@@ -1,6 +1,6 @@
 # 16 · The sandbox -- running what you do not trust
 
-> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Every other tutorial rests on one promise: **Cordon reads, it never executes.**
 This one is about the single component that breaks that promise on purpose, and
@@ -47,7 +47,10 @@ about all the ways it is kept away from the rest.
 ```bash
 cordon-sandbox pypi requests==2.31.0 --sandbox
 cordon-sandbox npm  left-pad          --sandbox --json
+cordon-sandbox rubygems rake          --sandbox
 ```
+
+npm, PyPI and RubyGems, each in its own pinned base image.
 
 `--sandbox` carries no information the command does not already imply. It is
 there so that running untrusted code is never something you did by accident.
@@ -80,6 +83,25 @@ there so that running untrusted code is never something you did by accident.
 │                   to do the thing.                                       │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+## A second install, with the clock moved
+
+Some payloads wait: they check the date and do nothing until a day well after anyone
+looked. So after the first install the sandbox installs again with the clock moved
+ahead, and reports only what that second run did differently.
+
+```
+   run 1   today            what the install does now
+   run 2   today + 400 days what it does once a date check passes
+           ─────────────────────────────────────────────────────
+   report  run 1, plus "only with the clock 400 days ahead: ..."
+
+   --clock-shift DAYS   change the distance;  --clock-shift 0  skips the pass
+```
+
+The clock is moved with libfaketime inside the same isolated container, so the second
+run has no more access than the first. A trigger that waits on anything other than the
+date -- a hostname, a count of installs, a message from a server -- is still out of reach.
 
 ## What the container is, and is not
 

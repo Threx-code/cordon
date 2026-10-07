@@ -1,6 +1,6 @@
 # 18 · AI agents, MCP servers and skills
 
-> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Coding agents read instruction files, launch MCP servers and run hooks -- all of it
 configured by files committed to the repository. Whoever can change those files can
@@ -81,7 +81,12 @@ told to read the README reads its hidden characters too.
 
 [ATR](https://github.com/Agent-Threat-Rule/agent-threat-rules) is the open catalogue of AI
 agent threats. Cordon carries 815 of its 825 rules, translated to Python and graded by
-how often each one fires on ATR's benign corpus. A rule follows the scan path ATR gives
+how often each one fires on ATR's benign corpus, and adds 4 of Cordon's own written in ATR's
+format (`scripts/data/cordon-atr-rules.yaml`) for the shapes ATR's published evasion cases show
+slipping past its rules: the same instruction in Spanish, French, German, Portuguese or Italian,
+a keyword split by stray spaces, and a persona defined by having no safety rules. Each went
+through exactly what an ATR rule goes through, and matched none of ATR's 13,311 benign samples
+and none of 1,654 real instruction files. A rule follows the scan path ATR gives
 it (`scan_target`):
 
 ```
@@ -116,6 +121,58 @@ removes one.
 - A malicious verdict warns; `--judge-blocks` makes it fail the build.
 - The report says which judge ran. One that could not be reached marks the scan
   incomplete, rather than passing it quietly.
+
+## Offline: what the text asks for
+
+Before any judge, the text is read for what it asks the agent to do, with no model and
+no network. Rephrasing does not escape it, because the wording is not what is matched:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  SUSPECT.AGENT.INTENT.001                                                │
+│     send what the user types to an outside address                       │
+│     lie to the user while acting                                         │
+│     copy itself into every reply                                         │
+│     write itself into the agent's own instruction files                  │
+│                                                                          │
+│  SUSPECT.AGENT.INTENT_CHAINED.001                                        │
+│     one file tells the agent to obey another, and the other asks for     │
+│     one of the above: followed across files                              │
+│                                                                          │
+│  read in six languages, with look-alike, invisible and spaced-out        │
+│  characters folded away first                                            │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+It lifted the published Agent Threat Rules evasions caught from 72.3% to 80.6%, with
+the catalogue's benign near-misses still 92.4% clean.
+
+## Remote MCP servers, as they are served now
+
+A tool description is an instruction to the agent, and a remote server decides it at
+request time: a server reviewed on Monday can describe its tools differently on
+Tuesday, and nothing in the repository changes.
+
+```
+   cordon-scanner agent mcp-approve        record what each remote server serves:
+                                           .cordon/mcp-tools.json (commit it)
+   cordon-scanner scan . --online          ask each server again and compare
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001   what it serves now asks the     │
+│                                          agent to do something harmful   │
+│  SUSPECT.MCP.TOOLS_CHANGED.001           a tool added, removed or        │
+│                                          redescribed since approval      │
+│  OPERATIONAL.MCP.LIVE_UNREAD.001         a server could not be asked;    │
+│                                          the scan says so                │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+Only remote servers over https, only with `--online`, with no redirects and no
+credential the configuration does not name. A local stdio server is never started:
+asking it would mean running the package under review.
 
 ## On a developer's laptop
 

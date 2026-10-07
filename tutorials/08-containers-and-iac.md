@@ -1,8 +1,8 @@
 # 08 · Containers, Kubernetes and infrastructure as code
 
-> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-31 container rules and a policy table of 1,082 controls, over the files that
+33 container rules and a policy table of 1,082 controls, over the files that
 describe *where your code runs*. Cordon reads the definitions -- it never
 contacts a cluster, a cloud account or a registry to do it.
 
@@ -47,7 +47,7 @@ contacts a cluster, a cloud account or a registry to do it.
 
 ## The policy table, and why it is separate
 
-The 31 container rules above match a pattern against a file: they answer "does
+The 33 container rules above match a pattern against a file: they answer "does
 this contain something alarming". Most infrastructure policy is the other
 question -- *this* resource is missing *that* setting -- and a regex cannot
 express absence over a region it has no notion of.
@@ -120,6 +120,23 @@ cordon-scanner rules list | grep IAC     # the pattern rules and the policies
 │                                     automount of a token nothing needs   │
 │   SUSPECT.HELM.UNTRUSTED_REPOSITORY.001                                  │
 │                                     a chart from a repo nobody pinned    │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### The images a workload runs
+
+A Deployment, StatefulSet, DaemonSet, Job, CronJob or Pod names images, and so does a
+Kustomization's `images:` override. Each one is a dependency like a package, read from
+the manifest Kubernetes would apply:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│   POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001                           │
+│       image: ghcr.io/acme/api:1.4      a tag; whoever can push moves it  │
+│       image: ghcr.io/acme/api@sha256:  a digest; what was reviewed runs  │
+│                                                                          │
+│   POLICY.CONTAINER.UNSIGNED_IMAGE.001            (with --online)         │
+│       the registry holds no signature or build attestation for it        │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 

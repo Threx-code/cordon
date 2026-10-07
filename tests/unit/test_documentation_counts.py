@@ -71,9 +71,11 @@ class DocumentTruth:
     def atr(kind: str) -> int:
         with gzip.open(ROOT / "src/cordon_scanner/intel/data/atr-rules.json.gz") as handle:
             data = json.load(handle)
-        carried = len(data["rules"])
+        # ATR's own rules only: Cordon's supplementary rules (source "cordon") are not ATR's.
+        carried = sum(1 for r in data["rules"] if r.get("source") != "cordon")
+        supplement = len(data["rules"]) - carried
         dropped = sum(len(v) for v in data["dropped"].values())
-        return {"carried": carried, "upstream": carried + dropped}[kind]
+        return {"carried": carried, "upstream": carried + dropped, "supplement": supplement}[kind]
 
 
 #: (phrase, the value it must state). The number is the named group `n`.
@@ -127,6 +129,11 @@ CLAIMS: tuple[tuple[str, re.Pattern[str], Callable[[], int]], ...] = (
         "ATR upstream",
         re.compile(r"\bcarries \d[\d,]* of its (?P<n>\d[\d,]*) rules\b"),
         lambda: DocumentTruth.atr("upstream"),
+    ),
+    (
+        "Cordon rules in ATR's format",
+        re.compile(rf"\b{NUMBER} of Cordon's own\b"),
+        lambda: DocumentTruth.atr("supplement"),
     ),
 )
 

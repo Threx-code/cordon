@@ -1,6 +1,6 @@
 # 20 · Findings in the editor
 
-> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 The VS Code extension shows Cordon's findings where you are already looking: on the
 line, with the fix beside it.
@@ -28,3 +28,5 @@ line, with the fix beside it.
 
 Findings without a line -- repository-wide ones, or members of an archive -- go to
 the **Cordon** output channel, and the status bar shows the count.
+
+Next: **[21 · Reviewing a dependency update](21-dependency-review.md)**.

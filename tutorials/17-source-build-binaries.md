@@ -1,6 +1,6 @@
 # 17 · Source, build systems, binaries and licences
 
-> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 The domains that do not fit anywhere else, and the flags that decide *what gets
 scanned in the first place*. Thirteen rules plus the licence layer.
