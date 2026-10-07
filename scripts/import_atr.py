@@ -316,6 +316,10 @@ class AtrImport:
         return ""
 
     @staticmethod
+    def supplement(args: argparse.Namespace) -> int:
+        return AtrSupplement.run(args)
+
+    @staticmethod
     def main() -> int:
         parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
         parser.add_argument("--atr", type=Path, required=True)
@@ -325,7 +329,18 @@ class AtrImport:
             type=Path,
             help="bench/fetch_agent_configs.py output; its calibration half grades rules in instruction files",
         )
+        parser.add_argument(
+            "--supplement",
+            type=Path,
+            help=(
+                "Cordon-authored rules in ATR's format (scripts/data/cordon-atr-rules.yaml): "
+                "screened, tested and measured exactly as ATR's are, then added to the existing "
+                "data without re-importing ATR"
+            ),
+        )
         args = parser.parse_args()
+        if args.supplement:
+            return AtrImport.supplement(args)
 
         commit = AtrImport.head_commit(args.atr)
         dropped: dict[str, list[str]] = {}
@@ -466,6 +481,124 @@ class AtrImport:
         print(f"wrote {len(rules)} rules to {TARGET} (ATR {commit[:12]})")
         for reason, ids in sorted(dropped.items()):
             print(f"  dropped, {reason}: {len(ids)}")
+        return 0
+
+
+class AtrSupplement:
+    """`--supplement`: Cordon's own rules, through ATR's whole pipeline, added to the shipped data."""
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        document = json.loads(gzip.decompress(TARGET.read_bytes()).decode("utf-8"))
+        rules_in = yaml.safe_load(args.supplement.read_text(encoding="utf-8")) or []
+        patterns: dict[str, tuple[str, str]] = {}
+        candidates: list[dict[str, Any]] = []
+        tests: dict[str, list[str]] = {}
+        negatives: dict[str, list[str]] = {}
+        for raw in rules_in:
+            kept = []
+            for n, condition in enumerate(raw["detection"]["conditions"]):
+                pattern, flags = AtrImport.translate(str(condition["value"]))
+                re.compile(pattern, compile_flags(flags))
+                key = f"{raw['id']}#{n}"
+                patterns[key] = (pattern, flags)
+                kept.append(
+                    {
+                        "key": key,
+                        "field": condition["field"],
+                        "pattern": pattern,
+                        "flags": flags,
+                        "ported": False,
+                    }
+                )
+            candidates.append(
+                {
+                    "id": str(raw["id"]),
+                    "title": str(raw["title"]),
+                    "category": str(raw["category"]),
+                    "severity": str(raw["severity"]),
+                    "status": str(raw["status"]),
+                    "condition": str(raw["detection"].get("condition") or "any"),
+                    "conditions": kept,
+                    "outside_code": False,
+                    "source": "cordon",
+                }
+            )
+            tests[str(raw["id"])] = [t["input"] for t in raw["test_cases"]["true_positives"]]
+            negatives[str(raw["id"])] = [
+                t["input"] for t in raw["test_cases"].get("true_negatives") or ()
+            ]
+        timings = AtrImport.screen(patterns)
+        rules: list[dict[str, Any]] = []
+        for rule in candidates:
+            slow = [
+                c["key"]
+                for c in rule["conditions"]
+                if timings.get(c["key"], float("inf")) > BUDGET_SECONDS
+            ]
+            if slow:
+                print(f"refusing {rule['id']}: patterns too slow on hostile input: {slow}")
+                return 1
+            rule["conditions"] = [
+                {k: c[k] for k in ("field", "pattern", "flags", "ported")}
+                for c in rule["conditions"]
+            ]
+            missed = [
+                t
+                for t in tests[rule["id"]]
+                if not AtrImport.matches(
+                    rule, {"content": t, "tool_response": t, "tool_description": t}
+                )
+            ]
+            if missed:
+                print(f"refusing {rule['id']}: misses its own true positives: {missed}")
+                return 1
+            wrong = [
+                t
+                for t in negatives[rule["id"]]
+                if AtrImport.matches(
+                    rule, {"content": t, "tool_response": t, "tool_description": t}
+                )
+            ]
+            if wrong:
+                print(f"refusing {rule['id']}: matches its own true negatives: {wrong}")
+                return 1
+            rules.append(rule)
+        samples = AtrImport.benign_samples(args.atr)
+        for rule, hits in zip(rules, AtrImport.measure(rules, samples, args.workers), strict=True):
+            rule["benign_hits"] = hits
+        if args.instruction_corpus:
+            instructions = AtrImport.instruction_samples(args.instruction_corpus)
+            for rule, hits in zip(
+                rules, AtrImport.measure(rules, instructions, args.workers), strict=True
+            ):
+                rule["instruction_hits"] = hits
+        if len(samples) != document["benign_samples"]:
+            print(
+                f"note: {len(samples)} benign samples here, {document['benign_samples']} when ATR "
+                f"was imported; rates are per this run's corpus"
+            )
+        ids = {r["id"] for r in rules}
+        document["rules"] = [r for r in document["rules"] if r["id"] not in ids] + rules
+        document["supplement"] = {
+            "source": str(args.supplement.name),
+            "rules": sorted(ids),
+            "benign_samples": len(samples),
+        }
+        TARGET.write_bytes(
+            gzip.compress(json.dumps(document, sort_keys=True).encode("utf-8"), mtime=0)
+        )
+        digests = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        digests[TARGET.name] = hashlib.sha256(TARGET.read_bytes()).hexdigest()
+        MANIFEST.write_text(json.dumps(digests, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        for rule in rules:
+            rate = rule["benign_hits"] / max(1, len(samples))
+            extra = (
+                f", {rule['instruction_hits']} real instruction file(s)"
+                if "instruction_hits" in rule
+                else ""
+            )
+            print(f"  {rule['id']}: {rule['benign_hits']} benign match(es) ({rate:.3%}){extra}")
         return 0
 
 

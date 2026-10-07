@@ -428,12 +428,62 @@ class AgentRules:
         return f"SUSPECT.AGENT.ATR.{suffix}.001"
 
 
+class ExtensionVerdicts:
+    """An extension id (and version, when known) against OSV's malicious extension records.
+
+    Shared by every place an extension can be named: a repository's recommendations, a vendored
+    .vsix, and the extensions installed on a machine (`cloud.device`). Returns the rule and a
+    sentence, or None.
+    """
+
+    @staticmethod
+    def osv(identifier: str, version: str | None) -> tuple[str, str] | None:
+        from cordon_scanner.intel.advisories import AdvisoryDatabase
+
+        database = AdvisoryDatabase.bundled()
+        records = [a for a in database.for_package("vscode", identifier) if a.malicious]
+        if not records:
+            return None
+        ids = ", ".join(sorted({a.identifier for a in records if a.identifier})[:3])
+        if version:
+            if any(a.affects(version) for a in records):
+                return (
+                    "MALWARE.EXTENSION.KNOWN.001",
+                    f"this release is recorded as malicious ({ids}).",
+                )
+            return None
+        # "Every release" only when a record's range takes in the very first version and nothing
+        # closes it. Several records are legitimate, widely installed extensions that had specific
+        # releases compromised (a publisher's account or pipeline taken over); naming one of those
+        # without a version is not naming a malicious release.
+        if any(
+            a.is_range and a.affects("0.0.0") and not (a.fixed or a.last_affected) for a in records
+        ):
+            return (
+                "MALWARE.EXTENSION.KNOWN.001",
+                f"every release is recorded as malicious ({ids}).",
+            )
+        named = sorted({v for a in records for v in a.versions})[:5]
+        return (
+            "SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001",
+            f"no version is named, and releases {', '.join(named) or 'of it'} are recorded as "
+            f"malicious ({ids}).",
+        )
+
+
 EXTENSION_PATHS: Final = (
     "**/.vscode/extensions.json",
     "**/.devcontainer.json",
     "**/.devcontainer/devcontainer.json",
     "**/.devcontainer/*/devcontainer.json",
+    # A multi-root workspace's own recommendations (`"extensions": {"recommendations": [...]}`).
+    "**/*.code-workspace",
 )
+GITPOD_PATHS: Final = ("**/.gitpod.yml", "**/.gitpod.yaml")
+BREWFILE_PATHS: Final = ("**/Brewfile",)
+"""`brew bundle` installs `vscode "publisher.name"` lines into VS Code."""
+"""Gitpod installs `vscode.extensions` from Open VSX into every workspace it starts, by id, by
+`id@version`, or by a URL to a .vsix."""
 VSIX_MANIFEST: Final = "extension/package.json"
 """The manifest inside a `.vsix`, read when the archive is expanded."""
 _EXTENSION_ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9._-]*$")
@@ -669,6 +719,33 @@ RULES: Final = {
             "fix.",
             "Upgrade the action, and pin the upgraded release by commit SHA.",
             (ref.GITHUB_ACTIONS_HARDENING,),
+        ),
+        AgentRules._rule(
+            "MALWARE.EXTENSION.KNOWN.001",
+            "An editor extension is a recorded malicious release",
+            Category.MALICIOUS,
+            Severity.CRITICAL,
+            Confidence.HIGH,
+            "This repository recommends, ships the package of, or this machine has installed an editor "
+            "extension (VS Code Marketplace or Open VSX) whose release OSV's malicious-package records "
+            "name. VS Code, VSCodium, Cursor and Windsurf all install from these registries.",
+            "Uninstall the extension everywhere it is installed, remove it from recommendations and "
+            "delete any vendored .vsix, then treat the machines that ran it as compromised: rotate "
+            "the credentials they held.",
+            (ref.OSV, ref.VSCODE_REMOVED_EXTENSIONS),
+        ),
+        AgentRules._rule(
+            "SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001",
+            "A named editor extension has had malicious releases",
+            Category.SUSPICIOUS,
+            Severity.LOW,
+            Confidence.LOW,
+            "This file names an editor extension without a version, and OSV records specific releases "
+            "of it as malicious (a compromised publisher or pipeline). The current release is not "
+            "known to be affected, so this is reported, not blocked; an installed affected release is "
+            "reported by version as MALWARE.EXTENSION.KNOWN.001.",
+            "Check that machines have moved past the affected releases.",
+            (ref.OSV,),
         ),
         AgentRules._rule(
             "MALWARE.EXTENSION.REMOVED.001",
@@ -938,6 +1015,46 @@ RULES.update(
     }
 )
 
+RULES.update(
+    {
+        "SUSPECT.AGENT.INTENT.001": AgentRules._rule(
+            "SUSPECT.AGENT.INTENT.001",
+            "Text that tells the agent to act against its user",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "Read for what it asks rather than how it is worded -- in any of six languages, with "
+            "look-alike or invisible characters folded away -- this passage instructs the agent to "
+            "work against the person using it.",
+            "Remove the passage, or confirm who wrote it. An agent acts on what it reads.",
+            (ref.OWASP_LLM_PROMPT_INJECTION, ref.MCP_SECURITY),
+        ),
+        "SUSPECT.AGENT.INTENT_CHAINED.001": AgentRules._rule(
+            "SUSPECT.AGENT.INTENT_CHAINED.001",
+            "Agent instructions that send the agent to a file that acts against its user",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "This instruction file tells the agent to follow another file, and that file instructs "
+            "the agent to work against its user. Split across two files, neither reads as the "
+            "attack alone.",
+            "Read both files together; remove the reference or the passage it leads to.",
+            (ref.OWASP_LLM_PROMPT_INJECTION,),
+        ),
+    }
+)
+
+#: What each intent is, as a finding says it.
+INTENT_WORDS: Final = {
+    "covert-exfil": "send what the user types, or other data, to an outside address -- covertly",
+    "deceive": "tell the user something false while acting behind their back",
+    "self-replicate": "copy these instructions into every reply or file it writes, so they spread",
+    "persist": "write itself into the agent's own instruction files so it loads every session",
+    "markdown-exfil": "carry data out in a markdown image URL the client fetches without asking",
+    "credential-pipe": "read key or credential files and pipe them to a network tool",
+}
+_MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
+
 
 class AgentPaths:
     """Whether a path is one of the places an agent reads configuration from."""
@@ -987,6 +1104,13 @@ class AgentChainDetector(BaseDetector):
             findings.extend(self._command_permissions(unit, ctx))
         if AgentPaths._paths_match(path, EXTENSION_PATHS):
             findings.extend(self._extension_recommendations(unit, ctx))
+        if AgentPaths._paths_match(path, GITPOD_PATHS):
+            findings.extend(self._gitpod_extensions(unit, ctx))
+        if AgentPaths._paths_match(path, BREWFILE_PATHS):
+            for identifier in dict.fromkeys(
+                re.findall(r"""(?m)^\s*vscode\s+["']([^"']+)["']""", unit.content.text)
+            ):
+                findings.extend(self._judge_extension(identifier, unit, ctx, recommended=True))
         if path == VSIX_MANIFEST and ".vsix!" in unit.content.path.lower():
             findings.extend(self._vsix_manifest(unit, ctx))
         if path.endswith(_SERVER_SOURCE_SUFFIXES) and _MCP_SDK.search(unit.content.text):
@@ -1005,6 +1129,7 @@ class AgentChainDetector(BaseDetector):
             if description in seen:
                 continue
             seen.add(description)
+            yield from self._intents(unit, ctx, description, within=text)
             reason = McpServerSource._poisoned_description(description)
             if reason is not None:
                 yield self._at_text(
@@ -1138,6 +1263,7 @@ class AgentChainDetector(BaseDetector):
                 start, end = InstructionText._byte_span(text, line_match)
                 yield self._finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
                 break
+        yield from self._intents(unit, ctx, text)
         yield from self._threat_rules(
             unit,
             ctx,
@@ -1146,6 +1272,77 @@ class AgentChainDetector(BaseDetector):
             instruction_file=True,
             corroborated=bool(hidden or injection or exfil or alarming is not None),
         )
+
+    def _intents(
+        self, unit: FileUnit, ctx: ScanContext, text: str, *, within: str | None = None
+    ) -> Iterator[Finding]:
+        """The semantic layer (`detect/agent_intent.py`): one finding per intent the text states,
+        and, for an instruction file, the intent of a file it tells the agent to follow."""
+        from cordon_scanner.detect.agent_intent import InstructionIntent
+
+        seen: set[str] = set()
+        for intent in InstructionIntent.find(text):
+            if intent.kind in seen:
+                continue
+            seen.add(intent.kind)
+            message = (
+                RULES["SUSPECT.AGENT.INTENT.001"].message
+                + f' It asks the agent to {INTENT_WORDS[intent.kind]}: "{intent.sentence[:160]}"'
+            )
+            severity = Severity.MEDIUM if intent.kind in _MEDIUM_INTENTS else None
+            if within is not None:
+                yield self._at_text(
+                    "SUSPECT.AGENT.INTENT.001",
+                    unit,
+                    ctx,
+                    within,
+                    intent.sentence[:80],
+                    message=message,
+                    severity=severity,
+                )
+            else:
+                start = len(text[: intent.start].encode("utf-8"))
+                end = start + len(intent.sentence.encode("utf-8"))
+                yield self._finding(
+                    "SUSPECT.AGENT.INTENT.001",
+                    unit,
+                    ctx,
+                    start,
+                    end,
+                    message=message,
+                    severity=severity,
+                )
+        if within is not None or ctx.repository is None:
+            return
+        root = Path(ctx.repository.root)
+        base = (root / unit.content.path).parent
+        for offset, referenced in InstructionIntent.chained_paths(text)[:5]:
+            for candidate in (base / referenced, root / referenced):
+                try:
+                    resolved = candidate.resolve()
+                    if (
+                        not resolved.is_relative_to(root.resolve())
+                        or not resolved.is_file()
+                        or resolved.stat().st_size > 512 << 10
+                    ):
+                        continue
+                    linked = resolved.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                found = InstructionIntent.find(linked)
+                if found:
+                    start = len(text[:offset].encode("utf-8"))
+                    yield self._finding(
+                        "SUSPECT.AGENT.INTENT_CHAINED.001",
+                        unit,
+                        ctx,
+                        start,
+                        start + len(referenced.encode("utf-8")),
+                        message=RULES["SUSPECT.AGENT.INTENT_CHAINED.001"].message
+                        + f" {referenced} asks the agent to {INTENT_WORDS[found[0].kind]}.",
+                    )
+                    return
+                break
 
     def _threat_rules(
         self,
@@ -1215,7 +1412,7 @@ class AgentChainDetector(BaseDetector):
                 RULES[rule_id].message
                 + f" Matched: {named}"
                 + (f", and {more} more" if more > 0 else "")
-                + f". Rules: {atr.RULE_URL.format(found[0].rule.rule_id)}"
+                + f". Rules: {atr.RuleLinks.url(found[0].rule.rule_id)}"
             )
             first = found[0]
             if within is None:
@@ -1795,23 +1992,59 @@ class AgentChainDetector(BaseDetector):
         raw_vscode = customizations.get("vscode")
         vscode: dict[str, Any] = raw_vscode if isinstance(raw_vscode, dict) else {}
         named += [x for x in vscode.get("extensions") or () if isinstance(x, str)]
-        named += [
-            x for x in document.get("extensions") or () if isinstance(x, str)
-        ]  # legacy devcontainer
-        for identifier in dict.fromkeys(named):
+        legacy = document.get("extensions")
+        if isinstance(legacy, dict):  # a *.code-workspace file
+            named += [x for x in legacy.get("recommendations") or () if isinstance(x, str)]
+        elif isinstance(legacy, list):  # a legacy devcontainer
+            named += [x for x in legacy if isinstance(x, str)]
+        for entry in dict.fromkeys(named):
+            identifier, _, version = entry.partition("@")
             yield from self._judge_extension(
-                identifier.split("@", 1)[0], unit, ctx, recommended=True
+                identifier, unit, ctx, recommended=True, version=version or None
+            )
+
+    def _gitpod_extensions(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """`vscode.extensions` in a Gitpod config: Open VSX ids, `id@version`, or .vsix URLs."""
+        text = unit.content.text
+        block = re.search(r"(?ms)^vscode:\s*\n((?:[ \t]+.*\n?)*)", text)
+        if not block:
+            return
+        listing = re.search(r"(?ms)^[ \t]+extensions:\s*\n((?:[ \t]+-.*\n?)*)", block.group(1))
+        if not listing:
+            return
+        for line in listing.group(1).splitlines():
+            entry = line.strip().lstrip("-").strip().strip("'\"")
+            if not entry or "://" in entry:
+                continue
+            identifier, _, version = entry.partition("@")
+            yield from self._judge_extension(
+                identifier, unit, ctx, recommended=True, version=version or None
             )
 
     def _vsix_manifest(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         manifest = McpConfigs._json(unit.content)
         if isinstance(manifest, dict) and manifest.get("publisher") and manifest.get("name"):
+            version = manifest.get("version")
             yield from self._judge_extension(
-                f"{manifest['publisher']}.{manifest['name']}", unit, ctx, recommended=False
+                f"{manifest['publisher']}.{manifest['name']}",
+                unit,
+                ctx,
+                recommended=False,
+                version=str(version) if version else None,
+                # The release's own identity is the engine's MALWARE.PACKAGE.KNOWN.001, as for an
+                # npm or PyPI release; judging it here too would report one package twice.
+                osv=False,
             )
 
     def _judge_extension(
-        self, identifier: str, unit: FileUnit, ctx: ScanContext, *, recommended: bool
+        self,
+        identifier: str,
+        unit: FileUnit,
+        ctx: ScanContext,
+        *,
+        recommended: bool,
+        version: str | None = None,
+        osv: bool = True,
     ) -> Iterator[Finding]:
         from cordon_scanner.intel import datafile
 
@@ -1820,6 +2053,19 @@ class AgentChainDetector(BaseDetector):
             return
         intel = datafile.IntelDataFile.newest("vscode-extensions.json")
         how = "recommends" if recommended else "vendors the package of"
+        verdict = ExtensionVerdicts.osv(lowered, version) if osv else None
+        if verdict is not None:
+            rule_id, detail = verdict
+            yield self._at_text(
+                rule_id,
+                unit,
+                ctx,
+                unit.content.text,
+                identifier,
+                message=f"This file {how} the editor extension {identifier}"
+                f"{'@' + version if version else ''}: {detail}",
+            )
+            return
         removal = (intel.get("removed") or {}).get(lowered)
         if isinstance(removal, dict):
             reason = str(removal.get("reason", "")).lower()

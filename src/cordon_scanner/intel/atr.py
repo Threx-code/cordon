@@ -34,6 +34,7 @@ from functools import cache
 from typing import Final
 
 from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
+from cordon_scanner.version import __version__
 
 FILE_NAME: Final = "atr-rules.json.gz"
 
@@ -62,6 +63,16 @@ CHUNK: Final = 4096
 _OVERLAP: Final = 512
 
 RULE_URL: Final = "https://agentthreatrule.org/en/rules/{}"
+CORDON_RULE_URL: Final = f"https://github.com/Threx-code/cordon/blob/v{__version__}/scripts/data/cordon-atr-rules.yaml#{{}}"
+"""Where Cordon's supplementary rules (`CORDON-ATR-*`, `scripts/import_atr.py --supplement`) live,
+at the release that carries them: a link on `main` would describe whatever the rule became later."""
+
+
+class RuleLinks:
+    @staticmethod
+    def url(rule_id: str) -> str:
+        return (CORDON_RULE_URL if rule_id.startswith("CORDON-") else RULE_URL).format(rule_id)
+
 
 PRODUCTION_AT_MOST: Final = 0.005
 DEMOTED_ABOVE: Final = 0.02
@@ -448,6 +459,7 @@ prose written to an agent has that ceiling; Cordon's own signals close the rest.
 
 __all__ = [
     "CHUNK",
+    "CORDON_RULE_URL",
     "DEMOTED_ABOVE",
     "INSTRUCTION_TOLERANCE",
     "KINDS",
@@ -460,4 +472,5 @@ __all__ = [
     "AtrText",
     "Catalogue",
     "Prepared",
+    "RuleLinks",
 ]
