@@ -772,4 +772,49 @@ C and C++ ports. Ecosystem id `vcpkg`.
 cordon-scanner scan .                      # every file above, in the project
 cordon-scanner deps .                      # every package found, with its findings
 ```
+## Every language
+
+The source Cordon reads inside any of those projects: 38 languages, each identified by its file name or extension, by a script's interpreter line, or by its content. The last column counts the rule-pack rules written for that language. Every file also gets the checks that are not tied to one language (secrets, hidden characters, obfuscation, known-malware signatures), and Dockerfiles, YAML pipelines, manifests and infrastructure are read by their own detectors (tutorials 07 and 08), so a 0 there is not a file left unread. Every rule is in tutorial 28.
+
+| Language | Files | Rule-pack rules |
+|---|---|---|
+| C | `*.c`, `*.h` | 0 |
+| C# | `*.cs` | 10 |
+| C++ | `*.cc`, `*.cpp`, `*.cxx`, `*.hpp` | 0 |
+| Clojure | `*.bb`, `*.clj`, `*.cljc`, `*.cljs` | 8 |
+| CMake | `CMakeLists.txt` | 10 |
+| Dart | `*.dart` | 7 |
+| Dockerfile | `Containerfile`, `Dockerfile` | 0 |
+| Elixir | `*.ex`, `*.exs` | 8 |
+| Go | `*.go` | 10 |
+| Groovy | `Jenkinsfile`, `build.gradle` | 11 |
+| Haskell | `*.hs`, `*.lhs` | 8 |
+| Java | `*.java` | 10 |
+| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 15 |
+| JSON | `*.json` | 0 |
+| Julia | `*.jl` | 8 |
+| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 18 |
+| Lua | `*.lua` | 8 |
+| Makefile | `GNUmakefile`, `Makefile` | 10 |
+| Markdown | `*.markdown`, `*.md`, `*.mdc` | 0 |
+| Nim | `*.nim`, `*.nimble`, `*.nims` | 7 |
+| Objective-C | `*.m`, `*.mm` | 8 |
+| OCaml | `*.ml`, `*.mli` | 8 |
+| Perl | `*.pl`, `*.pm` | 8 |
+| PHP | `*.php` | 10 |
+| PowerShell | `*.ps1`, `*.psm1` | 10 |
+| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 17 |
+| R | `*.r` | 8 |
+| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 10 |
+| Rust | `*.rs`, `build.rs` | 10 |
+| Scala | `*.scala` | 10 |
+| Shell | `*.bash`, `*.sh`, `*.zsh` | 11 |
+| SQL | `*.sql` | 0 |
+| Swift | `*.swift`, `Package.swift` | 8 |
+| TOML | `*.toml` | 0 |
+| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 15 |
+| XML | `*.csproj`, `*.fsproj`, `*.props`, `*.targets`, `*.vbproj`, `*.xml` | 11 |
+| YAML | `*.yaml`, `*.yml` | 0 |
+| Zig | `*.zig`, `build.zig` | 7 |
+
 Next: **[26 · Every command](26-every-command.md)**.

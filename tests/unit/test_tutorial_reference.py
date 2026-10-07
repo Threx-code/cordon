@@ -61,6 +61,13 @@ class TestTheReferenceIsCurrent:
         for ecosystem_id in EcosystemRegistry.BY_ID:
             assert f"Ecosystem id `{ecosystem_id}`" in text
 
+    def test_every_language_has_a_row(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        text = EcosystemTutorial.render()
+        for _suffix, language in LanguageRegistry.EXTENSIONS:
+            assert f"| {EcosystemTutorial.LANGUAGE_NAMES[language]} |" in text
+
     def test_every_command_has_a_section(self) -> None:
         from cordon_scanner.cli.main import CommandLine
 

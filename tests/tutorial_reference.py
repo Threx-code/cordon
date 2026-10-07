@@ -180,7 +180,98 @@ exactly what a scan reads. The same facts as one table:
 """
         body = "\n".join(EcosystemTutorial.section(i, database) for i in ids)
         tail = "Next: **[26 · Every command](26-every-command.md)**.\n"
-        return head + body + tail
+        return head + body + EcosystemTutorial.languages() + tail
+
+    LANGUAGE_NAMES: ClassVar[dict[str, str]] = {
+        "c": "C",
+        "clojure": "Clojure",
+        "cpp": "C++",
+        "csharp": "C#",
+        "dart": "Dart",
+        "elixir": "Elixir",
+        "go": "Go",
+        "haskell": "Haskell",
+        "java": "Java",
+        "javascript": "JavaScript",
+        "json": "JSON",
+        "julia": "Julia",
+        "kotlin": "Kotlin",
+        "lua": "Lua",
+        "markdown": "Markdown",
+        "nim": "Nim",
+        "objc": "Objective-C",
+        "ocaml": "OCaml",
+        "perl": "Perl",
+        "php": "PHP",
+        "powershell": "PowerShell",
+        "python": "Python",
+        "r": "R",
+        "ruby": "Ruby",
+        "rust": "Rust",
+        "scala": "Scala",
+        "shell": "Shell",
+        "sql": "SQL",
+        "swift": "Swift",
+        "toml": "TOML",
+        "typescript": "TypeScript",
+        "xml": "XML",
+        "yaml": "YAML",
+        "zig": "Zig",
+        "groovy": "Groovy",
+        "batch": "Batch",
+        "vb": "Visual Basic",
+        "fsharp": "F#",
+        "erlang": "Erlang",
+        "dockerfile": "Dockerfile",
+        "makefile": "Makefile",
+        "cmake": "CMake",
+    }
+
+    @staticmethod
+    def languages() -> str:
+        """Every language a file can be identified as, the files that make it one, and how many
+        of the built-in behaviour rules read it."""
+        from cordon_scanner.langs.registry import LanguageRegistry
+        from cordon_scanner.rules.loader import RuleLoader
+
+        files: dict[str, list[str]] = {}
+        for suffix, language in LanguageRegistry.EXTENSIONS:
+            files.setdefault(language, []).append(f"`*{suffix}`")
+        for name, language in dict(getattr(LanguageRegistry, "FILENAMES", {})).items():
+            files.setdefault(language, []).append(f"`{name}`")
+        rules: dict[str, int] = {}
+        for pack in RuleLoader.load_builtin():
+            for compiled in pack.rules:
+                for language in compiled.rule.languages:
+                    rules[language] = rules.get(language, 0) + 1
+        missing = [lang for lang in files if lang not in EcosystemTutorial.LANGUAGE_NAMES]
+        if missing:
+            raise SystemExit(f"name these languages in tests/tutorial_reference.py: {missing}")
+        rows = [
+            f"| {EcosystemTutorial.LANGUAGE_NAMES[lang]} | {', '.join(sorted(set(files[lang]))[:12])} "
+            f"| {rules.get(lang, 0)} |"
+            for lang in sorted(files, key=lambda x: EcosystemTutorial.LANGUAGE_NAMES[x].lower())
+        ]
+        return "\n".join(
+            [
+                "## Every language",
+                "",
+                f"The source Cordon reads inside any of those projects: {len(files)} languages, each "
+                "identified by its file name or extension, by a script's interpreter line, or by its "
+                "content. The last column counts the rule-pack rules written for that language. "
+                "Every file also gets the checks that are not tied to one language (secrets, "
+                "hidden characters, obfuscation, known-malware signatures), and Dockerfiles, YAML "
+                "pipelines, manifests and infrastructure are read by their own detectors "
+                "(tutorials 07 and 08), so a 0 there is not a file left unread. Every rule is in "
+                "tutorial 28.",
+                "",
+                "| Language | Files | Rule-pack rules |",
+                "|---|---|---|",
+                *rows,
+                "",
+                "",
+            ]
+        )
 
 
 class CommandTutorial:
