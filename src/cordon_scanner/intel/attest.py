@@ -163,6 +163,17 @@ class SigstoreVerification:
             # That is an inability to check, not a failed check.
             return Result(Outcome.UNVERIFIABLE, f"trust root unavailable: {type(exc).__name__}")
 
+        issuer = SigstoreVerification.issuer(bundle)
+        if issuer is not None and issuer != GITHUB_OIDC_ISSUER:
+            # Signed, but by an identity no source repository stands behind: a developer's
+            # email through Google or Microsoft login, which is how many Maven Central artefacts
+            # are signed. Checking it against the repository policy would reject an honest
+            # signature as a forgery; it is a question this check cannot answer.
+            return Result(
+                Outcome.UNVERIFIABLE,
+                f"signed by an identity from {issuer}, which is not tied to a source repository",
+            )
+
         verify_one = (
             SigstoreVerification._verify_dsse_bundle
             if SigstoreVerification._is_dsse(bundle_json)
@@ -178,6 +189,35 @@ class SigstoreVerification:
         return Result(
             Outcome.VERIFIED, f"built by github.com/{owner}/{name} and signed for that identity"
         )
+
+    #: Fulcio's certificate extensions naming the OIDC issuer: the current one (DER-encoded
+    #: UTF8String) and the deprecated one (raw bytes), which older certificates carry alone.
+    _ISSUER_V2 = "1.3.6.1.4.1.57264.1.8"
+    _ISSUER_V1 = "1.3.6.1.4.1.57264.1.1"
+
+    @staticmethod
+    def issuer(bundle: Any) -> str | None:
+        """The OIDC issuer the signing certificate was granted by, or None when it cannot be
+        read (the verification itself then decides)."""
+        try:
+            certificate = bundle.signing_certificate
+            extensions = {e.oid.dotted_string: e.value for e in certificate.extensions}
+        except Exception:
+            return None
+        for oid in (SigstoreVerification._ISSUER_V2, SigstoreVerification._ISSUER_V1):
+            value = extensions.get(oid)
+            raw = getattr(value, "value", None)
+            if not isinstance(raw, bytes) or not raw:
+                continue
+            if oid == SigstoreVerification._ISSUER_V2 and len(raw) > 2 and raw[0] == 0x0C:
+                # DER UTF8String: tag, length (short form, or long form with N length bytes).
+                start = 2 + (raw[1] & 0x7F) if raw[1] & 0x80 else 2
+                raw = raw[start:]
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+        return None
 
     @staticmethod
     def _is_dsse(bundle_json: str | bytes) -> bool:
@@ -329,6 +369,17 @@ class AttestationDocuments:
             return AttestationDocuments._npm_bundles(payload)
         if ecosystem == "pypi":
             return AttestationDocuments._pypi_bundles(payload)
+        if ecosystem in ("maven", "gradle"):
+            bundle = payload.get("bundle")
+            return (json.dumps(bundle),) if isinstance(bundle, dict) and bundle else ()
+        if ecosystem in ("rubygems", "image"):
+            # RubyGems.org's attestations; an image's referrers, one bundle each.
+            bundles = payload.get("bundles")
+            return (
+                tuple(json.dumps(b) for b in bundles if isinstance(b, dict))
+                if isinstance(bundles, list)
+                else ()
+            )
         return ()
 
     @staticmethod

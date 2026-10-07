@@ -134,6 +134,7 @@ class TestItStaysSilentWhereItShould(ProvenanceFixtures):
         wire(facts=RegistryError("timeout"))
         assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == []
 
+    @pytest.mark.conformance("x", "x.provenance")
     def test_a_verified_attestation_produces_no_finding(self, wire) -> None:
         wire(facts=ProvenanceHelpers._attested(), bundles=("{}",), outcome=Outcome.VERIFIED)
         assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == []
@@ -160,10 +161,12 @@ class TestItReportsWhatItCannotProve(ProvenanceFixtures):
 
 
 class TestItReportsAFailedVerification(ProvenanceFixtures):
+    @pytest.mark.conformance("x", "x.provenance")
     def test_an_invalid_bundle_is_a_vulnerability(self, wire) -> None:
         wire(facts=ProvenanceHelpers._attested(), bundles=("{}",), outcome=Outcome.INVALID)
         assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == [INVALID_RULE]
 
+    @pytest.mark.conformance("x", "x.provenance")
     def test_the_declared_repository_case_is_preserved(self, wire, monkeypatch) -> None:
         # The OIDC repository claim keeps the stored case, so the identity passed
         # to the verifier must not be lowercased by the mismatch helper.

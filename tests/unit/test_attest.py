@@ -119,6 +119,29 @@ class TestVerifyDegradation:
         assert "did not parse" in result.detail
 
 
+class TestTheSignerMustBeTheDeclaredRepository:
+    """UNI-17: a valid signature from the wrong identity is not provenance. The policy handed to
+    sigstore pins the certificate to GitHub Actions' issuer AND to the repository the package
+    declares; a signature by any other repository fails that policy and is `INVALID`."""
+
+    @pytest.mark.conformance("x", "x.provenance")
+    @pytest.mark.conformance("npm", "UNI-17", "x.provenance")
+    @pytest.mark.conformance("pypi", "UNI-17")
+    def test_the_policy_names_the_declared_repository_and_issuer(self) -> None:
+        pytest.importorskip("sigstore")
+        built = attest.SigstoreVerification._identity_policy(("github.com", "acme", "app"))
+        children = getattr(built, "_children", ())
+        values = {type(c).__name__: getattr(c, "_value", None) for c in children}
+        assert values.get("GitHubWorkflowRepository") == "acme/app"
+        assert values.get("OIDCIssuer") == attest.GITHUB_OIDC_ISSUER
+
+    @pytest.mark.conformance("npm", "UNI-17")
+    @pytest.mark.conformance("pypi", "UNI-17")
+    def test_no_declared_repository_is_never_verified(self) -> None:
+        assert attest.SigstoreVerification._identity_policy(None) is None
+        assert attest.SigstoreVerification._identity_policy(("gitlab.com", "acme", "app")) is None
+
+
 class TestVerifyOutcomeMapping:
     """With the bundle parser and verifier substituted, the outcome maps right."""
 
@@ -144,6 +167,8 @@ class TestVerifyOutcomeMapping:
         )
         assert self._run().outcome is Outcome.VERIFIED
 
+    @pytest.mark.conformance("npm", "UNI-17")
+    @pytest.mark.conformance("pypi", "UNI-17")
     def test_a_rejected_signature_is_invalid(self, monkeypatch) -> None:
         from sigstore.verify.policy import VerificationError
 
@@ -219,6 +244,8 @@ class TestDsseBundlesTakeTheDsseRoute:
         self._install(monkeypatch, FakeVerifier())
         assert self._verify().outcome is Outcome.VERIFIED
 
+    @pytest.mark.conformance("npm", "UNI-17")
+    @pytest.mark.conformance("pypi", "UNI-17")
     def test_a_signed_statement_about_other_bytes_is_invalid(self, monkeypatch) -> None:
         """`verify_dsse` proves who signed the envelope and nothing about which
         artefact the statement describes. Without the subject comparison this
@@ -236,6 +263,7 @@ class TestDsseBundlesTakeTheDsseRoute:
         assert result.outcome is Outcome.INVALID
         assert "subject" in result.detail
 
+    @pytest.mark.conformance("x", "x.provenance")
     def test_a_subject_under_another_algorithm_cannot_be_compared(self, monkeypatch) -> None:
         class FakeVerifier:
             def verify_dsse(self, bundle, policy):
@@ -271,3 +299,275 @@ class TestDsseBundlesTakeTheDsseRoute:
             source_repo=("github.com", "o", "r"),
         )
         assert result.outcome is Outcome.VERIFIED
+
+
+class Certificates:
+    """A throwaway self-signed certificate carrying Fulcio's issuer extension, made in the test:
+    `SigstoreVerification.issuer` reads the extension and nothing else of it."""
+
+    @staticmethod
+    def with_issuer(issuer: str, *, legacy: bool = False):
+        pytest.importorskip("cryptography")
+        import datetime
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.x509.oid import NameOID
+
+        key = ec.generate_private_key(ec.SECP256R1())
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "conformance")])
+        encoded = issuer.encode()
+        oid = (
+            attest.SigstoreVerification._ISSUER_V1
+            if legacy
+            else attest.SigstoreVerification._ISSUER_V2
+        )
+        value = encoded if legacy else bytes([0x0C, len(encoded)]) + encoded
+        now = datetime.datetime.now(datetime.UTC)
+        return (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(1)
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(minutes=10))
+            .add_extension(
+                x509.UnrecognizedExtension(x509.ObjectIdentifier(oid), value), critical=False
+            )
+            .sign(key, hashes.SHA256())
+        )
+
+
+class TestMavenCentralSignatures:
+    """Maven Central's Sigstore bundles (`<jar>.sigstore.json`): a signature over the jar itself,
+    bound to the jar's SHA-256 the build recorded (`.mvn/checksums/`) and to the repository the
+    published POM declares. A bundle a person signed with an email identity is honest and
+    common on Central, and is unverifiable here -- never reported as a forgery."""
+
+    DIGEST = "bb" * 32
+
+    @pytest.fixture(autouse=True)
+    def _available(self, monkeypatch):
+        pytest.importorskip("sigstore")
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+
+    def _bundle(self, monkeypatch, issuer: str | None) -> None:
+        certificate = Certificates.with_issuer(issuer) if issuer else None
+
+        class FakeBundle:
+            @property
+            def signing_certificate(self):
+                if certificate is None:
+                    raise ValueError("no certificate")
+                return certificate
+
+        monkeypatch.setattr(
+            "sigstore.models.Bundle.from_json", staticmethod(lambda raw: FakeBundle())
+        )
+
+    def _verifier(self, monkeypatch, *, rejects: bool) -> list[str]:
+        from sigstore.verify.policy import VerificationError
+
+        called: list[str] = []
+
+        class FakeVerifier:
+            def verify_dsse(self, bundle, policy):
+                raise AssertionError("a Maven bundle signs the jar, not a DSSE envelope")
+
+            def verify_artifact(self, hashed, bundle, policy) -> None:
+                called.append(hashed.digest.hex())
+                if rejects:
+                    raise VerificationError("signature does not verify")
+
+        monkeypatch.setattr(
+            "sigstore.verify.Verifier.production",
+            staticmethod(lambda *, offline=False: FakeVerifier()),
+        )
+        return called
+
+    def _verify(self):
+        return attest.SigstoreVerification.verify(
+            json.dumps({"messageSignature": {"signature": "x"}}),
+            digest_hex=self.DIGEST,
+            algorithm="sha256",
+            source_repo=("github.com", "acme", "lib"),
+        )
+
+    @pytest.mark.conformance("maven", "UNI-17", "x.provenance")
+    @pytest.mark.conformance("gradle", "UNI-17")
+    @pytest.mark.parametrize("ecosystem", ["maven", "gradle"])
+    def test_the_bundle_is_extracted_from_the_registry_document(self, ecosystem) -> None:
+        """A Gradle build's dependencies are Maven Central artefacts with the same bundles."""
+        bundle = {
+            "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+            "messageSignature": {},
+        }
+        assert attest.AttestationDocuments.extract_bundles(ecosystem, {"bundle": bundle}) == (
+            json.dumps(bundle),
+        )
+        assert (
+            attest.AttestationDocuments.extract_bundles(ecosystem, {"bundle": "not a bundle"}) == ()
+        )
+
+    @pytest.mark.conformance("maven", "UNI-17")
+    def test_a_workflow_signature_over_the_jar_digest_verifies(self, monkeypatch) -> None:
+        self._bundle(monkeypatch, attest.GITHUB_OIDC_ISSUER)
+        called = self._verifier(monkeypatch, rejects=False)
+        assert self._verify().outcome is Outcome.VERIFIED
+        assert called == [self.DIGEST], (
+            "the signature was not checked against the recorded jar digest"
+        )
+
+    @pytest.mark.conformance("maven", "UNI-17")
+    def test_a_workflow_signature_that_does_not_verify_is_invalid(self, monkeypatch) -> None:
+        self._bundle(monkeypatch, attest.GITHUB_OIDC_ISSUER)
+        self._verifier(monkeypatch, rejects=True)
+        assert self._verify().outcome is Outcome.INVALID
+
+    @pytest.mark.conformance("maven", "UNI-17")
+    @pytest.mark.parametrize("legacy", [False, True])
+    def test_a_person_signed_bundle_is_unverifiable_not_invalid(self, monkeypatch, legacy) -> None:
+        certificate = Certificates.with_issuer("https://accounts.google.com", legacy=legacy)
+        assert (
+            attest.SigstoreVerification.issuer(
+                type("B", (), {"signing_certificate": certificate})()
+            )
+            == "https://accounts.google.com"
+        )
+        self._bundle(monkeypatch, "https://accounts.google.com")
+        called = self._verifier(monkeypatch, rejects=True)
+        result = self._verify()
+        assert result.outcome is Outcome.UNVERIFIABLE and "accounts.google.com" in result.detail
+        assert called == [], "a policy check against the repository would call this a forgery"
+
+    @pytest.mark.conformance("maven", "UNI-17")
+    @pytest.mark.conformance("gradle", "UNI-17")
+    @pytest.mark.parametrize("ecosystem", ["maven", "gradle"])
+    def test_the_bundle_is_fetched_from_central_only(self, monkeypatch, ecosystem) -> None:
+        from cordon_scanner.intel.registry_client import RegistryClient
+
+        asked: list[str] = []
+        monkeypatch.setattr(
+            RegistryClient,
+            "_fetch",
+            staticmethod(lambda url, accept="": asked.append(url) or {"messageSignature": {}}),
+        )
+        payload = RegistryClient.attestation_payload(ecosystem, "com.acme:lib", "1.2.0")
+        assert payload == {"bundle": {"messageSignature": {}}}
+        assert asked == [
+            "https://repo.maven.apache.org/maven2/com/acme/lib/1.2.0/lib-1.2.0.jar.sigstore.json"
+        ]
+        assert RegistryClient.attestation_payload(ecosystem, "com.acme:../lib", "1.2.0") is None
+
+    @pytest.mark.conformance("maven", "UNI-17")
+    def test_the_source_repository_comes_from_the_published_pom(self, monkeypatch) -> None:
+        from cordon_scanner.intel.more_registries import MoreRegistries
+
+        pom = "<project><url>https://acme.example</url><scm><url>https://github.com/acme/lib</url></scm></project>"
+        monkeypatch.setattr(MoreRegistries, "_text", staticmethod(lambda url: pom))
+        assert (
+            MoreRegistries._maven_scm("https://repo.maven.apache.org/x.pom")
+            == "https://github.com/acme/lib"
+        )
+        monkeypatch.setattr(
+            MoreRegistries,
+            "_text",
+            staticmethod(lambda url: '<!DOCTYPE p [<!ENTITY e "x">]><project/>'),
+        )
+        assert MoreRegistries._maven_scm("https://repo.maven.apache.org/x.pom") is None
+
+    @pytest.mark.conformance("maven", "UNI-17")
+    @pytest.mark.conformance("gradle", "UNI-17")
+    def test_a_classified_artefact_is_not_checked_against_the_plain_jar(self, monkeypatch) -> None:
+        from cordon_scanner.core.models import Dependency
+        from cordon_scanner.detect.base import GraphUnit
+        from cordon_scanner.detect.provenance import ProvenanceDetector
+        from cordon_scanner.intel.registry_client import RegistryClient
+
+        asked: list[str] = []
+
+        def facts(ecosystem, name, version):
+            asked.append(name)
+            raise __import__(
+                "cordon_scanner.intel.registry_client", fromlist=["RegistryError"]
+            ).RegistryError("stub")
+
+        monkeypatch.setattr(RegistryClient, "facts", staticmethod(facts))
+        plain = Dependency(
+            purl="pkg:maven/com.acme:lib@1.0",
+            ecosystem="maven",
+            name="com.acme:lib",
+            version="1.0",
+            direct=True,
+        )
+        native = Dependency(
+            purl="pkg:maven/com.acme:native@1.0?classifier=linux-x86_64",
+            ecosystem="maven",
+            name="com.acme:native",
+            version="1.0",
+            direct=True,
+        )
+        from dataclasses import replace
+
+        ctx = type("Ctx", (), {"offline": False, "out_of_time": lambda self: False})()
+        list(ProvenanceDetector().inspect(GraphUnit(dependencies=(plain, native)), ctx))
+        assert asked == ["com.acme:lib"]
+        asked.clear()
+        gradle = (replace(plain, ecosystem="gradle"), replace(native, ecosystem="gradle"))
+        list(ProvenanceDetector().inspect(GraphUnit(dependencies=gradle), ctx))
+        assert asked == ["com.acme:lib"]
+
+
+class TestRubyGemsAttestations:
+    """RubyGems.org publishes the Sigstore bundles of a version pushed through trusted publishing at
+    `/api/v1/attestations/<name>-<version>.json`, an array; they are verified against the SHA-256
+    Bundler records in Gemfile.lock's CHECKSUMS, through the same verifier as npm's and PyPI's."""
+
+    @pytest.mark.conformance("rubygems", "UNI-17")
+    def test_every_bundle_in_the_array_is_extracted(self) -> None:
+        first, second = {"dsseEnvelope": {"payload": "a"}}, {"messageSignature": {}}
+        assert attest.AttestationDocuments.extract_bundles(
+            "rubygems", {"bundles": [first, "junk", second]}
+        ) == (
+            json.dumps(first),
+            json.dumps(second),
+        )
+        assert (
+            attest.AttestationDocuments.extract_bundles("rubygems", {"bundles": "not a list"}) == ()
+        )
+
+    @pytest.mark.conformance("rubygems", "UNI-17")
+    def test_the_documented_endpoint_on_rubygems_org_only(self, monkeypatch) -> None:
+        from cordon_scanner.intel.registry_client import RegistryClient
+
+        asked: list[tuple[str, bool]] = []
+
+        def fetch(url, accept="", array=False):
+            asked.append((url, array))
+            return {"items": [{"dsseEnvelope": {}}]}
+
+        monkeypatch.setattr(RegistryClient, "_fetch", staticmethod(fetch))
+        assert RegistryClient.attestation_payload("rubygems", "rack", "3.1.8") == {
+            "bundles": [{"dsseEnvelope": {}}]
+        }
+        assert asked == [("https://rubygems.org/api/v1/attestations/rack-3.1.8.json", True)]
+        assert RegistryClient.attestation_payload("rubygems", "../etc", "1") is None
+        assert RegistryClient.attestation_payload("rubygems", "rack", "1/2") is None
+
+    @pytest.mark.conformance("rubygems", "UNI-17")
+    def test_no_bundles_is_not_attested(self, monkeypatch) -> None:
+        from cordon_scanner.intel.registry_client import RegistryClient
+
+        monkeypatch.setattr(
+            RegistryClient,
+            "_fetch",
+            staticmethod(lambda url, accept="", array=False: {"items": []}),
+        )
+        assert RegistryClient.attestation_payload("rubygems", "rack", "3.1.8") is None
+
+    @pytest.mark.conformance("rubygems", "UNI-17")
+    def test_a_locked_checksum_is_the_digest_bound(self) -> None:
+        digest = "ab" * 32
+        assert attest.AttestationDocuments.parse_integrity(f"sha256:{digest}") == ("sha256", digest)

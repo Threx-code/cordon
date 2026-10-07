@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import posixpath
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core import references
 from cordon_scanner.core.models import (
@@ -39,6 +39,7 @@ from cordon_scanner.core.models import (
     Location,
     RedactionMode,
     RiskScore,
+    Scope,
     Severity,
 )
 from cordon_scanner.core.redact import Redactor
@@ -52,7 +53,60 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
-    from cordon_scanner.ecosystems.base import Manifest
+    from cordon_scanner.ecosystems.base import DeclaredDependency, Manifest
+
+MUTABLE_REF_RULE = "POLICY.DEPENDENCY.MUTABLE_REF.001"
+SOURCE_PRIORITY_RULE = "SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001"
+WRAPPER_RULE = "POLICY.BUILD.WRAPPER_UNVERIFIED.001"
+CLEARTEXT_SOURCE_RULE = "POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001"
+_FULL_COMMIT = re.compile(r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})(?![0-9a-fA-F])")
+
+
+class DeclaredSource:
+    """What a non-registry specification points at.
+
+    ```
+      inside    a path within this repository (file:, link:, portal:, workspace:, ./, ../)
+      outside   a path that leaves the repository, or an absolute one
+      pinned    a git reference to a full commit SHA: immutable
+      mutable   a git reference to a branch, a tag or nothing: a push re-points it
+      url       a download URL (an archive, a tarball)
+    ```
+    """
+
+    GIT = ("git+", "git:", "git@", "github:", "gitlab:", "bitbucket:", "ssh://", "gist:")
+
+    @staticmethod
+    def kind(spec: str, manifest_path: str) -> str:
+        text = spec.strip()
+        lowered = text.lower()
+        if lowered.startswith("workspace:"):
+            return "inside"
+        path: str | None = None
+        for prefix in ("file:", "link:", "portal:", "path:"):
+            if lowered.startswith(prefix):
+                path = text[len(prefix) :]
+                break
+        else:
+            if lowered.startswith(("./", "../", "/", "~")):
+                path = text
+        if path is not None:
+            if path.startswith(("/", "~")):
+                return "outside"
+            base = manifest_path.rpartition("/")[0]
+            joined = posixpath.normpath(posixpath.join(base, path) if base else path)
+            return "outside" if joined == ".." or joined.startswith("../") else "inside"
+        # `.git` as a path's suffix, not as a substring: `raw.githubusercontent.com` is not a git
+        # URL, and read as one, a pinned raw file was reported as a movable git reference.
+        is_git = (
+            lowered.startswith(DeclaredSource.GIT)
+            or re.search(r"\.git(?:$|[#/@?])", lowered)
+            or re.match(r"^[\w.-]+/[\w.-]+(?:#.*)?$", lowered)
+        )
+        if is_git:
+            return "pinned" if _FULL_COMMIT.search(text) else "mutable"
+        return "url"
+
 
 # Commands that in a lifecycle script are, on their own, sufficient evidence.
 # Every entry either fetches and runs remote content, reads credentials, or
@@ -376,6 +430,117 @@ class ManifestDetector(BaseDetector):
     def declared_rules() -> tuple[DeclaredRule, ...]:
         return (
             DeclaredRule(
+                id=CLEARTEXT_SOURCE_RULE,
+                title="Package source over plain HTTP",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                category=Category.POLICY,
+                detector="manifest",
+                message=(
+                    "A repository or index is reached over http://, so anyone on the network path "
+                    "can serve the packages the build installs."
+                ),
+                references=(
+                    references.CLEARTEXT_TRANSMISSION,
+                    references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+                ),
+                remediation="Use an https:// URL for the source.",
+            ),
+            DeclaredRule(
+                id="POLICY.CONTAINER.UNPINNED_BASE.001",
+                title="Base image referenced by tag rather than digest",
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector="manifest",
+                message=(
+                    "The base image is pinned by tag. A tag is mutable, so two builds of the "
+                    "same Dockerfile can produce different images, and a rebuild can pull "
+                    "content nobody reviewed."
+                ),
+                references=(
+                    references.DOCKER_BUILD_BEST_PRACTICE,
+                    references.OPENSSF_SCORECARD_PINNED,
+                ),
+                remediation="Pin by digest: FROM image:tag@sha256:...",
+            ),
+            DeclaredRule(
+                id="POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001",
+                title="Kubernetes workload runs an image by tag rather than digest",
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector="manifest",
+                message=(
+                    "A container in this manifest names its image by tag. Each node pulls the tag "
+                    "when it schedules the pod, so replicas of one Deployment can run different "
+                    "images, and a re-pushed tag reaches production with no change to the manifest."
+                ),
+                references=(references.OPENSSF_SCORECARD_PINNED,),
+                remediation="Pin by digest: image: registry/name:tag@sha256:..., or set the digest through Kustomize's images: field.",
+            ),
+            DeclaredRule(
+                id=WRAPPER_RULE,
+                title="Build wrapper downloads its tool without a checksum",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.POLICY,
+                detector="manifest",
+                message=(
+                    "A Maven or Gradle wrapper fetches the build tool from a URL and runs it, with "
+                    "no checksum pinned to refuse a different download."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+                remediation="Pin `distributionSha256Sum` in the wrapper properties.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.HELM.UNTRUSTED_REPOSITORY.001",
+                title="Chart depends on a chart from an unpinned or plain-HTTP repository",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector="manifest",
+                message=(
+                    "This chart pulls a dependency over plain HTTP, or with no version at all. Chart "
+                    "dependencies are rendered into the manifests applied to the cluster, so whoever "
+                    "controls that repository controls what runs."
+                ),
+                references=(
+                    references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+                    references.CLEARTEXT_TRANSMISSION,
+                ),
+                remediation="Use HTTPS, pin each dependency to a version, and prefer a repository the organisation controls or mirrors.",
+            ),
+            DeclaredRule(
+                id=SOURCE_PRIORITY_RULE,
+                title="A private package index merged with a public one",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector="manifest",
+                message=(
+                    "The project resolves from a private index and a public one together, and the "
+                    "resolver takes the highest version either offers: an internal name published "
+                    "publicly at a higher version is installed instead."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+                remediation="Resolve through one index, or pin internal packages to their index.",
+            ),
+            DeclaredRule(
+                id=MUTABLE_REF_RULE,
+                title="Git dependency on a reference that can move",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                category=Category.POLICY,
+                detector="manifest",
+                message=(
+                    "A dependency is declared from git at a branch, a tag or no reference: a push "
+                    "re-points it, so what installs can differ from what was reviewed."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+                remediation="Pin it to a full commit SHA, or depend on a registry release.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.INSTALL.UNEXAMINED.001",
                 title="Install-time code too large or slow to examine",
                 severity=Severity.HIGH,
@@ -617,7 +782,43 @@ class ManifestDetector(BaseDetector):
         findings.extend(self._lifecycle_findings(manifest, unit, ctx))
         findings.extend(self._source_findings(manifest, unit, ctx))
         findings.extend(self._own_name_findings(manifest, unit, ctx, ecosystem_id))
+        findings.extend(self._wrapper_findings(unit, ctx))
         return findings
+
+    def _wrapper_findings(self, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
+        """A build wrapper that downloads its tool without a pinned checksum.
+
+        `./mvnw` and `./gradlew` fetch a Maven or Gradle distribution from `distributionUrl` and
+        run it for every build, on every machine. With `distributionSha256Sum` set the wrapper
+        refuses a download that does not match; without it, whatever that URL serves runs."""
+        name = unit.path.rpartition("/")[2]
+        if name not in ("maven-wrapper.properties", "gradle-wrapper.properties"):
+            return
+        values = {
+            line.partition("=")[0].strip(): line.partition("=")[2].strip()
+            for line in unit.content.text.splitlines()
+            if "=" in line and not line.lstrip().startswith(("#", "!"))
+        }
+        if not values.get("distributionUrl") or values.get("distributionSha256Sum"):
+            return
+        tool = "Maven" if name.startswith("maven") else "Gradle"
+        yield self._finding(
+            rule_id=WRAPPER_RULE,
+            category=Category.POLICY,
+            severity=Severity.LOW,
+            confidence=Confidence.CONFIRMED,
+            title=f"{tool} wrapper downloads the build tool without a checksum",
+            message=(
+                f"{unit.path} names a {tool} distribution to download and run for every build, and "
+                f"pins no `distributionSha256Sum`: whatever the URL serves is what builds this project."
+            ),
+            remediation=f"Add `distributionSha256Sum` (the {tool} project publishes it beside each distribution).",
+            unit=unit,
+            ctx=ctx,
+            detail="distributionUrl without distributionSha256Sum",
+            capabilities=(),
+            reasons=["build tool fetched unverified"],
+        )
 
     def _own_name_findings(
         self, manifest: Manifest, unit: FileUnit, ctx: ScanContext, ecosystem_id: str
@@ -679,6 +880,11 @@ class ManifestDetector(BaseDetector):
     def _lifecycle_findings(
         self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
     ) -> Iterable[Finding]:
+        if manifest.ecosystem == "image":
+            # A Dockerfile's RUN steps are the project's own build, judged by the Dockerfile rules
+            # that read them in context (a fetched script piped to a shell, sudo, a remote ADD).
+            # Listed as build hooks; graded as a dependency's install script, each was reported twice.
+            return
         for hook in manifest.hooks:
             command = hook.command
             if not command:
@@ -882,24 +1088,551 @@ class ManifestDetector(BaseDetector):
 
     # -- Dependency sources ----------------------------------------------
 
+    def _source_priority_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """Indexes merged so that the highest version anywhere wins.
+
+        pip given an extra index does not prefer either one: it collects every candidate from every
+        index and installs the highest version. With a private index beside PyPI, anyone can
+        publish an internal package's name on PyPI at a higher version and it is installed --
+        dependency confusion without a typo. Reported when PyPI and another index are merged.
+
+        NuGet the same way: with several package sources and no package source mapping, restore
+        takes a package from whichever source answers, so an internal name published on nuget.org
+        can be restored in place of the internal package. Microsoft's remedy is source mapping,
+        and its absence is what is reported."""
+        yield from self._nuget_source_findings(manifest, unit, ctx)
+        yield from self._bundler_source_findings(manifest, unit, ctx)
+        yield from self._cocoapods_source_findings(manifest, unit, ctx)
+        yield from self._conan_remote_findings(manifest, unit, ctx)
+        yield from self._helm_repository_findings(manifest, unit, ctx)
+        yield from self._base_image_findings(manifest, unit, ctx)
+        yield from self._malformed_integrity_findings(manifest, unit, ctx)
+        indexes = [
+            s.split(" ", 1)[1]
+            for s in manifest.sources
+            if s.startswith(("index-url ", "extra-index-url "))
+        ]
+        extra = any(s.startswith("extra-index-url ") for s in manifest.sources)
+        public = [i for i in indexes if "pypi.org" in i or "pythonhosted.org" in i]
+        private = [i for i in indexes if i not in public]
+        if not (extra and public and private):
+            return
+        from cordon_scanner.core.inventory import DependencySource
+
+        hosts = ", ".join(
+            sorted(
+                {
+                    (DependencySource.sanitise(i) or i).split("/")[2] if "://" in i else i
+                    for i in private
+                }
+            )
+        )
+        yield self._finding(
+            rule_id=SOURCE_PRIORITY_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            title="A private index merged with PyPI",
+            message=(
+                f"{unit.path} sends pip to PyPI and to {hosts} together. pip installs the highest "
+                f"version any index offers, so a name that exists only on the private index can be "
+                f"published on PyPI at a higher version and installed in its place."
+            ),
+            remediation=(
+                "Resolve from one index that proxies PyPI, or pin each internal package to its index "
+                "(pip's `--index-url` alone, or Poetry/uv/PDM source pinning), and reserve the internal "
+                "names on PyPI."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=hosts,
+            capabilities=(),
+            reasons=["extra index merged with PyPI"],
+        )
+
+    _COMPOSER_BRANCH: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:dev-[\w./\-]{1,128}|[\w.]{1,64}\.x-dev|[\w.\-]{1,64}-dev)$"
+    )
+
+    def _composer_branch_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """A Composer constraint that names a branch (`dev-master`, `2.x-dev`), with or without an
+        inline alias: what installs is whatever the branch points at when the lock is next
+        updated. The lock pins a commit until then; the constraint is what lets it move."""
+        if manifest.ecosystem != "composer":
+            return
+        for declared in manifest.dependencies:
+            constraint = declared.spec.split(" as ", 1)[0].strip()
+            branch, _, commit = constraint.partition("#")
+            if declared.scope is Scope.PLATFORM or not self._COMPOSER_BRANCH.match(branch):
+                continue
+            if re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+                continue  # `dev-main#<full sha>`: pinned to one commit, whatever the branch does
+            yield self._finding(
+                rule_id=MUTABLE_REF_RULE,
+                category=Category.POLICY,
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                title="Dependency on a branch that can move",
+                message=(
+                    f"{declared.name!r} is required as {declared.spec!r}: a branch, which a push "
+                    f"re-points. The lock holds one commit until the next `composer update`, which "
+                    f"takes whatever the branch has become, unreviewed and outside any release."
+                ),
+                remediation="Require a tagged release, or pin the commit (`dev-master#<sha>`) until one exists.",
+                unit=unit,
+                ctx=ctx,
+                detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
+                capabilities=(),
+                reasons=[f"declared in {declared.field_name}", "branch constraint"],
+            )
+
+    def _cocoapods_source_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """The public spec repo listed before a private one. CocoaPods searches `source` lines in
+        order and takes the first that has the pod, so a private pod's name published on trunk is
+        resolved from trunk. Private repos first, trunk last, is the safe order."""
+        if manifest.ecosystem != "cocoapods":
+            return
+        listed = [s.partition(" ")[2] for s in manifest.sources if s.startswith("source ")]
+        public = [
+            i for i, s in enumerate(listed) if "cdn.cocoapods.org" in s or "CocoaPods/Specs" in s
+        ]
+        private = [i for i, s in enumerate(listed) if i not in public]
+        if not public or not private or min(public) > min(private):
+            return
+        from cordon_scanner.core.inventory import DependencySource
+
+        named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
+        yield self._finding(
+            rule_id=SOURCE_PRIORITY_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            title="Public spec repo searched before a private one",
+            message=(
+                f"{unit.path} lists the public CocoaPods trunk before {named}. CocoaPods takes a pod "
+                f"from the first source that has it, so a private pod's name published on trunk is "
+                f"installed in its place."
+            ),
+            remediation="List the private spec repos first and the public trunk last.",
+            unit=unit,
+            ctx=ctx,
+            detail=named,
+            capabilities=(),
+            reasons=["public source before private"],
+        )
+
+    def _malformed_integrity_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """A digest a manifest pins (an image's `@sha256:...`, an archive's checksum) that is not a
+        digest of any algorithm: what a lockfile's malformed hash is, written in the manifest. The
+        value is never repeated."""
+        from cordon_scanner.detect.lockfile import MALFORMED_RULE
+        from cordon_scanner.ecosystems.base import Coordinate
+
+        malformed = sorted(
+            {
+                f"{declared.name}@{declared.spec}" if declared.spec else declared.name
+                for declared in manifest.dependencies
+                if (Coordinate.integrity(declared.integrity) or "").startswith(Coordinate.MALFORMED)
+            }
+        )
+        if not malformed:
+            return
+        yield self._finding(
+            rule_id=MALFORMED_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            title="Lockfile integrity value is not a hash",
+            message=(
+                f"{len(malformed)} dependenc{'y pins' if len(malformed) == 1 else 'ies pin'} a digest that is not a "
+                f"digest of any algorithm: {', '.join(malformed[:10])}. The values are not repeated here."
+            ),
+            remediation="Pin the digest the registry serves (`docker buildx imagetools inspect`, the registry's own record), and find out what wrote these values.",
+            unit=unit,
+            ctx=ctx,
+            detail=malformed[0].split("@", 1)[0],
+            capabilities=(),
+            reasons=["a pinned digest that is not one"],
+        )
+
+    def _base_image_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """A stage built FROM an image named by tag alone. Read from the Dockerfile's stages, so
+        `FROM builder` (an earlier stage), `FROM scratch`, `FROM --platform=...` and an image
+        built from a global `ARG` are each read for what they are."""
+        if manifest.ecosystem != "image":
+            return
+        for declared in manifest.dependencies:
+            if declared.integrity:
+                continue
+            if declared.field_name.endswith(".image") or declared.field_name.startswith(
+                "Kustomization images["
+            ):
+                yield from self._workload_image_finding(declared, unit, ctx)
+                continue
+            if not declared.field_name.startswith("FROM "):
+                continue
+            written = declared.alias or declared.name
+            yield self._finding(
+                rule_id="POLICY.CONTAINER.UNPINNED_BASE.001",
+                category=Category.POLICY,
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                title="Base image referenced by tag rather than digest",
+                message=(
+                    f"{written}:{declared.spec} is pinned by tag. A tag is mutable, so two builds of "
+                    f"the same Dockerfile can produce different images, and a rebuild can pull "
+                    f"content nobody reviewed."
+                ),
+                remediation="Pin by digest: FROM image:tag@sha256:...",
+                unit=unit,
+                ctx=ctx,
+                detail=written,
+                capabilities=(),
+                reasons=[f"declared in {declared.field_name}", "no digest"],
+            )
+
+    def _workload_image_finding(
+        self, declared: DeclaredDependency, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """A Kubernetes container (or a Kustomize override) naming its image by tag."""
+        written = declared.alias or declared.name
+        yield self._finding(
+            rule_id="POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001",
+            category=Category.POLICY,
+            severity=Severity.LOW,
+            confidence=Confidence.HIGH,
+            title="Kubernetes workload runs an image by tag rather than digest",
+            message=(
+                f"{declared.field_name} runs {written}:{declared.spec}, pinned by tag. Each node pulls "
+                f"the tag when it schedules the pod, so a re-pushed tag reaches production with no "
+                f"change to this manifest."
+            ),
+            remediation="Pin by digest: image: registry/name:tag@sha256:...",
+            unit=unit,
+            ctx=ctx,
+            detail=f"{declared.field_name}:{written}",
+            capabilities=(),
+            reasons=[f"declared in {declared.field_name}", "no digest"],
+        )
+
+    def _helm_repository_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """A chart dependency from a plain-HTTP repository, or with no version at all. Read from
+        the chart's dependencies, so the order of `version` and `repository` in an entry does not
+        matter -- Helm's own examples put the version first."""
+        basename = unit.path.rpartition("/")[2]
+        if manifest.ecosystem == "helm" and basename in ("Chart.yaml", "Chart.yml"):
+            dependencies = list(manifest.dependencies)
+        elif basename == "requirements.yaml":
+            # An apiVersion v1 chart's dependencies: Helm's `dependencies:` key, where Ansible's
+            # file of the same name holds `roles:` and `collections:`.
+            from cordon_scanner.core.datayaml import DataYaml
+            from cordon_scanner.ecosystems.helm import ChartFile
+
+            try:
+                data = DataYaml.load(unit.content.text, source=unit.path)
+            except ValueError:
+                return
+            listed = data.get("dependencies") if isinstance(data, dict) else None
+            if not isinstance(listed, list):
+                return
+            dependencies = [
+                d
+                for d in (
+                    ChartFile.dependency(e, "dependencies") for e in listed if isinstance(e, dict)
+                )
+                if d is not None
+            ]
+        else:
+            return
+        weak = [
+            d.name
+            for d in dependencies
+            if d.scope is not Scope.PLATFORM
+            and not d.spec.startswith("path:")
+            and ((d.source or "").startswith("http://") or d.spec.strip() in ("", "*"))
+        ]
+        if not weak:
+            return
+        named = ", ".join(sorted(weak))
+        yield self._finding(
+            rule_id="SUSPECT.HELM.UNTRUSTED_REPOSITORY.001",
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.MEDIUM,
+            title="Chart depends on a chart from an unpinned or plain-HTTP repository",
+            message=(
+                f"{unit.path} pulls {named} over plain HTTP, or with no version at all. Chart "
+                f"dependencies are rendered into the manifests applied to the cluster, so whoever "
+                f"controls that repository controls what runs."
+            ),
+            remediation="Use HTTPS, pin each dependency to a version, and prefer a repository the organisation controls or mirrors.",
+            unit=unit,
+            ctx=ctx,
+            detail=named,
+            capabilities=(),
+            reasons=["unpinned or cleartext chart repository"],
+        )
+
+    def _conan_remote_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """ConanCenter listed before a private remote. Conan takes a recipe from the first remote
+        that has it, so an internal recipe's name published on ConanCenter is fetched from there."""
+        if manifest.ecosystem != "conan":
+            return
+        listed = [
+            s.split(" ")[2] if len(s.split(" ")) > 2 else ""
+            for s in manifest.sources
+            if s.startswith("remote ")
+        ]
+        public = [
+            i for i, s in enumerate(listed) if re.search(r"(?:^|//)center2?\.conan\.io(?:/|$)", s)
+        ]
+        private = [i for i, s in enumerate(listed) if i not in public and s]
+        if not public or not private or min(public) > min(private):
+            return
+        from cordon_scanner.core.inventory import DependencySource
+
+        named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
+        yield self._finding(
+            rule_id=SOURCE_PRIORITY_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            title="Public remote searched before a private one",
+            message=(
+                f"{unit.path} lists ConanCenter before {named}. Conan takes a recipe from the first "
+                f"remote that has it, so an internal recipe's name published on ConanCenter is "
+                f"fetched in its place."
+            ),
+            remediation="List the private remotes first and ConanCenter last, or pin each internal recipe to its remote.",
+            unit=unit,
+            ctx=ctx,
+            detail=named,
+            capabilities=(),
+            reasons=["public source before private"],
+        )
+
+    def _bundler_source_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """Several global `source` lines in a Gemfile. Bundler resolves a gem not pinned to a
+        source block from any of them, and before 2.2.18 took the highest version across all --
+        the dependency confusion recorded as CVE-2020-36327. The remedy is one global source and
+        a `source ... do` block for the internal gems."""
+        if manifest.ecosystem != "rubygems":
+            return
+        global_sources = [
+            s.partition(" ")[2]
+            for s in manifest.sources
+            if s.startswith("source ") and not s.startswith("source block ")
+        ]
+        if len(set(global_sources)) < 2:
+            return
+        from cordon_scanner.core.inventory import DependencySource
+
+        named = ", ".join(sorted({DependencySource.sanitise(s) or s for s in global_sources}))
+        yield self._finding(
+            rule_id=SOURCE_PRIORITY_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            title="Several global gem sources",
+            message=(
+                f"{unit.path} declares {len(set(global_sources))} global sources ({named}). A gem not "
+                f"scoped to one can be taken from any of them, so an internal gem's name published on "
+                f"rubygems.org can be installed in its place."
+            ),
+            remediation='Keep one global `source`, and require internal gems inside `source "<internal>" do ... end`.',
+            unit=unit,
+            ctx=ctx,
+            detail=named,
+            capabilities=(),
+            reasons=["several global sources"],
+        )
+
+    def _nuget_source_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        if manifest.ecosystem != "nuget":
+            return
+        sources = [s.partition(": ")[2] for s in manifest.sources if s.startswith("source ")]
+        mapped = any(s.startswith("mapping ") for s in manifest.sources)
+        public = [s for s in sources if "nuget.org" in s.lower()]
+        private = [s for s in sources if s not in public]
+        if mapped or not (public and private):
+            return
+        from cordon_scanner.core.inventory import DependencySource
+
+        named = ", ".join(sorted({(DependencySource.sanitise(s) or s) for s in private}))
+        yield self._finding(
+            rule_id=SOURCE_PRIORITY_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            title="Package sources without source mapping",
+            message=(
+                f"{unit.path} restores from nuget.org and from {named} with no package source "
+                f"mapping, so NuGet takes each package from whichever source answers: an internal "
+                f"package's name published on nuget.org can be restored in its place."
+            ),
+            remediation=(
+                "Add <packageSourceMapping> routing the internal package prefixes to the internal "
+                "source, and reserve the prefix on nuget.org."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=named,
+            capabilities=(),
+            reasons=["several sources, no package source mapping"],
+        )
+
+    _CLEARTEXT: ClassVar[re.Pattern[str]] = re.compile(r"\bhttp://([^/\s:@]{1,253})", re.IGNORECASE)
+    _LOOPBACK: ClassVar[frozenset[str]] = frozenset({"localhost", "127.0.0.1", "[::1]", "::1"})
+
+    def _cleartext_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """A package source reached over plain HTTP.
+
+        Whoever is on the network path -- a café's Wi-Fi, a compromised proxy, a hostile CI
+        network -- can answer for that repository, and the build installs what they serve: the
+        index, the metadata and, where no hash is pinned, the artefact itself. Maven 3.8.1 and
+        later refuse such repositories by default for exactly this reason; pip, Gradle, Composer
+        and older Maven do not. A loopback address never leaves the machine and is not reported.
+        """
+        seen: set[str] = set()
+        for source in manifest.sources:
+            match = self._CLEARTEXT.search(source)
+            if match is None:
+                continue
+            host = match.group(1).lower()
+            if host in self._LOOPBACK or host in seen:
+                continue
+            seen.add(host)
+            yield self._finding(
+                rule_id=CLEARTEXT_SOURCE_RULE,
+                category=Category.POLICY,
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                title="Package source over plain HTTP",
+                message=(
+                    f"{unit.path} fetches packages from {host} over plain HTTP. Anyone on the network "
+                    f"path can answer for that host, and the build installs what they serve."
+                ),
+                remediation=f"Use https:// for {host}, or remove the source.",
+                unit=unit,
+                ctx=ctx,
+                detail=host,
+                capabilities=(),
+                reasons=["package source without TLS"],
+            )
+
     def _source_findings(
         self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
     ) -> Iterable[Finding]:
+        yield from self._source_priority_findings(manifest, unit, ctx)
+        yield from self._cleartext_findings(manifest, unit, ctx)
+        yield from self._composer_branch_findings(manifest, unit, ctx)
+        ecosystem = EcosystemRegistry.get(manifest.ecosystem)
         for declared in manifest.dependencies:
             if not declared.is_non_registry:
+                continue
+            kind = DeclaredSource.kind(declared.spec, unit.path)
+            if kind == "inside":
+                # `file:packages/util`, `workspace:*`, `../shared` within this repository: the
+                # project's own code, reviewed here as source. Reporting it reported every
+                # monorepo's members as packages from outside the registry.
+                continue
+            if (
+                manifest.ecosystem == "image"
+                and declared.field_name.startswith("ADD (line")
+                and declared.spec.startswith(("http", "git+http"))
+            ):
+                # `ADD https://...` with no flags: the Dockerfile rule for remote ADD reports this
+                # line, and two findings for one download say nothing a second time.
+                continue
+            locked_inputs = str(getattr(ecosystem, "locked_inputs", None) or "")
+            if kind == "mutable" and declared.field_name in getattr(ecosystem, "index_fields", ()):
+                # A package index (a Homebrew tap) follows its branch by design: what matters is
+                # whose index it is, which the source rule below reports.
+                kind = "index"
+            if (
+                kind == "mutable"
+                and locked_inputs
+                and declared.field_name.startswith(locked_inputs)
+            ):
+                # A flake input's ref is the channel `nix flake update` follows; flake.lock, which
+                # Nix writes and every build of the flake reads, pins it to a commit and a hash.
+                continue
+            if kind == "mutable":
+                yield self._finding(
+                    rule_id=MUTABLE_REF_RULE,
+                    category=Category.POLICY,
+                    severity=Severity.MEDIUM,
+                    confidence=Confidence.CONFIRMED,
+                    title="Git dependency on a reference that can move",
+                    message=(
+                        f"{declared.name!r} is declared as {declared.spec!r}: a branch, a tag or "
+                        f"no reference at all, any of which a push can re-point. What installs "
+                        f"tomorrow need not be what was reviewed today, and no registry hash, "
+                        f"advisory match or release-age delay applies to it."
+                    ),
+                    remediation="Pin it to a full commit SHA, or depend on a registry release.",
+                    unit=unit,
+                    ctx=ctx,
+                    detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
+                    capabilities=(),
+                    reasons=[f"declared in {declared.field_name}", "mutable git reference"],
+                )
+                continue
+            # A commit pins a git source; a checksum the declaration records pins an archive the
+            # same way -- what is fetched cannot change under the project.
+            checksummed = (
+                kind == "url"
+                and bool(declared.integrity)
+                and not (declared.integrity or "").startswith("malformed:")
+            )
+            pinned = kind == "pinned" or checksummed
+            if getattr(ecosystem, "registryless", False):
+                # No registry exists to depart from (Nix): every source is a repository or an
+                # archive. Plain HTTP is the cleartext rule's to report.
+                continue
+            if pinned and getattr(ecosystem, "git_distribution", False):
+                # Where git is how the ecosystem distributes every package (SwiftPM), a commit
+                # pin is its most immutable form, not a departure from a registry.
                 continue
             yield self._finding(
                 rule_id="POLICY.DEPENDENCY.SOURCE.001",
                 category=Category.POLICY,
-                severity=Severity.MEDIUM,
+                severity=Severity.LOW if pinned else Severity.MEDIUM,
                 confidence=Confidence.CONFIRMED,
                 title="Dependency resolved from outside the registry",
                 message=(
                     f"{declared.name!r} is declared as {declared.spec!r}, which does not "
-                    f"resolve from the {manifest.ecosystem} registry. Lockfile integrity "
-                    f"hashes, advisory matching and any release-age delay all apply to "
-                    f"registry packages and none of them apply here. The dependency may "
-                    f"be entirely legitimate; the safety net is simply absent."
+                    f"resolve from the {manifest.ecosystem} registry"
+                    + (
+                        ", pinned by its checksum, so it cannot change under the project"
+                        if checksummed
+                        else ", pinned to a commit, so it cannot change under the project"
+                        if pinned
+                        else ""
+                    )
+                    + ". Lockfile integrity hashes, advisory matching and any release-age delay "
+                    "apply to registry packages and none of them apply here. The dependency may "
+                    "be entirely legitimate; the safety net is simply absent."
                 ),
                 remediation=(
                     "Publish the package to a registry the organisation controls, or "
@@ -910,7 +1643,7 @@ class ManifestDetector(BaseDetector):
                 ctx=ctx,
                 detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
                 capabilities=(),
-                reasons=[f"declared in {declared.field_name}"],
+                reasons=[f"declared in {declared.field_name}", "commit-pinned" if pinned else kind],
             )
 
     # -- Construction ----------------------------------------------------

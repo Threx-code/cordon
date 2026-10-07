@@ -34,6 +34,7 @@ from cordon_scanner.core.models import (
     Finding,
     Location,
     RedactionMode,
+    Scope,
     Severity,
 )
 from cordon_scanner.core.scoring import ScoringContext
@@ -56,11 +57,12 @@ if TYPE_CHECKING:
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
 UNCHECKED_RULE = "OPERATIONAL.PROVENANCE.NOT_CHECKED.001"
+UNSIGNED_IMAGE_RULE = "POLICY.CONTAINER.UNSIGNED_IMAGE.001"
 
 #: Ecosystems whose attestation format this can fetch and convert. Others carry
 #: no publish-time attestation to verify yet, so the detector stays silent for
 #: them rather than reporting an absence that means nothing.
-SUPPORTED_ECOSYSTEMS = frozenset({"npm", "pypi"})
+SUPPORTED_ECOSYSTEMS = frozenset({"npm", "pypi", "maven", "gradle", "rubygems", "image"})
 
 _GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
 
@@ -136,6 +138,26 @@ class ProvenanceDetector(BaseDetector):
                     "shown to have any."
                 ),
             ),
+            DeclaredRule(
+                id=UNSIGNED_IMAGE_RULE,
+                title="An image this project runs carries no signature or build attestation",
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector=ProvenanceDetector.id,
+                message=(
+                    "The registry serves no Sigstore signature or attestation for an image the "
+                    "project runs -- the final stage's base, a Compose service or a Kubernetes "
+                    "workload -- so nothing ties the bytes to the build that made them. A build "
+                    "stage's image is not reported: it is not what ships."
+                ),
+                references=(references.SIGSTORE, references.SLSA_PROVENANCE),
+                remediation=(
+                    "Prefer an image its publisher signs (Docker Official Images, Chainguard, "
+                    "distroless and most vendor images do), pinned by digest; for your own, sign "
+                    "and attest at build time (cosign, docker buildx --provenance)."
+                ),
+            ),
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
@@ -149,11 +171,20 @@ class ProvenanceDetector(BaseDetector):
         # dependencies first, so a truncated pass spends the budget where
         # provenance is most likely to be claimed.
         from cordon_scanner.detect.registry import MAX_QUERIES, RegistryDetector
+        from cordon_scanner.ecosystems.image import ImageEcosystem
 
         candidates = [
             d
             for d in RegistryDetector._order(unit.dependencies)
-            if d.ecosystem in SUPPORTED_ECOSYSTEMS and d.version
+            if d.ecosystem in SUPPORTED_ECOSYSTEMS
+            # An image pinned by digest alone is asked about by that digest; what a Dockerfile
+            # `ADD`s from a URL is no registry's.
+            and (d.version or (d.ecosystem == "image" and d.integrity))
+            and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
+            # Maven signs each file: a classifier jar or a WAR has its own bundle, and the
+            # registry's is the plain jar's. Comparing the plain jar's signature with a
+            # classified artefact's checksum would call an honest signature a forgery.
+            and not (d.ecosystem in ("maven", "gradle") and "?" in d.purl)
         ]
         findings: list[Finding] = []
         for index, dependency in enumerate(candidates[:MAX_QUERIES]):
@@ -197,10 +228,11 @@ class ProvenanceDetector(BaseDetector):
     def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
+        asked = dependency.version or (
+            dependency.integrity if dependency.ecosystem == "image" else None
+        )
         try:
-            observed = RegistryClient.facts(
-                dependency.ecosystem, dependency.name, dependency.version
-            )
+            observed = RegistryClient.facts(dependency.ecosystem, dependency.name, asked)
         except RegistryError:
             # The registry detector already reports the unreachable case. A
             # second finding here would only double the noise for one outage.
@@ -208,6 +240,22 @@ class ProvenanceDetector(BaseDetector):
         if not observed.attested:
             # No attestation to verify. Its absence, where siblings have one, is
             # the registry detector's SUSPECT.PACKAGE.PROVENANCE finding.
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+            # An image is different: a publisher signs every image or none, so there are no
+            # siblings to compare with, and an image the project RUNS with nothing tying it to a
+            # build is the M4 gap itself. A build stage's image never ships, and is left alone.
+            if dependency.ecosystem == "image" and dependency.scope is Scope.RUNTIME:
+                yield self._finding(
+                    UNSIGNED_IMAGE_RULE,
+                    ctx,
+                    dependency=dependency,
+                    detail=(
+                        f"{dependency.name}"
+                        + (f":{dependency.version}" if dependency.version else "")
+                        + " is run by this project and its registry serves no signature or build "
+                        "attestation for it."
+                    ),
+                )
             return
 
         digest = attest.AttestationDocuments.parse_integrity(dependency.integrity)
@@ -232,9 +280,7 @@ class ProvenanceDetector(BaseDetector):
             )
             return
 
-        payload = RegistryClient.attestation_payload(
-            dependency.ecosystem, dependency.name, dependency.version
-        )
+        payload = RegistryClient.attestation_payload(dependency.ecosystem, dependency.name, asked)
         bundles = attest.AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
         if not bundles:
             reason = (
@@ -273,7 +319,9 @@ class ProvenanceDetector(BaseDetector):
             for bundle in bundles
         ]
         if any(r.outcome is attest.Outcome.VERIFIED for r in results):
-            return  # A verified attestation is the clean case: no finding.
+            # The clean case: no finding, and the record says so.
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+            return
 
         # A rejection outranks an inability to check: one bundle that verified
         # cryptographically and then failed on identity or subject is the
@@ -284,6 +332,7 @@ class ProvenanceDetector(BaseDetector):
         )
 
         if last is not None and last.outcome is attest.Outcome.INVALID:
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
             yield self._finding(
                 INVALID_RULE,
                 ctx,
