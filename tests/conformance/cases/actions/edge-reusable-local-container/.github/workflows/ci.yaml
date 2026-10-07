@@ -1,0 +1,35 @@
+name: ci
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions: write-all
+
+jobs:
+  lint:
+    uses: acme/shared-workflows/.github/workflows/lint.yml@v3
+    secrets: inherit
+
+  release:
+    uses: acme/shared-workflows/.github/workflows/release.yml@0f3c1a2b4d5e6f708192a3b4c5d6e7f8091a2b3c # v2.4.1
+    with:
+      dry-run: true
+
+  test:
+    runs-on: ubuntu-latest
+    container: node:20-bookworm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/setup
+      - uses: ./nested
+      - uses: docker://ghcr.io/acme/linter:1.4.0
+      - name: Greet
+        run: |
+          echo "Title: ${{ github.event.pull_request.title }}"
+          cat > generated.yml <<'YAML'
+          steps:
+            - uses: evil/not-a-dependency@v1
+          YAML
+      - uses: github/codeql-action/init@v3.27.0

@@ -1,0 +1,12 @@
+# The old reader matched `uses:` on any line, so a script that writes a workflow (a `run: |` block
+# scalar) or documents one (`run: >-`) put the actions named in its text into the inventory --
+# packages the repository never runs. Quoted references are read; commented-out steps are not.
+kinds: [regression, valid]
+covers:
+  - actions.uses
+  - UNI-02
+  - UNI-28
+dependencies:
+  - {name: actions/checkout, resolved_version: 4.2.2}
+  - {name: actions/upload-artifact, resolved_version: 4.6.0}
+only: true

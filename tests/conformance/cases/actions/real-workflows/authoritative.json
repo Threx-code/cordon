@@ -1,0 +1,22 @@
+{
+ "tool": "GitHub dependency graph (dependency-graph/sbom API)",
+ "repository": "pypa/cibuildwheel",
+ "packages": [
+  "actions/attest@4.2.2",
+  "actions/checkout@7.0.1",
+  "actions/create-github-app-token@3.2.0",
+  "actions/download-artifact@8.0.1",
+  "actions/setup-python@7.0.0",
+  "actions/upload-artifact@7.0.1",
+  "astral-sh/setup-uv@10.2.0",
+  "docker/setup-qemu-action@4.4.0",
+  "hynek/build-and-inspect-python-package@3.0.1",
+  "j178/prek-action@3.0.0",
+  "joerick/pr-labels-action@1.0.9",
+  "joerick/update-vX.Y-tag-action@1.0.2",
+  "peter-evans/create-pull-request@8.1.1",
+  "pypa/gh-action-pypi-publish@1.14.2",
+  "zizmorcore/zizmor-action@0.6.4"
+ ],
+ "ignore": {}
+}

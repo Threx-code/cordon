@@ -1,0 +1,24 @@
+name: scaffold
+on: workflow_dispatch
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: "actions/checkout@v4.2.2"
+      # - uses: retired/old-action@v1
+      - name: Write a starter workflow for new repositories
+        run: |
+          mkdir -p template/.github/workflows
+          cat > template/.github/workflows/ci.yml <<'YAML'
+          jobs:
+            build:
+              steps:
+                - uses: template/placeholder-action@v0
+          YAML
+      - name: Document the pinning rule
+        run: >-
+          echo "Pin every action, e.g. uses: example/documented-action@abc123"
+      - uses: 'actions/upload-artifact@v4.6.0'
+        with:
+          name: template
+          path: template

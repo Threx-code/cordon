@@ -1,0 +1,30 @@
+# pypa/cibuildwheel's workflows and its composite action.yml, every action pinned to a commit
+# with its release in a comment. Checked against GitHub's own dependency graph for the same
+# commit, each pinned SHA mapped to the release tag that names it in the action's repository.
+kinds: [real-world, valid]
+covers:
+  - file:.github/workflows/ci.yml
+  - file:action.yml
+  - actions.uses
+  - actions.sha-pinning
+  - actions.composite
+  - actions.separation
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-08
+  - UNI-10
+dependencies:
+  # The commented release is the version advisories are matched on; the commit is the integrity.
+  - {name: actions/checkout, version_constraint: 7.0.1, resolved_version: 7.0.1, dependency_type: build, integrity: 3d3c42e5aac5ba805825da76410c181273ba90b1, integrity_status: recorded, source_type: git}
+  # The composite action's own step.
+  - {name: actions/setup-python, resolved_version: 7.0.0, manifest_location: {path: action.yml}}
+  - {name: pypa/gh-action-pypi-publish, resolved_version: 1.14.2, manifest_location: {path: .github/workflows/release.yml}}
+sources:
+  - "composite action (composite)"
+no_findings:
+  # Pinned to commits: nothing to report about the references themselves.
+  - POLICY.CI.UNPINNED_ACTION.001
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - SUSPECT.LOCKFILE.SOURCE.001

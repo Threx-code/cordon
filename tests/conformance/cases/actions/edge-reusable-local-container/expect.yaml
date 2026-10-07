@@ -1,0 +1,59 @@
+# Reusable workflows called at job level (by tag, and pinned to a commit), local actions, a nested
+# composite action with a container step pinned by digest, a container action whose image and
+# entrypoints run in every job that uses it, a job container, and an action in a repository
+# subdirectory. Beside the dependencies, the workflow's own misconfiguration -- pull_request_target
+# checking out the pull request, an untrusted title in a script, write-all permissions -- is
+# reported by the CI rules, apart from the dependency findings. A `uses:` written inside a script
+# is text, not a step.
+kinds: [edge, valid]
+covers:
+  - file:.github/workflows/ci.yaml
+  - file:action.yaml
+  - file:nested/action.yml
+  - actions.uses
+  - actions.reusable
+  - actions.local
+  - actions.composite
+  - actions.docker
+  - actions.expressions
+  - actions.permissions
+  - actions.secrets
+  - actions.separation
+  - actions.sha-pinning
+  - UNI-07
+  - UNI-09
+  - UNI-10
+  - UNI-18
+dependencies:
+  - {name: acme/shared-workflows, version_constraint: "ref:v3", resolution_status: unresolved, field_name: null}
+  - {name: acme/shared-workflows, resolved_version: 2.4.1, integrity: 0f3c1a2b4d5e6f708192a3b4c5d6e7f8091a2b3c, source_type: git}
+  - {name: ./.github/actions/setup, source_type: path}
+  - {name: ./nested, source_type: path}
+  # The local action's own step, from its action.yml.
+  - {name: actions/setup-node, resolved_version: 4.2.0, manifest_location: {path: .github/actions/setup/action.yml}}
+  - {name: github/codeql-action, resolved_version: 3.27.0}
+  # Container images: a step's, a job's, an action's.
+  - {name: ghcr.io/acme/linter, ecosystem: image, resolved_version: 1.4.0}
+  - {name: alpine, ecosystem: image, integrity: "sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d", resolution_reason: pinned by its digest}
+  - {name: node, ecosystem: image, resolved_version: 20-bookworm}
+  - {name: ghcr.io/acme/tool, ecosystem: image, manifest_location: {path: container/action.yaml}}
+absent:
+  - evil/not-a-dependency
+hooks:
+  - {kind: ci, path: .github/workflows/ci.yaml}
+  - {kind: ci, path: container/action.yaml, name: runs.entrypoint, command: /entrypoint.sh}
+  - {kind: ci, path: container/action.yaml, name: runs.pre-entrypoint, command: /setup.sh}
+sources:
+  - "container action (docker)"
+  - "composite action (composite)"
+findings:
+  # The workflow's configuration.
+  - {rule: SUSPECT.CI.PR_TARGET.001}
+  - {rule: SUSPECT.CI.EXPRESSION_INJECTION.001}
+  - {rule: POLICY.CI.WRITE_ALL_PERMISSIONS.001}
+  - {rule: POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001}
+  - {rule: POLICY.CI.UNPINNED_ACTION.001}
+  # A dependency's: a known advisory against the pinned release.
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: github/codeql-action}
+no_findings:
+  - SUSPECT.DEPENDENCY.SOURCE.001

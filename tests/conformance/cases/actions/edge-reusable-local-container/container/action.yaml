@@ -1,0 +1,7 @@
+name: container
+description: A container action
+runs:
+  using: docker
+  image: docker://ghcr.io/acme/tool:2.0.0
+  pre-entrypoint: /setup.sh
+  entrypoint: /entrypoint.sh
