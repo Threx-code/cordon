@@ -1,0 +1,63 @@
+{
+  "homebrew_version": "4.4.25-31-g7ddc4b0",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": false,
+  "changed_files": [
+    "lib/pkgconfig/mpfr.pc"
+  ],
+  "time": 1791375625,
+  "source_modified_time": 1742462481,
+  "compiler": "gcc-11",
+  "aliases": [],
+  "runtime_dependencies": [
+    {
+      "full_name": "linux-headers@6.8",
+      "version": "6.8.12",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.8.12_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "glibc",
+      "version": "2.39",
+      "revision": 1,
+      "bottle_rebuild": 2,
+      "pkg_version": "2.39_1",
+      "declared_directly": true
+    },
+    {
+      "full_name": "gmp",
+      "version": "6.3.0",
+      "revision": 0,
+      "bottle_rebuild": 1,
+      "pkg_version": "6.3.0",
+      "declared_directly": true
+    }
+  ],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "4.2.2",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 22.04.5",
+    "cpu_family": "zen3",
+    "glibc_version": "2.35",
+    "oldest_cpu_family": "core2"
+  }
+}

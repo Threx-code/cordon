@@ -1,0 +1,143 @@
+{
+  "homebrew_version": "6.0.18-9-gac983be",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": true,
+  "changed_files": [
+    "lib/pkgconfig/libjq.pc"
+  ],
+  "time": 1791375631,
+  "source_modified_time": 1781962615,
+  "compiler": "gcc-13",
+  "aliases": [],
+  "runtime_dependencies": [
+    {
+      "full_name": "linux-headers@6.8",
+      "version": "6.8.12",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.8.12_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "glibc",
+      "version": "2.39",
+      "revision": 1,
+      "bottle_rebuild": 2,
+      "pkg_version": "2.39_1",
+      "declared_directly": true
+    },
+    {
+      "full_name": "gmp",
+      "version": "6.3.0",
+      "revision": 0,
+      "bottle_rebuild": 1,
+      "pkg_version": "6.3.0",
+      "declared_directly": false
+    },
+    {
+      "full_name": "isl",
+      "version": "0.28",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "0.28",
+      "declared_directly": false
+    },
+    {
+      "full_name": "mpfr",
+      "version": "4.2.2",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "4.2.2",
+      "declared_directly": false
+    },
+    {
+      "full_name": "libmpc",
+      "version": "1.4.1",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "1.4.1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "lz4",
+      "version": "1.10.0",
+      "revision": 0,
+      "bottle_rebuild": 3,
+      "pkg_version": "1.10.0",
+      "declared_directly": false
+    },
+    {
+      "full_name": "xz",
+      "version": "5.8.4",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "5.8.4",
+      "declared_directly": false
+    },
+    {
+      "full_name": "zlib-ng-compat",
+      "version": "2.3.3",
+      "revision": 1,
+      "bottle_rebuild": 1,
+      "pkg_version": "2.3.3_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "zstd",
+      "version": "1.5.7",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "1.5.7_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "binutils",
+      "version": "2.47",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "2.47",
+      "declared_directly": false
+    },
+    {
+      "full_name": "gcc",
+      "version": "16.2.0",
+      "revision": 0,
+      "bottle_rebuild": 1,
+      "pkg_version": "16.2.0",
+      "declared_directly": true
+    },
+    {
+      "full_name": "oniguruma",
+      "version": "6.9.10",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.9.10",
+      "declared_directly": true
+    }
+  ],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "1.8.2",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 24.04.4",
+    "cpu_family": "icelake",
+    "glibc_version": "2.39",
+    "oldest_cpu_family": "core2"
+  }
+}

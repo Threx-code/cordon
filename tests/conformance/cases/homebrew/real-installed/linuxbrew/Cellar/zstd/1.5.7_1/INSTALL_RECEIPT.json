@@ -1,0 +1,82 @@
+{
+  "homebrew_version": "5.0.13-24-g70b5921",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": false,
+  "changed_files": [
+    "lib/pkgconfig/libzstd.pc"
+  ],
+  "time": 1791375625,
+  "source_modified_time": 1739923464,
+  "stdlib": "libstdcxx",
+  "compiler": "gcc-12",
+  "aliases": [
+    "pzstd"
+  ],
+  "runtime_dependencies": [
+    {
+      "full_name": "linux-headers@6.8",
+      "version": "6.8.12",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.8.12_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "glibc",
+      "version": "2.39",
+      "revision": 1,
+      "bottle_rebuild": 2,
+      "pkg_version": "2.39_1",
+      "declared_directly": true
+    },
+    {
+      "full_name": "lz4",
+      "version": "1.10.0",
+      "revision": 0,
+      "bottle_rebuild": 3,
+      "pkg_version": "1.10.0",
+      "declared_directly": true
+    },
+    {
+      "full_name": "xz",
+      "version": "5.8.4",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "5.8.4",
+      "declared_directly": true
+    },
+    {
+      "full_name": "zlib-ng-compat",
+      "version": "2.3.3",
+      "revision": 1,
+      "bottle_rebuild": 1,
+      "pkg_version": "2.3.3_1",
+      "declared_directly": true
+    }
+  ],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "1.5.7",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 22.04.5",
+    "cpu_family": "zen3",
+    "glibc_version": "2.35",
+    "oldest_cpu_family": "core2"
+  }
+}

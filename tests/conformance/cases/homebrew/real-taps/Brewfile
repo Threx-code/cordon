@@ -1,0 +1,11 @@
+tap "hashicorp/tap"
+tap "acme/tools", "https://git.acme.example.internal/homebrew/tools.git"
+brew "jq"
+brew "wget", args: ["with-libpsl"]
+brew "hashicorp/tap/terraform"
+brew "postgresql@16", restart_service: :changed, link: true
+cask "firefox"
+cask "visual-studio-code", greedy: true
+mas "Xcode", id: 497799835
+vscode "ms-python.python"
+whalebrew "whalebrew/wget"

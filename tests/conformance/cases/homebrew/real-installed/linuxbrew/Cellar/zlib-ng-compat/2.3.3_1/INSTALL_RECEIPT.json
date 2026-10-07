@@ -1,0 +1,59 @@
+{
+  "homebrew_version": "6.0.21-52-g27d05ae",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": false,
+  "changed_files": [
+    "lib/pkgconfig/zlib.pc"
+  ],
+  "linkage_files": [
+    "lib/libz.so.1.3.1.zlib-ng"
+  ],
+  "binary_relocation_files": [],
+  "time": 1791375625,
+  "source_modified_time": 1770153003,
+  "compiler": "gcc-13",
+  "aliases": [],
+  "runtime_dependencies": [
+    {
+      "full_name": "linux-headers@6.8",
+      "version": "6.8.12",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.8.12_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "glibc",
+      "version": "2.39",
+      "revision": 1,
+      "bottle_rebuild": 2,
+      "pkg_version": "2.39_1",
+      "declared_directly": true
+    }
+  ],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "2.3.3",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 24.04.4",
+    "cpu_family": "zen4",
+    "glibc_version": "2.39",
+    "oldest_cpu_family": "core2"
+  }
+}

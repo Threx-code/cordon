@@ -1,0 +1,30 @@
+{
+ "tool": "brew info --json=v2 --installed",
+ "packages": [
+  "binutils@2.47",
+  "ca-certificates@2026-09-25",
+  "gcc@16.2.0",
+  "glibc@2.39_1",
+  "gmp@6.3.0",
+  "isl@0.28",
+  "jq@1.8.2",
+  "libidn2@2.3.8",
+  "libmpc@1.4.1",
+  "libpsl@0.23.3",
+  "libunistring@1.4.2",
+  "libxcrypt@4.5.2",
+  "linux-headers@6.8@6.8.12_1",
+  "lz4@1.10.0",
+  "mpfr@4.2.2",
+  "ncurses@6.6",
+  "oniguruma@6.9.10",
+  "openssl@4@4.0.3",
+  "readline@8.3.6",
+  "sqlite@3.53.4",
+  "util-linux@2.42.4",
+  "wget@1.25.0_2",
+  "xz@5.8.4",
+  "zlib-ng-compat@2.3.3_1",
+  "zstd@1.5.7_1"
+ ]
+}

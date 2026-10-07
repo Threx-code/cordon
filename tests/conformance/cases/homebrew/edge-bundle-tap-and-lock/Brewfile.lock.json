@@ -1,0 +1,89 @@
+{
+  "entries": {
+    "tap": {
+      "homebrew/bundle": {
+        "revision": "3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+      },
+      "acme/internal": {
+        "revision": "0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5"
+      }
+    },
+    "brew": {
+      "openssl@3": {
+        "version": "3.3.2",
+        "bottle": {
+          "rebuild": 0,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_sonoma": {
+              "cellar": "/opt/homebrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/openssl/3/blobs/sha256:2b2fb0d06c0e4e3e2c5a2d2b0f1d4b6c8e9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+              "sha256": "2b2fb0d06c0e4e3e2c5a2d2b0f1d4b6c8e9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c"
+            }
+          }
+        }
+      },
+      "wget": {
+        "version": "1.24.5",
+        "bottle": {
+          "rebuild": 0,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_sonoma": {
+              "cellar": ":any",
+              "url": "https://ghcr.io/v2/homebrew/core/wget/blobs/sha256:c7b2ff6f1e8b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920a1b",
+              "sha256": "c7b2ff6f1e8b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920a1b"
+            }
+          }
+        }
+      },
+      "acme/internal/acme-cli": {
+        "version": "2024.1_1",
+        "bottle": false
+      },
+      "postgresql@16": {
+        "version": "16.4",
+        "bottle": {
+          "rebuild": 0,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_sonoma": {
+              "cellar": "/opt/homebrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/postgresql/16/blobs/sha256:5d0c4a3b2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b",
+              "sha256": "5d0c4a3b2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b"
+            }
+          }
+        }
+      }
+    },
+    "cask": {
+      "firefox": {
+        "version": "131.0.2",
+        "options": {
+          "full_name": "firefox",
+          "args": {
+            "appdir": "/Applications"
+          }
+        }
+      }
+    },
+    "mas": {
+      "Keynote": {
+        "id": 409183694,
+        "version": "14.2"
+      }
+    }
+  },
+  "system": {
+    "macos": {
+      "sonoma": {
+        "HOMEBREW_VERSION": "4.3.24",
+        "HOMEBREW_PREFIX": "/opt/homebrew",
+        "Homebrew/homebrew-core": "api",
+        "CLT": "15.3.0.0.1.1708646388",
+        "Xcode": "15.4",
+        "macOS": "14.6.1"
+      }
+    }
+  }
+}

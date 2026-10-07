@@ -1,0 +1,38 @@
+{
+  "homebrew_version": "5.1.1-71-g86fe878",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": false,
+  "changed_files": [],
+  "time": 1791375620,
+  "source_modified_time": 1717055393,
+  "compiler": "gcc-12",
+  "aliases": [
+    "linux-headers"
+  ],
+  "runtime_dependencies": [],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "6.8.12",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 22.04.5",
+    "cpu_family": "zen3",
+    "glibc_version": "2.35",
+    "oldest_cpu_family": "core2"
+  }
+}

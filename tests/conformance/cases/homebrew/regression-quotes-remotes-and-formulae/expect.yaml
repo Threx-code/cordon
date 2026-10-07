@@ -1,0 +1,30 @@
+# The old reader matched `brew`, `cask` and `tap` lines only. It gave a tap with its own remote the
+# GitHub URL `brew tap` uses when none is given -- the wrong repository -- dropped a trailing
+# `if` / `unless`, did not read whalebrew, mas or vscode entries, and read no formula or cask at
+# all: a tap's own formulae, their dependencies, checksums and install code were not seen. The
+# reader that replaced it also had to learn single-quoted names, which Ruby -- and so a Brewfile --
+# allows as freely as double-quoted ones.
+kinds: [regression, valid]
+covers:
+  - homebrew.taps
+  - homebrew.formulae-casks
+  - UNI-02
+  - UNI-28
+dependencies:
+  - {name: acme/tools, source_type: git, source_url: "https://git.acme.example.internal/homebrew/tools.git"}
+  - {name: jq, manifest_location: {path: Brewfile}}
+  - {name: git-lfs, platform_constraints: [when OS.linux?]}
+  - {name: docker, platform_constraints: ["unless ENV[\"CI\"]"]}
+  - {name: whalebrew/httpie, ecosystem: image}
+  - {name: cmake, dependency_type: build, manifest_location: {path: Formula/acme-sync.rb}}
+  - {name: libgit2, dependency_type: runtime}
+only: true
+absent:
+  - retired-tool
+sources:
+  - "source https://git.acme.example.internal/tools/acme-sync/archive/v3.2.0.tar.gz"
+  - "source sha256 3c59dc048e8850243be8079a5c74d079f3a1f35bd7aeb4ebc3e1b0e3d4c5b6a7"
+hooks:
+  - {kind: build, path: Formula/acme-sync.rb, command: def install}
+findings:
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: acme/tools}

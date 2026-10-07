@@ -1,0 +1,185 @@
+{
+  "homebrew_version": "6.0.21-49-g40916f6",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": false,
+  "changed_files": [
+    "libexec/gcc/x86_64-pc-linux-gnu/16/install-tools/mkheaders",
+    "lib/gcc/current/gcc/x86_64-pc-linux-gnu/16/plugin/include/auto-host.h",
+    "lib/gcc/current/gcc/x86_64-pc-linux-gnu/16/plugin/include/configargs.h",
+    "lib/gcc/current/libstdc++.so.6.0.36-gdb.py",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/liblto_plugin.la"
+  ],
+  "linkage_files": [
+    "bin/c++-16",
+    "bin/cpp-16",
+    "bin/gcc-16",
+    "bin/gcc-ar-16",
+    "bin/gcc-nm-16",
+    "bin/gcc-ranlib-16",
+    "bin/gcov-16",
+    "bin/gcov-dump-16",
+    "bin/gcov-tool-16",
+    "bin/gfortran-16",
+    "bin/gm2-16",
+    "bin/lto-dump-16",
+    "lib/gcc/current/gcc/x86_64-pc-linux-gnu/16/plugin/libcc1plugin.so.0.0.0",
+    "lib/gcc/current/gcc/x86_64-pc-linux-gnu/16/plugin/libcp1plugin.so.0.0.0",
+    "lib/gcc/current/gcc/x86_64-pc-linux-gnu/16/plugin/m2rte.so",
+    "lib/gcc/current/libasan.so.8.0.0",
+    "lib/gcc/current/libatomic.so.1.2.0",
+    "lib/gcc/current/libcc1.so.0.0.0",
+    "lib/gcc/current/libgcc_s.so.1",
+    "lib/gcc/current/libgfortran.so.5.0.0",
+    "lib/gcc/current/libgomp.so.1.0.0",
+    "lib/gcc/current/libhwasan.so.0.0.0",
+    "lib/gcc/current/libitm.so.1.0.0",
+    "lib/gcc/current/liblsan.so.0.0.0",
+    "lib/gcc/current/libm2cor.so.21.0.0",
+    "lib/gcc/current/libm2iso.so.21.0.0",
+    "lib/gcc/current/libm2log.so.21.0.0",
+    "lib/gcc/current/libm2min.so.21.0.0",
+    "lib/gcc/current/libm2pim.so.21.0.0",
+    "lib/gcc/current/libquadmath.so.0.0.0",
+    "lib/gcc/current/libssp.so.0.0.0",
+    "lib/gcc/current/libstdc++.so.6.0.36",
+    "lib/gcc/current/libtsan.so.2.0.0",
+    "lib/gcc/current/libubsan.so.1.0.0",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/cc1",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/cc1gm2",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/cc1obj",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/cc1objplus",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/cc1plus",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/collect2",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/f951",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/g++-mapper-server",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/install-tools/fixincl",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/liblto_plugin.so",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/lto-wrapper",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/lto1",
+    "libexec/gcc/x86_64-pc-linux-gnu/16/plugin/gengtype"
+  ],
+  "binary_relocation_files": [],
+  "time": 1791375627,
+  "source_modified_time": 1786090803,
+  "stdlib": "libstdcxx",
+  "compiler": "gcc-13",
+  "aliases": [
+    "gcc@16",
+    "gfortran"
+  ],
+  "runtime_dependencies": [
+    {
+      "full_name": "linux-headers@6.8",
+      "version": "6.8.12",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.8.12_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "glibc",
+      "version": "2.39",
+      "revision": 1,
+      "bottle_rebuild": 2,
+      "pkg_version": "2.39_1",
+      "declared_directly": true
+    },
+    {
+      "full_name": "gmp",
+      "version": "6.3.0",
+      "revision": 0,
+      "bottle_rebuild": 1,
+      "pkg_version": "6.3.0",
+      "declared_directly": true
+    },
+    {
+      "full_name": "isl",
+      "version": "0.28",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "0.28",
+      "declared_directly": true
+    },
+    {
+      "full_name": "mpfr",
+      "version": "4.2.2",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "4.2.2",
+      "declared_directly": true
+    },
+    {
+      "full_name": "libmpc",
+      "version": "1.4.1",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "1.4.1",
+      "declared_directly": true
+    },
+    {
+      "full_name": "lz4",
+      "version": "1.10.0",
+      "revision": 0,
+      "bottle_rebuild": 3,
+      "pkg_version": "1.10.0",
+      "declared_directly": false
+    },
+    {
+      "full_name": "xz",
+      "version": "5.8.4",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "5.8.4",
+      "declared_directly": true
+    },
+    {
+      "full_name": "zlib-ng-compat",
+      "version": "2.3.3",
+      "revision": 1,
+      "bottle_rebuild": 1,
+      "pkg_version": "2.3.3_1",
+      "declared_directly": true
+    },
+    {
+      "full_name": "zstd",
+      "version": "1.5.7",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "1.5.7_1",
+      "declared_directly": true
+    },
+    {
+      "full_name": "binutils",
+      "version": "2.47",
+      "revision": 0,
+      "bottle_rebuild": 0,
+      "pkg_version": "2.47",
+      "declared_directly": true
+    }
+  ],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "16.2.0",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 24.04.4",
+    "cpu_family": "zen3",
+    "glibc_version": "2.39",
+    "oldest_cpu_family": "core2"
+  }
+}

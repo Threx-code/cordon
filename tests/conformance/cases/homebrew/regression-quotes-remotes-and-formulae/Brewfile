@@ -1,0 +1,6 @@
+tap 'acme/tools', 'https://git.acme.example.internal/homebrew/tools.git'
+brew 'jq'
+brew "git-lfs" if OS.linux?
+cask 'docker' unless ENV['CI']
+whalebrew 'whalebrew/httpie'
+# brew "retired-tool"

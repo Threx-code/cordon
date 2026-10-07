@@ -1,0 +1,65 @@
+# Real formulae (jq, wget) and a real cask (firefox) from homebrew-core and homebrew-cask, beside a
+# Brewfile using every bundle category. Expectations are Homebrew's own reading of the same
+# revision (formulae.brew.sh's JSON, kept by generate/homebrew.sh): jq depends on oniguruma; wget
+# on libidn2, libpsl and openssl@4, on gettext and libunistring on macOS, on util-linux and
+# zlib-ng-compat on Linux, and on pkgconf to build; firefox 157.0.1 requires macOS.
+kinds: [real, valid]
+covers:
+  - file:Brewfile
+  - file:Formula/tool.rb
+  - file:Casks/app.rb
+  - homebrew.formulae-casks
+  - homebrew.taps
+  - homebrew.urls-checksums
+  - homebrew.categories
+  - UNI-01
+  - UNI-03
+  - UNI-18
+dependencies:
+  # The Brewfile.
+  - {name: jq, dependency_type: dev, manifest_location: {path: Brewfile}}
+  - {name: wget, manifest_location: {path: Brewfile}}
+  - {name: postgresql@16}
+  - {name: firefox, manifest_location: {path: Brewfile}}
+  - {name: visual-studio-code}
+  - {name: terraform, source_url: "registry:hashicorp/tap"}
+  - {name: hashicorp/tap, dependency_type: dev}
+  - {name: acme/tools, source_url: "https://git.acme.example.internal/homebrew/tools.git"}
+  - {name: whalebrew/wget, ecosystem: image}
+  # jq's formula.
+  - {name: oniguruma, dependency_type: runtime, manifest_location: {path: Formula/jq.rb}}
+  - {name: autoconf, dependency_type: build, platform_constraints: ["head build"], manifest_location: {path: Formula/jq.rb}}
+  # wget's.
+  - {name: pkgconf, dependency_type: build, manifest_location: {path: Formula/wget.rb}}
+  - {name: libidn2, dependency_type: runtime}
+  - {name: libpsl, dependency_type: runtime}
+  - {name: openssl@4, dependency_type: runtime}
+  - {name: gettext, platform_constraints: [macos]}
+  - {name: libunistring, platform_constraints: [macos]}
+  - {name: util-linux, platform_constraints: [linux]}
+  - {name: zlib-ng-compat, platform_constraints: [linux]}
+  # The patch wget's stable source applies, with its checksum.
+  - {name: aaec8d52a06c46eeab570b8ef3e10760ebc66b7a.diff, dependency_type: build, integrity: "sha256:96aa2923ce9a12dbc2c82969705da4f72792816b087dbee19c04cd2cb2769ea8"}
+  # The cask's.
+  - {name: macos, dependency_type: platform, manifest_location: {path: Casks/firefox.rb}}
+absent:
+  # An App Store app and an editor extension: not Homebrew packages.
+  - Xcode
+  - ms-python.python
+sources:
+  - "source https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-1.8.2.tar.gz"
+  - "source sha256 71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af"
+  - "source sha256 766e48423e79359ea31e41db9e5c289675947a7fcf2efdcedb726ac9d0da3784"
+  - "download https://download-installer.cdn.mozilla.net/pub/firefox/releases/157.0.1/mac/#{language}/Firefox%20157.0.1.dmg"
+  - "mas app Xcode (App Store id 497799835)"
+  - "vscode extension ms-python.python"
+hooks:
+  - {kind: build, path: Formula/jq.rb, command: def install}
+  - {kind: build, path: Formula/wget.rb, command: def install}
+findings:
+  # Third-party taps: formulae from outside Homebrew's own.
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: hashicorp/tap, severity: medium}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: acme/tools, severity: medium}
+no_findings:
+  # A tap follows its branch by design; it is not a mutable dependency reference.
+  - POLICY.DEPENDENCY.MUTABLE_REF.001

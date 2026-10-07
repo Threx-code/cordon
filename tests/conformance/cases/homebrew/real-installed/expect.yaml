@@ -1,0 +1,20 @@
+# A Brewfile and what `brew bundle install` made of it on Linux, as the Homebrew prefix records it:
+# one INSTALL_RECEIPT.json per keg (generate/homebrew_installed.sh; the receipts only, nothing else
+# of the install). authoritative.json is `brew info --json=v2 --installed`: 25 formulae, each at
+# its installed version with its revision. jq and wget were installed on request; the rest as
+# their dependencies. The Brewfile's entries stay what they are, a request for the current
+# version, beside the versions the prefix holds.
+kinds: [real, valid]
+covers:
+  - file:Cellar/<name>/<version>/INSTALL_RECEIPT.json
+  - homebrew.declared-vs-installed
+  - UNI-01
+  - UNI-06
+  - UNI-07
+dependencies:
+  - {name: wget, resolution_status: unresolved, manifest_location: {path: Brewfile}}
+  - {name: wget, resolved_version: 1.25.0_2, direct: true, lockfile_location: {path: linuxbrew/Cellar/wget/1.25.0_2/INSTALL_RECEIPT.json}}
+  - {name: jq, resolved_version: 1.8.2, direct: true}
+  - {name: libpsl, resolved_version: 0.23.3, direct: false, dependency_path: [wget, libpsl]}
+  - {name: oniguruma, resolved_version: 6.9.10, direct: false, dependency_path: [jq, oniguruma]}
+  - {name: linux-headers@6.8, resolved_version: 6.8.12_1, direct: false}

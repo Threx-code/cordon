@@ -1,0 +1,58 @@
+{
+  "homebrew_version": "6.0.15-9-g2bdc553",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "built_prefix": "/home/linuxbrew/.linuxbrew",
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": false,
+  "changed_files": [
+    "bin/ldd",
+    "bin/sotruss",
+    "bin/tzselect",
+    "bin/xtrace",
+    ".bottle/etc/ld.so.conf.d/90-homebrew.conf",
+    "etc/ld.so.conf",
+    "lib/libc.so",
+    "lib/libm.a",
+    "lib/libm.so"
+  ],
+  "time": 1791375620,
+  "source_modified_time": 1706661298,
+  "compiler": "gcc-13",
+  "aliases": [
+    "glibc@2.39"
+  ],
+  "runtime_dependencies": [
+    {
+      "full_name": "linux-headers@6.8",
+      "version": "6.8.12",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.8.12_1",
+      "declared_directly": true
+    }
+  ],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "2.39",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 24.04.4",
+    "cpu_family": "zen4",
+    "glibc_version": "2.39",
+    "oldest_cpu_family": "core2"
+  }
+}

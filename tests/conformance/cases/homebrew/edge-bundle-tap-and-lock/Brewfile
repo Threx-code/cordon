@@ -1,0 +1,21 @@
+tap "homebrew/bundle"
+tap "acme/internal", "https://git.acme.example.internal/homebrew/internal.git"
+tap "hashicorp/tap"
+cask_args appdir: "~/Applications", require_sha: true
+
+brew "openssl@3"
+brew "Wget"
+brew "acme/internal/acme-cli", args: ["with-telemetry-off"], link: :overwrite
+brew "hashicorp/tap/terraform"
+brew "postgresql@16", restart_service: :changed
+brew "mysql", restart_service: true, conflicts_with: ["postgresql@16"] if ENV["WITH_MYSQL"]
+cask "firefox", args: { appdir: "/Applications" }
+cask "homebrew/cask-fonts/font-fira-code"
+
+if OS.mac?
+  brew "mas"
+  mas "Keynote", id: 409183694
+end
+
+vscode "golang.go"
+whalebrew "whalebrew/whalesay:1.0"

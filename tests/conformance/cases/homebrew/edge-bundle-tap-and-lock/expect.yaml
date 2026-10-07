@@ -1,0 +1,83 @@
+# A Brewfile with every bundle form -- Homebrew's own taps (no source of their own), a private tap
+# with its remote, a tap-qualified formula, entry options, a trailing `if`, an `if OS.mac?` block,
+# a capitalised name, a cask from a core tap -- locked by the Brewfile.lock.json `brew bundle`
+# wrote before Homebrew 4.4 (versions with revisions, bottle checksums, each tap's commit). Beside
+# it, the private tap's own formula (a stable block with a patch, head, every dependency tag,
+# nested on_macos / on_arm, uses_from_macos, a resource with its checksum and one without,
+# install and post_install) and cask (version :latest, sha256 :no_check, depends_on formula /
+# cask / macos, preflight / postflight, an installer script), and two teams' Brewfiles sharing jq.
+kinds: [edge, valid]
+covers:
+  - file:Brewfile.lock.json
+  - homebrew.formulae-casks
+  - homebrew.taps
+  - homebrew.urls-checksums
+  - homebrew.categories
+  - homebrew.declared-vs-installed
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - UNI-18
+dependencies:
+  # Locked: the versions and bottle checksums brew bundle recorded.
+  - {name: wget, declared_name: Wget, resolved_version: 1.24.5, integrity: "sha256:c7b2ff6f1e8b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920a1b", lockfile_location: {path: Brewfile.lock.json}}
+  - {name: openssl@3, resolved_version: 3.3.2, integrity_status: recorded}
+  - {name: firefox, resolved_version: 131.0.2, manifest_location: {path: Brewfile}}
+  # A private tap's formula: its own name, the tap its namespace and its registry.
+  - {name: acme-cli, declared_name: acme/internal/acme-cli, namespace: acme/internal, source_type: registry, source_url: "registry:acme/internal", resolved_version: 2024.1_1, extras: [with-telemetry-off]}
+  - {name: terraform, declared_name: hashicorp/tap/terraform, namespace: hashicorp/tap, resolution_status: unresolved}
+  # The taps: one at the commit the lock recorded, one the lock does not have.
+  - {name: acme/internal, source_type: git, resolved_version: 0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5}
+  - {name: hashicorp/tap, resolution_status: unresolved, resolution_reason: "a tap: the repository of formulae brew follows at its default branch"}
+  # A cask from one of Homebrew's own taps: the tap its namespace, Homebrew's registry its source.
+  - {name: font-fira-code, source_type: registry, source_url: null, namespace: homebrew/cask-fonts}
+  # Entries under conditions.
+  - {name: mas, platform_constraints: [when OS.mac?]}
+  - {name: mysql, platform_constraints: ["when ENV[\"WITH_MYSQL\"]"]}
+  - {name: whalebrew/whalesay, ecosystem: image, resolved_version: "1.0"}
+  # The formula's dependency types and conditions.
+  - {name: rust, dependency_type: build, manifest_location: {path: homebrew-internal/Formula/acme-cli.rb}}
+  - {name: pytest, dependency_type: build}
+  - {name: libyaml, dependency_type: optional}
+  - {name: python@3.12, dependency_type: runtime}
+  - {name: llvm, dependency_type: build, platform_constraints: [macos, arm]}
+  - {name: libffi, platform_constraints: [linux (macOS provides it)]}
+  - {name: jq, platform_constraints: ["build.with? \"jq-filters\""], manifest_location: {path: homebrew-internal/Formula/acme-cli.rb}}
+  - {name: six, source_type: archive, integrity: "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926"}
+  - {name: 1a2b3c4.patch, dependency_type: build, integrity_status: recorded}
+  # The cask's.
+  - {name: acme-fonts, manifest_location: {path: homebrew-internal/Casks/acme-app.rb}}
+  - {name: macos, dependency_type: platform, version_constraint: ">= :ventura"}
+  # Both teams' jq, each where it is declared.
+  - {name: jq, manifest_location: {path: team-a/Brewfile}}
+  - {name: jq, manifest_location: {path: team-b/Brewfile}}
+  - {name: gh, manifest_location: {path: team-a/Brewfile}}
+  - {name: ripgrep, manifest_location: {path: team-b/Brewfile}}
+absent:
+  - homebrew/bundle
+  - Keynote
+  - golang.go
+sources:
+  - "mas app Keynote (App Store id 409183694)"
+  - "vscode extension golang.go"
+  - "download with no checksum (sha256 :no_check): whatever the URL serves is installed"
+  - "head https://git.acme.example.internal/tools/acme-cli.git (main)"
+hooks:
+  - {kind: build, path: homebrew-internal/Formula/acme-cli.rb, command: def install}
+  - {kind: build, path: homebrew-internal/Formula/acme-cli.rb, command: def post_install}
+  - {kind: preinstall, path: homebrew-internal/Casks/acme-app.rb, command: preflight}
+  - {kind: postinstall, path: homebrew-internal/Casks/acme-app.rb, command: postflight}
+  - {kind: postinstall, path: homebrew-internal/Casks/acme-app.rb, command: installer script}
+findings:
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: hashicorp/tap, severity: medium}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: acme/internal, severity: medium}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: acme-plugins, severity: medium}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: "'six'", severity: low}
+no_findings:
+  # A formula from a tap the project names is from a registry it configured on purpose.
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - SUSPECT.LOCKFILE.SOURCE.001
+  - POLICY.DEPENDENCY.MUTABLE_REF.001

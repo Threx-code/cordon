@@ -1,0 +1,76 @@
+{
+  "homebrew_version": "5.0.8-15-g7543440",
+  "used_options": [],
+  "unused_options": [],
+  "built_as_bottle": true,
+  "built_prefix": "/home/linuxbrew/.linuxbrew",
+  "poured_from_bottle": true,
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "installed_on_request": false,
+  "changed_files": [
+    "bin/ncursesw6-config",
+    "lib/pkgconfig/formw.pc",
+    "lib/pkgconfig/menuw.pc",
+    "lib/pkgconfig/ncurses++w.pc",
+    "lib/pkgconfig/ncursesw.pc",
+    "lib/pkgconfig/panelw.pc",
+    "share/man/man1/infocmp.1",
+    "share/man/man1/infotocap.1",
+    "share/man/man1/ncursesw6-config.1",
+    "share/man/man1/reset.1",
+    "share/man/man1/tabs.1",
+    "share/man/man1/tic.1",
+    "share/man/man1/toe.1",
+    "share/man/man1/tput.1",
+    "share/man/man1/tset.1",
+    "share/man/man3/ncurses.3ncurses",
+    "share/man/man5/term.5",
+    "share/man/man5/terminfo.5",
+    "share/man/man7/term.7",
+    "share/ncurses/test/Makefile"
+  ],
+  "time": 1791375653,
+  "source_modified_time": 1767137046,
+  "stdlib": "libstdcxx",
+  "compiler": "gcc-12",
+  "aliases": [],
+  "runtime_dependencies": [
+    {
+      "full_name": "linux-headers@6.8",
+      "version": "6.8.12",
+      "revision": 1,
+      "bottle_rebuild": 0,
+      "pkg_version": "6.8.12_1",
+      "declared_directly": false
+    },
+    {
+      "full_name": "glibc",
+      "version": "2.39",
+      "revision": 1,
+      "bottle_rebuild": 2,
+      "pkg_version": "2.39_1",
+      "declared_directly": true
+    }
+  ],
+  "source": {
+    "spec": "stable",
+    "versions": {
+      "stable": "6.6",
+      "head": null,
+      "version_scheme": 0,
+      "compatibility_version": null
+    },
+    "path": "/home/linuxbrew/.cache/Homebrew/api/internal/packages.x86_64_linux.jws.json",
+    "tap_git_head": "5a9d616d505e86328d3cd5e8e0df2750e1ed83ed",
+    "tap": "homebrew/core"
+  },
+  "arch": "x86_64",
+  "built_on": {
+    "os": "Linux",
+    "os_version": "Ubuntu 22.04.5",
+    "cpu_family": "zen3",
+    "glibc_version": "2.35",
+    "oldest_cpu_family": "core2"
+  }
+}
