@@ -13,7 +13,7 @@ import gzip
 import io
 import json
 import urllib.error
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -176,7 +176,8 @@ class TestDispatch(RegistryFixtures):
 
     def test_an_unknown_ecosystem_is_an_error(self) -> None:
         with pytest.raises(RegistryError, match="no registry configured"):
-            MoreRegistries.facts("conan", "zlib", "1.3")
+            # The operating system's packages: matched against distribution advisories, no registry.
+            MoreRegistries.facts("deb", "openssl", "3.0.15-1")
 
     def test_the_client_routes_these_ecosystems_here(self, serve) -> None:
         RegistryClient._cached_facts.cache_clear()
@@ -645,6 +646,1036 @@ class TestHex(RegistryFixtures):
         assert MoreRegistries.hex("demo", "1.0.0").yanked_reason == "retired by its owner"
 
 
+class TestCocoaPodsTrunk(RegistryFixtures):
+    """Trunk's CDN: the shard's version listing, and each version's podspec JSON, whose SHA-1 is
+    what a Podfile.lock's SPEC CHECKSUMS records."""
+
+    PODSPEC = b'{"name": "Alamofire", "version": "5.9.1", "deprecated": true, "deprecated_in_favor_of": "Alamofire2"}'
+
+    def urls(self, name: str = "Alamofire", version: str = "5.9.1") -> tuple[str, str]:
+        a, b, c = MoreRegistries.cocoapods_shard(name)
+        base = "https://cdn.cocoapods.org"
+        return (
+            f"{base}/all_pods_versions_{a}_{b}_{c}.txt",
+            f"{base}/Specs/{a}/{b}/{c}/{name}/{version}/{name}.podspec.json",
+        )
+
+    @pytest.mark.conformance("cocoapods", "UNI-16", "UNI-22")
+    def test_the_podspec_checksum_versions_and_deprecation(self, serve) -> None:
+        import hashlib
+
+        listing, podspec = self.urls()
+        served = serve({listing: "Other/1.0\nAlamofire/5.8.0/5.9.1\n", podspec: self.PODSPEC})
+        facts = MoreRegistries.cocoapods("Alamofire", "5.9.1")
+        assert facts.digests == (
+            f"sha1:{hashlib.sha1(self.PODSPEC, usedforsecurity=False).hexdigest()}",
+        )
+        assert facts.releases == 2 and facts.latest == "5.9.1" and not facts.yanked
+        assert facts.deprecated == "deprecated in favour of Alamofire2"
+        assert served.asked == [listing, podspec]
+
+    @pytest.mark.conformance("cocoapods", "UNI-16")
+    def test_a_version_trunk_no_longer_lists_was_deleted(self, serve) -> None:
+        listing, _ = self.urls()
+        serve({listing: "Alamofire/5.8.0\n"})
+        assert MoreRegistries.cocoapods("Alamofire", "5.9.1").yanked
+
+    @pytest.mark.conformance("cocoapods", "UNI-16")
+    def test_a_pod_trunk_does_not_have_is_not_found(self, serve) -> None:
+        listing, _ = self.urls("NoSuchPodAnywhere")
+        serve({listing: "Other/1.0\n"})
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.cocoapods("NoSuchPodAnywhere", "1.0.0")
+
+    @pytest.mark.conformance("cocoapods", "UNI-22")
+    def test_a_name_that_is_not_a_pod_name_is_never_requested(self, serve) -> None:
+        served = serve({})
+        with pytest.raises(RegistryError):
+            MoreRegistries.cocoapods("../../etc", "1.0")
+        assert served.asked == []
+
+
+class TestCran(RegistryFixtures):
+    URL = "https://crandb.r-pkg.org/jsonlite/all"
+    DOCUMENT: ClassVar[dict[str, Any]] = {
+        "name": "jsonlite",
+        "versions": {"1.8.9": {}, "2.0.0": {}},
+        "timeline": {"1.8.9": "2024-09-20T09:30:02+00:00", "2.0.0": "2025-03-27T05:40:02+00:00"},
+        "latest": {"Version": "2.0.0"},
+        "archived": False,
+    }
+
+    @pytest.mark.conformance("cran", "UNI-16", "UNI-22")
+    def test_versions_dates_and_the_latest(self, serve) -> None:
+        serve({self.URL: self.DOCUMENT})
+        facts = MoreRegistries.cran("jsonlite", "1.8.9")
+        assert facts.releases == 2 and facts.latest == "2.0.0" and not facts.yanked
+        assert facts.first_published == "2024-09-20T09:30:02+00:00" and facts.digests == ()
+
+    @pytest.mark.conformance("cran", "UNI-16")
+    def test_an_archived_package_is_withdrawn(self, serve) -> None:
+        serve({self.URL: {**self.DOCUMENT, "archived": True}})
+        facts = MoreRegistries.cran("jsonlite", "2.0.0")
+        assert facts.yanked and facts.yanked_reason == "archived by CRAN"
+
+    @pytest.mark.conformance("cran", "UNI-16")
+    def test_a_version_cran_never_published(self, serve) -> None:
+        serve({self.URL: self.DOCUMENT})
+        facts = MoreRegistries.cran("jsonlite", "9.9.9")
+        assert facts.yanked and facts.yanked_reason == "not a version CRAN published"
+
+    @pytest.mark.conformance("cran", "UNI-22")
+    def test_an_unreachable_registry_and_a_hostile_name(self, serve) -> None:
+        serve({self.URL: RegistryError("connection timed out")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.cran("jsonlite", "2.0.0")
+        with pytest.raises(RegistryError):
+            MoreRegistries.cran("../../etc/passwd", "1")
+
+
+class TestHackage(RegistryFixtures):
+    BASE = "https://hackage.haskell.org/package"
+    REVISION = "2ba66a092a32593880a87fb00f3213762d7bca65a687d45965778deb8694c5d1"
+
+    def answers(self, **overrides: Any) -> dict[str, Any]:
+        return {
+            f"{self.BASE}/acme-missiles/preferred": {
+                "normal-version": ["0.3", "0.2"],
+                "deprecated-version": ["0.1"],
+            },
+            f"{self.BASE}/acme-missiles/deprecated": {"is-deprecated": False, "in-favour-of": []},
+            f"{self.BASE}/acme-missiles-0.3/revisions/": [
+                {"number": 0, "sha256": self.REVISION, "time": "2012-04-15T04:08:20Z", "user": "u"}
+            ],
+            f"{self.BASE}/acme-missiles-0.1/revisions/": [],
+            **overrides,
+        }
+
+    @pytest.mark.conformance("hackage", "UNI-16", "UNI-22", "hackage.revisions")
+    def test_revision_hashes_and_the_latest(self, serve) -> None:
+        serve(self.answers())
+        facts = MoreRegistries.hackage("acme-missiles", "0.3")
+        # The cabal-file revision hash Stack's lock pins (`@sha256:...`).
+        assert facts.digests == (f"sha256:{self.REVISION}",)
+        assert facts.latest == "0.3" and not facts.yanked and facts.releases == 3
+
+    @pytest.mark.conformance("hackage", "UNI-16")
+    def test_a_deprecated_version_and_package(self, serve) -> None:
+        serve(
+            self.answers(
+                **{
+                    f"{self.BASE}/acme-missiles/deprecated": {
+                        "is-deprecated": True,
+                        "in-favour-of": ["acme-rockets"],
+                    }
+                }
+            )
+        )
+        facts = MoreRegistries.hackage("acme-missiles", "0.1")
+        assert (
+            facts.yanked
+            and facts.yanked_reason == "deprecated by its maintainer: the solver avoids it"
+        )
+        assert facts.deprecated == "deprecated on Hackage in favour of acme-rockets"
+
+    @pytest.mark.conformance("hackage", "UNI-16")
+    def test_a_version_hackage_never_published(self, serve) -> None:
+        serve(self.answers())
+        facts = MoreRegistries.hackage("acme-missiles", "9.9")
+        assert (
+            facts.yanked
+            and facts.yanked_reason == "not a version Hackage published"
+            and facts.digests == ()
+        )
+
+    @pytest.mark.conformance("hackage", "UNI-22")
+    def test_an_unreachable_registry_and_hostile_coordinates(self, serve) -> None:
+        serve({f"{self.BASE}/acme-missiles/preferred": RegistryError("connection timed out")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.hackage("acme-missiles", "0.3")
+        with pytest.raises(RegistryError):
+            MoreRegistries.hackage("../../etc/passwd", "1")
+        serve(self.answers())
+        with pytest.raises(RegistryError):
+            MoreRegistries.hackage("acme-missiles", "0.3/../../x")
+
+
+class TestJuliaGeneral(RegistryFixtures):
+    BASE = "https://raw.githubusercontent.com/JuliaRegistries/General/master/J/JSON3"
+    PACKAGE = 'name = "JSON3"\nuuid = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"\nrepo = "https://github.com/quinnj/JSON3.jl.git"\n'
+    VERSIONS = (
+        '["1.14.2"]\ngit-tree-sha1 = "196b41e5a854b387d99e5ede2de3fcb4d0422aae"\n\n'
+        '["1.14.3"]\ngit-tree-sha1 = "411eccfe8aba0814ffa0fdf4860913ed09c34975"\n\n'
+        '["1.15.0"]\ngit-tree-sha1 = "0000000000000000000000000000000000000001"\nyanked = true\n'
+    )
+
+    @pytest.mark.conformance("julia", "UNI-16", "UNI-22")
+    def test_tree_hash_repository_and_latest(self, serve) -> None:
+        serve(
+            {f"{self.BASE}/Package.toml": self.PACKAGE, f"{self.BASE}/Versions.toml": self.VERSIONS}
+        )
+        facts = MoreRegistries.julia("JSON3", "1.14.3")
+        # The tree a manifest's git-tree-sha1 pins.
+        assert facts.digests == ("git-tree-sha1:411eccfe8aba0814ffa0fdf4860913ed09c34975",)
+        assert facts.repository == "https://github.com/quinnj/JSON3.jl.git"
+        assert facts.latest == "1.14.3" and not facts.yanked and facts.deprecated is None
+
+    @pytest.mark.conformance("julia", "UNI-16")
+    def test_yanked_unknown_and_deprecated(self, serve) -> None:
+        retired = (
+            self.PACKAGE
+            + '\n[metadata.deprecated]\nreason = "unmaintained"\nalternative = "JSON"\n'
+        )
+        serve({f"{self.BASE}/Package.toml": retired, f"{self.BASE}/Versions.toml": self.VERSIONS})
+        assert (
+            MoreRegistries.julia("JSON3", "1.15.0").yanked_reason
+            == "yanked from the General registry"
+        )
+        assert (
+            MoreRegistries.julia("JSON3", "9.9.9").yanked_reason
+            == "not a version the General registry holds"
+        )
+        assert (
+            MoreRegistries.julia("JSON3", "1.14.3").deprecated
+            == "deprecated in the General registry in favour of JSON"
+        )
+
+    @pytest.mark.conformance("julia", "UNI-22")
+    def test_unreachable_unreadable_and_hostile(self, serve) -> None:
+        serve({f"{self.BASE}/Package.toml": RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.julia("JSON3", "1.14.3")
+        serve(
+            {
+                f"{self.BASE}/Package.toml": "name = [unterminated",
+                f"{self.BASE}/Versions.toml": self.VERSIONS,
+            }
+        )
+        with pytest.raises(RegistryError):
+            MoreRegistries.julia("JSON3", "1.14.3")
+        with pytest.raises(RegistryError):
+            MoreRegistries.julia("../../x", "1")
+
+
+class TestOpamRepository(RegistryFixtures):
+    RAW = "https://raw.githubusercontent.com/ocaml/opam-repository/master/packages/fmt"
+    SITE = "https://opam.ocaml.org/packages/fmt/"
+    SHA512 = "3f40155fc6a7315202e410585964307d63416c8001fd243667ed9d8d1a02b67deecacb25e9c2feb409c537bbdfb7817d91168de4ddd643532ff51d6c1c696a4a"
+    OPAM = (
+        'opam-version: "2.0"\ndev-repo: "git+https://erratique.ch/repos/fmt.git"\n'
+        'url {\n  src: "https://erratique.ch/software/fmt/releases/fmt-0.11.0.tbz"\n'
+        f'  checksum:\n    "sha512={SHA512}"\n}}\n'
+    )
+
+    @pytest.mark.conformance("opam", "UNI-16", "UNI-22", "opam.repositories")
+    def test_checksum_and_repository(self, serve) -> None:
+        serve({f"{self.RAW}/fmt.0.11.0/opam": self.OPAM})
+        facts = MoreRegistries.opam("fmt", "0.11.0")
+        # What dune's lock records for the archive.
+        assert facts.digests == (f"sha512:{self.SHA512}",)
+        assert facts.repository == "git+https://erratique.ch/repos/fmt.git" and not facts.yanked
+
+    @pytest.mark.conformance("opam", "UNI-16")
+    def test_flags_removed_versions_and_unknown_packages(self, serve) -> None:
+        serve(
+            {
+                f"{self.RAW}/fmt.0.11.0/opam": self.OPAM + "flags: [avoid-version deprecated]\n",
+                self.SITE: "<html></html>",
+            }
+        )
+        flagged = MoreRegistries.opam("fmt", "0.11.0")
+        assert flagged.yanked_reason == "flagged avoid-version: the solver avoids it"
+        assert flagged.deprecated == "deprecated in opam-repository"
+        assert (
+            MoreRegistries.opam("fmt", "0.0.1").yanked_reason
+            == "not a version opam-repository holds"
+        )
+        serve({})
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.opam("fmt", "0.0.1")
+
+    @pytest.mark.conformance("opam", "UNI-22")
+    def test_unreachable_unreadable_and_hostile(self, serve) -> None:
+        serve({f"{self.RAW}/fmt.0.11.0/opam": RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.opam("fmt", "0.11.0")
+        serve({f"{self.RAW}/fmt.0.11.0/opam": 'depends: ["unterminated'})
+        with pytest.raises(RegistryError):
+            MoreRegistries.opam("fmt", "0.11.0")
+        with pytest.raises(RegistryError):
+            MoreRegistries.opam("../../x", "1")
+        with pytest.raises(RegistryError):
+            MoreRegistries.opam("fmt", "1/../../x")
+
+
+class TestConanCenter(RegistryFixtures):
+    BASE = "https://center2.conan.io/v2/conans"
+    SEARCH: ClassVar[dict[str, Any]] = {
+        "results": ["zlib/1.2.11@_/_", "zlib/1.3.1@_/_", "zlib/1.3@_/_", "zlib-ng/2.2.1@_/_"]
+    }
+    REVISIONS: ClassVar[dict[str, Any]] = {
+        "reference": "zlib/1.3.1@_/_",
+        "revisions": [
+            {
+                "revision": "cac0f6daea041b0ccf42934163defb20",
+                "time": "2025-12-09T12:51:39.337+0000",
+            },
+            {
+                "revision": "b8bc2603263cf7eccbd6e17e66b0ed76",
+                "time": "2024-12-11T16:57:24.862+0000",
+            },
+        ],
+    }
+
+    @pytest.mark.conformance("conan", "UNI-16", "UNI-22", "conan.revisions")
+    def test_recipe_revisions_and_latest(self, serve) -> None:
+        serve(
+            {
+                f"{self.BASE}/search?q=zlib": self.SEARCH,
+                f"{self.BASE}/zlib/1.3.1/_/_/revisions": self.REVISIONS,
+            }
+        )
+        facts = MoreRegistries.conan("zlib", "1.3.1")
+        # Every revision of the version: a lock may pin any of them.
+        assert facts.digests == (
+            "md5:cac0f6daea041b0ccf42934163defb20",
+            "md5:b8bc2603263cf7eccbd6e17e66b0ed76",
+        )
+        # zlib-ng is another recipe, not a version of zlib.
+        assert facts.latest == "1.3.1" and facts.releases == 3 and not facts.yanked
+
+    @pytest.mark.conformance("conan", "UNI-16")
+    def test_a_version_and_a_recipe_conancenter_lacks(self, serve) -> None:
+        serve({f"{self.BASE}/search?q=zlib": self.SEARCH})
+        assert (
+            MoreRegistries.conan("zlib", "1.0.0").yanked_reason == "not a version ConanCenter holds"
+        )
+        serve({f"{self.BASE}/search?q=acme-internal": {"results": []}})
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.conan("acme-internal", "1.0")
+
+    @pytest.mark.conformance("conan", "UNI-22")
+    def test_unreachable_and_hostile(self, serve) -> None:
+        serve({f"{self.BASE}/search?q=zlib": RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.conan("zlib", "1.3.1")
+        with pytest.raises(RegistryError):
+            MoreRegistries.conan("../../x", "1")
+        serve({f"{self.BASE}/search?q=zlib": self.SEARCH})
+        with pytest.raises(RegistryError):
+            MoreRegistries.conan("zlib", "1.3.1/../../x")
+
+
+class TestVcpkgRegistry(RegistryFixtures):
+    URL = "https://raw.githubusercontent.com/microsoft/vcpkg/master/versions/f-/fmt.json"
+    DOCUMENT: ClassVar[dict[str, Any]] = {
+        "versions": [
+            {
+                "git-tree": "7ca0b8c0026883daf28a0db75f6b4964bae2979a",
+                "version": "12.2.0",
+                "port-version": 1,
+            },
+            {
+                "git-tree": "823af43db9df2c4be15c4331b36b3cc419afa02c",
+                "version": "12.2.0",
+                "port-version": 0,
+            },
+            {
+                "git-tree": "936231a2c765082457d348a8781ea9d3610eb331",
+                "version": "12.1.0",
+                "port-version": 0,
+            },
+        ]
+    }
+
+    @pytest.mark.conformance("vcpkg", "UNI-16", "UNI-22", "vcpkg.port-versions")
+    def test_git_trees_per_port_version_and_latest(self, serve) -> None:
+        serve({self.URL: self.DOCUMENT})
+        facts = MoreRegistries.vcpkg("fmt", "12.2.0")
+        # Both port-versions of 12.2.0: each a different git-tree of the port.
+        assert facts.digests == (
+            "git-tree-sha1:7ca0b8c0026883daf28a0db75f6b4964bae2979a",
+            "git-tree-sha1:823af43db9df2c4be15c4331b36b3cc419afa02c",
+        )
+        assert facts.latest == "12.2.0" and facts.releases == 2 and not facts.yanked
+
+    @pytest.mark.conformance("vcpkg", "UNI-16")
+    def test_a_version_and_a_port_the_registry_lacks(self, serve) -> None:
+        serve({self.URL: self.DOCUMENT})
+        assert (
+            MoreRegistries.vcpkg("fmt", "9.0.0").yanked_reason
+            == "not a version the vcpkg registry holds"
+        )
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.vcpkg("acme-internal", "1.0")
+
+    @pytest.mark.conformance("vcpkg", "UNI-22")
+    def test_unreachable_and_hostile(self, serve) -> None:
+        serve({self.URL: RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.vcpkg("fmt", "12.2.0")
+        with pytest.raises(RegistryError):
+            MoreRegistries.vcpkg("../../x", "1")
+
+
+class TestActionTags(RegistryFixtures):
+    URL = "https://github.com/actions/checkout.git/info/refs?service=git-upload-pack"
+    COMMIT = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+
+    @staticmethod
+    def advertisement(*lines: str) -> bytes:
+        def pkt(text: str) -> bytes:
+            return f"{len(text) + 5:04x}{text}\n".encode()
+
+        return (
+            pkt("# service=git-upload-pack")
+            + b"0000"
+            + b"".join(pkt(line) for line in lines)
+            + b"0000"
+        )
+
+    def refs(self) -> bytes:
+        return self.advertisement(
+            "59f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a HEAD\0multi_ack thin-pack",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/tags/v7.0.1",
+            f"{self.COMMIT} refs/tags/v7.0.1^{{}}",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb refs/tags/v7",
+            "cccccccccccccccccccccccccccccccccccccccc refs/tags/v6.0.2",
+        )
+
+    @pytest.mark.conformance("actions", "UNI-16", "UNI-22", "actions.sha-pinning")
+    def test_the_commit_a_release_tag_names(self, serve) -> None:
+        serve({self.URL: self.refs()})
+        facts = MoreRegistries.actions("actions/checkout", "7.0.1")
+        # The annotated tag peeled to its commit: what a SHA pin with `# v7.0.1` must equal.
+        assert facts.digests == (self.COMMIT,)
+        assert facts.latest == "7.0.1" and facts.releases == 2 and not facts.yanked
+
+    @pytest.mark.conformance("actions", "UNI-16")
+    def test_a_release_no_tag_names_and_a_missing_repository(self, serve) -> None:
+        serve({self.URL: self.refs()})
+        assert (
+            MoreRegistries.actions("actions/checkout", "9.9.9").yanked_reason
+            == "no tag of the repository names this release"
+        )
+        serve(
+            {
+                "https://github.com/acme/gone.git/info/refs?service=git-upload-pack": RegistryError(
+                    "HTTP 401 from github.com"
+                )
+            }
+        )
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.actions("acme/gone", "1.0.0")
+
+    @pytest.mark.conformance("actions", "UNI-22")
+    def test_unreachable_unreadable_and_hostile(self, serve) -> None:
+        serve({self.URL: RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.actions("actions/checkout", "7.0.1")
+        serve({self.URL: b"zzzz-not-pkt-lines"})
+        with pytest.raises(RegistryError):
+            MoreRegistries.actions("actions/checkout", "7.0.1")
+        with pytest.raises(RegistryError):
+            MoreRegistries.actions("../../etc/passwd", "1")
+
+
+class TestGalaxy(RegistryFixtures):
+    INDEX = "https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/index/ansible/posix/"
+    SHA = "6dc970c9350e7c54e628dc0704631a41ebfd5056b6ab05a566155d8c999217e9"
+
+    def collection(self, **overrides: Any) -> dict[str, Any]:
+        return {
+            self.INDEX: {
+                "namespace": "ansible",
+                "name": "posix",
+                "deprecated": False,
+                "highest_version": {"version": "2.2.2"},
+                "created_at": "2023-05-08T20:27:28Z",
+                "updated_at": "2026-07-13T02:34:05Z",
+            },
+            f"{self.INDEX}versions/1.5.4/": {
+                "version": "1.5.4",
+                "artifact": {"filename": "ansible-posix-1.5.4.tar.gz", "sha256": self.SHA},
+            },
+            **overrides,
+        }
+
+    @pytest.mark.conformance("ansible", "UNI-16", "UNI-22", "ansible.identity")
+    def test_a_collection_version_and_its_artefact(self, serve) -> None:
+        serve(self.collection())
+        facts = MoreRegistries.ansible("ansible.posix", "1.5.4")
+        assert (
+            facts.digests == (f"sha256:{self.SHA}",)
+            and facts.latest == "2.2.2"
+            and not facts.yanked
+        )
+
+    @pytest.mark.conformance("ansible", "UNI-16")
+    def test_a_deprecated_collection_and_a_missing_version(self, serve) -> None:
+        index = self.collection()[self.INDEX]
+        serve(self.collection(**{self.INDEX: {**index, "deprecated": True}}))
+        assert MoreRegistries.ansible("ansible.posix", "1.5.4").deprecated == "deprecated on Galaxy"
+        assert (
+            MoreRegistries.ansible("ansible.posix", "0.0.1").yanked_reason
+            == "not a version Galaxy holds"
+        )
+
+    @pytest.mark.conformance("ansible", "UNI-16", "ansible.collections-roles")
+    def test_a_role_when_no_collection_has_the_name(self, serve) -> None:
+        serve(
+            {
+                "https://galaxy.ansible.com/api/v1/roles/?owner__username=geerlingguy&name=docker": {
+                    "results": [
+                        {
+                            "github_user": "geerlingguy",
+                            "github_repo": "ansible-role-docker",
+                            "summary_fields": {"versions": [{"name": "7.4.1"}, {"name": "7.4.0"}]},
+                        }
+                    ]
+                }
+            }
+        )
+        facts = MoreRegistries.ansible("geerlingguy.docker", "7.4.1")
+        assert (
+            facts.latest == "7.4.1"
+            and facts.repository == "https://github.com/geerlingguy/ansible-role-docker"
+        )
+        assert MoreRegistries.ansible("geerlingguy.docker", "1.0.0").yanked
+        serve(
+            {
+                "https://galaxy.ansible.com/api/v1/roles/?owner__username=acme&name=gone": {
+                    "results": []
+                }
+            }
+        )
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.ansible("acme.gone", "1.0")
+
+    @pytest.mark.conformance("ansible", "UNI-22")
+    def test_unreachable_and_hostile(self, serve) -> None:
+        serve({self.INDEX: RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.ansible("ansible.posix", "1.5.4")
+        with pytest.raises(RegistryError):
+            MoreRegistries.ansible("../../x", "1")
+        with pytest.raises(RegistryError):
+            MoreRegistries.ansible("ansible.posix", "1/../../x")
+
+
+class TestTerraformRegistry(RegistryFixtures):
+    BASE = "https://registry.terraform.io/v1/providers/hashicorp/null"
+    LINUX = "d2855b922ea345dbd89ea287e4c6c4757e38bc0aaffeb2b79aa0b8004f9c53ff"
+    DARWIN = "10ec43b8b7b18d5639238c7fb9e111f6a4b038523dd66c7a426bf27b25fa4c08"
+    VERSIONS: ClassVar[dict[str, Any]] = {
+        "versions": [
+            {
+                "version": "3.3.2",
+                "platforms": [{"os": "linux", "arch": "amd64"}, {"os": "darwin", "arch": "arm64"}],
+            },
+            {"version": "3.2.4", "platforms": [{"os": "linux", "arch": "amd64"}]},
+        ]
+    }
+
+    def download(self, os_name: str, arch: str, shasum: str) -> dict[str, Any]:
+        return {
+            "os": os_name,
+            "arch": arch,
+            "shasum": shasum,
+            "shasums_url": "https://releases.hashicorp.com/terraform-provider-null/3.3.2/terraform-provider-null_3.3.2_SHA256SUMS",
+        }
+
+    @pytest.mark.conformance("terraform", "UNI-16", "UNI-22", "terraform.hashes")
+    def test_every_platforms_zip_hash(self, serve) -> None:
+        serve(
+            {
+                f"{self.BASE}/versions": self.VERSIONS,
+                f"{self.BASE}/3.3.2/download/linux/amd64": self.download(
+                    "linux", "amd64", self.LINUX
+                ),
+                "https://releases.hashicorp.com/terraform-provider-null/3.3.2/terraform-provider-null_3.3.2_SHA256SUMS": f"{self.LINUX}  terraform-provider-null_3.3.2_linux_amd64.zip\n{self.DARWIN}  terraform-provider-null_3.3.2_darwin_arm64.zip\n",
+            }
+        )
+        facts = MoreRegistries.terraform("hashicorp/null", "3.3.2")
+        assert set(facts.digests) == {f"sha256:{self.LINUX}", f"sha256:{self.DARWIN}"}
+        assert facts.latest == "3.3.2" and not facts.yanked
+
+    @pytest.mark.conformance("terraform", "UNI-16", "UNI-22")
+    def test_platform_by_platform_when_the_sums_file_is_out_of_reach(self, serve) -> None:
+        serve(
+            {
+                f"{self.BASE}/versions": self.VERSIONS,
+                f"{self.BASE}/3.3.2/download/linux/amd64": self.download(
+                    "linux", "amd64", self.LINUX
+                ),
+                f"{self.BASE}/3.3.2/download/darwin/arm64": self.download(
+                    "darwin", "arm64", self.DARWIN
+                ),
+            }
+        )
+        # Never one platform's hash alone: every other platform's would read as a mismatch.
+        assert set(MoreRegistries.terraform("hashicorp/null", "3.3.2").digests) == {
+            f"sha256:{self.LINUX}",
+            f"sha256:{self.DARWIN}",
+        }
+
+    @pytest.mark.conformance("terraform", "UNI-16", "terraform.modules")
+    def test_a_module_and_a_missing_version(self, serve) -> None:
+        serve(
+            {
+                "https://registry.terraform.io/v1/modules/cloudposse/label/null/versions": {
+                    "modules": [
+                        {
+                            "versions": [
+                                {"version": "0.25.0", "deprecation": None},
+                                {"version": "0.24.1", "deprecation": {"reason": "use 0.25"}},
+                            ]
+                        }
+                    ]
+                },
+                f"{self.BASE}/versions": self.VERSIONS,
+            }
+        )
+        assert MoreRegistries.terraform("cloudposse/label/null", "0.25.0").latest == "0.25.0"
+        assert (
+            MoreRegistries.terraform("cloudposse/label/null", "0.24.1").deprecated
+            == "deprecated on the registry: use 0.25"
+        )
+        assert (
+            MoreRegistries.terraform("hashicorp/null", "9.9.9").yanked_reason
+            == "not a version the registry holds"
+        )
+
+    @pytest.mark.conformance("terraform", "UNI-22")
+    def test_unreachable_and_hostile(self, serve) -> None:
+        serve({f"{self.BASE}/versions": RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.terraform("hashicorp/null", "3.3.2")
+        with pytest.raises(RegistryError):
+            MoreRegistries.terraform("../../etc/passwd", "1")
+        with pytest.raises(RegistryError):
+            MoreRegistries.terraform("hashicorp/null", "1/../../x")
+
+
+class TestHelmRepositories(RegistryFixtures):
+    REPO = "https://prometheus-community.github.io/helm-charts"
+    DIGEST = "1e2f3a4b5c6d7e8f901a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70"
+    INDEX = (
+        "apiVersion: v1\nentries:\n  prometheus-node-exporter:\n"
+        "    - name: prometheus-node-exporter\n      version: 4.59.0\n"
+        f"      digest: {DIGEST}\n"
+        "      urls:\n        - https://example.invalid/prometheus-node-exporter-4.59.0.tgz\n"
+        "    - name: prometheus-node-exporter\n      version: 4.58.0\n      deprecated: true\n"
+        f"      digest: {'0' * 64}\n"
+    )
+
+    @pytest.mark.conformance("helm", "UNI-16", "UNI-22", "helm.dependencies")
+    def test_the_repository_index(self, serve) -> None:
+        serve({f"{self.REPO}/index.yaml": self.INDEX})
+        facts = MoreRegistries.facts("helm", "prometheus-node-exporter", "4.59.0", self.REPO)
+        # The archive's SHA-256: what a chart downloaded into charts/ is hashed to.
+        assert (
+            facts.digests == (f"sha256:{self.DIGEST}",)
+            and facts.latest == "4.59.0"
+            and not facts.yanked
+        )
+        assert (
+            MoreRegistries.helm("prometheus-node-exporter", "4.58.0", self.REPO).deprecated
+            == "deprecated in its repository"
+        )
+        assert MoreRegistries.helm("prometheus-node-exporter", "1.0.0", self.REPO).yanked
+
+    @pytest.mark.conformance("helm", "UNI-16", "helm.local-oci")
+    def test_an_oci_registry_behind_an_anonymous_token(self, monkeypatch) -> None:
+        answers = {
+            "https://registry.example.invalid/v2/charts/postgresql/tags/list": {
+                "tags": ["15.5.38", "15.5.37"]
+            },
+            "https://registry.example.invalid/v2/charts/postgresql/manifests/15.5.38": {
+                "layers": [
+                    {
+                        "mediaType": "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+                        "digest": f"sha256:{self.DIGEST}",
+                    }
+                ]
+            },
+        }
+        monkeypatch.setattr(MoreRegistries, "_oci", staticmethod(lambda url, accept: answers[url]))
+        facts = MoreRegistries.helm(
+            "postgresql", "15.5.38", "oci://registry.example.invalid/charts"
+        )
+        assert facts.digests == (f"sha256:{self.DIGEST}",) and facts.latest == "15.5.38"
+        assert MoreRegistries.helm(
+            "postgresql", "9.9.9", "oci://registry.example.invalid/charts"
+        ).yanked
+
+    @pytest.mark.conformance("helm", "UNI-22")
+    def test_unreachable_absent_and_unaskable(self, serve) -> None:
+        serve({f"{self.REPO}/index.yaml": RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.helm("prometheus-node-exporter", "4.59.0", self.REPO)
+        serve({f"{self.REPO}/index.yaml": "apiVersion: v1\nentries: {}\n"})
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.helm("acme-internal", "1.0.0", self.REPO)
+        # A repository named only, or a chart of the project's own: nothing to ask, nothing claimed.
+        assert MoreRegistries.helm("redis", "17.3.14", "registry:internal") == PackageFacts(
+            name="redis", version="17.3.14"
+        )
+        with pytest.raises(RegistryError):
+            MoreRegistries.helm("../../x", "1", self.REPO)
+
+
+class TestContainerImages:
+    """The OCI distribution API, with `_oci_bytes` (the one transport every image request takes)
+    answering from a table."""
+
+    HUB = "https://registry-1.docker.io/v2/library/alpine"
+    GHCR = "https://ghcr.io/v2/acme/app"
+
+    @staticmethod
+    def sha(data: bytes) -> str:
+        import hashlib
+
+        return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+    @pytest.fixture
+    def oci(self, monkeypatch):
+        def install(answers: dict[str, Any]) -> Served:
+            served = Served(answers)
+            monkeypatch.setattr(
+                MoreRegistries,
+                "_oci_bytes",
+                staticmethod(lambda url, accept, follow=False: served(url)),
+            )
+            return served
+
+        return install
+
+    def platform_index(self) -> tuple[bytes, bytes, bytes]:
+        config = json.dumps(
+            {
+                "config": {
+                    "Labels": {"org.opencontainers.image.source": "https://github.com/acme/app"}
+                }
+            }
+        ).encode()
+        manifest = json.dumps(
+            {"schemaVersion": 2, "config": {"digest": self.sha(config)}, "layers": []}
+        ).encode()
+        index = json.dumps(
+            {
+                "schemaVersion": 2,
+                "manifests": [
+                    {
+                        "digest": self.sha(manifest),
+                        "platform": {"os": "linux", "architecture": "amd64"},
+                    },
+                    {
+                        "digest": "sha256:" + "c" * 64,
+                        "platform": {"os": "unknown", "architecture": "unknown"},
+                    },
+                ],
+            }
+        ).encode()
+        return index, manifest, config
+
+    @pytest.mark.conformance("image", "UNI-16", "UNI-22", "image.digests")
+    def test_a_tag_resolves_to_the_digest_of_the_manifest_as_served(self, oci) -> None:
+        index, manifest, config = self.platform_index()
+        oci(
+            {
+                f"{self.GHCR}/tags/list?n=1000": {"tags": ["1.0", "main"]},
+                f"{self.GHCR}/manifests/1.0": index,
+                f"{self.GHCR}/manifests/{self.sha(manifest)}": manifest,
+                f"{self.GHCR}/blobs/{self.sha(config)}": config,
+            }
+        )
+        facts = MoreRegistries.image("ghcr.io/acme/app", "1.0")
+        # The index's own digest, then each platform's: a pin may name either.
+        assert facts.digests == (self.sha(index), self.sha(manifest), "sha256:" + "c" * 64)
+        assert facts.repository == "https://github.com/acme/app" and not facts.yanked
+        # No `latest`: tags are not one release line.
+        assert facts.latest is None and facts.releases == 2 and facts.attested is False
+
+    @pytest.mark.conformance("image", "UNI-16")
+    def test_a_digest_pin_unknown_tags_and_unknown_repositories(self, oci) -> None:
+        index, _manifest, _config = self.platform_index()
+        digest = self.sha(index)
+        oci(
+            {
+                f"{self.HUB}/tags/list?n=1000": {"tags": ["3.20"]},
+                f"{self.HUB}/manifests/{digest}": index,
+            }
+        )
+        assert MoreRegistries.image("alpine", digest).digests[0] == digest
+        assert (
+            MoreRegistries.image("alpine", "sha256:" + "0" * 64).yanked_reason
+            == "not a digest the registry holds"
+        )
+        assert (
+            MoreRegistries.image("alpine", "9.99").yanked_reason == "not a tag the registry holds"
+        )
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.image("acme/nothing", "1.0")
+
+    @pytest.mark.conformance("image", "UNI-22")
+    def test_private_registries_and_hostile_references_are_never_asked(self, oci) -> None:
+        served = oci({})
+        for name, version in (
+            ("registry.acme.example.internal/acme/base", "1.0"),
+            ("../../etc", "1"),
+            ("alpine:3.20", "3.20"),
+            ("alpine", "a/../b"),
+        ):
+            with pytest.raises(RegistryError):
+                MoreRegistries.image(name, version)
+        assert served.asked == []
+
+    @pytest.mark.conformance("image", "UNI-17")
+    def test_attestation_bundles_come_from_the_referrers_of_the_pinned_digest(self, oci) -> None:
+        bundle = json.dumps(
+            {"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json", "dsseEnvelope": {}}
+        ).encode()
+        artifact = json.dumps(
+            {
+                "layers": [
+                    {
+                        "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+                        "digest": self.sha(bundle),
+                    }
+                ]
+            }
+        ).encode()
+        digest = "sha256:" + "d" * 64
+        referrers = {
+            "manifests": [
+                {
+                    "artifactType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+                    "digest": self.sha(artifact),
+                }
+            ]
+        }
+        # No referrers API at this registry: the `sha256-<hex>` tag holds them instead.
+        oci(
+            {
+                f"{self.GHCR}/manifests/{digest.replace(':', '-')}": referrers,
+                f"{self.GHCR}/manifests/{self.sha(artifact)}": artifact,
+                f"{self.GHCR}/blobs/{self.sha(bundle)}": bundle,
+            }
+        )
+        assert MoreRegistries.image_attestations("ghcr.io/acme/app", digest) == {
+            "bundles": [json.loads(bundle)]
+        }
+
+    @pytest.mark.conformance("image", "UNI-17", "UNI-22")
+    def test_a_blob_whose_bytes_do_not_match_its_digest_is_refused(self, oci) -> None:
+        oci({f"{self.GHCR}/blobs/sha256:{'e' * 64}": b"not those bytes"})
+        with pytest.raises(RegistryError, match="do not match"):
+            MoreRegistries._oci_blob(self.GHCR, "sha256:" + "e" * 64)
+
+    def test_a_blob_redirect_is_followed_over_https_only(self, monkeypatch) -> None:
+        import urllib.error
+        from email.message import Message
+
+        def redirect(location: str) -> urllib.error.HTTPError:
+            headers = Message()
+            headers["Location"] = location
+            return urllib.error.HTTPError(
+                "https://ghcr.io/v2/x/blobs/y", 307, "redirect", headers, None
+            )
+
+        monkeypatch.setattr(MoreRegistries, "_get", staticmethod(lambda url, accept="": b"blob"))
+        assert (
+            MoreRegistries._redirected(redirect("https://pkg-containers.example/blob")) == b"blob"
+        )
+        with pytest.raises(RegistryError, match="HTTPS"):
+            MoreRegistries._redirected(redirect("http://pkg-containers.example/blob"))
+
+
+class TestHomebrewApi(RegistryFixtures):
+    FORMULA: ClassVar[dict[str, Any]] = {
+        "name": "jq",
+        "homepage": "https://jqlang.github.io/jq/",
+        "versions": {"stable": "1.8.2"},
+        "revision": 0,
+        "urls": {
+            "stable": {
+                "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-1.8.2.tar.gz",
+                "checksum": "71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af",
+            }
+        },
+        "bottle": {
+            "stable": {
+                "files": {
+                    "arm64_sonoma": {
+                        "sha256": "90b0fe4ad51959380f16fe8d84c5be8ab525478c32f1f7034c72d99de2442c9b"
+                    }
+                }
+            }
+        },
+        "deprecated": False,
+        "disabled": False,
+    }
+
+    @pytest.mark.conformance("homebrew", "UNI-16", "UNI-22", "homebrew.urls-checksums")
+    def test_the_source_and_bottle_checksums_of_the_current_version(self, serve) -> None:
+        serve({"https://formulae.brew.sh/api/formula/jq.json": self.FORMULA})
+        facts = MoreRegistries.homebrew("jq", "1.8.2")
+        assert facts.digests == (
+            "sha256:71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af",
+            "sha256:90b0fe4ad51959380f16fe8d84c5be8ab525478c32f1f7034c72d99de2442c9b",
+        )
+        assert facts.latest == "1.8.2" and not facts.yanked
+        # Homebrew keeps one version: an older one has nothing to compare against.
+        assert MoreRegistries.homebrew("jq", "1.7.1").digests == ()
+
+    @pytest.mark.conformance("homebrew", "UNI-16")
+    def test_disabled_deprecated_and_casks(self, serve) -> None:
+        serve(
+            {
+                "https://formulae.brew.sh/api/formula/old.json": {
+                    **self.FORMULA,
+                    "name": "old",
+                    "disabled": True,
+                    "disable_reason": "unmaintained",
+                },
+                "https://formulae.brew.sh/api/formula/firefox.json": PackageNotFound(
+                    "not a formula"
+                ),
+                "https://formulae.brew.sh/api/cask/firefox.json": {
+                    "token": "firefox",
+                    "version": "157.0.1",
+                    "sha256": "40a0a649120635460256dae9ad63e40377f77326cbc9c449a5d0a1d7f5dd7982",
+                    "deprecated": True,
+                    "deprecation_reason": "discontinued",
+                },
+            }
+        )
+        assert MoreRegistries.homebrew("old", "1.8.2").yanked_reason == "disabled: unmaintained"
+        cask = MoreRegistries.homebrew("firefox", "157.0.1")
+        assert cask.digests == (
+            "sha256:40a0a649120635460256dae9ad63e40377f77326cbc9c449a5d0a1d7f5dd7982",
+        )
+        assert cask.yanked_reason == "deprecated: discontinued"
+
+    @pytest.mark.conformance("homebrew", "UNI-22")
+    def test_unreachable_and_hostile(self, serve) -> None:
+        serve({"https://formulae.brew.sh/api/formula/jq.json": RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.homebrew("jq", "1.8.2")
+        with pytest.raises(RegistryError):
+            MoreRegistries.homebrew("../../x", "1")
+
+
+class TestBazelCentralRegistry(RegistryFixtures):
+    BASE = "https://bcr.bazel.build/modules/platforms"
+    SOURCE = b'{\n    "url": "https://github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz",\n    "integrity": "sha256-KXQuhydYCbXlmNwvBNhpYMx6VbMGfZciHJq7yZJr/w8="\n}\n'
+    METADATA: ClassVar[dict[str, Any]] = {
+        "repository": ["github:bazelbuild/platforms"],
+        "versions": ["0.0.10", "0.0.11", "1.0.0"],
+        "yanked_versions": {"0.0.10": "a broken constraint_setting"},
+    }
+
+    @pytest.mark.conformance("bazel", "UNI-16", "UNI-22", "bazel.checksums")
+    def test_the_source_json_hash_and_the_archive_integrity(self, serve) -> None:
+        import hashlib
+
+        serve(
+            {
+                f"{self.BASE}/metadata.json": self.METADATA,
+                f"{self.BASE}/0.0.11/source.json": self.SOURCE,
+            }
+        )
+        facts = MoreRegistries.bazel("platforms", "0.0.11")
+        # What a 7.2+ lock records (the file's hash), and what a 7.0 lock records (the archive's).
+        assert facts.digests == (
+            f"sha256:{hashlib.sha256(self.SOURCE).hexdigest()}",
+            "sha256-KXQuhydYCbXlmNwvBNhpYMx6VbMGfZciHJq7yZJr/w8=",
+        )
+        assert (
+            facts.repository == "https://github.com/bazelbuild/platforms"
+            and facts.latest == "1.0.0"
+        )
+
+    @pytest.mark.conformance("bazel", "UNI-16")
+    def test_yanked_and_unknown_versions(self, serve) -> None:
+        serve(
+            {
+                f"{self.BASE}/metadata.json": self.METADATA,
+                f"{self.BASE}/0.0.10/source.json": self.SOURCE,
+            }
+        )
+        assert (
+            MoreRegistries.bazel("platforms", "0.0.10").yanked_reason
+            == "yanked: a broken constraint_setting"
+        )
+        assert (
+            MoreRegistries.bazel("platforms", "9.9.9").yanked_reason
+            == "not a version the registry holds"
+        )
+        with pytest.raises(PackageNotFound):
+            MoreRegistries.bazel("acme_internal", "1.0")
+
+    @pytest.mark.conformance("bazel", "UNI-22")
+    def test_unreachable_and_hostile(self, serve) -> None:
+        serve({f"{self.BASE}/metadata.json": RegistryError("connection reset")})
+        with pytest.raises(RegistryError):
+            MoreRegistries.bazel("platforms", "0.0.11")
+        with pytest.raises(RegistryError):
+            MoreRegistries.bazel("../../x", "1")
+        with pytest.raises(RegistryError):
+            MoreRegistries.bazel("platforms", "1/../../x")
+
+
+class TestCondaForge(RegistryFixtures):
+    URL = "https://api.anaconda.org/package/conda-forge/bzip2/files"
+
+    @pytest.mark.conformance("conda", "UNI-16", "UNI-22")
+    def test_every_build_of_the_version_and_its_hashes(self, serve) -> None:
+        serve(
+            {
+                self.URL: [
+                    {
+                        "version": "1.0.8",
+                        "md5": "a" * 32,
+                        "sha256": "b" * 64,
+                        "labels": ["main"],
+                        "basename": "linux-64/bzip2-1.0.8-h4bc722e_7.conda",
+                    },
+                    {
+                        "version": "1.0.8",
+                        "md5": "c" * 32,
+                        "sha256": "d" * 64,
+                        "labels": ["main"],
+                        "basename": "osx-arm64/bzip2-1.0.8-h99b78c6_7.conda",
+                    },
+                    {"version": "1.0.6", "md5": "e" * 32, "sha256": "", "labels": ["main"]},
+                ]
+            }
+        )
+        facts = MoreRegistries.conda("bzip2", "1.0.8")
+        assert set(facts.digests) == {
+            f"sha256:{'b' * 64}",
+            f"md5:{'a' * 32}",
+            f"sha256:{'d' * 64}",
+            f"md5:{'c' * 32}",
+        }
+        assert facts.releases == 2 and facts.latest == "1.0.8" and not facts.yanked
+
+    @pytest.mark.conformance("conda", "UNI-16")
+    def test_a_version_every_build_of_which_is_broken_is_withdrawn(self, serve) -> None:
+        serve({self.URL: [{"version": "1.0.8", "md5": "a" * 32, "labels": ["broken"]}]})
+        facts = MoreRegistries.conda("bzip2", "1.0.8")
+        assert facts.yanked and facts.yanked_reason == "labelled broken by conda-forge"
+
+    @pytest.mark.conformance("conda", "UNI-22")
+    def test_a_package_conda_forge_lacks_is_not_checked_rather_than_missing(self, serve) -> None:
+        serve({})
+        with pytest.raises(RegistryError) as raised:
+            MoreRegistries.conda("bzip2", "1.0.8")
+        assert not isinstance(raised.value, PackageNotFound)
+
+
 class TestDigestsTheNewRegistriesPublish:
     def test_go_h1_hashes_compare_with_each_other(self) -> None:
         h1 = "h1:" + base64.b64encode(b"\x07" * 32).decode()
@@ -857,7 +1888,10 @@ class TestLockfilesRecordTheHashTheRegistryPublishes:
         (entry,) = self.entries("pubspec.lock", text)
         assert entry.integrity == f"sha256:{SHA256}"
 
-    def test_a_pubspec_lock_without_a_hash_records_none(self) -> None:
+    def test_a_pubspec_lock_with_a_malformed_hash_records_it_as_malformed(self) -> None:
+        """A `sha256` that is not one is the tampering case: recorded as malformed (and reported),
+        never dropped as if the entry had no hash -- and never echoed."""
         text = 'packages:\n  http:\n    description:\n      name: http\n      sha256: nothex\n    version: "1.0.0"\n'
         (entry,) = self.entries("pubspec.lock", text)
-        assert entry.integrity is None
+        assert entry.integrity is not None and entry.integrity.startswith("malformed:")
+        assert "nothex" not in entry.integrity

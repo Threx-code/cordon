@@ -89,6 +89,10 @@ below would then be the attacker's answer."""
 ATTESTATION_HOSTS = {
     "npm": frozenset({"registry.npmjs.org"}),
     "pypi": frozenset({"pypi.org", "files.pythonhosted.org"}),
+    "maven": frozenset({"repo.maven.apache.org", "repo1.maven.org"}),
+    # A Gradle build's dependencies are Maven Central artefacts: the same bundles, the same hosts.
+    "gradle": frozenset({"repo.maven.apache.org", "repo1.maven.org"}),
+    "rubygems": frozenset({"rubygems.org"}),
 }
 
 USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
@@ -174,7 +178,9 @@ class RegistryClient:
     crates.io, RubyGems, NuGet, the Go proxy and Maven Central through `more_registries`."""
 
     @staticmethod
-    def _fetch(url: str, *, accept: str = "application/json") -> dict[str, Any]:
+    def _fetch(
+        url: str, *, accept: str = "application/json", array: bool = False
+    ) -> dict[str, Any]:
         """One answer, bounded, with no credentials and no redirects.
 
         Retried, because a registry is a shared service and a single refused
@@ -230,6 +236,9 @@ class RegistryClient:
         except (json.JSONDecodeError, ValueError) as exc:
             raise RegistryError(f"unreadable response from {parsed.netloc}") from exc
 
+        if array and isinstance(parsed_body, list):
+            # An endpoint documented to answer with an array (RubyGems' attestations).
+            return {"items": parsed_body}
         if not isinstance(parsed_body, dict):
             raise RegistryError(f"unexpected response shape from {parsed.netloc}")
         return parsed_body
@@ -264,7 +273,9 @@ class RegistryClient:
 
     @staticmethod
     @functools.lru_cache(maxsize=2048)
-    def _cached_facts(ecosystem: str, name: str, version: str | None) -> PackageFacts:
+    def _cached_facts(
+        ecosystem: str, name: str, version: str | None, source: str | None = None
+    ) -> PackageFacts:
         if ecosystem == "pypi":
             return RegistryClient._pypi(name, version)
         if ecosystem == "npm":
@@ -273,11 +284,17 @@ class RegistryClient:
 
         if ecosystem in ALIASES:
             # crates.io, RubyGems, NuGet, the Go proxy and Maven Central (G5).
-            return MoreRegistries.facts(ecosystem, name, version)
+            return (
+                MoreRegistries.facts(ecosystem, name, version, source)
+                if source
+                else MoreRegistries.facts(ecosystem, name, version)
+            )
         raise RegistryError(f"no registry configured for {ecosystem}")
 
     @staticmethod
-    def facts(ecosystem: str, name: str, version: str | None) -> PackageFacts:
+    def facts(
+        ecosystem: str, name: str, version: str | None, source: str | None = None
+    ) -> PackageFacts:
         """What the registry says about this package, or a `RegistryError`.
 
         Memoised for the life of the process. Two detectors ask the same question
@@ -292,7 +309,13 @@ class RegistryClient:
         question being asked, and a cache that outlived the run would answer it with
         yesterday's truth.
         """
-        return RegistryClient._cached_facts(ecosystem, name, version)
+        # `source` is the chart repository a Helm dependency came from -- the one registry kind
+        # where the name alone does not say where to ask.
+        return (
+            RegistryClient._cached_facts(ecosystem, name, version, source)
+            if source
+            else RegistryClient._cached_facts(ecosystem, name, version)
+        )
 
     @staticmethod
     def _pypi(name: str, version: str | None) -> PackageFacts:
@@ -452,7 +475,14 @@ class RegistryClient:
     def _npm(name: str, version: str | None) -> PackageFacts:
         quoted = urllib.parse.quote(name, safe="@/")
         document = RegistryClient._fetch(f"{REGISTRY_HOSTS['npm']}/{quoted}")
+        return RegistryClient._npm_document(document, name, version)
 
+    @staticmethod
+    def _npm_document(
+        document: dict[str, Any], name: str, version: str | None, *, downloads: bool = True
+    ) -> PackageFacts:
+        """A packument read: npmjs's, or a private registry's (`intel.private_registries`), which
+        has no public download count to ask for."""
         versions = RegistryClient._mapping(document.get("versions"))
         dist_tags = RegistryClient._mapping(document.get("dist-tags"))
         entry = RegistryClient._mapping(versions.get(version)) if version else {}
@@ -509,7 +539,7 @@ class RegistryClient:
             first_published=first_published,
             releases=len(versions),
             weekly_downloads=RegistryClient._npm_weekly_downloads(name)
-            if RegistryClient._younger_than(first_published, NEW_PACKAGE_DAYS)
+            if downloads and RegistryClient._younger_than(first_published, NEW_PACKAGE_DAYS)
             else None,
             name=name,
             version=version,
@@ -568,19 +598,64 @@ class RegistryClient:
                 return RegistryClient._npm_attestation_payload(name, version)
             if ecosystem == "pypi":
                 return RegistryClient._pypi_attestation_payload(name, version)
-        except RegistryError:
+            if ecosystem in ("maven", "gradle"):
+                return RegistryClient._maven_attestation_payload(name, version)
+            if ecosystem == "rubygems":
+                return RegistryClient._rubygems_attestation_payload(name, version)
+            if ecosystem == "image":
+                from cordon_scanner.intel.more_registries import MoreRegistries
+
+                return MoreRegistries.image_attestations(name, version)
+        except (RegistryError, ValueError):
             return None
         return None
 
     @staticmethod
+    def _rubygems_attestation_payload(name: str, version: str) -> dict[str, Any] | None:
+        """The Sigstore bundles RubyGems.org publishes with a version pushed through trusted
+        publishing: `GET /api/v1/attestations/<name>-<version>.json`, an array of bundles."""
+        safe = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        if not name or not version or set(name + version) - safe or ".." in name + version:
+            return None
+        url = f"https://rubygems.org/api/v1/attestations/{name}-{version}.json"
+        document = RegistryClient._fetch_from_allowlist(url, "rubygems", array=True)
+        bundles = document.get("items")
+        return {"bundles": bundles} if isinstance(bundles, list) and bundles else None
+
+    @staticmethod
+    def _maven_attestation_payload(name: str, version: str) -> dict[str, Any] | None:
+        """The Sigstore bundle Maven Central serves beside a jar (`<jar>.sigstore.json`).
+
+        A bundle signing the jar's bytes directly (a `messageSignature`), as the Sigstore Maven
+        plugin publishes it. Returned under `bundle` for `AttestationDocuments`."""
+        group, _, artifact = name.partition(":")
+        if (
+            not group
+            or not artifact
+            or "/" in name
+            or ".." in name
+            or "/" in version
+            or ".." in version
+        ):
+            return None
+        url = (
+            "https://repo.maven.apache.org/maven2/"
+            f"{group.replace('.', '/')}/{artifact}/{version}/{artifact}-{version}.jar.sigstore.json"
+        )
+        document = RegistryClient._fetch_from_allowlist(url, "maven")
+        return {"bundle": document} if document else None
+
+    @staticmethod
     def _fetch_from_allowlist(
-        url: str, ecosystem: str, *, accept: str = "application/json"
+        url: str, ecosystem: str, *, accept: str = "application/json", array: bool = False
     ) -> dict[str, Any]:
         host = urllib.parse.urlsplit(url).hostname or ""
         if host not in ATTESTATION_HOSTS.get(ecosystem, frozenset()):
             raise RegistryError(
                 f"refusing an attestation URL off the {ecosystem} allowlist: {host!r}"
             )
+        if array:
+            return RegistryClient._fetch(url, accept=accept, array=True)
         return RegistryClient._fetch(url, accept=accept)
 
     @staticmethod
@@ -740,6 +815,10 @@ ARCHIVE_HOSTS = {
     "cargo": frozenset({"static.crates.io"}),
     "rubygems": frozenset({"rubygems.org"}),
     "nuget": frozenset({"api.nuget.org"}),
+    "gomod": frozenset({"proxy.golang.org"}),
+    "hex": frozenset({"repo.hex.pm"}),
+    "pub": frozenset({"pub.dev"}),
+    "maven": frozenset({"repo.maven.apache.org"}),
 }
 MAX_ARCHIVE_BYTES = 64 << 20
 

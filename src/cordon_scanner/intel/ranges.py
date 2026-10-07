@@ -36,6 +36,53 @@ class VersionRanges:
             return VersionRanges._npm_admits(spec, version)
         if ecosystem == "pypi":
             return VersionRanges._pep440_admits(spec, version)
+        if ecosystem in ("maven", "gradle", "nuget"):
+            return VersionRanges._interval_admits(ecosystem, spec, version)
+        return False
+
+    # -- Maven, Gradle and NuGet intervals ---------------------------------------------------------
+
+    _INTERVAL: Final = re.compile(
+        r"([\[\(])\s{0,4}([^,\[\]\(\)]{0,64}?)\s{0,4}(?:,\s{0,4}([^,\[\]\(\)]{0,64}?)\s{0,4})?([\]\)])"
+    )
+
+    @staticmethod
+    def _interval_admits(ecosystem: str, spec: str, version: str) -> bool:
+        """Maven's (and NuGet's) interval notation: `[1.0,2.0)`, `(,1.5]`, `[2.0]`, and unions
+        `[1.0,1.2),[1.5,)`. A bare version is a soft requirement that names one version.
+
+        Compared with the ecosystem's own ordering (`intel/versions.py`), so `1.0-SNAPSHOT` sorts
+        before `1.0` and `1.0-alpha` before `1.0-beta`, as Maven sorts them."""
+        if len(spec) > 256 or not version:
+            return False
+        if not spec.startswith(("[", "(")):
+            return Versions.compare(ecosystem, spec, version) == 0 if spec else False
+        intervals = VersionRanges._INTERVAL.findall(spec)
+        if not intervals:
+            return False
+        for opening, low, high, closing in intervals:
+            if not high and "," not in spec[spec.find(opening) :].split(closing, 1)[0]:
+                # `[2.0]`: exactly this version.
+                if (
+                    opening == "["
+                    and closing == "]"
+                    and low
+                    and Versions.compare(ecosystem, version, low) == 0
+                ):
+                    return True
+                continue
+            above = not low or (
+                Versions.compare(ecosystem, version, low) >= 0
+                if opening == "["
+                else Versions.compare(ecosystem, version, low) > 0
+            )
+            below = not high or (
+                Versions.compare(ecosystem, version, high) <= 0
+                if closing == "]"
+                else Versions.compare(ecosystem, version, high) < 0
+            )
+            if above and below:
+                return True
         return False
 
     # -- npm ---------------------------------------------------------------------------------------

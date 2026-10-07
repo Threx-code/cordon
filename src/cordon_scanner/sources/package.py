@@ -47,6 +47,10 @@ class PackageTarget:
         "cargo": "cargo",
         "gem": "rubygems",
         "nuget": "nuget",
+        "golang": "gomod",
+        "hex": "hex",
+        "pub": "pub",
+        "maven": "maven",
     }
     _NAME: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9@._~+-][A-Za-z0-9@._~+/-]{0,213}$")
     _VERSION: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._+~!-]{1,128}$")
@@ -87,13 +91,16 @@ class PackageTarget:
         if kind.lower() == "npm" and name.count("/") == 1 and not name.startswith("@"):
             # pkg:npm/%40scope/name decodes to @scope/name; pkg:npm/scope/name is the same package.
             name = f"@{name}"
-        if (
-            not name
-            or not cls._NAME.match(name)
-            or ".." in name
-            or name.count("/") > (1 if ecosystem == "npm" else 0)
-        ):
+        # A Go module path has as many segments as it has; a Maven purl's namespace is the group.
+        segments = {"npm": 1, "maven": 1, "gomod": 16}.get(ecosystem, 0)
+        if not name or not cls._NAME.match(name) or ".." in name or name.count("/") > segments:
             raise PackageTargetError(f"not a valid {ecosystem} package name: {name!r}")
+        if ecosystem == "maven":
+            if name.count("/") != 1:
+                raise PackageTargetError(
+                    f"a Maven package URL names group and artifact: pkg:maven/<group>/<artifact>@<version>, not {name!r}"
+                )
+            name = name.replace("/", ":")
         if version is not None and not cls._VERSION.match(version):
             raise PackageTargetError(f"not a valid version: {version!r}")
         return cls(ecosystem=ecosystem, name=name, version=version)
@@ -131,6 +138,10 @@ class PackageTarget:
         "cargo": ".crate",
         "rubygems": ".gem",
         "nuget": ".nupkg",
+        "gomod": ".zip",
+        "hex": ".tar",
+        "pub": ".tar.gz",
+        "maven": ".jar",
     }
 
     @classmethod

@@ -113,6 +113,8 @@ class PreviousRelease:
     @staticmethod
     def fetch_previous(identity: Identity, into: Path) -> Previous | None:
         """Download the release published before `identity`, verified, into `into`."""
+        if identity.ecosystem not in ("npm", "pypi"):
+            return PreviousRelease._from_registry(identity, into)
         if identity.ecosystem == "npm":
             document = PreviousRelease._document(
                 f"https://registry.npmjs.org/{urllib.parse.quote(identity.name, safe='@')}"
@@ -173,6 +175,26 @@ class PreviousRelease:
             raise ValueError("previous release failed its digest check")
         path = into / PreviousRelease._safe(str(chosen["filename"]))
         path.write_bytes(blob)
+        return Previous(path, f"{identity.name} {version}")
+
+    @staticmethod
+    def _from_registry(identity: Identity, into: Path) -> Previous | None:
+        """Crates.io, RubyGems, NuGet, the Go proxy, Hex, pub and Maven Central: the release before
+        this one by the ecosystem's version order, fetched and verified against the digest its
+        registry publishes (`RegistryClient.package_archive`)."""
+        from cordon_scanner.intel.more_registries import MoreRegistries
+        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.sources.package import PackageTarget
+
+        try:
+            version = MoreRegistries.previous(identity.ecosystem, identity.name, identity.version)
+            if version is None:
+                return None
+            archive = RegistryClient.package_archive(identity.ecosystem, identity.name, version)
+        except RegistryError as exc:
+            raise ValueError(str(exc)) from exc
+        path = into / PackageTarget.safe_filename(archive.filename, identity.ecosystem)
+        path.write_bytes(archive.data)
         return Previous(path, f"{identity.name} {version}")
 
     @staticmethod
