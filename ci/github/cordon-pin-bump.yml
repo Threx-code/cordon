@@ -1,0 +1,91 @@
+# Cordon pin bump: one pull request per repository when Cordon releases (advanced gap E4).
+#
+# Copy into an organisation's automation repository as .github/workflows/cordon-pin-bump.yml.
+# Weekly (and on demand) it reads Cordon's latest release, and for every repository in the
+# organisation that pins Cordon -- the Action by commit, pip by version and hash, pre-commit by rev,
+# the runner image by digest -- moves every pin to that release with
+# scripts/bump_cordon_pins.py and opens one pull request carrying the release notes. A repository
+# already on the release, or with the bump already open, is left alone.
+#
+#   ORG               the organisation to sweep (repository variable)
+#   CORDON_BUMP_TOKEN a GitHub App or fine-grained token: contents and pull requests write on the
+#                     organisation's repositories (secret). The job's own GITHUB_TOKEN cannot
+#                     reach other repositories.
+#
+#   ┌──────────────┐   latest release    ┌───────────────────────┐   per repository
+#   │ schedule     │ ──────────────────▶ │ tag, commit, wheel    │ ─────────────────▶ clone, bump,
+#   │ (weekly)     │   PyPI JSON         │ sha256s, release notes│                    branch, PR
+#   └──────────────┘                     └───────────────────────┘
+name: Cordon pin bump
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Read the latest Cordon release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.CORDON_BUMP_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api repos/Threx-code/cordon/releases/latest --jq .tag_name)
+          printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::unexpected tag $tag"; exit 1; }
+          commit=$(gh api "repos/Threx-code/cordon/commits/$tag" --jq .sha)
+          printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::unexpected commit $commit"; exit 1; }
+          version=${tag#v}
+          # The wheel's published sha256, from PyPI: what a hash-pinned requirements file checks.
+          curl -fsSL "https://pypi.org/pypi/cordon-scanner/$version/json" \
+            | python3 -c 'import json,sys; print(" ".join(f["digests"]["sha256"] for f in json.load(sys.stdin)["urls"] if f["packagetype"] == "bdist_wheel"))' > wheels.txt
+          gh release view "$tag" --repo Threx-code/cordon --json body --jq .body > notes.md
+          { echo "tag=$tag"; echo "commit=$commit"; echo "version=$version"; } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the bump script at that release
+        env:
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://raw.githubusercontent.com/Threx-code/cordon/${COMMIT}/package/scripts/bump_cordon_pins.py" -o bump.py
+
+      - name: Bump every repository that pins Cordon
+        env:
+          GH_TOKEN: ${{ secrets.CORDON_BUMP_TOKEN }}
+          ORG: ${{ vars.ORG }}
+          TAG: ${{ steps.release.outputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -uo pipefail
+          printf '%s' "$ORG" | grep -Eq '^[A-Za-z0-9-]+$' || { echo "::error::ORG is not an organisation name"; exit 1; }
+          hashes=()
+          for h in $(cat wheels.txt); do hashes+=( --wheel-sha256 "$h" ); done
+          branch="cordon/bump-${TAG}"
+          gh repo list "$ORG" --no-archived --limit 2000 --json nameWithOwner --jq '.[].nameWithOwner' | while read -r repo; do
+            printf '%s' "$repo" | grep -Eq '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' || continue
+            if gh pr list --repo "$repo" --head "$branch" --state open --json number --jq 'length' | grep -q '^[1-9]'; then
+              echo "$repo: bump already open"; continue
+            fi
+            work=$(mktemp -d)
+            gh repo clone "$repo" "$work" -- --depth=1 --quiet || { echo "$repo: clone failed"; continue; }
+            if python3 bump.py "$work" --version "$VERSION" --commit "$COMMIT" "${hashes[@]}" > "$work/.cordon-bump.txt"; then
+              echo "$repo: current"; rm -rf "$work"; continue
+            fi
+            (
+              cd "$work"
+              { echo "Cordon ${TAG} is released; this moves every pin in the repository to it."; echo; echo '```'; cat .cordon-bump.txt; echo '```'; echo; echo "## Release notes"; echo; cat "$OLDPWD/notes.md"; } > ../body.md
+              rm .cordon-bump.txt
+              git switch -c "$branch"
+              git -c user.name="cordon-pin-bump" -c user.email="cordon-pin-bump@users.noreply.github.com" commit -qam "Bump Cordon to ${TAG}"
+              git push -q origin "$branch"
+              gh pr create --repo "$repo" --head "$branch" --title "Bump Cordon to ${TAG}" --body-file ../body.md
+            ) || echo "$repo: could not open the pull request"
+            rm -rf "$work"
+          done
