@@ -1,0 +1,28 @@
+# An Erlang project resolved by rebar3 (`get-deps`, nothing compiled) and checked against
+# `rebar3 tree`: Hex dependencies with and without versions, a git dependency at a tag, a test
+# profile, a minimum OTP version, and pre/post compile hooks.
+kinds: [real-world, valid]
+covers:
+  - file:rebar.config
+  - file:rebar.lock
+  - hex.rebar
+  - hex.compat
+  - hex.git-path
+  - hex.graph
+  - UNI-02
+  - UNI-06
+  - UNI-07
+  - UNI-15
+  - UNI-18
+dependencies:
+  - {name: cowboy, version_constraint: 2.12.0, resolved_version: 2.12.0, direct: true, integrity_status: recorded}
+  - {name: cowlib, direct: false, lockfile_location: {path: rebar.lock}}
+  - {name: jsx, version_constraint: "*", resolved_version: 3.1.0}
+  - {name: recon, source_type: git, resolved_version: c2a76855be3a226a3148c0dfc21ce000b6186ef8}
+  - {name: meck, dependency_type: test, resolution_status: unresolved, resolution_reason: "a test-profile dependency: rebar.lock records the default profile only"}
+  - {name: erlang/otp, dependency_type: platform, version_constraint: ">= 25"}
+hooks:
+  - {kind: build, name: "pre_hooks:compile", path: rebar.config}
+  - {kind: build, name: "post_hooks:compile"}
+findings:
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: recon}

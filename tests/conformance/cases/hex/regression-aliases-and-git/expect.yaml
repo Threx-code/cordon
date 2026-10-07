@@ -1,0 +1,19 @@
+# The regex readers took a lock entry's key as the package: `{:my_jason, ..., hex: :jason}` was
+# recorded as a package called `my_jason`, so advisories against `jason` never matched it, and a
+# `{:git, ...}` entry was invisible. The package is the one Hex fetched; the key is its alias.
+kinds: [regression, valid]
+covers:
+  - hex.git-path
+  - hex.declared-vs-locked
+  - UNI-04
+  - UNI-10
+dependencies:
+  - {name: jason, declared_name: my_jason, resolved_version: 1.2.2, direct: true, version_constraint: "~> 1.2"}
+  - {name: gettext, source_type: git, resolved_version: 0b6f6e3a2c8d1f5e4b7a9c0d2e1f3a4b5c6d7e8f}
+absent:
+  - my_jason
+  # Optional for jason, and not locked: not installed.
+  - decimal
+no_findings:
+  # Pinned to a full commit.
+  - POLICY.DEPENDENCY.MUTABLE_REF.001

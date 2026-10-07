@@ -1,0 +1,43 @@
+# An Elixir umbrella resolved by `mix deps.get` (nothing compiled) and checked against `mix deps`:
+# two apps sharing the root mix.lock, an in-umbrella dependency, dev- and test-only dependencies,
+# an optional dependency, a git dependency at a tag, an override, `runtime: false`, an Elixir
+# requirement, and the root's own dependencies.
+kinds: [real-world, valid]
+covers:
+  - file:mix.exs
+  - file:mix.lock
+  - hex.umbrella
+  - hex.git-path
+  - hex.optional-dev
+  - hex.compat
+  - hex.override
+  - hex.graph
+  - hex.declared-vs-locked
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - UNI-15
+dependencies:
+  # Declared in an app, resolved by the umbrella's mix.lock.
+  - {name: jason, version_constraint: "~> 1.4", resolved_version: 1.4.5, direct: true, manifest_location: {path: apps/core/mix.exs}, lockfile_location: {path: mix.lock}, integrity_status: recorded}
+  - {name: decimal, dependency_type: optional, direct: true}
+  - {name: mox, dependency_type: test, direct: true}
+  - {name: nimble_ownership, dependency_type: test, direct: false}
+  - {name: ex_doc, dependency_type: dev, direct: true, manifest_location: {path: mix.exs}}
+  - {name: makeup_elixir, dependency_type: dev, direct: false}
+  - {name: credo, dependency_type: test}
+  - {name: mime, overridden_by: "mime = ~> 2.0 in apps/web/mix.exs"}
+  - {name: nimble_options, source_type: git, resolved_version: cc80e7e6fdb9bbbe6a4614b2e2e81ca4012fc264}
+  - {name: core, source_type: path, manifest_location: {path: apps/web/mix.exs}}
+  - {name: plug_crypto, direct: false, dependency_path: [plug, plug_crypto]}
+  - {name: elixir, dependency_type: platform, version_constraint: "~> 1.15"}
+findings:
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: nimble_options}
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED
+  - POLICY.LOCKFILE.INTEGRITY.001

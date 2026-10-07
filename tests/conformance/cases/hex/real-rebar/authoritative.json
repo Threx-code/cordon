@@ -1,0 +1,13 @@
+{
+ "tool": "rebar3 tree",
+ "packages": [
+  "cowboy@2.12.0",
+  "cowlib@2.13.0",
+  "jsx@3.1.0",
+  "ranch@1.8.0",
+  "recon@2.5.6"
+ ],
+ "ignore": {
+  "recon": "a git dependency: rebar3 tree prints the application version (2.5.6), the lock and the record the commit"
+ }
+}

@@ -1,0 +1,34 @@
+# The options and formats the real projects do not use: a package from a private Hex organisation
+# (`repo: "hexpm:acme"`), a path dependency leaving the repository, `targets:`, `only: :prod`, a
+# `do:` one-line project function, a commented-out dependency; and an Erlang service with a
+# pre-1.0 rebar.lock (a bare list, no hashes), a dependency renamed through `{pkg, ...}` and a
+# rebar3 plugin.
+kinds: [edge, valid]
+covers:
+  - hex.rebar
+  - hex.git-path
+  - hex.compat
+  - UNI-04
+  - UNI-06
+  - UNI-10
+  - UNI-14
+dependencies:
+  - {name: acme_billing, source_url: "registry:hexpm:acme", resolved_version: 3.2.0, integrity_status: recorded}
+  - {name: nerves_runtime, platform_constraints: ["targets rpi4, rpi5"]}
+  - {name: recon, dependency_type: runtime}
+  - {name: local_helpers, source_type: path, resolution_reason: "a path dependency: mix.lock never locks one"}
+  - {name: elixir, dependency_type: platform, version_constraint: ">= 1.14.0"}
+  - {name: jiffy, declared_name: my_jiffy, resolved_version: 1.1.1, manifest_location: {path: erlang/rebar.config}}
+  - {name: goldrush, direct: false, lockfile_location: {path: erlang/rebar.lock}}
+  - {name: rebar3_hex, dependency_type: tool}
+absent:
+  - commented_out
+  - my_jiffy
+findings:
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: local_helpers}
+no_findings:
+  # A private organisation on Hex is a registry the project configured, not an outside source.
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - SUSPECT.LOCKFILE.SOURCE.001
+  # The pre-1.0 rebar.lock format records no hashes.
+  - POLICY.DEPENDENCY.INTEGRITY.001
