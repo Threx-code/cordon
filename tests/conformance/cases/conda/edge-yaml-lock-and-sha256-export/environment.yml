@@ -1,0 +1,5 @@
+name: compress
+channels:
+  - conda-forge
+dependencies:
+  - zlib==1.3.1

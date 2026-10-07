@@ -1,0 +1,7 @@
+name: service
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip:
+      - urllib3==2.6.3

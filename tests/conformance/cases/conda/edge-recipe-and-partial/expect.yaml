@@ -1,0 +1,31 @@
+# A conda-build recipe -- a Jinja template of YAML -- with `{% set %}` values substituted, a
+# `compiler('c')` call (a value only Jinja computes, left out), build/host/run/test requirements and
+# selectors; and a partial environment (`--from-history`): what was asked for, never reported as
+# a resolved graph.
+kinds: [edge, valid]
+covers:
+  - file:meta.yaml
+  - file:environment.yaml
+  - conda.partial
+  - conda.channels
+  - conda.subdirs
+  - UNI-05
+  - UNI-06
+  - UNI-08
+dependencies:
+  - {name: cmake, dependency_type: build, version_constraint: ">=3.24", manifest_location: {path: recipe/meta.yaml}}
+  - {name: cython, dependency_type: build}
+  - {name: numpy, dependency_type: runtime, version_constraint: ">=1.22"}
+  - {name: libxml2, version_constraint: 2.12.*, platform_constraints: ["selector linux"]}
+  - {name: pywin32, platform_constraints: ["selector win"]}
+  - {name: pytest, dependency_type: test}
+  # The partial environment: asked for, unresolved.
+  - {name: jupyterlab, version_constraint: ">=4", resolution_status: unresolved, source_url: "registry:conda-forge"}
+  - {name: matplotlib, resolution_status: unresolved}
+  # Conda's single `=` means 1.13.x, not exactly 1.13.
+  - {name: scipy, version_constraint: "1.13.*", resolution_status: unresolved}
+absent:
+  - compiler
+  - UNRESOLVED
+sources:
+  - "channel 1: defaults"

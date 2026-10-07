@@ -1,0 +1,17 @@
+name: analysis
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - numpy>=1.26,<2.1
+  - pandas=2.2.*
+  - openssl=3.*=*_0
+  - samtools=1.20  # [linux]
+  - pip
+  - pip:
+      - requests==2.32.3
+      - rich>=13
+platforms:
+  - linux-64
+  - osx-arm64

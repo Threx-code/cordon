@@ -1,0 +1,12 @@
+# The old conda-lock reader skipped every `manager: pip` entry, so the PyPI packages of a conda
+# environment -- the only ones any public advisory feed covers -- were never inventoried, and a
+# vulnerable urllib3 locked there went unreported. They are PyPI records now, matched as PyPI.
+kinds: [regression, valid]
+covers:
+  - conda.pip
+  - UNI-11
+dependencies:
+  - {name: urllib3, ecosystem: pypi, resolved_version: 2.6.3, direct: true, integrity_status: recorded}
+  - {name: python, ecosystem: conda, resolved_version: 3.12.7}
+findings:
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, package: urllib3}

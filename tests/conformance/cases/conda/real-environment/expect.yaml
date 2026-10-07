@@ -1,0 +1,45 @@
+# An environment solved by conda-lock for linux-64 and osx-arm64, with its linux-64 explicit export,
+# checked against conda-lock's own reader: two channels in priority order, a build-string pin, a
+# range, a platform selector, a pip subsection, per-platform builds of one package, virtual
+# packages, and md5/sha256 for every artefact.
+kinds: [real-world, valid]
+covers:
+  - file:environment.yml
+  - file:conda-lock.yml
+  - file:explicit.txt
+  - conda.channels
+  - conda.build-strings
+  - conda.subdirs
+  - conda.virtual
+  - conda.pip
+  - conda.explicit
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+  - UNI-15
+dependencies:
+  # One version per platform build: two artefacts, two records.
+  - {name: numpy, resolved_version: 2.0.2, version_constraint: ">=1.26,<2.1", platform_constraints: ["subdir linux-64", "build py312h58c1407_1", "platform linux-64"], integrity_status: recorded}
+  - {name: numpy, resolved_version: 1.26.4, platform_constraints: ["subdir osx-arm64", "build py312h8442bc7_0", "platform osx-arm64"]}
+  # A pure-Python build serves every platform.
+  - {name: pip, platform_constraints: ["subdir noarch", "build pyh8b19718_0"]}
+  - {name: python, dependency_type: runtime, resolved_version: 3.12.15}
+  - {name: samtools, platform_constraints: ["selector linux", "subdir linux-64", "build h50ea8bc_1", "platform linux-64"]}
+  # Pip entries are PyPI packages.
+  - {name: requests, ecosystem: pypi, resolved_version: 2.32.3, version_constraint: "==2.32.3"}
+  # The system the environment needs, never installed.
+  - {name: __glibc, dependency_type: platform}
+  - {name: bzip2, direct: false}
+sources:
+  - "channel 1: conda-forge"
+  - "channel 2: bioconda"
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001
+no_findings:
+  - SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001
+  - POLICY.LOCKFILE.INTEGRITY.001

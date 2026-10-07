@@ -1,0 +1,8 @@
+# Exported with `conda env export --from-history`: what was asked for, not what was solved.
+name: notebooks
+channels:
+  - defaults
+dependencies:
+  - conda-forge::jupyterlab>=4
+  - matplotlib
+  - scipy=1.13

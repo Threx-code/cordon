@@ -1,0 +1,15 @@
+# The `.yaml` spelling of a conda-lock file, an exact `==` pin, and an explicit export that mixes the
+# newer `#sha256:<hex>` fragment with the classic `#<md5>` one, in a second directory of the same
+# repository.
+kinds: [edge, valid]
+covers:
+  - file:conda-lock.yaml
+  - conda.explicit
+  - UNI-05
+  - UNI-09
+  - UNI-15
+dependencies:
+  - {name: zlib, version_constraint: "==1.3.1", resolved_version: 1.3.1, direct: true, lockfile_location: {path: conda-lock.yaml}, integrity_status: recorded}
+  - {name: libzlib, direct: false, dependency_path: [zlib, libzlib]}
+  - {name: libzlib, lockfile_location: {path: exported/explicit.txt}, integrity_status: recorded}
+  - {name: zlib, lockfile_location: {path: exported/explicit.txt}, integrity_status: recorded}
