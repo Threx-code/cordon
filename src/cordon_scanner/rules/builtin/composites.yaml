@@ -472,6 +472,45 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: SUSPECT.EXFIL.NAMED_SECRET.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code sends a named credential to a host outside its service
+    message: >
+      This file reads one named credential -- an AWS secret key, a GitHub, npm, PyPI or GitLab
+      token, a registry or service token -- and puts it in a request to a host written in the
+      file that is not the service the credential belongs to. A client sends its token to its own
+      service; an AWS secret key is never sent at all, because AWS clients sign with it. Sending
+      one to another host is how a careful payload steals it, at import or on first call, with no
+      install hook needed.
+    remediation: >
+      Read where the request goes and why it carries the credential. If this is not your code,
+      treat the credential, and anything else in the environment of whatever ran it, as exposed.
+    provenance:
+      kind: research
+      reference: >
+        Single-variable credential theft in published npm and PyPI malware: one token from the
+        environment, concatenated into a request to a collector, run from a module's top level.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.SECRET_SENT
+        - rule: FLOW.JS.SECRET_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
   - id: MALWARE.EXFIL.BEACON.001
     version: 1.0.0
     category: malicious

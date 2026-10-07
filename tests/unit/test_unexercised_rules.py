@@ -65,8 +65,14 @@ CASES: dict[str, tuple[str, str, str]] = {
     ),
     "POLICY.DEPENDENCY.SOURCE.001": (
         "requirements.txt",
-        "requests @ git+https://github.com/psf/requests.git@main\n",
+        "requests @ https://files.example.invalid/requests-2.32.3.tar.gz\n",
         "requests==2.32.3\n",
+    ),
+    # A branch can be re-pointed; the same git source at a full commit is the source rule's.
+    "POLICY.DEPENDENCY.MUTABLE_REF.001": (
+        "requirements.txt",
+        "requests @ git+https://github.com/psf/requests.git@main\n",
+        "requests @ git+https://github.com/psf/requests.git@0e322af87745eff34caffe4df68456ebc20d9068\n",
     ),
 }
 

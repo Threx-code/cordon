@@ -573,7 +573,13 @@ class TestBuiltinPacks:
         # `dart:convert` decodes data into maps and lists, and nothing in the platform
         # turns bytes back into arbitrary classes. A `deserialize` rule for Dart would
         # match nothing a Dart program can do, so its absence is the honest coverage.
-        inexpressible = {"dart": {Capability.DESERIALIZE}}
+        # Zig has no object deserialiser in its standard library, and Nim's `marshal` is typed:
+        # `to[T]` rebuilds a value of the type the caller names, never one the stream chooses.
+        inexpressible = {
+            "dart": {Capability.DESERIALIZE},
+            "zig": {Capability.DESERIALIZE},
+            "nim": {Capability.DESERIALIZE},
+        }
         for language, covered in by_language.items():
             missing = pattern_expressible - covered - agnostic - inexpressible.get(language, set())
             assert not missing, f"{language} is missing primitives: {sorted(missing)}"

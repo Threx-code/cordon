@@ -231,6 +231,7 @@ class TestAPinnedFetchIsNotEvidenceOfIntent:
         root = self.ci_script(tmp_path, f"{FETCH.replace('-fsSL ', '-s ')}bash | bash")
         assert "MALWARE.DROPPER.001" in CompositeScopeHelpers.rules_for(root)
 
+    @pytest.mark.conformance("x", "x.malicious")
     def test_a_version_pinned_installer_is_suspicious_not_malicious(self, tmp_path) -> None:
         root = self.ci_script(
             tmp_path, f"{FETCH.replace('-fsSL ', '-o- ')}nvm-sh/nvm/v0.40.4/install.sh | bash"

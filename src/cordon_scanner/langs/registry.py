@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from functools import lru_cache
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from cordon_scanner.core.paths import ContainerPaths
 
@@ -81,6 +81,23 @@ class LanguageRegistry:
         # R, as CRAN ships it: `.R` files, matched case-insensitively like every suffix here.
         (".r", "r"),
         (".hs", "haskell"),
+        (".lhs", "haskell"),
+        # Objective-C and Objective-C++. `.m` is also MATLAB's suffix; a MATLAB file read as
+        # Objective-C matches none of its rules, which name Cocoa APIs.
+        (".m", "objc"),
+        (".mm", "objc"),
+        (".jl", "julia"),
+        (".zig", "zig"),
+        # A `.nimble` file is NimScript that runs when the package is installed.
+        (".nimble", "nim"),
+        (".nims", "nim"),
+        (".nim", "nim"),
+        (".mli", "ocaml"),
+        (".ml", "ocaml"),
+        (".cljs", "clojure"),
+        (".cljc", "clojure"),
+        (".clj", "clojure"),
+        (".bb", "clojure"),
         (".sql", "sql"),
         (".yaml", "yaml"),
         (".yml", "yaml"),
@@ -118,6 +135,10 @@ class LanguageRegistry:
         "setup.py": "python",
         "conanfile.py": "python",
         "build.rs": "rust",
+        # Run on every build of a package that depends on them: SwiftPM's manifest and Zig's
+        # build script are programs, not data.
+        "Package.swift": "swift",
+        "build.zig": "zig",
     }
 
     # Interpreter to language, for executable scripts with no extension. A file
@@ -144,6 +165,15 @@ class LanguageRegistry:
         "elixir": "elixir",
         "Rscript": "r",
         "dart": "dart",
+        "julia": "julia",
+        "runghc": "haskell",
+        "runhaskell": "haskell",
+        "stack": "haskell",
+        "ocaml": "ocaml",
+        "bb": "clojure",
+        "clojure": "clojure",
+        "swift": "swift",
+        "nim": "nim",
     }
 
     @staticmethod
@@ -306,6 +336,22 @@ class LanguageRegistry:
         if by_shebang is not None:
             return by_shebang
         return cls.identify_from_content(text or "")
+
+    @classmethod
+    def of_file(cls, path: str, content: Any) -> str | None:
+        """A file's language for the detectors, wherever it was read: a directory, an archive's
+        member, a worker. One answer, so a scan's findings never depend on which of those read it.
+
+        An image's configuration (`image-config/`) is rendered as text for the secret rules and is
+        data, never code: its build history interleaves the base image's build with the author's,
+        and judged as a shell script an official image's verified download reads as the author's.
+        """
+        member = path.rpartition("!")[2]
+        if "!" in path and member.startswith("image-config/"):
+            return None
+        return cls.identify(
+            member, shebang=content.shebang, text=None if content.is_binary else content.text
+        )
 
     @classmethod
     def language_from_interpreter(cls, interpreter: str) -> str | None:
