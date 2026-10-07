@@ -1,0 +1,9 @@
+{
+    "name": "acme/util",
+    "description": "An internal package, required through a path repository.",
+    "version": "1.2.0",
+    "type": "library",
+    "license": "MIT",
+    "require": {"php": ">=8.1"},
+    "autoload": {"psr-4": {"Acme\\Util\\": "src/"}}
+}

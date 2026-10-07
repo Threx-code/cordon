@@ -1,0 +1,38 @@
+# A library resolved only from private Composer repositories (Packagist disabled), one of them over
+# plain HTTP, with credentials for both in auth.json; a lib-* platform requirement; a branch pinned
+# to a commit and a branch alias that floats; and no lock. The credentials are read for which
+# hosts have them -- their values appear in no output format.
+kinds: [edge, valid]
+covers:
+  - file:auth.json
+  - composer.credentials
+  - composer.repositories
+  - composer.platform
+  - composer.stability
+  - UNI-05
+  - UNI-06
+  - UNI-10
+  - UNI-14
+dependencies:
+  - {name: acme/ledger, version_constraint: "^4.1", resolution_status: unresolved}
+  - {name: acme/money, resolution_status: unresolved, resolution_reason: "the branch dev-main pinned to commit 4f2c1d9e8b7a"}
+  - {name: acme/rates, version_constraint: 2.x-dev, resolution_status: unresolved, resolution_reason: "the branch 2.x-dev: only composer.lock records which commit it resolved to"}
+  - {name: lib-openssl, dependency_type: platform}
+  - {name: acme/testing, dependency_type: dev}
+sources:
+  - "repository composer: http://satis.acme.example.internal"
+  - "repository packagist.org: disabled"
+  - "credentials http-basic: repo.acme.example.internal"
+  - "credentials bearer: satis.acme.example.internal"
+findings:
+  - {rule: POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001, message: satis.acme.example.internal}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: acme/rates}
+never_disclosed:
+  - conformance-canary-password-7f3a9c2e
+  - conformance-canary-bearer-51d0b8aa
+  - ci-reader
+no_findings:
+  # Since Composer 2 a configured repository is canonical for the names it serves, and Packagist
+  # is disabled outright: there is no public registry to confuse these names with.
+  - SUSPECT.DEPENDENCY.CONFUSION.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

@@ -1,0 +1,18 @@
+# The old reader skipped platform requirements with `name.startswith("php")`, which also dropped
+# every package whose vendor begins with "php": phpmailer, php-http, phpseclib, phpunit and
+# phpstan vanished from a manifest-only scan, advisories and typosquat checks included. Platform
+# requirements are now matched by their exact grammar (`php`, `ext-*`, `lib-*`, ...).
+kinds: [regression, valid]
+covers:
+  - composer.platform
+  - UNI-02
+  - UNI-08
+dependencies:
+  - {name: phpmailer/phpmailer, version_constraint: "^6.9", dependency_type: runtime}
+  - {name: php-http/guzzle7-adapter, dependency_type: runtime}
+  - {name: phpseclib/phpseclib, dependency_type: runtime}
+  - {name: phpunit/phpunit, dependency_type: dev}
+  - {name: phpstan/phpstan, dependency_type: dev}
+  - {name: php, dependency_type: platform}
+  - {name: ext-openssl, dependency_type: platform}
+only: true

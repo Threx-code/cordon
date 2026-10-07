@@ -1,0 +1,61 @@
+# A PHP application resolved by Composer 2 and checked against `composer show --locked`:
+# require and require-dev, php and ext-* platform requirements, provide, replace and conflict, an
+# inline alias on a stable release and on a branch from a VCS repository, a stability flag, a path
+# repository, an allowed plugin, a package Packagist marks abandoned, and lifecycle scripts.
+# Resolved with --no-scripts --no-plugins: nothing from any package ran.
+kinds: [real-world, valid]
+covers:
+  - file:composer.json
+  - file:composer.lock
+  - composer.require-dev
+  - composer.platform
+  - composer.virtual
+  - composer.aliases
+  - composer.stability
+  - composer.repositories
+  - composer.plugins
+  - composer.scripts
+  - composer.conflict
+  - composer.abandoned
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+  - UNI-18
+dependencies:
+  - {name: monolog/monolog, version_constraint: "^3.7", resolved_version: 3.12.1, direct: true, dependency_type: runtime, lockfile_location: {path: composer.lock}}
+  - {name: phpunit/phpunit, dependency_type: dev, direct: true}
+  - {name: sebastian/diff, dependency_type: dev, direct: false}
+  - {name: phpstan/phpstan, version_constraint: "^1.12@stable"}
+  # Platform requirements: met by the PHP runtime, never installed.
+  - {name: php, dependency_type: platform, version_constraint: ">=8.1"}
+  - {name: ext-mbstring, dependency_type: platform}
+  # Inline aliases: a stable release installed as another version, and a branch from a VCS
+  # repository, locked to a commit.
+  - {name: symfony/polyfill-ctype, version_constraint: "1.31.0 as 1.30.0", resolved_version: v1.31.0, platform_constraints: ["alias 1.30.0"]}
+  - {name: psr/clock, version_constraint: "dev-master as 1.0.0", resolved_version: dev-master, source_type: git, platform_constraints: ["alias 1.0.0"]}
+  - {name: acme/util, source_type: path, direct: true}
+  - {name: swiftmailer/swiftmailer, deprecated: "abandoned; use symfony/mailer instead"}
+absent:
+  # Provided by the root (a virtual package), replaced by the root, and only a conflict.
+  - psr/log-implementation
+  - symfony/polyfill-php80
+sources:
+  - "repository path: packages/acme-util"
+  - "repository vcs: https://github.com/php-fig/clock"
+hooks:
+  - {kind: plugin, name: php-http/discovery, path: composer.lock}
+  - {name: post-install-cmd, path: composer.json}
+findings:
+  - {rule: POLICY.DEPENDENCY.ABANDONED.001, package: swiftmailer/swiftmailer}
+  # A branch constraint, and the branch's source outside Packagist.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: psr/clock}
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: psr/clock}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001
+  - SUSPECT.DEPENDENCY.CONFUSION.001

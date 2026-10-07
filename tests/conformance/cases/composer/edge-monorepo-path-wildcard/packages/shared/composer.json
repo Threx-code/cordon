@@ -1,0 +1,7 @@
+{
+    "name": "acme/shared",
+    "type": "library",
+    "require": {
+        "psr/log": "^3.0"
+    }
+}

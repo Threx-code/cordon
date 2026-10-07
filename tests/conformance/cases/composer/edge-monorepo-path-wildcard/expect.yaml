@@ -1,0 +1,19 @@
+# A Composer monorepo: the root's path repository with a wildcard (`packages/*`) makes every
+# package below it installable by name. Each member is scanned as its own project; a member one
+# package requires (`acme/shared` from `acme/orders` and from the root) is the repository's own
+# code, never a registry package; a dependency several members share is recorded once in each.
+kinds: [edge, valid]
+covers:
+  - composer.repositories
+  - UNI-09
+  - UNI-10
+dependencies:
+  - {name: acme/orders, source_type: path, manifest_location: {path: composer.json}}
+  - {name: acme/shared, source_type: path, manifest_location: {path: packages/orders/composer.json}}
+  - {name: ramsey/uuid, manifest_location: {path: packages/orders/composer.json}}
+  - {name: psr/log, manifest_location: {path: packages/shared/composer.json}}
+sources:
+  - "repository path: packages/*"
+no_findings:
+  - SUSPECT.DEPENDENCY.CONFUSION.001
+  - SUSPECT.DEPENDENCY.TYPOSQUAT.001

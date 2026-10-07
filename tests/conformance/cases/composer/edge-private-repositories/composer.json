@@ -1,0 +1,19 @@
+{
+    "name": "acme/billing",
+    "type": "library",
+    "repositories": [
+        {"type": "composer", "url": "http://satis.acme.example.internal"},
+        {"type": "composer", "url": "https://repo.acme.example.internal"},
+        {"packagist.org": false}
+    ],
+    "require": {
+        "php": "^8.2",
+        "lib-openssl": ">=3.0",
+        "acme/ledger": "^4.1",
+        "acme/money": "dev-main#4f2c1d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d",
+        "acme/rates": "2.x-dev"
+    },
+    "require-dev": {
+        "acme/testing": "~1.3"
+    }
+}
