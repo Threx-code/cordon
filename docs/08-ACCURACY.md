@@ -112,6 +112,30 @@ Cordon defects on the way, each fixed with a test: pnpm 10's two-document lockfi
 directories linked without a name, pre-1.17 and untidied go.mod files that leave indirect
 modules to go.sum, and a lone go.sum.
 
+### What container images contain, against Syft
+
+`bench/image_agreement.py` saves each of 182 public images (175 read by both tools; 7 could not
+be pulled through the registry mirrors) and compares the packages Cordon and Syft 1.18.1 each
+inventory, by normalised package URL.
+
+```
+   operating-system packages   21,719 of 21,758 the same         99.9%
+   (deb, apk, rpm, pacman, portage)
+   every package, per image    93.4% mean raw    95.1% adjusted   133 images at 98% or above
+```
+
+Adjusted leaves out three things Syft lists that are not packages: the RPM signing-key entry
+(31), Go `(devel)` main modules built from a checkout (128), and .NET assembly file versions,
+which Syft reports from each DLL and which are not NuGet packages (1,862). The rest of the gap,
+by cause, is in `bench/results/full-2026-10-07/image-agreement.json`; the largest are known
+Cordon gaps, listed rather than hidden:
+
+| Gap | Where it shows |
+|---|---|
+| Maven metadata nested inside a single bundled ("uber") jar is not read | metabase: 357 libraries Syft names, 1 Cordon does |
+| Clear Linux bundles are not read | clearlinux: 6 packages, none from Cordon |
+| A shipped application's Composer and npm lockfiles are read, development packages included | nextcloud, drupal, haskell: Cordon names more than Syft |
+
 ### Detection rate, by target
 
 Two different questions, measured two different ways, because they need

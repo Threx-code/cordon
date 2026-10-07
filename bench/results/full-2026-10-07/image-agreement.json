@@ -1,28 +1,28 @@
 {
  "summary": {
-  "images": 177,
-  "compared": 170,
+  "images": 182,
+  "compared": 175,
   "errors": 7,
-  "mean_f1": 0.9321,
-  "images_at_or_above_98": 120,
+  "mean_f1": 0.9336,
+  "images_at_or_above_98": 123,
   "adjusted": {
-   "mean_f1": 0.95,
-   "images_at_or_above_98": 130,
+   "mean_f1": 0.951,
+   "images_at_or_above_98": 133,
    "packages": {
-    "cordon": 54753,
-    "syft": 47794,
-    "agree": 45926
+    "cordon": 58313,
+    "syft": 51243,
+    "agree": 49360
    },
    "excluded": {
     "rpm signing key": 31,
     "go (devel) build": 128,
-    "dotnet-assembly-file-version": 1860
+    "dotnet-assembly-file-version": 1862
    }
   },
   "packages": {
-   "cordon": 54753,
-   "syft": 49813,
-   "agree": 45926
+   "cordon": 58313,
+   "syft": 53264,
+   "agree": 49360
   },
   "by_type": {
    "alpm": {
@@ -31,9 +31,9 @@
     "agree": 137
    },
    "apk": {
-    "cordon": 1551,
-    "syft": 1551,
-    "agree": 1551
+    "cordon": 1797,
+    "syft": 1797,
+    "agree": 1797
    },
    "composer": {
     "cordon": 524,
@@ -46,12 +46,12 @@
     "agree": 0
    },
    "deb": {
-    "cordon": 16582,
-    "syft": 16587,
-    "agree": 16582
+    "cordon": 16952,
+    "syft": 16957,
+    "agree": 16952
    },
    "docker": {
-    "cordon": 6,
+    "cordon": 10,
     "syft": 0,
     "agree": 0
    },
@@ -62,7 +62,7 @@
    },
    "excluded:dotnet-assembly-file-version": {
     "cordon": 0,
-    "syft": 1860,
+    "syft": 1862,
     "agree": 0
    },
    "gem": {
@@ -71,9 +71,9 @@
     "agree": 584
    },
    "generic": {
-    "cordon": 63,
-    "syft": 110,
-    "agree": 53
+    "cordon": 66,
+    "syft": 114,
+    "agree": 56
    },
    "githubactions": {
     "cordon": 1,
@@ -81,13 +81,18 @@
     "agree": 0
    },
    "golang": {
-    "cordon": 5400,
-    "syft": 5577,
-    "agree": 5347
+    "cordon": 5970,
+    "syft": 6150,
+    "agree": 5914
    },
    "julia": {
     "cordon": 196,
     "syft": 0,
+    "agree": 0
+   },
+   "luarocks": {
+    "cordon": 0,
+    "syft": 1,
     "agree": 0
    },
    "maven": {
@@ -96,9 +101,9 @@
     "agree": 4745
    },
    "npm": {
-    "cordon": 19695,
-    "syft": 12708,
-    "agree": 12510
+    "cordon": 20193,
+    "syft": 13157,
+    "agree": 12953
    },
    "nuget": {
     "cordon": 325,
@@ -111,9 +116,9 @@
     "agree": 0
    },
    "pypi": {
-    "cordon": 1361,
-    "syft": 1340,
-    "agree": 1331
+    "cordon": 3230,
+    "syft": 3146,
+    "agree": 3136
    },
    "rpm": {
     "cordon": 2536,
@@ -8820,6 +8825,322 @@
      "only_syft": [
       "github.com/prometheus/blackbox_exporter@0.25.0",
       "stdlib@go1.22.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ghcr.io/home-assistant/home-assistant:2025.1",
+   "bytes": 619093504,
+   "cordon_seconds": 253.8,
+   "cordon": 1753,
+   "syft": 1690,
+   "agree": 1685,
+   "precision": 0.9612,
+   "recall": 0.997,
+   "f1": 0.9788,
+   "adjusted": {
+    "cordon": 1753,
+    "syft": 1689,
+    "agree": 1685,
+    "f1": 0.9791,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 201,
+     "syft": 201,
+     "agree": 201,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "docker": {
+     "cordon": 4,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "ghcr.io/alexxit/go2rtc@latest",
+      "ghcr.io/astral-sh/uv@0.5.8",
+      "mcr.microsoft.com/devcontainers/python@1-3.13",
+      "python@3.13-alpine"
+     ],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 12,
+     "syft": 13,
+     "agree": 11,
+     "only_cordon": [
+      "stdlib@1.23.3"
+     ],
+     "only_syft": [
+      "github.com/home-assistant/tempio@2024.11.2",
+      "stdlib@go1.23.3"
+     ]
+    },
+    "luarocks": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "pre-commit-package@dev-1"
+     ]
+    },
+    "pypi": {
+     "cordon": 1535,
+     "syft": 1473,
+     "agree": 1472,
+     "only_cordon": [
+      "aioambient@2024.08.0",
+      "aioguardian@2022.07.0",
+      "aionotion@2024.03.0",
+      "aiorecollect@2023.09.0",
+      "aioridwell@2024.01.0",
+      "astroid@3.3.6",
+      "baidu-aip@1.6.6",
+      "codespell@2.3.0",
+      "coverage@7.6.8",
+      "enocean@0.50",
+      "freezegun@1.5.1",
+      "guppy3@3.1.4.post1",
+      "libsoundtouch@0.8",
+      "license-expression@30.4.0",
+      "mock-open@1.4.0",
+      "mypy-dev@1.14.0a7",
+      "openhomedevice@2.2.0",
+      "pipdeptree@2.23.4",
+      "pre-commit@4.0.0",
+      "pyairvisual@2023.08.1"
+     ],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ghcr.io/open-webui/open-webui:main",
+   "bytes": 1656087552,
+   "cordon_seconds": 172.4,
+   "cordon": 757,
+   "syft": 709,
+   "agree": 704,
+   "precision": 0.93,
+   "recall": 0.9929,
+   "f1": 0.9604,
+   "adjusted": {
+    "cordon": 757,
+    "syft": 708,
+    "agree": 704,
+    "f1": 0.9611,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 370,
+     "syft": 370,
+     "agree": 370,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "node@24.15.0"
+     ]
+    },
+    "npm": {
+     "cordon": 52,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [
+      "@azure/msal-browser",
+      "@biomejs/biome@2.1.1",
+      "@codemirror/lang-javascript",
+      "@codemirror/lang-python",
+      "@codemirror/language-data",
+      "@codemirror/theme-one-dark",
+      "@floating-ui/dom",
+      "@huggingface/transformers",
+      "@joplin/turndown-plugin-gfm",
+      "@mediapipe/tasks-vision",
+      "@playwright/test",
+      "@pyscript/core",
+      "@sveltejs/adapter-auto@3.2.2",
+      "@sveltejs/adapter-node",
+      "@sveltejs/adapter-static",
+      "@sveltejs/kit",
+      "@sveltejs/svelte-virtual-list",
+      "@sveltejs/vite-plugin-svelte",
+      "@tailwindcss/container-queries",
+      "@tailwindcss/postcss"
+     ],
+     "only_syft": [
+      "open-webui@0.11.4",
+      "playwright-core@1.60.0",
+      "pyodide@314.0.3"
+     ]
+    },
+    "pypi": {
+     "cordon": 334,
+     "syft": 333,
+     "agree": 333,
+     "only_cordon": [
+      "typer@0.25.1"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ghcr.io/gethomepage/homepage:v0.10.9",
+   "bytes": 60358656,
+   "cordon_seconds": 10.1,
+   "cordon": 465,
+   "syft": 465,
+   "agree": 462,
+   "precision": 0.9935,
+   "recall": 0.9935,
+   "f1": 0.9935,
+   "adjusted": {
+    "cordon": 465,
+    "syft": 465,
+    "agree": 462,
+    "f1": 0.9935,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 446,
+     "syft": 446,
+     "agree": 443,
+     "only_cordon": [
+      "@headlessui/react",
+      "@kubernetes/client-node",
+      "@tailwindcss/forms"
+     ],
+     "only_syft": [
+      "@edge-runtime/primitives@1.1.0-beta.31",
+      "homepage@0.9.6",
+      "react-is@17.0.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "anchore/syft:v1.18.1",
+   "bytes": 16970752,
+   "cordon_seconds": 15.1,
+   "cordon": 186,
+   "syft": 187,
+   "agree": 185,
+   "precision": 0.9946,
+   "recall": 0.9893,
+   "f1": 0.992,
+   "adjusted": {
+    "cordon": 186,
+    "syft": 187,
+    "agree": 185,
+    "f1": 0.992,
+    "excluded": {}
+   },
+   "by_type": {
+    "golang": {
+     "cordon": 186,
+     "syft": 187,
+     "agree": 185,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "github.com/anchore/syft@1.18.1",
+      "stdlib@go1.23.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "aquasec/trivy:0.58.1",
+   "bytes": 50017792,
+   "cordon_seconds": 34.8,
+   "cordon": 399,
+   "syft": 400,
+   "agree": 398,
+   "precision": 0.9975,
+   "recall": 0.995,
+   "f1": 0.9962,
+   "adjusted": {
+    "cordon": 399,
+    "syft": 400,
+    "agree": 398,
+    "f1": 0.9962,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 27,
+     "syft": 27,
+     "agree": 27,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 372,
+     "syft": 373,
+     "agree": 371,
+     "only_cordon": [
+      "stdlib@1.22.10"
+     ],
+     "only_syft": [
+      "github.com/aquasecurity/trivy@0.58.1",
+      "stdlib@go1.22.10"
      ]
     }
    }
