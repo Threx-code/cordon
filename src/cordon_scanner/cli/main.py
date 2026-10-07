@@ -130,6 +130,23 @@ class CommandLine:
             ),
         )
 
+        host_group = scan.add_argument_group("host")
+        host_group.add_argument(
+            "--host",
+            action="store_true",
+            help=(
+                "read TARGET as the root of an installed system (default /): its OS packages and the "
+                "language packages installed outside any project, matched for known vulnerabilities "
+                "and malicious releases (OS packages with --online). Files are not content-scanned"
+            ),
+        )
+        host_group.add_argument(
+            "--home",
+            metavar="DIR",
+            default=None,
+            help="with --host, also read this user's own installs (pipx, ~/.local, ~/go/bin, cargo install)",
+        )
+
         secrets_group = scan.add_argument_group("secrets")
         secrets_group.add_argument(
             "--history",
@@ -212,6 +229,16 @@ class CommandLine:
             "--baseline",
             metavar="PATH",
             help="treat findings recorded in this file as already-known",
+        )
+        policy.add_argument(
+            "--vex",
+            metavar="PATH",
+            action="append",
+            default=None,
+            help=(
+                "an OpenVEX or CycloneDX VEX document (repeatable): a vulnerability a statement "
+                "rules out (not_affected, fixed) is marked suppressed with its justification"
+            ),
         )
         policy.add_argument("--config", metavar="PATH", help="repository configuration file")
         policy.add_argument("--policy", metavar="PATH", help="organisation policy file")
@@ -341,6 +368,20 @@ class CommandLine:
             help="the most model calls --judge may make in one scan (default 200)",
         )
         execution.add_argument(
+            "--registry-token",
+            dest="registry_tokens",
+            action="append",
+            metavar="URL=VARIABLE",
+            default=[os.environ["CORDON_REGISTRY_TOKENS"]]
+            if os.environ.get("CORDON_REGISTRY_TOKENS")
+            else [],
+            help=(
+                "with --online, ask a private registry about what was resolved from it, presenting "
+                "the token held in the environment variable named (repeatable; never the token "
+                "itself). Never set from a repository's configuration (env: CORDON_REGISTRY_TOKENS)"
+            ),
+        )
+        execution.add_argument(
             "--yara",
             metavar="RULES",
             default=os.environ.get("CORDON_YARA") or None,
@@ -449,7 +490,25 @@ class CommandLine:
         ):
             parser_ = guard_sub.add_parser(action, help=description)
             parser_.add_argument("path", nargs="?", default=".")
+            if action == "verify":
+                parser_.add_argument(
+                    "--manifest-only",
+                    action="store_true",
+                    help=(
+                        "check only that every file the guard manifest lists matches it; "
+                        "for CI, which has no hooks to check"
+                    ),
+                )
             if action == "install":
+                parser_.add_argument(
+                    "--global",
+                    dest="global_",
+                    action="store_true",
+                    help=(
+                        "install into git's template directory, so every repository cloned "
+                        "or created from now on has the hooks"
+                    ),
+                )
                 parser_.add_argument(
                     "--force",
                     action="store_true",
@@ -459,10 +518,30 @@ class CommandLine:
                     ),
                 )
 
+        # The incoming shims' entry point: hidden, because nobody types it.
+        incoming_hook = guard_sub.add_parser("incoming")
+        incoming_hook.add_argument("hook", choices=("post-checkout", "post-merge"))
+        incoming_hook.add_argument("git_args", nargs="*")
+
         # -- config ----------------------------------------------------------
         config_cmd = sub.add_parser("config", help="check configuration")
         config_sub = config_cmd.add_subparsers(dest="config_command", metavar="<action>")
         validate = config_sub.add_parser("validate", help="validate a configuration file")
+        fetch_policy = config_sub.add_parser(
+            "fetch-policy",
+            help="fetch a digest-pinned organisation policy once, so scans read it offline",
+        )
+        fetch_policy.add_argument("url", help="https://host/policy.yaml#sha256=<64 hex>")
+        drift = config_sub.add_parser(
+            "policy-drift",
+            help="check a vendored policy copy against the published one (exit 1 when they differ)",
+        )
+        drift.add_argument("vendored", help="the copy in this repository")
+        drift.add_argument(
+            "--published",
+            required=True,
+            help="the published policy: a path, or its URL with #sha256=<hex> (compared by digest, nothing fetched)",
+        )
         report = sub.add_parser(
             "report", help="re-render a saved JSON result in another format"
         ).add_subparsers(dest="report_command", metavar="<action>")
@@ -521,6 +600,17 @@ class CommandLine:
             metavar="ECOSYSTEM",
             default=None,
             help="sync only these ecosystems (default: all supported)",
+        )
+        advisories_sync.add_argument(
+            "--os",
+            nargs="+",
+            metavar="FAMILY",
+            default=None,
+            help=(
+                "also sync these distributions' advisories (debian, ubuntu, alpine, wolfi, "
+                "chainguard, rocky, almalinux, redhat, suse, opensuse) so image scans match "
+                "operating-system packages offline"
+            ),
         )
         advisories_sync.add_argument(
             "--bundle",
@@ -594,6 +684,13 @@ class CommandLine:
             "report", help="send the inventory with the MDM's device token"
         )
         agent_report.add_argument("--url", default=None, help="Cordon Cloud API base")
+        approve = agent.add_parser(
+            "mcp-approve",
+            help="record the tools each remote MCP server in the repository serves now (.cordon/mcp-tools.json)",
+        )
+        approve.add_argument(
+            "target", nargs="?", default=".", help="repository directory (default: .)"
+        )
         sub.add_parser("logout", help="forget the stored Cordon Cloud sign-in")
         sub.add_parser("whoami", help="show the Cordon Cloud sign-in in use")
 
@@ -662,6 +759,12 @@ class CommandLine:
         from cordon_scanner.cli.suppressions import SuppressCommand
 
         DepsCommand.add_parser(sub)
+        from cordon_scanner.cli.incoming import IncomingCommand
+        from cordon_scanner.cli.review import ReviewCommand
+
+        IncomingCommand.add_parser(sub)
+
+        ReviewCommand.add_parser(sub)
         SuppressCommand.add_parser(sub)
         CompletionCommand.add_parser(sub)
         help_cmd = sub.add_parser("help", help="this screen, or the help for one command")
@@ -703,7 +806,12 @@ class CommandLine:
                         raise CordonError(f"--compare-with: {earlier} does not exist")
                     label = earlier.name
                 else:
-                    identity = previous_release.PreviousRelease.identify(target)
+                    named = getattr(args, "package_identity", None)
+                    identity = (
+                        previous_release.Identity(*named)
+                        if named and named[0] not in ("npm", "pypi") and named[2]
+                        else previous_release.PreviousRelease.identify(target)
+                    )
                     if identity is None:
                         return result
                     found = previous_release.PreviousRelease.fetch_previous(identity, work)
@@ -840,7 +948,14 @@ class CommandLine:
                     f"Fetched {package.label} as {archive.name}; digest verified against the registry.",
                     file=sys.stderr,
                 )
-                return cls.cmd_scan(argparse.Namespace(**{**vars(args), "target": str(archive)}))
+                # The purl names the package exactly, so the release comparison need not re-identify
+                # it from the archive -- which it can only do for npm and PyPI.
+                identity = (package.ecosystem, package.name, package.version or "")
+                return cls.cmd_scan(
+                    argparse.Namespace(
+                        **{**vars(args), "target": str(archive), "package_identity": identity}
+                    )
+                )
         except PackageTargetError as exc:
             raise SourceError(
                 str(exc), hint="Check the name and version exist on the public registry."
@@ -864,12 +979,14 @@ class CommandLine:
                 hint="Add --online. Values go only to the issuer that minted them, never to Cordon.",
             )
 
-        target = Path(args.target)
+        target = Path("/" if getattr(args, "host", False) and args.target == "." else args.target)
         if not target.exists():
             raise CordonError(
                 f"target does not exist: {target}",
                 hint="Pass a directory, file, archive path, or a package URL such as pkg:npm/name@1.0.0.",
             )
+        if getattr(args, "host", False) and not target.is_dir():
+            raise ConfigError(f"--host reads a filesystem root, and {target} is not a directory")
 
         # A mistyped flag value is the user's mistake, not ours, and the difference
         # is visible in the exit code: 3 says "fix your invocation", 2 says "this is
@@ -916,6 +1033,15 @@ class CommandLine:
             overrides["clamav"] = args.clamav
         if getattr(args, "yara", None):
             overrides["yara"] = args.yara
+        if getattr(args, "registry_tokens", None):
+            from cordon_scanner.intel.private_registries import PrivateRegistries
+
+            try:
+                overrides["private_registries"] = tuple(
+                    tuple(r) for r in PrivateRegistries.parse(args.registry_tokens)
+                )
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
         if getattr(args, "judge", None):
             overrides["judge"] = args.judge
             overrides["judge_blocks"] = bool(getattr(args, "judge_blocks", False))
@@ -1020,10 +1146,17 @@ class CommandLine:
         if TerminalText.should_show(sys.stderr, args.progress, quiet=args.quiet):
             progress = TerminalProgress(sys.stderr, color=cls._use_color(args.no_color))
 
-        result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
-        result = cls._with_release_diff(args, target, result, config, selected)
-        result = cls._with_manifest_confusion(args, target, result, config)
-        result = cls._with_secret_history(args, target, result, config)
+        if getattr(args, "host", False):
+            result = Scanner(config, detectors=selected, progress=progress).scan_host(
+                target, args.home
+            )
+        else:
+            result = Scanner(config, detectors=selected, source=source, progress=progress).scan(
+                target
+            )
+            result = cls._with_release_diff(args, target, result, config, selected)
+            result = cls._with_manifest_confusion(args, target, result, config)
+            result = cls._with_secret_history(args, target, result, config)
 
         if args.baseline:
             from dataclasses import replace as _replace
@@ -1048,6 +1181,27 @@ class CommandLine:
                 # finding is one no reporting threshold can hide.
                 findings.append(cls._baseline_notice(silenced, Path(args.baseline)))
             result = _replace(result, findings=tuple(findings))
+
+        if getattr(args, "vex", None):
+            from dataclasses import replace as _replace_vex
+
+            from cordon_scanner.core.vex import VexDocuments, VexError
+
+            try:
+                statements = VexDocuments.load(args.vex)
+            except VexError as exc:
+                raise ConfigError(f"--vex: {exc}") from exc
+            ruled = VexDocuments.apply(result.findings, statements)
+            count = sum(
+                1 for f in ruled if f.suppressed is not None and f.suppressed.approved_by == "vex"
+            )
+            if count:
+                print(
+                    f"{cls.PROGRAM}: {count} vulnerability finding(s) marked suppressed by VEX "
+                    f"statements; they remain in the report with the statement that ruled them out",
+                    file=sys.stderr,
+                )
+            result = _replace_vex(result, findings=ruled)
 
         formats = args.format or ["text"]
         opts = ReportOptions(
@@ -1628,6 +1782,23 @@ class CommandLine:
         action = args.guard_command or "verify"
         root = Path(getattr(args, "path", "."))
 
+        if action == "incoming":
+            from cordon_scanner.cli.incoming import IncomingCommand
+
+            return IncomingCommand.run_hook(args)
+
+        if action == "install" and getattr(args, "global_", False):
+            template, installed = Guard.install_global(force=getattr(args, "force", False))
+            for hook in installed:
+                print(f"installed {template / 'hooks' / hook}")
+            print(
+                f"\nEvery repository cloned or created from now on starts with these hooks: a "
+                f"clone, branch\nswitch or pull is checked before anything acts on it, and "
+                f"undone if it is blocked.\nFor repositories you already have, run "
+                f"`{cls.PROGRAM} guard install` in each."
+            )
+            return int(ExitCode.CLEAN)
+
         if action == "install":
             installed = Guard.install_hooks(root, force=getattr(args, "force", False))
             for hook in installed:
@@ -1651,7 +1822,7 @@ class CommandLine:
             return int(ExitCode.CLEAN)
 
         if action == "verify":
-            report = Guard.verify(root)
+            report = Guard.verify(root, manifest_only=getattr(args, "manifest_only", False))
             if report.ok:
                 print("guard intact")
                 return int(ExitCode.CLEAN)
@@ -1983,8 +2154,10 @@ class CommandLine:
         from cordon_scanner.cloud import CloudError, device
 
         action = getattr(args, "agent_command", None)
+        if action == "mcp-approve":
+            return cls._mcp_approve(Path(args.target))
         if action not in ("inventory", "report"):
-            print(f"{cls.PROGRAM}: agent needs inventory or report", file=sys.stderr)
+            print(f"{cls.PROGRAM}: agent needs inventory, report or mcp-approve", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
         payload = device.DeviceInventory.collect()
         if action == "inventory":
@@ -2001,6 +2174,49 @@ class CommandLine:
             f"{len(payload['findings'])} finding(s){f' (receipt {receipt})' if receipt else ''}"
         )
         return int(ExitCode.CLEAN)
+
+    @classmethod
+    def _mcp_approve(cls, root: Path) -> int:
+        """List every remote MCP server's tools and record their fingerprints. A later `scan
+        --online` reports any tool added or changed since (`SUSPECT.MCP.TOOLS_CHANGED.001`)."""
+        from cordon_scanner.core.walker import PathGlob
+        from cordon_scanner.detect.agents import MCP_PATHS, McpConfigs
+        from cordon_scanner.intel.live_mcp import LiveMcp, LiveMcpError, McpApprovals
+
+        if not root.is_dir():
+            raise CordonError(f"mcp-approve needs a repository directory: {root}")
+        recorded: dict[str, dict[str, Any]] = {}
+        failed = 0
+        for path in sorted(p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts)[
+            :200_000
+        ]:
+            relative = path.relative_to(root).as_posix()
+            if not any(PathGlob.matches(relative, pattern) for pattern in MCP_PATHS):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for name, server in McpConfigs.mcp_servers(relative, text):
+                url = LiveMcp.remote_url(server)
+                if url is None or name in recorded:
+                    continue
+                try:
+                    tools = LiveMcp.tools(url)
+                except LiveMcpError as exc:
+                    failed += 1
+                    print(f"{cls.PROGRAM}: {name} ({url}) not read: {exc}", file=sys.stderr)
+                    continue
+                recorded[name] = McpApprovals.record(url, tools)
+                print(f"{name}: {len(tools)} tool(s) recorded from {url}")
+        if not recorded:
+            print(
+                f"{cls.PROGRAM}: no remote MCP server was read; nothing recorded", file=sys.stderr
+            )
+            return int(ExitCode.SCANNER_ERROR if failed else ExitCode.CLEAN)
+        written = McpApprovals.write(root, recorded)
+        print(f"wrote {written}: commit it, so a reviewer sees what was approved")
+        return int(ExitCode.SCANNER_ERROR if failed else ExitCode.CLEAN)
 
     @classmethod
     def cmd_logout(cls, args: argparse.Namespace) -> int:
@@ -2121,6 +2337,27 @@ class CommandLine:
                 raise ConfigError(f"advisories sync: {exc}") from exc
             print(f"installed a verified advisory bundle into {destination}")
             return int(ExitCode.CLEAN)
+
+        families = getattr(args, "os", None)
+        if families:
+            from cordon_scanner.images.distrodb import FAMILIES, DistroDatabase
+
+            unknown_families = [f for f in families if f not in FAMILIES]
+            if unknown_families:
+                raise ConfigError(
+                    f"unknown distribution(s) for --os: {', '.join(unknown_families)}",
+                    hint=f"choose from: {', '.join(FAMILIES)}",
+                )
+            with tempfile.TemporaryDirectory(prefix="cordon-osv-os-") as tmp:
+                for family in families:
+                    try:
+                        count = DistroDatabase.sync(family, tmp_dir=Path(tmp))
+                    except osv_import.OsvImportError as exc:
+                        raise ConfigError(f"advisories sync --os {family}: {exc}") from exc
+                    print(f"  {family}: {count:,} package advisor(y/ies)")
+            print(f"distribution advisories are in {DistroDatabase.directory()}")
+            if args.only is None:
+                return int(ExitCode.CLEAN)
 
         requested = args.only or sorted(osv_import.ECOSYSTEM_OSV_NAMES)
         unknown = [e for e in requested if e not in osv_import.ECOSYSTEM_OSV_NAMES]
@@ -2426,6 +2663,42 @@ class CommandLine:
             print("configuration is valid")
             return int(ExitCode.CLEAN)
 
+        if action == "fetch-policy":
+            from cordon_scanner.core.cache import ScanCache
+            from cordon_scanner.core.distribution import PolicyDistribution
+
+            if not PolicyDistribution.is_remote(args.url):
+                raise ConfigError(
+                    "fetch-policy takes the policy's https URL with its #sha256= digest"
+                )
+            # The one network request this command exists for, to the URL the operator named, and
+            # its content is fixed by the digest. Scans then read the cached copy with the network
+            # off -- which is what a policy saying `allow_network: false` asks of them.
+            cached = PolicyDistribution.resolve(
+                args.url, allow_network=True, cache_dir=ScanCache.default_cache_dir()
+            )
+            ConfigResolver.load_org_policy(cached)
+            print(f"verified and cached: {cached}")
+            print(f"scan with --policy '{args.url}'; no network is needed from now on")
+            return int(ExitCode.CLEAN)
+
+        if action == "policy-drift":
+            from cordon_scanner.core.distribution import PolicyDistribution
+
+            vendored = Path(args.vendored)
+            if not vendored.is_file():
+                raise ConfigError(f"no policy at {vendored}")
+            actual = PolicyDistribution.digest_of(vendored)
+            expected = PolicyDistribution.published_digest(args.published)
+            if actual == expected:
+                print(f"{vendored} matches the published policy (sha256 {actual})")
+                return int(ExitCode.CLEAN)
+            print(
+                f"{vendored} has drifted from the published policy: sha256 {actual}, published {expected}. "
+                "A drifted copy is a ceiling nobody set; replace it, or point --policy at the published one."
+            )
+            return int(ExitCode.FINDINGS)
+
         if action == "explain":
             config = ConfigResolver.resolve(
                 root=".", config_path=args.path, policy_path=args.policy
@@ -2457,6 +2730,8 @@ class CommandLine:
     def run(cls, argv: Sequence[str] | None = None) -> int:
         from cordon_scanner.cli.completion import CompletionCommand
         from cordon_scanner.cli.deps import DepsCommand
+        from cordon_scanner.cli.incoming import IncomingCommand
+        from cordon_scanner.cli.review import ReviewCommand
         from cordon_scanner.cli.suppressions import SuppressCommand
 
         parser = cls.build_parser()
@@ -2489,6 +2764,9 @@ class CommandLine:
             "whoami": cls.cmd_whoami,
             "sbom": cls.cmd_sbom,
             "deps": DepsCommand.run,
+            "review": ReviewCommand.run,
+            "clone": IncomingCommand.run_clone,
+            "pull": IncomingCommand.run_pull,
             "suppress": SuppressCommand.run,
             "help": functools.partial(HelpCommand.run, parser=parser),
             "completion": functools.partial(

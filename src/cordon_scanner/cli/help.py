@@ -484,7 +484,10 @@ class HelpScreen:
     TAGLINE = "Software supply-chain security scanner"
 
     GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("SCAN AND INSPECT", ("scan", "inventory", "deps", "sbom", "report")),
+        (
+            "SCAN AND INSPECT",
+            ("scan", "clone", "pull", "inventory", "deps", "review", "sbom", "report"),
+        ),
         ("POLICY", ("rules", "config", "baseline", "suppress", "guard")),
         ("THREAT INTEL", ("advisories", "intel", "bundle")),
         ("CORDON CLOUD", ("login", "logout", "whoami", "runner", "agent")),
@@ -497,6 +500,9 @@ class HelpScreen:
         "scan": "scan a directory, file or archive",
         "inventory": "what the repository is, and why",
         "deps": "dependency graph and findings",
+        "review": "what a dependency update adds",
+        "clone": "clone, scanned before checkout",
+        "pull": "pull, scanned before the merge",
         "sbom": "CycloneDX or SPDX bill of materials",
         "report": "re-render a saved JSON result",
         "rules": "list, test and show the rules",
