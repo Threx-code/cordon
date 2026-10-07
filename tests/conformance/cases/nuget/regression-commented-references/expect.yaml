@@ -1,0 +1,15 @@
+# The regex reader took a `<PackageReference ... Version="...">` anywhere in the text: inside an
+# XML comment it reported references the team had removed, and a version written as a child
+# element (`<Version>8.0.3</Version>`) was lost, leaving the dependency unresolved. Read as XML,
+# a comment is a comment and a child element is the version.
+kinds: [regression, valid]
+covers:
+  - UNI-02
+  - nuget.declared-vs-resolved
+dependencies:
+  - {name: Serilog.AspNetCore, version_constraint: 8.0.3, resolved_version: 8.0.3}
+  - {name: Swashbuckle.AspNetCore, resolved_version: 6.9.0}
+only: true
+absent:
+  - Contoso.Removed.Logging
+  - Contoso.Removed.Metrics

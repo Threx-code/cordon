@@ -1,0 +1,42 @@
+# The formats and options the restored solution does not use: an F# and a VB project, a classic
+# packages.config with a development dependency, a version in a <Version> child element, an exact
+# `[x]` version, build-only assets, an `Update` item, a configuration-conditional reference, a
+# property no file defines, a test project, a project reference written with backslashes, and a
+# NuGet.Config with a disabled source, a plain-HTTP source and no package source mapping.
+kinds: [edge, valid]
+covers:
+  - file:app.fsproj
+  - file:app.vbproj
+  - file:packages.config
+  - nuget.conditional
+  - nuget.sources
+  - nuget.project-references
+  - nuget.target-frameworks
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-08
+  - UNI-10
+  - UNI-14
+dependencies:
+  - {name: FSharp.Core, version_constraint: 8.0.401, resolved_version: 8.0.401, resolution_reason: "NuGet restores the lowest version the reference admits"}
+  # `Update` adds metadata to the reference above it; it is not a second dependency.
+  - {name: Dapper, version_constraint: "[2.1.35]", resolved_version: 2.1.35}
+  - {name: StyleCop.Analyzers, dependency_type: build}
+  - {name: Corp.Telemetry, resolution_status: unresolved, resolution_reason: "the version uses an MSBuild property no file in the scanned tree defines"}
+  - {name: Microsoft.Extensions.Logging.Debug, platform_constraints: ["configuration Debug"]}
+  - {name: NUnit, dependency_type: test, manifest_location: {path: Pricing.Tests/Pricing.Tests.vbproj}}
+  - {name: pricing, source_type: path, version_constraint: "path:../Pricing"}
+  - {name: Newtonsoft.Json, version_constraint: "[12.0.3]", resolved_version: 12.0.3, platform_constraints: ["target framework net472"], manifest_location: {path: Legacy.Web/packages.config}}
+  - {name: Microsoft.CodeDom.Providers.DotNetCompilerPlatform, dependency_type: dev}
+sources:
+  - "source nuget.org: https://api.nuget.org/v3/index.json"
+  - "source corp: http://nuget.corp.example.internal/v3/index.json"
+findings:
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, package: Newtonsoft.Json}
+  - {rule: POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001, message: nuget.corp.example.internal}
+  # Two sources, nuget.org among them, and no package source mapping.
+  - {rule: SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001, path: NuGet.Config}
+no_findings:
+  # A project file never records a hash: no lockfile here, so nothing is "missing" a hash.
+  - POLICY.DEPENDENCY.INTEGRITY.001

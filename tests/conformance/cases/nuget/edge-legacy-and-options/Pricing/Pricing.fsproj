@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Library.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core">
+      <Version>8.0.401</Version>
+    </PackageReference>
+    <PackageReference Include="Dapper" Version="[2.1.35]" />
+    <PackageReference Include="StyleCop.Analyzers" Version="1.1.118" IncludeAssets="analyzers; build" PrivateAssets="all" />
+    <PackageReference Include="Corp.Telemetry" Version="$(TelemetryVersion)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="8.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Update="Dapper" PrivateAssets="none" />
+  </ItemGroup>
+</Project>

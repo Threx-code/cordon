@@ -1,0 +1,74 @@
+# A .NET solution restored by the .NET 8 SDK and checked against `dotnet list package
+# --include-transitive`: central package management with transitive pinning and a floating version,
+# a property-based version, a VersionOverride, a GlobalPackageReference, Directory.Build.props
+# items inherited by every project, two target frameworks with a framework-conditional reference,
+# a runtime identifier with runtime-specific packages, a project reference, and an internal
+# package routed to a local feed by package source mapping. No MSBuild is evaluated.
+kinds: [real-world, valid]
+covers:
+  - file:app.csproj
+  - file:Directory.Packages.props
+  - file:Directory.Build.props
+  - file:packages.lock.json
+  - file:project.assets.json
+  - file:NuGet.Config
+  - nuget.central
+  - nuget.transitive-pinning
+  - nuget.target-frameworks
+  - nuget.rid
+  - nuget.conditional
+  - nuget.floating
+  - nuget.sources
+  - nuget.source-mapping
+  - nuget.project-references
+  - nuget.declared-vs-resolved
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - UNI-15
+  - UNI-18
+dependencies:
+  # Floating `13.0.*` from Directory.Packages.props, and the release restore locked.
+  - {name: Newtonsoft.Json, version_constraint: "13.0.*", resolved_version: 13.0.4, direct: true, manifest_location: {path: src/App/App.csproj}, integrity_status: recorded}
+  # `$(SerilogVersion)`, a property of Directory.Packages.props.
+  - {name: Serilog, version_constraint: 4.1.0, resolved_version: 4.1.0}
+  # VersionOverride beats the central 8.4.2.
+  - {name: Polly, version_constraint: 8.4.1, resolved_version: 8.4.1}
+  # Only for netstandard2.0, by a conditional ItemGroup.
+  - {name: System.Text.Json, platform_constraints: ["target framework netstandard2.0"], manifest_location: {path: src/Core/Core.csproj}}
+  - {name: NETStandard.Library, platform_constraints: ["target framework netstandard2.0"], direct: true}
+  # Only in the linux-x64 runtime graph.
+  - {name: runtime.unix.System.Private.Uri, platform_constraints: ["runtime linux-x64"], direct: false}
+  # A global reference is build tooling in every project.
+  - {name: Nerdbank.GitVersioning, dependency_type: build, manifest_location: {path: src/App/App.csproj}}
+  # Inherited from Directory.Build.props by every project.
+  - {name: Microsoft.SourceLink.GitHub, direct: true, manifest_location: {path: src/Core/Core.csproj}}
+  # Pinned centrally for a package no project references directly: the transitive pin.
+  - {name: Microsoft.Bcl.AsyncInterfaces, resolved_version: 8.0.0, overridden_by: "Microsoft.Bcl.AsyncInterfaces = 8.0.0 in Directory.Packages.props"}
+  # The project reference, and the internal package source mapping routes to the local feed.
+  - {name: core, source_type: path, manifest_location: {path: src/App/App.csproj}}
+  - {name: Acme.Internal.Util, source_type: registry, source_url: "registry:acme-local", direct: false, lockfile_location: {path: src/App/packages.lock.json}}
+  - {name: Acme.Internal.Util, source_type: registry, source_url: "registry:acme-local", direct: true, lockfile_location: {path: src/Core/packages.lock.json}}
+sources:
+  - "source nuget.org: https://api.nuget.org/v3/index.json"
+  - "source acme-local: ./local-feed"
+  - "mapping acme-local: Acme.*"
+hooks:
+  # Packages whose build/ props and targets MSBuild imports into every build.
+  - {kind: build, name: Nerdbank.GitVersioning, path: src/App/obj/project.assets.json}
+  - {kind: build, name: Microsoft.SourceLink.GitHub}
+findings:
+  # A real advisory against the runtime package System.Net.Http 4.3.4 brings in.
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, package: System.Private.Uri}
+  # The internal package's .nupkg is committed in the local feed: a binary nobody reviews.
+  - {rule: POLICY.BINARY.COMMITTED.001}
+no_findings:
+  - SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001
+  - SUSPECT.DEPENDENCY.CONFUSION.001
+  - POLICY.DEPENDENCY.INTEGRITY.001
+  - POLICY.LOCKFILE.INTEGRITY.001

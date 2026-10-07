@@ -1,0 +1,13 @@
+# A project file that declares an entity and uses it. MSBuild itself refuses DTDs; so does the
+# reader: the entity is never defined or expanded, and the project is reported unread, never as
+# one with no dependencies.
+kinds: [adversarial, invalid]
+covers:
+  - UNI-03
+  - UNI-27
+operational:
+  - OPERATIONAL.MANIFEST.UNPARSED
+findings:
+  - {rule: OPERATIONAL.MANIFEST.UNPARSED, path: App.csproj, message: "DTDs and entity declarations are refused"}
+absent:
+  - Contoso.EntityVersioned
