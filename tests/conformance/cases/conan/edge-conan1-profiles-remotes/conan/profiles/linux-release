@@ -1,0 +1,16 @@
+include(default)
+
+[settings]
+os=Linux
+arch=armv8
+build_type=Release
+
+[options]
+*:fPIC=True
+
+[tool_requires]
+*: ninja/1.11.1
+openssl/*: nasm/2.15.05
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja

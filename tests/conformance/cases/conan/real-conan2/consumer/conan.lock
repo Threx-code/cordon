@@ -1,0 +1,13 @@
+{
+    "version": "0.5",
+    "requires": [
+        "spdlog/1.14.1#0c58e5559d0409d1fadfc39f51393c11%1767604741.016",
+        "nlohmann_json/3.11.3#45828be26eb619a2e04ca517bb7b828d%1701220705.259",
+        "fmt/10.2.1#15db2a3ea0646365bf05a6f50369ac59%1785754570.436"
+    ],
+    "build_requires": [
+        "ninja/1.12.1#fd583651bf0c6a901943495d49878803%1724079877.609"
+    ],
+    "python_requires": [],
+    "config_requires": []
+}

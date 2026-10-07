@@ -1,0 +1,16 @@
+[requires]
+spdlog/1.14.1
+nlohmann_json/[~3.11]
+
+[tool_requires]
+ninja/1.12.1
+
+[options]
+spdlog/*:header_only=True
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout

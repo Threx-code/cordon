@@ -1,0 +1,10 @@
+{
+    "version": "0.5",
+    "requires": [
+        "gnu-config/cci.20210814#466e9d4d7779e1c142443f7ea44b4284%1762363589.329",
+        "abseil/20240722.0#f1c3f4e0d3a2b9c8d7e6f5a4b3c2d1e0%1730000000.0"
+    ],
+    "build_requires": [],
+    "python_requires": [],
+    "config_requires": []
+}

@@ -1,0 +1,44 @@
+{
+ "graph_lock": {
+  "nodes": {
+   "0": {
+    "ref": "legacy/3.2.0",
+    "options": "zlib:shared=False",
+    "requires": ["1", "2", "3"],
+    "build_requires": ["4"],
+    "path": "conanfile.py",
+    "context": "host"
+   },
+   "1": {
+    "ref": "zlib/1.2.11#683857dbd5377d65f26795d4023858f9",
+    "options": "fPIC=True\nshared=False",
+    "package_id": "6af9cc7cb931c5ad942174fd7838eb655717c709",
+    "prev": "e42eb9bf7b4d0a95146e94ba3c3c4c64",
+    "context": "host"
+   },
+   "2": {
+    "ref": "mylib/2.0@acme/stable#0b5c3d6e7f8091a2b3c4d5e6f7081920",
+    "package_id": "d057732059ea44a47760900cb5e4855d2bea8714",
+    "prev": "7c5b2a1f0e9d8c7b6a5f4e3d2c1b0a99",
+    "requires": ["1"],
+    "context": "host"
+   },
+   "3": {
+    "ref": "openssl/1.1.1q#2e9cd3fe5ac3c5c2de6bbdc24c0d8d2c",
+    "package_id": "6acf24cd4adf2df742e006cc0e5f0329e3b6e60b",
+    "prev": "3d0d5bdda6bcd0a7e3c1c8d7c2c5c1aa",
+    "requires": ["1"],
+    "context": "host"
+   },
+   "4": {
+    "ref": "cmake/3.24.1#3ea8dcf8b4b8d2f0e3b8a3b5d7a1c6f0",
+    "package_id": "4db1be536558d833e52e862fd84d64d75c2b3656",
+    "prev": "c9a1e3b5d7f9a1c3e5b7d9f1a3c5e7b9",
+    "context": "build"
+   }
+  },
+  "revisions_enabled": true
+ },
+ "version": "0.4",
+ "profile_host": "[settings]\narch=x86_64\nbuild_type=Release\ncompiler=gcc\ncompiler.version=11\nos=Linux\n"
+}

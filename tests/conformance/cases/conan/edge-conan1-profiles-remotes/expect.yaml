@@ -1,0 +1,36 @@
+# Conan 1: a recipe with class-attribute requires (one in a user/channel namespace), a
+# python_requires, and a requirement chosen by `if self.settings.os`; its graph lock (0.4) with
+# package ids and package revisions -- the binaries, told apart from the recipe revision -- and a
+# node in the build context. A profile that injects tool requirements, and a remotes.json that
+# puts ConanCenter before the internal remote.
+kinds: [edge, valid]
+covers:
+  - conan.versions-1-2
+  - conan.package-id
+  - conan.recipe-vs-binary
+  - conan.remotes
+  - conan.host-build
+  - conan.tool-requires
+  - conan.profiles-options
+  - conan.revisions
+  - UNI-07
+  - UNI-10
+  - UNI-14
+dependencies:
+  - {name: zlib, resolved_version: 1.2.11, direct: true, integrity: "md5:683857dbd5377d65f26795d4023858f9", platform_constraints: [package_id 6af9cc7cb931c5ad942174fd7838eb655717c709, prev e42eb9bf7b4d0a95146e94ba3c3c4c64], lockfile_location: {path: legacy/conan.lock}}
+  - {name: mylib, platform_constraints: [user acme, channel stable, package_id d057732059ea44a47760900cb5e4855d2bea8714, prev 7c5b2a1f0e9d8c7b6a5f4e3d2c1b0a99]}
+  - {name: cmake, dependency_type: tool, resolved_version: 3.24.1}
+  - {name: openssl, resolved_version: 1.1.1q, platform_constraints: ["not (self.settings.os == 'Windows')", package_id 6acf24cd4adf2df742e006cc0e5f0329e3b6e60b, prev 3d0d5bdda6bcd0a7e3c1c8d7c2c5c1aa]}
+  # Chosen only on Windows; the lock was made on Linux.
+  - {name: winflexbison, version_constraint: 2.5.24, platform_constraints: ["self.settings.os == 'Windows'"], lockfile_location: null}
+  - {name: acme-pyreq, dependency_type: build, platform_constraints: [user acme, channel stable]}
+  - {name: ninja, dependency_type: tool, platform_constraints: [applies to *], manifest_location: {path: conan/profiles/linux-release}}
+  - {name: nasm, dependency_type: tool, platform_constraints: [applies to openssl/*]}
+absent:
+  - legacy
+sources:
+  - "remote conancenter https://center2.conan.io"
+  - "option *:fPIC=True"
+  - "option zlib:shared=False"
+findings:
+  - {rule: SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001, message: conan.acme.example.internal}

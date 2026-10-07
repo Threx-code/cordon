@@ -1,0 +1,7 @@
+{
+ "remotes": [
+  {"name": "conancenter", "url": "https://center2.conan.io", "verify_ssl": true},
+  {"name": "acme", "url": "https://conan.acme.example.internal/artifactory/api/conan/conan-local", "verify_ssl": true},
+  {"name": "old-mirror", "url": "https://mirror.acme.example.internal/conan", "verify_ssl": true, "disabled": true}
+ ]
+}

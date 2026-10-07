@@ -1,0 +1,50 @@
+# A Conan 2 recipe (conanfile.py: a version range, an override, a tool_requires, a test_requires,
+# options) and a conanfile.txt consumer beside it, each locked against ConanCenter with the
+# project's profile. Checked against `conan graph info` for both.
+kinds: [real-world, valid]
+covers:
+  - file:conanfile.txt
+  - file:conanfile.py
+  - file:conan.lock
+  - file:profiles/default
+  - conan.versions-1-2
+  - conan.recipes
+  - conan.ranges
+  - conan.revisions
+  - conan.host-build
+  - conan.profiles-options
+  - conan.tool-requires
+  - conan.overrides
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-18
+dependencies:
+  # The recipe revision Conan pinned: the MD5 of the recipe's manifest.
+  - {name: fmt, version_constraint: ">=10 <11", resolved_version: 10.2.1, direct: true, integrity: "md5:15db2a3ea0646365bf05a6f50369ac59", integrity_status: recorded, manifest_location: {path: conanfile.py}}
+  - {name: libcurl, version_constraint: 8.10.1, dependency_type: runtime}
+  - {name: openssl, direct: false, dependency_type: runtime, resolved_version: 3.6.5}
+  # override=True sets the zlib every package gets; it is not a dependency of its own.
+  - {name: zlib, resolved_version: 1.3.1, direct: false, overridden_by: "zlib = 1.3.1 in conanfile.py"}
+  - {name: cmake, dependency_type: tool, version_constraint: ">=3.27 <4", resolved_version: 3.31.12}
+  - {name: gtest, dependency_type: test}
+  # The build context: tools the build runs, and what they need.
+  - {name: m4, dependency_type: build, direct: false}
+  - {name: ninja, resolved_version: 1.13.2, dependency_type: build, lockfile_location: {path: conan.lock}}
+  # The consumer.
+  - {name: nlohmann_json, version_constraint: "~3.11", resolved_version: 3.11.3, manifest_location: {path: consumer/conanfile.txt}}
+  - {name: ninja, resolved_version: 1.12.1, dependency_type: tool, lockfile_location: {path: consumer/conan.lock}}
+hooks:
+  - {kind: build, path: conanfile.py, command: conan install, ecosystem: conan}
+sources:
+  - "option fmt/*:header_only=True"
+  - "option spdlog/*:header_only=True"
+  - "option *:shared=False"
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001
+no_findings:
+  - SUSPECT.LOCKFILE.SOURCE.001
+  - POLICY.LOCKFILE.INTEGRITY.001

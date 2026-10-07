@@ -1,0 +1,5 @@
+packages:
+  - path: liba
+    ref: liba/0.1
+  - path: libb
+    ref: libb/0.1

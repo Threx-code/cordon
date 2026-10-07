@@ -1,0 +1,16 @@
+# The old reader matched `requires("...")` anywhere in the file -- in a docstring, a comment and a
+# string literal -- and took only versions beginning with a digit, so ConanCenter's `cci.<date>`
+# versions and every version range disappeared.
+kinds: [regression, valid]
+covers:
+  - conan.recipes
+  - conan.ranges
+  - UNI-02
+dependencies:
+  - {name: gnu-config, version_constraint: cci.20210814, resolved_version: cci.20210814, direct: true}
+  - {name: abseil, version_constraint: ">=20230802 <20250000", resolved_version: 20240722.0}
+only: true
+absent:
+  - legacy-docs
+  - removed-in-review
+  - in-a-string
