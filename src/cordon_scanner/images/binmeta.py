@@ -492,6 +492,154 @@ class BinaryClassifiers:
         return []
 
 
+class _Pushback:
+    """A stream read at most `size` bytes into, with bytes that can be handed back."""
+
+    def __init__(self, handle: IO[bytes], size: int) -> None:
+        self._handle = handle
+        self._left = size
+        self._back = b""
+
+    def read(self, n: int) -> bytes:
+        out = self._back[:n]
+        self._back = self._back[n:]
+        while len(out) < n and self._left > 0:
+            chunk = self._handle.read(min(n - len(out), self._left))
+            if not chunk:
+                self._left = 0
+                break
+            self._left -= len(chunk)
+            out += chunk
+        return out
+
+    def read_some(self, n: int) -> bytes:
+        if self._back:
+            out, self._back = self._back[:n], self._back[n:]
+            return out
+        return self.read(n)
+
+    def unread(self, data: bytes) -> None:
+        self._back = data + self._back
+
+
+class StreamedJar:
+    """A jar too large to hold, read once from front to back for the artifacts it records.
+
+    A zip's directory is at its end, which a stream reaches last; but every entry is also preceded
+    by a local header naming it, so the entries can be walked in order. Only `pom.properties` files
+    and nested jars are inflated, each within a size limit; everything else is passed over. An entry
+    whose length the header leaves to a trailing descriptor is found by inflating it to its end,
+    which is why a stored entry with a descriptor (rare, and never a Maven file) stops the walk.
+    """
+
+    LOCAL: Final = b"PK\x03\x04"
+    DESCRIPTOR: Final = b"PK\x07\x08"
+    POM_LIMIT: Final = 1 << 20
+    NESTED_LIMIT: Final = 64 << 20
+
+    @staticmethod
+    def _inflate(reader: _Pushback, keep: int) -> tuple[bytes | None, bool]:
+        """Inflate one raw-deflate entry to its end: (its bytes when within `keep`, finished)."""
+        inflater = zlib.decompressobj(-15)
+        out: list[bytes] | None = [] if keep else None
+        held = 0
+        while True:
+            chunk = reader.read_some(1 << 20)
+            if not chunk:
+                return None, False
+            try:
+                data = inflater.decompress(chunk)
+            except zlib.error:
+                return None, False
+            if out is not None:
+                held += len(data)
+                if held > keep:
+                    out = None
+                else:
+                    out.append(data)
+            if inflater.eof:
+                reader.unread(inflater.unused_data)
+                return (b"".join(out) if out is not None else None), True
+
+    @staticmethod
+    def _skip_descriptor(reader: _Pushback) -> None:
+        """The CRC and sizes after a streamed entry, with or without their signature, 32- or 64-bit."""
+        head = reader.read(4)
+        if head != StreamedJar.DESCRIPTOR:
+            reader.unread(head)
+        body = reader.read(20)
+        # 32-bit sizes take 12 bytes and 64-bit ones 20; the next record starts with "PK" either way.
+        cut = 12 if len(body) < 20 or body[12:14] == b"PK" else 20
+        reader.unread(body[cut:])
+
+    @staticmethod
+    def read(path: str, handle: IO[bytes], size: int) -> list[LanguagePackage]:
+        reader = _Pushback(handle, size)
+        names: list[str] = []
+        poms: list[tuple[str, str, str]] = []
+        out: list[LanguagePackage] = []
+        nested = 0
+        while True:
+            if reader.read(4) != StreamedJar.LOCAL:
+                break
+            header = reader.read(26)
+            if len(header) < 26:
+                break
+            _v, flags, method, _t, _d, _crc, csize, _usize, name_len, extra_len = struct.unpack(
+                "<HHHHHIIIHH", header
+            )
+            name = reader.read(name_len).decode("utf-8", "replace")
+            extra = reader.read(extra_len)
+            if csize == 0xFFFFFFFF:
+                at = 0
+                while at + 4 <= len(extra):
+                    tag, length = struct.unpack("<HH", extra[at : at + 4])
+                    if tag == 0x0001 and length >= 16:
+                        csize = struct.unpack("<Q", extra[at + 12 : at + 20])[0]
+                        break
+                    at += 4 + length
+            names.append(name)
+            pom = name.startswith("META-INF/maven/") and name.endswith("/pom.properties")
+            jar = name.endswith(".jar") and nested < MAX_NESTED_JARS
+            keep = StreamedJar.POM_LIMIT if pom else StreamedJar.NESTED_LIMIT if jar else 0
+            body: bytes | None
+            if flags & 0x08:
+                if method != 8:
+                    break
+                body, finished = StreamedJar._inflate(reader, keep)
+                if not finished:
+                    break
+                StreamedJar._skip_descriptor(reader)
+            else:
+                raw = reader.read(csize)
+                if len(raw) < csize:
+                    break
+                body = None
+                if keep and csize <= keep:
+                    if method == 0:
+                        body = raw
+                    elif method == 8:
+                        try:
+                            body = zlib.decompress(raw, -15)
+                        except zlib.error:
+                            body = None
+            if body is None:
+                continue
+            if pom:
+                found = BinaryMetadata._pom_properties(body.decode("utf-8", "replace"))
+                if found:
+                    poms.append(found)
+            elif jar:
+                nested += 1
+                out += BinaryMetadata.java(f"{path}!{name}", body, 1)
+        signature = BinaryFacts.jar_signature(names)
+        out += [
+            LanguagePackage("maven", f"{group}:{artifact}", version, path, platform=(signature,))
+            for group, artifact, version in poms
+        ]
+        return out
+
+
 class StreamedBinary:
     """A file too large to hold, read once in chunks: Go `buildinfo` and printable strings.
 

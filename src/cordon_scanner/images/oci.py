@@ -800,9 +800,15 @@ class Peek:
         self._keep(path, parts, strings.complete)
 
     def stream(self, path: str, handle: Any, size: int) -> None:
-        from cordon_scanner.images.binmeta import BinaryClassifiers, StreamedBinary
+        from cordon_scanner.images.binmeta import BinaryClassifiers, StreamedBinary, StreamedJar
 
         self.packages = [p for p in self.packages if p.path != path]
+        if path.lower().endswith((".jar", ".war", ".ear")):
+            # An application packed as one jar past the hold limit (an uberjar of every library it
+            # uses): its entries walked for the Maven artifacts they record. A jar's bytes are
+            # compressed, so its strings would be noise and are not taken.
+            self.packages.extend(StreamedJar.read(path, handle, size))
+            return
         packages, parts, complete = StreamedBinary.read(
             path, handle, size, self._allowance(path), self.part
         )

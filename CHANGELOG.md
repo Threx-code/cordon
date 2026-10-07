@@ -97,6 +97,9 @@ runs found is fixed below, with a test that fails on the old code. The figures a
   a package named after its version; a go.mod before Go 1.17, or one never tidied under 1.17's
   rules, lists only direct modules, and the indirect ones in go.sum were not read; a go.sum with
   no go.mod beside it was read as nearly empty.
+- A jar past 256 MB in an image (an application shipped as one jar of every library it uses) was
+  never read for the Maven artifacts it records: it is now walked entry by entry, trailing data
+  descriptors included. metabase's image went from 1 of 444 packages to 444 of 444, against Syft.
 - `docs/03-INTERFACES.md` listed `deps`, `suppress` and `completion` as not yet implemented after
   all three had shipped, and left `review`, `sbom`, `intel` and others out of the command surface.
 

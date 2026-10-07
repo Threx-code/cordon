@@ -127,12 +127,13 @@ inventory, by normalised package URL.
 Adjusted leaves out three things Syft lists that are not packages: the RPM signing-key entry
 (31), Go `(devel)` main modules built from a checkout (128), and .NET assembly file versions,
 which Syft reports from each DLL and which are not NuGet packages (1,862). The rest of the gap,
-by cause, is in `bench/results/full-2026-10-07/image-agreement.json`; the largest are known
-Cordon gaps, listed rather than hidden:
+by cause, is in `bench/results/full-2026-10-07/image-agreement.json`. One gap the run found is
+fixed since: a jar past 256 MB (metabase's single 450 MB jar of every library it uses) was not
+read for the Maven artifacts it records, and is now walked entry by entry; metabase went from
+0.33 to 1.0 (444 of 444). The figures above are from before that fix. Known gaps remaining:
 
 | Gap | Where it shows |
 |---|---|
-| Maven metadata nested inside a single bundled ("uber") jar is not read | metabase: 357 libraries Syft names, 1 Cordon does |
 | Clear Linux bundles are not read | clearlinux: 6 packages, none from Cordon |
 | A shipped application's Composer and npm lockfiles are read, development packages included | nextcloud, drupal, haskell: Cordon names more than Syft |
 
