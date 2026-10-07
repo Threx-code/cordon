@@ -40,6 +40,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -52,7 +53,14 @@ if TYPE_CHECKING:
 
 MANIFEST_NAME = ".cordon-guard.sha256"
 SHIM_MARKER = "cordon-guard-shim-v1"
-HOOKS = ("pre-commit", "commit-msg", "pre-push")
+HOOKS = ("pre-commit", "commit-msg", "pre-push", "post-checkout", "post-merge")
+INCOMING_HOOKS = ("post-checkout", "post-merge")
+"""The hooks that check code arriving rather than leaving: a clone or branch switch, and a pull
+or merge. Git runs them after the files are written, so they cannot refuse; they undo instead
+(`core/incoming.py`)."""
+TEMPLATE_DIR = "git-template"
+"""Under the user's Cordon configuration directory: what `guard install --global` points git's
+`init.templateDir` at, so every clone and `git init` starts with the hooks."""
 
 SHIM_TEMPLATE = """\
 #!/usr/bin/env sh
@@ -71,7 +79,15 @@ if ! command -v {program} >/dev/null 2>&1; then
     exit 1
 fi
 
-exec {program} {command}
+# The repository's organisation policy, when it carries one: the same ceiling CI applies, so a
+# commit the pipeline would refuse is refused here first.
+top="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+set --
+if [ -f "$top/cordon-policy.yaml" ]; then
+    set -- --policy "$top/cordon-policy.yaml"
+fi
+
+exec {program} {command} "$@"
 """
 """The hook body.
 
@@ -79,6 +95,30 @@ exec {program} {command}
 shim can never invoke a command that was not the one installed. Getting that
 wrong does not degrade quietly: the shim fails closed, and every commit in the
 repository is refused until somebody works out why."""
+
+INCOMING_SHIM_TEMPLATE = """\
+#!/usr/bin/env sh
+# {marker} -- installed by `{program} guard install`. Do not edit.
+#
+# Checks code that has just arrived -- a clone, a branch switch, a pull -- before anything acts on
+# it, and undoes the {hook} when the code is blocked. Runs on {program}'s defaults, never on a
+# configuration the arriving code carries. Git has already written the files when this runs, so
+# it cannot refuse; if {program} is missing it says so loudly instead.
+
+if [ -n "${{CORDON_INCOMING:-}}" ]; then
+    exit 0
+fi
+if ! command -v {program} >/dev/null 2>&1; then
+    echo "" >&2
+    echo "WARNING: {program} is not installed, so the code this {hook} brought in was NOT checked." >&2
+    echo "Install it (pipx install cordon-scanner) before opening or building it." >&2
+    exit 0
+fi
+
+exec {program} guard incoming {hook} "$@"
+"""
+"""The incoming hooks' body: git's own arguments are passed through, and no repository file is
+read to configure the check."""
 
 HOOK_COMMANDS = {
     # Staged mode reads the git index rather than the working tree. A hook that
@@ -90,9 +130,10 @@ HOOK_COMMANDS = {
     # a finding, so the removal itself cannot be committed. The cost is one extra
     # scan per commit.
     "commit-msg": "scan --staged --fail-on critical --quiet",
-    # The last check before code leaves the machine. Full tree, because a commit
-    # made with --no-verify skipped everything above.
-    "pre-push": "scan --fail-on high --quiet",
+    # The last check before code leaves the machine. Every tracked file, because a commit
+    # made with --no-verify skipped everything above; and history, because a secret
+    # committed in one local commit and deleted in the next is pushed all the same.
+    "pre-push": "scan --tracked --history --fail-on high --quiet",
 }
 
 
@@ -251,6 +292,91 @@ class Guard:
         with handle:
             handle.write(text)
 
+    @staticmethod
+    def shim(hook: str) -> str:
+        """The script installed as one hook."""
+        if hook in INCOMING_HOOKS:
+            return INCOMING_SHIM_TEMPLATE.format(marker=SHIM_MARKER, hook=hook, program=PROGRAM)
+        return SHIM_TEMPLATE.format(
+            marker=SHIM_MARKER, hook=hook, command=HOOK_COMMANDS[hook], program=PROGRAM
+        )
+
+    @classmethod
+    def _write_hooks(cls, hooks_dir: Path, *, force: bool) -> tuple[list[str], list[str]]:
+        """Write every hook into one hooks directory: (installed, preserved)."""
+        installed: list[str] = []
+        # Hooks left alone because something else already owned them.
+        preserved: list[str] = []
+        for hook in HOOKS:
+            target = hooks_dir / hook
+            # A pre-existing hook that is not one of ours is preserved rather
+            # than replaced. `install_hooks` used to overwrite whatever was
+            # there -- a project's own `pre-commit`, `commit-msg` or `pre-push`
+            # -- with no backup and no warning, which is a destructive act
+            # performed silently by a tool whose argument is that silent acts
+            # are the problem.
+            cls._refuse_symlink(target, f".git/hooks/{hook}")
+            if target.is_file():
+                existing = target.read_text(encoding="utf-8", errors="replace")
+                if SHIM_MARKER not in existing and not force:
+                    backup = target.with_suffix(f"{target.suffix}.cordon-backup")
+                    cls._refuse_symlink(backup, f".git/hooks/{backup.name}")
+                    if not backup.exists():
+                        cls._write_no_follow(backup, existing)
+                    preserved.append(hook)
+                    continue
+            cls._write_no_follow(target, cls.shim(hook))
+            target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            installed.append(hook)
+        return installed, preserved
+
+    @classmethod
+    def install_global(cls, *, force: bool = False) -> tuple[Path, list[str]]:
+        """Put the hooks in git's template directory, so every new clone and `git init` has them.
+
+        Through `init.templateDir`, not a global `core.hooksPath`: a global hooks path would
+        replace every repository's own hooks (husky's, pre-commit's, a team's), where a template
+        only seeds `.git/hooks` in repositories created from now on. An existing template
+        directory is used rather than replaced, and hooks already in it are preserved as
+        `install_hooks` preserves them. Repositories that already exist get the hooks with
+        `guard install` in each.
+        """
+        from cordon_scanner.sources.git import GitRepository
+
+        git = GitRepository.binary()
+        configured = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
+            [git, "config", "--global", "--get", "init.templateDir"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        if configured:
+            template = Path(configured).expanduser()
+        else:
+            xdg = os.environ.get("XDG_CONFIG_HOME")
+            base = Path(xdg) if xdg else Path("~/.config").expanduser()
+            template = base / "cordon" / TEMPLATE_DIR
+        hooks_dir = template / "hooks"
+        cls._refuse_symlink(template, str(template))
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        installed, preserved = cls._write_hooks(hooks_dir, force=force)
+        if not configured:
+            done = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
+                [git, "config", "--global", "init.templateDir", str(template)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if done.returncode != 0:
+                raise SourceError(f"could not set init.templateDir: {done.stderr.strip()}")
+        if preserved:
+            raise SourceError(
+                f"{', '.join(preserved)} already exist in {hooks_dir} and are not cordon shims; "
+                "a copy of each was saved alongside with a .cordon-backup suffix",
+                hint="Merge the check into your existing hook, or pass --force to replace it.",
+            )
+        return template, installed
+
     @classmethod
     def install_hooks(cls, root: str | Path, *, force: bool = False) -> list[str]:
         """Install the fail-closed shims. Safe to run repeatedly.
@@ -277,38 +403,7 @@ class Guard:
         if configured:
             git.run(["config", "--unset-all", "core.hooksPath"], check=False, harden=False)
 
-        installed: list[str] = []
-        # Hooks left alone because something else already owned them.
-        preserved: list[str] = []
-        for hook in HOOKS:
-            target = hooks_dir / hook
-            # A pre-existing hook that is not one of ours is preserved rather
-            # than replaced. `install_hooks` used to overwrite whatever was
-            # there -- a project's own `pre-commit`, `commit-msg` or `pre-push`
-            # -- with no backup and no warning, which is a destructive act
-            # performed silently by a tool whose argument is that silent acts
-            # are the problem.
-            cls._refuse_symlink(target, f".git/hooks/{hook}")
-            if target.is_file():
-                existing = target.read_text(encoding="utf-8", errors="replace")
-                if SHIM_MARKER not in existing and not force:
-                    backup = target.with_suffix(f"{target.suffix}.cordon-backup")
-                    cls._refuse_symlink(backup, f".git/hooks/{backup.name}")
-                    if not backup.exists():
-                        cls._write_no_follow(backup, existing)
-                    preserved.append(hook)
-                    continue
-            cls._write_no_follow(
-                target,
-                SHIM_TEMPLATE.format(
-                    marker=SHIM_MARKER,
-                    hook=hook,
-                    command=HOOK_COMMANDS[hook],
-                    program=PROGRAM,
-                ),
-            )
-            target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            installed.append(hook)
+        installed, preserved = cls._write_hooks(hooks_dir, force=force)
 
         # The manifest is written as part of installation, not left as an
         # optional extra somebody might do later. That is what makes its absence
@@ -374,20 +469,66 @@ class Guard:
         candidates = [
             *CONFIG_FILENAMES,
             ".pre-commit-config.yaml",
-            ".github/workflows/security.yml",
-            ".github/workflows/cordon.yml",
+            # The organisation policy ceiling and the baselines: editing one is how a finding is
+            # quietly accepted, which is the edit a guard exists to make visible.
+            "cordon-policy.yaml",
+            "cordon-baseline.json",
+            ".cordon-baseline.json",
+            "cordon-history-baseline.json",
         ]
-        return [name for name in candidates if (root / name).is_file()]
+        # Every CI definition that runs the scanner, in any provider's layout: deleting the step
+        # or loosening its gate is the cheapest way round it.
+        pipelines = [
+            *sorted(
+                str(p.relative_to(root))
+                for p in (root / ".github" / "workflows").glob("*.y*ml")
+                if p.is_file()
+            ),
+            ".gitlab-ci.yml",
+            "bitbucket-pipelines.yml",
+            "azure-pipelines.yml",
+            "Jenkinsfile",
+            ".circleci/config.yml",
+            ".buildkite/pipeline.yml",
+        ]
+        for name in pipelines:
+            path = root / name
+            try:
+                if path.is_file() and "cordon" in path.read_text(
+                    encoding="utf-8", errors="replace"
+                ):
+                    candidates.append(name)
+            except OSError:
+                continue
+        return [name for name in dict.fromkeys(candidates) if (root / name).is_file()]
 
     @classmethod
-    def verify(cls, root: str | Path) -> GuardReport:
+    def verify(cls, root: str | Path, *, manifest_only: bool = False) -> GuardReport:
         """Check that the guard is intact.
 
         Every failure names what to do about it. A verification that says something
         is wrong without saying what to do gets disabled rather than fixed.
+
+        `manifest_only` is for CI, which has no hooks and never will: there the shims
+        and `core.hooksPath` are not checked, and the manifest is -- every file it
+        lists must match, and a missing manifest is a failure, because CI asked to
+        verify one.
         """
         repository = Path(root).resolve()
         problems: list[GuardProblem] = []
+
+        if manifest_only:
+            if not (repository / MANIFEST_NAME).is_file():
+                return GuardReport(
+                    (
+                        GuardProblem(
+                            GuardStatus.MANIFEST_MISSING,
+                            f"{MANIFEST_NAME} is absent, so there is nothing to verify",
+                            f"Run `{PROGRAM} guard update` and commit {MANIFEST_NAME}.",
+                        ),
+                    )
+                )
+            return GuardReport(tuple(cls._check_manifest(repository)))
 
         try:
             git_dir = cls._git_dir(repository)

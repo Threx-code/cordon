@@ -392,3 +392,89 @@ class TestShimInvokesTheInstalledCommand(GuardFixtures):
                 if line.lstrip().startswith("#"):
                     continue
                 assert not re.search(r"(?<![\w-])cordon(?![\w-])", line), line
+
+
+class TestTheHooksApplyThePolicy(GuardFixtures):
+    """L7: the hooks apply the same ceiling CI does, and pre-push reads what will be pushed."""
+
+    def test_a_repository_policy_is_passed(self, repository, tmp_path) -> None:
+        """Run the shim with a stand-in scanner that records its arguments."""
+        Guard.install_hooks(repository)
+        (repository / "cordon-policy.yaml").write_text("policy: {}\n", encoding="utf-8")
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        record = tmp_path / "argv"
+        stand_in = bin_dir / PROGRAM
+        stand_in.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{record}"\n', encoding="utf-8")
+        stand_in.chmod(0o755)
+        environment = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+        subprocess.run(
+            ["sh", str(repository / ".git" / "hooks" / "pre-commit")],
+            cwd=repository,
+            env=environment,
+            check=True,
+        )
+        argv = record.read_text(encoding="utf-8").split("\n")
+        assert "--policy" in argv
+        assert argv[argv.index("--policy") + 1].endswith("cordon-policy.yaml")
+
+    def test_no_policy_no_flag(self, repository, tmp_path) -> None:
+        Guard.install_hooks(repository)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        record = tmp_path / "argv"
+        stand_in = bin_dir / PROGRAM
+        stand_in.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{record}"\n', encoding="utf-8")
+        stand_in.chmod(0o755)
+        environment = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+        subprocess.run(
+            ["sh", str(repository / ".git" / "hooks" / "pre-commit")],
+            cwd=repository,
+            env=environment,
+            check=True,
+        )
+        assert "--policy" not in record.read_text(encoding="utf-8").split("\n")
+
+    def test_pre_push_reads_tracked_files_and_history(self, repository) -> None:
+        Guard.install_hooks(repository)
+        content = (repository / ".git" / "hooks" / "pre-push").read_text(encoding="utf-8")
+        assert "--tracked --history" in content
+
+
+class TestVerifyingTheManifestInCi(GuardFixtures):
+    """`guard verify --manifest-only`: CI has no hooks, and checks what it can."""
+
+    def test_no_hooks_is_fine_when_the_manifest_matches(self, repository) -> None:
+        Guard.write_manifest(repository)
+        assert Guard.verify(repository, manifest_only=True).ok
+        assert not Guard.verify(repository).ok, "the full check still wants the hooks"
+
+    def test_an_edited_guarded_file_fails(self, repository) -> None:
+        Guard.write_manifest(repository)
+        (repository / "cordon.yaml").write_text(
+            "scan:\n  severity_threshold: critical\n", encoding="utf-8"
+        )
+        report = Guard.verify(repository, manifest_only=True)
+        assert [p.status for p in report.problems] == [GuardStatus.TAMPERED]
+
+    def test_a_missing_manifest_fails(self, repository) -> None:
+        report = Guard.verify(repository, manifest_only=True)
+        assert [p.status for p in report.problems] == [GuardStatus.MANIFEST_MISSING]
+
+    def test_the_policy_baselines_and_pipelines_are_guarded(self, repository) -> None:
+        (repository / "cordon-policy.yaml").write_text("policy: {}\n", encoding="utf-8")
+        (repository / "cordon-baseline.json").write_text("{}\n", encoding="utf-8")
+        workflows = repository / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "security.yml").write_text(
+            "steps:\n  - run: cordon-scanner scan .\n", encoding="utf-8"
+        )
+        (workflows / "docs.yml").write_text("steps:\n  - run: make docs\n", encoding="utf-8")
+        manifest = Guard.write_manifest(repository).read_text(encoding="utf-8")
+        for name in (
+            "cordon-policy.yaml",
+            "cordon-baseline.json",
+            ".github/workflows/security.yml",
+        ):
+            assert name in manifest
+        assert "docs.yml" not in manifest, "a pipeline that does not run the scanner is not guarded"

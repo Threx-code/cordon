@@ -450,9 +450,47 @@ class GitRepository:
             return None
         return completed.stdout
 
+    def tree_files(self, rev: str) -> list[str]:
+        """Every regular file in a commit's tree, without a working tree.
+
+        Symbolic links (mode 120000) and submodules (gitlinks) are left out: a link's blob is
+        only its target's name, and a submodule is another repository, checked out (and
+        checked) on its own. Used where nothing may be written to disk before the scan, such as
+        a clone that has not been checked out yet.
+        """
+        if rev.startswith("-"):
+            raise SourceError(f"revision {rev!r} starts with a dash and would be read as an option")
+        output = self.run(["ls-tree", "-r", "-z", "--full-tree", rev])
+        files: list[str] = []
+        for record in output.split("\0"):
+            meta, _, name = record.partition("\t")
+            mode, _, kind = meta.partition(" ")
+            if name and kind.startswith("blob") and mode != "120000":
+                files.append(name)
+        return files
+
+    def blob_at(self, rev: str, path: str) -> bytes | None:
+        """A file's content in a commit's tree, or None when it cannot be read."""
+        answered, blob = self._batch_read(path, rev)
+        if answered:
+            return blob
+        try:
+            completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
+                [self.binary(), *HARDENING, "show", f"{rev}:{path}"],
+                cwd=self.root,
+                capture_output=True,
+                timeout=GIT_TIMEOUT,
+                check=False,
+                text=False,
+                env=GitRepository._environment(),
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, SourceError):
+            return None
+        return completed.stdout if completed.returncode == 0 else None
+
     # -- Batched blob reads ----------------------------------------------
 
-    def _batch_read(self, path: str) -> tuple[bool, bytes | None]:
+    def _batch_read(self, path: str, rev: str = "") -> tuple[bool, bytes | None]:
         """Read one blob through a shared `git cat-file --batch` process.
 
         `git show :path` starts a process per file. A pre-commit hook staging
@@ -483,7 +521,8 @@ class GitRepository:
             return (False, None)
 
         try:
-            process.stdin.write(f":{path}\n".encode())
+            # `:path` is the index; `<commit>:path` is that commit's tree.
+            process.stdin.write(f"{rev}:{path}\n".encode())
             process.stdin.flush()
             header = process.stdout.readline()
             if not header:
@@ -752,4 +791,40 @@ class GitIndexSource:
         return f"git index ({len(self._paths)} staged paths)"
 
 
-__all__ = ["GitIndexSource", "GitInfo", "GitPathSource", "GitRepository"]
+class GitTreeSource(GitIndexSource):
+    """A scan of one commit's tree, read from the object store.
+
+    What `clone` and `pull` scan before anything is checked out or merged: every file is read
+    from git's objects, so nothing the commit contains is written to the working tree, where an
+    editor, a shell hook or an agent could act on it, until the scan has passed. Not parallel,
+    for the reason `GitIndexSource` gives: a worker reads by path from disk, and the bytes on
+    disk are not this commit's.
+    """
+
+    id = "git-tree"
+
+    def __init__(
+        self, repository: GitRepository, rev: str, paths: Iterable[str] | None = None
+    ) -> None:
+        super().__init__(repository, repository.tree_files(rev) if paths is None else paths)
+        self._rev = rev
+
+    def missing_from_tree(self, root: Path) -> tuple[str, ...]:
+        """Nothing is expected on disk: the commit is the whole source."""
+        return ()
+
+    def load(self, entry: WalkEntry, limits: Limits) -> FileContent | Skipped:
+        raw = self._repository.blob_at(self._rev, entry.rel_path)
+        if raw is None:
+            return Skipped(entry.rel_path, SkipReason.UNREADABLE)
+        return FileContent.from_bytes(entry.rel_path, raw, limits=limits)
+
+    @property
+    def empty_selection_is_normal(self) -> bool:
+        return False
+
+    def describe(self) -> str:
+        return f"git commit {self._rev[:12]} ({len(self._paths)} files)"
+
+
+__all__ = ["GitIndexSource", "GitInfo", "GitPathSource", "GitRepository", "GitTreeSource"]
