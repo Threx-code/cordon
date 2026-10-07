@@ -1,0 +1,18 @@
+# Jane Street versions begin with `v` (`v0.16.2`), and the old reader only took a locked version
+# that began with a digit: core, base, ppx_jane and sexplib0 disappeared from the inventory. It
+# also read `depends:` out of a comment, and stopped a formula at the first `]`.
+kinds: [regression, valid]
+covers:
+  - opam.versions
+  - UNI-02
+  - UNI-04
+dependencies:
+  - {name: core, version_constraint: ">= v0.16 & < v0.17", resolved_version: v0.16.2, direct: true}
+  - {name: base, resolved_version: v0.16.3, direct: false}
+  - {name: ppx_jane, resolved_version: v0.16.0}
+  - {name: sexplib0, resolved_version: v0.16.0}
+  - {name: ssl, resolved_version: 0.7.0, resolution_reason: resolved by the lockfile}
+  - {name: tls-async, resolution_status: unresolved, resolution_reason: "one of alternatives (`|`): resolved only if the solver chooses it"}
+  - {name: landmarks, dependency_type: optional}
+absent:
+  - left-over-from-a-refactor

@@ -1,0 +1,6 @@
+depexts: [
+  ["libgmp-dev"] {os-family = "debian"}
+]
+pin-depends: [
+  ["uutf.1.0.3" "git+https://github.com/dbuenzli/uutf.git#v1.0.3"]
+]

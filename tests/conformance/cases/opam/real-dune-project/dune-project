@@ -1,0 +1,21 @@
+(lang dune 3.0)
+(name app)
+(generate_opam_files true)
+(source (github acme/app))
+(license MIT)
+(authors "Conformance Fixture")
+(maintainers "fixture@example.invalid")
+
+(package
+ (name app)
+ (synopsis "A conformance fixture")
+ (depends
+  (ocaml (>= 4.14))
+  dune
+  (fmt (>= 0.9))
+  (cmdliner (< 2.0))
+  uutf
+  (astring (= 0.8.5))
+  (mtime (and (>= 2.0) (< 3.0)))
+  (alcotest :with-test)
+  (odoc :with-doc)))

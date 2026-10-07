@@ -1,0 +1,6 @@
+(lang dune 3.17)
+(package
+ (name acme_core)
+ (depends
+  (ocaml (>= 5.0))
+  (fmt (>= 0.9))))

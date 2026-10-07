@@ -1,0 +1,48 @@
+# A dune project whose app.opam dune generates (plus a template adding a git pin-depends and a
+# depext), its dependencies installed into an opam switch with test ones, and the solution locked
+# by `opam lock`. Checked against `opam list --required-by --recursive` on that switch.
+kinds: [real-world, valid]
+covers:
+  - file:app.opam
+  - file:dune-project
+  - file:app.opam.locked
+  - opam.compiler
+  - opam.versions
+  - opam.pins
+  - opam.git-local
+  - opam.dep-kinds
+  - opam.variables
+  - opam.dune
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+  - UNI-18
+dependencies:
+  - {name: fmt, version_constraint: ">= 0.9", resolved_version: 0.11.0, direct: true, manifest_location: {path: app.opam}, lockfile_location: {path: app.opam.locked}}
+  - {name: mtime, version_constraint: ">= 2.0 & < 3.0", resolved_version: 2.2.0}
+  - {name: astring, version_constraint: "= 0.8.5", resolved_version: 0.8.5}
+  - {name: alcotest, dependency_type: test, resolved_version: 1.9.1}
+  - {name: re, dependency_type: test, direct: false}
+  - {name: odoc, dependency_type: dev, resolution_status: unresolved, resolution_reason: "a with-doc dependency: installed, and locked, only when opam is asked for with-doc"}
+  # The pin: from git at a tag, not through opam-repository.
+  - {name: uutf, source_type: git, version_constraint: "git+https://github.com/dbuenzli/uutf.git#v1.0.3", resolved_version: 1.0.3}
+  # The compiler and the virtual packages describing it: the switch.
+  - {name: ocaml, dependency_type: platform, version_constraint: ">= 4.14"}
+  - {name: ocaml-base-compiler, dependency_type: platform}
+  - {name: base-domains, dependency_type: platform}
+  - {name: "depext:libgmp-dev", dependency_type: platform, platform_constraints: [os-family = debian]}
+  - {name: topkg, direct: false, resolved_version: 1.1.1}
+hooks:
+  - {kind: build, path: app.opam, name: opam build, command: dune build -p name -j jobs}
+sources:
+  - "dune generates app.opam (generate_opam_files)"
+findings:
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: uutf}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: uutf}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

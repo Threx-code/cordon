@@ -1,0 +1,9 @@
+opam-version: "2.0"
+# depends: ["left-over-from-a-refactor"]
+depopts: ["landmarks"]
+depends: [
+  "ocaml" {>= "5.1"}
+  "core" {>= "v0.16" & < "v0.17"}
+  "ppx_jane" {>= "v0.16"}
+  ("ssl" {>= "0.7"} | "tls-async")
+]

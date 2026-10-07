@@ -1,0 +1,53 @@
+# dune's own package management: `dune pkg lock` (dune 3.24) wrote dune.lock/ -- lock.dune with
+# the repositories at their commits, and one .pkg per package with its archive's SHA-512 -- from
+# the same dune-project as the real case. A dune-workspace adds an internal opam repository and
+# an opam-switch context. Beside it, a vendored package's `opam` file in the older style:
+# alternatives with `|`, depopts, conflicts, `!with-test & os != "win32"` filters, `= version`,
+# `available`, a local pin, and build / install commands.
+kinds: [edge, valid]
+covers:
+  - file:opam
+  - file:dune-workspace
+  - opam.repositories
+  - opam.dune
+  - opam.dep-kinds
+  - opam.variables
+  - opam.git-local
+  - opam.compiler
+  - UNI-07
+  - UNI-10
+  - UNI-15
+  - UNI-18
+dependencies:
+  # Each dune.lock package file belongs to the project above dune.lock/.
+  - {name: fmt, resolved_version: 0.11.0, direct: true, integrity_status: recorded, manifest_location: {path: dune-project}, lockfile_location: {path: dune.lock/fmt.0.11.0.pkg}}
+  - {name: ocamlfind, resolved_version: 1.9.8+dune, direct: false, source_type: registry}
+  - {name: ocaml-base-compiler, dependency_type: platform}
+  - {name: compiler-cloning, dependency_type: platform}
+  - {name: dune, resolution_status: unresolved, resolution_reason: "dune itself, which runs the build: dune's own lock leaves it out", manifest_location: {path: dune-project}}
+  # The legacy opam file.
+  - {name: lwt, resolution_reason: "one of alternatives (`|`): resolved only if the solver chooses it"}
+  - {name: async, version_constraint: ">= v0.16"}
+  - {name: yojson, dependency_type: optional}
+  - {name: ounit2, dependency_type: test}
+  - {name: dune, dependency_type: build, version_constraint: ">= 2.9", manifest_location: {path: vendor/legacy/opam}}
+  - {name: ppx_deriving, platform_constraints: ["!with-test", "os != win32"]}
+  - {name: shared, source_type: path}
+  - {name: ocaml, dependency_type: platform, version_constraint: ">= 4.08 & < 5.3"}
+absent:
+  - commented-out
+  - also-not-a-dependency
+  # conflicts are not dependencies.
+  - result
+hooks:
+  - {kind: build, path: vendor/legacy/opam, name: opam build, command: "./configure --prefix=%{prefix}%"}
+  - {kind: build, path: vendor/legacy/opam, name: opam install, command: make install}
+sources:
+  - "repository acme git+https://git.acme.example.internal/opam-repository.git"
+  - "context on opam switch 5.2"
+  - "repository https://github.com/ocaml/opam-repository.git#99cc90ddea5a8b2f9a6c406ce61df37f5c54e87b"
+  - "available: arch != arm32 & os != freebsd"
+no_findings:
+  - SUSPECT.LOCKFILE.SOURCE.001
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001

@@ -1,0 +1,6 @@
+{
+ "tool": "opam list --required-by --recursive --installed --with-test",
+ "packages": ["alcotest@1.9.1", "astring@0.8.5", "base-threads@base", "base-unix@base", "cmdliner@1.3.0", "dune@3.24.2", "fmt@0.11.0", "mtime@2.2.0", "ocaml@5.2.1", "ocaml-base-compiler@5.2.1", "ocaml-config@3", "ocaml-syntax-shims@1.0.0", "ocamlbuild@0.16.1", "ocamlfind@1.9.8", "re@1.14.0", "stdlib-shims@0.3.0", "topkg@1.1.1", "uutf@1.0.3"],
+ "exclude": {"dependency_type": {"platform": "the OCaml compiler and its virtual feature packages: met by the switch, recorded as platform requirements"}},
+ "ignore": {"ocaml": "the compiler", "ocaml-base-compiler": "the compiler", "ocaml-config": "the compiler", "base-threads": "a virtual package of the compiler", "base-unix": "a virtual package of the compiler"}
+}

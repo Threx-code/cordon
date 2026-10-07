@@ -1,0 +1,28 @@
+opam-version: "2.0"
+name: "legacy"
+version: "0.4.0"
+maintainer: "fixture@example.invalid"
+dev-repo: "git+https://github.com/acme/legacy.git"
+# A comment the old reader did not skip: "commented-out" {>= "1.0"}
+(* and a block comment: "also-not-a-dependency" *)
+depends: [
+  "ocaml" {>= "4.08" & < "5.3"}
+  "dune" {build & >= "2.9"}
+  ("lwt" {>= "5.6"} | "async" {>= "v0.16"})
+  "ounit2" {with-test}
+  "shared" {= version}
+  "ppx_deriving" {!with-test & os != "win32"}
+]
+depopts: [
+  "yojson"
+]
+conflicts: [
+  "result" {< "1.5"}
+]
+available: arch != "arm32" & os != "freebsd"
+pin-depends: ["shared.0.4.0" "file://../shared"]
+build: [
+  ["./configure" "--prefix=%{prefix}%"] {os != "win32"}
+  [make "-j%{jobs}%"]
+]
+install: [make "install"]

@@ -1,0 +1,7 @@
+(lang package 0.1)
+
+(repositories
+ (complete true)
+ (used
+  ((source
+    https://github.com/ocaml/opam-repository.git#99cc90ddea5a8b2f9a6c406ce61df37f5c54e87b))))

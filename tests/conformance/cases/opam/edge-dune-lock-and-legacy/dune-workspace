@@ -1,0 +1,16 @@
+(lang dune 3.17)
+
+; Package management: the lock is solved against opam-repository and an internal overlay.
+(repository
+ (name acme)
+ (url git+https://git.acme.example.internal/opam-repository.git))
+
+(lock_dir
+ (repositories overlay upstream acme))
+
+(context
+ (opam
+  (switch 5.2)
+  (name release)))
+
+(context default)

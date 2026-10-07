@@ -1,0 +1,56 @@
+opam-version: "2.0"
+name: "app"
+version: "~dev"
+synopsis: "A conformance fixture"
+maintainer: "fixture@example.invalid"
+authors: "Conformance Fixture"
+license: "MIT"
+homepage: "https://github.com/acme/app"
+bug-reports: "https://github.com/acme/app/issues"
+depends: [
+  "alcotest" {= "1.9.1" & with-test}
+  "astring" {= "0.8.5"}
+  "base-bigarray" {= "base"}
+  "base-domains" {= "base"}
+  "base-nnp" {= "base"}
+  "base-threads" {= "base"}
+  "base-unix" {= "base"}
+  "cmdliner" {= "1.3.0"}
+  "dune" {= "3.24.2"}
+  "fmt" {= "0.11.0"}
+  "mtime" {= "2.2.0"}
+  "ocaml" {= "5.2.1"}
+  "ocaml-base-compiler" {= "5.2.1"}
+  "ocaml-config" {= "3"}
+  "ocaml-options-vanilla" {= "1"}
+  "ocaml-syntax-shims" {= "1.0.0" & with-test}
+  "ocamlbuild" {= "0.16.1"}
+  "ocamlfind" {= "1.9.8"}
+  "re" {= "1.14.0" & with-test}
+  "stdlib-shims" {= "0.3.0" & with-test}
+  "topkg" {= "1.1.1"}
+  "uutf" {= "1.0.3"}
+]
+build: [
+  ["dune" "subst"] {dev}
+  [
+    "dune"
+    "build"
+    "-p"
+    name
+    "-j"
+    jobs
+    "@install"
+    "@runtest" {with-test}
+    "@doc" {with-doc}
+  ]
+]
+depexts: ["libgmp-dev"] {os-family = "debian"}
+dev-repo: "git+https://github.com/acme/app.git"
+pin-depends: [
+  [
+    "ocaml-base-compiler.5.2.1"
+    "https://github.com/ocaml/ocaml/releases/download/5.2.1/ocaml-5.2.1.tar.gz"
+  ]
+  ["uutf.1.0.3" "git+https://github.com/dbuenzli/uutf.git#v1.0.3"]
+]

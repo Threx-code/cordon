@@ -1,0 +1,13 @@
+opam-version: "2.0"
+name: "service"
+version: "~dev"
+depends: [
+  "base" {= "v0.16.3"}
+  "base-threads" {= "base"}
+  "core" {= "v0.16.2"}
+  "ocaml" {= "5.1.1"}
+  "ocaml-base-compiler" {= "5.1.1"}
+  "ppx_jane" {= "v0.16.0"}
+  "sexplib0" {= "v0.16.0"}
+  "ssl" {= "0.7.0"}
+]

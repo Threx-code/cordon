@@ -1,0 +1,14 @@
+# A dune workspace of two projects -- a library and a CLI that depends on it -- solved together
+# into one dune.lock/ at the workspace root. Each project's declarations join the root lock; the
+# library is the workspace's own code; fmt, which both declare, is one package. A per-platform
+# `(choice ...)` in a lock file's depends.
+kinds: [edge, valid]
+covers:
+  - opam.dune
+  - UNI-07
+  - UNI-09
+dependencies:
+  - {name: fmt, resolved_version: 0.11.0, direct: true, lockfile_location: {path: dune.lock/fmt.0.11.0.pkg}}
+  - {name: cmdliner, version_constraint: ">= 1.2", resolved_version: 1.3.0, manifest_location: {path: apps/cli/dune-project}}
+  - {name: acme_core, source_type: path, manifest_location: {path: apps/cli/dune-project}}
+  - {name: ocaml, dependency_type: platform}
