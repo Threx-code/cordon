@@ -101,6 +101,17 @@ runs found is fixed below, with a test that fails on the old code. The figures a
   packages detected by content alone"; that was the overall rate, the known-release lookup included.
   By the code alone it is 79.7% (39,328 samples, this release), and 0.5.2 measures the same on one
   fixed-seed draw, so the label was wrong, not the detection. README, docs and site now give both.
+- **Container images, against Syft**: what Syft found and Cordon did not is read now. Installed R
+  packages (`site-library/<pkg>/DESCRIPTION`); PECL extensions (`.registry/.channel.pecl.php.net`);
+  Composer's install record (`vendor/composer/installed.json`); programs copied in with no package
+  database, by the version their build embeds (bash, curl, OpenSSL, xz, zstd, util-linux, PHP),
+  counted only where no package database owns the file; a Go toolchain's own programs, for the
+  modules they were built from; jars nested two levels down and named by their file when they
+  carry no Maven metadata; and a Maven group from the advisory data where it records exactly one,
+  else the module name less the parts that repeat the artifact (Groovy 4's `org.apache.groovy`,
+  which Syft gives as `org.codehaus.groovy`). In an image, a lockfile's development packages and
+  a manifest's unversioned names count only where installed. Measured: clearlinux 0 to 1.0,
+  r-base, metabase 1.0, haskell 0.44 to 0.99, drupal 0.32 to 0.99.
 - A jar past 256 MB in an image (an application shipped as one jar of every library it uses) was
   never read for the Maven artifacts it records: it is now walked entry by entry, trailing data
   descriptors included. metabase's image went from 1 of 444 packages to 444 of 444, against Syft.
