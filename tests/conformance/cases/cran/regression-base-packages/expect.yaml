@@ -1,0 +1,21 @@
+# R's base packages (methods, utils, stats, grDevices, tools) ship with R itself and are not on
+# CRAN. The old reader recorded each as a CRAN dependency -- names a registry check reported as
+# missing and a typosquat check compared against the popular set. They are part of R, and only
+# R's own version is a requirement.
+kinds: [regression, valid]
+covers:
+  - cran.fields
+  - cran.r-version
+  - UNI-02
+  - UNI-08
+dependencies:
+  - {name: httr2, version_constraint: ">= 1.0.0", dependency_type: runtime}
+  - {name: testthat, dependency_type: dev}
+  - {name: R, dependency_type: platform, version_constraint: ">= 4.0"}
+only: true
+absent:
+  - methods
+  - utils
+  - stats
+  - grDevices
+  - tools

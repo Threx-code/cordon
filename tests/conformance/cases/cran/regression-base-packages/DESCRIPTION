@@ -1,0 +1,13 @@
+Package: reporting
+Version: 0.4.1
+License: MIT
+Depends:
+    R (>= 4.0),
+    methods
+Imports:
+    utils,
+    stats,
+    grDevices,
+    tools,
+    httr2 (>= 1.0.0)
+Suggests: testthat (>= 3.0.0)

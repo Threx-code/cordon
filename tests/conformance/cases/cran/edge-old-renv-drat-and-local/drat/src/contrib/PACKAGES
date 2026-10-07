@@ -1,0 +1,12 @@
+Package: shared
+Version: 0.3.0
+Imports: jsonlite
+MD5sum: 4f2e1c0b9a8d7e6f5a4b3c2d1e0f9a8b
+NeedsCompilation: no
+
+Package: acmeplot
+Version: 2.1.0
+Depends: R (>= 4.0.0)
+Imports: ggplot2
+MD5sum: 1a2b3c4d5e6f708192a3b4c5d6e7f809
+NeedsCompilation: no

@@ -1,0 +1,44 @@
+{
+  "R": {
+    "Version": "4.2.3",
+    "Repositories": [
+      {"Name": "CRAN", "URL": "https://cloud.r-project.org"},
+      {"Name": "acme", "URL": "https://acme.r-universe.dev"}
+    ]
+  },
+  "Bioconductor": {"Version": "3.16"},
+  "Packages": {
+    "data.table": {
+      "Package": "data.table",
+      "Version": "1.14.8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "b4c06e554f33344e044ccd7fdca750a9",
+      "Requirements": ["methods"]
+    },
+    "limma": {
+      "Package": "limma",
+      "Version": "3.54.2",
+      "Source": "Bioconductor",
+      "Hash": "c3d8b0b2a8c3f0d6e1a2b3c4d5e6f708",
+      "Requirements": ["statmod"]
+    },
+    "statmod": {
+      "Package": "statmod",
+      "Version": "1.5.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "26e158d12052c279bdd4ba858b80fb1f",
+      "Requirements": []
+    },
+    "shared": {
+      "Package": "shared",
+      "Version": "0.3.0",
+      "Source": "Local",
+      "RemoteType": "local",
+      "RemoteUrl": "../shared",
+      "Hash": "9a1d3f0c2b4e5d6a7b8c9d0e1f2a3b4c",
+      "Requirements": []
+    }
+  }
+}

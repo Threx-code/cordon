@@ -1,0 +1,25 @@
+Package: conformance
+Title: A Conformance Fixture
+Version: 0.1.0
+Authors@R: person("Conformance", "Fixture", role = c("aut", "cre"), email = "fixture@example.invalid")
+Description: Exercises every DESCRIPTION dependency field.
+License: MIT
+Depends:
+    R (>= 4.1.0)
+Imports:
+    jsonlite (>= 1.8.0),
+    R6,
+    digest,
+    BiocGenerics,
+    glue
+Suggests:
+    knitr
+LinkingTo:
+    Rcpp
+Enhances:
+    data.table
+Remotes:
+    github::tidyverse/glue@v1.8.0
+biocViews:
+SystemRequirements: libxml2, GNU make
+Encoding: UTF-8

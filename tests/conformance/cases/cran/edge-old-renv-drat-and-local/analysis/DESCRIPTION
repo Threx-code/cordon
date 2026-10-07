@@ -1,0 +1,11 @@
+Package: analysis
+Version: 1.2.0
+License: GPL-3
+Depends: R (>= 3.6)
+Imports:
+    shared,
+    limma,
+    data.table (>= 1.14.0)
+Remotes:
+    local::../shared,
+    bioc::release/limma

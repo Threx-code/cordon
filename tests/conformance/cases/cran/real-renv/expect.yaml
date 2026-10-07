@@ -1,0 +1,49 @@
+# An R package whose dependencies renv installed and snapshotted, checked against R's own
+# installed.packages() on the project library: Depends with an R version, Imports, LinkingTo,
+# Suggests and Enhances, a GitHub remote, a Bioconductor package, SystemRequirements, and
+# renv's settings.
+kinds: [real-world, valid]
+covers:
+  - file:DESCRIPTION
+  - file:renv.lock
+  - file:renv/settings.json
+  - cran.fields
+  - cran.r-version
+  - cran.repositories
+  - cran.bioconductor
+  - cran.remotes
+  - cran.sysreqs
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  - {name: jsonlite, version_constraint: ">= 1.8.0", resolved_version: 2.0.0, direct: true, dependency_type: runtime, lockfile_location: {path: renv.lock}}
+  - {name: Rcpp, dependency_type: build}
+  # Bioconductor is R's second public repository.
+  - {name: BiocGenerics, source_url: "registry:bioconductor", resolved_version: 0.52.0}
+  # Bioconductor's installer, recorded by renv to restore Bioconductor packages.
+  - {name: BiocVersion, dependency_type: tool}
+  - {name: BiocManager, dependency_type: tool}
+  - {name: glue, source_type: git, version_constraint: "git+https://github.com/tidyverse/glue#v1.8.0", resolved_version: 1.8.0}
+  - {name: knitr, dependency_type: dev, resolution_status: unresolved, resolution_reason: "a Suggests dependency: renv locks it only when snapshot.dev is on"}
+  - {name: data.table, dependency_type: optional}
+  - {name: R, dependency_type: platform, version_constraint: ">= 4.1.0"}
+  - {name: libxml2, dependency_type: platform, field_name: null}
+  - {name: gnu-make, dependency_type: platform, version_constraint: GNU make}
+  - {name: renv, dependency_type: tool}
+absent:
+  # Shipped with R itself.
+  - methods
+  - utils
+sources:
+  - "repository bioconductor"
+  - "renv snapshot.type: explicit"
+findings:
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: glue}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

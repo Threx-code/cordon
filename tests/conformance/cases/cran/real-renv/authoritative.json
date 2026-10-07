@@ -1,0 +1,27 @@
+{
+ "tool": "installed.packages() over the renv project library",
+ "packages": [
+  "BiocGenerics@0.52.0",
+  "BiocManager@1.30.27",
+  "BiocVersion@3.20.0",
+  "digest@0.6.39",
+  "evaluate@1.0.5",
+  "glue@1.8.0",
+  "highr@0.12",
+  "jsonlite@2.0.0",
+  "knitr@1.52",
+  "R6@2.6.1",
+  "Rcpp@1.1.2",
+  "xfun@0.61",
+  "yaml@2.3.12"
+ ],
+ "ignore": {
+  "renv": "renv itself, the tool",
+  "knitr": "installed for Suggests (development only): renv snapshot.dev is false, so the lock records only what Imports, Depends and LinkingTo reach",
+  "evaluate": "installed for Suggests (development only): renv snapshot.dev is false, so the lock records only what Imports, Depends and LinkingTo reach",
+  "highr": "installed for Suggests (development only): renv snapshot.dev is false, so the lock records only what Imports, Depends and LinkingTo reach",
+  "xfun": "installed for Suggests (development only): renv snapshot.dev is false, so the lock records only what Imports, Depends and LinkingTo reach",
+  "yaml": "installed for Suggests (development only): renv snapshot.dev is false, so the lock records only what Imports, Depends and LinkingTo reach"
+ },
+ "lists_tools": true
+}

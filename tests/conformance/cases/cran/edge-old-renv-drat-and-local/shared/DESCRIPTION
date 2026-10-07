@@ -1,0 +1,6 @@
+Package: shared
+Version: 0.3.0
+License: MIT
+Imports: jsonlite
+Description: Helpers used by
+    the analysis package, on a continuation line.

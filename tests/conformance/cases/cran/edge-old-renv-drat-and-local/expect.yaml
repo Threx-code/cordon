@@ -1,0 +1,31 @@
+# Two R packages in one repository (one depends on the other through `Remotes: local::`), an renv
+# lock in the renv < 1.1 layout (Requirements and Hash) with a Bioconductor package, a local
+# package and an extra repository, a `bioc::` remote, a continuation line in DESCRIPTION, and a
+# drat repository's PACKAGES index.
+kinds: [edge, valid]
+covers:
+  - file:PACKAGES
+  - cran.remotes
+  - cran.bioconductor
+  - cran.repositories
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-09
+  - UNI-10
+  - UNI-15
+dependencies:
+  - {name: data.table, version_constraint: ">= 1.14.0", resolved_version: 1.14.8, integrity_status: recorded, manifest_location: {path: analysis/DESCRIPTION}}
+  - {name: limma, source_url: "registry:bioconductor", resolved_version: 3.54.2}
+  - {name: statmod, direct: false, dependency_path: [limma, statmod]}
+  - {name: shared, source_type: path}
+  # The second package of the repository, scanned on its own.
+  - {name: jsonlite, manifest_location: {path: shared/DESCRIPTION}}
+  - {name: R, dependency_type: platform, version_constraint: ">= 3.6"}
+absent:
+  - methods
+  # The drat index lists what that repository serves, not what anything here depends on.
+  - acmeplot
+  - ggplot2
+sources:
+  - "repository index serving 2 package(s)"
