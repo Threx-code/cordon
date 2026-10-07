@@ -1,0 +1,17 @@
+# Pseudo-versions (a commit, not a tag), an older go directive, a module from a private source
+# the project declares internal (cordon.yaml) with no hash in go.sum -- the go command fetches it
+# directly, not through the public proxy and checksum database -- and a stale go.sum line for a
+# version the build no longer selects, which must not enter the inventory.
+kinds: [edge, valid, regression]
+covers:
+  - gomod.pseudo
+  - gomod.private
+  - UNI-05
+  - UNI-14
+dependencies:
+  - {name: golang.org/x/crypto, resolved_version: v0.0.0-20210921155107-089bfa567519, integrity_status: recorded}
+  - {name: github.com/acme-internal/billing, resolved_version: v1.4.2}
+  - {name: github.com/gopherjs/gopherjs, direct: false}
+  - {name: go, dependency_type: platform, version_constraint: ">=1.16"}
+findings:
+  - {rule: SUSPECT.DEPENDENCY.CONFUSION.001, message: github.com/acme-internal/billing}

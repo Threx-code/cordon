@@ -1,0 +1,11 @@
+# Module paths keep their case (`github.com/Azure/...`, `github.com/BurntSushi/toml`), carry their
+# namespace, keep a gopkg.in `.v3` major suffix, and match advisories however the case is written.
+kinds: [edge, valid]
+advisories: true
+covers:
+  - UNI-04
+  - gomod.major-suffix
+dependencies:
+  - {name: github.com/Azure/azure-sdk-for-go/sdk/azcore, namespace: github.com/Azure/azure-sdk-for-go/sdk}
+  - {name: github.com/BurntSushi/toml, advisory_status: vulnerable, namespace: github.com/BurntSushi}
+  - {name: gopkg.in/yaml.v3, resolved_version: v3.0.1}

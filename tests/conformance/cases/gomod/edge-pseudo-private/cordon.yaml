@@ -1,0 +1,4 @@
+version: 1
+scan:
+  internal_namespaces:
+    - github.com/acme-internal/

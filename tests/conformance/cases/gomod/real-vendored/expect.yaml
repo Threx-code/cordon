@@ -1,0 +1,11 @@
+# The same module after `go mod vendor`: every module go.mod selects is built from vendor/, which
+# vendor/modules.txt records.
+kinds: [real-world, valid]
+covers:
+  - file:vendor/modules.txt
+  - gomod.vendor
+  - UNI-10
+  - x.vendored
+dependencies:
+  - {name: github.com/google/uuid, source_type: vendored, source_url: vendor/modules.txt, integrity_status: recorded}
+  - {name: golang.org/x/text, source_type: vendored}

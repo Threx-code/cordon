@@ -1,0 +1,34 @@
+# A Go 1.24 module written by the go command: direct and `// indirect` requirements, a local
+# replace, a replace to another module, an exclude, a tool directive and a toolchain line. go.mod
+# is the build list; go.sum only completes it with hashes. Authoritative: the modules `go list
+# -deps` says supply packages to the build.
+kinds: [real-world, valid]
+covers:
+  - file:go.mod
+  - file:go.sum
+  - gomod.major-suffix
+  - gomod.replace
+  - gomod.exclude
+  - gomod.local-replace
+  - gomod.indirect
+  - gomod.checksums
+  - gomod.toolchain
+  - gomod.tool
+  - UNI-01
+  - UNI-02
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  - {name: github.com/google/uuid, direct: true, resolved_version: v1.6.0, integrity_status: recorded, namespace: github.com/google}
+  - {name: golang.org/x/sync, direct: false, resolution_status: resolved}
+  - {name: golang.org/x/tools, dependency_type: tool, direct: true}
+  - {name: example.com/conformance/localdep, source_type: path, integrity_status: not_applicable}
+  - {name: stdlib, resolved_version: v1.24.0, integrity_status: not_applicable}
+  - {name: go, dependency_type: platform, version_constraint: ">=1.24"}
+absent:
+  - github.com/pkg/errors
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

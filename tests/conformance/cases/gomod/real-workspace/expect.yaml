@@ -1,0 +1,10 @@
+# A go.work workspace of two modules that share a requirement: each module is scanned, and the
+# shared module is recorded once per module that requires it -- not merged into one, not dropped.
+kinds: [real-world, valid]
+covers:
+  - file:go.work
+  - gomod.workspace
+  - UNI-09
+dependencies:
+  - {name: github.com/google/uuid, manifest_location: {path: svc-a/go.mod}}
+  - {name: github.com/google/uuid, manifest_location: {path: svc-b/go.mod}}

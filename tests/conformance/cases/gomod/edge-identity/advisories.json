@@ -1,0 +1,3 @@
+[
+  {"ecosystem": "gomod", "name": "github.com/burntsushi/toml", "identifier": "CONFORMANCE-GOID-1", "summary": "Module paths compare case-insensitively for matching.", "severity": "high", "introduced": "0", "fixed": "v1.4.1"}
+]

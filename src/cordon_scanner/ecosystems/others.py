@@ -12,12 +12,17 @@ resolves from somewhere other than the ecosystem's own registry.
 
 from __future__ import annotations
 
-import json
+import posixpath
 import re
 import tomllib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.core.models import Hook, Scope
+from cordon_scanner.core.safexml import Element, SafeXml, SafeXmlError
+
+# Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
+# Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
+from cordon_scanner.ecosystems.actions import GitHubActionsEcosystem
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -25,8 +30,22 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.bazel import BazelEcosystem
+from cordon_scanner.ecosystems.cocoapods import CocoaPodsEcosystem
+from cordon_scanner.ecosystems.composer import ComposerEcosystem
+from cordon_scanner.ecosystems.conan import ConanEcosystem
+from cordon_scanner.ecosystems.conda import CondaEcosystem
+from cordon_scanner.ecosystems.cran import CranEcosystem
+from cordon_scanner.ecosystems.gradle import GradleEcosystem
+from cordon_scanner.ecosystems.hex import HexEcosystem
+from cordon_scanner.ecosystems.nuget import NuGetEcosystem
+from cordon_scanner.ecosystems.pub import PubEcosystem
+from cordon_scanner.ecosystems.rubygems import RubyGemsEcosystem
+from cordon_scanner.ecosystems.swift import SwiftEcosystem
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from cordon_scanner.core.content import FileContent
 
 
@@ -38,7 +57,7 @@ if TYPE_CHECKING:
 class CargoEcosystem(BaseEcosystem):
     id = "cargo"
     purl_type = "cargo"
-    manifest_globs: tuple[str, ...] = ("**/Cargo.toml",)
+    manifest_globs: tuple[str, ...] = ("**/Cargo.toml", "**/.cargo/config.toml", "**/.cargo/config")
     lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)
     registry_hosts: frozenset[str] = frozenset(
         {
@@ -86,23 +105,110 @@ class CargoEcosystem(BaseEcosystem):
         # crate has a free typosquat.
         return name.strip().lower().replace("_", "-")
 
+    SECTIONS: ClassVar[tuple[tuple[str, Scope], ...]] = (
+        ("dependencies", Scope.RUNTIME),
+        ("dev-dependencies", Scope.DEV),
+        ("build-dependencies", Scope.BUILD),
+    )
+
+    @staticmethod
+    def _declaration(
+        key: str, spec: object, scope: Scope, field_name: str, platform: tuple[str, ...]
+    ) -> DeclaredDependency:
+        """One `[dependencies]` entry: a version string or a table.
+
+        ```
+          serde = { version = "1", features = ["derive"] }        features -> extras
+          rand_core_alias = { package = "rand_core", ... }         a rename: the crate is rand_core
+          log = { version = "0.4", optional = true }               only with a feature that enables it
+          itoa = { git = "https://...", tag = "1.0.11" }           a git source at a tag, rev or branch
+          util = { path = "../util" }                              the workspace's own code
+          anyhow = { workspace = true }                            the constraint is the workspace's
+        ```
+        """
+        if not isinstance(spec, dict):
+            return DeclaredDependency(
+                name=key, spec=str(spec), scope=scope, field_name=field_name, platform=platform
+            )
+        name = str(spec.get("package") or key)
+        text = BaseEcosystem._table_spec(spec)
+        if isinstance(spec.get("git"), str):
+            ref = next(
+                (
+                    f"{k}={spec[k]}"
+                    for k in ("rev", "tag", "branch")
+                    if isinstance(spec.get(k), str)
+                ),
+                None,
+            )
+            text = f"git+{spec['git']}" + (f"?{ref}" if ref else "")
+        features = spec.get("features")
+        registry = spec.get("registry") or spec.get("registry-index")
+        return DeclaredDependency(
+            name=name,
+            spec=text,
+            scope=Scope.OPTIONAL
+            if spec.get("optional") is True and scope is Scope.RUNTIME
+            else scope,
+            field_name=field_name,
+            platform=platform,
+            alias=key if name != key else None,
+            extras=tuple(str(f) for f in features) if isinstance(features, list) else (),
+            source=f"registry:{registry}" if isinstance(registry, str) else None,
+        )
+
     def parse_manifest(self, content: FileContent) -> Manifest:
+        if content.basename in ("config.toml", "config") and "/.cargo/" in f"/{content.path}":
+            return CargoConfig.parse(content, self.id)
         try:
             data = tomllib.loads(content.text)
         except (tomllib.TOMLDecodeError, ValueError) as exc:
             return BaseEcosystem._err(content, self.id, f"invalid TOML: {exc}")
 
         declared: list[DeclaredDependency] = []
-        for section, scope in (
-            ("dependencies", Scope.RUNTIME),
-            ("dev-dependencies", Scope.DEV),
-            ("build-dependencies", Scope.BUILD),
-        ):
+        for section, scope in self.SECTIONS:
             for name, spec in (data.get(section) or {}).items():
-                text = spec if isinstance(spec, str) else BaseEcosystem._table_spec(spec)
-                declared.append(
-                    DeclaredDependency(name=str(name), spec=text, scope=scope, field_name=section)
+                declared.append(self._declaration(str(name), spec, scope, section, ()))
+        # `[target.'cfg(windows)'.dependencies]`: only on the platforms the cfg selects.
+        targets = data.get("target")
+        if isinstance(targets, dict):
+            for condition, tables in targets.items():
+                if not isinstance(tables, dict):
+                    continue
+                for section, scope in self.SECTIONS:
+                    for name, spec in (tables.get(section) or {}).items():
+                        declared.append(
+                            self._declaration(
+                                str(name),
+                                spec,
+                                scope,
+                                f"target.{condition}.{section}",
+                                (str(condition),),
+                            )
+                        )
+        raw_package, raw_workspace = data.get("package"), data.get("workspace")
+        package_table: dict[str, Any] = raw_package if isinstance(raw_package, dict) else {}
+        workspace: dict[str, Any] = raw_workspace if isinstance(raw_workspace, dict) else {}
+        raw_shared_package = workspace.get("package")
+        shared_package: dict[str, Any] = (
+            raw_shared_package if isinstance(raw_shared_package, dict) else {}
+        )
+        rust = package_table.get("rust-version")
+        if isinstance(rust, dict) and rust.get("workspace") is True:
+            rust = shared_package.get("rust-version")
+        if rust is None:
+            rust = shared_package.get("rust-version")
+        if isinstance(rust, str) and rust:
+            declared.append(
+                DeclaredDependency(
+                    name="rust", spec=f">={rust}", scope=Scope.PLATFORM, field_name="rust-version"
                 )
+            )
+        shared = {
+            str(name): (spec if isinstance(spec, str) else BaseEcosystem._table_spec(spec))
+            for name, spec in (workspace.get("dependencies") or {}).items()
+        }
+        declared = CargoFeatures.annotate(declared, data.get("features"))
 
         # build.rs is arbitrary Rust compiled and run during every build, with
         # full access to the build machine. It is Cargo's equivalent of an
@@ -129,6 +235,7 @@ class CargoEcosystem(BaseEcosystem):
             version=BaseEcosystem._s(package.get("version")),
             dependencies=tuple(declared),
             hooks=tuple(hooks),
+            shared_specs=shared,
         )
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
@@ -138,22 +245,170 @@ class CargoEcosystem(BaseEcosystem):
             return LockGraph(
                 path=content.path, ecosystem=self.id, parse_error=f"invalid TOML: {exc}"
             )
+        packages = [p for p in data.get("package") or [] if isinstance(p, dict) and p.get("name")]
+        if data.get("package") and not packages:
+            return LockGraph(
+                path=content.path, ecosystem=self.id, parse_error="no [[package]] could be read"
+            )
+        # Version 1 lockfiles keep checksums in a `[metadata]` table keyed by "checksum name version
+        # (source)"; versions 2 to 4 keep them on each package.
+        raw_legacy = data.get("metadata")
+        legacy: dict[str, Any] = raw_legacy if isinstance(raw_legacy, dict) else {}
+        by_name: dict[str, list[str]] = {}
+        for package in packages:
+            by_name.setdefault(str(package["name"]), []).append(str(package.get("version", "")))
+        entries = []
+        for package in packages:
+            name, version = str(package["name"]), str(package.get("version", ""))
+            source = BaseEcosystem._s(package.get("source"))
+            checksum = BaseEcosystem._s(package.get("checksum"))
+            if checksum is None and source:
+                checksum = BaseEcosystem._s(legacy.get(f"checksum {name} {version} ({source})"))
+            edges: list[str] = []
+            for raw in package.get("dependencies") or []:
+                # `serde`, or `serde 1.0.210` when two versions are locked, or with `(source)`.
+                parts = str(raw).split()
+                if len(parts) >= 2:
+                    edges.append(f"{parts[0]}@{parts[1]}")
+                elif parts:
+                    versions = by_name.get(parts[0], [])
+                    edges.append(f"{parts[0]}@{versions[0]}" if len(versions) == 1 else parts[0])
+            entries.append(
+                LockEntry(
+                    name=name,
+                    version=version,
+                    integrity=checksum,
+                    resolved_from=source,
+                    # No `source` means a workspace member or a path dependency: the
+                    # crate is in this repository. Cargo writes no checksum for those
+                    # because there is nothing to check against.
+                    local=not source,
+                    dependencies=tuple(sorted(edges)),
+                )
+            )
+        # The workspace's own crates: no source. They are the members whose manifests the graph
+        # resolves, so their dependencies are what the project declares directly.
+        members = {e.name for e in entries if e.local}
+        direct = {
+            edge.partition("@")[0]
+            for e in entries
+            if e.local
+            for edge in e.dependencies
+            if edge.partition("@")[0] not in members
+        }
         entries = [
             LockEntry(
-                name=str(pkg.get("name", "")),
-                version=str(pkg.get("version", "")),
-                integrity=BaseEcosystem._s(pkg.get("checksum")),
-                resolved_from=BaseEcosystem._s(pkg.get("source")),
-                # No `source` means a workspace member or a path dependency: the
-                # crate is in this repository. Cargo writes no checksum for those
-                # because there is nothing to check against.
-                local=not BaseEcosystem._s(pkg.get("source")),
-                dependencies=tuple(sorted(d.split()[0] for d in pkg.get("dependencies") or [])),
+                name=e.name,
+                version=e.version,
+                integrity=e.integrity,
+                resolved_from=e.resolved_from,
+                local=e.local,
+                dependencies=e.dependencies,
+                direct=e.name in direct or e.local,
             )
-            for pkg in data.get("package") or []
-            if isinstance(pkg, dict) and pkg.get("name")
+            for e in entries
         ]
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
+
+
+class CargoFeatures:
+    """Which features enable each optional dependency, and whether the defaults do.
+
+    Declaring `log = { optional = true }` and enabling it are different facts: the lockfile
+    resolves every optional dependency, and only an enabled feature compiles one in. Each optional
+    dependency's condition is recorded as the features that enable it, and whether `default`
+    reaches any of them -- the spec's "feature activation separately from merely declaring".
+
+    ```
+      [features]
+      default = ["std"]            std -> serde/std          (a feature of another crate)
+      logging = ["dep:log"]        dep:log                   (enables the optional dependency)
+      tracing = ["tracing-core"]   tracing-core              (implicit feature of an optional dep)
+    ```
+    """
+
+    @staticmethod
+    def annotate(declared: list[DeclaredDependency], features: object) -> list[DeclaredDependency]:
+        table = features if isinstance(features, dict) else {}
+        enables: dict[str, set[str]] = {}
+        for feature, members in table.items():
+            for member in members if isinstance(members, list) else ():
+                target = str(member).removeprefix("dep:").split("/", 1)[0].rstrip("?")
+                enables.setdefault(target, set()).add(str(feature))
+        reached: set[str] = set()
+        pending = ["default"]
+        while pending:
+            feature = pending.pop()
+            if feature in reached:
+                continue
+            reached.add(feature)
+            for member in table.get(feature, ()) if isinstance(table.get(feature), list) else ():
+                pending.append(str(member).removeprefix("dep:").split("/", 1)[0].rstrip("?"))
+        out: list[DeclaredDependency] = []
+        for entry in declared:
+            if entry.scope is not Scope.OPTIONAL:
+                out.append(entry)
+                continue
+            key = entry.alias or entry.name
+            gates = sorted(enables.get(key, set()) | ({key} if key not in enables else set()))
+            on_by_default = key in reached or any(g in reached for g in gates)
+            condition = (
+                f"feature {', '.join(gates)} (enabled by default)"
+                if on_by_default
+                else f"feature {', '.join(gates)} (not enabled by default)"
+            )
+            out.append(
+                DeclaredDependency(
+                    name=entry.name,
+                    spec=entry.spec,
+                    scope=entry.scope,
+                    field_name=entry.field_name,
+                    platform=(*entry.platform, condition),
+                    alias=entry.alias,
+                    extras=entry.extras,
+                    source=entry.source,
+                )
+            )
+        return out
+
+
+class CargoConfig:
+    """`.cargo/config.toml`: the registries Cargo resolves from, and whether crates.io is replaced.
+
+    ```
+      [registries.internal]            index = "sparse+https://cargo.example.internal/index/"
+      [source.crates-io]               replace-with = "vendored-sources"
+      [source.vendored-sources]        directory = "vendor"
+    ```
+
+    A replaced crates.io is served from the replacement while `Cargo.lock` still names
+    crates.io: the lockfile's checksums are still checked, against whatever the replacement
+    serves. Recorded as the sources the project resolves from.
+    """
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        try:
+            data = tomllib.loads(content.text)
+        except (tomllib.TOMLDecodeError, ValueError) as exc:
+            return BaseEcosystem._err(content, ecosystem, f"invalid TOML: {exc}")
+        sources: list[str] = []
+        registries = data.get("registries")
+        if isinstance(registries, dict):
+            for name, table in sorted(registries.items()):
+                if isinstance(table, dict) and isinstance(table.get("index"), str):
+                    sources.append(f"registry {name}: {table['index']}")
+        replacements = data.get("source")
+        if isinstance(replacements, dict):
+            for name, table in sorted(replacements.items()):
+                if not isinstance(table, dict):
+                    continue
+                if isinstance(table.get("replace-with"), str):
+                    sources.append(f"source {name} replaced with {table['replace-with']}")
+                for key in ("registry", "directory", "local-registry", "git"):
+                    if isinstance(table.get(key), str):
+                        sources.append(f"source {name}: {key} {table[key]}")
+        return Manifest(path=content.path, ecosystem=ecosystem, sources=tuple(sources))
 
 
 # ---------------------------------------------------------------------------
@@ -161,17 +416,172 @@ class CargoEcosystem(BaseEcosystem):
 # ---------------------------------------------------------------------------
 
 
+class GoModFile:
+    """One `go.mod`, read once for both of the questions asked of it.
+
+    From Go 1.17 a module's `go.mod` lists every module its build needs, each at the version
+    minimal version selection chose, with `// indirect` on the ones no package of the module
+    imports directly. That is the resolution: `go.sum` is not -- it keeps hashes for versions the
+    build no longer selects, and for module files only -- so `go.mod` is read as the lockfile and
+    `go.sum` completes it with integrity (see `LockGraph.companion`).
+    """
+
+    _REQUIRE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*([^\s()]+)\s+(v[^\s/]+)(\s*//\s*indirect)?"
+    )
+    _REPLACE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*(?:replace\s+)?(\S+)(?:\s+(v\S+))?\s+=>\s+(\S+)(?:\s+(v\S+))?\s*$"
+    )
+    """`replace old [vX] => new [vY]`, on one line or inside a `replace ( ... )` block."""
+    _EXCLUDE: ClassVar[re.Pattern[str]] = re.compile(r"^\s*(?:exclude\s+)?(\S+)\s+(v\S+)\s*$")
+    _GO_DIRECTIVE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(go|toolchain)\s+(?:go)?(\d{1,4}(?:\.\d{1,6}){1,2})\s*$"
+    )
+    _TOOL: ClassVar[re.Pattern[str]] = re.compile(r"^\s*(?:tool\s+)?([^\s()]+)\s*$")
+
+    #: Every directive `go.mod` and `go.work` allow. The go command refuses anything else, and so
+    #: does this reader: a line it skipped silently was a file it reported as read.
+    BLOCKS: ClassVar[frozenset[str]] = frozenset(
+        {"require", "replace", "exclude", "retract", "tool", "godebug", "ignore", "use"}
+    )
+
+    def __init__(self, text: str) -> None:
+        self.module: str | None = None
+        self.requires: list[tuple[str, str, bool]] = []
+        self.replaces: dict[str, tuple[str, str | None]] = {}
+        self.excludes: set[tuple[str, str]] = set()
+        self.tools: list[str] = []
+        self.language: str | None = None
+        self.toolchain: str | None = None
+        self.errors: list[str] = []
+        block: str | None = None
+        block_line = 0
+        for number, raw in enumerate(text.splitlines(), 1):
+            line = raw.rstrip()
+            stripped = line.split("//", 1)[0].strip() if "indirect" not in line else line.strip()
+            if not stripped:
+                continue
+            plain = stripped.split("//", 1)[0].strip()
+            if block is None and plain.startswith("module "):
+                self.module = plain.split(None, 1)[1].strip().strip('"')
+                continue
+            directive = self._GO_DIRECTIVE.match(plain)
+            if directive and block is None:
+                if directive.group(1) == "toolchain":
+                    self.toolchain = directive.group(2)
+                else:
+                    self.language = directive.group(2)
+                continue
+            if block is None and re.match(r"^toolchain\s+(?:default|go\S+)$", plain):
+                continue
+            opened = re.match(r"^(\w+)\s*\(\s*$", plain)
+            if opened and block is None:
+                # Errors name the line and never repeat its text: a go.mod is attacker-shaped
+                # input, and whatever sits on a malformed line (a token pasted by mistake) would
+                # otherwise travel into every report format.
+                if opened.group(1) not in self.BLOCKS:
+                    self.errors.append(f"line {number}: a block opened by an unknown directive")
+                block, block_line = opened.group(1), number
+                continue
+            if block is not None and plain == ")":
+                block = None
+                continue
+            kind = block
+            body = stripped
+            if block is None:
+                word = plain.split(None, 1)[0]
+                if word not in self.BLOCKS or len(plain.split(None, 1)) < 2:
+                    self.errors.append(f"line {number}: not a go.mod directive")
+                    continue
+                kind, body = word, stripped[len(word) :].strip()
+            matched = True
+            if kind == "require":
+                found = self._REQUIRE.match(body)
+                matched = found is not None
+                if found:
+                    self.requires.append((found.group(1), found.group(2), bool(found.group(3))))
+            elif kind == "replace":
+                found = self._REPLACE.match(body.split("//", 1)[0])
+                matched = found is not None
+                if found:
+                    self.replaces[found.group(1)] = (found.group(3), found.group(4))
+            elif kind == "exclude":
+                found = self._EXCLUDE.match(body.split("//", 1)[0])
+                matched = found is not None
+                if found:
+                    self.excludes.add((found.group(1), found.group(2)))
+            elif kind == "tool":
+                found = self._TOOL.match(body.split("//", 1)[0])
+                matched = found is not None
+                if found:
+                    self.tools.append(found.group(1))
+            elif kind == "retract":
+                matched = bool(
+                    re.match(
+                        r"^(?:v\S+|\[\s*v\S+\s*,\s*v\S+\s*\])$", body.split("//", 1)[0].strip()
+                    )
+                )
+            elif kind == "godebug":
+                matched = bool(re.match(r"^[\w.-]+=\S+$", body.split("//", 1)[0].strip()))
+            elif kind in ("use", "ignore"):
+                matched = bool(body.split("//", 1)[0].strip())
+            if not matched:
+                self.errors.append(f"line {number}: malformed {kind} entry")
+        if block is not None:
+            self.errors.append(f"line {block_line}: {block} block is never closed")
+
+    @property
+    def stdlib(self) -> str | None:
+        """The standard library's version: the toolchain directive's, or failing that the `go`
+        directive's -- the reading govulncheck and OSV-Scanner apply."""
+        version = self.toolchain or self.language
+        if not version:
+            return None
+        parts = version.split(".")
+        return "v" + ".".join(parts + ["0"] * (3 - len(parts)))
+
+    @staticmethod
+    def lists_direct_only(language: str | None) -> bool:
+        """Whether a `go.mod` at this `go` version leaves its indirect modules out: before 1.17
+        (and with no `go` line, which the go command reads as 1.16) only `go.sum` names them."""
+        if not language:
+            return True
+        parts = language.split(".")
+        try:
+            return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0) < (1, 17)
+        except ValueError:
+            return False
+
+    def untidied(self) -> bool:
+        """A 1.17-or-later `go.mod` that requires modules but marks none `// indirect` was not
+        tidied under 1.17's rules (its `go` line was raised by hand, or `go mod tidy` never ran),
+        so it too names only what it imports. `go.sum` then completes it: a module whose
+        requirements really have no dependencies of their own adds nothing from it."""
+        return bool(self.requires) and not any(indirect for _, _, indirect in self.requires)
+
+    def tool_modules(self) -> set[str]:
+        """Modules that provide a `tool` directive's package (the longest required prefix)."""
+        provided: set[str] = set()
+        for tool in self.tools:
+            owners = [
+                name for name, _, _ in self.requires if tool == name or tool.startswith(name + "/")
+            ]
+            if owners:
+                provided.add(max(owners, key=len))
+        return provided
+
+
 class GoEcosystem(BaseEcosystem):
     id = "gomod"
     purl_type = "golang"
-    manifest_globs: tuple[str, ...] = ("**/go.mod",)
-    lockfile_globs: tuple[str, ...] = ("**/go.sum",)
+    manifest_globs: tuple[str, ...] = ("**/go.mod", "**/go.work")
+    lockfile_globs: tuple[str, ...] = (
+        "**/go.mod",
+        "**/go.sum",
+        "**/go.work.sum",
+        "**/vendor/modules.txt",
+    )
     registry_hosts: frozenset[str] = frozenset({"proxy.golang.org", "sum.golang.org"})
-
-    _REQUIRE = re.compile(r"^\s*([^\s()]+)\s+(v[^\s/]+)")
-    _REPLACE = re.compile(r"^\s*(?:replace\s+)?(\S+)(?:\s+(v\S+))?\s+=>\s+(\S+)(?:\s+(v\S+))?\s*$")
-    """`replace old [vX] => new [vY]`, on one line or inside a `replace ( ... )` block."""
-    _GO_DIRECTIVE = re.compile(r"^(go|toolchain)\s+(?:go)?(\d{1,4}(?:\.\d{1,6}){1,2})\s*$")
 
     def normalize_name(self, name: str) -> str:
         """Go module paths are case-sensitive but case-encoded in the proxy.
@@ -183,138 +593,199 @@ class GoEcosystem(BaseEcosystem):
         return name.strip().lower()
 
     def parse_manifest(self, content: FileContent) -> Manifest:
+        """What a `go.mod` declares: the modules it requires directly (not `// indirect`, which
+        the go command records for the build and nobody wrote), replacement targets, tools, the
+        Go version, and the standard library the toolchain compiles in. A `go.work` declares the
+        modules of a workspace, which are read as projects of their own."""
+        if content.basename == "go.work":
+            return GoWork.parse(content, self.id)
+        mod = GoModFile(content.text)
+        if mod.errors:
+            return BaseEcosystem._err(content, self.id, "; ".join(mod.errors[:3]))
         declared: list[DeclaredDependency] = []
-        hooks: list[Hook] = []
-        module: str | None = None
-        in_require = False
-        in_replace = False
-        replaced: set[str] = set()
-        targets: list[DeclaredDependency] = []
-        language: str | None = None
-        toolchain: str | None = None
-
-        for raw in content.text.splitlines():
-            line = raw.split("//", 1)[0].rstrip()
-            stripped = line.strip()
-            if stripped.startswith("module "):
-                module = stripped.split(None, 1)[1].strip()
+        tools = mod.tool_modules()
+        for name, version, indirect in mod.requires:
+            if indirect and name not in tools:
                 continue
-            directive = self._GO_DIRECTIVE.match(stripped)
-            if directive:
-                if directive.group(1) == "toolchain":
-                    toolchain = directive.group(2)
-                else:
-                    language = directive.group(2)
+            if (name, version) in mod.excludes:
                 continue
-            if stripped.startswith("require ("):
-                in_require = True
-                continue
-            if stripped.startswith("replace ("):
-                in_replace = True
-                continue
-            if (in_require or in_replace) and stripped == ")":
-                in_require = in_replace = False
-                continue
-
-            replace = (
-                self._REPLACE.match(stripped)
-                if in_replace or stripped.startswith("replace ")
-                else None
-            )
-            if replace:
-                # A replace directive redirects a module elsewhere, commonly to
-                # a local path or a fork. It silently changes what compiles into
-                # the binary while the import path stays identical, so it is
-                # recorded as a non-registry source -- and when the target is a
-                # module at a version, that module is what builds and what an
-                # advisory about it applies to: harbor replaces docker/distribution
-                # with distribution/distribution v2.8.2+incompatible.
-                original, target, version = replace.group(1), replace.group(3), replace.group(4)
+            target, target_version = mod.replaces.get(name, (None, None))
+            if target is not None and target.startswith((".", "/")):
                 declared.append(
                     DeclaredDependency(
-                        name=original,
-                        spec=target,
+                        name=name, spec=target, scope=Scope.RUNTIME, field_name="replace"
+                    )
+                )
+                continue
+            if target is not None and target_version:
+                declared.append(
+                    DeclaredDependency(
+                        name=target,
+                        spec=target_version,
                         scope=Scope.RUNTIME,
                         field_name="replace",
+                        alias=name,
                     )
                 )
-                if version and not target.startswith((".", "/")):
-                    targets.append(
-                        DeclaredDependency(
-                            name=target,
-                            spec=version,
-                            scope=Scope.RUNTIME,
-                            field_name="require",
-                        )
-                    )
-                replaced.add(original)
                 continue
-
-            target = stripped
-            if stripped.startswith("require "):
-                target = stripped[len("require ") :]
-            elif not in_require:
-                continue
-
-            match = self._REQUIRE.match(target)
-            if match:
-                declared.append(
-                    DeclaredDependency(
-                        name=match.group(1),
-                        spec=match.group(2),
-                        scope=Scope.RUNTIME,
-                        field_name="require",
-                    )
-                )
-
-        # A required module that a replace points elsewhere does not build; its replacement does.
-        declared = [
-            d for d in declared if not (d.field_name == "require" and d.name in replaced)
-        ] + targets
-        stdlib = toolchain or language
-        if stdlib:
-            # The standard library is compiled into every binary at the version the toolchain
-            # directive names, or failing that the `go` directive -- the reading `govulncheck` and
-            # OSV-Scanner apply. Go's advisories file it under the module `stdlib`, and without it
-            # a `net/http` or `crypto/tls` advisory matched no module in the graph.
-            parts = stdlib.split(".")
             declared.append(
                 DeclaredDependency(
-                    name="stdlib",
-                    spec="v" + ".".join(parts + ["0"] * (3 - len(parts))),
-                    scope=Scope.RUNTIME,
-                    field_name="toolchain",
+                    name=name,
+                    spec=version,
+                    scope=Scope.TOOL if name in tools else Scope.RUNTIME,
+                    field_name="tool" if name in tools else "require",
                 )
             )
-
+        if mod.stdlib:
+            # The standard library is compiled into every binary at the toolchain's version; Go's
+            # advisories file it under the module `stdlib`, and without it a `net/http` or
+            # `crypto/tls` advisory matched no module in the graph.
+            declared.append(
+                DeclaredDependency(
+                    name="stdlib", spec=mod.stdlib, scope=Scope.RUNTIME, field_name="toolchain"
+                )
+            )
+        if mod.language:
+            declared.append(
+                DeclaredDependency(
+                    name="go", spec=f">={mod.language}", scope=Scope.PLATFORM, field_name="go"
+                )
+            )
         return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            name=module,
-            dependencies=tuple(declared),
-            hooks=tuple(hooks),
+            path=content.path, ecosystem=self.id, name=mod.module, dependencies=tuple(declared)
         )
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
-        """go.sum records a hash per module version.
+        name = content.basename
+        if name in ("go.sum", "go.work.sum"):
+            return self._parse_sum(content)
+        if name == "modules.txt":
+            return self._parse_vendor(content)
+        return self._parse_build_list(content)
 
-        Not a resolution graph, but it is the integrity record, which is the
-        part that matters here: a module version present in go.mod with no
-        corresponding go.sum entry is unverified.
-        """
+    def _parse_build_list(self, content: FileContent) -> LockGraph:
+        """`go.mod`'s requirements as the resolution: every module at the selected version, direct
+        unless `// indirect`, replacements applied, exclusions honoured."""
+        mod = GoModFile(content.text)
+        if mod.errors:
+            return LockGraph(
+                path=content.path, ecosystem=self.id, parse_error="; ".join(mod.errors[:3])
+            )
+        tools = mod.tool_modules()
+        entries: list[LockEntry] = []
+        for name, version, indirect in mod.requires:
+            if (name, version) in mod.excludes:
+                continue
+            target, target_version = mod.replaces.get(name, (None, None))
+            if target is not None and target.startswith((".", "/")):
+                # A local replacement: the module's code is the directory, read as source here.
+                entries.append(
+                    LockEntry(
+                        name=name, version="", resolved_from=target, direct=not indirect, local=True
+                    )
+                )
+                continue
+            if target is not None and target_version:
+                entries.append(
+                    LockEntry(name=target, version=target_version, direct=not indirect, alias=name)
+                )
+                continue
+            entries.append(
+                LockEntry(
+                    name=name,
+                    version=version,
+                    direct=not indirect or name in tools,
+                    scope=Scope.TOOL if name in tools else Scope.RUNTIME,
+                )
+            )
+        if mod.stdlib:
+            # BSD-3-Clause: the Go project's own licence for the standard library.
+            entries.append(
+                LockEntry(name="stdlib", version=mod.stdlib, direct=True, license="BSD-3-Clause")
+            )
+        return LockGraph(
+            path=content.path,
+            ecosystem=self.id,
+            entries=tuple(entries),
+            integrity_elsewhere=True,
+            completed_by_companion=GoModFile.lists_direct_only(mod.language) or mod.untidied(),
+        )
+
+    def _parse_sum(self, content: FileContent) -> LockGraph:
+        """`go.sum`: a hash of each module zip (`h1:`) and of each `go.mod` it read. Only zip
+        hashes are integrity for a module's code; a `/go.mod` line hashes a file the build read
+        to plan, not the code it compiled. A companion: it completes `go.mod`'s entries."""
         seen: dict[tuple[str, str], str] = {}
         for raw in content.text.splitlines():
             parts = raw.split()
-            if len(parts) != 3:
+            if len(parts) != 3 or parts[1].endswith("/go.mod"):
                 continue
-            name, version, digest = parts
-            version = version.removesuffix("/go.mod")
-            seen.setdefault((name, version), digest)
-        entries = [
-            LockEntry(name=name, version=version, integrity=digest)
-            for (name, version), digest in sorted(seen.items())
-        ]
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
+            seen.setdefault((parts[0], parts[1]), parts[2])
+        entries = [LockEntry(name=n, version=v, integrity=d) for (n, v), d in sorted(seen.items())]
+        return LockGraph(
+            path=content.path, ecosystem=self.id, entries=tuple(entries), companion=True
+        )
+
+    def _parse_vendor(self, content: FileContent) -> LockGraph:
+        """`vendor/modules.txt`: `# module version [=> replacement]` per vendored module, `##
+        explicit` when go.mod requires it directly. A companion: the modules `go.mod` selects are
+        built from the copies in `vendor/`."""
+        entries: list[LockEntry] = []
+        for raw in content.text.splitlines():
+            if not raw.startswith("# "):
+                continue
+            parts = raw[2:].split()
+            if len(parts) >= 2 and parts[1].startswith("v"):
+                entries.append(
+                    LockEntry(
+                        name=parts[0], version=parts[1], resolved_from=f"vendored:{content.path}"
+                    )
+                )
+            elif len(parts) >= 3 and parts[1] == "=>":
+                entries.append(
+                    LockEntry(name=parts[0], version="", resolved_from=f"vendored:{content.path}")
+                )
+        return LockGraph(
+            path=content.path, ecosystem=self.id, entries=tuple(entries), companion=True
+        )
+
+
+class GoWork:
+    """`go.work`: the modules a workspace builds together (`use`), its Go version, and
+    workspace-wide replacements. Each used module is a project with its own `go.mod`."""
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        mod = GoModFile(content.text)
+        if mod.errors:
+            return BaseEcosystem._err(content, ecosystem, "; ".join(mod.errors[:3]))
+        uses: list[str] = []
+        block = False
+        for raw in content.text.splitlines():
+            stripped = raw.split("//", 1)[0].strip()
+            if stripped.startswith("use ("):
+                block = True
+                continue
+            if block and stripped == ")":
+                block = False
+                continue
+            if stripped.startswith("use "):
+                uses.append(stripped[4:].strip())
+            elif block and stripped:
+                uses.append(stripped)
+        declared: list[DeclaredDependency] = []
+        if mod.language:
+            declared.append(
+                DeclaredDependency(
+                    name="go", spec=f">={mod.language}", scope=Scope.PLATFORM, field_name="go"
+                )
+            )
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            dependencies=tuple(declared),
+            includes=tuple(("workspace", u) for u in uses),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -322,1281 +793,608 @@ class GoEcosystem(BaseEcosystem):
 # ---------------------------------------------------------------------------
 
 
-class MavenEcosystem(BaseEcosystem):
-    id = "maven"
-    purl_type = "maven"
-    manifest_globs: tuple[str, ...] = ("**/pom.xml",)
-    lockfile_globs: tuple[str, ...] = ()
-    registry_hosts: frozenset[str] = frozenset(
-        {"repo.maven.apache.org", "repo1.maven.org", "central.sonatype.com"}
+class MavenDependency:
+    """One `<dependency>` as written, before interpolation and management."""
+
+    __slots__ = (
+        "artifact",
+        "classifier",
+        "exclusions",
+        "group",
+        "line",
+        "optional",
+        "scope",
+        "type",
+        "version",
     )
 
-    _DEP = re.compile(r"<dependency>(.*?)</dependency>", re.DOTALL | re.IGNORECASE)
-    _TAG = re.compile(r"<(groupId|artifactId|version|scope)>\s*([^<]*)\s*</\1>", re.IGNORECASE)
-    _REPO = re.compile(r"<url>\s*([^<]+?)\s*</url>", re.IGNORECASE)
-
-    _MANAGEMENT = re.compile(
-        r"<dependencyManagement>(.*?)</dependencyManagement>", re.DOTALL | re.IGNORECASE
-    )
-    _PROPERTIES = re.compile(r"<properties>(.*?)</properties>", re.DOTALL | re.IGNORECASE)
-    _PROPERTY = re.compile(r"<([A-Za-z0-9_.\-]+)>\s*([^<]*?)\s*</\1>")
-    _PLACEHOLDER = re.compile(r"\$\{([A-Za-z0-9_.\-]+)\}")
-    _PARENT = re.compile(r"<parent>(.*?)</parent>", re.DOTALL | re.IGNORECASE)
-    #: How many times a property may expand into another before the parser
-    #: stops. Maven allows `${a}` to resolve to `${b}`; a POM that resolves in
-    #: a cycle is a file the parser must leave rather than spin on.
-    _MAX_PROPERTY_DEPTH = 5
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    @classmethod
-    def _managed_versions(cls, text: str, properties: dict[str, str]) -> dict[str, str]:
-        """`group:artifact` -> version, from every `<dependencyManagement>` block.
-
-        These are the versions a dependency inherits when it declares none, and
-        stating them once is how a multi-module build is meant to be written.
-        """
-        managed: dict[str, str] = {}
-        for section in cls._MANAGEMENT.findall(text):
-            for block in cls._DEP.findall(section):
-                fields = {k.lower(): v for k, v in cls._TAG.findall(block)}
-                artifact = cls._resolve(fields.get("artifactid", "").strip(), properties)
-                if not artifact:
-                    continue
-                group = cls._resolve(fields.get("groupid", "").strip(), properties)
-                version = cls._resolve(fields.get("version", "").strip(), properties)
-                if version:
-                    managed[f"{group}:{artifact}" if group else artifact] = version
-        return managed
-
-    @classmethod
-    def _own_coordinates(cls, text: str) -> dict[str, str]:
-        """The project's own groupId, artifactId and version.
-
-        Read from the header alone -- everything before the first
-        `<dependencies>`, with any `<parent>` block removed. Scanning the whole
-        document instead takes whichever coordinate appears last, which is a
-        dependency's, so a POM reported its final dependency's artifactId as
-        the project's name.
-
-        groupId and version fall back to the parent's, because a module that
-        inherits them omits its own, and that inheritance is what
-        `${project.version}` resolves against.
-        """
-        lowered = text.lower()
-        cut = lowered.find("<dependencies")
-        header = text[:cut] if cut != -1 else text
-
-        parent = cls._PARENT.search(header)
-        body = header[: parent.start()] + header[parent.end() :] if parent else header
-        own = {k.lower(): v.strip() for k, v in cls._TAG.findall(body)}
-        inherited = (
-            {k.lower(): v.strip() for k, v in cls._TAG.findall(parent.group(1))} if parent else {}
+    def __init__(self, element: Element) -> None:
+        self.group = element.value("groupId")
+        self.artifact = element.value("artifactId")
+        self.version = element.value("version")
+        self.scope = element.value("scope").lower() or ""
+        self.optional = element.value("optional").lower() == "true"
+        self.classifier = element.value("classifier")
+        self.type = element.value("type")
+        self.exclusions = tuple(
+            f"{e.value('groupId')}:{e.value('artifactId')}"
+            for e in element.find_all("exclusions", "exclusion")
         )
-        return {
-            "groupid": own.get("groupid") or inherited.get("groupid", ""),
-            "artifactid": own.get("artifactid", ""),
-            "version": own.get("version") or inherited.get("version", ""),
+        self.line = element.line
+
+
+class MavenPom:
+    """A POM's model, read structurally (`core/safexml.py`): what it declares, not yet resolved
+    against its parent, its imports or the rest of the build."""
+
+    def __init__(self, path: str, root: Element) -> None:
+        self.path = path
+        parent = root.find("parent")
+        self.parent: tuple[str, str, str, str] | None = (
+            (
+                parent.value("groupId"),
+                parent.value("artifactId"),
+                parent.value("version"),
+                parent.value("relativePath", default="../pom.xml"),
+            )
+            if parent is not None
+            else None
+        )
+        self.group = root.value("groupId") or (self.parent[0] if self.parent else "")
+        self.artifact = root.value("artifactId")
+        self.version = root.value("version") or (self.parent[2] if self.parent else "")
+        self.packaging = root.value("packaging") or "jar"
+        self.properties = {
+            c.local: c.text.strip() for c in (root.find("properties") or Element("p")).children
         }
+        self.managed = [
+            MavenDependency(d)
+            for d in root.find_all("dependencyManagement", "dependencies", "dependency")
+        ]
+        self.dependencies = [
+            MavenDependency(d) for d in root.find_all("dependencies", "dependency")
+        ]
+        self.modules = [m.text.strip() for m in root.find_all("modules", "module")]
+        self.repositories = [
+            (r.value("id"), r.value("url"))
+            for r in root.find_all("repositories", "repository")
+            + root.find_all("pluginRepositories", "pluginRepository")
+        ]
+        self.plugins = [
+            (
+                p.value("groupId") or "org.apache.maven.plugins",
+                p.value("artifactId"),
+                p.value("version"),
+                p.line,
+            )
+            for p in root.find_all("build", "plugins", "plugin")
+            + root.find_all("build", "pluginManagement", "plugins", "plugin")
+        ]
+        self.extensions = [
+            (e.value("groupId"), e.value("artifactId"), e.value("version"), e.line)
+            for e in root.find_all("build", "extensions", "extension")
+        ]
+        self.profiles: list[tuple[str, str, list[MavenDependency], dict[str, str]]] = []
+        for profile in root.find_all("profiles", "profile"):
+            activation = profile.find("activation")
+            trigger = ""
+            if activation is not None:
+                parts = []
+                for kind in ("activeByDefault", "jdk", "os", "property", "file"):
+                    found = activation.find(kind)
+                    if found is not None:
+                        detail = found.text.strip() or " ".join(
+                            f"{c.local}={c.text.strip()}" for c in found.children
+                        )
+                        parts.append(f"{kind} {detail}".strip())
+                trigger = "; ".join(parts)
+            self.profiles.append(
+                (
+                    profile.value("id"),
+                    trigger,
+                    [MavenDependency(d) for d in profile.find_all("dependencies", "dependency")],
+                    {
+                        c.local: c.text.strip()
+                        for c in (profile.find("properties") or Element("p")).children
+                    },
+                )
+            )
 
-    @classmethod
-    def _properties_of(cls, text: str) -> dict[str, str]:
-        """Every `<properties>` entry, plus the project coordinates Maven
-        predefines.
 
-        A POM that writes `<version>${spring.version}</version>` is pinned; it
-        just says so one block higher up. Reading the placeholder literally put
-        `${spring.version}` into the purl and into every finding about that
-        dependency, so the version was neither usable nor true.
+class MavenBuild:
+    """Every POM in a scan, resolved together the way Maven resolves a reactor build.
 
-        `${project.version}` and its `${pom.*}` aliases are resolved from the
-        project's own version, or from the parent's where the project inherits
-        one, which is the commonest placeholder in a multi-module build.
-        """
+    A module inherits its parent's properties, managed versions and dependencies; a parent is
+    found by `relativePath` (default `../pom.xml`) or, failing that, by coordinates among the
+    POMs scanned; an imported BOM (`<scope>import</scope>`) contributes its managed versions when
+    it is in the tree. A parent or BOM that is not -- `spring-boot-starter-parent`, a company
+    parent served from a repository -- cannot be read offline, and a version it would manage is
+    reported as unresolved with that parent named, never guessed.
+    """
+
+    PLACEHOLDER: ClassVar[re.Pattern[str]] = re.compile(r"\$\{([A-Za-z0-9_.\-]{1,200})\}")
+    MAX_PARENTS: ClassVar[int] = 16
+
+    def __init__(self, poms: dict[str, MavenPom]) -> None:
+        self.poms = poms
+        self.by_coordinates = {f"{p.group}:{p.artifact}": p for p in poms.values() if p.artifact}
+
+    def parent_of(self, pom: MavenPom) -> MavenPom | None:
+        if pom.parent is None:
+            return None
+        group, artifact, _, relative = pom.parent
+        if relative:
+            base = pom.path.rpartition("/")[0]
+            candidate = posixpath.normpath(posixpath.join(base, relative) if base else relative)
+            if not candidate.endswith(".xml"):
+                candidate = posixpath.join(candidate, "pom.xml")
+            found = self.poms.get(candidate)
+            if found is not None and found.artifact == artifact:
+                return found
+        return self.by_coordinates.get(f"{group}:{artifact}")
+
+    def lineage(self, pom: MavenPom) -> tuple[list[MavenPom], str | None]:
+        """The POM and its ancestors in the tree, nearest first, and the first ancestor that is
+        not in the tree (`group:artifact:version`), if any."""
+        chain = [pom]
+        missing: str | None = None
+        current = pom
+        for _ in range(self.MAX_PARENTS):
+            if current.parent is None:
+                break
+            parent = self.parent_of(current)
+            if parent is None or parent in chain:
+                missing = ":".join(current.parent[:3]) if parent is None else None
+                break
+            chain.append(parent)
+            current = parent
+        return chain, missing
+
+    def properties(self, chain: list[MavenPom]) -> dict[str, str]:
         values: dict[str, str] = {}
-        for block in cls._PROPERTIES.findall(text):
-            for name, value in cls._PROPERTY.findall(block):
-                values[name] = value
-
-        own = cls._own_coordinates(text)
-        version = own["version"]
-        if version and not cls._PLACEHOLDER.search(version):
-            for alias in ("project.version", "pom.version", "version"):
-                values.setdefault(alias, version)
-        if own["groupid"]:
-            for alias in ("project.groupId", "pom.groupId"):
-                values.setdefault(alias, own["groupid"])
-        if own["artifactid"]:
-            for alias in ("project.artifactId", "pom.artifactId"):
-                values.setdefault(alias, own["artifactid"])
+        for pom in reversed(chain):
+            values.update(pom.properties)
+        own = chain[0]
+        for prefix in ("project.", "pom.", ""):
+            values.setdefault(f"{prefix}version", own.version)
+            values.setdefault(f"{prefix}groupId", own.group)
+            values.setdefault(f"{prefix}artifactId", own.artifact)
+        if own.parent is not None:
+            values.setdefault("project.parent.version", own.parent[2])
+            values.setdefault("project.parent.groupId", own.parent[0])
         return values
 
-    @classmethod
-    def _resolve(cls, value: str, properties: dict[str, str]) -> str:
-        """Expand `${...}` against `properties`, leaving anything unknown alone.
-
-        An unresolved placeholder is left verbatim rather than blanked: it is
-        the honest record of a version this file does not determine, and the
-        rules that read a spec can then say so instead of treating it as a
-        pin they verified.
-        """
-        for _ in range(cls._MAX_PROPERTY_DEPTH):
-            if not cls._PLACEHOLDER.search(value):
-                return value
-            expanded = cls._PLACEHOLDER.sub(lambda m: properties.get(m.group(1), m.group(0)), value)
+    def interpolate(self, value: str, properties: dict[str, str]) -> str:
+        for _ in range(8):
+            expanded = self.PLACEHOLDER.sub(lambda m: properties.get(m.group(1), m.group(0)), value)
             if expanded == value:
-                return value
+                break
             value = expanded
         return value
 
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        """Read a POM with regular expressions rather than an XML parser.
+    def managed(
+        self, chain: list[MavenPom], properties: dict[str, str]
+    ) -> tuple[dict[str, tuple[str, str]], list[str]]:
+        """`group:artifact -> (version, scope)` from every `<dependencyManagement>` up the chain
+        (nearest wins), BOM imports in the tree merged in, and the imports that are not."""
+        managed: dict[str, tuple[str, str]] = {}
+        unavailable: list[str] = []
+        for pom in chain:
+            for dependency in pom.managed:
+                group = self.interpolate(dependency.group, properties)
+                artifact = self.interpolate(dependency.artifact, properties)
+                version = self.interpolate(dependency.version, properties)
+                if dependency.scope == "import" and dependency.type == "pom":
+                    bom = self.by_coordinates.get(f"{group}:{artifact}")
+                    if bom is None:
+                        unavailable.append(f"{group}:{artifact}:{version}")
+                        continue
+                    bom_chain, _ = self.lineage(bom)
+                    imported, more = self.managed(bom_chain, self.properties(bom_chain))
+                    for key, value in imported.items():
+                        managed.setdefault(key, value)
+                    unavailable.extend(more)
+                    continue
+                managed.setdefault(f"{group}:{artifact}", (version, dependency.scope))
+        return managed, unavailable
 
-        Deliberate. Python's XML parsers carry documented hazards on untrusted
-        input -- entity expansion, external entity resolution, quadratic blowup
-        -- and a POM is attacker-controlled like everything else in the target.
-        The fields needed here are simple and flat, so pattern extraction avoids
-        the entire class of problem rather than mitigating it.
-        """
-        text = content.text
-        declared: list[DeclaredDependency] = []
-        properties = self._properties_of(text)
-        managed = self._managed_versions(text, properties)
+    def declarations(self, pom: MavenPom) -> list[DeclaredDependency]:
+        chain, missing_parent = self.lineage(pom)
+        properties = self.properties(chain)
+        managed, unavailable = self.managed(chain, properties)
+        unknown_from = ", ".join(
+            ([f"the parent {missing_parent}"] if missing_parent else [])
+            + [f"the imported BOM {b}" for b in unavailable]
+        )
+        out: list[DeclaredDependency] = []
+        seen: set[tuple[str, str]] = set()
 
-        # `<dependencyManagement>` states versions for the whole tree and the
-        # dependencies themselves then omit them. Reading only `<dependencies>`
-        # meant every dependency in a project that centralises its versions --
-        # the recommended Maven layout -- reached the graph with no version, so
-        # no advisory could match it. The block is removed before the scan so
-        # its own entries are not reported as dependencies in their own right.
-        body = self._MANAGEMENT.sub("", text)
-
-        for block in self._DEP.findall(body):
-            fields = {k.lower(): v for k, v in self._TAG.findall(block)}
-            group = self._resolve(fields.get("groupid", "").strip(), properties)
-            artifact = self._resolve(fields.get("artifactid", "").strip(), properties)
+        def declare(
+            dependency: MavenDependency, field_name: str, conditions: tuple[str, ...]
+        ) -> None:
+            group = self.interpolate(dependency.group, properties)
+            artifact = self.interpolate(dependency.artifact, properties)
             if not artifact:
-                continue
-            scope_text = fields.get("scope", "compile").strip().lower()
-            name = f"{group}:{artifact}" if group else artifact
-            version = self._resolve(fields.get("version", "").strip(), properties)
-            declared.append(
+                return
+            name = f"{group}:{artifact}"
+            # One artefact per name, classifier and type: the jar and the test-jar of a module
+            # are two dependencies.
+            identity = f"{name}:{dependency.classifier}:{dependency.type or 'jar'}"
+            if (identity, field_name) in seen:
+                return
+            seen.add((identity, field_name))
+            version = self.interpolate(dependency.version, properties)
+            managed_version, managed_scope = managed.get(name, ("", ""))
+            scope_text = dependency.scope or managed_scope or "compile"
+            spec = version or managed_version
+            note = None
+            if not spec:
+                spec = "*"
+                note = (
+                    f"the version is managed by {unknown_from}, which is not in the scanned tree"
+                    if unknown_from
+                    else "no version is declared or managed for it"
+                )
+            elif self.PLACEHOLDER.search(spec):
+                note = f"the version {spec} uses a property no POM in the scanned tree defines"
+            platform = list(conditions)
+            if dependency.classifier:
+                platform.append(f"classifier {dependency.classifier}")
+            if dependency.type and dependency.type != "jar":
+                platform.append(f"type {dependency.type}")
+            out.append(
                 DeclaredDependency(
                     name=name,
-                    spec=version or managed.get(name, "") or "*",
-                    scope=Scope.TEST if scope_text == "test" else Scope.RUNTIME,
-                    field_name="dependency",
+                    spec=spec,
+                    scope=MavenEcosystem.SCOPES.get(scope_text, Scope.RUNTIME)
+                    if not dependency.optional
+                    else Scope.OPTIONAL,
+                    field_name=field_name,
+                    platform=tuple(platform),
+                    exclusions=dependency.exclusions,
+                    note=note,
                 )
             )
 
-        own = self._own_coordinates(text)
+        # What this POM itself declares. A parent's dependencies, profiles and plugins are
+        # inherited by every module, but they are recorded once, against the POM that declares
+        # them -- the parent is in the scan too -- rather than once per module.
+        for dependency in pom.dependencies:
+            declare(dependency, "dependency", ())
+        for profile_id, trigger, dependencies, _ in pom.profiles:
+            condition = f"profile {profile_id}" + (f" ({trigger})" if trigger else "")
+            for dependency in dependencies:
+                declare(dependency, f"profile {profile_id}", (condition,))
+        for ancestor in (pom,):
+            for group, artifact, version, _ in ancestor.plugins + ancestor.extensions:
+                name = f"{self.interpolate(group, properties)}:{self.interpolate(artifact, properties)}"
+                if (name, "plugin") in seen or not artifact:
+                    continue
+                seen.add((name, "plugin"))
+                resolved = self.interpolate(version, properties)
+                out.append(
+                    DeclaredDependency(
+                        name=name,
+                        spec=resolved or "*",
+                        scope=Scope.TOOL,
+                        field_name="plugin",
+                        note=None
+                        if resolved
+                        else "a build plugin with no version: Maven picks one from its own defaults",
+                    )
+                )
+        return out
+
+
+class MavenTree:
+    """`mvn dependency:tree` output: the effective graph Maven resolved, supplied by the project.
+
+    ```
+      com.example:app:jar:1.0.0
+      +- com.google.guava:guava:jar:33.3.1-jre:compile
+      |  \\- com.google.guava:failureaccess:jar:1.0.2:compile
+      \\- junit:junit:jar:4.13.2:test
+    ```
+
+    A POM declares; this is what resolved -- every transitive dependency, its scope, the version
+    a range chose. When a build supplies it (`dependency-tree.txt`), it is read as the lockfile.
+    """
+
+    LINE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?P<indent>(?:[|+\\ ]  |[+\\]- )*)(?P<coords>[\w.\-]+:[\w.\-]+:[\w.\-]+(?::[\w.\-]+){1,3})(?P<rest>.*)$"
+    )
+
+    @classmethod
+    def parse(cls, content: FileContent, ecosystem: str) -> LockGraph:
+        lines = [line.rstrip() for line in content.text.splitlines() if line.strip()]
+        lines = [re.sub(r"^\[INFO\] ", "", line) for line in lines]
+        if not lines:
+            return LockGraph(path=content.path, ecosystem=ecosystem)
+        entries: list[LockEntry] = []
+        parents: list[tuple[int, str]] = []
+        children: dict[str, list[str]] = {}
+        unreadable = 0
+        for index, line in enumerate(lines):
+            if index == 0:
+                continue  # the project itself
+            match = cls.LINE.match(line)
+            if not match:
+                unreadable += 1
+                continue
+            depth = len(match.group("indent")) // 3
+            parts = match.group("coords").split(":")
+            if len(parts) == 5:
+                group, artifact, kind, version, scope = parts
+                classifier = ""
+            elif len(parts) == 6:
+                group, artifact, kind, classifier, version, scope = parts
+            else:
+                unreadable += 1
+                continue
+            rest = match.group("rest")
+            name = f"{group}:{artifact}"
+            while parents and parents[-1][0] >= depth:
+                parents.pop()
+            key = f"{name}@{version}"
+            if parents:
+                children.setdefault(parents[-1][1], []).append(key)
+            parents.append((depth, key))
+            if "omitted for" in rest:
+                continue
+            platform = [f"classifier {classifier}"] if classifier else []
+            if kind not in ("jar", "bundle"):
+                platform.append(f"type {kind}")
+            entries.append(
+                LockEntry(
+                    name=name,
+                    version=version,
+                    scope=Scope.OPTIONAL
+                    if "(optional)" in rest
+                    else MavenEcosystem.SCOPES.get(scope, Scope.RUNTIME),
+                    direct=depth == 0,
+                    platform=tuple(platform),
+                )
+            )
+        if unreadable and not entries:
+            return LockGraph(
+                path=content.path,
+                ecosystem=ecosystem,
+                parse_error=f"{unreadable} line(s) are not dependency:tree output",
+            )
+        entries = [
+            LockEntry(
+                name=e.name,
+                version=e.version,
+                scope=e.scope,
+                direct=e.direct,
+                platform=e.platform,
+                dependencies=tuple(sorted(set(children.get(f"{e.name}@{e.version}", ())))),
+            )
+            for e in entries
+        ]
+        return LockGraph(
+            path=content.path, ecosystem=ecosystem, entries=tuple(entries), integrity_elsewhere=True
+        )
+
+
+class MavenChecksums:
+    """Maven Resolver's trusted checksums (`.mvn/checksums/checksums-<repository>.sha256`): the
+    digest of every artefact a build resolved, recorded by Maven and committed so the next build
+    refuses anything different.
+
+    ```
+      4bf0e2c5...4e90  com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar
+    ```
+
+    Lines are in the repository layout, so the coordinates are recovered from the path. The
+    artefact of a dependency is its jar (or its classifier's jar); `.pom` lines, which every
+    artefact has, are used only where nothing else was resolved. A companion: it completes the
+    entries `dependency-tree.txt` resolved, for every module of the build below it.
+    """
+
+    # The digest field is taken as written and validated as a digest afterwards
+    # (`Coordinate.integrity`): a value that is not one is kept as malformed and reported, never
+    # skipped as if the line were absent.
+    LINE: ClassVar[re.Pattern[str]] = re.compile(r"^(\S{1,256})\s+\*?(\S{1,1024})$")
+    ALGORITHMS: ClassVar[dict[str, str]] = {
+        "sha1": "sha1",
+        "sha256": "sha256",
+        "sha512": "sha512",
+        "md5": "md5",
+    }
+
+    @classmethod
+    def parse(cls, content: FileContent, ecosystem: str) -> LockGraph:
+        algorithm = cls.ALGORITHMS.get(content.basename.rpartition(".")[2].lower())
+        if algorithm is None:
+            return LockGraph(
+                path=content.path,
+                ecosystem=ecosystem,
+                parse_error="not a checksum summary file (.sha1, .sha256, .sha512)",
+            )
+        best: dict[tuple[str, str], tuple[int, str]] = {}
+        unreadable = 0
+        for raw in content.text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = cls.LINE.match(line)
+            if not match:
+                unreadable += 1
+                continue
+            digest, path = match.group(1).lower(), match.group(2)
+            parts = path.split("/")
+            if len(parts) < 4 or ".." in parts:
+                unreadable += 1
+                continue
+            *group, artifact, version, filename = parts
+            stem = f"{artifact}-{version}"
+            if not filename.startswith(stem):
+                unreadable += 1
+                continue
+            extension = filename.rpartition(".")[2]
+            classified = filename[len(stem) :].startswith("-")
+            # Prefer the plain jar, then a classified jar, then anything but a POM, then the POM.
+            rank = (
+                0
+                if extension == "jar" and not classified
+                else 1
+                if extension == "jar"
+                else 2
+                if extension != "pom"
+                else 3
+            )
+            key = (".".join(group) + ":" + artifact, version)
+            if key not in best or rank < best[key][0]:
+                best[key] = (rank, f"{algorithm}:{digest}")
+        if unreadable and not best:
+            return LockGraph(
+                path=content.path,
+                ecosystem=ecosystem,
+                parse_error=f"{unreadable} line(s) are not '<digest>  <repository path>'",
+            )
+        entries = tuple(
+            LockEntry(name=name, version=version, integrity=digest)
+            for (name, version), (_, digest) in sorted(best.items())
+        )
+        return LockGraph(
+            path=content.path,
+            ecosystem=ecosystem,
+            entries=entries,
+            companion=True,
+            companion_tree=True,
+            owner_levels=2,
+        )
+
+
+class MavenWrapper:
+    """`.mvn/wrapper/maven-wrapper.properties`: the Maven distribution the wrapper downloads and
+    runs for every build, and whether its checksum is pinned."""
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        values: dict[str, str] = {}
+        for raw in content.text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith(("#", "!")) or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip().replace("\\:", ":")
+        declared: list[DeclaredDependency] = []
+        url = values.get("distributionUrl", "")
+        found = re.search(r"apache-maven/([\w.\-]+)/apache-maven-[\w.\-]+\.zip$", url)
+        if not found:
+            # The one thing the file is for. Without it the wrapper cannot run, and an empty
+            # result would read as "this build uses no tool".
+            return BaseEcosystem._err(
+                content,
+                ecosystem,
+                "no readable distributionUrl naming an apache-maven-<version> distribution"
+                if url
+                else "no distributionUrl: the wrapper names no Maven distribution",
+            )
+        if found:
+            declared.append(
+                DeclaredDependency(
+                    name="org.apache.maven:apache-maven",
+                    spec=found.group(1),
+                    scope=Scope.TOOL,
+                    field_name="distributionUrl",
+                    source=url,
+                )
+            )
+        return Manifest(path=content.path, ecosystem=ecosystem, dependencies=tuple(declared))
+
+
+class MavenEcosystem(BaseEcosystem):
+    id = "maven"
+    purl_type = "maven"
+    manifest_globs: tuple[str, ...] = ("**/pom.xml", "**/.mvn/wrapper/maven-wrapper.properties")
+    lockfile_globs: tuple[str, ...] = (
+        "**/dependency-tree.txt",
+        "**/.mvn/checksums/*.sha1",
+        "**/.mvn/checksums/*.sha256",
+        "**/.mvn/checksums/*.sha512",
+    )
+    registry_hosts: frozenset[str] = frozenset(
+        {"repo.maven.apache.org", "repo1.maven.org", "central.sonatype.com"}
+    )
+    records_integrity = False
+    """A POM records no hashes, and `dependency-tree.txt` none either. A build that commits
+    Maven Resolver's trusted checksums (`.mvn/checksums/`) has them, and they are applied to the
+    resolved entries; with `--online` they are compared with Maven Central's own."""
+    integrity_companion = True
+
+    SCOPES: ClassVar[dict[str, Scope]] = {
+        "compile": Scope.RUNTIME,
+        "runtime": Scope.RUNTIME,
+        "provided": Scope.BUILD,
+        "system": Scope.BUILD,
+        "test": Scope.TEST,
+    }
+
+    def normalize_name(self, name: str) -> str:
+        return name.strip().lower()
+
+    def qualifiers(self, platform: tuple[str, ...]) -> str:
+        """`?classifier=linux-x86_64&type=test-jar`: the jar and the test-jar of one version, or
+        a native classifier beside the plain jar, are different artefacts with different bytes."""
+        found = {}
+        for condition in platform:
+            kind, _, value = condition.partition(" ")
+            if kind in ("classifier", "type") and value and " " not in value:
+                found[kind] = value
+        return ("?" + "&".join(f"{k}={v}" for k, v in sorted(found.items()))) if found else ""
+
+    def parse_manifest(self, content: FileContent) -> Manifest:
+        return self.parse_in_tree(content, {content.path: content})
+
+    def parse_in_tree(self, content: FileContent, files: Mapping[str, FileContent]) -> Manifest:
+        """A POM resolved against the other POMs of its build, when they are in the scan.
+
+        Read structurally (`core/safexml.py`): a DTD or entity declaration is refused, never
+        expanded, and a POM that is not well-formed XML is a parse error, not an empty build."""
+        if content.basename == "maven-wrapper.properties":
+            return MavenWrapper.parse(content, self.id)
+        poms: dict[str, MavenPom] = {}
+        for path, other in files.items():
+            if other.basename != "pom.xml":
+                continue
+            try:
+                poms[path] = MavenPom(path, SafeXml.parse(other.text, source=path))
+            except SafeXmlError as exc:
+                if path == content.path:
+                    return BaseEcosystem._err(content, self.id, f"not a readable POM: {exc}")
+        pom = poms.get(content.path)
+        if pom is None:
+            return BaseEcosystem._err(content, self.id, "not a readable POM")
+        build = MavenBuild(poms)
+        sources = tuple(f"repository {rid or '?'}: {url}" for rid, url in pom.repositories if url)
+        properties = build.properties(build.lineage(pom)[0])
         return Manifest(
             path=content.path,
             ecosystem=self.id,
-            name=self._resolve(own["artifactid"], properties) or None,
-            version=self._resolve(own["version"], properties) or None,
-            dependencies=tuple(declared),
+            name=f"{build.interpolate(pom.group, properties)}:{pom.artifact}"
+            if pom.artifact
+            else None,
+            version=build.interpolate(pom.version, properties) or None,
+            dependencies=tuple(build.declarations(pom)),
+            sources=sources,
         )
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
+        if content.basename == "dependency-tree.txt":
+            return MavenTree.parse(content, self.id)
+        if "/.mvn/checksums/" in f"/{content.path}":
+            return MavenChecksums.parse(content, self.id)
         return LockGraph(
             path=content.path,
             ecosystem=self.id,
-            parse_error="Maven has no standard lockfile",
-        )
-
-
-class GradleEcosystem(BaseEcosystem):
-    id = "gradle"
-    purl_type = "maven"
-    manifest_globs: tuple[str, ...] = (
-        "**/build.gradle",
-        "**/build.gradle.kts",
-        "**/gradle/libs.versions.toml",
-    )
-    lockfile_globs: tuple[str, ...] = (
-        "**/gradle.lockfile",
-        "**/gradle/verification-metadata.xml",
-    )
-    registry_hosts: frozenset[str] = frozenset(
-        {"repo.maven.apache.org", "repo1.maven.org", "jcenter.bintray.com"}
-    )
-
-    _DEP = re.compile(
-        r"""(?:implementation|api|compile|compileOnly|runtimeOnly|testImplementation|
-            testCompile|annotationProcessor|kapt)
-            \s*[\s(]\s*["']([^"':]+):([^"':]+):?([^"']*)["']""",
-        re.VERBOSE,
-    )
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        if content.basename == "libs.versions.toml":
-            return self._parse_version_catalog(content)
-        declared = [
-            DeclaredDependency(
-                name=f"{group}:{artifact}",
-                spec=version or "*",
-                scope=Scope.RUNTIME,
-                field_name="dependencies",
-            )
-            for group, artifact, version in self._DEP.findall(content.text)
-        ]
-        # A Gradle build file is executable Groovy or Kotlin, evaluated on every
-        # build. It is a build hook by nature, not only when it declares one.
-        hooks = (
-            Hook(
-                kind="build",
-                path=content.path,
-                name=content.basename,
-                command="gradle build",
-                ecosystem=self.id,
+            parse_error=(
+                "Maven has no standard lockfile: supply `mvn dependency:tree -DoutputFile=dependency-tree.txt` "
+                "output, and commit trusted checksums under .mvn/checksums/"
             ),
         )
-        return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            dependencies=tuple(declared),
-            hooks=hooks,
-        )
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        if content.basename == "verification-metadata.xml":
-            return self._parse_verification_metadata(content)
-        entries: list[LockEntry] = []
-        for raw in content.text.splitlines():
-            line = raw.split("#", 1)[0].strip()
-            if not line or "=" not in line:
-                continue
-            coordinate = line.split("=", 1)[0]
-            parts = coordinate.split(":")
-            if len(parts) >= 3:
-                entries.append(LockEntry(name=f"{parts[0]}:{parts[1]}", version=parts[2]))
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-    def _parse_version_catalog(self, content: FileContent) -> Manifest:
-        """`gradle/libs.versions.toml`, Gradle's central version declaration.
-
-        A catalog states each coordinate once and every module then refers to it
-        by alias, so a build using one has almost nothing in its `build.gradle`
-        for the regex above to find. Without this, the projects following
-        Gradle's current recommendation were the ones with no dependency graph.
-        """
-        try:
-            data = tomllib.loads(content.text)
-        except (tomllib.TOMLDecodeError, ValueError) as exc:
-            return BaseEcosystem._err(content, self.id, f"invalid TOML: {exc}")
-
-        versions = {
-            str(k): str(v) for k, v in (data.get("versions") or {}).items() if isinstance(v, str)
-        }
-        declared: list[DeclaredDependency] = []
-        for alias, entry in (data.get("libraries") or {}).items():
-            name, spec = self._catalog_coordinate(entry, versions)
-            if name:
-                declared.append(
-                    DeclaredDependency(name=name, spec=spec or "*", field_name=f"libraries.{alias}")
-                )
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    @staticmethod
-    def _catalog_coordinate(entry: object, versions: dict[str, str]) -> tuple[str, str]:
-        """One `[libraries]` entry as `(group:artifact, version)`.
-
-        Three spellings are legal: a `"group:artifact:version"` string, a table
-        with `module`, or a table with separate `group` and `name`. The version
-        is inline, or a `version.ref` naming a `[versions]` key, or a rich
-        table with `require`/`strictly`/`prefer`.
-        """
-        if isinstance(entry, str):
-            parts = entry.split(":")
-            if len(parts) >= 3:
-                return (f"{parts[0]}:{parts[1]}", parts[2])
-            return (f"{parts[0]}:{parts[1]}", "") if len(parts) == 2 else ("", "")
-        if not isinstance(entry, dict):
-            return ("", "")
-
-        module = entry.get("module")
-        if isinstance(module, str) and ":" in module:
-            name = module
-        else:
-            group, artifact = entry.get("group"), entry.get("name")
-            if not (isinstance(group, str) and isinstance(artifact, str)):
-                return ("", "")
-            name = f"{group}:{artifact}"
-
-        version = entry.get("version")
-        if isinstance(version, str):
-            return (name, version)
-        if isinstance(version, dict):
-            ref = version.get("ref")
-            if isinstance(ref, str):
-                return (name, versions.get(ref, ""))
-            for key in ("require", "strictly", "prefer"):
-                if isinstance(version.get(key), str):
-                    return (name, str(version[key]))
-        return (name, "")
-
-    _VERIFY_COMPONENT = re.compile(
-        r'<component\s+group="([^"]+)"\s+name="([^"]+)"\s+version="([^"]+)"(.*?)</component>',
-        re.DOTALL | re.IGNORECASE,
-    )
-    _VERIFY_SHA = re.compile(r'<(sha256|sha512|sha1|md5)\s+value="([0-9a-fA-F]+)"', re.IGNORECASE)
-
-    def _parse_verification_metadata(self, content: FileContent) -> LockGraph:
-        """`gradle/verification-metadata.xml` -- Gradle dependency verification.
-
-        The only place a Gradle build records an artefact hash, which makes it
-        the only Gradle file able to answer the integrity rules. Read with
-        patterns rather than an XML parser, for the reason the Maven parser
-        gives: the file is attacker-controlled like everything else in the
-        target, and Python's XML parsers carry documented hazards on that input.
-        """
-        entries: list[LockEntry] = []
-        for group, name, version, body in self._VERIFY_COMPONENT.findall(content.text):
-            digest = self._VERIFY_SHA.search(body)
-            entries.append(
-                LockEntry(
-                    name=f"{group}:{name}",
-                    version=version,
-                    integrity=f"{digest.group(1).lower()}:{digest.group(2).lower()}"
-                    if digest
-                    else None,
-                )
-            )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# NuGet
-# ---------------------------------------------------------------------------
-
-
-class NuGetEcosystem(BaseEcosystem):
-    id = "nuget"
-    purl_type = "nuget"
-    manifest_globs: tuple[str, ...] = (
-        "**/*.csproj",
-        "**/*.fsproj",
-        "**/*.vbproj",
-        "**/packages.config",
-    )
-    lockfile_globs: tuple[str, ...] = ("**/packages.lock.json", "**/project.assets.json")
-    registry_hosts: frozenset[str] = frozenset({"api.nuget.org", "nuget.org"})
-
-    _PKGREF = re.compile(
-        r'<PackageReference\s+Include="([^"]+)"(?:[^>]*?Version="([^"]*)")?', re.IGNORECASE
-    )
-    _PKG = re.compile(r'<package\s+id="([^"]+)"\s+version="([^"]*)"', re.IGNORECASE)
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        text = content.text
-        declared = [
-            DeclaredDependency(name=name, spec=version or "*", field_name="PackageReference")
-            for name, version in self._PKGREF.findall(text)
-        ]
-        declared += [
-            DeclaredDependency(name=name, spec=version or "*", field_name="packages.config")
-            for name, version in self._PKG.findall(text)
-        ]
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        try:
-            data = BaseEcosystem._json_object(content.text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"
-            )
-        if content.basename == "project.assets.json":
-            return self._parse_assets(content, data)
-        entries: list[LockEntry] = []
-        for framework in (data.get("dependencies") or {}).values():
-            if not isinstance(framework, dict):
-                continue
-            for name, meta in sorted(framework.items()):
-                if not isinstance(meta, dict):
-                    continue
-                kind = str(meta.get("type", "")).lower()
-                entries.append(
-                    LockEntry(
-                        name=str(name),
-                        version=str(meta.get("resolved", "")),
-                        integrity=BaseEcosystem._s(meta.get("contentHash")),
-                        direct=kind == "direct",
-                        # `"type": "Project"` is a reference to another project in the
-                        # same solution. It has no `contentHash` because there is
-                        # nothing to fetch -- the bytes are in the repository -- which
-                        # is the same statement npm makes with `"link": true` and Cargo
-                        # makes by omitting `source`.
-                        #
-                        # `bitwarden/server` is a .NET solution of about forty projects
-                        # that reference each other, so every `packages.lock.json` in it
-                        # lists several: 73 of its 86 blocking findings, and the single
-                        # largest group in the repository.
-                        local=kind == "project",
-                    )
-                )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-    def _parse_assets(self, content: FileContent, data: dict[str, Any]) -> LockGraph:
-        """`project.assets.json`, which is what a restored .NET project has.
-
-        `packages.lock.json` exists only when a project opted into locking;
-        `obj/project.assets.json` is written by every `dotnet restore`. Reading
-        only the first meant the ordinary .NET project had no dependency graph.
-
-        `libraries` carries the resolved set keyed `Name/Version`, and `targets`
-        carries the edges per framework.
-        """
-        entries: list[LockEntry] = []
-        direct: set[str] = set()
-        for group in (data.get("projectFileDependencyGroups") or {}).values():
-            if isinstance(group, list):
-                direct.update(str(d).split(" ", 1)[0].lower() for d in group)
-
-        edges: dict[str, tuple[str, ...]] = {}
-        for target in (data.get("targets") or {}).values():
-            if not isinstance(target, dict):
-                continue
-            for key, meta in target.items():
-                if not isinstance(meta, dict):
-                    continue
-                name = str(key).split("/", 1)[0]
-                dependencies = meta.get("dependencies")
-                if isinstance(dependencies, dict):
-                    edges[name] = tuple(sorted(str(d) for d in dependencies))
-
-        for key, meta in (data.get("libraries") or {}).items():
-            if not isinstance(meta, dict):
-                continue
-            name, _, version = str(key).partition("/")
-            if not name or str(meta.get("type", "package")).lower() == "project":
-                continue
-            entries.append(
-                LockEntry(
-                    name=name,
-                    version=version,
-                    integrity=BaseEcosystem._s(meta.get("sha512")),
-                    dependencies=edges.get(name, ()),
-                    direct=name.lower() in direct,
-                )
-            )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# Composer
-# ---------------------------------------------------------------------------
-
-
-class ComposerEcosystem(BaseEcosystem):
-    id = "composer"
-    purl_type = "composer"
-    manifest_globs: tuple[str, ...] = ("**/composer.json",)
-    lockfile_globs: tuple[str, ...] = ("**/composer.lock",)
-    registry_hosts: frozenset[str] = frozenset({"packagist.org", "repo.packagist.org"})
-
-    lifecycle_keys = frozenset(
-        {
-            "pre-install-cmd",
-            "post-install-cmd",
-            "pre-update-cmd",
-            "post-update-cmd",
-            "post-autoload-dump",
-            "post-root-package-install",
-            "post-create-project-cmd",
-        }
-    )
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        try:
-            data = BaseEcosystem._json_object(content.text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return BaseEcosystem._err(content, self.id, f"invalid JSON: {exc}")
-
-        declared: list[DeclaredDependency] = []
-        for section, scope in (("require", Scope.RUNTIME), ("require-dev", Scope.DEV)):
-            for name, spec in sorted((data.get(section) or {}).items()):
-                if str(name).startswith("php") or str(name).startswith("ext-"):
-                    continue
-                declared.append(
-                    DeclaredDependency(
-                        name=str(name), spec=str(spec), scope=scope, field_name=section
-                    )
-                )
-
-        scripts = data.get("scripts")
-        hooks: tuple[Hook, ...] = ()
-        if isinstance(scripts, dict):
-            flat = {
-                k: (" && ".join(str(x) for x in v) if isinstance(v, list) else str(v))
-                for k, v in scripts.items()
-            }
-            hooks = tuple(self.lifecycle_hooks(flat, content.path))
-
-        return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            name=BaseEcosystem._s(data.get("name")),
-            version=BaseEcosystem._s(data.get("version")),
-            dependencies=tuple(declared),
-            hooks=hooks,
-        )
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        try:
-            data = BaseEcosystem._json_object(content.text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"
-            )
-        entries: list[LockEntry] = []
-        for section, scope in (
-            ("packages", Scope.RUNTIME),
-            ("packages-dev", Scope.DEV),
-        ):
-            for pkg in data.get(section) or []:
-                if not isinstance(pkg, dict):
-                    continue
-                dist = pkg.get("dist") or {}
-                entries.append(
-                    LockEntry(
-                        name=str(pkg.get("name", "")),
-                        version=str(pkg.get("version", "")),
-                        integrity=BaseEcosystem._s(dist.get("shasum")),
-                        resolved_from=BaseEcosystem._s(dist.get("url")),
-                        scope=scope,
-                        dependencies=tuple(sorted((pkg.get("require") or {}).keys())),
-                    )
-                )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# RubyGems
-# ---------------------------------------------------------------------------
-
-
-class RubyGemsEcosystem(BaseEcosystem):
-    id = "rubygems"
-    purl_type = "gem"
-    manifest_globs: tuple[str, ...] = ("**/Gemfile", "**/*.gemspec")
-    lockfile_globs: tuple[str, ...] = ("**/Gemfile.lock",)
-    registry_hosts: frozenset[str] = frozenset({"rubygems.org", "index.rubygems.org"})
-
-    _GEM = re.compile(r"""^\s*gem\s+["']([^"']+)["']\s*(?:,\s*["']([^"']+)["'])?""", re.M)
-    # re.M is load-bearing: without it `^` matches only at the start of the
-    # file, the pattern finds nothing, and an empty graph looks exactly like a
-    # project with no dependencies.
-    _LOCK = re.compile(r"^\s{4}([A-Za-z0-9_.-]+)\s+\(([^)]+)\)", re.M)
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared = [
-            DeclaredDependency(name=name, spec=spec or "*", field_name="gem")
-            for name, spec in self._GEM.findall(content.text)
-        ]
-        hooks: list[Hook] = []
-        if content.basename.endswith(".gemspec"):
-            # A gemspec is executable Ruby, evaluated whenever the gem is built
-            # or installed from source.
-            hooks.append(
-                Hook(
-                    kind="build",
-                    path=content.path,
-                    name=content.basename,
-                    ecosystem=self.id,
-                )
-            )
-        return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            dependencies=tuple(declared),
-            hooks=tuple(hooks),
-        )
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        entries = [
-            LockEntry(name=name, version=version)
-            for name, version in self._LOCK.findall(content.text)
-        ]
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# CocoaPods and pub
-# ---------------------------------------------------------------------------
-
-
-class CocoaPodsEcosystem(BaseEcosystem):
-    id = "cocoapods"
-    purl_type = "cocoapods"
-    manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
-    lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)
-    registry_hosts: frozenset[str] = frozenset({"cdn.cocoapods.org", "github.com/CocoaPods"})
-
-    _POD = re.compile(r"""^\s*pod\s+["']([^"']+)["']\s*(?:,\s*["']([^"']+)["'])?""", re.M)
-    # See the note on the RubyGems lockfile pattern: re.M is required.
-    _LOCK = re.compile(r"^\s{2}-\s+([A-Za-z0-9_.\-/+]+)\s+\(([^)]+)\)", re.M)
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared = [
-            DeclaredDependency(name=name, spec=spec or "*", field_name="pod")
-            for name, spec in self._POD.findall(content.text)
-        ]
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        entries = [
-            LockEntry(name=name, version=version)
-            for name, version in self._LOCK.findall(content.text)
-        ]
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-class PubEcosystem(BaseEcosystem):
-    id = "pub"
-    purl_type = "pub"
-    manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)
-    lockfile_globs: tuple[str, ...] = ("**/pubspec.lock",)
-    registry_hosts: frozenset[str] = frozenset({"pub.dev", "pub.dartlang.org"})
-
-    @staticmethod
-    def _sha256(description: object) -> str | None:
-        if not isinstance(description, dict):
-            return None
-        value = description.get("sha256")
-        if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value):
-            return f"sha256:{value.lower()}"
-        return None
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        from cordon_scanner.core.config import RestrictedYamlParser
-
-        try:
-            data = RestrictedYamlParser._load_yaml_subset(content.text, source=content.path)
-        except Exception as exc:
-            return BaseEcosystem._err(content, self.id, f"invalid YAML: {exc}")
-
-        declared: list[DeclaredDependency] = []
-        for section, scope in (
-            ("dependencies", Scope.RUNTIME),
-            ("dev_dependencies", Scope.DEV),
-        ):
-            block = data.get(section)
-            if not isinstance(block, dict):
-                continue
-            for name, spec in sorted(block.items()):
-                text = spec if isinstance(spec, str) else BaseEcosystem._table_spec(spec)
-                declared.append(
-                    DeclaredDependency(name=str(name), spec=text, scope=scope, field_name=section)
-                )
-
-        return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            name=BaseEcosystem._s(data.get("name")),
-            version=BaseEcosystem._s(data.get("version")),
-            dependencies=tuple(declared),
-        )
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        from cordon_scanner.core.config import RestrictedYamlParser
-
-        try:
-            data = RestrictedYamlParser._load_yaml_subset(content.text, source=content.path)
-        except Exception as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid YAML: {exc}"
-            )
-        packages = data.get("packages")
-        if not isinstance(packages, dict):
-            return LockGraph(path=content.path, ecosystem=self.id)
-        entries = [
-            LockEntry(
-                name=str(name),
-                version=str(meta.get("version", "")),
-                resolved_from=BaseEcosystem._s((meta.get("description") or {}).get("url"))
-                if isinstance(meta.get("description"), dict)
-                else None,
-                scope=Scope.DEV
-                if str(meta.get("dependency", "")).startswith("direct dev")
-                else Scope.RUNTIME,
-                direct=str(meta.get("dependency", "")).startswith("direct"),
-                # Dart 2.19 and later record the archive's sha256 under `description`, which is
-                # what pub.dev publishes as `archive_sha256`.
-                integrity=self._sha256(meta.get("description")),
-            )
-            for name, meta in sorted(packages.items())
-            if isinstance(meta, dict)
-        ]
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Swift
-# ---------------------------------------------------------------------------
-
-
-class SwiftEcosystem(BaseEcosystem):
-    """Swift Package Manager.
-
-    A Swift dependency is a git URL rather than a registry name, so the purl
-    identity is the repository it resolves from. `Package.resolved` is the only
-    file that records a revision, and a revision is what a scan can act on: the
-    manifest states a range, and `Package.swift` is Swift source that would have
-    to be compiled to read properly -- which is the same argument `setup.py`
-    gets, and the same answer.
-    """
-
-    id = "swift"
-    purl_type = "swift"
-    manifest_globs: tuple[str, ...] = ("**/Package.swift",)
-    lockfile_globs: tuple[str, ...] = ("**/Package.resolved",)
-    registry_hosts: frozenset[str] = frozenset(
-        {"github.com", "gitlab.com", "swiftpackageindex.com"}
-    )
-
-    _PACKAGE = re.compile(r'\.package\s*\(\s*url:\s*"([^"]+)"([^)]*)\)', re.DOTALL)
-    _REQUIREMENT = re.compile(r'"([0-9][^"]*)"')
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower().removesuffix(".git")
-
-    @staticmethod
-    def _identity(location: str) -> str:
-        """A package's name: the repository path it resolves from.
-
-        `swiftlang/swift-nio` rather than `NIO`, because the display name is
-        chosen by whoever depends on it and two packages may share one.
-        """
-        text = location.strip().removesuffix(".git")
-        if "://" in text:
-            text = text.split("://", 1)[1]
-        text = text.rpartition("@")[2]
-        parts = [p for p in text.replace(":", "/").split("/") if p]
-        return "/".join(parts[-2:]) if len(parts) >= 2 else text
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared: list[DeclaredDependency] = []
-        for url, requirement in self._PACKAGE.findall(content.text):
-            version = self._REQUIREMENT.search(requirement)
-            declared.append(
-                DeclaredDependency(
-                    name=self._identity(url),
-                    spec=version.group(1) if version else "*",
-                    field_name="package",
-                )
-            )
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        try:
-            data = BaseEcosystem._json_object(content.text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"
-            )
-
-        # Version 1 nests under `object.pins`; version 2 and 3 put `pins` at the
-        # top and renamed `repositoryURL` to `location`. All three are in use.
-        pins = data.get("pins")
-        if not isinstance(pins, list):
-            pins = (data.get("object") or {}).get("pins")
-        if not isinstance(pins, list):
-            return LockGraph(path=content.path, ecosystem=self.id)
-
-        entries: list[LockEntry] = []
-        for pin in pins:
-            if not isinstance(pin, dict):
-                continue
-            location = BaseEcosystem._s(pin.get("location")) or BaseEcosystem._s(
-                pin.get("repositoryURL")
-            )
-            name = self._identity(location) if location else BaseEcosystem._s(pin.get("identity"))
-            state = pin.get("state") or {}
-            if not name or not isinstance(state, dict):
-                continue
-            entries.append(
-                LockEntry(
-                    name=name,
-                    # A branch pin has a revision and no version, and the
-                    # revision is the only thing that identifies what was built.
-                    version=str(state.get("version") or state.get("revision") or ""),
-                    resolved_from=location,
-                    direct=True,
-                )
-            )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# Hex (Elixir and Erlang)
-# ---------------------------------------------------------------------------
-
-
-class HexEcosystem(BaseEcosystem):
-    """Hex, via `mix.lock`.
-
-    `mix.exs` is Elixir source and is read for declarations only; `mix.lock` is
-    a literal map of resolved packages and is where the versions and hashes are.
-    """
-
-    id = "hex"
-    purl_type = "hex"
-    manifest_globs: tuple[str, ...] = ("**/mix.exs",)
-    lockfile_globs: tuple[str, ...] = ("**/mix.lock",)
-    registry_hosts: frozenset[str] = frozenset({"hex.pm", "repo.hex.pm"})
-
-    # `:name` or `:"name-with-hyphens"`. A hex package name may contain a
-    # hyphen, and a hyphen is not legal in a bare Elixir atom -- mix writes
-    # those quoted. Matching only the bare form made every dependency on such a
-    # package invisible: `ecdsa-elixir` has a published advisory and a
-    # `mix.lock` pinning it reported nothing at all.
-    _DEP = re.compile(r'\{\s*:(?:"([a-z_0-9.-]+)"|([a-z_0-9]+))\s*,\s*"([^"]+)"')
-    _LOCK = re.compile(
-        r'"([a-z_0-9.-]+)"\s*:\s*\{\s*:hex\s*,\s*'
-        r':(?:"[a-z_0-9.-]+"|[a-z_0-9]+)\s*,\s*"([^"]+)"([^}]*)\}',
-        re.DOTALL,
-    )
-    _LOCK_HASH = re.compile(r'"([0-9a-f]{64})"')
-
-    @classmethod
-    def _integrity(cls, text: str, start: int) -> str | None:
-        """The hash Hex publishes for this entry, from the whole of its line.
-
-        mix.lock writes `{:hex, :name, "version", "<inner>", [:mix], [deps], "hexpm", "<outer>"}`, one
-        entry per line. The outer checksum is the one hex.pm serves, so it is the one a registry
-        comparison can use. It sits after the dependency list, whose own braces ended the old
-        match early, so it was never read and the inner one was recorded in its place - and an
-        inner checksum compared with hex.pm's outer one contradicts it every time.
-
-        A lock from before mix wrote the outer checksum has only the inner one. It is kept, under a
-        label no digest reader accepts, so the entry still counts as hashed and is never compared.
-        """
-        end = text.find("\n", start)
-        hashes = cls._LOCK_HASH.findall(text[start : end if end != -1 else len(text)])
-        if len(hashes) >= 2:
-            return f"sha256:{hashes[-1]}"
-        return f"hexinner:{hashes[0]}" if hashes else None
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared = [
-            # Two name groups, one for the quoted atom and one for the bare
-            # form; exactly one of them matched.
-            DeclaredDependency(name=quoted or bare, spec=spec, field_name="deps")
-            for quoted, bare, spec in self._DEP.findall(content.text)
-        ]
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        entries: list[LockEntry] = []
-        for match in self._LOCK.finditer(content.text):
-            name, version = match.group(1), match.group(2)
-            entries.append(
-                LockEntry(
-                    name=name,
-                    version=version,
-                    integrity=self._integrity(content.text, match.start()),
-                )
-            )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# CRAN (R)
-# ---------------------------------------------------------------------------
-
-
-class CranEcosystem(BaseEcosystem):
-    """CRAN, via `DESCRIPTION` and `renv.lock`.
-
-    `renv.lock` is the only R file that records what was actually installed;
-    `DESCRIPTION` states ranges, in a comma-separated field that wraps across
-    lines.
-    """
-
-    id = "cran"
-    purl_type = "cran"
-    manifest_globs: tuple[str, ...] = ("**/DESCRIPTION",)
-    lockfile_globs: tuple[str, ...] = ("**/renv.lock",)
-    registry_hosts: frozenset[str] = frozenset({"cran.r-project.org", "cloud.r-project.org"})
-
-    _FIELD = re.compile(
-        r"^(Depends|Imports|Suggests|LinkingTo):\s*(.*?)(?=^\S+:|\Z)",
-        re.MULTILINE | re.DOTALL,
-    )
-    _ENTRY = re.compile(r"([A-Za-z][A-Za-z0-9._]*)\s*(?:\(([^)]*)\))?")
-
-    def normalize_name(self, name: str) -> str:
-        """Folded to lower case, although CRAN itself is case-sensitive.
-
-        `Matrix` and `matrix` are genuinely two different names there, so this
-        loses a distinction. It is the right trade: a pair of CRAN packages
-        differing only in case is close to unknown, while swapping the case of
-        a well-known name is a standard typosquat, and folding is what lets the
-        similarity check see one. Every other adapter folds for the same
-        reason.
-        """
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared: list[DeclaredDependency] = []
-        for field_name, body in self._FIELD.findall(content.text):
-            scope = Scope.DEV if field_name == "Suggests" else Scope.RUNTIME
-            for chunk in body.split(","):
-                match = self._ENTRY.search(chunk.strip())
-                if not match or match.group(1) == "R":
-                    continue
-                declared.append(
-                    DeclaredDependency(
-                        name=match.group(1),
-                        spec=(match.group(2) or "*").strip(),
-                        scope=scope,
-                        field_name=field_name,
-                    )
-                )
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        try:
-            data = BaseEcosystem._json_object(content.text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"
-            )
-        entries: list[LockEntry] = []
-        for name, meta in (data.get("Packages") or {}).items():
-            if not isinstance(meta, dict):
-                continue
-            requirements = meta.get("Requirements")
-            entries.append(
-                LockEntry(
-                    name=str(meta.get("Package") or name),
-                    version=str(meta.get("Version", "")),
-                    integrity=BaseEcosystem._s(meta.get("Hash")),
-                    resolved_from=BaseEcosystem._s(meta.get("Repository")),
-                    dependencies=tuple(sorted(str(r) for r in requirements))
-                    if isinstance(requirements, list)
-                    else (),
-                )
-            )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# Conan (C and C++)
-# ---------------------------------------------------------------------------
-
-
-class ConanEcosystem(BaseEcosystem):
-    """Conan, via `conanfile.txt`, `conanfile.py` and `conan.lock`.
-
-    `conanfile.py` is Python that Conan imports, which makes it an install hook
-    in the sense this project means: arbitrary code that runs during a build.
-    It is registered as one, and read as text like every other manifest.
-    """
-
-    id = "conan"
-    purl_type = "conan"
-    manifest_globs: tuple[str, ...] = ("**/conanfile.txt", "**/conanfile.py")
-    lockfile_globs: tuple[str, ...] = ("**/conan.lock",)
-    registry_hosts: frozenset[str] = frozenset({"center.conan.io", "conan.io"})
-
-    _REFERENCE = re.compile(r"([A-Za-z0-9_][A-Za-z0-9_.+-]*)/([0-9][A-Za-z0-9_.+-]*)")
-    _SECTION = re.compile(r"^\[(requires|build_requires|tool_requires|test_requires)\]", re.M)
-    _PY_REQUIRE = re.compile(r'(?:self\.requires|self\.build_requires|requires)\s*\(?\s*"([^"]+)"')
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared: list[DeclaredDependency] = []
-        hooks: list[Hook] = []
-
-        if content.basename == "conanfile.py":
-            # Imported by Conan during a build, so it runs on every machine
-            # that builds -- the same standing `setup.py` has.
-            hooks.append(
-                Hook(
-                    kind="build",
-                    path=content.path,
-                    name="conanfile.py",
-                    command="conan install",
-                    ecosystem=self.id,
-                )
-            )
-            for reference in self._PY_REQUIRE.findall(content.text):
-                match = self._REFERENCE.match(reference)
-                if match:
-                    declared.append(
-                        DeclaredDependency(
-                            name=match.group(1), spec=match.group(2), field_name="requires"
-                        )
-                    )
-        else:
-            section: str | None = None
-            for raw in content.text.splitlines():
-                line = raw.split("#", 1)[0].strip()
-                if not line:
-                    continue
-                header = self._SECTION.match(line)
-                if header:
-                    section = header.group(1)
-                    continue
-                if line.startswith("["):
-                    section = None
-                    continue
-                if section is None:
-                    continue
-                match = self._REFERENCE.match(line)
-                if match:
-                    declared.append(
-                        DeclaredDependency(
-                            name=match.group(1),
-                            spec=match.group(2),
-                            scope=Scope.RUNTIME if section == "requires" else Scope.BUILD,
-                            field_name=section,
-                        )
-                    )
-
-        return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            dependencies=tuple(declared),
-            hooks=tuple(hooks),
-        )
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        try:
-            data = BaseEcosystem._json_object(content.text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"
-            )
-
-        # Conan 2 lists references under `requires`; Conan 1 keyed them by node
-        # id under `graph_lock.nodes`. Both are in the wild.
-        references: list[str] = []
-        for key in ("requires", "build_requires", "python_requires"):
-            section = data.get(key)
-            if isinstance(section, list):
-                references.extend(str(r) for r in section)
-        nodes = (data.get("graph_lock") or {}).get("nodes")
-        if isinstance(nodes, dict):
-            references.extend(
-                str(node["ref"])
-                for node in nodes.values()
-                if isinstance(node, dict) and node.get("ref")
-            )
-
-        entries: list[LockEntry] = []
-        seen: set[tuple[str, str]] = set()
-        for reference in references:
-            match = self._REFERENCE.match(reference)
-            if not match:
-                continue
-            coordinate = (match.group(1), match.group(2))
-            if coordinate in seen:
-                continue
-            seen.add(coordinate)
-            entries.append(LockEntry(name=coordinate[0], version=coordinate[1]))
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# Conda
-# ---------------------------------------------------------------------------
-
-
-class CondaEcosystem(BaseEcosystem):
-    """Conda, via `environment.yml` and `conda-lock.yml`.
-
-    An environment file mixes conda packages with a nested `pip:` list, and the
-    pip entries are PyPI packages rather than conda ones. They are declared as
-    PyPI -- reporting one under a conda purl would match no advisory and name
-    nothing a user could act on, and leaving them out meant nothing read them at
-    all, since no PyPI glob matches `environment.yml`. OSV publishes no conda
-    feed, so for an environment file those entries are the only dependencies
-    that can be matched against an advisory at all.
-    """
-
-    id = "conda"
-    purl_type = "conda"
-    manifest_globs: tuple[str, ...] = ("**/environment.yml", "**/environment.yaml")
-    lockfile_globs: tuple[str, ...] = ("**/conda-lock.yml", "**/conda-lock.yaml")
-    registry_hosts: frozenset[str] = frozenset(
-        {"anaconda.org", "conda.anaconda.org", "repo.anaconda.com"}
-    )
-
-    _SPEC = re.compile(r"^([A-Za-z0-9_][A-Za-z0-9_.-]*)\s*(?:[=<>!~]+\s*([^\s#]+))?")
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared: list[DeclaredDependency] = []
-        in_dependencies = False
-        in_pip = False
-        for raw in content.text.splitlines():
-            line = raw.split("#", 1)[0].rstrip()
-            if not line.strip():
-                continue
-            if not line[0].isspace():
-                in_dependencies = line.strip().startswith("dependencies:")
-                in_pip = False
-                continue
-            if not in_dependencies:
-                continue
-            stripped = line.strip()
-            if stripped.startswith("- pip:"):
-                in_pip = True
-                continue
-            # A nested list stays under `pip:` until the indentation returns.
-            if in_pip and not line.startswith("    "):
-                in_pip = False
-            if not stripped.startswith("- "):
-                continue
-            match = self._SPEC.match(stripped[2:].strip().strip("'\""))
-            if match and match.group(1) not in ("pip", "python"):
-                declared.append(
-                    DeclaredDependency(
-                        name=match.group(1),
-                        spec=match.group(2) or "*",
-                        field_name="pip" if in_pip else "dependencies",
-                        ecosystem="pypi" if in_pip else None,
-                    )
-                )
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        from cordon_scanner.core.config import RestrictedYamlParser
-
-        try:
-            data = RestrictedYamlParser._load_yaml_subset(content.text, source=content.path)
-        except Exception as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid YAML: {exc}"
-            )
-        packages = data.get("package")
-        if not isinstance(packages, list):
-            return LockGraph(path=content.path, ecosystem=self.id)
-
-        entries: list[LockEntry] = []
-        for package in packages:
-            if not isinstance(package, dict):
-                continue
-            name = BaseEcosystem._s(package.get("name"))
-            if not name or str(package.get("manager", "conda")).lower() == "pip":
-                continue
-            hashes = package.get("hash")
-            digest = None
-            if isinstance(hashes, dict):
-                digest = BaseEcosystem._s(hashes.get("sha256"))
-                if digest:
-                    digest = f"sha256:{digest}"
-            entries.append(
-                LockEntry(
-                    name=name,
-                    version=str(package.get("version", "")),
-                    integrity=digest,
-                    resolved_from=BaseEcosystem._s(package.get("url")),
-                )
-            )
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-# ---------------------------------------------------------------------------
-# Bazel
-# ---------------------------------------------------------------------------
-
-
-class BazelEcosystem(BaseEcosystem):
-    """Bazel modules, via `MODULE.bazel` and `MODULE.bazel.lock`.
-
-    Only bzlmod is read. A legacy `WORKSPACE` is Starlark whose dependencies are
-    whatever its macros expand to, and a regex over it reports a fraction of the
-    truth as though it were all of it -- which is the failure this project is
-    organised against. A `WORKSPACE` with no `MODULE.bazel` beside it therefore
-    contributes nothing here rather than something misleading.
-    """
-
-    id = "bazel"
-    purl_type = "bazel"
-    manifest_globs: tuple[str, ...] = ("**/MODULE.bazel",)
-    lockfile_globs: tuple[str, ...] = ("**/MODULE.bazel.lock",)
-    registry_hosts: frozenset[str] = frozenset({"bcr.bazel.build", "registry.bazel.build"})
-
-    _DEP = re.compile(
-        r'bazel_dep\s*\(\s*name\s*=\s*"([^"]+)"\s*,\s*version\s*=\s*"([^"]*)"([^)]*)\)',
-        re.DOTALL,
-    )
-    _DEV = re.compile(r"dev_dependency\s*=\s*True")
-
-    def normalize_name(self, name: str) -> str:
-        return name.strip().lower()
-
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        declared = [
-            DeclaredDependency(
-                name=name,
-                spec=version or "*",
-                scope=Scope.DEV if self._DEV.search(tail) else Scope.RUNTIME,
-                field_name="bazel_dep",
-            )
-            for name, version, tail in self._DEP.findall(content.text)
-        ]
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
-
-    def parse_lockfile(self, content: FileContent) -> LockGraph:
-        try:
-            data = BaseEcosystem._json_object(content.text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return LockGraph(
-                path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"
-            )
-        entries: list[LockEntry] = []
-        seen: set[tuple[str, str]] = set()
-        # Keys are `@@name~version` or `name@version` depending on the Bazel
-        # release that wrote the file.
-        for key in data.get("moduleDepGraph") or data.get("selectedYankedVersions") or {}:
-            text = str(key).lstrip("@")
-            name, separator, version = text.rpartition("~")
-            if not separator:
-                name, separator, version = text.rpartition("@")
-            if not separator or not name:
-                continue
-            if (name, version) in seen:
-                continue
-            seen.add((name, version))
-            entries.append(LockEntry(name=name, version=version))
-        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
 
 
 __all__ = [
@@ -1607,6 +1405,7 @@ __all__ = [
     "ConanEcosystem",
     "CondaEcosystem",
     "CranEcosystem",
+    "GitHubActionsEcosystem",
     "GoEcosystem",
     "GradleEcosystem",
     "HexEcosystem",
