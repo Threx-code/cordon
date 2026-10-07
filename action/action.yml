@@ -72,6 +72,25 @@ inputs:
       admin adds a trust rule for the repository first.
     required: false
     default: "false"
+  dependency-review:
+    description: >
+      On a pull request, also report what the dependency update adds compared with the base
+      branch (`cordon-scanner review`): packages added, upgraded, downgraded and removed, and the
+      known-malicious or vulnerable releases among them. Written to the job summary.
+    required: false
+    default: "false"
+  dependency-review-online:
+    description: >
+      Fetch each changed package's old and new releases from its registry, verify them against the
+      registry's digest, and compare what they contain (new install hooks, capabilities, binaries).
+    required: false
+    default: "false"
+  dependency-review-comment:
+    description: >
+      Post the dependency review on the pull request as a comment, updating it on later pushes.
+      Needs `permissions: pull-requests: write`.
+    required: false
+    default: "false"
   cloud-url:
     description: >-
       Cordon Cloud API base. Defaults to https://api.cordon.dev. The scan and the CI's OIDC-exchanged
@@ -282,3 +301,35 @@ runs:
       with:
         sarif_file: ${{ inputs.working-directory }}/${{ inputs.sarif-file }}
         category: cordon
+
+    - name: Dependency review
+      # A separate step, after the scan, so the review never changes what the scan gates on; its
+      # own exit code fails the job only for a known-malicious or high/critical release.
+      if: inputs.dependency-review == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        # Through the environment, never interpolated: a branch name is attacker-chosen.
+        REVIEW_BASE: ${{ github.event.pull_request.base.sha }}
+        REVIEW_ONLINE: ${{ inputs.dependency-review-online }}
+        REVIEW_COMMENT: ${{ inputs.dependency-review-comment }}
+        REVIEW_PR: ${{ github.event.pull_request.number }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -uo pipefail
+        if ! printf '%s' "$REVIEW_BASE" | grep -Eq '^[0-9a-f]{40}$'; then
+          echo "::error::the pull request's base is not a commit id: $REVIEW_BASE"
+          exit 1
+        fi
+        # A shallow checkout may not have the base commit; fetch exactly it.
+        git cat-file -e "${REVIEW_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$REVIEW_BASE"
+        args=( review . --base "$REVIEW_BASE" --format markdown --quiet )
+        [ "$REVIEW_ONLINE" = "true" ] && args+=( --online )
+        cordon-scanner "${args[@]}" > cordon-review.md
+        code=$?
+        cat cordon-review.md >> "$GITHUB_STEP_SUMMARY"
+        if [ "$REVIEW_COMMENT" = "true" ]; then
+          gh pr comment "$REVIEW_PR" --body-file cordon-review.md --edit-last 2>/dev/null \
+            || gh pr comment "$REVIEW_PR" --body-file cordon-review.md
+        fi
+        exit $code
