@@ -1,0 +1,6 @@
+name = "LocalUtils"
+uuid = "5c1f8d2a-3b7e-4f0a-9c61-2d84e0b7a913"
+version = "0.1.0"
+
+[deps]
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"

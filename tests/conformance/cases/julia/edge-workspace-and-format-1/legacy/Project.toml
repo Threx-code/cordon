@@ -1,0 +1,16 @@
+name = "Legacy"
+uuid = "a4c0e2f1-6b3d-4e8a-9f7c-2d1b0a9e8c7f"
+
+[deps]
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+
+[targets]
+test = ["Test", "Aqua"]
+
+[compat]
+JSON = "0.21"
+julia = "1.5"

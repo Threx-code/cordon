@@ -1,0 +1,36 @@
+# A Julia 1.12 workspace: the root package and its `test` and `docs` projects share one
+# JuliaManifest.toml (the name Pkg prefers over Manifest.toml), the root takes a dependency from
+# git through [sources], and deps/build.jl is a build hook Pkg runs. Beside it, a package still on
+# a format 1 manifest (Julia <= 1.6: packages at the top level, standard libraries without
+# versions) with test dependencies in [extras] and [targets].
+kinds: [edge, valid]
+covers:
+  - file:JuliaManifest.toml
+  - julia.manifest-versions
+  - julia.git
+  - julia.compat
+  - julia.uuid
+  - UNI-02
+  - UNI-07
+  - UNI-09
+  - UNI-10
+  - UNI-18
+dependencies:
+  # Every workspace project's declarations join the root manifest.
+  - {name: HTTP, version_constraint: "1.10", resolved_version: 1.10.16, direct: true, manifest_location: {path: Project.toml}, lockfile_location: {path: JuliaManifest.toml}}
+  - {name: Documenter, version_constraint: "1", manifest_location: {path: docs/Project.toml}, lockfile_location: {path: JuliaManifest.toml}}
+  - {name: Service, source_type: path, manifest_location: {path: test/Project.toml}}
+  - {name: Example, source_type: git, version_constraint: "git+https://github.com/JuliaLang/Example.jl#master", resolved_version: 0.5.5}
+  - {name: URIs, direct: false}
+  # Format 1.
+  - {name: JSON, resolved_version: 0.21.1, lockfile_location: {path: legacy/Manifest.toml}}
+  - {name: Parsers, direct: false, resolved_version: 1.1.0}
+  - {name: Dates, dependency_type: platform, lockfile_location: {path: legacy/Manifest.toml}}
+  - {name: Aqua, dependency_type: test, resolution_status: unresolved, resolution_reason: "a test-only dependency ([extras] and [targets]): resolved when the tests run, not into the manifest"}
+  - {name: julia, dependency_type: platform, version_constraint: "1.5"}
+hooks:
+  - {kind: build, path: deps/build.jl}
+findings:
+  # [sources] names a branch: the next Pkg.update moves it.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: Example}
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: JLSEC-2025-1}

@@ -1,0 +1,6 @@
+name = "Pipeline"
+uuid = "c0ffee00-1111-4222-8333-944455556666"
+
+[deps]
+Utils = "aaaaaaaa-1111-4111-8111-111111111111"
+Reports = "bbbbbbbb-2222-4222-8222-222222222222"

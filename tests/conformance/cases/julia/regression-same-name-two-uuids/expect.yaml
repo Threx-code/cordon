@@ -1,0 +1,16 @@
+# Two packages named Utils from two registries, told apart only by UUID: the project's own, and
+# the one Reports depends on (`deps` in its table form, naming the UUID). The old reader keyed by
+# name alone, recorded both as one package, and reported every git-tree-sha1 -- the hash every
+# Julia manifest records -- as a malformed integrity value.
+kinds: [regression, valid]
+covers:
+  - julia.uuid
+  - UNI-04
+  - UNI-15
+dependencies:
+  - {name: Utils, resolved_version: 1.2.0, platform_constraints: [uuid aaaaaaaa-1111-4111-8111-111111111111], direct: true, integrity: "git-tree-sha1:9c1185a5c5e9fc54612808977ee8f548b2258d31", integrity_status: recorded}
+  - {name: Utils, resolved_version: 0.3.1, platform_constraints: [uuid cccccccc-3333-4333-8333-333333333333]}
+  - {name: Reports, resolved_version: 0.4.0, direct: true}
+no_findings:
+  - SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001
+  - POLICY.LOCKFILE.INTEGRITY.001

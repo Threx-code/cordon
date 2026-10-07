@@ -1,0 +1,45 @@
+# A Julia package project resolved by Pkg (format 2 manifest, Julia 1.11): registry packages with
+# compat bounds, a git dependency at a tag, a package developed in place by path, a weak
+# dependency enabling an extension, the julia compat, and an Artifacts.toml of per-platform
+# binaries. Checked against Pkg.dependencies().
+kinds: [real-world, valid]
+covers:
+  - file:Project.toml
+  - file:Manifest.toml
+  - julia.uuid
+  - julia.compat
+  - julia.manifest-versions
+  - julia.julia-version
+  - julia.git
+  - julia.path
+  - julia.weak-extensions
+  - julia.artifacts
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  # Identity is the UUID, carried to the purl's qualifier
+  # (pkg:julia/JSON3@1.14.3?uuid=0f8b85d8-7281-11e9-16c2-39a750bddbf1).
+  - {name: JSON3, version_constraint: "1.13", resolved_version: 1.14.3, direct: true, platform_constraints: [uuid 0f8b85d8-7281-11e9-16c2-39a750bddbf1], integrity_status: recorded}
+  - {name: OrderedCollections, version_constraint: "1.6, 2", resolved_version: 2.0.2}
+  - {name: Parsers, direct: false, dependency_path: [JSON3, Parsers]}
+  # Pinned by the git tree Pkg checks out, whatever the tag now points to.
+  - {name: Example, source_type: git, resolved_version: 0.5.5, resolution_status: resolved}
+  - {name: LocalUtils, source_type: path}
+  - {name: JSON, dependency_type: optional, resolution_status: unresolved, resolution_reason: "a weak dependency: installed only by a user who adds it, which loads ConformanceJSONExt"}
+  - {name: julia, dependency_type: platform, version_constraint: "1.10"}
+  # A standard library: ships with Julia.
+  - {name: Dates, resolved_version: 1.11.0, direct: false}
+  - {name: "artifact:conformance_data", platform_constraints: [os linux, arch x86_64, libc glibc], integrity_status: recorded, lockfile_location: {path: Artifacts.toml}}
+  - {name: "artifact:conformance_data", platform_constraints: [os macos, arch aarch64]}
+sources:
+  - "extension ConformanceJSONExt (loaded with JSON)"
+findings:
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: Example}
+no_findings:
+  - SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001
+  - POLICY.LOCKFILE.INTEGRITY.001

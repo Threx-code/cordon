@@ -1,0 +1,39 @@
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.12.0"
+manifest_format = "2.0"
+project_hash = "0d1f0c8e9a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d"
+
+[[deps.Documenter]]
+deps = ["Test"]
+git-tree-sha1 = "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"
+uuid = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+version = "1.8.0"
+
+[[deps.Example]]
+git-tree-sha1 = "46e44e869b4d90b96bd8ed1fdcf32244fddfb6cc"
+repo-rev = "master"
+repo-url = "https://github.com/JuliaLang/Example.jl"
+uuid = "7876af07-990d-54b4-ab0e-23690620f79a"
+version = "0.5.5"
+
+[[deps.HTTP]]
+deps = ["URIs"]
+git-tree-sha1 = "2c3ec1f90bb4a8f7beafb0cffea8a4c3f4f3b2ba"
+uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+version = "1.10.16"
+
+[[deps.Service]]
+deps = ["Example", "HTTP"]
+path = "."
+uuid = "3b9c1e6a-7d2f-4a85-b0c4-91e2f5a7d813"
+version = "2.0.0"
+
+[[deps.Test]]
+uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+version = "1.11.0"
+
+[[deps.URIs]]
+git-tree-sha1 = "cbbebadbcc76c5ca1cc4b4a3b0614b3e603b5000"
+uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
+version = "1.5.2"

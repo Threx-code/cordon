@@ -1,0 +1,18 @@
+[[conformance_data]]
+arch = "x86_64"
+git-tree-sha1 = "4f0d4b9e9b9a3b8b1d0f5e3a2c1b0a9f8e7d6c5b"
+os = "linux"
+libc = "glibc"
+
+    [[conformance_data.download]]
+    sha256 = "0e6b9a1c4d7f2e5a8b3c6d9f0a1e4b7c2d5f8a3b6c9e0d1f4a7b2c5e8d1f4a7b"
+    url = "https://github.com/acme/conformance-data/releases/download/v1.0.0/data.x86_64-linux-gnu.tar.gz"
+
+[[conformance_data]]
+arch = "aarch64"
+git-tree-sha1 = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
+os = "macos"
+
+    [[conformance_data.download]]
+    sha256 = "7c2d5f8a3b6c9e0d1f4a7b2c5e8d1f4a7b0e6b9a1c4d7f2e5a8b3c6d9f0a1e4b"
+    url = "https://github.com/acme/conformance-data/releases/download/v1.0.0/data.aarch64-apple-darwin.tar.gz"

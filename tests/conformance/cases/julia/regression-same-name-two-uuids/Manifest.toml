@@ -1,0 +1,21 @@
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.10.4"
+manifest_format = "2.0"
+project_hash = "5d3e1c0f9b8a7e6d5c4b3a2f1e0d9c8b7a6f5e4d"
+
+[[deps.Reports]]
+deps = {Utils = "cccccccc-3333-4333-8333-333333333333"}
+git-tree-sha1 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4"
+uuid = "bbbbbbbb-2222-4222-8222-222222222222"
+version = "0.4.0"
+
+[[deps.Utils]]
+git-tree-sha1 = "9c1185a5c5e9fc54612808977ee8f548b2258d31"
+uuid = "aaaaaaaa-1111-4111-8111-111111111111"
+version = "1.2.0"
+
+[[deps.Utils]]
+git-tree-sha1 = "1f09d30c707d53f3d16c530dd73d70a6ce7596a9"
+uuid = "cccccccc-3333-4333-8333-333333333333"
+version = "0.3.1"

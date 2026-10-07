@@ -1,0 +1,23 @@
+{
+ "tool": "Pkg.dependencies()",
+ "packages": [
+  "Dates@1.11.0",
+  "Example@0.5.5",
+  "JSON3@1.14.3",
+  "Mmap@1.11.0",
+  "OrderedCollections@2.0.2",
+  "Parsers@2.8.8",
+  "PrecompileTools@1.2.1",
+  "Preferences@1.6.0",
+  "Printf@1.11.0",
+  "Random@1.11.0",
+  "SHA@0.7.0",
+  "StructTypes@1.11.0",
+  "TOML@1.0.3",
+  "UUIDs@1.11.0",
+  "Unicode@1.11.0"
+ ],
+ "ignore": {
+  "artifact:conformance_data": "an artifact (a platform binary from Artifacts.toml), not a package: Pkg.dependencies() lists packages"
+ }
+}

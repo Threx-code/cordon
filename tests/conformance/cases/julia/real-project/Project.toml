@@ -1,0 +1,21 @@
+name = "Conformance"
+uuid = "8f0b6e7c-2a41-4d3b-b5e9-7c1d0a6f4e22"
+version = "0.1.0"
+
+[deps]
+Example = "7876af07-990d-54b4-ab0e-23690620f79a"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+LocalUtils = "5c1f8d2a-3b7e-4f0a-9c61-2d84e0b7a913"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+
+[compat]
+Example = "0.5.5"
+JSON3 = "1.13"
+OrderedCollections = "1.6, 2"
+julia = "1.10"
+
+[weakdeps]
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+
+[extensions]
+ConformanceJSONExt = "JSON"
