@@ -1,0 +1,39 @@
+# A flake's inputs -- nixpkgs on a release branch, flake-utils (and its own input), home-manager
+# made to follow nixpkgs, an indirect input the flake registry resolved, a git repository that is
+# not a flake, and a tarball -- locked by `nix flake lock`. Read, never evaluated. Checked against
+# `nix flake metadata --json`.
+kinds: [real-world, valid]
+covers:
+  - file:flake.nix
+  - file:flake.lock
+  - nix.inputs
+  - nix.locked
+  - nix.follows
+  - nix.indirect
+  - nix.nixpkgs
+  - nix.git-archive
+  - nix.no-eval
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  # A revision is the version; the NAR hash is what Nix verifies.
+  - {name: nixos/nixpkgs, version_constraint: "git+https://github.com/NixOS/nixpkgs#nixos-24.05", resolved_version: b134951a4c9f3c995fd7be05f3243f8ecd65d798, integrity_status: recorded, direct: true}
+  # Resolved through the flake registry when the lock was made.
+  - {name: nixpkgs, resolved_version: 7dd199b0e2993e37b4775ed66b1c291699608c9f, platform_constraints: [indirect flake:nixpkgs], resolution_reason: resolved by the lockfile}
+  - {name: nix-systems/default, direct: false, dependency_path: [numtide/flake-utils, nix-systems/default]}
+  - {name: hello, platform_constraints: [not a flake], resolved_version: d598de6f9a89f78eafac959adc0376e20c87d6a7}
+  - {name: hercules-ci/gitignore.nix, platform_constraints: [not a flake]}
+sources:
+  - "input home-manager.nixpkgs follows nixpkgs"
+no_findings:
+  # flake.lock pins every input; the branches in flake.nix are what `nix flake update` follows.
+  - POLICY.DEPENDENCY.MUTABLE_REF.001
+  - POLICY.DEPENDENCY.SOURCE.001
+  - SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001

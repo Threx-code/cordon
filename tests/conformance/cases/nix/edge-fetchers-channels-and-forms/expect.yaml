@@ -1,0 +1,37 @@
+# Sources pinned by hand outside flakes, and a flake written every way the language allows. In
+# default.nix: `import <nixpkgs>` (a channel lookup on NIX_PATH, pinned to nothing),
+# fetchFromGitHub with a revision and hash, fetchTarball of a branch archive, and fetchGit of a
+# branch -- inside `let`, `with` and `assert`, with an interpolated indented string. In shell.nix:
+# nixpkgs as a tarball of a revision with its Nix base32 hash. In a flake with no lock: inputs as
+# dotted paths, an unquoted URI, a tag, a path, and a url computed by interpolation, which only
+# evaluating would know.
+kinds: [edge, valid]
+covers:
+  - file:default.nix
+  - file:shell.nix
+  - nix.inputs
+  - nix.nixpkgs
+  - nix.git-archive
+  - nix.follows
+  - nix.no-eval
+  - UNI-07
+  - UNI-09
+  - UNI-10
+  - UNI-15
+dependencies:
+  - {name: burntsushi/ripgrep, version_constraint: "git+https://github.com/BurntSushi/ripgrep#4649aa9700619f94cf9c66876e9549d83420e16c", integrity_status: recorded, resolution_reason: pinned to a commit}
+  # A Nix base32 sha256 is a hash, not a malformed one.
+  - {name: nixos/nixpkgs, manifest_location: {path: shell.nix}, integrity_status: recorded}
+  - {name: nixpkgs, version_constraint: "git+https://github.com/NixOS/nixpkgs", resolution_reason: "looked up on NIX_PATH when evaluated: whatever that channel holds then, pinned to nothing"}
+  - {name: acme/nix-overlay, version_constraint: "git+https://github.com/acme/nix-overlay#main"}
+  - {name: nixos/nixpkgs, manifest_location: {path: service/flake.nix}, resolution_reason: pinned to a commit}
+  - {name: cachix/devenv, version_constraint: "git+https://github.com/cachix/devenv#v1.3.1"}
+  - {name: shared, source_type: path}
+  - {name: dynamic, resolution_reason: "an input whose url is computed: it is known only by evaluating the flake, which is never done here"}
+sources:
+  - "input devenv.nixpkgs follows nixpkgs"
+findings:
+  # Pinned to nothing, or to something that moves.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: nixpkgs}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: acme/nix-overlay}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: tools}

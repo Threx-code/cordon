@@ -1,0 +1,16 @@
+# Two nixpkgs in one lock (the root's, and nixos-unstable that treefmt brings), a `follows` that
+# makes treefmt use the root's nixpkgs instead of its own, and nixpkgs-lib as a tarball. The old
+# reader named every tarball by the last segment of its URL (`fb192fec....tar.gz`), took
+# nothing from `follows`, and kept no edges.
+kinds: [regression, valid]
+covers:
+  - nix.follows
+  - nix.locked
+  - UNI-04
+  - UNI-28
+dependencies:
+  - {name: nixos/nixpkgs, resolved_version: b134951a4c9f3c995fd7be05f3243f8ecd65d798, direct: true}
+  - {name: nixos/nixpkgs, resolved_version: c04d5652cfa9742b1d519688f65d1bbccea9eb7e, direct: false, dependency_path: [numtide/treefmt-nix, nixos/nixpkgs]}
+  # Named by its repository, whatever the archive's file is called.
+  - {name: nixos/nixpkgs, resolved_version: "1727825735", direct: false, dependency_path: [hercules-ci/flake-parts, nixos/nixpkgs]}
+  - {name: numtide/treefmt-nix, direct: true}

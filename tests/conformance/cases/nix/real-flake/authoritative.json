@@ -1,0 +1,12 @@
+{
+ "tool": "nix flake metadata --json (the locked input graph)",
+ "packages": [
+  "hello@d598de6f9a89f78eafac959adc0376e20c87d6a7",
+  "hercules-ci/gitignore.nix@1709087332",
+  "nix-community/home-manager@2f23fa308a7c067e52dfcc30a0758f47043ec176",
+  "nix-systems/default@da67096a3b9bf56a91d16901293e51ba5b49a27e",
+  "nixos/nixpkgs@b134951a4c9f3c995fd7be05f3243f8ecd65d798",
+  "nixpkgs@7dd199b0e2993e37b4775ed66b1c291699608c9f",
+  "numtide/flake-utils@11707dc2f618dd54ca8739b309ec4fc024de578b"
+ ]
+}
