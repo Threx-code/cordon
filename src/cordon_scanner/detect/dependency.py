@@ -37,6 +37,7 @@ from cordon_scanner.core.models import (
     Finding,
     Location,
     RedactionMode,
+    Scope,
     Severity,
 )
 from cordon_scanner.core.scoring import ScoringContext
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from cordon_scanner.ecosystems.base import Ecosystem
 
 MAX_EDIT_DISTANCE = 2
+ABANDONED_RULE = "POLICY.DEPENDENCY.ABANDONED.001"
 # Combosquatting -- a name that wraps a popular one, like `python-requests-oauth`
 # -- was implemented here and has been removed. It cannot be made precise
 # offline. `fast-glob`, `is-glob`, `neo-async`, `typescript-eslint` and
@@ -186,6 +188,20 @@ class DependencyDetector(BaseDetector):
                 ),
                 references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Pin the dependency to the registry, or vendor it deliberately.",
+            ),
+            DeclaredRule(
+                id=ABANDONED_RULE,
+                title="Dependency is abandoned by its maintainer",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                category=Category.POLICY,
+                detector=DependencyDetector.id,
+                message=(
+                    "The lockfile records the package as abandoned (Composer writes what Packagist "
+                    "says). Nothing will be fixed in it, security fixes included."
+                ),
+                references=(references.INSECURE_DEFAULT,),
+                remediation="Move to the replacement the maintainer names, or a maintained alternative.",
             ),
             DeclaredRule(
                 id="POLICY.DEPENDENCY.INTEGRITY.001",
@@ -467,6 +483,26 @@ class DependencyDetector(BaseDetector):
         if ecosystem is None:
             return
 
+        if dep.deprecated:
+            # The lockfile's own record (Composer's `abandoned`), so it is known offline. The
+            # registry check does not repeat it online.
+            yield self._finding(
+                rule_id=ABANDONED_RULE,
+                category=Category.POLICY,
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                title="Dependency is abandoned by its maintainer",
+                message=(
+                    f"{dep.name}@{dep.version} is recorded in the lockfile as {dep.deprecated}. "
+                    f"Nothing will be fixed in it, security fixes included, and an abandoned name is "
+                    f"the one a takeover targets."
+                ),
+                remediation="Move to the replacement the maintainer names, or a maintained alternative.",
+                dep=dep,
+                ctx=ctx,
+                detail=f"{dep.name}: {dep.deprecated}",
+            )
+
         normalized = ecosystem.normalize_name(dep.name)
 
         # A package that exists in the known set is not a typosquat of itself.
@@ -547,6 +583,10 @@ class DependencyDetector(BaseDetector):
 
         if (
             dep.resolved_from
+            and dep.version
+            # A declaration with no resolved version is the manifest's to report, by its own
+            # source rule, with the declaration in hand (`POLICY.DEPENDENCY.SOURCE.001`).
+            and not dep.local
             and not ecosystem.is_registry_host(dep.resolved_from)
             and DependencyDetector._host(dep.resolved_from) not in mirrors
         ):
@@ -581,10 +621,31 @@ class DependencyDetector(BaseDetector):
         #
         # Go's standard library arrives with the toolchain, not from the module proxy, so
         # `go.sum` never records it.
+        #
+        # A format with no per-package hash (an action, whose integrity IS the commit SHA it is
+        # pinned to and which `POLICY.CI.UNPINNED_ACTION.001` already covers; a Helm chart lock)
+        # has nothing missing.
+        # And only for what a lockfile resolved. A project file (`*.csproj`, `build.gradle`, a
+        # `package.json` pin) never records a hash in any ecosystem, so a declaration without one
+        # is the ordinary case, not a hash that went missing; what is missing there is the lockfile.
+        locked = (
+            bool(dep.declared_in)
+            and EcosystemRegistry.lockfile_ecosystem(dep.declared_in or "") is not None
+        )
+        # And only where the lockfile records hashes at all. One with none (a pre-1.0 rebar.lock,
+        # a lock written before its tool recorded checksums) is one fact about the file, which
+        # the lockfile rule states once, not a hash missing from each of its entries.
+        hashed_files = self._hashed_files(unit)
         if (
             not dep.integrity
             and dep.version
+            and locked
+            and dep.declared_in in hashed_files
+            # The tool and runtime a lockfile records about itself (COCOAPODS:, BUNDLED WITH).
+            and dep.scope not in (Scope.PLATFORM, Scope.TOOL)
             and not dep.local
+            and not dep.bundled
+            and getattr(ecosystem, "records_integrity", True)
             and not (dep.ecosystem == "gomod" and dep.name == "stdlib")
             and ecosystem.is_registry_host(dep.resolved_from)
         ):
@@ -606,6 +667,16 @@ class DependencyDetector(BaseDetector):
             )
 
     # -- Dependency confusion --------------------------------------------
+
+    def _hashed_files(self, unit: GraphUnit) -> frozenset[str]:
+        """The lockfiles in this graph that record at least one hash, computed once per graph."""
+        cached = getattr(self, "_hashed_cache", None)
+        if cached is not None and cached[0] is unit:
+            hashed: frozenset[str] = cached[1]
+            return hashed
+        found = frozenset(d.declared_in for d in unit.dependencies if d.integrity and d.declared_in)
+        self._hashed_cache = (unit, found)
+        return found
 
     def _confusion_finding(
         self, dep: Dependency, ecosystem: Ecosystem, ctx: ScanContext
@@ -632,7 +703,8 @@ class DependencyDetector(BaseDetector):
         # Resolved from somewhere private is the whole point of declaring the
         # namespace, so that case is correct and silent.
         host = DependencyDetector._host(dep.resolved_from or "")
-        from_public = bool(dep.resolved_from) and ecosystem.is_registry_host(dep.resolved_from)
+        is_public = getattr(ecosystem, "is_public_registry", ecosystem.is_registry_host)
+        from_public = bool(dep.resolved_from) and is_public(dep.resolved_from)
 
         if dep.resolved_from and not from_public:
             return

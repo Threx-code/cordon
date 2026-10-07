@@ -201,6 +201,12 @@ class Scope(enum.StrEnum):
     OPTIONAL = "optional"
     PEER = "peer"
     TEST = "test"
+    TOOL = "tool"
+    """A tool the build runs (Go `tool` directives, a Gradle or Maven plugin, a Cargo or
+    Terraform provider), not code linked into the product."""
+    PLATFORM = "platform"
+    """A requirement on the platform itself (`php`, `ext-json`, an SDK, a compiler), not a
+    package anyone downloads."""
     UNKNOWN = "unknown"
 
 
@@ -1306,6 +1312,102 @@ class Dependency:
     is the only reader, and it treats the two identically (nothing to
     report) rather than guessing at the difference."""
 
+    platform: tuple[str, ...] = ()
+    """The conditions under which this dependency applies, as the file wrote them: an
+    environment marker (`sys_platform == "win32"`), npm's `os`/`cpu`, a Cargo `cfg(...)` target,
+    a .NET target framework, a Gem platform. Empty means unconditional or not recorded."""
+
+    manifest_path: str | None = None
+    """The manifest that declared it, when it is direct and a manifest beside the lockfile names
+    it. `declared_in` is the file that resolved it; the two are different questions."""
+    manifest_line: int | None = None
+    lockfile_line: int | None = None
+
+    dependency_path: tuple[str, ...] = ()
+    """One chain of package names from a direct dependency down to this one: how it arrived."""
+
+    advisory_status: str = "not_checked"
+    malware_status: str = "not_checked"
+    integrity_status: str = "not_checked"
+    provenance_status: str = "not_checked"
+    licence_status: str = "not_checked"
+    """What each check concluded, never one boolean. "No vulnerability found" and "the check
+    did not run" are different answers; see `core/inventory.py` for every value and its meaning."""
+
+    finding_ids: tuple[str, ...] = ()
+    """Fingerprints of the findings about this dependency."""
+
+    resolution_note: str | None = None
+    """Why it is unresolved, when the parser or engine knows better than the generic reason."""
+
+    resolved_by: str | None = None
+    """What fixed the version when it was not the dependency's own file: `the constraints file
+    constraints.txt` for a range a pip `-c` pin resolves."""
+
+    alias: str | None = None
+    """The name the project declared it under, when that is not the package's own."""
+
+    bundled: bool = False
+    """It arrives inside another package's archive and is verified by that archive's hash. See
+    `LockEntry.bundled`."""
+
+    extras: tuple[str, ...] = ()
+    """Optional features requested (`requests[socks]`, Cargo features). See
+    `DeclaredDependency.extras`."""
+
+    editable: bool = False
+    """Installed in place from a working tree (`pip install -e`)."""
+
+    exclusions: tuple[str, ...] = ()
+    """Transitive dependencies the declaration excludes (Maven `<exclusions>`)."""
+
+    forced_by: str | None = None
+    """The override that pins this version across the tree (npm `overrides`, Yarn `resolutions`,
+    pnpm `pnpm.overrides`, Composer and Cargo equivalents), as `<spec> in <file>`. An upgrade
+    anywhere else does not move it; the override must change."""
+
+    deprecated: str | None = None
+    """What the lockfile records about the package's maintenance, when it does: Composer writes
+    `"abandoned": "symfony/mailer"` for a package its maintainer abandoned. Offline evidence the
+    registry check would otherwise need the network for."""
+
+    def _resolved_by_lockfile(self) -> bool:
+        """Whether `declared_in` is a lockfile (it may also be the manifest: a pinned
+        `requirements.txt` is both)."""
+        if not self.declared_in:
+            return False
+        if self.declared_in != self.manifest_path:
+            return True
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return (
+            EcosystemRegistry.lockfile_ecosystem(self.declared_in) is not None
+            and self.version is not None
+        )
+
+    @property
+    def namespace(self) -> str | None:
+        from cordon_scanner.core.inventory import DependencyIdentity
+
+        # A Homebrew formula from a named tap is recorded by its own name, its tap the namespace
+        # its full name (`user/repo/name`, kept as the alias) carries.
+        name = self.alias if self.ecosystem == "homebrew" and self.alias else self.name
+        return DependencyIdentity.namespace(self.ecosystem, name)
+
+    @property
+    def source(self) -> tuple[str, str | None]:
+        """`(source_type, source_url)`; the URL never carries credentials."""
+        from cordon_scanner.core.inventory import DependencySource
+
+        return DependencySource.classify(self)
+
+    @property
+    def resolution(self) -> tuple[str, str]:
+        """`(resolution_status, reason)`."""
+        from cordon_scanner.core.inventory import DependencyResolution
+
+        return DependencyResolution.status(self)
+
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "purl": self.purl,
@@ -1329,6 +1431,49 @@ class Dependency:
                 out[key] = value
         if self.parents:
             out["parents"] = list(self.parents)
+        source_type, source_url = self.source
+        status, reason = self.resolution
+        # The shared dependency record: the same keys for every ecosystem.
+        out["record"] = {
+            "ecosystem": self.ecosystem,
+            "name": self.name,
+            "declared_name": self.alias or self.name,
+            "namespace": self.namespace,
+            "version_constraint": self.declared_spec,
+            "resolved_version": (self.version or None)
+            if status in ("resolved", "partially_resolved")
+            else None,
+            "resolution_status": status,
+            "resolution_reason": reason,
+            "source_type": source_type,
+            "source_url": source_url,
+            "integrity": self.integrity,
+            "direct": self.direct,
+            "dependency_path": list(self.dependency_path or (self.name,)),
+            "dependency_type": str(self.scope),
+            "platform_constraints": list(self.platform),
+            "manifest_location": (
+                {"path": self.manifest_path, "line": self.manifest_line}
+                if self.manifest_path
+                else None
+            ),
+            "lockfile_location": (
+                {"path": self.declared_in, "line": self.lockfile_line}
+                if self._resolved_by_lockfile()
+                else None
+            ),
+            "advisory_status": self.advisory_status,
+            "malware_status": self.malware_status,
+            "integrity_status": self.integrity_status,
+            "provenance_status": self.provenance_status,
+            "licence_status": self.licence_status,
+            "findings": list(self.finding_ids),
+            "overridden_by": self.forced_by,
+            "deprecated": self.deprecated,
+            "extras": list(self.extras),
+            "editable": self.editable,
+            "exclusions": list(self.exclusions),
+        }
         return out
 
 
@@ -1397,10 +1542,18 @@ class ScanResult:
     intel: dict[str, Any] | None = None
     """How current the threat intel behind this scan was: its source, age and feed serial.
     See `intel/feed.IntelStatus`. None for a result built outside a scan."""
+    sources: tuple[tuple[str, str, str], ...] = ()
+    """`(file, ecosystem, source)` for every package source a project configures -- a pip index,
+    a Cargo registry or source replacement, a Composer repository, a NuGet feed -- with any
+    credentials removed. Where resolution looks is what dependency confusion turns on."""
+    image: dict[str, Any] | None = None
+    """The scanned image's identity (`images.oci.ImageIdentity`): its ID and manifest digest, the
+    names it was saved under, its layers, its platform and the base image its labels name."""
     target_kind: str = "source"
     """What was scanned: ``source`` (a directory or repository), ``image`` (a container image
-    archive, read layer by layer), ``package`` (a published package's distribution archive) or
-    ``archive`` (any other archive). Sent with an upload so the console can tell them apart."""
+    archive, read layer by layer), ``package`` (a published package's distribution archive),
+    ``archive`` (any other archive), ``sbom`` (a bill of materials it was given) or ``host`` (an
+    installed system, `scan --host`). Sent with an upload so the console can tell them apart."""
 
     @property
     def active(self) -> tuple[Finding, ...]:
@@ -1454,8 +1607,9 @@ class ScanResult:
             "stats": self.stats.to_dict(),
             "repository": self.repository.to_dict() if self.repository else None,
             "dependencies": [d.to_dict() for d in self.dependencies],
+            "sources": [{"path": p, "ecosystem": e, "source": s} for p, e, s in self.sources],
             "findings": [f.to_dict() for f in self.findings],
-        }
+        } | ({"image": self.image} if self.image is not None else {})
 
 
 __all__ = [

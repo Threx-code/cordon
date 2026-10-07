@@ -36,12 +36,14 @@ from cordon_scanner.core.models import (
     Location,
     RedactionMode,
     RiskScore,
+    Scope,
     Severity,
 )
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import FIXTURE_CEILING, SourcePaths
+from cordon_scanner.ecosystems.base import Coordinate
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -54,6 +56,8 @@ if TYPE_CHECKING:
 # into hundreds of alerts, which is how a useful signal becomes a suppressed
 # one. Beyond this count the finding is summarised instead.
 MAX_INDIVIDUAL = 5
+MALFORMED_RULE = "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001"
+CONFLICT_RULE = "SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001"
 
 
 class LockfileDetector(BaseDetector):
@@ -91,6 +95,36 @@ class LockfileDetector(BaseDetector):
                 ),
                 references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Confirm the source is intended and controlled by you.",
+            ),
+            DeclaredRule(
+                id=MALFORMED_RULE,
+                title="Lockfile integrity value is not a hash",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=LockfileDetector.id,
+                message=(
+                    "An entry's integrity field holds something that is not a digest of any "
+                    "algorithm the format uses. Nothing can verify a download against it, and a "
+                    "package manager that skips what it cannot parse installs whatever is served."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+                remediation="Regenerate the lockfile with the package manager, and find out what wrote this value.",
+            ),
+            DeclaredRule(
+                id=CONFLICT_RULE,
+                title="One package version locked with two different hashes",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=LockfileDetector.id,
+                message=(
+                    "The same name and version carry different hashes in one lockfile. One "
+                    "artefact has one digest: two means two different artefacts are being passed "
+                    "off under one version, or the file was edited by hand."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+                remediation="Regenerate the lockfile with the package manager and review the diff.",
             ),
         )
 
@@ -143,15 +177,100 @@ class LockfileDetector(BaseDetector):
             return ()
 
         findings: list[Finding] = []
+        findings.extend(self._tamper_findings(graph, ecosystem, unit, ctx))
         findings.extend(self._integrity_findings(graph, ecosystem, unit, ctx))
         findings.extend(self._source_findings(graph, ecosystem, unit, ctx))
         return findings
+
+    # -- Tampering --------------------------------------------------------
+
+    def _tamper_findings(
+        self, graph: LockGraph, ecosystem: Ecosystem, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """Integrity values that are not hashes, and one version locked with two hashes.
+
+        A missing hash is a gap; these are worse -- a value somebody put where a hash belongs,
+        which no installer can check. The value itself is never repeated: a field that is not a
+        hash may be anything, including a credential (`Coordinate.integrity`)."""
+        malformed = sorted(
+            {
+                f"{e.name}@{e.version}"
+                for e in graph.entries
+                if (e.integrity or "").startswith(Coordinate.MALFORMED)
+            }
+        )
+        if malformed:
+            yield self._finding(
+                rule_id=MALFORMED_RULE,
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                title="Lockfile integrity value is not a hash",
+                message=(
+                    f"{len(malformed)} entr{'y' if len(malformed) == 1 else 'ies'} record an integrity "
+                    f"value that is not a digest of any algorithm the {ecosystem.id} format uses: "
+                    f"{', '.join(malformed[:MAX_INDIVIDUAL])}"
+                    + (
+                        f" and {len(malformed) - MAX_INDIVIDUAL} more"
+                        if len(malformed) > MAX_INDIVIDUAL
+                        else ""
+                    )
+                    + ". The values are not repeated here."
+                ),
+                remediation="Regenerate the lockfile with the package manager, and find out what wrote these values.",
+                unit=unit,
+                ctx=ctx,
+                detail=",".join(malformed[:MAX_INDIVIDUAL]),
+            )
+        # Keyed by the artefact, not only the version: one version built for several platforms
+        # (conda's linux-64 and osx-arm64 builds, a native gem's platform variants) is several
+        # artefacts with several hashes, and that is the format, not a conflict.
+        seen: dict[tuple[str, str, tuple[str, ...]], set[str]] = {}
+        for entry in graph.entries:
+            if entry.integrity and not entry.integrity.startswith(Coordinate.MALFORMED):
+                algorithm = (
+                    entry.integrity.split("-", 1)[0].split(":", 1)[0]
+                    if entry.integrity[:3].isalpha()
+                    else "raw"
+                )
+                seen.setdefault(
+                    (ecosystem.normalize_name(entry.name), entry.version, entry.platform), set()
+                ).add(f"{algorithm}|{entry.integrity}")
+        conflicts = sorted(
+            {
+                f"{name}@{version}"
+                for (name, version, _), values in seen.items()
+                if len({v.split("|", 1)[0] for v in values}) < len(values)
+            }
+        )
+        if conflicts:
+            yield self._finding(
+                rule_id=CONFLICT_RULE,
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                title="One package version locked with two different hashes",
+                message=(
+                    f"{', '.join(conflicts[:MAX_INDIVIDUAL])} "
+                    f"{'is' if len(conflicts) == 1 else 'are'} recorded more than once with different "
+                    f"hashes of the same algorithm. One artefact has one digest."
+                ),
+                remediation="Regenerate the lockfile with the package manager and review the diff.",
+                unit=unit,
+                ctx=ctx,
+                detail=",".join(conflicts[:MAX_INDIVIDUAL]),
+            )
 
     # -- Integrity -------------------------------------------------------
 
     def _integrity_findings(
         self, graph: LockGraph, ecosystem: Ecosystem, unit: FileUnit, ctx: ScanContext
     ) -> Iterable[Finding]:
+        if not getattr(ecosystem, "records_integrity", True) or graph.integrity_elsewhere:
+            # `go.mod` keeps no hashes: `go.sum` beside it does. Whether a selected module has
+            # one is judged on the merged graph (`POLICY.DEPENDENCY.INTEGRITY.001`), where the
+            # companion's hashes have been applied.
+            return
         # Entries resolved from outside the registry are excluded. A git or
         # path dependency has no registry hash to carry, so counting it as
         # missing one reports a fact of the format as though it were an anomaly
@@ -175,10 +294,15 @@ class LockfileDetector(BaseDetector):
         # own because it has no separate download; the parent's hash covers its bytes.
         # `iamkun/dayjs` carries 208 of them under one `node_modules/` subtree and
         # `astral-sh/ruff` sixteen, and the rule called every one unverified.
+        # And the runtime and tool a lockfile names about itself -- Bundler's `RUBY VERSION` and
+        # `BUNDLED WITH` -- which are records of what wrote the file, not packages it pins.
         candidates = [
             e
             for e in graph.entries
-            if not e.local and not e.bundled and ecosystem.is_registry_host(e.resolved_from)
+            if not e.local
+            and not e.bundled
+            and e.scope not in (Scope.PLATFORM, Scope.TOOL)
+            and ecosystem.is_registry_host(e.resolved_from)
         ]
         missing = [e for e in candidates if not e.integrity]
         if not missing or not candidates:
@@ -264,7 +388,7 @@ class LockfileDetector(BaseDetector):
         foreign = [
             e
             for e in graph.entries
-            if e.resolved_from and not ecosystem.is_registry_host(e.resolved_from)
+            if e.resolved_from and not e.local and not ecosystem.is_registry_host(e.resolved_from)
         ]
         if not foreign:
             return

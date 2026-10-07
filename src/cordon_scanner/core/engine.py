@@ -28,7 +28,7 @@ import re
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.archive.safe import ArchiveReader, Rejection
 from cordon_scanner.core.cache import CacheKey, ScanCache
@@ -75,6 +75,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
     Unit,
 )
+from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.langs.registry import LanguageRegistry
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -82,9 +83,10 @@ from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.version import SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
     from cordon_scanner.detect.base import Detector
+    from cordon_scanner.ecosystems.base import DeclaredDependency
 
 NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
 
@@ -175,8 +177,19 @@ DEPENDENCY_BUILD_FILENAMES = frozenset(
         "extconf.rb",
         "Makefile.PL",
         "Build.PL",
+        # vcpkg runs a port's portfile.cmake to fetch and build it.
+        "portfile.cmake",
+        # SwiftPM evaluates every dependency's manifest; Zig runs every dependency's build
+        # script; Cabal runs a package's custom Setup when it is built as a dependency.
+        "Package.swift",
+        "build.zig",
+        "Setup.hs",
+        "Setup.lhs",
     }
 )
+DEPENDENCY_BUILD_SUFFIXES = (".nimble",)
+"""Nimble evaluates a package's `.nimble` file -- NimScript, top-level code and hooks -- when
+the package is installed as a dependency."""
 """Build files that run when somebody installs the package as a DEPENDENCY.
 
 This is the install-hook condition, and the word install is doing the work. `pip
@@ -310,6 +323,8 @@ UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
+ARCHIVE_SLICE = 4000
+"""Archive members handed to the worker pool at a time, between deadline checks."""
 ARCHIVE_ESCAPE_RULE = "SUSPECT.ARCHIVE.PATH_ESCAPE.001"
 ARCHIVE_NESTING_RULE = "SUSPECT.ARCHIVE.NESTING.001"
 ARCHIVE_POLYGLOT_RULE = "SUSPECT.ARCHIVE.POLYGLOT.001"
@@ -469,9 +484,11 @@ class Engine:
         for unit in units:
             member = unit.path.rpartition("!")[2]
             parts = member.split("/")
-            if len(parts) < 2:
+            # A root-level `.nuspec` is the one release manifest kept at the package's top; it
+            # counts only inside an archive (a repository's own .nuspec is not a release).
+            if len(parts) < 2 and not ("!" in unit.path and member.endswith(".nuspec")):
                 continue
-            parent, name = parts[-2], parts[-1]
+            parent, name = (parts[-2] if len(parts) >= 2 else ""), parts[-1]
             try:
                 if name == "package.json" and parent == "package":
                     document = json.loads(unit.content.text)
@@ -482,6 +499,45 @@ class Engine:
                     ):
                         identities.append(
                             ("npm", str(document["name"]), str(document["version"]), unit.path)
+                        )
+                elif name == "package.json" and parent == "extension":
+                    # A VS Code / Open VSX extension package (.vsix): the Marketplace names it
+                    # `publisher.name`, and that is the key OSV's VSCode records use.
+                    document = json.loads(unit.content.text)
+                    if (
+                        isinstance(document, dict)
+                        and document.get("publisher")
+                        and document.get("name")
+                        and document.get("version")
+                    ):
+                        identities.append(
+                            (
+                                "vscode",
+                                f"{document['publisher']}.{document['name']}",
+                                str(document["version"]),
+                                unit.path,
+                            )
+                        )
+                elif name == "Cargo.toml" and re.search(r"-\d", parent):
+                    # A published crate (.crate): `<name>-<version>/Cargo.toml`, normalised by
+                    # cargo at publish time, so `[package]` holds the release's own name.
+                    text = unit.content.text[:20000]
+                    package = re.search(r"(?ms)^\[package\](.*?)(?:^\[|\Z)", text)
+                    if package:
+                        found_name = re.search(r'(?m)^name\s*=\s*"([^"]+)"', package.group(1))
+                        found_version = re.search(r'(?m)^version\s*=\s*"([^"]+)"', package.group(1))
+                        if found_name and found_version:
+                            identities.append(
+                                ("cargo", found_name.group(1), found_version.group(1), unit.path)
+                            )
+                elif name.endswith(".nuspec") and len(parts) == 1:
+                    # A NuGet package (.nupkg): its `<id>.nuspec` sits at the package root.
+                    text = unit.content.text[:20000]
+                    found_name = re.search(r"<id>\s*([^<\s]+)\s*</id>", text)
+                    found_version = re.search(r"<version>\s*([^<\s]+)\s*</version>", text)
+                    if found_name and found_version:
+                        identities.append(
+                            ("nuget", found_name.group(1), found_version.group(1), unit.path)
                         )
                 elif (name == "PKG-INFO" and re.search(r"-\d", parent)) or (
                     name == "METADATA" and parent.endswith(".dist-info")
@@ -799,6 +855,9 @@ class Engine:
         # counters reported in `ScanStats`: opened, members, milliseconds.
         self._expansions: dict[str, list[tuple[str, bytes]] | None] = {}
         self._archive_stats = [0, 0, 0]
+        # What an ingested SBOM itself lists as vulnerable: `(document, vulnerability, purl,
+        # name, version, tool)`, reported once the scan's own matching has run.
+        self._sbom_listed: list[tuple[str, Any, str, str, str | None, str]] = []
         # True while the scan TARGET is an archive, where its members' lockfiles are
         # the package's own graph rather than a vendored artefact's.
         self._scanning_archive = False
@@ -820,6 +879,69 @@ class Engine:
             # newline on it. Leaving it there puts a traceback or an error
             # message on the same row as a half-drawn progress bar.
             self.progress.finish()
+
+    def scan_host(self, root: str | Path, home: str | Path | None = None) -> ScanResult:
+        """What an installed system holds (advanced gap M7): its distribution's packages and the
+        language packages installed outside any project, read from the metadata their installers
+        left (`images/host.py`), then matched as an image's are -- language packages against the
+        advisory database, OS packages through OSV with `--online`. Files are not content-scanned:
+        that is what `scan` of a directory is for."""
+        try:
+            return self._scan_host(Path(root), Path(home) if home is not None else None)
+        finally:
+            self.progress.finish()
+
+    def _scan_host(self, root: Path, home: Path | None) -> ScanResult:
+        from cordon_scanner.images.host import HostFilesystem
+
+        started = time.monotonic()
+        acc = _Accumulator(finding_cap=self.config.limits.max_findings)
+        intel = self._intel_status(acc)
+        if not root.is_dir():
+            raise SourceError(f"--host needs a directory to read as a filesystem root: {root}")
+        self.progress.phase("inventory")
+        inventory = HostFilesystem(root, home).inventory()
+        for problem in inventory.problems:
+            acc.complete = False
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.HOST.PARTIAL",
+                    message=f"Part of the host was not read: {problem}.",
+                    remediation="Run as a user that can read the package databases, or say so beside the result.",
+                    severity=Severity.LOW,
+                )
+            )
+        dependencies = self._image_dependencies(inventory)
+        ctx = replace(self._context(Repository(root=str(root))), image=inventory)
+        if dependencies:
+            ctx = replace(ctx, dependencies=Engine._packages(dependencies))
+            graph_unit = GraphUnit(dependencies=Engine._packages(dependencies))
+            self.progress.phase("dependencies")
+            for detector in self.detectors:
+                if detector.requires.dependencies and self._detector_enabled(detector, ctx):
+                    acc.add(self._run(detector, graph_unit, ctx, acc))
+        dependencies = self._annotated(dependencies, acc.findings, ctx, [])
+        result = ScanResult(
+            findings=tuple(acc.findings),
+            dependencies=dependencies,
+            repository=Repository(root=str(root), file_count=0),
+            target_kind="host",
+            stats=ScanStats(
+                files_scanned=0,
+                bytes_scanned=0,
+                dependencies=len(dependencies),
+                rules_evaluated=len(self.rules),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            ),
+            complete=acc.complete,
+            schema_version=SCHEMA_VERSION,
+            engine_version=__version__,
+            rulepack_version=self.rules.version,
+            rulepack_hash=self.rules.content_hash,
+            config_hash=self.config.fingerprint(),
+        )
+        return replace(PolicyGate.filter_for_reporting(result, self.config).sorted(), intel=intel)
 
     def _scan(self, target: str | Path) -> ScanResult:
         started = time.monotonic()
@@ -880,6 +1002,27 @@ class Engine:
 
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
+        # A bill of materials named as the target is its inventory; in a tree it is a claim to
+        # compare with what the tree resolves (`detect/sbom.py`), never counted twice.
+        ingested = self._sbom_dependencies(units, acc) if root.is_file() else ()
+        # Repositories checked out as git submodules, at the commits their gitlinks pin.
+        from cordon_scanner.core.submodules import Submodules
+
+        submodules, unreadable = Submodules.dependencies(
+            units, root if root.is_dir() else root.parent
+        )
+        for path, problem in unreadable:
+            acc.complete = False
+            acc.append(
+                Engine._operational(
+                    path=path,
+                    rule_id="OPERATIONAL.MANIFEST.UNPARSED",
+                    message=f"This .gitmodules could not be read: {problem}. Its submodules are not in the inventory.",
+                    remediation="Fix the file so `git submodule` reads it.",
+                    severity=Severity.MEDIUM,
+                )
+            )
+        dependencies = (*dependencies, *ingested, *submodules)
         manifest_hooks, consumer_hooks = self._manifest_hook_paths(units, acc)
         hook_paths = (
             set(ctx.install_hook_paths)
@@ -900,7 +1043,7 @@ class Engine:
         deferred = self._hook_deferred_lines(units, hook_paths, entries)
         ctx = replace(
             ctx,
-            dependencies=dependencies,
+            dependencies=Engine._packages(dependencies),
             install_hook_paths=frozenset(hook_paths),
             install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
@@ -926,7 +1069,11 @@ class Engine:
         carried_bytes = sum(len(u.content.raw) for u in units) if carry_content else 0
         parallelisable = not carry_content or carried_bytes <= MAX_CARRIED_BYTES
         workers = (
-            ParallelScanner.worker_count(self.config.limits.max_workers, len(units))
+            ParallelScanner.worker_count(
+                self.config.limits.max_workers,
+                len(units),
+                carried_bytes if carry_content else sum(u.content.size for u in units),
+            )
             if parallelisable
             else 1
         )
@@ -947,13 +1094,14 @@ class Engine:
 
         if dependencies:
             self.progress.phase("graph")
-            graph_unit = GraphUnit(dependencies=dependencies)
+            graph_unit = GraphUnit(dependencies=Engine._packages(dependencies))
             for detector in self.detectors:
                 if not detector.requires.dependencies:
                     continue
                 if not self._detector_enabled(detector, ctx):
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
+        acc.add(self._sbom_listed_findings(acc.findings, ctx))
 
         # Reachability annotates the vulnerability findings just produced, using
         # the imports of the files just scanned -- so it runs here, after the
@@ -1017,10 +1165,13 @@ class Engine:
             )
         )
 
+        dependencies = self._annotated(dependencies, findings, ctx, units)
         result = ScanResult(
             findings=findings,
             repository=inventory,
             dependencies=dependencies,
+            sources=Engine._configured_sources(units),
+            target_kind="sbom" if ingested else "source",
             stats=ScanStats(
                 cache_hits=self.cache.hits,
                 cache_misses=self.cache.misses,
@@ -1199,12 +1350,13 @@ class Engine:
                     )
                     break
 
+                member_content = FileContent.from_bytes(
+                    member_path, member_data, self.config.limits
+                )
                 units.append(
                     FileUnit(
-                        content=FileContent.from_bytes(
-                            member_path, member_data, self.config.limits
-                        ),
-                        language=LanguageRegistry.identify_language(member_path.rpartition("!")[2]),
+                        content=member_content,
+                        language=LanguageRegistry.of_file(member_path, member_content),
                     )
                 )
                 acc.files_scanned += 1
@@ -1257,11 +1409,54 @@ class Engine:
             install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=self._hook_deferred_lines(units, hook_paths, entries),
+            # Known before any file is examined, so a detector can tell an image's files from a
+            # source tree's: an image's executables are what it ships.
+            image=image if image is not None else ctx.image,
         )
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
-        for unit in units:
+        # An image or a large archive is thousands of members (a Grafana image adds eleven
+        # thousand files): across the worker pool, as a directory is, with each member's bytes
+        # carried since it has no path on disk. In slices, so the scan's deadline is still checked.
+        content_detectors = [
+            d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
+        ]
+        workers = ParallelScanner.worker_count(
+            self.config.limits.max_workers, len(units), sum(len(u.content.raw) for u in units)
+        )
+        if workers > 1:
+            from cordon_scanner.core.cache import ScanCache
+
+            signature = ScanCache.detector_signature(content_detectors)
+            for start in range(0, len(units), ARCHIVE_SLICE):
+                if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
+                    acc.complete = False
+                    acc.append(
+                        Engine._operational(
+                            path=path.name,
+                            rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                            message=f"The {self.config.limits.total_timeout:.0f}s budget was reached with members still unexamined.",
+                            remediation="Raise --timeout, or unpack and scan as a directory.",
+                            severity=Severity.MEDIUM,
+                        )
+                    )
+                    break
+                acc.add(
+                    self._scan_parallel(
+                        units[start : start + ARCHIVE_SLICE],
+                        path.parent,
+                        ctx,
+                        acc,
+                        content_detectors,
+                        signature,
+                        carry_content=True,
+                    )
+                )
+            units_left: list[FileUnit] = []
+        else:
+            units_left = units
+        for unit in units_left:
             # The same budget the directory path applies between units. Most of
             # the cost of a hostile archive is here rather than in extraction --
             # a fifty-thousand-member archive expands in a second and then takes
@@ -1316,8 +1511,8 @@ class Engine:
             ctx = replace(ctx, image=image)
             dependencies = (*dependencies, *self._image_dependencies(image))
         if dependencies:
-            ctx = replace(ctx, dependencies=dependencies)
-            graph_unit = GraphUnit(dependencies=dependencies)
+            ctx = replace(ctx, dependencies=Engine._packages(dependencies))
+            graph_unit = GraphUnit(dependencies=Engine._packages(dependencies))
             for detector in self.detectors:
                 if not detector.requires.dependencies:
                     continue
@@ -1325,11 +1520,13 @@ class Engine:
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
 
+        dependencies = self._annotated(dependencies, acc.findings, ctx, units)
         result = ScanResult(
             findings=tuple(acc.findings),
             dependencies=dependencies,
             repository=Repository(root=str(path), file_count=acc.files_scanned),
             target_kind=target_kind,
+            image=image.identity.to_dict() if image is not None else None,
             stats=ScanStats(
                 files_scanned=acc.files_scanned,
                 bytes_scanned=acc.bytes_scanned,
@@ -2167,7 +2364,12 @@ class Engine:
         the manifest detector, which can parse them properly.
         """
         name = ContainerPaths.basename(rel_path)
-        if name in DEPENDENCY_BUILD_FILENAMES:
+        if (
+            name in DEPENDENCY_BUILD_FILENAMES
+            or name.endswith(DEPENDENCY_BUILD_SUFFIXES)
+            or f"/{rel_path}".endswith("/deps/build.jl")
+        ):
+            # Julia's Pkg runs a package's deps/build.jl when the package is added or built.
             yield Hook(kind="build", path=rel_path, name=name)
         elif name.endswith(".pth"):
             # Installed into site-packages, its `import` lines run in every Python process the
@@ -2774,7 +2976,9 @@ class Engine:
             config=self.config,
             root=str(root),
             files=pending,
-            workers=ParallelScanner.worker_count(self.config.limits.max_workers, len(pending)),
+            workers=ParallelScanner.worker_count(
+                self.config.limits.max_workers, len(pending), sum(item[2] for item in pending)
+            ),
             # The set the parent already filtered. Without it the worker ran
             # every detector it could find, and a scan's findings depended on
             # the machine's core count.
@@ -2795,6 +2999,10 @@ class Engine:
             # paths without it would apply install-time context more widely than
             # the parent does.
             install_deferred_lines=ctx.install_deferred_lines,
+            # An image's members are judged as an image's: a binary there is what it ships.
+            image=ctx.image,
+            install_entry_paths=ctx.install_entry_paths,
+            consumer_install_paths=ctx.consumer_install_paths,
             on_batch=report,
         )
 
@@ -2932,6 +3140,16 @@ class Engine:
                 if not oci.ImageLayers.is_image(archive):
                     return None
         except (tarfile.TarError, OSError, ValueError, EOFError):
+            if oci.ImageLayers.cut_short(data):
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=REPOSITORY_SCOPE,
+                        rule_id="OPERATIONAL.IMAGE.UNREADABLE",
+                        message="The target is a container image archive that ends early: its layers begin and the archive stops before its manifest, so nothing in it was inventoried.",
+                        remediation="Export the image again with `docker save` or `skopeo copy ... oci-archive:` and rescan.",
+                    )
+                )
             return None
         try:
             inventory = oci.ImageLayers.read_image(data)
@@ -2962,17 +3180,27 @@ class Engine:
                     remediation="Rescan an image exported without zstd compression, or check the distribution is supported.",
                 )
             )
-        if inventory.packages and self.config.offline:
+        from cordon_scanner.images.distrodb import DistroDatabase
+
+        synced = inventory.release is not None and DistroDatabase.covers(
+            inventory.release.osv_ecosystem
+        )
+        if inventory.packages and self.config.offline and not synced:
             acc.append(
                 Engine._operational(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.NOT_MATCHED",
                     message=(
                         f"{len(inventory.packages)} operating-system packages were inventoried and not "
-                        f"matched against distribution advisories, which needs --online (it sends the "
+                        f"matched against distribution advisories: none are synced on this machine for "
+                        f"this distribution, and matching through OSV's API needs --online (it sends the "
                         f"package names and versions to OSV)."
                     ),
-                    remediation="Scan with --online to match them, or read them from the SBOM.",
+                    remediation=(
+                        "Run `cordon-scanner advisories sync --os <family>` once (debian, ubuntu, "
+                        "alpine, wolfi, chainguard, rocky, almalinux, redhat, suse, opensuse) to match "
+                        "offline, or scan with --online."
+                    ),
                 )
             )
         return inventory
@@ -2980,7 +3208,7 @@ class Engine:
     @staticmethod
     def _report_image_contents(inventory: Any, acc: _Accumulator) -> None:
         """Say what of the image was content-scanned and what was not, and why."""
-        from cordon_scanner.images.oci import OVERSIZE
+        from cordon_scanner.images.oci import OVERSIZE, OVERSIZE_STRINGS
 
         skipped = ", ".join(
             f"{count} ({reason})" for reason, count in sorted(inventory.skipped.items())
@@ -2991,31 +3219,190 @@ class Engine:
                 rule_id="OPERATIONAL.IMAGE.CONTENTS",
                 message=(
                     f"{inventory.added_files} files the image adds beyond its distribution's packages were "
-                    f"scanned, and {len(inventory.language_packages)} installed language packages were "
+                    f"scanned"
+                    + (
+                        f" (and {inventory.binaries_as_strings} past the per-file limit as their "
+                        f"printable strings and build metadata)"
+                        if inventory.binaries_as_strings
+                        else ""
+                    )
+                    + (
+                        f", {inventory.removed_files} file(s) a later layer removed were scanned in "
+                        f"the layer that holds them"
+                        if inventory.removed_files
+                        else ""
+                    )
+                    + f", and {len(inventory.language_packages)} installed language packages were "
                     f"inventoried. Not content-scanned: {skipped or 'nothing'}."
                 ),
                 remediation="None needed; the counts say what this scan covered.",
             )
         )
-        oversize = inventory.skipped.get(OVERSIZE, 0)
+        oversize = inventory.skipped.get(OVERSIZE, 0) + inventory.skipped.get(OVERSIZE_STRINGS, 0)
         if oversize:
             acc.complete = False
             acc.append(
                 Engine._operational(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.PARTIAL",
-                    message=f"Part of the image was not examined: {oversize} file(s) {OVERSIZE}.",
+                    message=(
+                        "Part of the image was not fully examined: "
+                        + "; ".join(
+                            f"{inventory.skipped[reason]} file(s) {reason}"
+                            for reason in (OVERSIZE, OVERSIZE_STRINGS)
+                            if inventory.skipped.get(reason)
+                        )
+                        + "."
+                    ),
                     remediation="Raise limits.max_file_bytes to read them.",
                 )
             )
 
+    def _sbom_dependencies(
+        self, units: list[FileUnit], acc: _Accumulator
+    ) -> tuple[Dependency, ...]:
+        """The components of a CycloneDX or SPDX document, validated and attributed to it."""
+        from cordon_scanner.core.sbom_ingest import SbomDocument, SbomInventory
+
+        out: list[Dependency] = []
+        self._sbom_listed = []
+        for unit in units:
+            data, unreadable = SbomDocument.recognise(unit.content.text, unit.path)
+            if unreadable:
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.SBOM.INVALID",
+                        message=f"This file is named or shaped as a bill of materials and was not read: {unreadable}. Nothing from it is in the inventory.",
+                        remediation="Regenerate the document with its tool, or validate it against the CycloneDX or SPDX schema.",
+                        severity=Severity.MEDIUM,
+                    )
+                )
+                continue
+            if data is None:
+                continue
+            reading = SbomDocument.read(data)
+            for problem in reading.problems[:20]:
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.SBOM.INVALID",
+                        message=f"Part of this bill of materials could not be believed: {problem}. What it says there was not read into the inventory.",
+                        remediation="Regenerate the document with its tool, or validate it against the CycloneDX or SPDX schema.",
+                        severity=Severity.MEDIUM,
+                    )
+                )
+            if len(reading.problems) > 20:
+                acc.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.SBOM.INVALID",
+                        message=f"{len(reading.problems) - 20} further problems in this bill of materials were not listed.",
+                        remediation="Regenerate the document with its tool.",
+                        severity=Severity.MEDIUM,
+                    )
+                )
+            records = SbomInventory.dependencies(unit.path, reading)
+            out.extend(records)
+            by_key = {
+                component.key: record
+                for component, record in zip(reading.components, records, strict=True)
+            }
+            for listed in reading.vulnerabilities:
+                for key in listed.affects:
+                    record = by_key.get(key)
+                    if record is not None:
+                        self._sbom_listed.append(
+                            (
+                                unit.path,
+                                listed,
+                                record.purl,
+                                record.name,
+                                record.version,
+                                reading.tool,
+                            )
+                        )
+        return tuple(out)
+
+    def _sbom_listed_findings(self, findings: Sequence[Finding], ctx: ScanContext) -> list[Finding]:
+        """What an ingested SBOM itself lists as affecting its components, where the scan's own
+        advisory matching did not already say so. A listed vulnerability the document rules out
+        is not applied: a scan target cannot vouch for its own vulnerabilities (`--vex` can)."""
+        from cordon_scanner.core.vex import RULED_OUT, VexDocuments
+
+        if not self._sbom_listed:
+            return []
+        known: dict[str, set[str]] = {}
+        for finding in findings:
+            if finding.category is Category.VULNERABLE and finding.location.package:
+                known.setdefault(finding.location.package.split("?", 1)[0].lower(), set()).update(
+                    VexDocuments.identifiers_of(finding)
+                )
+        out: list[Finding] = []
+        ruled_out: dict[str, int] = {}
+        seen: set[tuple[str, str]] = set()
+        for path, listed, purl, name, version, tool in self._sbom_listed:
+            if listed.state in RULED_OUT:
+                ruled_out[path] = ruled_out.get(path, 0) + 1
+                continue
+            names = {listed.identifier, *listed.aliases}
+            if (
+                names & known.get(purl.split("?", 1)[0].lower(), set())
+                or (purl, listed.identifier) in seen
+            ):
+                continue
+            seen.add((purl, listed.identifier))
+            severity = {
+                "critical": Severity.CRITICAL,
+                "high": Severity.HIGH,
+                "medium": Severity.MEDIUM,
+                "low": Severity.LOW,
+            }.get(listed.severity or "", Severity.MEDIUM)
+            finding = Engine._operational(
+                path=path,
+                rule_id="VULNERABLE.SBOM.LISTED.001",
+                message=(
+                    f"{name} {version or ''} is listed in {path} as affected by {listed.identifier}"
+                    + (f" ({listed.state})" if listed.state else "")
+                    + f", by {tool}. The advisory data this scan matched against does not name it for this "
+                    f"version, so it rests on the document's word."
+                ),
+                remediation="Look the advisory up and upgrade past it, or record why it does not apply as a VEX statement.",
+                category=Category.VULNERABLE,
+                severity=severity,
+            )
+            out.append(
+                replace(
+                    finding,
+                    location=replace(finding.location, package=purl),
+                    confidence=Confidence.MEDIUM,
+                    risk=ctx.scorer.score(severity, Confidence.MEDIUM),
+                    detector="sbom",
+                    references=(listed.reference,) if listed.reference else (),
+                )
+            )
+        for path, count in sorted(ruled_out.items()):
+            out.append(
+                Engine._operational(
+                    path=path,
+                    rule_id="OPERATIONAL.SBOM.VEX_NOT_APPLIED",
+                    message=(
+                        f"{path} rules out {count} vulnerabilit{'y' if count == 1 else 'ies'} for its own components. A scan "
+                        f"target cannot vouch for its own vulnerabilities, so none was applied; the scan's own matching stands."
+                    ),
+                    remediation="Pass the document with --vex to apply its statements, if its author is trusted to make them.",
+                )
+            )
+        return out
+
     @staticmethod
     def _image_dependencies(inventory: Any) -> tuple[Dependency, ...]:
-        where = {
-            "dpkg": "var/lib/dpkg/status",
-            "apk": "lib/apk/db/installed",
-            "rpm": "var/lib/rpm/rpmdb.sqlite",
-        }
+        from cordon_scanner.core.inventory import NAMED_BY_FILE
+        from cordon_scanner.images.packages import OsPackage
+
+        where = OsPackage.DATABASE
         languages = tuple(
             Dependency(
                 purl=package.purl,
@@ -3024,20 +3411,80 @@ class Engine:
                 version=package.version,
                 direct=True,
                 declared_in=package.path,
+                # The checksum the build recorded where it recorded one (Go). Otherwise these are
+                # bytes already installed in the image, not something still to be fetched whose
+                # hash could be missing -- and never `local`, which would hide their advisories.
+                integrity=package.integrity or "installed-in-image",
+                # A binary's architecture and whether it is signed, where it came from one.
+                platform=package.platform,
+                resolved_from=NAMED_BY_FILE if package.named_by_file else None,
             )
             for package in inventory.language_packages
         )
-        return languages + tuple(
-            Dependency(
-                purl=package.purl(inventory.release),
-                ecosystem={"dpkg": "deb", "apk": "apk", "rpm": "rpm"}[package.manager],
-                name=package.name,
-                version=package.version,
-                direct=True,
-                declared_in=where[package.manager],
-            )
-            for package in inventory.packages
-        )
+        from cordon_scanner.images.packages import PackageGraph
+
+        # The installed graph: what each package requires, from the asked-for ones down. Each
+        # manager's packages are their own graph -- an image holds one, but nothing assumes it.
+        operating_system: list[Dependency] = []
+        for manager in OsPackage.MANAGERS:
+            packages = [p for p in inventory.packages if p.manager == manager]
+            if not packages:
+                continue
+            edges = PackageGraph.edges(packages)
+            direct = PackageGraph.direct(packages, edges)
+            depth = {index: 0 for index, asked in enumerate(direct) if asked}
+            parents: dict[int, set[str]] = {index: set() for index in range(len(packages))}
+            frontier = list(depth)
+            while frontier:
+                following: list[int] = []
+                for index in frontier:
+                    for child in edges[index]:
+                        parents[child].add(packages[index].name)
+                        if child not in depth:
+                            depth[child] = depth[index] + 1
+                            following.append(child)
+                frontier = following
+            for index, package in enumerate(packages):
+                operating_system.append(
+                    Dependency(
+                        purl=package.purl(inventory.release),
+                        ecosystem=OsPackage.PURL_TYPE[manager],
+                        name=package.name,
+                        version=package.version,
+                        direct=direct[index],
+                        # Installed automatically and required by nothing now (what `apt
+                        # autoremove` would take): a dependency of nothing in the graph.
+                        depth=depth.get(index, 1),
+                        parents=tuple(sorted(parents[index])),
+                        declared_in=where[manager],
+                    )
+                )
+        identity = inventory.identity
+        base: tuple[Dependency, ...] = ()
+        if identity.base_name:
+            from cordon_scanner.ecosystems.image import ImageReference
+
+            reference = ImageReference.parse(identity.base_name)
+            if reference is not None:
+                version = reference.tag
+                digest = identity.base_digest or reference.digest
+                base = (
+                    Dependency(
+                        purl=f"pkg:docker/{reference.familiar}"
+                        + (f"@{version}" if version else ""),
+                        ecosystem="image",
+                        name=reference.familiar,
+                        version=version,
+                        direct=True,
+                        integrity=digest,
+                        resolved_from=f"registry:{reference.registry}"
+                        if reference.registry
+                        else None,
+                        declared_in="image-config/labels",
+                        declared_spec=version or "",
+                    ),
+                )
+        return base + languages + tuple(operating_system)
 
     def _build_graph(self, units: list[FileUnit], acc: _Accumulator) -> tuple[Dependency, ...]:
         """Build the resolved graph from lockfiles.
@@ -3048,7 +3495,15 @@ class Engine:
         purpose is avoiding that, and it would make results non-reproducible
         because a resolver consults a live registry.
         """
+        Engine._unread_dependency_files(units, acc)
         collected: list[Dependency] = []
+        companions: list[tuple[str | None, str, Any, LockGraph]] = []
+        completing: set[tuple[str | None, str, str]] = set()
+        fragments: dict[tuple[str, str], tuple[Any, list[tuple[LockEntry, str]]]] = {}
+        # `(member directory, ecosystem) -> the lockfile's directory`: a workspace member's
+        # manifest is resolved by the root lockfile, so it is joined to that graph, not graphed
+        # again on its own (which put a second, unresolved copy of each of its dependencies in).
+        workspace_members: dict[tuple[str, str], str | None] = {}
         for unit in units:
             if "!" in unit.path and not self._scanning_archive:
                 # A lockfile inside a vendored archive describes that artefact's own
@@ -3088,6 +3543,32 @@ class Engine:
             if graph.parse_error or not graph.entries:
                 continue
             project = unit.path.rpartition("/")[0]
+            # `.mvn/checksums/`, `gradle/verification-metadata.xml`, `gradle/dependency-locks/`:
+            # files that belong to the project directories above them.
+            for _ in range(max(0, min(graph.owner_levels, 8))):
+                project = project.rpartition("/")[0]
+            if graph.fragment:
+                pieces = fragments.setdefault((project, ecosystem_id), (ecosystem, []))[1]
+                pieces.extend((entry, unit.path) for entry in graph.entries)
+                continue
+            if graph.completed_by_companion:
+                completing.add((project or None, ecosystem_id, unit.path))
+            if graph.companion:
+                # `go.sum`, `vendor/modules.txt`: facts about the resolution beside them, applied
+                # once every resolving file has been read. `vendor/` belongs to its parent module.
+                owner = (
+                    project.rpartition("/")[0]
+                    if project.endswith("vendor") and not graph.owner_levels
+                    else project
+                )
+                companions.append((owner or None, ecosystem_id, ecosystem, graph))
+                continue
+            for member in graph.workspaces:
+                if not isinstance(member, str) or not member:
+                    continue  # a parser's mistake must not end the scan
+                joined = posixpath.normpath(posixpath.join(project, member) if project else member)
+                if joined not in (".", "") and not joined.startswith(".."):
+                    workspace_members[(joined, ecosystem_id)] = project or None
             collected.extend(
                 replace(dependency, declared_in=unit.path)
                 for dependency in ecosystem.to_dependencies(graph, project=project or None)
@@ -3109,24 +3590,789 @@ class Engine:
                 )
                 break
 
+        for (project, ecosystem_id), (ecosystem, pieces) in sorted(
+            fragments.items(), key=lambda item: item[0]
+        ):
+            # The pieces of one installed tree, joined: an edge in one keg's receipt reaches the
+            # keg it names. Each record keeps the file that holds it as its location.
+            from cordon_scanner.core.inventory import DependencyRecords
+
+            where = {(entry.name, entry.version): path for entry, path in pieces}
+            merged_graph = LockGraph(
+                path=pieces[0][1],
+                ecosystem=ecosystem_id,
+                entries=tuple(entry for entry, _ in pieces),
+            )
+            merged = tuple(ecosystem.to_dependencies(merged_graph, project=project or None))
+            chains = DependencyRecords._paths(merged)
+            collected.extend(
+                replace(
+                    dependency,
+                    declared_in=where.get(
+                        (dependency.name, dependency.version or ""), pieces[0][1]
+                    ),
+                    dependency_path=chains.get(id(dependency), (dependency.name,)),
+                )
+                for dependency in merged
+            )
+
         # Per project AND ecosystem. A lockfile resolves its own ecosystem's
         # manifests and says nothing about anyone else's, so a `requirements.txt`
         # cannot stand in for the `conanfile.txt` beside it. Keyed per path
         # alone, it did, and those dependencies left the graph entirely.
+        collected = Engine._apply_companions(collected, companions)
+        collected.extend(Engine._companion_completions(collected, companions, completing))
+        # A resolved entry naming a package this repository defines, with no registry hash of
+        # its own -- `app` depending on `core` in one Maven reactor -- is built from that module's
+        # source here, not downloaded. An entry the registry hashed is left alone: that is a
+        # published package, whatever a local directory happens to be called.
+        defined = Engine._workspace_members(units)
+        if defined:
+            collected = [
+                replace(d, local=True)
+                if not d.local and not d.integrity and Engine._defined_member(d, defined)
+                else d
+                for d in collected
+            ]
+        workspace_members.update(Engine._members_by_name(units, collected, workspace_members))
+        workspace_members.update(
+            Engine._members_by_lock_reference(units, collected, workspace_members)
+        )
+        covered = {(d.project, d.ecosystem) for d in collected} | set(workspace_members)
+        collected = Engine._join_manifests(units, collected, covered, workspace_members)
+        collected = Engine._propagate_scopes(collected)
+        # Exact pins in a build with no lockfile are completed by its companions too: Gradle's
+        # verification metadata holds the hash of `guava:33.3.1-jre` whether or not the build
+        # also locks.
         collected.extend(
-            self._declared_graph(units, acc, covered={(d.project, d.ecosystem) for d in collected})
+            Engine._apply_companions(self._declared_graph(units, acc, covered=covered), companions)
         )
 
-        # Deduplicated by package URL and sorted, so the graph is deterministic
-        # regardless of the order lockfiles were encountered in.
-        unique: dict[str, Dependency] = {}
+        # Deduplicated by project and package URL, and sorted, so the graph is deterministic
+        # regardless of the order lockfiles were encountered in. Per project: two services in
+        # one repository that each require the same module each depend on it, and each needs
+        # its own fix -- one record for both left the second service's use out of the inventory.
+        # Within a project, one record however many times the lockfile lists it.
+        from cordon_scanner.ecosystems.npm import LockScopes
+
+        unique: dict[tuple[str | None, str], Dependency] = {}
         for dependency in collected:
-            existing = unique.get(dependency.purl)
+            key = (dependency.project, dependency.purl)
+            existing = unique.get(key)
             # Keep the shallowest occurrence: depth drives the risk score, and
-            # the closest path to the root is the honest one.
-            if existing is None or dependency.depth < existing.depth:
-                unique[dependency.purl] = dependency
-        return tuple(sorted(unique.values(), key=lambda d: d.purl))
+            # the closest path to the root is the honest one. At equal depth, the scope that
+            # reaches furthest: a module on both the compile and the runtime classpath ships.
+            if (
+                existing is None
+                or dependency.depth < existing.depth
+                or (
+                    dependency.depth == existing.depth
+                    and LockScopes.rank(dependency.scope) < LockScopes.rank(existing.scope)
+                )
+            ):
+                unique[key] = dependency
+        resolved = list(unique.values())
+        if not self.config.offline:
+            resolved = Engine._resolve_maven_ranges(resolved)
+        return tuple(sorted(resolved, key=lambda d: (d.purl, d.project or "")))
+
+    #: Dependency files in a format no parser here reads, and what to supply instead. Reported,
+    #: never skipped silently: a project whose only lockfile is one of these was not resolved.
+    UNREAD_DEPENDENCY_FILES: ClassVar[dict[str, tuple[str, str]]] = {
+        "bun.lockb": (
+            "bun.lock",
+            "Bun's legacy binary lockfile: an undocumented format Bun itself replaced with the "
+            "text `bun.lock` in 1.2. Regenerate it with `bun install --save-text-lockfile`.",
+        ),
+    }
+
+    @staticmethod
+    def _unread_dependency_files(units: list[FileUnit], acc: _Accumulator) -> None:
+        present = {u.path for u in units}
+        for unit in units:
+            name = unit.path.rpartition("/")[2]
+            known = Engine.UNREAD_DEPENDENCY_FILES.get(name)
+            if known is None:
+                continue
+            directory = unit.path.rpartition("/")[0]
+            replacement, why = known
+            if (f"{directory}/{replacement}" if directory else replacement) in present:
+                continue  # the readable lockfile is beside it and is what was read
+            acc.complete = False
+            acc.append(
+                Engine._operational(
+                    path=unit.path,
+                    rule_id="OPERATIONAL.LOCKFILE.UNSUPPORTED",
+                    message=(
+                        f"{name} was not read: {why} The dependencies it resolves are not in "
+                        f"the graph from this file."
+                    ),
+                    remediation=f"Commit `{replacement}` beside it.",
+                    severity=Severity.MEDIUM,
+                )
+            )
+
+    @staticmethod
+    def _companion_completions(
+        collected: list[Dependency],
+        companions: list[tuple[str | None, str, Any, LockGraph]],
+        completing: set[tuple[str | None, str, str]],
+    ) -> list[Dependency]:
+        """The indirect modules a pre-1.17 `go.mod` leaves out, from the `go.sum` beside it: each
+        module hashed and not already in the graph, at the highest version hashed (what minimal
+        version selection settles on), marked indirect and declared in `go.sum`."""
+        from cordon_scanner.intel.versions import Versions
+
+        present = {(d.project, d.ecosystem, d.name) for d in collected}
+        resolved = {(d.project, d.ecosystem) for d in collected}
+        added: list[Dependency] = []
+        for owner, ecosystem_id, ecosystem, graph in companions:
+            # Go only: other ecosystems' companions (Maven checksums, Gradle verification
+            # metadata) record hashes of what something else resolved, never a build of their own.
+            if ecosystem_id != "gomod" or graph.path.endswith("modules.txt"):
+                continue
+            # Completed where the resolving file leaves indirect modules out (a pre-1.17 go.mod),
+            # and where there is no resolving file at all: a go.sum on its own is then the only
+            # record of the build there is.
+            if (
+                not any(p == owner and e == ecosystem_id for p, e, _ in completing)
+                and (owner, ecosystem_id) in resolved
+            ):
+                continue
+            highest: dict[str, LockEntry] = {}
+            for entry in graph.entries:
+                if (owner, ecosystem_id, entry.name) in present or not entry.version:
+                    continue
+                best = highest.get(entry.name)
+                if (
+                    best is None
+                    or Versions.compare(
+                        ecosystem_id, entry.version.lstrip("v"), best.version.lstrip("v")
+                    )
+                    > 0
+                ):
+                    highest[entry.name] = entry
+            if not highest:
+                continue
+            completion = LockGraph(
+                path=graph.path,
+                ecosystem=ecosystem_id,
+                entries=tuple(replace(e, direct=False) for _, e in sorted(highest.items())),
+            )
+            added.extend(
+                replace(d, direct=False, depth=max(d.depth, 2))
+                for d in ecosystem.to_dependencies(completion, project=owner)
+            )
+        return added
+
+    @staticmethod
+    def _apply_companions(
+        collected: list[Dependency], companions: list[tuple[str | None, str, Any, LockGraph]]
+    ) -> list[Dependency]:
+        """Complete each resolved entry with what its companion files record about it: the hash
+        `go.sum` holds for that exact module version, the vendored copy `vendor/modules.txt`
+        lists. An entry a companion has and the resolution does not (a version `go.sum` still
+        hashes but the build no longer selects) adds nothing: it is not in the build."""
+        if not companions:
+            return collected
+        facts: dict[tuple[str | None, str, str, str], LockEntry] = {}
+        projects = {d.project for d in collected}
+        for owner, ecosystem_id, ecosystem, graph in companions:
+            # A tree companion is applied to every project at or below its owner.
+            covered = (
+                [
+                    p
+                    for p in projects
+                    if owner is None or p == owner or (p or "").startswith(f"{owner}/")
+                ]
+                if graph.companion_tree
+                else [owner]
+            )
+            for project in covered:
+                Engine._companion_facts(facts, project, ecosystem_id, ecosystem, graph)
+        out: list[Dependency] = []
+        for dependency in collected:
+            ecosystem = EcosystemRegistry.get(dependency.ecosystem)
+            name = ecosystem.normalize_name(dependency.name) if ecosystem else dependency.name
+            fact = facts.get(
+                (dependency.project, dependency.ecosystem, name, dependency.version or "")
+            )
+            if fact is None:
+                out.append(dependency)
+                continue
+            out.append(
+                replace(
+                    dependency,
+                    integrity=dependency.integrity or fact.integrity,
+                    resolved_from=dependency.resolved_from
+                    if dependency.resolved_from
+                    and not (fact.resolved_from or "").startswith("vendored:")
+                    else fact.resolved_from or dependency.resolved_from,
+                )
+            )
+        return out
+
+    @staticmethod
+    def _companion_facts(
+        facts: dict[tuple[str | None, str, str, str], LockEntry],
+        project: str | None,
+        ecosystem_id: str,
+        ecosystem: Any,
+        graph: LockGraph,
+    ) -> None:
+        for entry in graph.entries:
+            key = (project, ecosystem_id, ecosystem.normalize_name(entry.name), entry.version)
+            previous = facts.get(key)
+            if previous is None:
+                facts[key] = entry
+            else:
+                facts[key] = LockEntry(
+                    name=entry.name,
+                    version=entry.version,
+                    integrity=previous.integrity or entry.integrity,
+                    resolved_from=previous.resolved_from or entry.resolved_from,
+                )
+
+    @staticmethod
+    def _members_by_lock_reference(
+        units: list[FileUnit],
+        collected: list[Dependency],
+        known: dict[tuple[str, str], str | None],
+    ) -> dict[tuple[str, str], str | None]:
+        """Manifests that name the lockfile resolving them (`lockfile: "../../mix.lock"` in an
+        umbrella app): members of the project that lockfile belongs to, when it was read."""
+        locked = {(d.project or "", d.ecosystem) for d in collected}
+        contents = {u.path: u.content for u in units}
+        out: dict[tuple[str, str], str | None] = {}
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id else None
+            if ecosystem is None or ecosystem_id is None:
+                continue
+            project = unit.path.rpartition("/")[0]
+            if not project or (project, ecosystem_id) in known:
+                continue
+            try:
+                manifest = Engine._manifest_of(ecosystem, unit, contents)
+            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+                continue
+            owner = manifest.locked_by
+            if owner is not None and (owner, ecosystem_id) in locked:
+                out[(project, ecosystem_id)] = owner or None
+        return out
+
+    @staticmethod
+    def _members_by_name(
+        units: list[FileUnit],
+        collected: list[Dependency],
+        known: dict[tuple[str, str], str | None],
+    ) -> dict[tuple[str, str], str | None]:
+        """Workspace members a lockfile does not list by directory (Yarn Classic, Cargo).
+
+        A manifest below a lockfile's directory whose own package name is one of that lockfile's
+        local entries is a member it resolves."""
+        local: dict[tuple[str | None, str], set[str]] = {}
+        for dependency in collected:
+            if dependency.local:
+                local.setdefault((dependency.project, dependency.ecosystem), set()).add(
+                    dependency.name.lower()
+                )
+        if not local:
+            return {}
+        found: dict[tuple[str, str], str | None] = {}
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            project = unit.path.rpartition("/")[0]
+            if ecosystem_id is None or not project or (project, ecosystem_id) in known:
+                continue
+            for (lock_project, lock_ecosystem), names in local.items():
+                if lock_ecosystem != ecosystem_id or lock_project == project:
+                    continue
+                if lock_project and not project.startswith(lock_project + "/"):
+                    continue
+                ecosystem = EcosystemRegistry.get(ecosystem_id)
+                try:
+                    manifest = ecosystem.parse_manifest(unit.content) if ecosystem else None
+                except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+                    continue
+                if manifest is not None and manifest.name and manifest.name.lower() in names:
+                    found[(project, ecosystem_id)] = lock_project
+                    break
+        return found
+
+    @staticmethod
+    def _configured_sources(units: list[FileUnit]) -> tuple[tuple[str, str, str], ...]:
+        """Every package source the scanned manifests configure, credentials removed."""
+        from cordon_scanner.core.inventory import DependencySource
+
+        found: list[tuple[str, str, str]] = []
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id else None
+            if ecosystem is None or ecosystem_id is None:
+                continue
+            try:
+                manifest = ecosystem.parse_manifest(unit.content)
+            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+                continue
+            for source in manifest.sources:
+                # A URL inside the description loses its userinfo and query: a token in an
+                # index URL is a credential, and the report is not where it goes.
+                cleaned = re.sub(
+                    r"\S+://\S+", lambda m: DependencySource.sanitise(m.group(0)) or "", source
+                )
+                found.append((unit.path, ecosystem_id, cleaned))
+        return tuple(sorted(set(found)))
+
+    @staticmethod
+    def _declared_inside(spec: str, manifest_path: str) -> bool:
+        """Whether a declaration names a path inside the scanned repository (`path:../lib`,
+        `file:packages/util`): the project's own code, not a package from anywhere."""
+        if not spec.startswith(("path:", "file:", "link:", "./", "../", "workspace:")):
+            return False
+        from cordon_scanner.detect.manifest import DeclaredSource
+
+        return DeclaredSource.kind(spec, manifest_path) == "inside"
+
+    @staticmethod
+    def _manifest_of(ecosystem: Any, unit: FileUnit, files: Mapping[str, Any]) -> Any:
+        """A manifest parsed with the rest of its build in view, where the ecosystem needs it:
+        a Maven module inherits from a parent POM elsewhere in the tree, a .NET project from
+        `Directory.Packages.props` above it. Other ecosystems read one file on its own."""
+        in_tree = getattr(ecosystem, "parse_in_tree", None)
+        if in_tree is not None:
+            return in_tree(unit.content, files)
+        return ecosystem.parse_manifest(unit.content)
+
+    MAX_INCLUDE_DEPTH: ClassVar[int] = 8
+
+    @staticmethod
+    def _included(
+        manifest: Any, path: str, by_path: dict[str, FileUnit], ecosystem: Any
+    ) -> list[tuple[str, str, Any]]:
+        """`(kind, path, manifest)` for each file a manifest includes, followed through nested
+        includes, each file once, to `MAX_INCLUDE_DEPTH`. A path that leaves the scanned tree or
+        is not in it is skipped (and was never going to be readable here)."""
+        out: list[tuple[str, str, Any]] = []
+        seen = {path}
+        pending = [(kind, target, path, 0) for kind, target in getattr(manifest, "includes", ())]
+        while pending:
+            kind, target, origin, depth = pending.pop(0)
+            directory = origin.rpartition("/")[0]
+            resolved = posixpath.normpath(
+                posixpath.join(directory, target) if directory else target
+            )
+            if resolved.startswith("..") or resolved in seen or resolved not in by_path:
+                continue
+            seen.add(resolved)
+            parse = getattr(ecosystem, "parse_included", None)
+            try:
+                included = (
+                    parse(by_path[resolved].content)
+                    if parse
+                    else ecosystem.parse_manifest(by_path[resolved].content)
+                )
+            except Exception:  # noqa: S112 - an unreadable include is reported where it is parsed
+                continue
+            out.append((kind, resolved, included))
+            if depth + 1 < Engine.MAX_INCLUDE_DEPTH:
+                # A constraints file's own `-r` lines are constraints too.
+                pending.extend(
+                    (kind if kind == "constraints" else nested_kind, nested, resolved, depth + 1)
+                    for nested_kind, nested in getattr(included, "includes", ())
+                )
+        return out
+
+    @staticmethod
+    def _packages(dependencies: tuple[Dependency, ...]) -> tuple[Dependency, ...]:
+        """The dependencies a registry could serve: not the platform requirements.
+
+        `requires-python = ">=3.10"`, Composer's `php` and `ext-json`, Cargo's `rust-version`, a
+        Dart SDK constraint: each is in the inventory, and none is a package. `python` on PyPI
+        and `php` on Packagist are unrelated distributions, and a typosquat, advisory or registry
+        check against them would be a claim about the wrong thing."""
+        return tuple(d for d in dependencies if d.scope is not Scope.PLATFORM)
+
+    @staticmethod
+    def _override_target(selector: str) -> tuple[str | None, str | None]:
+        """`(package, version selector)` an override key applies to.
+
+        `ms`, `ms@2.0.0` (npm, pnpm), `**/ms`, `debug/ms` (Yarn resolutions: the last segment),
+        `debug>ms` (pnpm's parent selector) and `@scope/pkg@^1`."""
+        text = selector.strip()
+        for separator in (">",):
+            text = text.rpartition(separator)[2] if separator in text else text
+        if "/" in text and not text.startswith("@"):
+            text = text.rpartition("/")[2]
+        elif text.startswith("@") and text.count("/") > 1:
+            text = "/".join(text.split("/")[-2:])
+        at = text.find("@", 1 if text.startswith("@") else 0)
+        if at > 0:
+            return text[:at] or None, text[at + 1 :] or None
+        return text or None, None
+
+    @staticmethod
+    def _propagate_scopes(collected: list[Dependency]) -> list[Dependency]:
+        """Carry each direct dependency's scope down to what only it brings in.
+
+        Yarn, Bun and several other lockfiles record no scope: a package needed only by a test
+        runner read as runtime. With the direct dependencies' scopes known from the manifest,
+        a transitive one reached only through dev dependencies is dev, only through optional
+        ones optional -- npm's own rule for its `dev` and `optional` flags."""
+        from cordon_scanner.ecosystems.npm import LockScopes
+
+        groups: dict[tuple[str | None, str], list[Dependency]] = {}
+        for dependency in collected:
+            groups.setdefault((dependency.declared_in, dependency.ecosystem), []).append(dependency)
+        out: list[Dependency] = []
+        for members in groups.values():
+            # The workspace's own packages are the project, not its dependencies: a Cargo member
+            # lists its dev and build dependencies as edges too, and as a runtime root it made
+            # every test-only crate runtime.
+            roots: dict[str, set[Scope]] = {}
+            for d in members:
+                if d.direct and not d.local:
+                    roots.setdefault(d.name, set()).add(d.scope)
+            if not roots or all(d.direct for d in members):
+                out.extend(members)
+                continue
+            edges: dict[str, set[str]] = {}
+            for dependency in members:
+                for parent in dependency.parents:
+                    edges.setdefault(parent, set()).add(dependency.name)
+            scopes = LockScopes.propagate(roots, edges)
+            for dependency in members:
+                found = scopes.get(dependency.name)
+                if (
+                    not dependency.direct
+                    and dependency.scope is Scope.RUNTIME
+                    and found is not None
+                    and found is not Scope.RUNTIME
+                ):
+                    out.append(replace(dependency, scope=found))
+                else:
+                    out.append(dependency)
+        return out
+
+    MAX_RANGE_LOOKUPS: ClassVar[int] = 200
+
+    @staticmethod
+    def _resolve_maven_ranges(dependencies: list[Dependency]) -> list[Dependency]:
+        """A Maven or Gradle range (`[1.2,2.0)`) a pom declares with no lockfile to pin it,
+        resolved online to the highest release Maven Central lists inside it -- what Maven itself
+        picks -- so its advisories can be matched. Offline it stays unresolved, and says why."""
+        from cordon_scanner.intel.more_registries import MoreRegistries
+        from cordon_scanner.intel.ranges import VersionRanges
+        from cordon_scanner.intel.registry_client import RegistryError
+        from cordon_scanner.intel.versions import Versions
+
+        listed: dict[str, list[str]] = {}
+        out: list[Dependency] = []
+        for dependency in dependencies:
+            spec = (dependency.declared_spec or "").strip()
+            if (
+                dependency.ecosystem not in ("maven", "gradle")
+                or dependency.version
+                or spec[:1] not in ("[", "(")
+                or ":" not in dependency.name
+            ):
+                out.append(dependency)
+                continue
+            if dependency.name not in listed and len(listed) < Engine.MAX_RANGE_LOOKUPS:
+                try:
+                    listed[dependency.name] = MoreRegistries.versions("maven", dependency.name)
+                except (RegistryError, OSError, ValueError):
+                    listed[dependency.name] = []
+            admitted = [
+                v for v in listed.get(dependency.name, []) if VersionRanges.admits("maven", spec, v)
+            ]
+            if not admitted:
+                out.append(dependency)
+                continue
+            best = admitted[0]
+            for candidate in admitted[1:]:
+                if Versions.compare("maven", candidate, best) > 0:
+                    best = candidate
+            base, sep, query = dependency.purl.partition("?")
+            out.append(
+                replace(
+                    dependency,
+                    version=best,
+                    purl=f"{base}@{best}" + (f"?{query}" if sep else ""),
+                    resolution_note=f"the range {spec} resolved online to {best}, the highest release Maven Central lists inside it",
+                )
+            )
+        return out
+
+    @staticmethod
+    def _join_manifests(
+        units: list[FileUnit],
+        collected: list[Dependency],
+        covered: set[tuple[str | None, str]],
+        members: dict[tuple[str, str], str | None] | None = None,
+    ) -> list[Dependency]:
+        """Give each locked direct dependency the manifest entry that declared it.
+
+        A lockfile says what resolved; the manifest beside it says what was asked for -- the
+        constraint, the platform conditions, the line a reviewer edits. The record carries both
+        (`version_constraint` beside `resolved_version`, `manifest_location` beside
+        `lockfile_location`), so a pin that has drifted from its declared range is visible.
+        """
+        declared: dict[tuple[str | None, str, str], tuple[str, DeclaredDependency]] = {}
+        declared_from_lock: dict[tuple[str | None, str, str], bool] = {}
+        shared: dict[tuple[str | None, str, str], str] = {}
+        forced: dict[tuple[str | None, str, str], tuple[str, str, str | None]] = {}
+        routed: dict[tuple[str | None, str], dict[str, str]] = {}
+        contents = {u.path: u.content for u in units}
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            if ecosystem_id is None:
+                continue
+            project = unit.path.rpartition("/")[0] or None
+            if (project, ecosystem_id) not in covered:
+                continue
+            if members and project is not None and (project, ecosystem_id) in members:
+                project = members[(project, ecosystem_id)]
+            ecosystem = EcosystemRegistry.get(ecosystem_id)
+            if ecosystem is None:
+                continue
+            try:
+                manifest = Engine._manifest_of(ecosystem, unit, contents)
+            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+                continue
+            for shared_name, shared_spec in manifest.shared_specs.items():
+                shared.setdefault(
+                    (project, ecosystem_id, ecosystem.normalize_name(shared_name)), shared_spec
+                )
+            if manifest.source_patterns:
+                routed.setdefault((project, ecosystem_id), {}).update(manifest.source_patterns)
+            # A file that is also a lockfile (a pinned `requirements.txt`) is the manifest of last
+            # resort: where `requirements.in` names the same package, that is what was asked for.
+            is_lock = EcosystemRegistry.lockfile_ecosystem(unit.path) is not None
+            for entry in manifest.dependencies:
+                key = (
+                    project,
+                    entry.ecosystem or ecosystem_id,
+                    ecosystem.normalize_name(entry.name),
+                )
+                if key not in declared or (not is_lock and declared_from_lock.get(key, False)):
+                    declared[key] = (unit.path, entry)
+                    declared_from_lock[key] = is_lock
+            for selector, spec in manifest.overrides.items():
+                target, selected = Engine._override_target(str(selector))
+                if target:
+                    forced.setdefault(
+                        (project, ecosystem_id, ecosystem.normalize_name(target)),
+                        (
+                            f"{selector!s} = {spec!s} in {manifest.override_origin or unit.path}",
+                            str(spec),
+                            selected,
+                        ),
+                    )
+        if not declared and not forced:
+            return collected
+        joined: list[Dependency] = []
+        matched: set[tuple[str | None, str, str]] = set()
+        present: set[tuple[str | None, str, str]] = set()
+        # Lockfiles that say which entries are direct; for the rest (`Pipfile.lock`, `go.sum`),
+        # the manifest beside them is the only record of what the project asked for.
+        marked = {d.declared_in for d in collected if d.direct}
+        manifested = {(k[0], k[1]) for k in declared}
+        for dependency in collected:
+            ecosystem = EcosystemRegistry.get(dependency.ecosystem)
+            name = (
+                ecosystem.normalize_name(dependency.name) if ecosystem else dependency.name.lower()
+            )
+            key = (dependency.project, dependency.ecosystem, name)
+            present.add(key)
+            override = forced.get(key)
+            if override is not None and dependency.version and not dependency.forced_by:
+                description, spec, selected = override
+                # Forced when the override names this exact version, or applies to every
+                # version and resolved to this one -- or is a range (mix's `override: true` on
+                # `"~> 2.0"`), which governs whatever version the tree resolved under it.
+                exact = Engine._exact_pin(spec)
+                if spec.lstrip("=v") == dependency.version or (
+                    selected is None
+                    and (
+                        exact == dependency.version
+                        or (exact is None and not spec.startswith(("path:", "git")))
+                    )
+                ):
+                    dependency = replace(dependency, forced_by=description)
+            found = declared.get(key)
+            if found is not None and not dependency.direct and dependency.depth > 0:
+                # A second copy deeper in the tree (`debug`'s own `ms`) is not the one the
+                # manifest declared; only the direct one is joined to the declaration.
+                found = None
+            if found is not None:
+                matched.add(key)
+            if found is None or dependency.manifest_path:
+                if (
+                    found is None
+                    and dependency.declared_in not in marked
+                    and (dependency.project, dependency.ecosystem) in manifested
+                ):
+                    # Not declared, in a lockfile that marks nothing: transitive.
+                    dependency = replace(dependency, direct=False)
+                joined.append(dependency)
+                continue
+            path, entry = found
+            spec = entry.spec
+            if spec == WORKSPACE_INHERITED:
+                # `{ workspace = true }`: the constraint is the workspace root's.
+                spec = shared.get(key, spec)
+            joined.append(
+                replace(
+                    dependency,
+                    manifest_path=path,
+                    declared_spec=dependency.declared_spec or spec or None,
+                    # Both are conditions on the same package: the manifest's marker (`win32`
+                    # only) and the lockfile's own (`python >=3.7`).
+                    platform=tuple(dict.fromkeys((*entry.platform, *dependency.platform))),
+                    direct=True,
+                    # What the project asked for decides a direct dependency's scope: a PDM
+                    # lockfile cannot tell an optional extra from a dev group, the manifest can.
+                    scope=entry.scope,
+                    alias=dependency.alias or entry.alias,
+                    extras=dependency.extras or entry.extras,
+                    editable=dependency.editable or entry.editable,
+                    exclusions=dependency.exclusions or entry.exclusions,
+                    # Where the lockfile does not say where it came from (NuGet's does not), the
+                    # source the project configures for it (package source mapping) does.
+                    resolved_from=dependency.resolved_from or entry.source,
+                )
+            )
+        # Declared beside a lockfile that does not resolve it: the two have drifted, and what
+        # installs is whatever the range resolves to on the day. Kept in the inventory, unresolved,
+        # with the reason -- dropping it hid a dependency the project really asks for.
+        defined: frozenset[tuple[str, str]] | None = None
+        for key, (path, entry) in sorted(
+            declared.items(), key=lambda item: (str(item[0]), item[1][0])
+        ):
+            # Resolved anywhere in the lockfile's graph is resolved: a pip-compile output is both
+            # the lockfile and, by its name, a manifest, and every pin in it is "declared".
+            if key in matched or key in present:
+                continue
+            project, ecosystem_id, name = key
+            pinned = Engine._exact_pin(entry.spec)
+            implementation = EcosystemRegistry.get(ecosystem_id)
+            if defined is None:
+                defined = Engine._workspace_members(units)
+            purl_type = implementation.purl_type if implementation else ecosystem_id
+            if Engine._declared_inside(entry.spec, path) or (ecosystem_id, name) in defined:
+                # Another project of this build (Gradle's `project(":lib")`), or a module this
+                # repository builds (an included build substituting `shared-util`): built from
+                # its source here, which no lockfile lists because nothing is fetched for it.
+                joined.append(
+                    Dependency(
+                        purl=f"pkg:{purl_type}/{name}",
+                        ecosystem=ecosystem_id,
+                        name=entry.name,
+                        direct=True,
+                        local=True,
+                        scope=entry.scope,
+                        declared_spec=entry.spec,
+                        project=project,
+                        declared_in=path,
+                        manifest_path=path,
+                        platform=entry.platform,
+                    )
+                )
+                continue
+            joined.append(
+                Dependency(
+                    purl=f"pkg:{purl_type}/{name}"
+                    + (f"@{pinned}" if pinned else "")
+                    + (implementation.qualifiers(entry.platform) if implementation else ""),
+                    ecosystem=ecosystem_id,
+                    name=entry.name,
+                    version=pinned,
+                    direct=True,
+                    scope=entry.scope,
+                    declared_spec=entry.spec,
+                    project=project,
+                    declared_in=path,
+                    manifest_path=path,
+                    resolved_from=entry.source,
+                    platform=entry.platform,
+                    alias=entry.alias,
+                    extras=entry.extras,
+                    editable=entry.editable,
+                    exclusions=entry.exclusions,
+                    # A value that is no digest is never echoed: recorded as `malformed:<hash>`.
+                    integrity=Coordinate.integrity(entry.integrity),
+                    resolution_note=entry.note
+                    or "declared in the manifest but absent from the lockfile beside it",
+                )
+            )
+        # A local entry that no manifest declares and nothing in its lockfile depends on is a
+        # root of the workspace -- the project itself (a Cargo workspace's own crate, an
+        # independent monorepo member) -- not one of its dependencies. A member another member
+        # depends on, or that a manifest names, is a path dependency and stays.
+        if routed:
+            joined = [
+                replace(
+                    d, resolved_from=Engine._routed_source(d.name, routed[(d.project, d.ecosystem)])
+                )
+                if not d.resolved_from
+                and not d.local
+                and (d.project, d.ecosystem) in routed
+                and Engine._routed_source(d.name, routed[(d.project, d.ecosystem)])
+                else d
+                for d in joined
+            ]
+        return [d for d in joined if not (d.local and not d.parents and d.manifest_path is None)]
+
+    @staticmethod
+    def _routed_source(name: str, patterns: Mapping[str, str]) -> str | None:
+        """The source a pattern routes `name` to: the longest matching pattern, `Prefix.*` or an
+        exact name, as NuGet's package source mapping matches."""
+        lowered = name.lower()
+        best: tuple[int, str] | None = None
+        for pattern, source in patterns.items():
+            text = pattern.lower()
+            matched = lowered == text or (text.endswith("*") and lowered.startswith(text[:-1]))
+            if matched and (best is None or len(text) > best[0]):
+                best = (len(text), source)
+        return best[1] if best else None
+
+    def _annotated(
+        self,
+        dependencies: tuple[Dependency, ...],
+        findings: Iterable[Finding],
+        ctx: ScanContext,
+        units: list[FileUnit],
+    ) -> tuple[Dependency, ...]:
+        """Each dependency's shared record: its check statuses, path and locations."""
+        if not dependencies:
+            return dependencies
+        from cordon_scanner.core.inventory import DependencyRecords, InventoryContext
+
+        findings = tuple(findings)
+        advisory = next((d for d in self.detectors if d.id == "advisory"), None)
+        database = (
+            getattr(advisory, "_database", None)
+            if advisory is not None and self._detector_enabled(advisory, ctx)
+            else None
+        )
+        failed = any(
+            f.rule_id == "OPERATIONAL.DETECTOR.FAILED" and "'advisory'" in f.message
+            for f in findings
+        )
+        wanted = {d.declared_in for d in dependencies} | {d.manifest_path for d in dependencies}
+        texts = {u.path: u.content.text for u in units if u.path in wanted}
+        return DependencyRecords.annotate(
+            dependencies,
+            findings,
+            InventoryContext(
+                advisory_database=database,
+                advisory_failed=failed,
+                offline=ctx.offline,
+                checks=ctx.checks,
+                texts=texts,
+            ),
+        )
 
     _EXACT_PIN = re.compile(r"^(?:==|=)?\s*v?(\d[A-Za-z0-9.+\-_]*)$")
     """A specification that names one version and no other.
@@ -3141,10 +4387,25 @@ class Engine:
     def _exact_pin(spec: str) -> str | None:
         """The version a specification pins to, or None if it is a range."""
         text = spec.strip().strip("'\"")
-        if not text or any(character in text for character in "*,<>~^!| "):
+        bracketed = re.fullmatch(r"\[\s*([^,\[\]\s]{1,64})\s*\]", text)
+        if bracketed:
+            # `[1.2.3]`: NuGet's and Maven's notation for exactly one version.
+            text = bracketed.group(1)
+        if not text or any(character in text for character in "*,<>~^!| #"):
+            return None
+        if text.startswith("dev-") or ".x-dev" in text:
+            # Composer's branch constraints (`dev-main`, `2.x-dev`): a branch, never a version.
             return None
         found = Engine._EXACT_PIN.match(text)
         return found.group(1) if found else None
+
+    @staticmethod
+    def _defined_member(dependency: Dependency, defined: frozenset[tuple[str, str]]) -> bool:
+        """Whether a dependency names a module this checkout defines, by its ecosystem's own
+        name normalisation."""
+        ecosystem = EcosystemRegistry.get(dependency.ecosystem)
+        name = ecosystem.normalize_name(dependency.name) if ecosystem else dependency.name
+        return (dependency.ecosystem, name) in defined
 
     @staticmethod
     def _workspace_members(units: list[FileUnit]) -> frozenset[tuple[str, str]]:
@@ -3154,15 +4415,22 @@ class Engine:
         these names is resolved to the member by the workspace, not fetched from the registry.
         """
         members: set[tuple[str, str]] = set()
+        contents = {u.path: u.content for u in units}
         for unit in units:
             if "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
                 continue
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id else None
-            if ecosystem is None or ecosystem_id is None:
+            if (
+                ecosystem is None
+                or ecosystem_id is None
+                or not getattr(ecosystem, "defines_members", True)
+            ):
                 continue
             try:
-                manifest = ecosystem.parse_manifest(unit.content)
+                # With the build in view: a Gradle project's name is in its settings script, a
+                # Maven module's group in its parent POM.
+                manifest = Engine._manifest_of(ecosystem, unit, contents)
             except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
                 continue
             if manifest.name:
@@ -3201,6 +4469,8 @@ class Engine:
         """
         collected: list[Dependency] = []
         members = Engine._workspace_members(units)
+        by_path = {u.path: u for u in units}
+        contents = {u.path: u.content for u in units}
 
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
@@ -3215,7 +4485,7 @@ class Engine:
                 continue
 
             try:
-                manifest = ecosystem.parse_manifest(unit.content)
+                manifest = Engine._manifest_of(ecosystem, unit, contents)
             except Exception:  # noqa: S112
                 # Deliberately silent here, and not a swallowed failure.
                 # `_manifest_hook_paths` parses the same file, under the same
@@ -3227,7 +4497,21 @@ class Engine:
             if manifest.parse_error:
                 continue
 
-            for declared in manifest.dependencies:
+            # What the file includes: pip's `-r` adds another file's requirements to this one,
+            # and `-c` pins whatever they resolve to. An included file the walk would not graph
+            # on its own (`-r common.txt`) is read here; one it would is left to its own pass.
+            declarations = [(unit.path, d) for d in manifest.dependencies]
+            pins: dict[str, tuple[str, str]] = {}
+            for kind, path, included in Engine._included(manifest, unit.path, by_path, ecosystem):
+                if kind == "requirements" and EcosystemRegistry.manifest_ecosystem(path) is None:
+                    declarations.extend((path, d) for d in included.dependencies)
+                elif kind == "constraints":
+                    for constraint in included.dependencies:
+                        pin = Engine._exact_pin(constraint.spec)
+                        if pin:
+                            pins.setdefault(ecosystem.normalize_name(constraint.name), (pin, path))
+
+            for source_path, declared in declarations:
                 # A manifest may carry another ecosystem's packages -- conda's
                 # nested `pip:` list is PyPI -- and they are graphed as what they
                 # are, so the advisory and typosquat layers can reach them.
@@ -3244,11 +4528,31 @@ class Engine:
                 # advisory layer skipped it -- in a file whose own ecosystem has
                 # no advisory feed, so nothing else was going to match it
                 # either. A range stays unresolved, because a range is a
-                # decision the resolver has not made yet.
-                pinned = Engine._exact_pin(declared.spec)
+                # decision the resolver has not made yet -- unless a constraints
+                # file pins it, which is the resolver's own input.
+                # An ecosystem whose versions are not version numbers (an image's tag) says what pins.
+                pinned = getattr(implementation, "exact_pin", Engine._exact_pin)(declared.spec)
+                constrained = None if pinned or declared.editable else pins.get(name)
+                if constrained is not None:
+                    pinned = constrained[0]
+                if pinned:
+                    # Bounded like every version a lockfile gives: a spec is bounded at the
+                    # length of a constraint, which is longer than any real version.
+                    pinned = Coordinate.token(pinned, Coordinate.MAX_VERSION) or None
+                # Where the project's configuration routes the name (a vcpkg registry serving
+                # `acme-*`, NuGet package source mapping), when the declaration names no source.
+                routed = declared.source or (
+                    Engine._routed_source(declared.name, manifest.source_patterns)
+                    if manifest.source_patterns
+                    else None
+                )
                 collected.append(
                     Dependency(
-                        purl=f"pkg:{declared_id}/{name}" + (f"@{pinned}" if pinned else ""),
+                        # The Package URL type, not the ecosystem id: a Gradle dependency is
+                        # `pkg:maven/...`, a Go module `pkg:golang/...`, a gem `pkg:gem/...`.
+                        purl=f"pkg:{implementation.purl_type}/{name}"
+                        + (f"@{pinned}" if pinned else "")
+                        + implementation.qualifiers(declared.platform),
                         ecosystem=declared_id,
                         name=declared.name,
                         version=pinned,
@@ -3257,11 +4561,25 @@ class Engine:
                         scope=declared.scope,
                         declared_spec=declared.spec,
                         project=project,
-                        declared_in=unit.path,
+                        declared_in=source_path,
+                        manifest_path=source_path,
+                        resolved_from=routed,
+                        integrity=Coordinate.integrity(declared.integrity),
+                        resolved_by=f"the constraints file {constrained[1]}"
+                        if constrained
+                        else None,
+                        resolution_note=declared.note,
+                        exclusions=declared.exclusions,
+                        platform=declared.platform,
+                        alias=declared.alias,
+                        extras=declared.extras,
+                        editable=declared.editable,
                         # Strapi's `packages/cli/cloud` declares `"vitest-config": "5.56.0"`, and
                         # `packages/utils/vitest-config` is that package: the workspace resolves
                         # it locally. Squatters register exactly these names on the registry.
-                        local=(declared_id, name) in members,
+                        local=(declared_id, name) in members
+                        or Engine._declared_inside(declared.spec, source_path)
+                        or bool(routed and Engine._declared_inside(routed, source_path)),
                     )
                 )
 
@@ -3443,10 +4761,9 @@ class Engine:
         for suffix, data in members:
             member_path = rel_path + suffix
             content = FileContent.from_bytes(member_path, data, self.config.limits)
-            language = LanguageRegistry.identify_language(member_path.rpartition("!")[2])
-            if language is None and not content.is_binary:
-                language = LanguageRegistry.identify_from_content(content.text)
-            units.append(FileUnit(content=content, language=language))
+            units.append(
+                FileUnit(content=content, language=LanguageRegistry.of_file(member_path, content))
+            )
         self._archive_stats[1] += len(units)
         return units
 
