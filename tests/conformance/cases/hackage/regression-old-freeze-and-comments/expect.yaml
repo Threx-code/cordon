@@ -1,0 +1,24 @@
+# The freeze format cabal wrote before 2.4 (no `any.` qualifier), which the old reader matched
+# nothing in; a `--` comment inside build-depends naming a package that was removed, and a
+# cabal.config that is not a lock. And a Stack 2.1 lock (`dependencies:` rather than
+# `packages:`) whose extra-dep is pinned by cabal-file hash in stack.yaml itself.
+kinds: [regression, valid]
+covers:
+  - hackage.cabal-constraints
+  - hackage.revisions
+  - hackage.distinct
+  - UNI-02
+  - UNI-04
+dependencies:
+  - {name: mtl, version_constraint: ==2.2.*, resolved_version: 2.2.2, lockfile_location: {path: legacy/cabal.project.freeze}}
+  - {name: bytestring, resolved_version: 0.10.8.1}
+  - {name: transformers, direct: false, resolved_version: 0.5.2.0}
+  - {name: base, dependency_type: platform}
+  - {name: acme-missiles, resolved_version: "0.3", integrity_status: recorded, lockfile_location: {path: stacked/stack.yaml.lock}}
+absent:
+  - unsafe-remote-exec
+  - containers
+  - never-read
+sources:
+  - "snapshot lts-9.21"
+  - "extra-dep acme-missiles-0.3 pinned to sha256:2ba66a092a32593880a87fb00f3213762d7bca65a687d45965778deb8694c5d1"

@@ -1,0 +1,12 @@
+packages: .
+
+source-repository-package
+  type: git
+  location: https://github.com/ndmitchell/safe
+  tag: 748a635ed38582385a91c86a8847701f5ced63fd
+
+constraints:
+  aeson ^>=2.2,
+  text -simdutf
+
+tests: True

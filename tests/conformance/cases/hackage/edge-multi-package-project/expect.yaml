@@ -1,0 +1,41 @@
+# Two packages built by one cabal.project (`core/` and a `.cabal` glob), resolved by one freeze file
+# at the root: the app depends on core (the project's own code), core has a Custom Setup.hs, a
+# private Hackage repository, `if` / `elif` on the compiler, a pkg-config library named like a
+# Hackage package, a build tool, a flag set per package, an exact constraint, with-compiler and
+# index-state.
+kinds: [edge, valid]
+covers:
+  - hackage.cabal-constraints
+  - hackage.conditionals
+  - hackage.compiler
+  - hackage.flags
+  - hackage.revisions
+  - UNI-02
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - UNI-18
+dependencies:
+  # Both members' declarations join the root freeze file.
+  - {name: acme-billing, resolved_version: 0.4.2, manifest_location: {path: core/core.cabal}, lockfile_location: {path: cabal.project.freeze}}
+  - {name: text, resolved_version: 2.1.1, overridden_by: "text = ==2.1.1 in cabal.project"}
+  - {name: core, source_type: path, manifest_location: {path: app/app.cabal}}
+  - {name: Cabal, dependency_type: build, resolved_version: 3.10.3.0}
+  - {name: happy, dependency_type: tool, resolved_version: 2.0.2}
+  - {name: ghc-compat, platform_constraints: ["impl(ghc >= 9.8)"], resolved_version: 0.1.0.0}
+  - {name: ghc-compat-legacy, platform_constraints: ["!(impl(ghc >= 9.8))", "impl(ghc >= 9.6)"], resolution_status: unresolved}
+  # The C library, apart from the Haskell binding of the same name.
+  - {name: "pkg-config:zlib", dependency_type: platform, version_constraint: ">=1.2"}
+  - {name: zlib, dependency_type: runtime, resolved_version: 0.7.1.0}
+  - {name: ghc, dependency_type: platform, version_constraint: 9.8.2}
+  - {name: Cabal-syntax, direct: false}
+hooks:
+  - {kind: build, path: core/core.cabal, command: Setup.hs, ecosystem: hackage}
+sources:
+  - "repository acme https://hackage.acme.example.internal/"
+  - "flags core: +fast"
+  - "index-state hackage.haskell.org 2024-06-01T00:00:00Z"
+  - "flag fast (default off)"
+findings:
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: Cabal}

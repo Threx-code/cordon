@@ -1,0 +1,49 @@
+# A Cabal package (library, executable and test suite sharing a `common` stanza; a manual flag;
+# `if os(windows)` / `else` and `if flag(dev)` conditionals) in a cabal.project with a git
+# source-repository-package and constraints, frozen by `cabal freeze`. Checked against Cabal's
+# own install plan (plan.json).
+kinds: [real-world, valid]
+covers:
+  - file:app.cabal
+  - file:cabal.project
+  - file:cabal.project.freeze
+  - hackage.cabal-constraints
+  - hackage.flags
+  - hackage.conditionals
+  - hackage.compiler
+  - hackage.source-repos
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  # From the `common shared` stanza every component imports.
+  - {name: text, version_constraint: ^>=2.0, resolved_version: 2.0.2, direct: true, lockfile_location: {path: cabal.project.freeze}}
+  - {name: aeson, version_constraint: ">=2.1 && <2.3", resolved_version: 2.2.5.1, overridden_by: "aeson = ^>=2.2 in cabal.project"}
+  - {name: hspec, dependency_type: test, resolved_version: 2.11.18}
+  - {name: optparse-applicative, dependency_type: runtime}
+  - {name: safe, source_type: git, resolved_version: 0.3.21}
+  # The else branch of `if os(windows)` applies on the platform the plan was made for.
+  - {name: unix, platform_constraints: ["!(os(windows))"], resolved_version: 2.8.6.0}
+  - {name: Win32, platform_constraints: ["os(windows)"], resolution_status: unresolved, resolution_reason: "conditional on os(windows): resolved only where that holds"}
+  - {name: pretty-simple, platform_constraints: ["flag(dev)"], resolution_status: unresolved}
+  # Part of GHC: met by the compiler, not installed from Hackage.
+  - {name: base, dependency_type: platform, version_constraint: ">=4.17 && <5"}
+  - {name: rts, dependency_type: platform}
+  - {name: hspec-core, direct: false, resolved_version: 2.11.18}
+absent:
+  # The package itself, which the executable and test suite depend on.
+  - conformance
+sources:
+  - "flags text: -simdutf"
+  - "flag dev (default off, manual)"
+findings:
+  # Fixed in process 1.6.23.0; the plan resolved 1.6.19.0.
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: HSEC-2024-0003}
+  - {rule: SUSPECT.DEPENDENCY.SOURCE.001, message: safe}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

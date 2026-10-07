@@ -1,0 +1,12 @@
+resolver: lts-22.33
+packages:
+  - .
+extra-deps:
+  - acme-missiles-0.3@rev:0
+  - git: https://github.com/well-typed/optics
+    commit: e7cc5d375645be19cccb2c9e4672b6a77c29ca78
+    subdirs:
+      - optics-core
+flags:
+  aeson:
+    ordered-keymap: false

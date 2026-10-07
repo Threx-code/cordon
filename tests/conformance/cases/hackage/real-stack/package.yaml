@@ -1,0 +1,10 @@
+name: stackapp
+version: 0.1.0
+dependencies:
+  - base >= 4.17 && < 5
+  - text
+  - aeson
+  - acme-missiles
+  - optics-core
+library:
+  source-dirs: src

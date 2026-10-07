@@ -1,0 +1,34 @@
+# A Stack project (hpack package.yaml) on the lts-22.33 snapshot with two extra-deps -- a Hackage
+# package pinned to its first metadata revision, and a git package from a subdirectory -- and a
+# flag, locked by Stack. Checked against `stack ls dependencies`.
+#
+# Stack's lock lists only the extra-deps: every other package comes from the snapshot, which the
+# lock pins by hash without naming its packages. Those declarations say so instead of reading as
+# missing from the lock.
+kinds: [real-world, valid]
+covers:
+  - file:stack.yaml
+  - file:stack.yaml.lock
+  - hackage.stack-snapshots
+  - hackage.revisions
+  - hackage.source-repos
+  - hackage.flags
+  - hackage.distinct
+  - UNI-01
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-10
+dependencies:
+  # The SHA-256 of the cabal-file revision Stack pinned (`@rev:0`).
+  - {name: acme-missiles, resolved_version: "0.3", integrity_status: recorded, lockfile_location: {path: stack.yaml.lock}}
+  - {name: optics-core, source_type: git, resolved_version: 0.4.1}
+  - {name: aeson, resolution_status: unresolved, resolution_reason: "resolved by Stack from the lts-22.33 snapshot, which stack.yaml.lock pins by hash without listing its packages"}
+  - {name: text, resolution_status: unresolved}
+  - {name: base, dependency_type: platform}
+sources:
+  - "snapshot lts-22.33"
+  - "extra-dep acme-missiles-0.3 pinned to rev:0"
+  - "flags aeson: -ordered-keymap"
+findings:
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: optics-core}
