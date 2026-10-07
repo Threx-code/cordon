@@ -1,0 +1,93 @@
+{
+  "lockFileVersion": 3,
+  "moduleFileHash": "4f1d7c2b0e9a8f3c6d5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a49382716050",
+  "moduleDepGraph": {
+    "<root>": {
+      "name": "modular",
+      "version": "2.0.0",
+      "key": "<root>",
+      "deps": {
+        "rules_jvm_external": "rules_jvm_external@6.3",
+        "protobuf": "protobuf@27.0",
+        "rules_go": "rules_go@0.50.1"
+      }
+    },
+    "rules_jvm_external@6.3": {
+      "name": "rules_jvm_external",
+      "version": "6.3",
+      "key": "rules_jvm_external@6.3",
+      "deps": {
+        "bazel_skylib": "bazel_skylib@1.7.1"
+      },
+      "repoSpec": {
+        "bzlFile": "@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": ["https://github.com/bazelbuild/rules_jvm_external/releases/download/6.3/rules_jvm_external-6.3.tar.gz"],
+          "integrity": "sha256-xrdEw+2kBf4+t+R8Q0Tdl8eHB44Rmm7KJDmM0RuSUVU=",
+          "strip_prefix": "rules_jvm_external-6.3"
+        }
+      }
+    },
+    "protobuf@27.0": {
+      "name": "protobuf",
+      "version": "27.0",
+      "key": "protobuf@27.0",
+      "deps": {},
+      "repoSpec": {
+        "bzlFile": "@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": ["https://github.com/protocolbuffers/protobuf/releases/download/v27.0/protobuf-27.0.zip"],
+          "integrity": "sha256-W/u8CiTJSoUuLqFLD9bkhWimyDhIqQ8xrJKbVk/dGDU="
+        }
+      }
+    },
+    "protobuf@21.7": {
+      "name": "protobuf",
+      "version": "21.7",
+      "key": "protobuf@21.7",
+      "deps": {},
+      "repoSpec": {
+        "bzlFile": "@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": ["https://github.com/protocolbuffers/protobuf/releases/download/v21.7/protobuf-all-21.7.zip"],
+          "integrity": "sha256-VJOiH17T/FAuZv7GuUScBqVRztYwAvpIkDxA36jeeko="
+        }
+      }
+    },
+    "rules_go@0.50.1": {
+      "name": "rules_go",
+      "version": "0.50.1",
+      "key": "rules_go@0.50.1",
+      "deps": {
+        "bazel_skylib": "bazel_skylib@1.7.1",
+        "protobuf": "protobuf@21.7"
+      },
+      "repoSpec": {
+        "bzlFile": "@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": ["https://github.com/bazelbuild/rules_go/releases/download/v0.50.1/rules_go-v0.50.1.zip"],
+          "integrity": "sha256-9KkxRRjKas+hbMSrQ7C4zh5OpkuBw42KN3KIPxUzRrg="
+        }
+      }
+    },
+    "bazel_skylib@1.7.1": {
+      "name": "bazel_skylib",
+      "version": "1.7.1",
+      "key": "bazel_skylib@1.7.1",
+      "deps": {},
+      "repoSpec": {
+        "bzlFile": "@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz"],
+          "integrity": "sha256-vCg8381SalLDIBJ5zaS8KYZS76iYsQtNsIN9xRZSdW8="
+        }
+      }
+    }
+  },
+  "moduleExtensions": {}
+}

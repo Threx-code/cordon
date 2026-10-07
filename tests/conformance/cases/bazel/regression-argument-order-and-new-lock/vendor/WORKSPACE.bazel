@@ -1,0 +1,11 @@
+workspace(name = "vendor")
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "com_github_nlohmann_json",
+    url = "https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip",
+    integrity = "sha256-pGnpOFnLzM3e8i9QbTgQomLcvlmsEe9zsnIAiTHVbDY=",
+)
+
+# Above: `url` (singular) and `integrity` rather than `urls` and `sha256`, both http_archive's.

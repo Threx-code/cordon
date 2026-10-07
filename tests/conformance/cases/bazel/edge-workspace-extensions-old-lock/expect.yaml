@@ -1,0 +1,43 @@
+# A legacy WORKSPACE -- an archive with its sha256, one with none, a git repository at a commit and
+# one following a branch, a local repository, maven_install's Maven artifacts, and macros whose
+# repositories only evaluation would show -- beside a Bzlmod module using the maven extension, a
+# second module extension, multiple_version_override, local_path_override and a bazel_dep with no
+# version, locked in Bazel 7.0's format (the module graph itself, each module's archive integrity).
+kinds: [edge, valid]
+covers:
+  - file:WORKSPACE
+  - bazel.workspace
+  - bazel.extensions
+  - bazel.overrides
+  - bazel.checksums
+  - bazel.git
+  - bazel.repository-rules
+  - UNI-07
+  - UNI-09
+  - UNI-10
+  - UNI-18
+dependencies:
+  # WORKSPACE.
+  - {name: io_bazel_rules_go, integrity_status: recorded, dependency_type: build}
+  - {name: nightly_tools, resolution_reason: "an archive fetched with no checksum: whatever the URL serves is used"}
+  - {name: com_github_acme_proto, resolution_reason: pinned to a commit}
+  - {name: vendored_utils, source_type: path}
+  - {name: junit:junit, ecosystem: maven, resolved_version: 4.13.2}
+  # The module, and its extension's Maven artifacts.
+  - {name: com.google.guava:guava, ecosystem: maven, resolved_version: 33.3.1-jre, manifest_location: {path: modular/MODULE.bazel}}
+  - {name: org.slf4j:slf4j-api, resolved_version: 2.0.16}
+  # Both versions multiple_version_override keeps: one direct, one rules_go's.
+  - {name: protobuf, resolved_version: "27.0", direct: true, integrity_status: recorded}
+  - {name: protobuf, resolved_version: "21.7", direct: false, dependency_path: [rules_go, protobuf]}
+  - {name: rules_go, version_constraint: "*", resolved_version: 0.50.1}
+  - {name: shared, source_type: path}
+hooks:
+  # A module extension's implementation runs while Bazel resolves: the module's code, every build.
+  - {kind: build, path: modular/MODULE.bazel, command: "@rules_jvm_external//:extensions.bzl"}
+  - {kind: build, path: modular/MODULE.bazel, command: "@rules_go//go:extensions.bzl"}
+sources:
+  - "macro go_rules_dependencies() expands to more repositories, which only evaluating the workspace shows"
+findings:
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: com_github_acme_flags}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: nightly_tools, severity: medium}
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: jackson-databind}

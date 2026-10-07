@@ -1,0 +1,44 @@
+# A Bzlmod root module: bazel_deps from the Bazel Central Registry (one dev-only, one under a
+# repo_name), a single_version_override, a git_override at a commit and an archive_override with
+# its integrity, a module extension, and an http_archive declared with use_repo_rule -- resolved
+# by Bazel 7.4 into MODULE.bazel.lock. Checked against `bazel mod graph --output=json`.
+kinds: [real-world, valid]
+covers:
+  - file:MODULE.bazel
+  - file:MODULE.bazel.lock
+  - file:BUILD.bazel
+  - bazel.bzlmod
+  - bazel.overrides
+  - bazel.repository-rules
+  - bazel.checksums
+  - bazel.git
+  - bazel.extensions
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  # The SHA-256 of the registry's source.json for the selected version: what Bazel verified.
+  - {name: abseil-cpp, version_constraint: 20240722.0, resolved_version: 20240722.0, direct: true, integrity_status: recorded, lockfile_location: {path: MODULE.bazel.lock}}
+  # single_version_override decides the version the whole graph gets.
+  - {name: platforms, version_constraint: 0.0.10, resolved_version: 0.0.11, overridden_by: "platforms = 0.0.11 in MODULE.bazel"}
+  - {name: rules_license, dependency_type: dev}
+  # bazel_tools' own dependencies are in the graph too.
+  - {name: rules_java, resolved_version: 7.6.5, direct: false}
+  - {name: rules_pkg, source_type: git, resolution_reason: "overridden (git_override): fetched from where the override says, which the lock does not record"}
+  - {name: bazel_skylib, source_type: archive, integrity_status: recorded}
+  - {name: zlib_src, dependency_type: build, integrity_status: recorded, resolution_reason: "a repository rule: the lock records modules, not repositories; this one is pinned by its checksum"}
+sources:
+  - "uses external repositories bazel_skylib, com_google_absl"
+findings:
+  # Outside the registry, but pinned by commit or by checksum: low.
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: rules_pkg, severity: low}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: zlib_src, severity: low}
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001

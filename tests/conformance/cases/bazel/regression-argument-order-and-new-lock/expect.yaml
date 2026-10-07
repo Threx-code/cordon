@@ -1,0 +1,23 @@
+# The old reader matched `bazel_dep(name = "...", version = "...")` in that order only, so a
+# declaration written version-first, or across lines with dev_dependency before name, was not
+# read; a commented-out one was. And it read only the module graph of Bazel 7.0-7.1 locks: a lock
+# written by 7.2 or later -- the registry file hashes, with no graph -- gave nothing. A version
+# only visited during resolution (googletest 1.11.0, platforms 0.0.10) has its MODULE.bazel hashed
+# but is not in the graph.
+#
+# And WORKSPACE.bazel, the name a workspace file can also have, with http_archive's singular `url`
+# and `integrity` forms.
+kinds: [regression, valid]
+covers:
+  - file:WORKSPACE.bazel
+  - bazel.bzlmod
+  - bazel.checksums
+  - UNI-02
+  - UNI-28
+dependencies:
+  - {name: platforms, version_constraint: 0.0.11, resolved_version: 0.0.11, integrity: "sha256:f7e188b79ebedebfe75e9e1d098b8845226c7992b307e28e1496f23112e8fc29"}
+  - {name: googletest, dependency_type: dev, resolved_version: 1.15.2}
+  - {name: com_github_nlohmann_json, integrity: "sha256-pGnpOFnLzM3e8i9QbTgQomLcvlmsEe9zsnIAiTHVbDY=", manifest_location: {path: vendor/WORKSPACE.bazel}}
+only: true
+absent:
+  - retired_module

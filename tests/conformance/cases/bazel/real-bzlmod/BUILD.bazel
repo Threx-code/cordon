@@ -1,0 +1,12 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+
+write_file(
+    name = "hello",
+    out = "hello.txt",
+    content = ["hello"],
+)
+
+cc_library(
+    name = "lib",
+    deps = ["@com_google_absl//absl/strings"],
+)

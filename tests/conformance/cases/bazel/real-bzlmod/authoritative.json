@@ -1,0 +1,29 @@
+{
+ "tool": "bazel mod graph --output=json --include_builtin (from the root, and from bazel_tools)",
+ "packages": [
+  "abseil-cpp@20240722.0",
+  "apple_support@1.15.1",
+  "bazel_features@1.11.0",
+  "bazel_skylib@1.7.1",
+  "buildozer@7.1.2",
+  "googletest@1.15.2",
+  "platforms@0.0.11",
+  "protobuf@21.7",
+  "pybind11_bazel@2.12.0",
+  "re2@2024-07-02",
+  "rules_cc@0.0.9",
+  "rules_java@7.6.5",
+  "rules_jvm_external@4.4.2",
+  "rules_license@1.0.0",
+  "rules_pkg@1.0.1",
+  "rules_proto@6.0.0-rc1",
+  "rules_python@0.33.2",
+  "stardoc@0.5.1",
+  "upb@0.0.0-20220923-a547704",
+  "zlib@1.3.1.bcr.3"
+ ],
+ "ignore": {
+  "bazel_skylib": "overridden from git or an archive in MODULE.bazel: Bazel's lock holds no registry entry for it; checked in expect.yaml",
+  "rules_pkg": "overridden from git or an archive in MODULE.bazel: Bazel's lock holds no registry entry for it; checked in expect.yaml"
+ }
+}

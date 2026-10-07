@@ -1,0 +1,44 @@
+module(
+    name = "conformance",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_absl")
+bazel_dep(name = "rules_license", version = "1.0.0", dev_dependency = True)
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+
+# Everything in the graph gets this platforms, whatever its own bazel_deps ask for.
+single_version_override(
+    module_name = "platforms",
+    version = "0.0.11",
+)
+
+# From the repository at a commit, not from the registry.
+git_override(
+    module_name = "rules_pkg",
+    remote = "https://github.com/bazelbuild/rules_pkg.git",
+    commit = "6a44f01087cf504eeee7dffce7cabe042a2f0bac",
+)
+
+# The release archive itself, checked against its integrity.
+archive_override(
+    module_name = "bazel_skylib",
+    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz"],
+    integrity = "sha256-vCg8381SalLDIBJ5zaS8KYZS76iYsQtNsIN9xRZSdW8=",
+)
+
+cc_configure = use_extension("@bazel_tools//tools/cpp:cc_configure.bzl", "cc_configure_extension")
+use_repo(cc_configure, "local_config_cc")
+
+# A repository rule declared in MODULE.bazel (Bazel 7.1+), with its archive's checksum.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "zlib_src",
+    urls = ["https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"],
+    sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+    strip_prefix = "zlib-1.3.1",
+    build_file_content = "filegroup(name = 'all', srcs = glob(['**']))",
+)

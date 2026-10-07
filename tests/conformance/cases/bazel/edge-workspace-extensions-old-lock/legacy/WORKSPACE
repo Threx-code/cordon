@@ -1,0 +1,49 @@
+workspace(name = "legacy")
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+http_archive(
+    name = "io_bazel_rules_go",
+    sha256 = "f4a9314518ca6acfa16cc4ab43b0b8ce1e4ea64b81c38d8a3772883f153346b8",
+    urls = ["https://github.com/bazelbuild/rules_go/releases/download/v0.50.1/rules_go-v0.50.1.zip"],
+)
+
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+
+# A macro: the repositories it declares are known only by evaluating it.
+go_rules_dependencies()
+
+go_register_toolchains(version = "1.23.1")
+
+http_archive(
+    name = "nightly_tools",
+    urls = ["https://downloads.acme.example.internal/tools/nightly.tar.gz"],
+)
+
+git_repository(
+    name = "com_github_acme_proto",
+    remote = "https://github.com/acme/proto.git",
+    commit = "0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3",
+)
+
+git_repository(
+    name = "com_github_acme_flags",
+    remote = "https://github.com/acme/flags.git",
+    branch = "main",
+)
+
+local_repository(
+    name = "vendored_utils",
+    path = "third_party/utils",
+)
+
+load("@rules_jvm_external//:defs.bzl", "maven_install")
+
+maven_install(
+    artifacts = [
+        "junit:junit:4.13.2",
+        "com.fasterxml.jackson.core:jackson-databind:2.17.2",
+    ],
+    repositories = ["https://repo1.maven.org/maven2"],
+)

@@ -1,0 +1,10 @@
+module(name = "argument_order")
+
+# Keyword arguments in any order, as Starlark allows:
+bazel_dep(version = "0.0.11", name = "platforms")
+bazel_dep(
+    dev_dependency = True,
+    name = "googletest",
+    version = "1.15.2",
+)
+# bazel_dep(name = "retired_module", version = "1.0")
