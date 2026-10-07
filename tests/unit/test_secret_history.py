@@ -93,8 +93,16 @@ class TestGitHistory:
         commit, when = history.introduced_by(blob.object_id) or ("", "")
         assert commit == introduced and when[:4].isdigit()
 
-    def test_bounds_are_counted_not_silent(self, tmp_path) -> None:
+    def test_a_blob_over_the_limit_is_streamed_not_skipped(self, tmp_path) -> None:
         HistoryKit.repository(tmp_path, HistoryKit.token("c"))
+        small = GitHistory(GitRepository(tmp_path), max_blob_bytes=10)
+        assert len(list(small.blobs())) == 1 and small.coverage.complete
+
+    def test_bounds_are_counted_not_silent(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.sources import history
+
+        HistoryKit.repository(tmp_path, HistoryKit.token("c"))
+        monkeypatch.setattr(history, "MAX_STREAMED_BYTES", 10)
         small = GitHistory(GitRepository(tmp_path), max_blob_bytes=10)
         assert (
             list(small.blobs()) == []
@@ -153,6 +161,7 @@ class TestHistorySecretScan:
 
         HistoryKit.repository(tmp_path, HistoryKit.token("g"))
         monkeypatch.setattr(history, "MAX_BLOB_BYTES", 10)
+        monkeypatch.setattr(history, "MAX_STREAMED_BYTES", 10)
         findings = HistoryKit.scan(tmp_path).run()
         note = [f for f in findings if f.rule_id == HISTORY_INCOMPLETE_RULE]
         assert note and note[0].degrades_coverage

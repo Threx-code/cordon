@@ -121,18 +121,25 @@ class HistorySecretScan:
         detector = SecretDetector()
         ctx = ScanContext(config=self.config, rules=self.rules)
         earliest: dict[tuple[str, str], tuple[Finding, str]] = {}
+        from cordon_scanner.detect.secrets import PROVIDER_PATTERNS
+
+        # From a binary's strings, only a credential with a provider's own shape (`ghp_`, `AKIA`,
+        # `xoxb-`): a printable run in a compiled file or a database page can look like anything
+        # an entropy rule measures, and nothing like a fixed provider prefix by chance.
+        provider = frozenset(p.rule_id for p in PROVIDER_PATTERNS)
         for blob in history.blobs():
-            content = FileContent.from_bytes(blob.path, blob.data)
-            if content.is_binary:
-                continue
-            unit = FileUnit(content=content, language=LanguageRegistry.identify_language(blob.path))
-            for finding in detector.inspect(unit, ctx):
-                if not finding.rule_id.startswith("SECRET."):
-                    continue
-                key = (finding.rule_id, finding.evidence.match_hash)
-                if key not in earliest:
-                    earliest[key] = (finding, blob.object_id)
-                    self.blob_contents[key] = blob.data
+            for path, data, from_binary in self._readable(blob.path, blob.data):
+                content = FileContent.from_bytes(path, data)
+                unit = FileUnit(content=content, language=LanguageRegistry.identify_language(path))
+                for finding in detector.inspect(unit, ctx):
+                    if not finding.rule_id.startswith("SECRET."):
+                        continue
+                    if from_binary and finding.rule_id not in provider:
+                        continue
+                    key = (finding.rule_id, finding.evidence.match_hash)
+                    if key not in earliest:
+                        earliest[key] = (finding, blob.object_id)
+                        self.blob_contents[key] = data
         findings = [
             self._place(history, finding, object_id) for finding, object_id in earliest.values()
         ]
@@ -140,6 +147,63 @@ class HistorySecretScan:
         if not coverage.complete:
             findings.append(self._incomplete(coverage))
         return findings
+
+    #: Media and font formats: compressed pixels and glyphs, nothing a credential is kept in.
+    MEDIA = (
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".ico",
+        ".bmp",
+        ".tiff",
+        ".avif",
+        ".heic",
+        ".mp3",
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".webm",
+        ".wav",
+        ".flac",
+        ".ogg",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".eot",
+    )
+
+    def _readable(self, path: str, data: bytes) -> list[tuple[str, bytes, bool]]:
+        """What of one historical blob the secret rules can read.
+
+        Text as it is. An archive opened with the same bounded reader the tree uses, each member
+        named `archive!member`, a binary member as its strings. Any other binary -- a database
+        dump, a compiled file, a keystore -- as its printable strings: a credential in a committed
+        `.sqlite` or `.pyc` is the same credential.
+        """
+        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.images.binmeta import BinaryStrings
+
+        def as_text(name: str, payload: bytes) -> list[tuple[str, bytes, bool]]:
+            if name.lower().endswith(self.MEDIA):
+                return []
+            if FileContent.from_bytes(name, payload).is_binary:
+                return [(name, BinaryStrings.extract(payload, limit=8 << 20)[0], True)]
+            return [(name, payload, False)]
+
+        if ArchiveReader.is_archive(path):
+            try:
+                members = list(
+                    ArchiveReader.walk_archive(data, path=path, limits=self.config.limits)
+                )
+            except Exception:  # a malformed archive is read as bytes instead
+                members = []
+            if members:
+                return [item for name, payload in members for item in as_text(name, payload)]
+        return as_text(path, data)
 
     @staticmethod
     def _place(history, finding: Finding, object_id: str) -> Finding:  # type: ignore[no-untyped-def]

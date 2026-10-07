@@ -25,6 +25,16 @@ from cordon_scanner.sources.git import HARDENING, GitRepository
 
 MAX_BLOBS = 50_000
 MAX_BLOB_BYTES = 1 << 20
+#: Past `MAX_BLOB_BYTES` a blob is read in chunks of this size, each overlapping the last by
+#: `CHUNK_OVERLAP` so that a credential straddling a boundary is whole in one of them; the
+#: secret rules are line-oriented, and no credential is near this long.
+CHUNK_BYTES = 1 << 20
+CHUNK_OVERLAP = 16 << 10
+#: The largest blob read at all: a data dump or a lockfile committed once is where a secret
+#: hides, and is rarely past this.
+MAX_STREAMED_BYTES = 256 << 20
+#: An archive is read whole (to be opened) up to this size.
+MAX_ARCHIVE_BYTES = 64 << 20
 TIME_BUDGET_SECONDS = 300.0
 BATCH_TIMEOUT_SECONDS = 30.0
 
@@ -128,10 +138,14 @@ class GitHistory:
         if len(removed) > self.max_blobs:
             self.coverage.skipped_over_ceiling = len(removed) - self.max_blobs
             removed = removed[: self.max_blobs]
+        from cordon_scanner.archive.safe import ArchiveReader
+
         sizes = getattr(self, "_sizes", {})
         wanted = []
         for object_id, path in removed:
-            if sizes.get(object_id, 0) > self.max_blob_bytes:
+            size = sizes.get(object_id, 0)
+            ceiling = MAX_ARCHIVE_BYTES if ArchiveReader.is_archive(path) else MAX_STREAMED_BYTES
+            if size > max(self.max_blob_bytes, ceiling):
                 self.coverage.skipped_large += 1
                 continue
             wanted.append((object_id, path))
@@ -161,10 +175,23 @@ class GitHistory:
                 if len(header) != 3 or header[1] != b"blob" or not header[2].isdigit():
                     continue
                 size = int(header[2])
-                data = process.stdout.read(size)
+                if size <= self.max_blob_bytes or ArchiveReader.is_archive(path):
+                    data = process.stdout.read(size)
+                    process.stdout.read(1)
+                    self.coverage.read += 1
+                    yield HistoricalBlob(object_id, path, data)
+                    continue
+                # Streamed, so a large blob never sits in memory whole.
+                remaining, tail = size, b""
+                while remaining > 0:
+                    piece = process.stdout.read(min(CHUNK_BYTES, remaining))
+                    if not piece:
+                        break
+                    remaining -= len(piece)
+                    yield HistoricalBlob(object_id, path, tail + piece)
+                    tail = piece[-CHUNK_OVERLAP:]
                 process.stdout.read(1)
                 self.coverage.read += 1
-                yield HistoricalBlob(object_id, path, data)
         finally:
             process.stdin.close()
             try:

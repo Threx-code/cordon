@@ -1094,7 +1094,13 @@ class SecretValues:
         if rule_id not in AWS_KEY_ID_RULES:
             return False
         window = raw[max(0, start - AWS_PAIR_WINDOW) : end + AWS_PAIR_WINDOW]
-        return AWS_SECRET_SHAPE.search(window) is None
+        if AWS_SECRET_SHAPE.search(window) is not None:
+            return False
+        # The secret half labelled as one, whatever its alphabet: `aws_secret_access_key = ...` in
+        # a credentials file, an `.env` or a config beside the id is the pair, and a random value
+        # that strays outside base64 is still the value someone will try. A reference
+        # (`${AWS_SECRET_ACCESS_KEY}`, `<secret>`, an empty value) is not a value.
+        return AWS_LABELLED_SECRET.search(window) is None
 
     @staticmethod
     def reads_as_words(value: bytes) -> bool:
@@ -1737,6 +1743,11 @@ bytes landing on printable characters do not.
 
 
 AWS_SECRET_SHAPE = re.compile(rb"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])")
+AWS_LABELLED_SECRET = re.compile(
+    rb"""(?i)(?:aws_?)?secret_?access_?key["']?\s*[:=]\s*["']?(?![$<{%]|\s|["']|\Z)"""
+    rb"""(?!(?:none|null|nil|changeme|example|your|xxx|\*{3}|redacted|placeholder|todo)\b)"""
+    rb"""[^\s"'#;,]{16,}"""
+)
 """The shape of an AWS secret access key: forty characters of base64 alphabet."""
 
 AWS_KEY_ID_RULES = frozenset({"SECRET.AWS.ACCESS_KEY.001"})
@@ -4992,10 +5003,18 @@ class SecretDetector(BaseDetector):
             confidence=confidence,
             message=(
                 f"{Prose.article(spec.name).capitalize()} {spec.name} appears in this file. "
-                f"Anything committed is in git "
-                f"history and in every clone, so it must be treated as public from "
-                f"the moment it landed, whether or not it is still in the working "
-                f"tree.{caveat}{note}"
+                + (
+                    # In an image the exposure is the image itself: every layer and the
+                    # configuration go to everyone who pulls it, a file a later layer deleted too.
+                    "Everything in an image's layers and configuration ships to everyone who "
+                    "pulls it -- a file a later layer deleted included -- so it must be treated "
+                    "as public from the moment the image was pushed."
+                    if ctx.image is not None
+                    else "Anything committed is in git history and in every clone, so it must "
+                    "be treated as public from the moment it landed, whether or not it is "
+                    "still in the working tree."
+                )
+                + f"{caveat}{note}"
             ),
             location=Location(
                 path=content.path,
