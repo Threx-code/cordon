@@ -1,0 +1,13 @@
+{
+  "tool": "Pod::Lockfile (CocoaPods 1.17.0)",
+  "packages": [
+    "Alamofire@5.12.2",
+    "CocoaLumberjack@3.10.0",
+    "Moya@15.0.0",
+    "SDWebImage@5.21.7",
+    "SwiftyJSON@5.0.2"
+  ],
+  "ignore": {
+    "LocalKit": "a path pod: the project's own code, read as source"
+  }
+}

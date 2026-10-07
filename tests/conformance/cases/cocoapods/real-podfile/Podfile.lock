@@ -1,0 +1,55 @@
+PODS:
+  - Alamofire (5.12.2)
+  - CocoaLumberjack/Core (3.10.0)
+  - CocoaLumberjack/Swift (3.10.0):
+    - CocoaLumberjack/Core
+  - LocalKit/Core (0.3.0):
+    - SwiftyJSON (~> 5.0)
+  - LocalKit/UI (0.3.0):
+    - LocalKit/Core
+  - Moya (15.0.0):
+    - Moya/Core (= 15.0.0)
+  - Moya/Core (15.0.0):
+    - Alamofire (~> 5.0)
+  - SDWebImage/Core (5.21.7)
+  - SwiftyJSON (5.0.2)
+
+DEPENDENCIES:
+  - Alamofire (~> 5.9)
+  - CocoaLumberjack/Swift (~> 3.8)
+  - LocalKit/Core (from `./LocalKit`)
+  - LocalKit/UI (from `./LocalKit`)
+  - Moya (from `https://github.com/Moya/Moya.git`, tag `15.0.0`)
+  - SDWebImage/Core (~> 5.19)
+  - SwiftyJSON (= 5.0.2)
+
+SPEC REPOS:
+  trunk:
+    - Alamofire
+    - CocoaLumberjack
+    - SDWebImage
+    - SwiftyJSON
+
+EXTERNAL SOURCES:
+  LocalKit:
+    :path: "./LocalKit"
+  Moya:
+    :git: https://github.com/Moya/Moya.git
+    :tag: 15.0.0
+
+CHECKOUT OPTIONS:
+  Moya:
+    :git: https://github.com/Moya/Moya.git
+    :tag: 15.0.0
+
+SPEC CHECKSUMS:
+  Alamofire: c5f37d8f438dc1d7fd3ff767f2f80fd01ca381d7
+  CocoaLumberjack: 12545b2899dcaeec69b82c27b174042259c1ec27
+  LocalKit: 20a3aa73fbf439f6ad4c29a3b143cec7a44f80ea
+  Moya: 138f0573e53411fb3dc17016add0b748dfbd78ee
+  SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
+  SwiftyJSON: f5b1bf1cd8dd53cd25887ac0eabcfd92301c6a5a
+
+PODFILE CHECKSUM: 1771aca626e9f254738d77fa0d98f4ffc7b119f9
+
+COCOAPODS: 1.17.0

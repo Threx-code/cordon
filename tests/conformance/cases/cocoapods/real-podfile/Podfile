@@ -1,0 +1,21 @@
+source "https://cdn.cocoapods.org/"
+
+platform :ios, "15.0"
+project "App.xcodeproj"
+install! "cocoapods", :integrate_targets => false
+use_frameworks!
+
+target "App" do
+  pod "Alamofire", "~> 5.9"
+  pod "SwiftyJSON", "5.0.2"
+  pod "SDWebImage/Core", "~> 5.19"
+  pod "Moya", :git => "https://github.com/Moya/Moya.git", :tag => "15.0.0"
+  pod "LocalKit", :path => "./LocalKit", :subspecs => ["Core", "UI"]
+  pod "CocoaLumberjack/Swift", "~> 3.8", :configurations => ["Debug"]
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each { |c| c.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.0" }
+  end
+end

@@ -1,0 +1,7 @@
+platform :ios, "16.0"
+
+target "Reader" do
+  pod "Firebase/Analytics", "~> 10.29"
+  pod "Firebase/Crashlytics", "~> 10.29"
+  pod "GoogleUtilities/Logger"
+end

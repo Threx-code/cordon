@@ -1,0 +1,18 @@
+source "https://cdn.cocoapods.org/"
+source "https://github.com/acme/private-specs.git"
+
+platform :ios, "14.0"
+plugin "cocoapods-keys", :project => "Shop", :keys => ["AnalyticsKey"]
+
+target "Shop" do
+  use_frameworks!
+  pod "AcmeAnalytics", "~> 2.4"
+  pod "Kingfisher", :git => "https://github.com/onevcat/Kingfisher.git", :branch => "master"
+  pod "Lottie", :podspec => "https://raw.githubusercontent.com/airbnb/lottie-ios/4.4.3/lottie-ios.podspec"
+  # pod "Commented", "~> 1.0"
+
+  target "ShopTests" do
+    inherit! :search_paths
+    pod "Quick", "~> 7.0"
+  end
+end

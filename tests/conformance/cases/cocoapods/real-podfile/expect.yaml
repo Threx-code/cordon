@@ -1,0 +1,53 @@
+# A Podfile resolved and installed by CocoaPods 1.17 (pods fetched, never built) and checked against
+# CocoaPods' own Pod::Lockfile: an explicit CDN source, an optimistic and an exact version,
+# subspecs, a git pod at a tag, a local pod whose podspec has subspecs, a dependency and a
+# prepare_command, a Debug-only pod, an iOS platform and a post_install hook.
+kinds: [real-world, valid]
+covers:
+  - file:Podfile
+  - file:app.podspec
+  - file:Podfile.lock
+  - cocoapods.sources
+  - cocoapods.podspec
+  - cocoapods.subspecs
+  - cocoapods.platform
+  - cocoapods.configurations
+  - cocoapods.constraints
+  - cocoapods.git-external
+  - cocoapods.checksums
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+  - UNI-15
+  - UNI-18
+dependencies:
+  - {name: Alamofire, version_constraint: "~> 5.9", resolved_version: 5.12.2, direct: true, integrity_status: recorded}
+  - {name: SwiftyJSON, version_constraint: 5.0.2, resolved_version: 5.0.2}
+  # Subspecs fold into their pod; the configuration restriction is kept.
+  - {name: SDWebImage, platform_constraints: ["subspec Core"]}
+  - {name: CocoaLumberjack, platform_constraints: ["subspec Swift", "configuration Debug", "subspec Core"]}
+  - {name: Moya, source_type: git, resolved_version: 15.0.0, version_constraint: "git+https://github.com/Moya/Moya.git#15.0.0"}
+  - {name: LocalKit, source_type: path, platform_constraints: ["subspec Core", "subspec UI"]}
+  - {name: ios, dependency_type: platform, version_constraint: ">= 15.0"}
+  - {name: cocoapods, dependency_type: tool, resolved_version: 1.17.0}
+absent:
+  - Moya/Core
+  - SDWebImage/Core
+sources:
+  - "source https://cdn.cocoapods.org/"
+hooks:
+  - {kind: build, name: post_install, path: Podfile}
+  - {kind: preinstall, name: prepare_command, path: LocalKit/LocalKit.podspec}
+findings:
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: Moya}
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: Moya}
+operational:
+  # No public advisory database covers CocoaPods; the scan says so instead of reporting clean.
+  - OPERATIONAL.ADVISORY.NO_FEED.001
+no_findings:
+  - POLICY.DEPENDENCY.INTEGRITY.001
+  - POLICY.LOCKFILE.INTEGRITY.001

@@ -1,0 +1,15 @@
+# One Podfile and one lock for an Xcode workspace of two projects: an abstract target whose pod
+# every concrete target inherits, and a target per project with pods of its own. Every pod is
+# recorded once, against the target that declares it.
+kinds: [edge, valid]
+covers:
+  - cocoapods.podspec
+  - UNI-07
+  - UNI-09
+dependencies:
+  - {name: SnapKit, resolved_version: 5.7.1, direct: true}
+  - {name: Kingfisher, resolved_version: 7.12.0}
+  - {name: SwiftDate, resolved_version: 7.0.0}
+  - {name: ios, dependency_type: platform, version_constraint: ">= 16.0"}
+  - {name: cocoapods, dependency_type: tool, resolved_version: 1.16.2}
+only: true

@@ -1,0 +1,32 @@
+PODS:
+  - Firebase/Analytics (10.29.0):
+    - Firebase/Core
+  - Firebase/Core (10.29.0):
+    - Firebase/CoreOnly
+  - Firebase/CoreOnly (10.29.0):
+    - FirebaseCore (= 10.29.0)
+  - Firebase/Crashlytics (10.29.0):
+    - Firebase/CoreOnly
+  - FirebaseCore (10.29.0):
+    - GoogleUtilities/Logger (~> 7.12)
+  - GoogleUtilities/Logger (7.13.3)
+
+DEPENDENCIES:
+  - Firebase/Analytics (~> 10.29)
+  - Firebase/Crashlytics (~> 10.29)
+  - GoogleUtilities/Logger
+
+SPEC REPOS:
+  trunk:
+    - Firebase
+    - FirebaseCore
+    - GoogleUtilities
+
+SPEC CHECKSUMS:
+  Firebase: cec914dab6fd7b1bd8ab56ea07ce4e03dd251c2d
+  FirebaseCore: 30e9c1cbe3d38f5f5e75f48bfcea87d7c358ec16
+  GoogleUtilities: ea963c370a38a8069cc5f7ba4ca849a60b6d7d15
+
+PODFILE CHECKSUM: 7c0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2
+
+COCOAPODS: 1.15.2

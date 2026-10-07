@@ -1,0 +1,39 @@
+PODS:
+  - AcmeAnalytics (2.4.1)
+  - Kingfisher (7.10.2)
+  - Lottie (4.4.3)
+  - Quick (7.3.0)
+
+DEPENDENCIES:
+  - AcmeAnalytics (~> 2.4)
+  - Kingfisher (from `https://github.com/onevcat/Kingfisher.git`, branch `master`)
+  - Lottie (from `https://raw.githubusercontent.com/airbnb/lottie-ios/4.4.3/lottie-ios.podspec`)
+  - Quick (~> 7.0)
+
+SPEC REPOS:
+  https://github.com/acme/private-specs.git:
+    - AcmeAnalytics
+  trunk:
+    - Quick
+
+EXTERNAL SOURCES:
+  Kingfisher:
+    :branch: master
+    :git: https://github.com/onevcat/Kingfisher.git
+  Lottie:
+    :podspec: https://raw.githubusercontent.com/airbnb/lottie-ios/4.4.3/lottie-ios.podspec
+
+CHECKOUT OPTIONS:
+  Kingfisher:
+    :commit: 3ec0ab0bca4feb56e8b33e289c9496e89059dd08
+    :git: https://github.com/onevcat/Kingfisher.git
+
+SPEC CHECKSUMS:
+  AcmeAnalytics: 0d5c27f0d5c7c0a5c8e1d0f6b9e4c3a2b1d0e9f8
+  Kingfisher: b9c985d864d43515f404f1ef4a143ce7c1fc9daa
+  Lottie: e4ae6bfd6b9d6a1d0a6e5a3b2c1d0e9f8a7b6c5d
+  Quick: 9d8ad4dc8aa8bc2097fbcf1e9d3a4b5c6d7e8f90
+
+PODFILE CHECKSUM: 3c4e6c1a9f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c
+
+COCOAPODS: 1.15.2

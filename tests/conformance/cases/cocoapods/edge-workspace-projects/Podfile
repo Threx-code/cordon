@@ -1,0 +1,16 @@
+workspace "Shop"
+platform :ios, "16.0"
+
+abstract_target "Shared" do
+  pod "SnapKit", "~> 5.7"
+
+  target "ShopApp" do
+    project "App/ShopApp.xcodeproj"
+    pod "Kingfisher", "~> 7.10"
+  end
+
+  target "ShopWidget" do
+    project "Widget/ShopWidget.xcodeproj"
+    pod "SwiftDate", "~> 7.0"
+  end
+end

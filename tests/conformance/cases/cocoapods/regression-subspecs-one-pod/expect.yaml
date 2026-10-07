@@ -1,0 +1,16 @@
+# Four subspec lines of Firebase were four "packages" named `Firebase/Analytics`, `Firebase/Core`,
+# ... -- none a name any advisory or registry uses, and each a separate typosquat candidate. A
+# subspec is part of its pod: one Firebase, at one version, with its subspecs as conditions; an
+# edge between two subspecs of one pod is not a dependency.
+kinds: [regression, valid]
+covers:
+  - cocoapods.subspecs
+  - UNI-04
+  - UNI-07
+dependencies:
+  - {name: Firebase, resolved_version: 10.29.0, direct: true, platform_constraints: ["subspec Analytics", "subspec Crashlytics", "subspec Core", "subspec CoreOnly"]}
+  - {name: FirebaseCore, direct: false, dependency_path: [Firebase, FirebaseCore]}
+  - {name: GoogleUtilities, direct: true, platform_constraints: ["subspec Logger"]}
+  - {name: ios, dependency_type: platform}
+  - {name: cocoapods, dependency_type: tool}
+only: true

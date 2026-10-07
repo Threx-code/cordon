@@ -1,0 +1,31 @@
+# A Podfile that searches trunk before a private spec repo (the dependency-confusion order), a pod
+# served by that private repo, a git pod on a branch (the lock pins the commit), a pod from a
+# podspec URL, a nested test target, a CocoaPods plugin, a commented-out pod, and the same library
+# also declared through Swift Package Manager beside it.
+kinds: [edge, valid]
+covers:
+  - cocoapods.sources
+  - cocoapods.git-external
+  - cocoapods.vs-spm
+  - cocoapods.configurations
+  - UNI-05
+  - UNI-06
+  - UNI-08
+  - UNI-10
+  - UNI-14
+dependencies:
+  - {name: AcmeAnalytics, source_url: "registry:https://github.com/acme/private-specs.git", resolved_version: 2.4.1}
+  - {name: Kingfisher, ecosystem: cocoapods, source_type: git, resolved_version: 7.10.2, resolution_reason: "pinned to a commit"}
+  - {name: Lottie, source_type: url}
+  - {name: Quick, dependency_type: test}
+  - {name: cocoapods-keys, dependency_type: tool}
+  # The same library through SwiftPM is a different package in a different ecosystem.
+  - {name: onevcat/kingfisher, ecosystem: swift}
+absent:
+  - Commented
+hooks:
+  - {kind: build, name: plugin cocoapods-keys, path: Podfile}
+findings:
+  - {rule: SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001, path: Podfile}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: Kingfisher}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: Lottie}

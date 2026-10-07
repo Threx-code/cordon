@@ -1,0 +1,24 @@
+PODS:
+  - Kingfisher (7.12.0)
+  - SnapKit (5.7.1)
+  - SwiftDate (7.0.0)
+
+DEPENDENCIES:
+  - Kingfisher (~> 7.10)
+  - SnapKit (~> 5.7)
+  - SwiftDate (~> 7.0)
+
+SPEC REPOS:
+  trunk:
+    - Kingfisher
+    - SnapKit
+    - SwiftDate
+
+SPEC CHECKSUMS:
+  Kingfisher: 53a10ea35051a436b5fb626ca2dd8f3144d755e9
+  SnapKit: d612e99e678a2d3b95bf60b0705ed0a35c03484a
+  SwiftDate: bbc26e26fc8c0c33fbee8c140c5e8a68293a148a
+
+PODFILE CHECKSUM: 6e1e2a4b6c7d8e9f0a1b2c3d4e5f60718293a4b5
+
+COCOAPODS: 1.16.2
