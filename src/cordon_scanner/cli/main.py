@@ -716,6 +716,13 @@ class CommandLine:
         sbom_generate.add_argument("--format", choices=("cyclonedx", "spdx"), default="cyclonedx")
         sbom_generate.add_argument("--output", "-o", metavar="PATH", default=None)
         sbom_generate.add_argument(
+            "--exclude",
+            action="append",
+            default=[],
+            metavar="GLOB",
+            help="skip matching paths, as `scan --exclude` does (repeatable)",
+        )
+        sbom_generate.add_argument(
             "--ai",
             action="store_true",
             help=(
@@ -2492,7 +2499,12 @@ class CommandLine:
             from cordon_scanner.detect.advisory import AdvisoryDetector
 
             detectors = (AdvisoryDetector(),)
-        result = Scanner(detectors=detectors).scan(target)
+        from cordon_scanner.core.config import Config
+
+        config = Config.default()
+        if getattr(args, "exclude", None):
+            config = config.with_overrides(exclude=tuple(args.exclude))
+        result = Scanner(config, detectors=detectors).scan(target)
         # The scan has already parsed the target's own manifests, so the
         # directory name is a fallback rather than the answer. A project whose
         # package.json says `{"name": "g", "version": "1.0.0"}` was described in

@@ -118,6 +118,13 @@ class DepsCommand:
             "--direct-only", action="store_true", help="list direct dependencies only"
         )
         deps.add_argument(
+            "--exclude",
+            action="append",
+            default=[],
+            metavar="GLOB",
+            help="skip matching paths, as `scan --exclude` does (repeatable)",
+        )
+        deps.add_argument(
             "--online",
             action="store_true",
             help="also ask registries (withdrawal, hashes, provenance)",
@@ -136,6 +143,8 @@ class DepsCommand:
         config = ConfigResolver.resolve(
             root=target if target.is_dir() else target.parent, offline=not args.online
         )
+        if args.exclude:
+            config = config.with_overrides(exclude=(*config.exclude, *args.exclude))
         view = DependencyView(Scanner(config).scan(target))
         if args.format == "json":
             payload = [

@@ -233,6 +233,8 @@ Dependency graph and per-package findings.
 │ target                    path to scan (default: .)                        │
 │ --format {text,json}                                                       │
 │ --direct-only             list direct dependencies only                    │
+│ --exclude GLOB            skip matching paths, as `scan --exclude` does    │
+│                           (repeatable)                                     │
 │ --online                  also ask registries (withdrawal, hashes,         │
 │                           provenance)                                      │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -272,6 +274,8 @@ Generate or inspect a bill of materials for a scan target.
 │ target                                                                     │
 │ --format {cyclonedx,spdx}                                                  │
 │ --output, -o PATH                                                          │
+│ --exclude GLOB            skip matching paths, as `scan --exclude` does    │
+│                           (repeatable)                                     │
 │ --ai                      write the AI bill of materials instead           │
 │                           (CycloneDX 1.6): agent instruction, skill and    │
 │                           prompt files, agent settings, MCP servers,       │
