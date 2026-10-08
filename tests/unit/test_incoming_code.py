@@ -265,3 +265,31 @@ class TestInstallation(GitWorld):
             Guard.install_global()
         assert (mine / "hooks" / "post-merge").read_text() == "#!/bin/sh\necho mine\n"
         assert SHIM_MARKER in (mine / "hooks" / "post-checkout").read_text()
+
+
+class TestRemovingABlockedClone:
+    def test_a_file_held_open_for_a_moment_is_retried(self, tmp_path, monkeypatch) -> None:
+        """Windows: a file another process still holds (WinError 32) fails the delete for a
+        moment after git exits. The removal retries rather than crashing the check."""
+        import os
+
+        root = tmp_path / "clone"
+        (root / ".git" / "objects").mkdir(parents=True)
+        held = root / ".git" / "objects" / "pack"
+        held.write_bytes(b"x")
+        real_unlink = os.unlink
+        refusals = {"left": 3}
+
+        def unlink(path, *args, **kwargs):
+            # By name: on Linux rmtree deletes relative to a directory handle, so `path` is the
+            # file's name alone; on Windows it is the full path.
+            if Path(path).name == held.name and refusals["left"]:
+                refusals["left"] -= 1
+                raise PermissionError(32, "being used by another process", str(path))
+            return real_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "unlink", unlink)
+        monkeypatch.setattr("cordon_scanner.core.incoming.time.sleep", lambda _: None)
+        Incoming._remove(root, keep_directory=False)
+        assert not root.exists()
+        assert refusals["left"] == 0

@@ -32,12 +32,14 @@ Two properties hold in every path:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -79,6 +81,10 @@ class IncomingCheck:
     @property
     def ok(self) -> bool:
         return not self.blocking
+
+
+_REMOVE_ATTEMPTS = 20
+"""How often a blocked clone's file is tried before its removal fails: about ten seconds."""
 
 
 class Incoming:
@@ -242,9 +248,21 @@ class Incoming:
 
         def writable(function: Any, path: str, *_: Any) -> None:
             # Git writes its objects read-only, and Windows refuses to delete a read-only file:
-            # without this the blocked clone stayed on disk, objects and all.
-            Path(path).chmod(stat.S_IWRITE)
-            function(path)
+            # without this the blocked clone stayed on disk, objects and all. A file can also be
+            # held for a moment after git exits (an indexer or antivirus opening what was just
+            # written: WinError 32), so the delete is retried briefly before it is given up.
+            with contextlib.suppress(OSError):
+                Path(path).chmod(stat.S_IWRITE)
+            for attempt in range(_REMOVE_ATTEMPTS):
+                try:
+                    function(path)
+                    return
+                except FileNotFoundError:
+                    return
+                except PermissionError:
+                    if attempt == _REMOVE_ATTEMPTS - 1:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
 
         if sys.version_info >= (3, 12):
             shutil.rmtree(root, onexc=writable)
