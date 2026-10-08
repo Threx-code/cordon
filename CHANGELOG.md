@@ -5,7 +5,7 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-10-07
+## [0.6.0] - 2026-10-08
 
 Measured at scale before it was written down: every one of the 249,646 known-malicious records
 in the bundled intel is caught (`bench/malicious_records.py`), container images are compared with
