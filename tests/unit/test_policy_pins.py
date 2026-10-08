@@ -33,7 +33,7 @@ class PinHelpers:
     @staticmethod
     def write(tmp_path, text: str = POLICY):
         path = tmp_path / "cordon-policy.yaml"
-        path.write_text(text)
+        path.write_bytes(text.encode())  # as published: no newline translation on Windows
         return path, hashlib.sha256(text.encode()).hexdigest()
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import bz2
 import io
-import resource
 import tarfile
 import time
 
@@ -17,6 +16,7 @@ from cordon_scanner.core.limits import DEFAULT_LIMITS
 
 class TestBombsAreRefusedWhileStreaming:
     def test_a_small_gzip_that_expands_to_gigabytes_is_refused_early(self) -> None:
+        resource = pytest.importorskip("resource")  # memory accounting is POSIX-only
         zeros = b"\0" * (10 * 1024 * 1024 - 1)
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz", compresslevel=9) as archive:

@@ -104,10 +104,10 @@ class TestTruncatedAndCorruptInput:
         files = [
             p
             for p in case.project_files()
-            if str(p.relative_to(case.path)) in contributing
+            if p.relative_to(case.path).as_posix() in contributing
             and (
-                EcosystemRegistry.lockfile_ecosystem(str(p.relative_to(case.path)))
-                or EcosystemRegistry.manifest_ecosystem(str(p.relative_to(case.path)))
+                EcosystemRegistry.lockfile_ecosystem(p.relative_to(case.path).as_posix())
+                or EcosystemRegistry.manifest_ecosystem(p.relative_to(case.path).as_posix())
             )
         ]
         if case.expect.get("target"):

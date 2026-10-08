@@ -65,7 +65,7 @@ class Writers:
     def npm(root: Path, pkgs: list[Pkg]) -> None:
         deps = {p.name: p.version for p in pkgs}
         (root / "package.json").write_text(
-            json.dumps({"name": "app", "version": "1.0.0", "dependencies": deps})
+            json.dumps({"name": "app", "version": "1.0.0", "dependencies": deps}), encoding="utf-8"
         )
         packages: dict[str, object] = {
             "": {"name": "app", "version": "1.0.0", "dependencies": deps}
@@ -90,7 +90,8 @@ class Writers:
                     "requires": True,
                     "packages": packages,
                 }
-            )
+            ),
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -103,7 +104,7 @@ class Writers:
             lines.append(line)
         index = next((p.source for p in pkgs if p.source), None)
         head = f"--index-url {index}\n" if index else ""
-        (root / "requirements.txt").write_text(head + "\n".join(lines) + "\n")
+        (root / "requirements.txt").write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
     @staticmethod
     def cargo(root: Path, pkgs: list[Pkg]) -> None:
@@ -111,7 +112,7 @@ class Writers:
             '[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n'
         )
         manifest += "".join(f'{p.name} = "={p.version}"\n' for p in pkgs)
-        (root / "Cargo.toml").write_text(manifest)
+        (root / "Cargo.toml").write_text(manifest, encoding="utf-8")
         lock = 'version = 3\n\n[[package]]\nname = "app"\nversion = "0.1.0"\ndependencies = [\n'
         lock += "".join(f' "{p.name}",\n' for p in pkgs) + "]\n"
         for p in pkgs:
@@ -121,7 +122,7 @@ class Writers:
             )
             if p.integrity:
                 lock += f'checksum = "{p.integrity}"\n'
-        (root / "Cargo.lock").write_text(lock)
+        (root / "Cargo.lock").write_text(lock, encoding="utf-8")
 
     @staticmethod
     def gomod(root: Path, pkgs: list[Pkg]) -> None:
@@ -130,9 +131,10 @@ class Writers:
             + "".join(f"\t{p.name} {p.version}\n" for p in pkgs)
             + ")\n"
         )
-        (root / "go.mod").write_text(mod)
+        (root / "go.mod").write_text(mod, encoding="utf-8")
         (root / "go.sum").write_text(
-            "".join(f"{p.name} {p.version} {p.integrity}\n" for p in pkgs if p.integrity)
+            "".join(f"{p.name} {p.version} {p.integrity}\n" for p in pkgs if p.integrity),
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -148,13 +150,14 @@ class Writers:
         (root / "pom.xml").write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
             "  <modelVersion>4.0.0</modelVersion>\n  <groupId>com.example</groupId>\n  <artifactId>app</artifactId>\n"
-            f"  <version>1.0.0</version>\n  <dependencies>\n{dependencies}  </dependencies>\n</project>\n"
+            f"  <version>1.0.0</version>\n  <dependencies>\n{dependencies}  </dependencies>\n</project>\n",
+            encoding="utf-8",
         )
         tree = ["com.example:app:jar:1.0.0"]
         for index, p in enumerate(pkgs):
             branch = "\\- " if index == len(pkgs) - 1 else "+- "
             tree.append(f"{branch}{p.name}:jar:{p.version}:compile")
-        (root / "dependency-tree.txt").write_text("\n".join(tree) + "\n")
+        (root / "dependency-tree.txt").write_text("\n".join(tree) + "\n", encoding="utf-8")
         hashed = [p for p in pkgs if p.integrity]
         if hashed:
             (root / ".mvn" / "checksums").mkdir(parents=True, exist_ok=True)
@@ -165,7 +168,7 @@ class Writers:
                     f"{p.integrity}  {group.replace('.', '/')}/{artifact}/{p.version}/{artifact}-{p.version}.jar"
                 )
             (root / ".mvn" / "checksums" / "checksums-central.sha256").write_text(
-                "\n".join(lines) + "\n"
+                "\n".join(lines) + "\n", encoding="utf-8"
             )
 
     @staticmethod
@@ -175,11 +178,14 @@ class Writers:
         body = "".join(f'    implementation("{p.name}:{p.version}")\n' for p in pkgs)
         (root / "build.gradle.kts").write_text(
             "plugins {\n    `java-library`\n}\n\ndependencyLocking {\n    lockAllConfigurations()\n}\n\n"
-            f"dependencies {{\n{body}}}\n"
+            f"dependencies {{\n{body}}}\n",
+            encoding="utf-8",
         )
         lock = "# This is a Gradle generated file for dependency locking.\n"
         lock += "".join(f"{p.name}:{p.version}=compileClasspath,runtimeClasspath\n" for p in pkgs)
-        (root / "gradle.lockfile").write_text(lock + "empty=annotationProcessor\n")
+        (root / "gradle.lockfile").write_text(
+            lock + "empty=annotationProcessor\n", encoding="utf-8"
+        )
         hashed = [p for p in pkgs if p.integrity]
         if hashed:
             (root / "gradle").mkdir(exist_ok=True)
@@ -193,7 +199,8 @@ class Writers:
             (root / "gradle" / "verification-metadata.xml").write_text(
                 '<?xml version="1.0" encoding="UTF-8"?>\n'
                 '<verification-metadata xmlns="https://schema.gradle.org/dependency-verification">\n'
-                f"   <components>\n{components}   </components>\n</verification-metadata>\n"
+                f"   <components>\n{components}   </components>\n</verification-metadata>\n",
+                encoding="utf-8",
             )
 
     @staticmethod
@@ -206,7 +213,8 @@ class Writers:
         (root / "App.csproj").write_text(
             '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n'
             "    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>\n  </PropertyGroup>\n"
-            f"  <ItemGroup>\n{references}  </ItemGroup>\n</Project>\n"
+            f"  <ItemGroup>\n{references}  </ItemGroup>\n</Project>\n",
+            encoding="utf-8",
         )
         entries: dict[str, object] = {}
         for p in pkgs:
@@ -219,7 +227,8 @@ class Writers:
                 entry["contentHash"] = p.integrity
             entries[p.name] = entry
         (root / "packages.lock.json").write_text(
-            json.dumps({"version": 1, "dependencies": {"net8.0": entries}}, indent=2)
+            json.dumps({"version": 1, "dependencies": {"net8.0": entries}}, indent=2),
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -228,7 +237,7 @@ class Writers:
         Packagist carry its `notification-url`, and a private repository's `shasum` is recorded."""
         require = {p.name: p.version for p in pkgs}
         (root / "composer.json").write_text(
-            json.dumps({"name": "acme/app", "require": require}, indent=4)
+            json.dumps({"name": "acme/app", "require": require}, indent=4), encoding="utf-8"
         )
         packages = []
         for p in pkgs:
@@ -252,7 +261,8 @@ class Writers:
             json.dumps(
                 {"content-hash": "0" * 32, "packages": packages, "packages-dev": [], "aliases": []},
                 indent=4,
-            )
+            ),
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -261,7 +271,8 @@ class Writers:
         `cases/rubygems/real-bundler`."""
         (root / "Gemfile").write_text(
             'source "https://rubygems.org"\n\n'
-            + "".join(f'gem "{p.name}", "{p.version}"\n' for p in pkgs)
+            + "".join(f'gem "{p.name}", "{p.version}"\n' for p in pkgs),
+            encoding="utf-8",
         )
         private = next((p.source for p in pkgs if p.source), None)
         lock = ["GEM", f"  remote: {private or 'https://rubygems.org/'}", "  specs:"]
@@ -275,7 +286,7 @@ class Writers:
                 for p in sorted(pkgs, key=lambda p: p.name)
             ]
         lock += ["", "BUNDLED WITH", "   2.6.2", ""]
-        (root / "Gemfile.lock").write_text("\n".join(lock))
+        (root / "Gemfile.lock").write_text("\n".join(lock), encoding="utf-8")
 
     @staticmethod
     def hex(root: Path, pkgs: list[Pkg]) -> None:
@@ -285,7 +296,8 @@ class Writers:
         (root / "mix.exs").write_text(
             "defmodule App.MixProject do\n  use Mix.Project\n\n  def project do\n"
             '    [app: :app, version: "0.1.0", deps: deps()]\n  end\n\n'
-            f"  defp deps do\n    [\n      {deps}\n    ]\n  end\nend\n"
+            f"  defp deps do\n    [\n      {deps}\n    ]\n  end\nend\n",
+            encoding="utf-8",
         )
         lines = []
         for p in sorted(pkgs, key=lambda p: p.name):
@@ -294,14 +306,15 @@ class Writers:
             lines.append(
                 f'  "{p.name}": {{:hex, :{p.name}, "{p.version}", "{"0" * 64}", [:mix], [], "{repository}", "{outer}"}},'
             )
-        (root / "mix.lock").write_text("%{\n" + "\n".join(lines) + "\n}\n")
+        (root / "mix.lock").write_text("%{\n" + "\n".join(lines) + "\n}\n", encoding="utf-8")
 
     @staticmethod
     def pub(root: Path, pkgs: list[Pkg]) -> None:
         """pubspec.yaml and pubspec.lock, as in `cases/pub/real-workspace`."""
         (root / "pubspec.yaml").write_text(
             "name: app\npublish_to: none\nenvironment:\n  sdk: ^3.6.0\ndependencies:\n"
-            + "".join(f'  "{p.name}": "{p.version}"\n' for p in pkgs)
+            + "".join(f'  "{p.name}": "{p.version}"\n' for p in pkgs),
+            encoding="utf-8",
         )
         lines = ["packages:"]
         for p in sorted(pkgs, key=lambda p: p.name):
@@ -319,7 +332,7 @@ class Writers:
                 f'    version: "{p.version}"',
             ]
         lines += ["sdks:", '  dart: ">=3.6.0 <4.0.0"', ""]
-        (root / "pubspec.lock").write_text("\n".join(lines))
+        (root / "pubspec.lock").write_text("\n".join(lines), encoding="utf-8")
 
     @staticmethod
     def swift(root: Path, pkgs: list[Pkg]) -> None:
@@ -330,7 +343,8 @@ class Writers:
         )
         (root / "Package.swift").write_text(
             "// swift-tools-version:5.9\nimport PackageDescription\n\nlet package = Package(\n"
-            f'    name: "App",\n    dependencies: [\n{dependencies}    ],\n    targets: [.target(name: "App")]\n)\n'
+            f'    name: "App",\n    dependencies: [\n{dependencies}    ],\n    targets: [.target(name: "App")]\n)\n',
+            encoding="utf-8",
         )
         pins = [
             {
@@ -341,7 +355,9 @@ class Writers:
             }
             for p in pkgs
         ]
-        (root / "Package.resolved").write_text(json.dumps({"pins": pins, "version": 2}, indent=2))
+        (root / "Package.resolved").write_text(
+            json.dumps({"pins": pins, "version": 2}, indent=2), encoding="utf-8"
+        )
 
     @staticmethod
     def cocoapods(root: Path, pkgs: list[Pkg]) -> None:
@@ -349,7 +365,8 @@ class Writers:
         (root / "Podfile").write_text(
             'platform :ios, "15.0"\n\ntarget "App" do\n'
             + "".join(f'  pod "{p.name}", "{p.version}"\n' for p in pkgs)
-            + "end\n"
+            + "end\n",
+            encoding="utf-8",
         )
         private = [p for p in pkgs if p.source]
         lock = ["PODS:"] + [f"  - {p.name} ({p.version})" for p in pkgs]
@@ -364,14 +381,15 @@ class Writers:
         if hashed:
             lock += ["", "SPEC CHECKSUMS:"] + [f"  {p.name}: {p.integrity}" for p in hashed]
         lock += ["", "COCOAPODS: 1.17.0", ""]
-        (root / "Podfile.lock").write_text("\n".join(lock))
+        (root / "Podfile.lock").write_text("\n".join(lock), encoding="utf-8")
 
     @staticmethod
     def conda(root: Path, pkgs: list[Pkg]) -> None:
         """environment.yml and conda-lock.yml, as in `cases/conda/real-environment`."""
         (root / "environment.yml").write_text(
             "name: app\nchannels:\n  - conda-forge\ndependencies:\n"
-            + "".join(f"  - {p.name}=={p.version}\n" for p in pkgs)
+            + "".join(f"  - {p.name}=={p.version}\n" for p in pkgs),
+            encoding="utf-8",
         )
         lines = ["version: 1", "metadata:", "  platforms:", "  - linux-64", "package:"]
         for p in pkgs:
@@ -387,14 +405,15 @@ class Writers:
             if p.integrity:
                 lines += ["  hash:", f"    sha256: {p.integrity}"]
             lines += ["  category: main", "  optional: false"]
-        (root / "conda-lock.yml").write_text("\n".join(lines) + "\n")
+        (root / "conda-lock.yml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     @staticmethod
     def cran(root: Path, pkgs: list[Pkg]) -> None:
         """DESCRIPTION and an renv.lock in the renv < 1.1 layout (Requirements and Hash)."""
         imports = ",\n    ".join(f"{p.name} (== {p.version})" for p in pkgs)
         (root / "DESCRIPTION").write_text(
-            f"Package: app\nVersion: 0.1.0\nLicense: MIT\nImports:\n    {imports}\n"
+            f"Package: app\nVersion: 0.1.0\nLicense: MIT\nImports:\n    {imports}\n",
+            encoding="utf-8",
         )
         packages = {}
         for p in pkgs:
@@ -411,7 +430,8 @@ class Writers:
                 entry["Hash"] = p.integrity
             packages[p.name] = entry
         (root / "renv.lock").write_text(
-            json.dumps({"R": {"Version": "4.4.3"}, "Packages": packages}, indent=2)
+            json.dumps({"R": {"Version": "4.4.3"}, "Packages": packages}, indent=2),
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -421,11 +441,12 @@ class Writers:
         an archive URL for one from elsewhere)."""
         deps = "".join(f"  - {p.name} == {p.version}\n" for p in pkgs)
         (root / "package.yaml").write_text(
-            f"name: app\nversion: 0.1.0\ndependencies:\n{deps}library:\n  source-dirs: src\n"
+            f"name: app\nversion: 0.1.0\ndependencies:\n{deps}library:\n  source-dirs: src\n",
+            encoding="utf-8",
         )
         extra = "".join(f"  - {p.name}-{p.version}\n" for p in pkgs)
         (root / "stack.yaml").write_text(
-            f"snapshot: lts-22.33\npackages:\n  - .\nextra-deps:\n{extra}"
+            f"snapshot: lts-22.33\npackages:\n  - .\nextra-deps:\n{extra}", encoding="utf-8"
         )
         lines = ["packages:"]
         for p in pkgs:
@@ -455,7 +476,7 @@ class Writers:
             "    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/33.yaml",
             "  original: lts-22.33",
         ]
-        (root / "stack.yaml.lock").write_text("\n".join(lines) + "\n")
+        (root / "stack.yaml.lock").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     @staticmethod
     def julia(root: Path, pkgs: list[Pkg]) -> None:
@@ -468,7 +489,7 @@ class Writers:
 
         deps = "".join(f'{json.dumps(p.name)} = "{ident(p.name)}"\n' for p in pkgs)
         (root / "Project.toml").write_text(
-            f'name = "App"\nuuid = "{ident("App")}"\n\n[deps]\n{deps}'
+            f'name = "App"\nuuid = "{ident("App")}"\n\n[deps]\n{deps}', encoding="utf-8"
         )
         lines = ['julia_version = "1.11.9"', 'manifest_format = "2.0"', ""]
         for p in pkgs:
@@ -478,7 +499,7 @@ class Writers:
             if p.source:
                 lines.append(f'repo-url = "{p.source}"')
             lines += [f'uuid = "{ident(p.name)}"', f"version = {json.dumps(p.version)}", ""]
-        (root / "Manifest.toml").write_text("\n".join(lines))
+        (root / "Manifest.toml").write_text("\n".join(lines), encoding="utf-8")
 
     @staticmethod
     def opam(root: Path, pkgs: list[Pkg]) -> None:
@@ -486,11 +507,11 @@ class Writers:
         archive's checksum in the `sha512=<hex>` form, a pin (`(dev)`) for a package with a source."""
         depends = "".join(f"\n  ({p.name} (= {p.version}))" for p in pkgs)
         (root / "dune-project").write_text(
-            f"(lang dune 3.17)\n(package\n (name app)\n (depends{depends}))\n"
+            f"(lang dune 3.17)\n(package\n (name app)\n (depends{depends}))\n", encoding="utf-8"
         )
         lock = root / "dune.lock"
         lock.mkdir()
-        (lock / "lock.dune").write_text("(lang package 0.1)\n")
+        (lock / "lock.dune").write_text("(lang package 0.1)\n", encoding="utf-8")
         for p in pkgs:
             fetch = f"(url {p.source or f'https://example.org/{p.name[:60]}-{p.version[:30]}.tbz'})"
             if p.integrity:
@@ -501,14 +522,14 @@ class Writers:
                 + f"\n(source\n (fetch\n  {fetch}))\n"
             )
             # A file name holds at most 255 bytes; the version inside the file is what is read.
-            (lock / f"{p.name[:120]}.{p.version[:60]}.pkg").write_text(body)
+            (lock / f"{p.name[:120]}.{p.version[:60]}.pkg").write_text(body, encoding="utf-8")
 
     @staticmethod
     def conan(root: Path, pkgs: list[Pkg]) -> None:
         """conanfile.txt and the Conan 2 lock: each reference with its recipe revision, and a
         user/channel for a package from a private remote."""
         (root / "conanfile.txt").write_text(
-            "[requires]\n" + "".join(f"{p.name}/{p.version}\n" for p in pkgs)
+            "[requires]\n" + "".join(f"{p.name}/{p.version}\n" for p in pkgs), encoding="utf-8"
         )
         requires = []
         for p in pkgs:
@@ -525,7 +546,8 @@ class Writers:
                     "config_requires": [],
                 },
                 indent=4,
-            )
+            ),
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -551,7 +573,7 @@ class Writers:
                     }
                 ]
             }
-        (root / "vcpkg.json").write_text(json.dumps(manifest, indent=2))
+        (root / "vcpkg.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     @staticmethod
     def actions(root: Path, pkgs: list[Pkg]) -> None:
@@ -566,7 +588,8 @@ class Writers:
         workflows = root / ".github" / "workflows"
         workflows.mkdir(parents=True)
         (workflows / "ci.yml").write_text(
-            f"name: ci\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n{steps}"
+            f"name: ci\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n{steps}",
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -578,7 +601,7 @@ class Writers:
             lines += [f"  - name: {json.dumps(p.name)}", f"    version: {json.dumps(p.version)}"]
             if p.source:
                 lines.append(f"    source: {p.source}")
-        (root / "requirements.yml").write_text("\n".join(lines) + "\n")
+        (root / "requirements.yml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     @staticmethod
     def terraform(root: Path, pkgs: list[Pkg]) -> None:
@@ -597,9 +620,10 @@ class Writers:
                 f"provider {json.dumps(host + address)} {{\n  version     = {json.dumps(p.version)}\n  constraints = {json.dumps(p.version)}\n{hashes}}}\n"
             )
         (root / "versions.tf").write_text(
-            "terraform {\n  required_providers {\n" + "\n".join(required) + "\n  }\n}\n"
+            "terraform {\n  required_providers {\n" + "\n".join(required) + "\n  }\n}\n",
+            encoding="utf-8",
         )
-        (root / ".terraform.lock.hcl").write_text("\n".join(locked))
+        (root / ".terraform.lock.hcl").write_text("\n".join(locked), encoding="utf-8")
 
     @staticmethod
     def helm(root: Path, pkgs: list[Pkg]) -> None:
@@ -611,14 +635,15 @@ class Writers:
             for p in pkgs
         )
         (root / "Chart.yaml").write_text(
-            f"apiVersion: v2\nname: app\nversion: 1.0.0\ndependencies:\n{deps}"
+            f"apiVersion: v2\nname: app\nversion: 1.0.0\ndependencies:\n{deps}", encoding="utf-8"
         )
         locked = "".join(
             f"- name: {json.dumps(p.name)}\n  repository: {p.source or repository}\n  version: {json.dumps(p.version)}\n"
             for p in pkgs
         )
         (root / "Chart.lock").write_text(
-            f'dependencies:\n{locked}digest: sha256:{"a" * 64}\ngenerated: "2026-01-01T00:00:00Z"\n'
+            f'dependencies:\n{locked}digest: sha256:{"a" * 64}\ngenerated: "2026-01-01T00:00:00Z"\n',
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -630,7 +655,8 @@ class Writers:
             f'    {json.dumps(f"in{i}")}.url = "github:{p.name}";\n' for i, p in enumerate(pkgs)
         )
         (root / "flake.nix").write_text(
-            f"{{\n  inputs = {{\n{inputs}  }};\n  outputs = {{ self, ... }}: {{ }};\n}}\n"
+            f"{{\n  inputs = {{\n{inputs}  }};\n  outputs = {{ self, ... }}: {{ }};\n}}\n",
+            encoding="utf-8",
         )
         nodes: dict[str, object] = {
             "root": {"inputs": {f"in{i}": f"in{i}" for i in range(len(pkgs))}}
@@ -651,7 +677,7 @@ class Writers:
                 "original": {"owner": owner, "repo": repo, "type": "github"},
             }
         (root / "flake.lock").write_text(
-            json.dumps({"nodes": nodes, "root": "root", "version": 7}, indent=2)
+            json.dumps({"nodes": nodes, "root": "root", "version": 7}, indent=2), encoding="utf-8"
         )
 
     @staticmethod
@@ -662,7 +688,9 @@ class Writers:
             f"bazel_dep(name = {json.dumps(p.name)}, version = {json.dumps(p.version)})\n"
             for p in pkgs
         )
-        (root / "MODULE.bazel").write_text(f'module(name = "app", version = "0.1.0")\n\n{deps}')
+        (root / "MODULE.bazel").write_text(
+            f'module(name = "app", version = "0.1.0")\n\n{deps}', encoding="utf-8"
+        )
         hashes: dict[str, str] = {}
         for p in pkgs:
             registry = p.source or "https://bcr.bazel.build"
@@ -678,7 +706,8 @@ class Writers:
                     "moduleExtensions": {},
                 },
                 indent=2,
-            )
+            ),
+            encoding="utf-8",
         )
 
     @staticmethod
@@ -691,7 +720,7 @@ class Writers:
             f'brew "acme/internal/{p.name}"\n' if p.source else f"brew {json.dumps(p.name)}\n"
             for p in pkgs
         ]
-        (root / "Brewfile").write_text("".join(lines))
+        (root / "Brewfile").write_text("".join(lines), encoding="utf-8")
         brew: dict[str, object] = {}
         for p in pkgs:
             digest = (p.integrity or "").removeprefix("sha256:")
@@ -719,7 +748,7 @@ class Writers:
                 "macos": {"sonoma": {"HOMEBREW_VERSION": "4.3.24", "CLT": "15.3.0.0.1.1708646388"}}
             },
         }
-        (root / "Brewfile.lock.json").write_text(json.dumps(lock, indent=2))
+        (root / "Brewfile.lock.json").write_text(json.dumps(lock, indent=2), encoding="utf-8")
 
     @staticmethod
     def image(root: Path, pkgs: list[Pkg]) -> None:
@@ -730,7 +759,7 @@ class Writers:
             host = (p.source or "").removeprefix("https://").rstrip("/")
             reference = f"{host + '/' if host else ''}{p.name}:{p.version}{'@' + p.integrity if p.integrity else ''}"
             lines.append(f"  service-{index}:\n    image: {json.dumps(reference)}")
-        (root / "compose.yaml").write_text("\n".join(lines) + "\n")
+        (root / "compose.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 class Hashes:

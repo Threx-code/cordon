@@ -18,14 +18,14 @@ import json
 import time
 
 import pytest
-from tests.conformancebuilders import Pkg, Writers
-from tests.imagekit import ImageKit
 
+from conformancebuilders import Pkg, Writers
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.images.binmeta import StreamedBinary
 from cordon_scanner.langs.registry import LanguageRegistry
+from imagekit import ImageKit
 
 
 class ScaleHelpers:

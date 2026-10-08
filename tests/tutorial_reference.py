@@ -19,6 +19,7 @@ import os
 import sys
 import textwrap
 from typing import ClassVar
+from unittest import mock
 
 from cordon_scanner.detect.provenance import SUPPORTED_ECOSYSTEMS as PROVENANCE_ECOSYSTEMS
 from cordon_scanner.detect.registry import REGISTRY_ECOSYSTEMS
@@ -454,9 +455,15 @@ class AgentTutorial:
         rule_rows = [
             f"| `{r.rule_id}` | {r.severity} | {r.title.replace('|', '/')} |" for r in rules
         ]
+        # The Linux layout, wherever this runs: the support directory otherwise follows the
+        # platform and XDG_CONFIG_HOME, and the reference would differ on every runner.
+        with mock.patch.object(
+            DeviceInventory, "_app_support", staticmethod(lambda home: home / ".config")
+        ):
+            sources = DeviceInventory.sources(Path("/home/you"))
         laptop = [
-            f"| `{str(src.path).replace('/home/you', '~')}` | {src.tool} | {src.kind} |"
-            for src in DeviceInventory.sources(Path("/home/you"))
+            f"| `{src.path.as_posix().replace('/home/you', '~')}` | {src.tool} | {src.kind} |"
+            for src in sources
         ]
         actions = [
             f"| `{name}` | {agent} |" for name, agent in sorted(agents.AGENT_ACTIONS.items())

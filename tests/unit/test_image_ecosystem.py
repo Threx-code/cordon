@@ -9,7 +9,6 @@ import json
 import tarfile
 
 import pytest
-from tests.imagekit import ImageKit
 
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.models import Dependency, Scope
@@ -22,6 +21,7 @@ from cordon_scanner.ecosystems.image import (
 )
 from cordon_scanner.images.oci import ImageIdentity, ImageLayers
 from cordon_scanner.images.packages import OsPackage, PackageDatabases, PackageGraph
+from imagekit import ImageKit
 
 
 class ImageHelpers:
