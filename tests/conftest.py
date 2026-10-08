@@ -43,8 +43,10 @@ class SharedFixtures:
 
     @pytest.fixture(autouse=True)
     def _no_osv_refresh(self, monkeypatch) -> None:
-        """A scan refreshes from OSV unless offline; a test must never reach the network."""
+        """A scan refreshes from OSV unless offline; a test must never reach the network. The
+        variable reaches a scanner a test starts as a subprocess, which the attribute cannot."""
         monkeypatch.setattr("cordon_scanner.intel.osv_delta.ENABLED", False)
+        monkeypatch.setenv("CORDON_NO_ADVISORY_REFRESH", "1")
 
     @pytest.fixture(autouse=True)
     def _isolated_cache_key(self, tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:

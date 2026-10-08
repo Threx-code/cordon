@@ -21,6 +21,7 @@ cache, applied on top of the database the way the feed's overlays are (`advisori
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -48,8 +49,18 @@ RECHECK_SECONDS: Final = 15 * 60
 ONLY_IDS: Final[dict[str, str]] = {"GIT": "MAL-"}
 """Ecosystems whose import keeps one kind of record (`osv_import`: GIT's malicious repositories,
 not its C and C++ commit ranges), so the rest of their churn is neither fetched nor counted."""
-ENABLED: bool = True
-"""Off in the test suite, which must never reach the network (`tests/conftest.py`)."""
+DISABLE_VARIABLE: Final = "CORDON_NO_ADVISORY_REFRESH"
+"""Set to 1 to scan with the database as it is, without asking OSV what changed: for a pipeline
+that refreshes on a schedule instead (`advisories sync`), or a test suite. `--offline` and
+`CORDON_OFFLINE=1` also turn it off, along with every other network use."""
+ENABLED: bool = os.environ.get(DISABLE_VARIABLE, "").strip().lower() not in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+"""Read once at import. The test suite sets the variable as well as this, so a scanner it runs in
+a subprocess does not reach the network either (`tests/conftest.py`)."""
 
 
 class OsvDeltaError(RuntimeError):
