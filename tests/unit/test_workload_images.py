@@ -107,7 +107,19 @@ class TestKubernetesManifests:
 
     def test_a_tag_only_workload_image_is_a_policy_finding(self, tmp_path) -> None:
         (tmp_path / "k8s").mkdir()
-        (tmp_path / "k8s" / "app.yaml").write_text(DEPLOYMENT)
+        (tmp_path / "k8s" / "app.yaml").write_text(DEPLOYMENT, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        unpinned = sorted(
+            f.message.split(" runs ")[1].split(",")[0]
+            for f in result.findings
+            if f.rule_id == "POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001"
+        )
+        assert unpinned == ["ghcr.io/example/migrate:1.4", "nginx:1.27", "python:3.12-slim"]
+
+    def test_every_document_of_a_crlf_manifest_is_read(self, tmp_path) -> None:
+        """A Windows checkout: `---\r` was not a document break, so later documents were lost."""
+        (tmp_path / "k8s").mkdir()
+        (tmp_path / "k8s" / "app.yaml").write_bytes(DEPLOYMENT.replace("\n", "\r\n").encode())
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         unpinned = sorted(
             f.message.split(" runs ")[1].split(",")[0]

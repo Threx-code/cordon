@@ -634,7 +634,7 @@ class PnpmLock:
             return head[:at], reference[at + 1 :], name
         return name, reference, None
 
-    DOCUMENT_BREAK: ClassVar[re.Pattern[str]] = re.compile(r"(?m)^---[ \t]*$")
+    DOCUMENT_BREAK: ClassVar[re.Pattern[str]] = re.compile(r"(?m)^---[ \t]*\r?$")
 
     @classmethod
     def _project_document(cls, content: FileContent) -> Any:

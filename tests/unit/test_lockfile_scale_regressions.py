@@ -85,7 +85,7 @@ class TestNpmLinkedDirectories:
                 "packages_imported/kase-core/3.2.3": {"version": "3.2.3"},
             },
         }
-        (tmp_path / "package-lock.json").write_text(json.dumps(lock))
+        (tmp_path / "package-lock.json").write_text(json.dumps(lock), encoding="utf-8")
         names = {
             (d.name, d.version)
             for d in Scanner(Config.default().with_overrides(use_cache=False), detectors=())
@@ -106,9 +106,10 @@ class TestGoBeforeOneSeventeen:
 
     def graph(self, tmp_path, language: str):
         (tmp_path / "go.mod").write_text(
-            f"module example.com/app\n\ngo {language}\n\nrequire github.com/direct/one v1.2.0\n"
+            f"module example.com/app\n\ngo {language}\n\nrequire github.com/direct/one v1.2.0\n",
+            encoding="utf-8",
         )
-        (tmp_path / "go.sum").write_text(self.GO_SUM)
+        (tmp_path / "go.sum").write_text(self.GO_SUM, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False), detectors=()).scan(
             tmp_path
         )
@@ -128,7 +129,7 @@ class TestGoBeforeOneSeventeen:
         }
 
     def test_a_go_sum_on_its_own_is_the_build_record(self, tmp_path) -> None:
-        (tmp_path / "go.sum").write_text(self.GO_SUM)
+        (tmp_path / "go.sum").write_text(self.GO_SUM, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False), detectors=()).scan(
             tmp_path
         )
@@ -141,9 +142,10 @@ class TestGoBeforeOneSeventeen:
     def test_from_one_seventeen_a_tidied_go_mod_is_the_build_list(self, tmp_path) -> None:
         (tmp_path / "go.mod").write_text(
             "module example.com/app\n\ngo 1.21\n\nrequire (\n\tgithub.com/direct/one v1.2.0\n"
-            "\tgithub.com/pkg/errors v0.9.1 // indirect\n)\n"
+            "\tgithub.com/pkg/errors v0.9.1 // indirect\n)\n",
+            encoding="utf-8",
         )
-        (tmp_path / "go.sum").write_text(self.GO_SUM)
+        (tmp_path / "go.sum").write_text(self.GO_SUM, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False), detectors=()).scan(
             tmp_path
         )
@@ -170,7 +172,7 @@ class TestPnpmTen:
     def test_the_project_document_after_the_environment_is_read(self, tmp_path) -> None:
         """pnpm 10 writes its own environment first and the project after `---`; only the first
         was read, so 12 of 62 real pnpm lockfiles lost their whole tree."""
-        (tmp_path / "pnpm-lock.yaml").write_text(PNPM_TWO_DOCUMENTS)
+        (tmp_path / "pnpm-lock.yaml").write_text(PNPM_TWO_DOCUMENTS, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False), detectors=()).scan(
             tmp_path
         )
@@ -178,3 +180,12 @@ class TestPnpmTen:
         assert ("ms", "2.1.3", "runtime") in found and ("left-pad", "1.3.0", "dev") in found
         # The package manager pnpm installs itself with is the tool, not the project's dependency.
         assert not [n for n, _, _ in found if n in ("pnpm", "@pnpm/exe")]
+
+    def test_a_windows_checkout_with_crlf_line_endings(self, tmp_path) -> None:
+        """`---\r` was not a document break, so on Windows the project's whole tree was lost."""
+        (tmp_path / "pnpm-lock.yaml").write_bytes(PNPM_TWO_DOCUMENTS.replace("\n", "\r\n").encode())
+        result = Scanner(Config.default().with_overrides(use_cache=False), detectors=()).scan(
+            tmp_path
+        )
+        found = {(d.name, d.version) for d in result.dependencies}
+        assert ("ms", "2.1.3") in found and ("left-pad", "1.3.0") in found

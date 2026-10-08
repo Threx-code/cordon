@@ -480,7 +480,7 @@ class Guard:
         # or loosening its gate is the cheapest way round it.
         pipelines = [
             *sorted(
-                str(p.relative_to(root))
+                p.relative_to(root).as_posix()
                 for p in (root / ".github" / "workflows").glob("*.y*ml")
                 if p.is_file()
             ),

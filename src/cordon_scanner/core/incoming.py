@@ -34,11 +34,13 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.core.config import Config, Policy
 from cordon_scanner.core.errors import ConfigError, SourceError
@@ -237,7 +239,17 @@ class Incoming:
     @staticmethod
     def _remove(root: Path, keep_directory: bool) -> None:
         """Remove a blocked clone: its objects as well, so nothing of it stays on disk."""
-        shutil.rmtree(root, ignore_errors=True)
+
+        def writable(function: Any, path: str, *_: Any) -> None:
+            # Git writes its objects read-only, and Windows refuses to delete a read-only file:
+            # without this the blocked clone stayed on disk, objects and all.
+            Path(path).chmod(stat.S_IWRITE)
+            function(path)
+
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(root, onexc=writable)
+        else:
+            shutil.rmtree(root, onerror=writable)
         if keep_directory:
             root.mkdir(exist_ok=True)
 

@@ -809,7 +809,7 @@ class Kubernetes:
     CONTAINER_LISTS: ClassVar[frozenset[str]] = frozenset(
         {"containers", "initContainers", "ephemeralContainers"}
     )
-    DOCUMENT_BREAK: ClassVar[re.Pattern[str]] = re.compile(r"(?m)^---[ \t]*(?:#[^\n]*)?$")
+    DOCUMENT_BREAK: ClassVar[re.Pattern[str]] = re.compile(r"(?m)^---[ \t]*(?:#[^\r\n]*)?\r?$")
     MAX_DOCUMENTS: ClassVar[int] = 2_000
 
     @staticmethod
