@@ -18,7 +18,7 @@ PKG := cordon_scanner
 VERSION := $(shell $(PY) -c "from $(PKG).version import __version__; print(__version__)" 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup fmt lint types test test-all scan check live matrix demo \
+.PHONY: help setup fmt lint types test test-all scan check live matrix demo prepush prepush-quick hooks \
         build verify preflight guards release clean
 
 help:  ## List the targets
@@ -91,6 +91,15 @@ scan:  ## Cordon scans Cordon
 		--exclude '**/detect/data/**' --fail-on medium --no-color
 
 check: lint types test scan  ## Everything CI checks, in CI's order
+
+prepush:  ## What CI will say about HEAD, in Docker, on CI's terms (scripts/prepush.sh)
+	@sh scripts/prepush.sh
+
+prepush-quick:  ## The same without the suite, perf and fuzz
+	@sh scripts/prepush.sh --quick
+
+hooks:  ## Run `make prepush` before every push (CORDON_PREPUSH=--quick for the short form)
+	@git config core.hooksPath .githooks && echo "pre-push hook: .githooks/pre-push -> scripts/prepush.sh"
 
 # -- Generated artefacts ---------------------------------------------------
 

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Installed by `make hooks` (git config core.hooksPath .githooks). Runs what CI runs, in Docker,
+# against the commit being pushed. CORDON_PREPUSH=--quick leaves out the suite, perf and fuzz.
+exec sh "$(git rev-parse --show-toplevel)/scripts/prepush.sh" ${CORDON_PREPUSH:-}
