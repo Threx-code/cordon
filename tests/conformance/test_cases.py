@@ -141,7 +141,8 @@ class TestTruncatedAndCorruptInput:
                     f
                     for f in report["findings"]
                     if (
-                        f["rule_id"] in PARSE_DIAGNOSTICS and f["location"]["path"] == relative.as_posix()
+                        f["rule_id"] in PARSE_DIAGNOSTICS
+                        and f["location"]["path"] == relative.as_posix()
                     )
                     or (case.expect.get("target") and f["rule_id"] in ARCHIVE_DIAGNOSTICS)
                 ]
