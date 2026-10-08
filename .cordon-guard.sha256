@@ -5,10 +5,10 @@
 # same commit, and no self-hosted check can prevent that. What this file
 # guarantees is that such a change cannot be silent: it must appear as a
 # diff. Code-owner rules on this path are what put a human on that diff.
-a8ae4a55268850b390a7dd7c609e3ab1961dd2652a498d65d8b6585f63798458  .github/workflows/ci.yml
+883217a9177c07463c226f3a9df538954e2806b9e8943354b5c741a8492a82f4  .github/workflows/ci.yml
 ed4cb2b07c5f73b2e79a8c877ae417211d1cbca45313b5b609722483bc1ccbdf  .github/workflows/refresh-advisories.yml
 5573931782fe1434c904eafc10ecdbea57b9b6f443b70e100a14bd2394a8e362  .github/workflows/refresh-iac-policies.yml
 cf52f25f801f85f5009d10feb8ef8acd574d9376a4a56c2dd9ba38289f95189c  .github/workflows/refresh-intel.yml
 73a65c10c8190b1c1d4806d949f588ee8726a36b2b304aa2ddc468b0aa771190  .github/workflows/release.yml
 6da3f199618f0265ba618e56f61a082888eef051cba1a81ce757601af8e14f61  .github/workflows/verify-refresh.yml
-e2a3fb26014498fb5355000d83e32b2f7a25c648857ea58ed6ce77d2ac93c3e1  cordon-history-baseline.json
+3f7d486163dc6f3d21ebbece6513483c3965f294af70c3c4cc7545fd4c55faa8  cordon-history-baseline.json

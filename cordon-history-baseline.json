@@ -3,16 +3,23 @@
   "fingerprints": [
     "0e9f922aaff9fa68",
     "1494e9be58b324b1",
+    "18c393d405067e3d",
     "288f77b388ad83c3",
+    "3009c0ed43f0dfa2",
     "3154d8626ea88066",
     "3eb8c33ee092b555",
     "4f8a8b47cc61c19b",
     "574d782dd1d151b6",
     "5c5c8a10858f451e",
+    "71aeafa611dde8c0",
     "7a830554a15a1273",
     "83687ec72c0c03b3",
+    "95cfc9acd5d6717f",
+    "adbe339edea1b4c2",
     "c6219db277e6d97f",
     "cbd1144a7bd31e54",
+    "cdc739734f6d7024",
+    "e31e0a079192e2bb",
     "ebdb31c4aaadbc0f",
     "ec901eb952ef50d8"
   ],
@@ -160,6 +167,48 @@
       "rule": "SECRET.URL.CREDENTIAL.001",
       "path": "tests/unit/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "3009c0ed43f0dfa2",
+      "rule": "SECRET.GITHUB.TOKEN.001",
+      "path": "tests/conformance/cases/image/edge-layers-and-history/expect.yaml",
+      "note": "a detector test fixture: the image conformance case's planted placeholders (tests/conformance/generate/image_edge.py, Build.placeholder), shorter than a real token. Reviewed 2026-10-08; nothing to rotate."
+    },
+    {
+      "fingerprint": "adbe339edea1b4c2",
+      "rule": "SECRET.NPM.TOKEN.001",
+      "path": "tests/conformance/cases/image/edge-layers-and-history/expect.yaml",
+      "note": "a detector test fixture: the image conformance case's planted placeholders (tests/conformance/generate/image_edge.py, Build.placeholder), shorter than a real token. Reviewed 2026-10-08; nothing to rotate."
+    },
+    {
+      "fingerprint": "cdc739734f6d7024",
+      "rule": "SECRET.STRIPE.KEY.001",
+      "path": "tests/conformance/cases/image/edge-layers-and-history/expect.yaml",
+      "note": "a detector test fixture: the image conformance case's planted placeholders (tests/conformance/generate/image_edge.py, Build.placeholder), shorter than a real token. Reviewed 2026-10-08; nothing to rotate."
+    },
+    {
+      "fingerprint": "e31e0a079192e2bb",
+      "rule": "SECRET.GITHUB.TOKEN.001",
+      "path": "tests/conformance/cases/image/edge-layers-and-history/image.tar",
+      "note": "a detector test fixture: the image conformance case's planted placeholders (tests/conformance/generate/image_edge.py, Build.placeholder), shorter than a real token. Reviewed 2026-10-08; nothing to rotate."
+    },
+    {
+      "fingerprint": "71aeafa611dde8c0",
+      "rule": "SECRET.NPM.TOKEN.001",
+      "path": "tests/conformance/cases/image/edge-layers-and-history/image.tar",
+      "note": "a detector test fixture: the image conformance case's planted placeholders (tests/conformance/generate/image_edge.py, Build.placeholder), shorter than a real token. Reviewed 2026-10-08; nothing to rotate."
+    },
+    {
+      "fingerprint": "95cfc9acd5d6717f",
+      "rule": "SECRET.STRIPE.KEY.001",
+      "path": "tests/conformance/cases/image/edge-layers-and-history/image.tar",
+      "note": "a detector test fixture: the image conformance case's planted placeholders (tests/conformance/generate/image_edge.py, Build.placeholder), shorter than a real token. Reviewed 2026-10-08; nothing to rotate."
+    },
+    {
+      "fingerprint": "18c393d405067e3d",
+      "rule": "OPERATIONAL.LOCKFILE.UNSUPPORTED",
+      "path": "tests/conformance/cases/npm/edge-bun-lockb/bun.lockb",
+      "note": "a conformance fixture: Bun's legacy binary lockfile, kept to prove it is reported as unread rather than read as empty. Reviewed 2026-10-08."
     }
   ]
 }
