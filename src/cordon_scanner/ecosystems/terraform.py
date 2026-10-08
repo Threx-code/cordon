@@ -104,6 +104,10 @@ class HclLexer:
 
     @staticmethod
     def tokens(text: str) -> list[tuple[str, str]]:
+        # A Windows checkout's `\r\n`: the heredoc opener expects `\n` straight after its
+        # marker and the closing line `[ \t]*$`, so with CRLF neither matched, the heredoc ran
+        # on, and every block after it was lost. Only line ends change; nothing reads a column.
+        text = text.replace("\r\n", "\n")
         out: list[tuple[str, str]] = []
         index, length = 0, len(text)
         while index < length:

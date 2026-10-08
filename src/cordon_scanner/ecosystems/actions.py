@@ -215,7 +215,10 @@ class ActionsFile:
 
     @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:
-        text = content.text
+        # A Windows checkout's `\r\n`. The block-scalar and `steps:` patterns below are written
+        # against `\n`, and with CRLF a local action's steps and a job's container went unread.
+        # Only line ends change: line numbers are counted, never columns.
+        text = content.text.replace("\r\n", "\n")
         workflow = "/.github/workflows/" in f"/{content.path}"
         if workflow and not re.search(r"(?m)^jobs[ \t]*:", text):
             return BaseEcosystem._err(content, ecosystem, "a workflow without `jobs`")
