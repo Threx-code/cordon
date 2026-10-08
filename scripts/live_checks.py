@@ -263,6 +263,11 @@ class LiveChecks:
                 "corpus/**",
                 "--exclude",
                 "bench/**",
+                # The conformance cases hold deliberately unreadable files (a DTD in a .csproj,
+                # Bun's binary lockfile) whose notices are the point of them, as `ci.yml`'s
+                # self-scan already excludes them.
+                "--exclude",
+                "tests/conformance/cases/**",
                 "--exclude",
                 "build/**",
                 "--exclude",

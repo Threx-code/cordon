@@ -86,6 +86,7 @@ scan:  ## Cordon scans Cordon
 	@# bench/ for the corpus's reason: the agent benchmark builds inert attack
 	@# samples on purpose to measure detection.
 	$(PY) -m $(PKG) scan . --tracked --exclude 'corpus/**' --exclude 'bench/**' --exclude 'build/**' \
+		--exclude 'tests/conformance/cases/**' \
 		--exclude 'dist/**' --exclude '**/intel/data/**' \
 		--exclude '**/detect/data/**' --fail-on medium --no-color
 
