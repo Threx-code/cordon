@@ -38,7 +38,11 @@ MAX_SENTENCE: Final = 2_000
 
 #: Characters with no visible form that change nothing a reader sees: zero-width, bidirectional
 #: controls, the Unicode Tag block, variation selectors.
-_INVISIBLE: Final = re.compile("[​-‏‪-‮⁠-⁤⁦-⁩﻿︀-️\U000e0000-\U000e007f]")
+_INVISIBLE: Final = re.compile(
+    # Escapes, not the characters: a file of literal bidi and zero-width characters is what this
+    # looks for, and Cordon scanning its own source found exactly that here.
+    "[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\ufe00-\ufe0f\U000e0000-\U000e007f]"
+)
 
 #: Look-alike letters (Cyrillic, Greek, fullwidth already NFKC-folded) folded to the Latin letter
 #: a reader sees. Not the whole confusables table: the letters an English instruction is made of.
