@@ -16,6 +16,15 @@ runs found is fixed below, with a test that fails on the old code. The figures a
 
 ### Added
 
+- **Advisories published since the build, fetched before each scan.** Bundled intel missed
+  everything published after it was built: a Next.js SSRF advisory (GHSA-cjq9-62q9-8jv4) published
+  twenty hours after the build matched nothing, and `pnpm audit` caught it. Unless the scan is
+  offline, it now reads the top of OSV's per-ecosystem change list down to the last refresh and
+  fetches only the records changed since (`intel/osv_delta`), at most once every 15 minutes. The
+  requests are the same for everyone and name no package. The records are converted exactly as
+  `advisories sync` converts them, kept as a sealed overlay in the user's cache, and applied over
+  the database. Intel refreshed this way is judged against the 24-hour limit, not the 30-day one
+  for bundled data, so a scan that cannot refresh says it is stale.
 - **`cordon-scanner clone` and `cordon-scanner pull`**: code from elsewhere checked before it
   reaches the working tree. `clone` clones without checking out, scans the commit from git's
   object store and checks it out only if it passes; a blocked clone is removed, objects and all.

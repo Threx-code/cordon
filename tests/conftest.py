@@ -42,6 +42,11 @@ class SharedFixtures:
             monkeypatch.delenv(name, raising=False)
 
     @pytest.fixture(autouse=True)
+    def _no_osv_refresh(self, monkeypatch) -> None:
+        """A scan refreshes from OSV unless offline; a test must never reach the network."""
+        monkeypatch.setattr("cordon_scanner.intel.osv_delta.ENABLED", False)
+
+    @pytest.fixture(autouse=True)
     def _isolated_cache_key(self, tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:
         directory = tmp_path_factory.mktemp("cordon-key")
         monkeypatch.setattr(ScanCache, "key_dir", staticmethod(lambda: directory))

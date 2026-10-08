@@ -204,6 +204,22 @@ class FeedClient:
         return value.strip().lower() in ("1", "true", "yes", "on")
 
     @staticmethod
+    def _database_built_at() -> float:
+        """When the database in use (synced or shipped, whichever is newer) was built."""
+        from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
+
+        built = [AdvisoryFiles._read_meta(DATA_DIR).built_at]
+        if AdvisoryFiles.trusted_user_file("advisories-meta.json") is not None:
+            built.append(AdvisoryFiles._read_meta(AdvisoryFiles.user_sync_dir()).built_at)
+        times = []
+        for value in built:
+            try:
+                times.append(FeedRoles._parse_time(value) if value else 0.0)
+            except ValueError:
+                times.append(0.0)
+        return max(times)
+
+    @staticmethod
     def status(
         *,
         use_feed: bool,
@@ -234,10 +250,26 @@ class FeedClient:
                 from cordon_scanner.intel import advisories
 
                 advisories.ShippedAdvisories.reset_caches()
-        elif use_feed:
-            error = "no feed root is pinned in this build"
 
         state = FeedState.load(feed._dir())
+        # Advisories OSV published or changed since the database was built (`intel/osv_delta`):
+        # without this, bundled intel misses everything after its build until the next release.
+        delta_through = 0.0
+        from cordon_scanner.intel import osv_delta
+
+        if use_feed and osv_delta.ENABLED:
+            delta = osv_delta.OsvDelta
+            if now - delta.checked_at() >= osv_delta.RECHECK_SECONDS:
+                result = delta.refresh(since=FeedClient._database_built_at(), now=now)
+                if result.error and not refreshed:
+                    error = f"advisories since the build: {result.error}"
+                from cordon_scanner.intel import advisories as _advisories
+
+                _advisories.ShippedAdvisories.reset_caches()
+            delta_through = delta.through()
+        elif use_feed and not feed.enabled:
+            error = "no feed root is pinned in this build"
+
         if state.serial and state.fresh_at:
             source, fresh_at, serial = "feed", state.fresh_at, state.serial
         else:
@@ -257,6 +289,8 @@ class FeedClient:
                 fresh_at = FeedRoles._parse_time(chosen.built_at) if chosen.built_at else 0.0
             except ValueError:
                 fresh_at = 0.0
+        if delta_through > fresh_at:
+            source, fresh_at = "osv", delta_through
         age = int(max(0.0, now - fresh_at)) if fresh_at else None
 
         # With no feed, intel is as old as the release or the last sync, and that age was never
@@ -264,7 +298,11 @@ class FeedClient:
         effective = (
             max_age
             if max_age is not None
-            else (DEFAULT_MAX_AGE if feed.enabled else BUNDLED_MAX_AGE)
+            else (
+                DEFAULT_MAX_AGE
+                if feed.enabled or (use_feed and osv_delta.ENABLED)
+                else BUNDLED_MAX_AGE
+            )
         )
         stale = bool(effective) and (age is None or age > int(effective or 0))
         return IntelStatus(

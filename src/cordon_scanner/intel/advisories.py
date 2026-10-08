@@ -527,7 +527,14 @@ class ShippedAdvisories:
         # The feed's verified deltas, on top of whichever database file won. An upsert replaces the
         # record with the same id; a withdrawal removes it. Applied here, once per ecosystem, so a
         # delta never has to rewrite a quarter of a million records to add one.
+        from cordon_scanner.intel.osv_delta import OsvDelta
+
         upserts, withdrawn = FeedStore.read_overlay(_SHARED_DATA.get(ecosystem, ecosystem))
+        # Then what OSV changed since the database was built (`intel/osv_delta`), on top of both.
+        changed, delta_withdrawn = OsvDelta.read_overlay(_SHARED_DATA.get(ecosystem, ecosystem))
+        newer = {str(r.get("id")) for r in changed}
+        upserts = [r for r in upserts if str(r.get("id")) not in newer] + changed
+        withdrawn = withdrawn | delta_withdrawn
         replaced = {str(r.get("id")) for r in upserts} | withdrawn
         grouped: dict[str, list[dict[str, object]]] = {}
         for raw in ShippedAdvisories._read_shipped(ecosystem):
