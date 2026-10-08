@@ -118,7 +118,7 @@ class TestTruncatedAndCorruptInput:
             relative = original.relative_to(case.path)
             data = original.read_bytes()
             variants = [("corrupt", b"\x00\xff{[<" + data[len(data) // 3 :])]
-            if str(relative) in packaged:
+            if relative.as_posix() in packaged:
                 variants.insert(0, ("truncated", data[: max(1, len(data) // 2)]))
             for label, damaged in variants:
                 root = tmp_path / f"{index}-{label}"
@@ -130,7 +130,7 @@ class TestTruncatedAndCorruptInput:
                 from_file = [
                     d
                     for d in report["dependencies"]
-                    if str(relative)
+                    if relative.as_posix()
                     in (
                         d.get("declared_in"),
                         d["record"].get("manifest_location")
@@ -141,7 +141,7 @@ class TestTruncatedAndCorruptInput:
                     f
                     for f in report["findings"]
                     if (
-                        f["rule_id"] in PARSE_DIAGNOSTICS and f["location"]["path"] == str(relative)
+                        f["rule_id"] in PARSE_DIAGNOSTICS and f["location"]["path"] == relative.as_posix()
                     )
                     or (case.expect.get("target") and f["rule_id"] in ARCHIVE_DIAGNOSTICS)
                 ]
