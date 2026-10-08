@@ -65,7 +65,7 @@ class BenignStream:
     def ranked(ecosystem: str, count: int, out: Path) -> list[str]:
         """The top `count` names, cached in `out` so every run measures the same list."""
         if out.exists():
-            names: list[str] = json.loads(out.read_text())["names"]
+            names: list[str] = json.loads(out.read_text(encoding="utf-8"))["names"]
             if len(names) >= count:
                 return names[:count]
         names = []
@@ -88,7 +88,8 @@ class BenignStream:
                     "sha256": hashlib.sha256(body.encode()).hexdigest(),
                     "names": names,
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         return names
 
@@ -196,7 +197,7 @@ class BenignStream:
         results = args.out / "results.jsonl"
         done = set()
         if results.exists():
-            for line in results.read_text().splitlines():
+            for line in results.read_text(encoding="utf-8").splitlines():
                 row = json.loads(line)
                 done.add((row["ecosystem"], row["name"]))
 
@@ -241,7 +242,7 @@ class BenignStream:
 
     @staticmethod
     def summarise(results: Path) -> int:
-        rows = [json.loads(line) for line in results.read_text().splitlines()]
+        rows = [json.loads(line) for line in results.read_text(encoding="utf-8").splitlines()]
         for ecosystem in sorted({r["ecosystem"] for r in rows}):
             scanned = [r for r in rows if r["ecosystem"] == ecosystem and "cordon" in r]
             blocked = [r for r in scanned if r["cordon"]["blocked"]]

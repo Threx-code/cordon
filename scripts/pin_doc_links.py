@@ -49,7 +49,7 @@ class DocLinks:
             pinned = LINK.sub(lambda m: f"{REPOSITORY}/{m.group(1)}/{tag}/", text)
             if pinned != text:
                 if args.check:
-                    stale.append(str(path.relative_to(ROOT)))
+                    stale.append(path.relative_to(ROOT).as_posix())
                 else:
                     path.write_text(pinned, encoding="utf-8")
                     print(f"pinned {path.relative_to(ROOT)} to {tag}")

@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 CASE = Path("/conformance/cases/bazel/real-bzlmod")
-raw = json.loads((CASE / "authoritative.raw.json").read_text())
+raw = json.loads((CASE / "authoritative.raw.json").read_text(encoding="utf-8"))
 found: dict[str, tuple[str, str]] = {}
 expanded: set[str] = set()
 
@@ -35,7 +35,7 @@ ModuleGraph.walk(raw["root"])
 ModuleGraph.walk(raw["bazel_tools"])
 builtin = {"bazel_tools", "local_config_platform"}
 packages = sorted(f"{name}@{version}" for name, version in found.values() if name not in builtin)
-module = (CASE / "MODULE.bazel").read_text()
+module = (CASE / "MODULE.bazel").read_text(encoding="utf-8")
 overridden = {
     name: "overridden from git or an archive in MODULE.bazel: Bazel's lock holds no registry entry for it; checked in expect.yaml"
     for name in ("bazel_skylib", "rules_pkg")
@@ -50,7 +50,8 @@ overridden = {
         },
         indent=1,
     )
-    + "\n"
+    + "\n",
+    encoding="utf-8",
 )
 (CASE / "authoritative.raw.json").unlink()
 print(packages)

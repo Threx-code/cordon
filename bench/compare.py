@@ -57,14 +57,16 @@ class GuardDogComparison:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             rows = list(pool.map(one, samples))
         partial = out.with_suffix(".partial")
-        partial.write_text(json.dumps(rows))
+        partial.write_text(json.dumps(rows), encoding="utf-8")
         partial.rename(out)
         print(f"batch {index}: {len(rows)} samples written", flush=True)
         return out
 
     @staticmethod
     def merge(results: Path) -> int:
-        cordon_rows = json.loads((results / "results.json").read_text())["malware"]["verdicts"]
+        cordon_rows = json.loads((results / "results.json").read_text(encoding="utf-8"))["malware"][
+            "verdicts"
+        ]
         cordon = {
             v["sample"]: (v["blocked"], v.get("detail", ""))
             for v in cordon_rows
@@ -72,7 +74,7 @@ class GuardDogComparison:
         }
         guarddog: dict[str, bool | None] = {}
         for path in sorted(results.glob("guarddog-batch-*.json")):
-            for row in json.loads(path.read_text()):
+            for row in json.loads(path.read_text(encoding="utf-8")):
                 guarddog[str(row["sample"])] = row["blocked"]  # type: ignore[assignment]
         both = [
             s
@@ -116,7 +118,8 @@ class GuardDogComparison:
                     "guarddog": guarddog_blocked,
                 },
                 indent=1,
-            )
+            ),
+            encoding="utf-8",
         )
         return 0
 

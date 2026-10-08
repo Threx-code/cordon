@@ -15,20 +15,20 @@ PACK_DIRECTORY = BUILTIN_PACK.parent
 
 class TestThePackShipped:
     def test_it_is_the_upstream_rules_at_a_pinned_commit_with_their_licence(self) -> None:
-        manifest = json.loads((PACK_DIRECTORY / "MANIFEST.json").read_text())
+        manifest = json.loads((PACK_DIRECTORY / "MANIFEST.json").read_text(encoding="utf-8"))
         assert manifest["licence"] == "Apache-2.0" and len(manifest["commit"]) == 40
         assert (
             (PACK_DIRECTORY / "upstream" / "LICENSE")
-            .read_text()
+            .read_text(encoding="utf-8")
             .startswith(("Apache License", "\n", " "))
         )
-        text = BUILTIN_PACK.read_text()
+        text = BUILTIN_PACK.read_text(encoding="utf-8")
         assert manifest["commit"] in text and "Apache License 2.0" in text
         # Every kept rule is in the pack unchanged; nothing dropped is.
         for name in manifest["kept"]:
-            assert (PACK_DIRECTORY / "upstream" / name).read_text() in text
+            assert (PACK_DIRECTORY / "upstream" / name).read_text(encoding="utf-8") in text
         for name in manifest["dropped"]:
-            assert (PACK_DIRECTORY / "upstream" / name).read_text() not in text
+            assert (PACK_DIRECTORY / "upstream" / name).read_text(encoding="utf-8") not in text
 
     def test_builtin_names_the_shipped_pack(self) -> None:
         yara = pytest.importorskip("yara")

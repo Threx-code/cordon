@@ -28,7 +28,22 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 MAX_MEMBER = 4 << 20
-CODE = (".js", ".mjs", ".cjs", ".ts", ".py", ".rb", ".php", ".sh", ".ps1", ".bat", ".go", ".rs", ".java", ".cs")
+CODE = (
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".py",
+    ".rb",
+    ".php",
+    ".sh",
+    ".ps1",
+    ".bat",
+    ".go",
+    ".rs",
+    ".java",
+    ".cs",
+)
 BINARY = (".exe", ".dll", ".so", ".dylib", ".node", ".bin", ".pyd", ".jar", ".wasm")
 
 
@@ -66,7 +81,11 @@ class Features:
         try:
             if name.endswith((".whl", ".zip")):
                 with zipfile.ZipFile(io.BytesIO(data)) as inner:
-                    out += [(i.filename, inner.read(i)) for i in inner.infolist()[:5000] if not i.is_dir() and i.file_size <= MAX_MEMBER]
+                    out += [
+                        (i.filename, inner.read(i))
+                        for i in inner.infolist()[:5000]
+                        if not i.is_dir() and i.file_size <= MAX_MEMBER
+                    ]
             else:
                 with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as inner:
                     for member in inner.getmembers()[:5000]:
@@ -106,7 +125,9 @@ class Features:
             features.append("setup.py")
         if any(n.endswith(".pth") for n in names):
             features.append("pth")
-        longest = max((max((len(line) for line in d.split(b"\n")), default=0) for _, d in code), default=0)
+        longest = max(
+            (max((len(line) for line in d.split(b"\n")), default=0) for _, d in code), default=0
+        )
         if longest > 5000:
             features.append("very-long-lines")
         languages = sorted({n.rsplit(".", 1)[-1] for n, _ in code})[:3]
@@ -118,10 +139,15 @@ if __name__ == "__main__":
     import run as harness
 
     results = Path("/results/results.json")
-    collected: dict[str, Any] = json.loads(results.read_text())
+    collected: dict[str, Any] = json.loads(results.read_text(encoding="utf-8"))
     verdicts = collected.get("malware", {}).get("verdicts") or collected.get("verdicts") or []
-    missed = {v["sample"] for v in verdicts if v.get("tool") == "cordon" and v.get("blocked") is False}
-    samples = {name: (path, ecosystem) for name, path, ecosystem in harness.Harness.malware_samples(Path("/data"))}
+    missed = {
+        v["sample"] for v in verdicts if v.get("tool") == "cordon" and v.get("blocked") is False
+    }
+    samples = {
+        name: (path, ecosystem)
+        for name, path, ecosystem in harness.Harness.malware_samples(Path("/data"))
+    }
     clusters: Counter[tuple[str, ...]] = Counter()
     by_source: Counter[str] = Counter()
     for name in sorted(missed):
@@ -136,7 +162,7 @@ if __name__ == "__main__":
         "by_source": dict(by_source),
         "clusters": [{"features": list(k), "samples": n} for k, n in clusters.most_common()],
     }
-    Path("/results/miss-clusters.json").write_text(json.dumps(report, indent=1))
+    Path("/results/miss-clusters.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     print(json.dumps({"missed": report["missed"], "by_source": report["by_source"]}))
     for row in report["clusters"][:30]:
         print(f"{row['samples']:6}  {' '.join(row['features'])}")

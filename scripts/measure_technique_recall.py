@@ -109,7 +109,7 @@ for label, samples in TECHNIQUE.items():
             capture_output=True,
         )
         try:
-            fs = json.loads(out.read_text())["findings"]
+            fs = json.loads(out.read_text(encoding="utf-8"))["findings"]
         except Exception:
             fs = []
         if any(f.get("category") in ("malicious", "suspicious") for f in fs):
@@ -122,5 +122,8 @@ for label, samples in TECHNIQUE.items():
         f"{label:34} {hit:3}/{total:<3} {rate:>5}  {'missed: ' + ', '.join(missed) if missed else ''}"
     )
 pathlib.Path("techniques.json").write_text(
-    json.dumps({k: {"hit": v[0], "total": v[1], "missed": v[2]} for k, v in rows.items()}, indent=1)
+    json.dumps(
+        {k: {"hit": v[0], "total": v[1], "missed": v[2]} for k, v in rows.items()}, indent=1
+    ),
+    encoding="utf-8",
 )

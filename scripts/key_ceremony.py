@@ -140,13 +140,13 @@ class KeyCeremony:
 
         self.verify(root_document, advisory_key, seed)
         (public / "feed-root.json").write_text(
-            json.dumps(root_document, indent=2, sort_keys=True) + "\n"
+            json.dumps(root_document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         (public / "advisory-signing-key.json").write_text(
-            json.dumps(advisory_key, indent=2, sort_keys=True) + "\n"
+            json.dumps(advisory_key, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         fingerprints = self.fingerprints(root_document, advisory_key)
-        (public / "fingerprints.txt").write_text("\n".join(fingerprints) + "\n")
+        (public / "fingerprints.txt").write_text("\n".join(fingerprints) + "\n", encoding="utf-8")
         return {"root": root_document, "advisory_key": advisory_key, "fingerprints": fingerprints}
 
     @staticmethod

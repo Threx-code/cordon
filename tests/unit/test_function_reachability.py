@@ -252,7 +252,7 @@ class TestDatabaseMetadataAfterAPartialBuild:
             meta=DatabaseMeta(built_at="t2", sources=("osv:pypi",), record_count=1),
         )
         OsvImport.write_output(partial, tmp_path)
-        meta = json.loads((tmp_path / "advisories-meta.json").read_text())
+        meta = json.loads((tmp_path / "advisories-meta.json").read_text(encoding="utf-8"))
         assert meta["record_count"] == 4
         assert meta["sources"] == ["osv:cargo", "osv:npm", "osv:pypi"]
 
@@ -277,5 +277,5 @@ class TestDatabaseMetadataAfterAPartialBuild:
             ),
             tmp_path,
         )
-        meta = json.loads((tmp_path / "advisories-meta.json").read_text())
+        meta = json.loads((tmp_path / "advisories-meta.json").read_text(encoding="utf-8"))
         assert meta["record_count"] == 1 and meta["sources"] == ["osv:cargo"]

@@ -25,7 +25,7 @@ GHC = {
 }
 GHC_REASON = "part of GHC itself, not installable from Hackage: recorded as a platform requirement the compiler meets"
 
-plan = json.loads((RAW / "plan.json").read_text())
+plan = json.loads((RAW / "plan.json").read_text(encoding="utf-8"))
 units = [u for u in plan["install-plan"] if u.get("pkg-name") != "conformance"]
 listed = sorted({f"{u['pkg-name']}@{u['pkg-version']}" for u in units})
 (CASES / "real-cabal" / "authoritative.json").write_text(
@@ -38,13 +38,14 @@ listed = sorted({f"{u['pkg-name']}@{u['pkg-version']}" for u in units})
         },
         indent=1,
     )
-    + "\n"
+    + "\n",
+    encoding="utf-8",
 )
 print("cabal", len(listed))
 
-deps = json.loads((RAW / "stack-deps.json").read_text())
+deps = json.loads((RAW / "stack-deps.json").read_text(encoding="utf-8"))
 found = sorted({f"{d['name']}@{d['version']}" for d in deps if d.get("name") != "stackapp"})
-lock = (CASES / "real-stack" / "stack.yaml.lock").read_text()
+lock = (CASES / "real-stack" / "stack.yaml.lock").read_text(encoding="utf-8")
 ignore = {}
 for entry in found:
     name = entry.rsplit("@", 1)[0]
@@ -58,7 +59,8 @@ for entry in found:
     json.dumps(
         {"tool": "stack ls dependencies json", "packages": found, "ignore": ignore}, indent=1
     )
-    + "\n"
+    + "\n",
+    encoding="utf-8",
 )
 print("stack", len(found), "of which from the snapshot or GHC", len(ignore))
 shutil.rmtree(RAW)

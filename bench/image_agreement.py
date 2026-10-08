@@ -148,7 +148,7 @@ class Image:
     def pull(reference: str, into: Path) -> str | None:
         failure = ""
         for candidate in Image.mirrors(reference):
-            completed = subprocess.run(  # noqa: S603 - fixed argv
+            completed = subprocess.run(
                 ["crane", "pull", "--platform", "linux/amd64", candidate, str(into)],
                 capture_output=True, text=True, timeout=1800, check=False,
             )  # fmt: skip
@@ -159,7 +159,7 @@ class Image:
 
     @staticmethod
     def syft(tarball: Path) -> dict[str, set[str]]:
-        completed = subprocess.run(  # noqa: S603 - fixed argv
+        completed = subprocess.run(
             ["syft", f"docker-archive:{tarball}", "-o", "json", "-q"],
             capture_output=True, text=True, timeout=3600, check=True,
         )  # fmt: skip
@@ -211,7 +211,7 @@ class Image:
             try:
                 theirs = Image.syft(tarball)
                 ours, seconds = Image.cordon(tarball)
-            except Exception as exc:  # noqa: BLE001 - one image's failure is recorded, not fatal
+            except Exception as exc:
                 return {"image": reference, "error": f"{type(exc).__name__}: {exc}"[:400]}
         by_type: dict[str, Any] = {}
         for kind in sorted(set(ours) | set(theirs)):
@@ -249,7 +249,7 @@ class Image:
     def run(results: Path, only: list[str]) -> None:
         out_path = results / "image-agreement.json"
         rows: list[dict[str, Any]] = (
-            json.loads(out_path.read_text())["images"] if out_path.exists() else []
+            json.loads(out_path.read_text(encoding="utf-8"))["images"] if out_path.exists() else []
         )
         done = {row["image"] for row in rows if "error" not in row}
         rows = [row for row in rows if row["image"] in done]
@@ -263,7 +263,8 @@ class Image:
                 flush=True,
             )
             out_path.write_text(
-                json.dumps({"summary": Image.summary(rows), "images": rows}, indent=1)
+                json.dumps({"summary": Image.summary(rows), "images": rows}, indent=1),
+                encoding="utf-8",
             )
         print(json.dumps(Image.summary(rows), indent=1))
 

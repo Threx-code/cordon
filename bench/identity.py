@@ -142,7 +142,7 @@ class Identity:
         parser.add_argument("--out", type=Path, required=True)
         args = parser.parse_args()
         result = Identity.run(args.osv)
-        args.out.write_text(json.dumps(result, indent=2))
+        args.out.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(f"identity: {result['covered']}/{result['records']} = {result['rate']}%")
         for eco, row in result["by_ecosystem"].items():
             print(

@@ -42,7 +42,9 @@ class Agreement:
 
     #: The toolchain that wrote the lockfile, which Cordon lists (for its own advisories) and
     #: Trivy does not: `BUNDLED WITH`, `COCOAPODS:`. Excluded from the adjusted figure only.
-    TOOLCHAIN = frozenset({("rubygems", "bundler"), ("cocoapods", "cocoapods"), ("gomod", "stdlib")})
+    TOOLCHAIN = frozenset(
+        {("rubygems", "bundler"), ("cocoapods", "cocoapods"), ("gomod", "stdlib")}
+    )
 
     @staticmethod
     def name(ecosystem: str, name: str) -> str:
@@ -51,7 +53,12 @@ class Agreement:
         if ecosystem == "swift":
             # Trivy names a Swift package by its host and path (or, for an ssh remote, the remote
             # as written), Cordon by its path.
-            return name.lower().removeprefix("git@github.com:").removeprefix("github.com/").removesuffix(".git")
+            return (
+                name.lower()
+                .removeprefix("git@github.com:")
+                .removeprefix("github.com/")
+                .removesuffix(".git")
+            )
         if ecosystem == "cocoapods":
             # Trivy lists each subspec (`Pod/Core`) as a package; Cordon the pod it belongs to.
             return name.lower().split("/", 1)[0]
@@ -62,7 +69,18 @@ class Agreement:
     #: Formats both tools read from the lockfile alone. Compared that way: beside its manifest, a
     #: workspace lockfile was read by Trivy only as far as the root manifest reaches, and the
     #: members' manifests were not fetched.
-    LOCK_ALONE = frozenset({"Cargo.lock", "mix.lock", "Gemfile.lock", "pubspec.lock", "composer.lock", "Podfile.lock", "Package.resolved", "packages.lock.json"})
+    LOCK_ALONE = frozenset(
+        {
+            "Cargo.lock",
+            "mix.lock",
+            "Gemfile.lock",
+            "pubspec.lock",
+            "composer.lock",
+            "Podfile.lock",
+            "Package.resolved",
+            "packages.lock.json",
+        }
+    )
     _SEMVER = re.compile(r"^v?\d+(?:\.\d+){0,3}(?:[-+][\w.-]+)?$")
 
     @staticmethod
@@ -78,7 +96,9 @@ class Agreement:
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import Config
 
-        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True), detectors=()).scan(folder)
+        result = Scanner(
+            Config.default().with_overrides(use_cache=False, offline=True), detectors=()
+        ).scan(folder)
         out: set[tuple[str, str]] = set()
         for dependency in result.dependencies:
             # A workspace member or path package with a version is in the lockfile, and Trivy
@@ -86,13 +106,31 @@ class Agreement:
             if not dependency.version or dependency.ecosystem in ("image", "actions"):
                 continue
             ecosystem = "maven" if dependency.ecosystem == "gradle" else dependency.ecosystem
-            out.add((Agreement.name(ecosystem, dependency.name), Agreement.version(ecosystem, dependency.version)))
+            out.add(
+                (
+                    Agreement.name(ecosystem, dependency.name),
+                    Agreement.version(ecosystem, dependency.version),
+                )
+            )
         return out
 
     @staticmethod
     def trivy(folder: Path) -> tuple[set[tuple[str, str]], str]:
-        completed = subprocess.run(  # noqa: S603 - fixed argv, the benchmark's own binary
-            ["trivy", "fs", "--quiet", "--skip-db-update", "--offline-scan", "--scanners", "vuln", "--list-all-pkgs", "--include-dev-deps", "--format", "json", str(folder)],
+        completed = subprocess.run(
+            [
+                "trivy",
+                "fs",
+                "--quiet",
+                "--skip-db-update",
+                "--offline-scan",
+                "--scanners",
+                "vuln",
+                "--list-all-pkgs",
+                "--include-dev-deps",
+                "--format",
+                "json",
+                str(folder),
+            ],
             capture_output=True,
             text=True,
             timeout=600,
@@ -108,7 +146,12 @@ class Agreement:
             kinds.add(ecosystem)
             for package in result.get("Packages") or []:
                 if package.get("Name") and package.get("Version"):
-                    out.add((Agreement.name(ecosystem, package["Name"]), Agreement.version(ecosystem, package["Version"])))
+                    out.add(
+                        (
+                            Agreement.name(ecosystem, package["Name"]),
+                            Agreement.version(ecosystem, package["Version"]),
+                        )
+                    )
         return out, ",".join(sorted(kinds))
 
     @staticmethod
@@ -128,12 +171,22 @@ class Agreement:
                     name = re.search(r'^name = "([^"]+)"', block, re.M)
                     if not name:
                         continue
-                    local = re.search(r'^source = \{ (?:editable|virtual|directory) = ', block, re.M) if lock.name == "uv.lock" else not re.search(r"^source = ", block, re.M)
+                    local = (
+                        re.search(r"^source = \{ (?:editable|virtual|directory) = ", block, re.M)
+                        if lock.name == "uv.lock"
+                        else not re.search(r"^source = ", block, re.M)
+                    )
                     if local:
-                        names.add(Agreement.name("pypi" if lock.name == "uv.lock" else "cargo", name.group(1)))
+                        names.add(
+                            Agreement.name(
+                                "pypi" if lock.name == "uv.lock" else "cargo", name.group(1)
+                            )
+                        )
             elif lock.name == "Gemfile.lock":
                 for section in re.findall(r"(?ms)^PATH\n(.*?)(?:\n\n|\Z)", text):
-                    names |= {m.lower() for m in re.findall(r"^    ([A-Za-z0-9_.-]+) \(", section, re.M)}
+                    names |= {
+                        m.lower() for m in re.findall(r"^    ([A-Za-z0-9_.-]+) \(", section, re.M)
+                    }
         return names
 
     @staticmethod
@@ -152,13 +205,17 @@ class Agreement:
             try:
                 ours = Agreement.cordon(read)
                 theirs, kinds = Agreement.trivy(read)
-            except Exception as exc:  # noqa: BLE001 - one lockfile's failure is recorded, not fatal
+            except Exception as exc:
                 return {**entry, "error": f"{type(exc).__name__}: {exc}"[:300]}
         if not kinds:
             return {**entry, "trivy_types": "", "cordon": len(ours), "trivy_reads_nothing": True}
         ecosystems = {TRIVY_TYPES.get(k, k) for k in kinds.split(",")}
         own = Agreement.own_packages(folder)
-        ours = {(n, v) for n, v in ours if not any((e, n) in Agreement.TOOLCHAIN for e in ecosystems) and n not in own}
+        ours = {
+            (n, v)
+            for n, v in ours
+            if not any((e, n) in Agreement.TOOLCHAIN for e in ecosystems) and n not in own
+        }
         theirs = {(n, v) for n, v in theirs if n not in own}
         both = ours & theirs
         precision = len(both) / len(ours) if ours else (1.0 if not theirs else 0.0)
@@ -177,7 +234,9 @@ class Agreement:
 
     @staticmethod
     def run(results: Path, workers: int) -> None:
-        index = json.loads((Path(DATA) / "lockfiles-large" / "index.json").read_text())
+        index = json.loads(
+            (Path(DATA) / "lockfiles-large" / "index.json").read_text(encoding="utf-8")
+        )
         with multiprocessing.get_context("fork").Pool(workers) as pool:
             rows = list(pool.imap_unordered(Agreement.one, index, chunksize=4))
         by_registry: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -192,16 +251,22 @@ class Agreement:
                 "compared": len(compared),
                 "errors": sum(1 for r in items if "error" in r),
                 "exact": sum(1 for r in compared if r["f1"] == 1.0),
-                "mean_f1": round(sum(r["f1"] for r in compared) / len(compared), 4) if compared else None,
+                "mean_f1": round(sum(r["f1"] for r in compared) / len(compared), 4)
+                if compared
+                else None,
             }
-        (results / "parse-agreement.json").write_text(json.dumps({"summary": summary, "lockfiles": rows}, indent=1))
+        (results / "parse-agreement.json").write_text(
+            json.dumps({"summary": summary, "lockfiles": rows}, indent=1), encoding="utf-8"
+        )
         print(json.dumps(summary, indent=1))
 
 
 DATA = "/data"
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--data", default="/data")
     parser.add_argument("--results", type=Path, default=Path("/results"))
     parser.add_argument("--workers", type=int, default=8)

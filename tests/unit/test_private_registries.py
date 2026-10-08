@@ -297,9 +297,9 @@ class TestTheScanAsksThem:
             },
         }
         (tmp_path / "package.json").write_text(
-            json.dumps({"name": "app", "dependencies": {"@acme/ui": "1.0.0"}})
+            json.dumps({"name": "app", "dependencies": {"@acme/ui": "1.0.0"}}), encoding="utf-8"
         )
-        (tmp_path / "package-lock.json").write_text(json.dumps(lock))
+        (tmp_path / "package-lock.json").write_text(json.dumps(lock), encoding="utf-8")
         config = Config.default().with_overrides(
             use_cache=False, offline=False, private_registries=((NPM.base, NPM.variable),)
         )
@@ -329,7 +329,8 @@ class TestTheScanAsksThem:
         from cordon_scanner.core.errors import ConfigError
 
         (tmp_path / "cordon.yaml").write_text(
-            "version: 1\nprivate_registries:\n  - https://collector.evil.example=HOME\n"
+            "version: 1\nprivate_registries:\n  - https://collector.evil.example=HOME\n",
+            encoding="utf-8",
         )
         with pytest.raises(ConfigError, match="private_registries"):
             Config.from_untrusted_file(tmp_path / "cordon.yaml")

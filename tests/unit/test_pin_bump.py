@@ -56,11 +56,13 @@ class TestARepository:
     def test_current_is_left_alone_and_a_readme_is_never_touched(self, tmp_path) -> None:
         (tmp_path / ".github/workflows").mkdir(parents=True)
         (tmp_path / ".github/workflows/ci.yml").write_text(
-            f"uses: Threx-code/cordon/action@{NEW}  # v0.5.3\n"
+            f"uses: Threx-code/cordon/action@{NEW}  # v0.5.3\n", encoding="utf-8"
         )
-        (tmp_path / "README.md").write_text(f"uses: Threx-code/cordon/action@{OLD}\n")
+        (tmp_path / "README.md").write_text(
+            f"uses: Threx-code/cordon/action@{OLD}\n", encoding="utf-8"
+        )
         assert bump_module.CordonPins.run(tmp_path, RELEASE) == []
-        assert OLD in (tmp_path / "README.md").read_text()
+        assert OLD in (tmp_path / "README.md").read_text(encoding="utf-8")
 
     def test_the_workflow_template_passes_values_through_the_environment(self) -> None:
         workflow = (ROOT / "ci" / "github" / "cordon-pin-bump.yml").read_text(encoding="utf-8")

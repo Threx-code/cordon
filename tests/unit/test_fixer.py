@@ -169,7 +169,7 @@ class TestNpm:
         )
         changed = DependencyFixer.apply(tmp_path, FixSpec.from_options(FixerKit.npm_options()))
         assert changed == ["package-lock.json", "package.json"]
-        lock = json.loads((tmp_path / "package-lock.json").read_text())
+        lock = json.loads((tmp_path / "package-lock.json").read_text(encoding="utf-8"))
         for key in ("node_modules/lodash", "node_modules/other/node_modules/lodash"):
             entry = lock["packages"][key]
             assert entry == {
@@ -181,7 +181,9 @@ class TestNpm:
             "a name that merely starts the same is not it"
         )
         assert (
-            json.loads((tmp_path / "package.json").read_text())["dependencies"]["lodash"]
+            json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))["dependencies"][
+                "lodash"
+            ]
             == "^4.17.21"
         )
 
@@ -194,7 +196,7 @@ class TestNpm:
         }
         FixerKit.write(tmp_path, {"package-lock.json": lock})
         DependencyFixer.apply(tmp_path, FixSpec.from_options(FixerKit.npm_options()))
-        text = (tmp_path / "package-lock.json").read_text()
+        text = (tmp_path / "package-lock.json").read_text(encoding="utf-8")
         assert text.endswith("\n") and '\n  "name": "app"' in text
         tree = json.loads(text)["dependencies"]
         assert (
@@ -224,7 +226,9 @@ class TestNpm:
         )
         DependencyFixer.apply(tmp_path, FixSpec.from_options(FixerKit.npm_options()))
         assert (
-            json.loads((tmp_path / "package.json").read_text())["devDependencies"]["lodash"]
+            json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))["devDependencies"][
+                "lodash"
+            ]
             == expected
         )
 
@@ -248,7 +252,7 @@ class TestNpm:
         with pytest.raises(FixRefused, match="changes its own dependencies"):
             DependencyFixer.apply(tmp_path, FixSpec.from_options(options))
         assert (
-            json.loads((tmp_path / "package-lock.json").read_text())["packages"][
+            json.loads((tmp_path / "package-lock.json").read_text(encoding="utf-8"))["packages"][
                 "node_modules/lodash"
             ]["version"]
             == "4.17.20"
@@ -263,7 +267,7 @@ class TestNpm:
         with pytest.raises(FixRefused, match="no npm lockfile here records"):
             DependencyFixer.apply(tmp_path, FixSpec.from_options(FixerKit.npm_options()))
         assert (
-            json.loads((outside / "package-lock.json").read_text())["packages"][
+            json.loads((outside / "package-lock.json").read_text(encoding="utf-8"))["packages"][
                 "node_modules/lodash"
             ]["version"]
             == "4.17.20"
@@ -282,9 +286,9 @@ class TestPypi:
         )
         changed = DependencyFixer.apply(tmp_path, FixSpec.from_options(FixerKit.pypi_options()))
         assert changed == ["requirements.txt", "services/api/requirements-dev.txt"]
-        assert (
-            tmp_path / "requirements.txt"
-        ).read_text() == "flask==3.0.0\nRequests==2.32.0\nrequests-mock==1.0\n"
+        assert (tmp_path / "requirements.txt").read_text(
+            encoding="utf-8"
+        ) == "flask==3.0.0\nRequests==2.32.0\nrequests-mock==1.0\n"
         assert (
             tmp_path / "services/api/requirements-dev.txt"
         ).read_bytes() == b"requests[socks]==2.32.0 ; python_version >= '3.8'  # pinned\r\n"
@@ -302,7 +306,7 @@ class TestPypi:
             },
         )
         DependencyFixer.apply(tmp_path, FixSpec.from_options(FixerKit.pypi_options()))
-        assert (tmp_path / "requirements.txt").read_text() == (
+        assert (tmp_path / "requirements.txt").read_text(encoding="utf-8") == (
             "requests==2.32.0 \\\n"
             f"    --hash=sha256:{'a' * 64} \\\n"
             f"    --hash=sha256:{'b' * 64}\n"

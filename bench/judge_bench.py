@@ -182,7 +182,9 @@ class JudgeBench:
         summary = bench.summary()
         print(json.dumps(summary, indent=1))
         if args.json:
-            args.json.write_text(json.dumps({"summary": summary, "rows": bench.rows}, indent=1))
+            args.json.write_text(
+                json.dumps({"summary": summary, "rows": bench.rows}, indent=1), encoding="utf-8"
+            )
         return 0
 
 

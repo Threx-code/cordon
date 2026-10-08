@@ -297,7 +297,9 @@ class Harness:
     @staticmethod
     def benign(data: Path, limit: int, workers: int) -> SuiteResult:
         result = SuiteResult("benign")
-        manifest = json.loads((data / "benign" / "manifest.json").read_text())[:limit]
+        manifest = json.loads((data / "benign" / "manifest.json").read_text(encoding="utf-8"))[
+            :limit
+        ]
 
         def one(entry: dict[str, str]) -> list[Verdict]:
             path = data / entry["file"]
@@ -313,7 +315,7 @@ class Harness:
     def agents(repo: Path) -> dict[str, Any]:
         """The agent and MCP attack-shape suite. Cordon is scored on the rules each case expects; the
         other tools on whether they flag the case at all -- a generous reading for them."""
-        suite = json.loads((repo / "bench" / "agent-suite.json").read_text())
+        suite = json.loads((repo / "bench" / "agent-suite.json").read_text(encoding="utf-8"))
         rows = []
         for case in suite["cases"]:
             path = repo / case["path"]
@@ -541,7 +543,11 @@ class Harness:
                     malware.append((name, purl))
             benign = []
             manifest = data / "benign" / "manifest.json"
-            for entry in json.loads(manifest.read_text())[:limit] if manifest.exists() else []:
+            for entry in (
+                json.loads(manifest.read_text(encoding="utf-8"))[:limit]
+                if manifest.exists()
+                else []
+            ):
                 key = Harness._malregistry_key(Path(entry["file"]))
                 purl = Harness._purl(entry["ecosystem"], key)
                 if purl:
@@ -674,7 +680,7 @@ class Harness:
         collected: dict[str, Any] = {}
         previous = args.results / "results.json"
         if previous.exists():
-            collected = json.loads(previous.read_text())
+            collected = json.loads(previous.read_text(encoding="utf-8"))
         for suite in args.suites:
             if suite == "agents":
                 collected["agents"] = Harness.agents(args.repo)
@@ -695,8 +701,8 @@ class Harness:
                     "verdicts": [asdict(v) for v in outcome.verdicts],
                 }
             print(f"{suite}: done")
-        previous.write_text(json.dumps(collected, indent=1))
-        (args.results / "summary.md").write_text(Harness.summary(collected))
+        previous.write_text(json.dumps(collected, indent=1), encoding="utf-8")
+        (args.results / "summary.md").write_text(Harness.summary(collected), encoding="utf-8")
         print(Harness.summary(collected))
         return 0
 

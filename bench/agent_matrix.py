@@ -1235,7 +1235,8 @@ class AgentMatrix:
                         for c in cases
                     ],
                     indent=1,
-                )
+                ),
+                encoding="utf-8",
             )
         return 0
 

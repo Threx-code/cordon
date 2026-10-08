@@ -119,13 +119,15 @@ class TestTheSeamEndToEnd:
 
     def test_a_shell_command_in_python_is_examined_as_shell(self, tmp_path) -> None:
         (tmp_path / "a.py").write_text(
-            "import os\n\nos." + "system" + f'("{FETCH}\\"$(env)\\" {DESTINATION}")\n'
+            "import os\n\nos." + "system" + f'("{FETCH}\\"$(env)\\" {DESTINATION}")\n',
+            encoding="utf-8",
         )
         assert self.flagged(tmp_path)
 
     def test_a_shell_command_in_javascript_is_examined_as_shell(self, tmp_path) -> None:
         (tmp_path / "a.js").write_text(
-            f'const cp = require("child_process");\ncp.exec("{FETCH}\\"$(env)\\" {DESTINATION}");\n'
+            f'const cp = require("child_process");\ncp.exec("{FETCH}\\"$(env)\\" {DESTINATION}");\n',
+            encoding="utf-8",
         )
         assert self.flagged(tmp_path)
 
@@ -135,6 +137,7 @@ class TestTheSeamEndToEnd:
         (tmp_path / "a.js").write_text(
             'const cp = require("child_process");\n'
             'cp.execSync("git rev-parse HEAD");\n'
-            'cp.spawn("npm", ["run", "build"]);\n'
+            'cp.spawn("npm", ["run", "build"]);\n',
+            encoding="utf-8",
         )
         assert self.flagged(tmp_path) == []

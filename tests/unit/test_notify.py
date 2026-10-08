@@ -183,7 +183,7 @@ class TestTheCommandLine:
         assert "notify slack failed: HTTP 500 from slack" in capsys.readouterr().err
 
     def test_a_passing_gate_sends_nothing(self, tmp_path, monkeypatch) -> None:
-        (tmp_path / "ok.py").write_text("print('hello')\n")
+        (tmp_path / "ok.py").write_text("print('hello')\n", encoding="utf-8")
         sent = _Recorder()
         monkeypatch.setattr(notify.Webhooks, "_post", sent)
         monkeypatch.setenv("CORDON_NOTIFY_SLACK", ENV["CORDON_NOTIFY_SLACK"])

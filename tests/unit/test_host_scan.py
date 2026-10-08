@@ -51,11 +51,14 @@ class HostHelpers:
                         "ripgrep 14.1.0 (registry+https://github.com/rust-lang/crates.io-index)": {}
                     }
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         site = home / ".local/lib/python3.12/site-packages/pyyaml-5.3.dist-info"
         site.mkdir(parents=True)
-        (site / "METADATA").write_text("Metadata-Version: 2.1\nName: PyYAML\nVersion: 5.3\n")
+        (site / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: PyYAML\nVersion: 5.3\n", encoding="utf-8"
+        )
         return root, home
 
 

@@ -63,7 +63,12 @@ class ConformanceCase:
         out = []
         for ecosystem in sorted(p for p in CASES.iterdir() if p.is_dir()) if CASES.is_dir() else ():
             for case in sorted(p for p in ecosystem.iterdir() if (p / EXPECT).is_file()):
-                expect = DataYaml.load((case / EXPECT).read_text(), source=str(case / EXPECT)) or {}
+                expect = (
+                    DataYaml.load(
+                        (case / EXPECT).read_text(encoding="utf-8"), source=str(case / EXPECT)
+                    )
+                    or {}
+                )
                 out.append(ConformanceCase(ecosystem.name, case.name, case, expect))
         return out
 
@@ -209,7 +214,7 @@ class ConformanceCheck:
                 normal = implementation.normalize_name(name) if implementation else name
                 return f"{normal}@{version}"
 
-            document = json.loads(authoritative.read_text())
+            document = json.loads(authoritative.read_text(encoding="utf-8"))
             # Names the tool cannot report, each with the reason (`go list` has no module for the
             # standard library): excluded from both sides, never silently. Likewise whole kinds
             # the tool's listing omits, each with the reason (`exclude`).
@@ -264,7 +269,7 @@ class ConformanceCheck:
             }
             if truth != seen:
                 problems.append(
-                    f"differs from {json.loads(authoritative.read_text())['tool']}: "
+                    f"differs from {json.loads(authoritative.read_text(encoding='utf-8'))['tool']}: "
                     f"missing {sorted(truth - seen)}, extra {sorted(seen - truth)}"
                 )
 

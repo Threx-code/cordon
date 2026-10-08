@@ -56,7 +56,9 @@ class TestThePerFileBudgetCannotSkipMalwareDetection:
     """P-1: padding a file so an earlier detector spends the budget no longer hides a payload."""
 
     def test_the_malware_detectors_run_even_when_the_budget_is_spent(self, tmp_path) -> None:
-        (tmp_path / "install.js").write_text("const p = atob(process.argv[2]);\neval(p);\n")
+        (tmp_path / "install.js").write_text(
+            "const p = atob(process.argv[2]);\neval(p);\n", encoding="utf-8"
+        )
         limits = DEFAULT_LIMITS.merged(per_file_timeout=1e-9, max_workers=1)
         result = AdversarialKit.scan(tmp_path, limits=limits)
         rules = {f.rule_id for f in result.findings}
@@ -84,7 +86,7 @@ class TestARepositoryCannotConfigureItsOwnBlindness:
     )
 
     def test_every_blinding_setting_is_withheld(self, tmp_path) -> None:
-        (tmp_path / "cordon.yaml").write_text(self.CONFIG)
+        (tmp_path / "cordon.yaml").write_text(self.CONFIG, encoding="utf-8")
         config = ConfigResolver.resolve(root=tmp_path)
         assert config.allow_plugins is False
         assert config.expand_archives is True
@@ -100,8 +102,8 @@ class TestARepositoryCannotConfigureItsOwnBlindness:
         }
 
     def test_each_attempt_fails_the_default_gate(self, tmp_path) -> None:
-        (tmp_path / "cordon.yaml").write_text(self.CONFIG)
-        (tmp_path / "a.txt").write_text("hello\n")
+        (tmp_path / "cordon.yaml").write_text(self.CONFIG, encoding="utf-8")
+        (tmp_path / "a.txt").write_text("hello\n", encoding="utf-8")
         config = ConfigResolver.resolve(root=tmp_path, use_cache=False)
         result = Scanner(config).scan(tmp_path)
         weakened = [f for f in result.findings if f.rule_id == "POLICY.CONFIG.GATE_WEAKENED"]
@@ -109,7 +111,7 @@ class TestARepositoryCannotConfigureItsOwnBlindness:
 
     def test_a_narrow_minified_path_is_kept_and_reported_like_an_exclusion(self, tmp_path) -> None:
         (tmp_path / "cordon.yaml").write_text(
-            'version: 1\nscan:\n  minified: ["dist/bundle.min.js"]\n'
+            'version: 1\nscan:\n  minified: ["dist/bundle.min.js"]\n', encoding="utf-8"
         )
         config = ConfigResolver.resolve(root=tmp_path)
         assert (
@@ -133,8 +135,10 @@ class TestPluginTrustRunsNoForeignCode:
         marker = tmp_path / "ran"
         package = tmp_path / "evilpkg"
         package.mkdir()
-        (package / "__init__.py").write_text(f"open({str(marker)!r}, 'w').write('x')\n")
-        (package / "mod.py").write_text("X = 1\n")
+        (package / "__init__.py").write_text(
+            f"open({str(marker)!r}, 'w').write('x')\n", encoding="utf-8"
+        )
+        (package / "mod.py").write_text("X = 1\n", encoding="utf-8")
         monkeypatch.syspath_prepend(str(tmp_path))
         entry = types.SimpleNamespace(
             module="evilpkg.mod", value="evilpkg.mod:X", name="capability"
@@ -174,7 +178,9 @@ class TestTheCacheDirectoryIsNotTrusted:
         planted = sync / "advisories-npm.json.gz"
         planted.write_bytes(gzip.compress(b"[]"))
         digest = advisories.AdvisoryFiles.digest_of(planted)
-        (sync / advisories.DIGESTS_NAME).write_text(json.dumps({"advisories-npm.json.gz": digest}))
+        (sync / advisories.DIGESTS_NAME).write_text(
+            json.dumps({"advisories-npm.json.gz": digest}), encoding="utf-8"
+        )
         records = advisories.ShippedAdvisories._read_shipped("npm")
         assert len(records) > 1000, "the shipped npm database is still the one in use"
         assert "advisories-npm.json.gz" in advisories.AdvisoryFiles.refused_synced_files()
@@ -210,7 +216,7 @@ class TestTheCacheDirectoryIsNotTrusted:
 
         FeedStore.state_dir().mkdir(parents=True)
         FeedStore.overlay_path("npm").write_text(
-            json.dumps({"upsert": {}, "withdraw": ["GHSA-anything"]})
+            json.dumps({"upsert": {}, "withdraw": ["GHSA-anything"]}), encoding="utf-8"
         )
         assert FeedStore.read_overlay("npm") == ([], frozenset())
 
@@ -226,9 +232,11 @@ class TestTheCacheDirectoryIsNotTrusted:
         directory = FeedStore.state_dir()
         directory.mkdir(parents=True)
         (directory / "root.json").write_text(
-            json.dumps({"signed": {"version": 999}, "signatures": []})
+            json.dumps({"signed": {"version": 999}, "signatures": []}), encoding="utf-8"
         )
-        (directory / "state.json").write_text(json.dumps({"serial": 0, "timestamp_version": 0}))
+        (directory / "state.json").write_text(
+            json.dumps({"serial": 0, "timestamp_version": 0}), encoding="utf-8"
+        )
         state = FeedState.load(directory)
         assert state.root is None and state.serial == 0
 
@@ -302,12 +310,12 @@ class TestGitRunsNoDriverTheRepositoryDefines:
             )
 
         git("init", "-q")
-        (repo / "a.txt").write_text("one\n")
+        (repo / "a.txt").write_text("one\n", encoding="utf-8")
         git("add", "-A")
         git("commit", "-q", "-m", "one")
-        (repo / ".gitattributes").write_text("*.txt filter=evil\n")
+        (repo / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
         git("config", "filter.evil.clean", f"sh -c 'touch {marker}; cat'")
-        (repo / "a.txt").write_text("two\n")
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
         GitRepository(repo).changed_files("HEAD")
         assert not marker.exists(), "the repository's clean filter ran during the scan"
 
@@ -379,7 +387,9 @@ class TestUploadsCarryNoCode:
     def test_snippets_are_removed(self, tmp_path) -> None:
         from cordon_scanner.cloud.results import SignedResults
 
-        (tmp_path / "install.js").write_text("const p = atob(process.argv[2]);\neval(p);\n")
+        (tmp_path / "install.js").write_text(
+            "const p = atob(process.argv[2]);\neval(p);\n", encoding="utf-8"
+        )
         result = AdversarialKit.scan(tmp_path, evidence=RedactionMode.MASKED)
         assert any(f.evidence.snippet for f in result.findings), "the local report keeps excerpts"
         document = json.loads(SignedResults.results_bytes(result))
@@ -458,7 +468,7 @@ class TestTheRunnerTrustsNoRedirectAndNoControlPlaneSwitch:
         from cordon_scanner.cloud import runner
 
         (tmp_path / "cordon.yaml").write_text(
-            "version: 1\nscan:\n  allow_plugins: true\n  offline: false\n"
+            "version: 1\nscan:\n  allow_plugins: true\n  offline: false\n", encoding="utf-8"
         )
         seen = {}
 
@@ -563,7 +573,7 @@ class TestOfflineBundlesProveWhatTheySay:
         from cordon_scanner.core.bundle import MANIFEST_NAME, Bundle
 
         payload = tmp_path / "rules.yaml"
-        payload.write_text("rules: []\n")
+        payload.write_text("rules: []\n", encoding="utf-8")
         out = tmp_path / "bundle.tar.gz"
         Bundle.create(out, files=[("rules.yaml", payload)])
         if signature is not None:
@@ -630,7 +640,7 @@ class TestOfflineBundlesProveWhatTheySay:
         monkeypatch.setattr(bundle_module.Bundle, "_verify", classmethod(verify_then_swap))
         into = tmp_path / "into"
         report = bundle_module.Bundle.install(path, into)
-        assert report.ok and (into / "rules.yaml").read_text() == "rules: []\n"
+        assert report.ok and (into / "rules.yaml").read_text(encoding="utf-8") == "rules: []\n"
 
 
 class TestDevicePseudonyms:

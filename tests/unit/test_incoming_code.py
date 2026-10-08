@@ -37,7 +37,7 @@ class Repo:
     def commit(repo: Path, files: dict[str, str], message: str = "change") -> str:
         for name, text in files.items():
             (repo / name).parent.mkdir(parents=True, exist_ok=True)
-            (repo / name).write_text(text)
+            (repo / name).write_text(text, encoding="utf-8")
         Repo.git(repo, "add", "-A")
         Repo.git(repo, "commit", "-q", "-m", message)
         return Repo.git(repo, "rev-parse", "HEAD")
@@ -96,7 +96,9 @@ class GitWorld:
 class TestTheCommitTree(GitWorld):
     def test_a_tree_is_read_from_the_objects_not_the_working_tree(self, upstream) -> None:
         rev = Repo.git(upstream, "rev-parse", "HEAD")
-        (upstream / "package-lock.json").write_text("changed on disk, never committed")
+        (upstream / "package-lock.json").write_text(
+            "changed on disk, never committed", encoding="utf-8"
+        )
         source = GitTreeSource(GitRepository(upstream), rev)
         assert "package-lock.json" in source.selected_paths
         assert (
@@ -115,7 +117,9 @@ class TestClone(GitWorld):
         target = tmp_path / "clone"
         check = Incoming.clone(str(upstream), target, Repo.config())
         assert check is not None and check.ok
-        assert (target / "package-lock.json").read_text() == CLEAN["package-lock.json"]
+        assert (target / "package-lock.json").read_text(encoding="utf-8") == CLEAN[
+            "package-lock.json"
+        ]
 
     def test_a_compromised_repository_is_never_checked_out(self, upstream, tmp_path) -> None:
         Repo.commit(upstream, COMPROMISED, "compromise")
@@ -142,12 +146,12 @@ class TestClone(GitWorld):
     ) -> None:
         occupied = tmp_path / "occupied"
         occupied.mkdir()
-        (occupied / "mine.txt").write_text("keep")
+        (occupied / "mine.txt").write_text("keep", encoding="utf-8")
         with pytest.raises(ConfigError):
             Incoming.clone(str(upstream), occupied, Repo.config())
         with pytest.raises(ConfigError):
             Incoming.clone("--upload-pack=touch /tmp/x", tmp_path / "x", Repo.config())
-        assert (occupied / "mine.txt").read_text() == "keep"
+        assert (occupied / "mine.txt").read_text(encoding="utf-8") == "keep"
 
     def test_the_default_directory_is_the_one_git_would_choose(self) -> None:
         assert Incoming.default_directory("https://github.com/Threx-code/cordon.git") == "cordon"
@@ -167,7 +171,9 @@ class TestPull(GitWorld):
         check, outcome = Incoming.pull(checkout, Repo.config())
         assert check is not None and not check.ok and outcome.startswith("not merged")
         assert Repo.git(checkout, "rev-parse", "HEAD") == before
-        assert (checkout / "package-lock.json").read_text() == CLEAN["package-lock.json"]
+        assert (checkout / "package-lock.json").read_text(encoding="utf-8") == CLEAN[
+            "package-lock.json"
+        ]
 
     def test_a_clean_push_is_merged(self, upstream, checkout) -> None:
         pushed = Repo.commit(upstream, {"docs.md": "more\n"}, "docs")
@@ -195,12 +201,12 @@ class TestTheHooks(GitWorld):
         Repo.git(tmp_path, "clone", "-q", str(upstream), str(mine))
         before = Repo.git(mine, "rev-parse", "HEAD")
         Repo.commit(upstream, COMPROMISED, "compromised")
-        (mine / "notes.txt").write_text("mine, not committed")
+        (mine / "notes.txt").write_text("mine, not committed", encoding="utf-8")
         Repo.git(mine, "pull", "-q", "--ff-only")
         check = Incoming.after_merge(mine, Repo.config())
         assert check is not None and not check.ok
         assert Repo.git(mine, "rev-parse", "HEAD") == before
-        assert (mine / "notes.txt").read_text() == "mine, not committed"
+        assert (mine / "notes.txt").read_text(encoding="utf-8") == "mine, not committed"
 
     def test_a_blocked_clone_has_its_files_removed(self, upstream, tmp_path) -> None:
         Repo.commit(upstream, COMPROMISED, "compromised")
@@ -244,7 +250,7 @@ class TestInstallation(GitWorld):
     ) -> None:
         Guard.install_hooks(upstream)
         for hook in INCOMING_HOOKS:
-            text = (upstream / ".git" / "hooks" / hook).read_text()
+            text = (upstream / ".git" / "hooks" / hook).read_text(encoding="utf-8")
             assert SHIM_MARKER in text and f'guard incoming {hook} "$@"' in text
             assert "cordon-policy.yaml" not in text and "CORDON_INCOMING" in text
 
@@ -254,17 +260,19 @@ class TestInstallation(GitWorld):
         assert Repo.git(tmp_path, "config", "--global", "init.templateDir") == str(template)
         fresh = tmp_path / "fresh"
         Repo.git(tmp_path, "init", "-q", str(fresh))
-        assert SHIM_MARKER in (fresh / ".git" / "hooks" / "post-merge").read_text()
+        assert SHIM_MARKER in (fresh / ".git" / "hooks" / "post-merge").read_text(encoding="utf-8")
 
     def test_global_install_keeps_an_existing_template_and_its_hooks(self, tmp_path) -> None:
         mine = tmp_path / "my-template"
         (mine / "hooks").mkdir(parents=True)
-        (mine / "hooks" / "post-merge").write_text("#!/bin/sh\necho mine\n")
+        (mine / "hooks" / "post-merge").write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
         Repo.git(tmp_path, "config", "--global", "init.templateDir", str(mine))
         with pytest.raises(Exception, match="post-merge"):
             Guard.install_global()
-        assert (mine / "hooks" / "post-merge").read_text() == "#!/bin/sh\necho mine\n"
-        assert SHIM_MARKER in (mine / "hooks" / "post-checkout").read_text()
+        assert (mine / "hooks" / "post-merge").read_text(
+            encoding="utf-8"
+        ) == "#!/bin/sh\necho mine\n"
+        assert SHIM_MARKER in (mine / "hooks" / "post-checkout").read_text(encoding="utf-8")
 
 
 class TestRemovingABlockedClone:

@@ -345,7 +345,7 @@ class TestSuppressionFile:
 
     def write(self, tmp_path: Path, text: str | None = None) -> SuppressionFile:
         path = tmp_path / "cordon.yaml"
-        path.write_text(self.TEXT if text is None else text)
+        path.write_text(self.TEXT if text is None else text, encoding="utf-8")
         return SuppressionFile(path)
 
     def test_states_today(self, tmp_path) -> None:
@@ -361,7 +361,7 @@ class TestSuppressionFile:
     def test_add_writes_an_entry_the_scanner_reads_and_keeps_every_comment(self, tmp_path) -> None:
         file = self.write(tmp_path)
         SuppressCommand.add(file, self.rules(), TODAY, self.args(days=10))
-        text = file.path.read_text()
+        text = file.path.read_text(encoding="utf-8")
         assert (
             "# Kept for the record." in text
             and "# Why each exception" in text
@@ -377,7 +377,7 @@ class TestSuppressionFile:
     def test_add_creates_the_config_when_there_is_none(self, tmp_path) -> None:
         file = SuppressionFile(tmp_path / "cordon.yaml")
         SuppressCommand.add(file, self.rules(), TODAY, self.args(expires="2026-11-01"))
-        assert file.path.read_text().startswith("version: 1\n")
+        assert file.path.read_text(encoding="utf-8").startswith("version: 1\n")
         assert file.suppressions()[0].expires == "2026-11-01"
 
     def test_add_into_an_empty_inline_list(self, tmp_path) -> None:
@@ -408,10 +408,10 @@ class TestSuppressionFile:
     )
     def test_add_refuses_what_the_scanner_would_refuse(self, tmp_path, fields, message) -> None:
         file = self.write(tmp_path)
-        before = file.path.read_text()
+        before = file.path.read_text(encoding="utf-8")
         with pytest.raises(ConfigError, match=message):
             SuppressCommand.add(file, self.rules(), TODAY, self.args(**fields))
-        assert file.path.read_text() == before
+        assert file.path.read_text(encoding="utf-8") == before
 
     def test_an_approver_is_demanded_when_policy_says_so(self, tmp_path) -> None:
         file = self.write(tmp_path)
@@ -435,7 +435,7 @@ class TestSuppressionFile:
     def test_prune_removes_expired_entries_with_their_comments(self, tmp_path, capsys) -> None:
         file = self.write(tmp_path)
         SuppressCommand.prune(file, TODAY, dry_run=False)
-        text = file.path.read_text()
+        text = file.path.read_text(encoding="utf-8")
         assert "scripts/old.mjs" not in text and "# Kept for the record." not in text
         assert (
             "scripts/fetch.sh" in text
@@ -447,22 +447,25 @@ class TestSuppressionFile:
     def test_a_dry_run_changes_nothing(self, tmp_path, capsys) -> None:
         file = self.write(tmp_path)
         SuppressCommand.prune(file, TODAY, dry_run=True)
-        assert file.path.read_text() == self.TEXT
+        assert file.path.read_text(encoding="utf-8") == self.TEXT
         assert "would remove" in capsys.readouterr().out
 
     def test_pruning_everything_leaves_an_empty_list_that_loads(self, tmp_path) -> None:
         file = self.write(tmp_path)
         SuppressCommand.prune(file, date(2027, 6, 1), dry_run=False)
-        assert "suppressions: []" in file.path.read_text() and file.suppressions() == ()
+        assert (
+            "suppressions: []" in file.path.read_text(encoding="utf-8")
+            and file.suppressions() == ()
+        )
 
     def test_a_write_that_would_not_read_back_is_refused_and_the_file_is_untouched(
         self, tmp_path
     ) -> None:
         file = self.write(tmp_path)
-        before = file.path.read_text()
+        before = file.path.read_text(encoding="utf-8")
         with pytest.raises(ConfigError, match="does not read back"):
             file.replace(before + "\n", (Suppression("X", "y", GOOD, "2027-01-01"),))
-        assert file.path.read_text() == before
+        assert file.path.read_text(encoding="utf-8") == before
 
     def test_the_files_mode_is_kept(self, tmp_path) -> None:
         file = self.write(tmp_path)
@@ -502,7 +505,7 @@ class TestSuppressionFile:
 class TestDeps:
     def test_the_graph_nests_and_carries_findings(self, tmp_path, capsys) -> None:
         (tmp_path / "package.json").write_text(
-            json.dumps({"name": "demo", "dependencies": {"express": "4.17.1"}})
+            json.dumps({"name": "demo", "dependencies": {"express": "4.17.1"}}), encoding="utf-8"
         )
         (tmp_path / "package-lock.json").write_text(
             json.dumps(
@@ -518,7 +521,8 @@ class TestDeps:
                         "node_modules/qs": {"version": "6.7.0"},
                     },
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         assert CommandLine.run(["deps", str(tmp_path)]) == 0
         lines = capsys.readouterr().out.splitlines()

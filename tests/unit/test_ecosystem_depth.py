@@ -106,7 +106,7 @@ class TestMavenRanges:
             "versions",
             staticmethod(lambda eco, name: ["1.7.36", "2.0.0", "2.0.9", "2.0.10", "2.0.13"]),
         )
-        (tmp_path / "pom.xml").write_text(POM)
+        (tmp_path / "pom.xml").write_text(POM, encoding="utf-8")
         [dependency] = (
             Scanner(Config.default().with_overrides(use_cache=False, offline=False), detectors=())
             .scan(tmp_path)
@@ -121,7 +121,7 @@ class TestMavenRanges:
             raise AssertionError("an offline scan asked a registry")
 
         monkeypatch.setattr(MoreRegistries, "versions", staticmethod(refuse))
-        (tmp_path / "pom.xml").write_text(POM)
+        (tmp_path / "pom.xml").write_text(POM, encoding="utf-8")
         [dependency] = (
             Scanner(Config.default().with_overrides(use_cache=False), detectors=())
             .scan(tmp_path)

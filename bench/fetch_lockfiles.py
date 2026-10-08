@@ -22,7 +22,9 @@ from pathlib import Path
 from typing import Any
 
 PACKAGES = "https://packages.ecosyste.ms/api/v1/registries/{registry}/packages?sort=downloads&order=desc&per_page=100&page={page}"
-MANIFESTS = "https://repos.ecosyste.ms/api/v1/hosts/GitHub/repositories/{repo}/manifests?per_page=100"
+MANIFESTS = (
+    "https://repos.ecosyste.ms/api/v1/hosts/GitHub/repositories/{repo}/manifests?per_page=100"
+)
 RAW = "https://raw.githubusercontent.com/{repo}/HEAD/{path}"
 REGISTRIES = (
     "npmjs.org",
@@ -71,10 +73,12 @@ class Fetch:
 
     @staticmethod
     def get(url: str) -> bytes:
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-bench (lockfile corpus)"})
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "cordon-bench (lockfile corpus)"}
+        )
         for attempt in range(3):
             try:
-                with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - fixed https hosts
+                with urllib.request.urlopen(request, timeout=60) as response:
                     data = response.read(MAX_BYTES + 1)
                 time.sleep(0.2)
                 if len(data) > MAX_BYTES:
@@ -101,7 +105,7 @@ class Corpus:
         for page in range(1, count // 100 + 2):
             try:
                 rows = Fetch.json(PACKAGES.format(registry=registry, page=page))
-            except Exception as exc:  # noqa: BLE001 - a registry the service lacks is skipped and said
+            except Exception as exc:
                 print(f"{registry} page {page}: {exc}", file=sys.stderr)
                 break
             for row in rows if isinstance(rows, list) else []:
@@ -121,7 +125,9 @@ class Corpus:
         out = data / "lockfiles-large"
         out.mkdir(parents=True, exist_ok=True)
         index_path = out / "index.json"
-        index: list[dict[str, str]] = json.loads(index_path.read_text()) if index_path.exists() else []
+        index: list[dict[str, str]] = (
+            json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else []
+        )
         done = {(entry["repo"], entry["path"]) for entry in index}
         seen_repos: set[str] = set()
         for registry in REGISTRIES:
@@ -132,28 +138,47 @@ class Corpus:
                     continue
                 seen_repos.add(repo.lower())
                 try:
-                    manifests = Fetch.json(MANIFESTS.format(repo=urllib.parse.quote(repo, safe="/")))
-                except Exception as exc:  # noqa: BLE001
+                    manifests = Fetch.json(
+                        MANIFESTS.format(repo=urllib.parse.quote(repo, safe="/"))
+                    )
+                except Exception as exc:
                     print(f"{repo}: {exc}", file=sys.stderr)
                     continue
                 for manifest in manifests if isinstance(manifests, list) else []:
                     if manifest.get("kind") != "lockfile" or not manifest.get("filepath"):
                         continue
                     path = str(manifest["filepath"])
-                    if (repo, path) in done or "/node_modules/" in f"/{path}" or "/vendor/" in f"/{path}":
+                    if (
+                        (repo, path) in done
+                        or "/node_modules/" in f"/{path}"
+                        or "/vendor/" in f"/{path}"
+                    ):
                         continue
                     try:
                         body = Fetch.get(RAW.format(repo=repo, path=urllib.parse.quote(path)))
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         print(f"{repo}/{path}: {exc}", file=sys.stderr)
                         continue
-                    folder = out / registry / f"{repo.replace('/', '__')}__{path.replace('/', '__')}"
+                    folder = (
+                        out / registry / f"{repo.replace('/', '__')}__{path.replace('/', '__')}"
+                    )
                     folder.mkdir(parents=True, exist_ok=True)
                     (folder / Path(path).name).write_bytes(body)
-                    index.append({"registry": registry, "ecosystem": str(manifest.get("ecosystem")), "repo": repo, "path": path, "folder": str(folder.relative_to(out))})
+                    index.append(
+                        {
+                            "registry": registry,
+                            "ecosystem": str(manifest.get("ecosystem")),
+                            "repo": repo,
+                            "path": path,
+                            "folder": folder.relative_to(out).as_posix(),
+                        }
+                    )
                     done.add((repo, path))
-                index_path.write_text(json.dumps(index, indent=1))
-            print(f"{registry}: {sum(1 for e in index if e['registry'] == registry)} lockfiles so far", flush=True)
+                index_path.write_text(json.dumps(index, indent=1), encoding="utf-8")
+            print(
+                f"{registry}: {sum(1 for e in index if e['registry'] == registry)} lockfiles so far",
+                flush=True,
+            )
         print(f"lockfiles: {len(index)}")
 
 
@@ -162,7 +187,7 @@ class Siblings:
     def run(data: Path) -> None:
         """For each lockfile already fetched, the manifest beside it in the same commit's tree."""
         out = data / "lockfiles-large"
-        index = json.loads((out / "index.json").read_text())
+        index = json.loads((out / "index.json").read_text(encoding="utf-8"))
         added = 0
         for entry in index:
             lockfile = Path(entry["path"])
@@ -172,8 +197,10 @@ class Siblings:
                     break
                 sibling = (lockfile.parent / name).as_posix()
                 try:
-                    body = Fetch.get(RAW.format(repo=entry["repo"], path=urllib.parse.quote(sibling)))
-                except Exception:  # noqa: BLE001 - a lockfile with no manifest beside it is read alone
+                    body = Fetch.get(
+                        RAW.format(repo=entry["repo"], path=urllib.parse.quote(sibling))
+                    )
+                except Exception:
                     continue
                 (folder / name).write_bytes(body)
                 added += 1
@@ -182,10 +209,14 @@ class Siblings:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--data", type=Path, default=Path("/data"))
     parser.add_argument("--per-registry", type=int, default=400)
-    parser.add_argument("--siblings", action="store_true", help="only add each fetched lockfile's manifest")
+    parser.add_argument(
+        "--siblings", action="store_true", help="only add each fetched lockfile's manifest"
+    )
     arguments = parser.parse_args()
     if arguments.siblings:
         Siblings.run(arguments.data)

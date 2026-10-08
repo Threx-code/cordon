@@ -60,12 +60,12 @@ class Selection:
         for path in files:
             for match in rules.match(data=path.read_bytes(), timeout=10):
                 if Selection.applies(match.meta, path):
-                    hits.append(str(path.relative_to(PACKAGE)))
+                    hits.append(path.relative_to(PACKAGE).as_posix())
         return hits
 
     @staticmethod
     def run() -> None:
-        measurement = json.loads((PACK.parent / "MEASUREMENT.json").read_text())
+        measurement = json.loads((PACK.parent / "MEASUREMENT.json").read_text(encoding="utf-8"))
         files = Selection.benign_files()
         kept: list[str] = []
         dropped: dict[str, str] = {}
@@ -77,7 +77,7 @@ class Selection:
                     f"does not compile with yara-python {yara.__version__}: {exc}"
                 )
                 continue
-            names = re.findall(r"(?m)^rule\s+(\w+)", source.read_text())
+            names = re.findall(r"(?m)^rule\s+(\w+)", source.read_text(encoding="utf-8"))
             measured = [
                 measurement["rules"].get(name, {"benign_hits": 0, "malicious_hits": 0})
                 for name in names
@@ -94,13 +94,16 @@ class Selection:
                 )
             else:
                 kept.append(source.name)
-        commit = (UPSTREAM / "COMMIT").read_text().strip()
+        commit = (UPSTREAM / "COMMIT").read_text(encoding="utf-8").strip()
         header = (
             "// Cordon's built-in YARA pack (`--yara builtin`). Rules by the GuardDog Team, Datadog,\n"
             f"// from github.com/DataDog/guarddog at {commit}, Apache License 2.0 (upstream/LICENSE),\n"
             "// unchanged. Chosen by tests/conformance/generate/yara_select.py: see MANIFEST.json.\n\n"
         )
-        PACK.write_text(header + "\n".join((UPSTREAM / name).read_text() for name in kept))
+        PACK.write_text(
+            header + "\n".join((UPSTREAM / name).read_text(encoding="utf-8") for name in kept),
+            encoding="utf-8",
+        )
         yara.compile(filepath=str(PACK), includes=False)
         MANIFEST.write_text(
             json.dumps(
@@ -114,7 +117,8 @@ class Selection:
                 },
                 indent=1,
             )
-            + "\n"
+            + "\n",
+            encoding="utf-8",
         )
         print(f"{len(files)} benign files; kept {len(kept)}, dropped {len(dropped)}")
         for name, why in dropped.items():

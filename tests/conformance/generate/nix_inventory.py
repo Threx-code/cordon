@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 CASE = Path("/conformance/cases/nix/real-flake")
-meta = json.loads((CASE / "authoritative.raw.json").read_text())
+meta = json.loads((CASE / "authoritative.raw.json").read_text(encoding="utf-8"))
 nodes = meta["locks"]["nodes"]
 root = meta["locks"]["root"]
 packages = []
@@ -41,7 +41,8 @@ for key, node in nodes.items():
         },
         indent=1,
     )
-    + "\n"
+    + "\n",
+    encoding="utf-8",
 )
 (CASE / "authoritative.raw.json").unlink()
 print(sorted(packages))

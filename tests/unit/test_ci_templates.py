@@ -18,7 +18,7 @@ TEMPLATES = sorted(
 )
 
 
-@pytest.mark.parametrize("template", TEMPLATES, ids=lambda p: str(p.relative_to(ROOT)))
+@pytest.mark.parametrize("template", TEMPLATES, ids=lambda p: p.relative_to(ROOT).as_posix())
 class TestEveryTemplate:
     def test_it_names_the_version_it_ships_with(self, template: Path) -> None:
         text = template.read_text(encoding="utf-8")

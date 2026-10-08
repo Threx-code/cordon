@@ -148,7 +148,7 @@ class TestWithWorkerProcesses(ClamavFixtures):
         count = 1100
         assert ParallelScanner.worker_count(4, count) > 1, "the test must start real workers"
         for n in range(count):
-            (tmp_path / f"f{n:04d}.txt").write_text(f"ordinary {n}\n")
+            (tmp_path / f"f{n:04d}.txt").write_text(f"ordinary {n}\n", encoding="utf-8")
         (tmp_path / "zz-payload.txt").write_bytes(b"hello " + MARKER)
         config = Config.default().with_overrides(use_cache=False, clamav=clamd.path)
         config = config.with_overrides(limits=config.limits.merged(max_workers=4))

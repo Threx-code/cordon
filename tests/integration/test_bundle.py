@@ -44,7 +44,9 @@ class BundleFixtures:
 
     @pytest.fixture
     def bundle(self, tmp_path: Path, source: Path) -> Path:
-        files = [(str(p.relative_to(source)), p) for p in sorted(source.rglob("*")) if p.is_file()]
+        files = [
+            (p.relative_to(source).as_posix(), p) for p in sorted(source.rglob("*")) if p.is_file()
+        ]
         return Bundle.create(tmp_path / "offline.tar.gz", files=files)
 
 

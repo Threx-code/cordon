@@ -350,7 +350,9 @@ class TestInstalledExtensions:
         (root / ".windsurf/extensions/golang.go-0.46.1-darwin-arm64").mkdir(parents=True)
         # Extension code is never read.
         (root / ".cursor/extensions/ellacrity.recoil-0.7.4/out").mkdir()
-        (root / ".cursor/extensions/ellacrity.recoil-0.7.4/out/extension.js").write_text("x")
+        (root / ".cursor/extensions/ellacrity.recoil-0.7.4/out/extension.js").write_text(
+            "x", encoding="utf-8"
+        )
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: root))
         monkeypatch.setenv("XDG_CONFIG_HOME", str(root / ".config"))
         return root

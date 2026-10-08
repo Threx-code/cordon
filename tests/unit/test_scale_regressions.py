@@ -129,7 +129,8 @@ class TestDetectionRulesAreData:
         (tmp_path / "rules").mkdir()
         (tmp_path / "rules" / "miners.yar").write_text(
             'rule miner { strings: $a = "stratum+tcp://pool.minexmr.com:4444" $b = "xmrig --donate-level" '
-            '$c = "~/.ssh/id_rsa" $d = "https://pastebin.com/raw/" condition: any of them }\n'
+            '$c = "~/.ssh/id_rsa" $d = "https://pastebin.com/raw/" condition: any of them }\n',
+            encoding="utf-8",
         )
         findings = ScaleHelpers.scan(tmp_path).findings
         assert not [
@@ -140,7 +141,9 @@ class TestDetectionRulesAreData:
 
     def test_a_credential_in_one_is_still_a_credential(self, tmp_path) -> None:
         token = "ghp_" + "Zq8" * 12
-        (tmp_path / "leak.yar").write_text(f'rule x {{ strings: $a = "{token}" condition: $a }}\n')
+        (tmp_path / "leak.yar").write_text(
+            f'rule x {{ strings: $a = "{token}" condition: $a }}\n', encoding="utf-8"
+        )
         assert any(
             f.rule_id == "SECRET.GITHUB.TOKEN.001" for f in ScaleHelpers.scan(tmp_path).findings
         )
@@ -150,5 +153,5 @@ class TestDetectionRulesAreData:
 
         measurement = BUILTIN_PACK.parent / "MEASUREMENT.json"
         if measurement.exists():
-            data = json.loads(measurement.read_text())
+            data = json.loads(measurement.read_text(encoding="utf-8"))
             assert data["benign_packages"] >= 14_992 and data["malicious_packages"] >= 39_000

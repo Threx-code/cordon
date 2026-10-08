@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 CASE = Path("/conformance/cases/terraform/real-root-module")
-raw = (CASE / "authoritative.raw.json").read_text()
+raw = (CASE / "authoritative.raw.json").read_text(encoding="utf-8")
 marker = '"modules_json": '
 modules = json.loads(raw[raw.index(marker) + len(marker) :].rstrip().rstrip("}").rstrip())
 packages = re.findall(r'"([^"@]+@[^"]+)"', raw[: raw.index(marker)])
@@ -41,7 +41,8 @@ for module in modules["Modules"]:
         },
         indent=1,
     )
-    + "\n"
+    + "\n",
+    encoding="utf-8",
 )
 (CASE / "authoritative.raw.json").unlink()
 print(sorted(packages), ignore)

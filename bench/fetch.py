@@ -105,15 +105,29 @@ class BenchmarkData:
         out.mkdir(parents=True, exist_ok=True)
         manifest: list[dict[str, str]] = []
         already = (
-            {(e["ecosystem"], e["name"]) for e in json.loads((out / "manifest.json").read_text())}
+            {
+                (e["ecosystem"], e["name"])
+                for e in json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+            }
             if (out / "manifest.json").exists()
             else set()
         )
-        manifest += list(json.loads((out / "manifest.json").read_text())) if already else []
+        manifest += (
+            list(json.loads((out / "manifest.json").read_text(encoding="utf-8"))) if already else []
+        )
         # What is already on disk counts as fetched, manifest or not: a run that stopped before
         # writing its manifest is resumed, not repeated.
-        on_disk = {p.name for registry in ("pypi", "npm") if (out / registry).is_dir() for p in (out / registry).iterdir()}
-        pypi = [row["project"] for row in json.loads(BenchmarkData.get(TOP_PYPI))["rows"][:count]] if "pypi" in ecosystems else []
+        on_disk = {
+            p.name
+            for registry in ("pypi", "npm")
+            if (out / registry).is_dir()
+            for p in (out / registry).iterdir()
+        }
+        pypi = (
+            [row["project"] for row in json.loads(BenchmarkData.get(TOP_PYPI))["rows"][:count]]
+            if "pypi" in ecosystems
+            else []
+        )
         for name in pypi:
             if ("pypi", name) in already:
                 continue
@@ -129,7 +143,9 @@ class BenchmarkData:
                 continue
             chosen = files[0]
             if chosen["filename"] in on_disk:
-                manifest.append({"ecosystem": "pypi", "name": name, "file": f"benign/pypi/{chosen['filename']}"})
+                manifest.append(
+                    {"ecosystem": "pypi", "name": name, "file": f"benign/pypi/{chosen['filename']}"}
+                )
                 continue
             blob = BenchmarkData.get(chosen["url"])
             if hashlib.sha256(blob).hexdigest() != chosen["digests"]["sha256"]:
@@ -139,7 +155,7 @@ class BenchmarkData:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(blob)
             manifest.append(
-                {"ecosystem": "pypi", "name": name, "file": str(target.relative_to(data))}
+                {"ecosystem": "pypi", "name": name, "file": target.relative_to(data).as_posix()}
             )
         names: list[str] = []
         for page in range(1, (count // 100 + 2) if "npm" in ecosystems else 1):
@@ -157,8 +173,14 @@ class BenchmarkData:
                 continue
             if name.replace("/", "__") in stems:
                 # Fetched by a run that stopped before writing its manifest: recorded, not refetched.
-                existing = next(p for p in sorted(on_disk) if p.endswith(".tgz") and p.rsplit("-", 1)[0] == name.replace("/", "__"))
-                manifest.append({"ecosystem": "npm", "name": name, "file": f"benign/npm/{existing}"})
+                existing = next(
+                    p
+                    for p in sorted(on_disk)
+                    if p.endswith(".tgz") and p.rsplit("-", 1)[0] == name.replace("/", "__")
+                )
+                manifest.append(
+                    {"ecosystem": "npm", "name": name, "file": f"benign/npm/{existing}"}
+                )
                 continue
             try:
                 document = json.loads(
@@ -174,9 +196,9 @@ class BenchmarkData:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(blob)
             manifest.append(
-                {"ecosystem": "npm", "name": name, "file": str(target.relative_to(data))}
+                {"ecosystem": "npm", "name": name, "file": target.relative_to(data).as_posix()}
             )
-        (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
+        (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
         print(f"benign: {len(manifest)} archives")
 
     @staticmethod
@@ -189,7 +211,9 @@ class BenchmarkData:
         )
         parser.add_argument("--data", type=Path, default=Path("/data"))
         parser.add_argument("--count", type=int, default=1000)
-        parser.add_argument("--ecosystems", default="pypi,npm", help="for benign: which registries' top packages")
+        parser.add_argument(
+            "--ecosystems", default="pypi,npm", help="for benign: which registries' top packages"
+        )
         args = parser.parse_args()
         args.data.mkdir(parents=True, exist_ok=True)
         if args.suite in ("malware", "all"):
@@ -202,7 +226,9 @@ class BenchmarkData:
             lockfiles = args.data / "lockfiles"
             lockfiles.mkdir(exist_ok=True)
             fetched = 0
-            for repo, path in json.loads((Path(__file__).parent / "lockfiles.json").read_text()):
+            for repo, path in json.loads(
+                (Path(__file__).parent / "lockfiles.json").read_text(encoding="utf-8")
+            ):
                 # One directory per lockfile, under its own file name: every tool finds it by name.
                 target = (
                     lockfiles / f"{repo.replace('/', '__')}__{Path(path).stem}" / Path(path).name

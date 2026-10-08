@@ -8,14 +8,15 @@ import json
 from pathlib import Path
 
 CASE = Path("/conformance/cases/homebrew/real-installed")
-raw = json.loads((CASE / "authoritative.raw.json").read_text())
+raw = json.loads((CASE / "authoritative.raw.json").read_text(encoding="utf-8"))
 packages = sorted(
     f"{formula['name']}@{installed['version']}"
     for formula in raw["formulae"]
     for installed in formula["installed"]
 )
 (CASE / "authoritative.json").write_text(
-    json.dumps({"tool": "brew info --json=v2 --installed", "packages": packages}, indent=1) + "\n"
+    json.dumps({"tool": "brew info --json=v2 --installed", "packages": packages}, indent=1) + "\n",
+    encoding="utf-8",
 )
 (CASE / "authoritative.raw.json").unlink()
 print(len(packages), "packages")

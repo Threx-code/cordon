@@ -28,7 +28,7 @@ class Universal:
     ) -> dict[str, Any]:
         expect: dict[str, Any] = {"args": list(args)}
         if advisories is not None:
-            (root.parent / "advisories.json").write_text(json.dumps(advisories))
+            (root.parent / "advisories.json").write_text(json.dumps(advisories), encoding="utf-8")
             expect["advisories"] = True
         case = ConformanceCase(ecosystem, "universal", root, expect)
         code, out = ConformanceRun.scan(root, case)
@@ -172,7 +172,7 @@ class TestDependencyConfusion:
             [Pkg(name, profile.versions[1], profile.hash_of(1) if profile.hash_of else None)],
         )
         (root / "cordon.yaml").write_text(
-            f"version: 1\nscan:\n  internal_namespaces:\n    - {prefix!r}\n"
+            f"version: 1\nscan:\n  internal_namespaces:\n    - {prefix!r}\n", encoding="utf-8"
         )
         report = Universal.scan(root, profile.id)
         assert any(f["rule_id"] == "SUSPECT.DEPENDENCY.CONFUSION.001" for f in report["findings"])
@@ -197,7 +197,7 @@ class TestDependencyConfusion:
             ],
         )
         (root / "cordon.yaml").write_text(
-            f"version: 1\nscan:\n  internal_namespaces:\n    - {prefix!r}\n"
+            f"version: 1\nscan:\n  internal_namespaces:\n    - {prefix!r}\n", encoding="utf-8"
         )
         report = Universal.scan(root, profile.id)
         assert not any(
@@ -302,7 +302,7 @@ class TestScannerSafety:
         root = Universal.project(tmp_path, profile, [Pkg(profile.names[0], profile.versions[1])])
         for relative, text in profile.executable.items():
             (root / relative).parent.mkdir(parents=True, exist_ok=True)
-            (root / relative).write_text(text)
+            (root / relative).write_text(text, encoding="utf-8")
         Universal.scan(root, profile.id)
         assert not Path(MARKER).exists(), "project code was executed during the scan"
 
@@ -441,7 +441,7 @@ class TestPolicyLists:
 
     @staticmethod
     def policy(root: Path, body: str) -> None:
-        (root / "cordon.yaml").write_text("version: 1\npolicy:\n" + body)
+        (root / "cordon.yaml").write_text("version: 1\npolicy:\n" + body, encoding="utf-8")
 
     @pytest.mark.conformance("x", "x.policy")
     @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))

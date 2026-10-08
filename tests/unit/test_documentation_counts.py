@@ -65,7 +65,7 @@ class DocumentTruth:
     @staticmethod
     def advisories() -> int:
         meta = ROOT / "src/cordon_scanner/intel/data/advisories-meta.json"
-        return int(json.loads(meta.read_text())["record_count"])
+        return int(json.loads(meta.read_text(encoding="utf-8"))["record_count"])
 
     @staticmethod
     def atr(kind: str) -> int:
@@ -164,7 +164,11 @@ class DocumentClaims:
             for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 for match in pattern.finditer(line):
                     found.append(
-                        (str(path.relative_to(ROOT)), line_number, cls.number(match.group("n")))
+                        (
+                            path.relative_to(ROOT).as_posix(),
+                            line_number,
+                            cls.number(match.group("n")),
+                        )
                     )
         return found
 

@@ -45,7 +45,9 @@ class TestAVendoredCopyPinnedByDigest:
 
     def test_an_edited_copy_is_refused(self, tmp_path) -> None:
         path, digest = PinHelpers.write(tmp_path)
-        path.write_text(POLICY.replace("allow_network: false", "allow_network: true"))
+        path.write_text(
+            POLICY.replace("allow_network: false", "allow_network: true"), encoding="utf-8"
+        )
         with pytest.raises(ConfigError, match="does not match its pinned digest"):
             ConfigResolver.load_org_policy(f"{path}#sha256={digest}")
 
@@ -67,7 +69,7 @@ class TestDrift:
     def test_a_drifted_copy(self, tmp_path, capsys) -> None:
         path, _ = PinHelpers.write(tmp_path)
         published = tmp_path / "published.yaml"
-        published.write_text(POLICY.replace("90", "30"))
+        published.write_text(POLICY.replace("90", "30"), encoding="utf-8")
         code = CommandLine.run(["config", "policy-drift", str(path), "--published", str(published)])
         assert code == int(ExitCode.FINDINGS) and "drifted" in capsys.readouterr().out
 

@@ -337,7 +337,7 @@ class YaraFixtures:
                     types.SimpleNamespace(compile=fake.compile, __version__=fake.__version__),
                 )
             rules = tmp_path / "rules.yar"
-            rules.write_text("rule x { condition: true }\n")
+            rules.write_text("rule x { condition: true }\n", encoding="utf-8")
             target = tmp_path / "repo"
             target.mkdir()
             for name, data in (files or {"payload.bin": b"\x00EVIL\x00"}).items():
@@ -396,7 +396,9 @@ class TestYara(YaraFixtures):
         assert not any("YARA" in f.rule_id for f in result.findings)
 
     def test_a_repository_config_cannot_name_the_rules(self, tmp_path) -> None:
-        (tmp_path / "cordon.yaml").write_text("version: 1\nyara: /tmp/rules.yar\n")
+        (tmp_path / "cordon.yaml").write_text(
+            "version: 1\nyara: /tmp/rules.yar\n", encoding="utf-8"
+        )
         from cordon_scanner.core.config import ConfigResolver
         from cordon_scanner.core.errors import ConfigError
 

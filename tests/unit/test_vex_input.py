@@ -32,9 +32,10 @@ class VexHelpers:
     @staticmethod
     def scan(tmp_path: Path):
         (tmp_path / "package.json").write_text(
-            json.dumps({"name": "app", "version": "1.0.0", "dependencies": {"lodash": "4.17.15"}})
+            json.dumps({"name": "app", "version": "1.0.0", "dependencies": {"lodash": "4.17.15"}}),
+            encoding="utf-8",
         )
-        (tmp_path / "package-lock.json").write_text(json.dumps(LOCK))
+        (tmp_path / "package-lock.json").write_text(json.dumps(LOCK), encoding="utf-8")
         return Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
 
     @staticmethod

@@ -34,7 +34,7 @@ class RubyPhpHelpers:
         for rel, text in files.items():
             target = tmp_path / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
+            target.write_text(text, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         return {f.rule_id for f in result.findings if not f.rule_id.startswith("OPERATIONAL")}
 

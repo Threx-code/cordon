@@ -49,7 +49,8 @@ class RefreshMovementHelpers:
     def restamp(repo: Path, *, days_ago: float = 0) -> None:
         """What every refresh does whether or not the data moved."""
         (repo / "data" / "meta.json").write_text(
-            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=days_ago)})
+            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=days_ago)}),
+            encoding="utf-8",
         )
 
 
@@ -62,12 +63,14 @@ class RefreshMovementFixtures:
         RefreshMovementHelpers.git(tmp_path, "config", "user.email", "t@example.test")
         RefreshMovementHelpers.git(tmp_path, "config", "user.name", "t")
         (tmp_path / "data").mkdir()
-        (tmp_path / "data" / "names.txt").write_text("# Refreshed: 2026-01-01\nalpha\nbeta\n")
+        (tmp_path / "data" / "names.txt").write_text(
+            "# Refreshed: 2026-01-01\nalpha\nbeta\n", encoding="utf-8"
+        )
         # Committed with an earlier stamp than the refresh will write, so restamping
         # genuinely dirties the index. A baseline of "now" would match the restamp
         # byte for byte and the tests would pass without deciding anything.
         (tmp_path / "data" / "meta.json").write_text(
-            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=5)})
+            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=5)}), encoding="utf-8"
         )
         RefreshMovementHelpers.git(tmp_path, "add", "-A")
         RefreshMovementHelpers.git(tmp_path, "commit", "-q", "-m", "baseline")
@@ -76,7 +79,9 @@ class RefreshMovementFixtures:
 
 class TestTheDataDecidesFirst(RefreshMovementFixtures):
     def test_moved_data_is_always_worth_proposing(self, repo: Path) -> None:
-        (repo / "data" / "names.txt").write_text("# Refreshed: 2026-06-01\nalpha\nbeta\ngamma\n")
+        (repo / "data" / "names.txt").write_text(
+            "# Refreshed: 2026-06-01\nalpha\nbeta\ngamma\n", encoding="utf-8"
+        )
         RefreshMovementHelpers.restamp(repo)
         RefreshMovementHelpers.git(repo, "add", "-A")
         assert (
@@ -93,7 +98,9 @@ class TestTheDataDecidesFirst(RefreshMovementFixtures):
         )
 
     def test_a_new_data_file_counts_as_movement(self, repo: Path) -> None:
-        (repo / "data" / "extra.txt").write_text("# Refreshed: 2026-06-01\ndelta\n")
+        (repo / "data" / "extra.txt").write_text(
+            "# Refreshed: 2026-06-01\ndelta\n", encoding="utf-8"
+        )
         RefreshMovementHelpers.restamp(repo)
         RefreshMovementHelpers.git(repo, "add", "-A")
         assert (
@@ -159,7 +166,9 @@ class TestATimestampIsNotAChange(RefreshMovementFixtures):
     def test_a_moved_fetch_date_header_is_not_movement(self, repo: Path) -> None:
         """The allowlist files carry the date they were fetched. It moves daily
         on its own and says nothing about the names under it."""
-        (repo / "data" / "names.txt").write_text("# Refreshed: 2026-09-23\nalpha\nbeta\n")
+        (repo / "data" / "names.txt").write_text(
+            "# Refreshed: 2026-09-23\nalpha\nbeta\n", encoding="utf-8"
+        )
         RefreshMovementHelpers.git(repo, "add", "-A")
         assert (
             RefreshMovementHelpers.verdict(
@@ -169,7 +178,9 @@ class TestATimestampIsNotAChange(RefreshMovementFixtures):
         )
 
     def test_a_name_moving_under_that_header_still_is(self, repo: Path) -> None:
-        (repo / "data" / "names.txt").write_text("# Refreshed: 2026-09-23\nalpha\nbeta\ngamma\n")
+        (repo / "data" / "names.txt").write_text(
+            "# Refreshed: 2026-09-23\nalpha\nbeta\ngamma\n", encoding="utf-8"
+        )
         RefreshMovementHelpers.git(repo, "add", "-A")
         assert (
             RefreshMovementHelpers.verdict(
@@ -187,7 +198,7 @@ class TestTheStampIsStillKeptCurrent(RefreshMovementFixtures):
     def test_an_aged_stamp_is_proposed_on_its_own(self, repo: Path) -> None:
         RefreshMovementHelpers.git(repo, "rm", "-q", "--cached", "data/meta.json")
         (repo / "data" / "meta.json").write_text(
-            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=95)})
+            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=95)}), encoding="utf-8"
         )
         RefreshMovementHelpers.git(repo, "add", "-A")
         RefreshMovementHelpers.git(repo, "commit", "-q", "-m", "an old confirmation")
@@ -220,7 +231,7 @@ class TestTheStampIsStillKeptCurrent(RefreshMovementFixtures):
     ) -> None:
         RefreshMovementHelpers.git(repo, "rm", "-q", "--cached", "data/meta.json")
         (repo / "data" / "meta.json").write_text(
-            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=age)})
+            json.dumps({"built_at": RefreshMovementHelpers.stamp(days_ago=age)}), encoding="utf-8"
         )
         RefreshMovementHelpers.git(repo, "add", "-A")
         RefreshMovementHelpers.git(repo, "commit", "-q", "-m", "a dated confirmation")
@@ -243,7 +254,9 @@ class TestTheStampIsStillKeptCurrent(RefreshMovementFixtures):
         """A stamp that cannot be parsed is not evidence the data was confirmed
         recently, so it errs towards asking somebody to look."""
         RefreshMovementHelpers.git(repo, "rm", "-q", "--cached", "data/meta.json")
-        (repo / "data" / "meta.json").write_text(json.dumps({"built_at": "not a date"}))
+        (repo / "data" / "meta.json").write_text(
+            json.dumps({"built_at": "not a date"}), encoding="utf-8"
+        )
         RefreshMovementHelpers.git(repo, "add", "-A")
         RefreshMovementHelpers.git(repo, "commit", "-q", "-m", "a broken stamp")
         RefreshMovementHelpers.restamp(repo)
@@ -265,7 +278,9 @@ class TestTheStampIsStillKeptCurrent(RefreshMovementFixtures):
         """The allowlist refresh. Nothing reads the date in its headers, so
         there is no date to keep current and only the names can be worth
         proposing."""
-        (repo / "data" / "names.txt").write_text("# Refreshed: 2026-09-23\nalpha\nbeta\n")
+        (repo / "data" / "names.txt").write_text(
+            "# Refreshed: 2026-09-23\nalpha\nbeta\n", encoding="utf-8"
+        )
         RefreshMovementHelpers.git(repo, "add", "-A")
         assert (
             RefreshMovementHelpers.verdict(

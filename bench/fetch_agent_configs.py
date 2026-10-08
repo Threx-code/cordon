@@ -142,10 +142,10 @@ class AgentConfigCorpus:
             return 0
         repos = AgentConfigCorpus.repositories(FRESH_TOPICS if args.fresh else TOPICS)
         if args.exclude:
-            seen = {name for name, _ in json.loads(args.exclude.read_text())}
+            seen = {name for name, _ in json.loads(args.exclude.read_text(encoding="utf-8"))}
             repos = [(name, branch) for name, branch in repos if name not in seen]
         (args.out).mkdir(parents=True, exist_ok=True)
-        (args.out / "repos.json").write_text(json.dumps(repos))
+        (args.out / "repos.json").write_text(json.dumps(repos), encoding="utf-8")
         jobs = [(r, b, p) for r, b in repos for p in PATHS]
         with ThreadPoolExecutor(12) as pool:
             fetched = sum(pool.map(lambda job: AgentConfigCorpus.fetch(args.out, *job), jobs))

@@ -82,7 +82,7 @@ class RealWorldAgents:
         for rule, n in counts.most_common(30):
             print(f"  {n:5} {rule}")
         if args.json:
-            args.json.write_text(json.dumps(results, indent=1))
+            args.json.write_text(json.dumps(results, indent=1), encoding="utf-8")
         return 0
 
 

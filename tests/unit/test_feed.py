@@ -294,7 +294,7 @@ class TestAScanReportsItsIntel(FeedFixtures):
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import Config
 
-        (tmp_path / "ok.py").write_text("x = 1\n")
+        (tmp_path / "ok.py").write_text("x = 1\n", encoding="utf-8")
         config = Config.default().with_overrides(use_cache=False, max_intel_age=1)
 
         result = Scanner(config).scan(tmp_path)
@@ -309,7 +309,7 @@ class TestAScanReportsItsIntel(FeedFixtures):
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import Config
 
-        (tmp_path / "ok.py").write_text("x = 1\n")
+        (tmp_path / "ok.py").write_text("x = 1\n", encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
 
         assert result.intel is not None and result.intel["feed_enabled"] is False

@@ -179,7 +179,7 @@ for eco in sorted(by_eco):
         capture_output=True,
     )
     try:
-        findings = json.loads(out.read_text())["findings"]
+        findings = json.loads(out.read_text(encoding="utf-8"))["findings"]
     except Exception:
         findings = []
     # Distinct packages reported, not string matching on the purl: a name
@@ -195,4 +195,4 @@ for eco in sorted(by_eco):
     rows[eco] = (len(pins), hits, rate)
     print(f"{eco:11} {len(pins):7} {hits:9} {rate:6.1%}   {name}")
 
-pathlib.Path("ecosystems.json").write_text(json.dumps(rows, indent=1))
+pathlib.Path("ecosystems.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")

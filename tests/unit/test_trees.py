@@ -41,7 +41,7 @@ class TestTrees:
 
     def test_an_ordinary_tree_is_removed(self, tmp_path) -> None:
         (tmp_path / "a" / "b").mkdir(parents=True)
-        (tmp_path / "a" / "b" / "c.txt").write_text("x")
+        (tmp_path / "a" / "b" / "c.txt").write_text("x", encoding="utf-8")
         Trees.remove(tmp_path / "a")
         assert not (tmp_path / "a").exists()
 

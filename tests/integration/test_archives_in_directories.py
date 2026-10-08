@@ -120,7 +120,7 @@ class TestVendoredArchives:
             ArchivesInDirectoriesHelpers._zip({"setup.py": DROPPER.read_bytes()})
         )
         for index in range(40):
-            (tmp_path / f"m{index}.py").write_text(f"VALUE = {index}\n")
+            (tmp_path / f"m{index}.py").write_text(f"VALUE = {index}\n", encoding="utf-8")
 
         serial = ArchivesInDirectoriesHelpers._scan(
             tmp_path, limits=Config.default().limits.__class__(max_workers=1)

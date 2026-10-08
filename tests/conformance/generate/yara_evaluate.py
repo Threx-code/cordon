@@ -236,7 +236,9 @@ class Evaluation:
             "rules": {n: {"benign_hits": noise[n], "malicious_hits": value[n]} for n in names},
             "timeouts_by_rule": dict(slow),
         }
-        MEASUREMENT.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
+        MEASUREMENT.write_text(
+            json.dumps(report, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+        )
         print(
             "datasets",
             json.dumps(report["datasets"]),

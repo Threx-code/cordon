@@ -54,7 +54,7 @@ class CeremonyFixtures:
 class TestTheCeremony(CeremonyFixtures):
     def test_the_root_verifies_with_the_clients_own_code(self, ran) -> None:
         out, _ = ran
-        document = json.loads((out / "public/feed-root.json").read_text())
+        document = json.loads((out / "public/feed-root.json").read_text(encoding="utf-8"))
         signed = FeedRoles.verify_role(document, "root", document["signed"], expected_type="root")
         assert signed["version"] == 1
         assert (
@@ -67,11 +67,13 @@ class TestTheCeremony(CeremonyFixtures):
 
     def test_a_feed_pinned_to_it_is_enabled(self, ran) -> None:
         out, _ = ran
-        assert Feed(root=json.loads((out / "public/feed-root.json").read_text())).enabled
+        assert Feed(
+            root=json.loads((out / "public/feed-root.json").read_text(encoding="utf-8"))
+        ).enabled
 
     def test_every_root_key_signed_and_the_threshold_is_real(self, ran) -> None:
         out, _ = ran
-        document = json.loads((out / "public/feed-root.json").read_text())
+        document = json.loads((out / "public/feed-root.json").read_text(encoding="utf-8"))
         assert len(document["signatures"]) == 3
         # Two of three signatures are enough; one is not.
         two = {**document, "signatures": document["signatures"][:2]}
@@ -82,7 +84,7 @@ class TestTheCeremony(CeremonyFixtures):
 
     def test_a_tampered_root_is_refused(self, ran) -> None:
         out, _ = ran
-        document = json.loads((out / "public/feed-root.json").read_text())
+        document = json.loads((out / "public/feed-root.json").read_text(encoding="utf-8"))
         document["signed"]["roles"]["root"]["threshold"] = 1
         with pytest.raises(FeedError):
             FeedRoles.verify_role(document, "root", document["signed"], expected_type="root")
@@ -91,7 +93,7 @@ class TestTheCeremony(CeremonyFixtures):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         out, _ = ran
-        seed = bytes.fromhex((out / "private/advisories.seed").read_text().strip())
+        seed = bytes.fromhex((out / "private/advisories.seed").read_text(encoding="utf-8").strip())
         archive = b"bundle bytes"
         signature = Ed25519PrivateKey.from_private_bytes(seed).sign(archive)
         monkeypatch.setattr(dbsync, "PUBLIC_KEY_FILE", out / "public/advisory-signing-key.json")
@@ -100,7 +102,7 @@ class TestTheCeremony(CeremonyFixtures):
 
     def test_private_seeds_are_owner_only_and_public_files_hold_no_seed(self, ran) -> None:
         out, _ = ran
-        seeds = {p.name: p.read_text().strip() for p in (out / "private").iterdir()}
+        seeds = {p.name: p.read_text(encoding="utf-8").strip() for p in (out / "private").iterdir()}
         assert set(seeds) == {
             "root-1.seed",
             "root-2.seed",
@@ -117,14 +119,14 @@ class TestTheCeremony(CeremonyFixtures):
                 assert oct(path.stat().st_mode & 0o777) == "0o600"
         if os.name != "nt":
             assert oct((out / "private").stat().st_mode & 0o777) == "0o700"
-        published = "".join(p.read_text() for p in (out / "public").iterdir())
+        published = "".join(p.read_text(encoding="utf-8") for p in (out / "public").iterdir())
         assert not any(seed in published for seed in seeds.values())
 
     def test_fingerprints_name_every_key(self, ran) -> None:
         out, result = ran
-        lines = (out / "public/fingerprints.txt").read_text().splitlines()
+        lines = (out / "public/fingerprints.txt").read_text(encoding="utf-8").splitlines()
         assert len(lines) == 7 and lines == result["fingerprints"]
-        document = json.loads((out / "public/feed-root.json").read_text())
+        document = json.loads((out / "public/feed-root.json").read_text(encoding="utf-8"))
         for keyid in document["signed"]["keys"]:
             assert any(keyid in line for line in lines)
 
@@ -136,10 +138,10 @@ class TestTheCeremony(CeremonyFixtures):
 
     def test_it_never_overwrites_keys(self, ran) -> None:
         out, _ = ran
-        before = (out / "private/root-1.seed").read_text()
+        before = (out / "private/root-1.seed").read_text(encoding="utf-8")
         with pytest.raises(SystemExit, match="not empty"):
             CeremonyKit.ceremony()(out).run()
-        assert (out / "private/root-1.seed").read_text() == before
+        assert (out / "private/root-1.seed").read_text(encoding="utf-8") == before
 
     @pytest.mark.parametrize("keys, threshold", [(3, 0), (2, 3)])
     def test_an_impossible_threshold_is_refused(self, tmp_path, keys, threshold) -> None:
@@ -154,14 +156,16 @@ class TestTheCeremony(CeremonyFixtures):
             text=True,
             check=True,
         )
-        seeds = [p.read_text().strip() for p in (out / "private").iterdir()]
+        seeds = [p.read_text(encoding="utf-8").strip() for p in (out / "private").iterdir()]
         assert "feed root" in completed.stdout and "advisories" in completed.stdout
         assert not any(seed in completed.stdout + completed.stderr for seed in seeds)
 
 
 class TestThePublishedPage(CeremonyFixtures):
     def test_the_page_matches_the_keys_this_build_pins(self) -> None:
-        assert (ROOT / "docs/12-SIGNING-KEYS.md").read_text() == CeremonyKit.page().render(), (
+        assert (ROOT / "docs/12-SIGNING-KEYS.md").read_text(
+            encoding="utf-8"
+        ) == CeremonyKit.page().render(), (
             "docs/12-SIGNING-KEYS.md is out of date. Regenerate it:\n"
             "    python tests/signing_keys.py > docs/12-SIGNING-KEYS.md"
         )
@@ -200,7 +204,7 @@ class TestPinnedAdvisoryKey:
             json.dumps({"keytype": "ed25519", "public": 5}),
         ):
             path = tmp_path / "k.json"
-            path.write_text(body)
+            path.write_text(body, encoding="utf-8")
             monkeypatch.setattr(dbsync, "PUBLIC_KEY_FILE", path)
             monkeypatch.setattr(dbsync, "PUBLIC_KEY_HEX", "")
             assert AdvisoryBundle.pinned_key_hex() == ""

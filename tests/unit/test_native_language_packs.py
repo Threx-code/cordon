@@ -71,13 +71,13 @@ class TestBuildTimeEntryPoints:
         self, tmp_path, name, content
     ) -> None:
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / name).write_text(content)
+        (tmp_path / name).write_text(content, encoding="utf-8")
         assert ("MALWARE.DROPPER.001", name) in NativeHelpers.findings(tmp_path)
 
     def test_the_same_line_in_library_code_is_suspicious_not_malicious(self, tmp_path) -> None:
         (tmp_path / "src").mkdir()
         (tmp_path / "src" / "lib.ml").write_text(
-            f'let () = ignore (Sys.command "{FETCH_AND_RUN}")\n'
+            f'let () = ignore (Sys.command "{FETCH_AND_RUN}")\n', encoding="utf-8"
         )
         found = NativeHelpers.findings(tmp_path)
         assert ("SUSPECT.DROPPER.001", "src/lib.ml") in found
@@ -91,7 +91,8 @@ class TestOrdinaryCodeIsQuiet:
             "import PackageDescription\n"
             'let package = Package(name: "Kit", products: [.library(name: "Kit", targets: ["Kit"])],\n'
             '    dependencies: [.package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")],\n'
-            '    targets: [.target(name: "Kit", dependencies: [.product(name: "Logging", package: "swift-log")])])\n'
+            '    targets: [.target(name: "Kit", dependencies: [.product(name: "Logging", package: "swift-log")])])\n',
+            encoding="utf-8",
         )
         assert not NativeHelpers.findings(tmp_path)
 
@@ -101,13 +102,15 @@ class TestOrdinaryCodeIsQuiet:
             "pub fn build(b: *std.Build) void {\n"
             '    const exe = b.addExecutable(.{ .name = "app", .root_source_file = b.path("src/main.zig"), .target = b.standardTargetOptions(.{}) });\n'
             "    b.installArtifact(exe);\n"
-            "}\n"
+            "}\n",
+            encoding="utf-8",
         )
         assert not NativeHelpers.findings(tmp_path)
 
     def test_a_nimble_file(self, tmp_path) -> None:
         (tmp_path / "kit.nimble").write_text(
             'version = "0.1.0"\nauthor = "Example"\ndescription = "A kit"\nlicense = "MIT"\n'
-            'srcDir = "src"\nrequires "nim >= 2.0.0"\n\ntask test, "Run tests":\n  exec "nim c -r tests/all.nim"\n'
+            'srcDir = "src"\nrequires "nim >= 2.0.0"\n\ntask test, "Run tests":\n  exec "nim c -r tests/all.nim"\n',
+            encoding="utf-8",
         )
         assert not NativeHelpers.findings(tmp_path)

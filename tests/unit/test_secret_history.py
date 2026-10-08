@@ -63,12 +63,16 @@ class HistoryKit:
     def repository(cls, root: Path, token: str) -> str:
         root.mkdir(parents=True, exist_ok=True)
         cls.git(root, "init", "-q", "-b", "main")
-        (root / "deploy.py").write_text(f'GITHUB = "{token}"\nprint("deploying")\n')
-        (root / "README.md").write_text("demo\n")
+        (root / "deploy.py").write_text(
+            f'GITHUB = "{token}"\nprint("deploying")\n', encoding="utf-8"
+        )
+        (root / "README.md").write_text("demo\n", encoding="utf-8")
         cls.git(root, "add", "-A")
         cls.git(root, "commit", "-q", "-m", "add deploy")
         introduced = cls.git(root, "rev-parse", "HEAD").strip()
-        (root / "deploy.py").write_text('GITHUB = os.environ["GITHUB_TOKEN"]\nprint("deploying")\n')
+        (root / "deploy.py").write_text(
+            'GITHUB = os.environ["GITHUB_TOKEN"]\nprint("deploying")\n', encoding="utf-8"
+        )
         cls.git(root, "commit", "-q", "-am", "read the token from the environment")
         return introduced
 
@@ -121,7 +125,7 @@ class TestGitHistory:
     def test_a_repository_with_no_history_beyond_the_tree_reads_nothing(self, tmp_path) -> None:
         tmp_path.mkdir(exist_ok=True)
         HistoryKit.git(tmp_path, "init", "-q")
-        (tmp_path / "a.txt").write_text("x\n")
+        (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
         HistoryKit.git(tmp_path, "add", "-A")
         HistoryKit.git(tmp_path, "commit", "-q", "-m", "one")
         assert list(GitHistory(GitRepository(tmp_path)).blobs()) == []
@@ -144,9 +148,11 @@ class TestHistorySecretScan:
         token = HistoryKit.token("f")
         HistoryKit.repository(tmp_path, token)
         for n in range(3):
-            (tmp_path / "deploy.py").write_text(f'GITHUB = "{token}"\nprint({n})\n')
+            (tmp_path / "deploy.py").write_text(
+                f'GITHUB = "{token}"\nprint({n})\n', encoding="utf-8"
+            )
             HistoryKit.git(tmp_path, "commit", "-q", "-am", f"rev {n}")
-        (tmp_path / "deploy.py").write_text("print('clean')\n")
+        (tmp_path / "deploy.py").write_text("print('clean')\n", encoding="utf-8")
         HistoryKit.git(tmp_path, "commit", "-q", "-am", "clean")
         findings = [
             f for f in HistoryKit.scan(tmp_path).run() if f.rule_id == "SECRET.GITHUB.TOKEN.001"

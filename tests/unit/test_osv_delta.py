@@ -139,9 +139,9 @@ class TestRefresh:
         )
         OsvDelta.refresh(since=BUILT, now=NOW)
         path = OsvDelta.overlay_path("npm")
-        document = json.loads(path.read_text())
+        document = json.loads(path.read_text(encoding="utf-8"))
         document["withdraw"] = ["GHSA-anything"]
-        path.write_text(json.dumps(document))
+        path.write_text(json.dumps(document), encoding="utf-8")
         assert OsvDelta.read_overlay("npm") == ([], frozenset())
 
     def test_disabled_makes_no_request(self, osv: FakeOsv, monkeypatch) -> None:

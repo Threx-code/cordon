@@ -33,7 +33,9 @@ from collections import Counter
 from pathlib import Path
 
 DATA = Path("/data/lockfiles-large")
-HEX_ENTRY = re.compile(r'"(?P<key>[^"]+)":\s*\{:hex,\s*:"?(?P<package>[\w.-]+)"?,\s*"(?P<version>[^"]+)"')
+HEX_ENTRY = re.compile(
+    r'"(?P<key>[^"]+)":\s*\{:hex,\s*:"?(?P<package>[\w.-]+)"?,\s*"(?P<version>[^"]+)"'
+)
 
 
 class Gaps:
@@ -45,7 +47,7 @@ class Gaps:
         path = folder / "go.sum"
         if not path.is_file():
             return code, planned
-        for line in path.read_text(errors="replace").splitlines():
+        for line in path.read_text(errors="replace", encoding="utf-8").splitlines():
             parts = line.split()
             if len(parts) != 3:
                 continue
@@ -58,7 +60,11 @@ class Gaps:
     @staticmethod
     def hex_entries(folder: Path) -> list[re.Match[str]]:
         path = folder / "mix.lock"
-        return list(HEX_ENTRY.finditer(path.read_text(errors="replace"))) if path.is_file() else []
+        return (
+            list(HEX_ENTRY.finditer(path.read_text(errors="replace", encoding="utf-8")))
+            if path.is_file()
+            else []
+        )
 
     @classmethod
     def classify(cls, row: dict) -> Counter[str]:
@@ -78,7 +84,11 @@ class Gaps:
             only_trivy = kept
         if row["registry"] == "hex.pm":
             entries = cls.hex_entries(folder)
-            aliases = {(m["key"].lower(), m["version"]): m["package"].lower() for m in entries if m["key"] != m["package"]}
+            aliases = {
+                (m["key"].lower(), m["version"]): m["package"].lower()
+                for m in entries
+                if m["key"] != m["package"]
+            }
             for entry in list(only_trivy):
                 name, _, version = entry.rpartition("@")
                 package = aliases.get((name.lower(), version))
@@ -102,7 +112,7 @@ class Gaps:
     def _lock_text(folder: Path) -> str:
         for name in ("package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml"):
             if (folder / name).is_file():
-                return (folder / name).read_text(errors="replace")
+                return (folder / name).read_text(errors="replace", encoding="utf-8")
         return ""
 
     @staticmethod
@@ -122,7 +132,9 @@ class Gaps:
         own.update(m.group(1) for m in re.finditer(r'"?(@?[^@"\s]+)@workspace:', text))
         if (folder / "package.json").is_file():
             try:
-                root = json.loads((folder / "package.json").read_text(errors="replace")).get("name")
+                root = json.loads(
+                    (folder / "package.json").read_text(errors="replace", encoding="utf-8")
+                ).get("name")
             except ValueError:
                 root = None
             if root:
@@ -130,12 +142,21 @@ class Gaps:
         return own
 
     @classmethod
-    def _npm(cls, folder: Path, only_trivy: list[str], only_cordon: list[str], causes: Counter[str]) -> tuple[list[str], list[str]]:
+    def _npm(
+        cls, folder: Path, only_trivy: list[str], only_cordon: list[str], causes: Counter[str]
+    ) -> tuple[list[str], list[str]]:
         text = cls._lock_text(folder)
         own = cls._own_npm(folder, text)
         for entry in list(only_trivy):
             name, _, version = entry.rpartition("@")
-            twin = next((c for c in only_cordon if c.rpartition("@")[2] == version and f"npm:{c.rpartition('@')[0]}@" in text), None)
+            twin = next(
+                (
+                    c
+                    for c in only_cordon
+                    if c.rpartition("@")[2] == version and f"npm:{c.rpartition('@')[0]}@" in text
+                ),
+                None,
+            )
             if twin is not None and name in text:
                 only_trivy.remove(entry)
                 only_cordon.remove(twin)
@@ -155,7 +176,7 @@ class Gaps:
 
     @classmethod
     def run(cls, results: Path) -> dict:
-        document = json.loads(results.read_text())
+        document = json.loads(results.read_text(encoding="utf-8"))
         totals: Counter[str] = Counter()
         by_registry: dict[str, Counter[str]] = {}
         for row in document["lockfiles"]:
@@ -168,12 +189,16 @@ class Gaps:
         return {
             "disagreements": disagreements,
             "causes": dict(totals.most_common()),
-            "by_registry": {k: dict(v.most_common()) for k, v in sorted(by_registry.items()) if sum(v.values())},
+            "by_registry": {
+                k: dict(v.most_common()) for k, v in sorted(by_registry.items()) if sum(v.values())
+            },
         }
 
 
 if __name__ == "__main__":
     source = Path(sys.argv[1])
     report = Gaps.run(source)
-    (source.parent / "parse-gaps.json").write_text(json.dumps(report, indent=1) + "\n")
+    (source.parent / "parse-gaps.json").write_text(
+        json.dumps(report, indent=1) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=1))

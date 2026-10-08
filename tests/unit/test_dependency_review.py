@@ -49,10 +49,10 @@ class ReviewHelpers:
         git("init", "-q")
         git("config", "user.email", "review@example.test")
         git("config", "user.name", "review")
-        (tmp_path / "package-lock.json").write_text(ReviewHelpers.lock(before))
+        (tmp_path / "package-lock.json").write_text(ReviewHelpers.lock(before), encoding="utf-8")
         git("add", "-A")
         git("commit", "-qm", "base")
-        (tmp_path / "package-lock.json").write_text(ReviewHelpers.lock(after))
+        (tmp_path / "package-lock.json").write_text(ReviewHelpers.lock(after), encoding="utf-8")
         return tmp_path
 
     @staticmethod

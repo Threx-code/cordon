@@ -391,7 +391,7 @@ class AtrBench:
                         f"  {r['rule']} [{r['category']}/{r['channel']}] {r['text'][:140]!r} {r['reported'] if kind == 'benign' else ''}"
                     )
         if args.json:
-            args.json.write_text(json.dumps(rows, indent=1))
+            args.json.write_text(json.dumps(rows, indent=1), encoding="utf-8")
         return 0
 
 

@@ -41,7 +41,9 @@ class Records:
     ANY_VERSION: ClassVar[dict[str, str]] = {"gomod": "v1.0.0", "maven": "1.0.0", "nuget": "1.0.0"}
 
     @staticmethod
-    def load(placeholder_only: list[tuple[str, str, str]] | None = None) -> list[tuple[str, str, str, str]]:
+    def load(
+        placeholder_only: list[tuple[str, str, str]] | None = None,
+    ) -> list[tuple[str, str, str, str]]:
         """The checks; records whose only listed version is npm's placeholder go to `placeholder_only`."""
         placeholder_only = placeholder_only if placeholder_only is not None else []
         checks: list[tuple[str, str, str, str]] = []
@@ -57,13 +59,21 @@ class Records:
                 # in a malicious one's place; Cordon does not call it malicious, by design.
                 versions = [v for v in listed if not (ecosystem == "npm" and PLACEHOLDER.match(v))]
                 if listed and not versions:
-                    placeholder_only.append((ecosystem, str(record["name"]), str(record.get("id", ""))))
+                    placeholder_only.append(
+                        (ecosystem, str(record["name"]), str(record.get("id", "")))
+                    )
                     continue
                 if not versions:
                     introduced = str(record.get("introduced") or "0")
-                    if ecosystem == "npm" and PLACEHOLDER.match(introduced) and not record.get("fixed"):
+                    if (
+                        ecosystem == "npm"
+                        and PLACEHOLDER.match(introduced)
+                        and not record.get("fixed")
+                    ):
                         # A range opening at the placeholder names only the placeholder.
-                        placeholder_only.append((ecosystem, str(record["name"]), str(record.get("id", ""))))
+                        placeholder_only.append(
+                            (ecosystem, str(record["name"]), str(record.get("id", "")))
+                        )
                         continue
                     if introduced != "0":
                         versions = [introduced]
@@ -72,7 +82,10 @@ class Records:
                         versions = ["v0.0.0" if ecosystem == "gomod" else "0.0.0"]
                     else:
                         versions = [Records.ANY_VERSION.get(ecosystem, "1.0.0")]
-                checks.extend((ecosystem, str(record["name"]), version, str(record.get("id", ""))) for version in versions)
+                checks.extend(
+                    (ecosystem, str(record["name"]), version, str(record.get("id", "")))
+                    for version in versions
+                )
         return checks
 
     @staticmethod
@@ -110,11 +123,16 @@ class Check:
         if ecosystem == "vscode":
             pins = [f"{name}@{version}" for _e, name, version, _i in batch]
             (root / ".devcontainer").mkdir()
-            (root / ".devcontainer/devcontainer.json").write_text(json.dumps({"customizations": {"vscode": {"extensions": pins}}}))
+            (root / ".devcontainer/devcontainer.json").write_text(
+                json.dumps({"customizations": {"vscode": {"extensions": pins}}}), encoding="utf-8"
+            )
             return
         if ecosystem == "git":
-            sections = "".join(f'[submodule "s{i}"]\n\tpath = third_party/s{i}\n\turl = https://{name}.git\n' for i, (_e, name, _v, _i) in enumerate(batch))
-            (root / ".gitmodules").write_text(sections)
+            sections = "".join(
+                f'[submodule "s{i}"]\n\tpath = third_party/s{i}\n\turl = https://{name}.git\n'
+                for i, (_e, name, _v, _i) in enumerate(batch)
+            )
+            (root / ".gitmodules").write_text(sections, encoding="utf-8")
             return
         getattr(Writers, ecosystem)(root, [Pkg(name, version) for _e, name, version, _i in batch])
 
@@ -130,26 +148,45 @@ class Check:
                 Check.write(root, ecosystem, batch)
                 result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
             except Exception as exc:
-                return ecosystem, 0, [{"name": n, "version": v, "id": i, "why": f"{type(exc).__name__}: {exc}"[:200]} for _e, n, v, i in batch]
+                return (
+                    ecosystem,
+                    0,
+                    [
+                        {
+                            "name": n,
+                            "version": v,
+                            "id": i,
+                            "why": f"{type(exc).__name__}: {exc}"[:200],
+                        }
+                        for _e, n, v, i in batch
+                    ],
+                )
             flagged = {
                 (d.name.lower(), (d.version or "").lower())
                 for d in result.dependencies
                 if d.to_dict()["record"]["malware_status"] == "malicious"
             }
-            named = " ".join(f.message.lower() for f in result.findings if f.rule_id.startswith("MALWARE."))
+            named = " ".join(
+                f.message.lower() for f in result.findings if f.rule_id.startswith("MALWARE.")
+            )
             misses: list[dict[str, str]] = []
             caught = 0
             for _e, name, version, identifier in batch:
                 hit = (
                     name.lower() in named
                     if ecosystem in ("vscode", "git")
-                    else (name.lower(), version.lower()) in flagged or (name.lower(), version.lower().lstrip("v")) in flagged
+                    else (name.lower(), version.lower()) in flagged
+                    or (name.lower(), version.lower().lstrip("v")) in flagged
                 )
                 if hit:
                     caught += 1
                 else:
                     recorded = [d for d in result.dependencies if d.name.lower() == name.lower()]
-                    why = "not in the inventory" if not recorded else f"recorded as {recorded[0].to_dict()['record']['malware_status']} at {recorded[0].version}"
+                    why = (
+                        "not in the inventory"
+                        if not recorded
+                        else f"recorded as {recorded[0].to_dict()['record']['malware_status']} at {recorded[0].version}"
+                    )
                     misses.append({"name": name, "version": version, "id": identifier, "why": why})
             return ecosystem, caught, misses
 
@@ -162,7 +199,9 @@ class Check:
         caught: Counter[str] = Counter()
         misses: list[dict[str, str]] = []
         with multiprocessing.get_context("fork").Pool() as pool:
-            for done, (ecosystem, count, missed) in enumerate(pool.imap_unordered(Check.run, batches), start=1):
+            for done, (ecosystem, count, missed) in enumerate(
+                pool.imap_unordered(Check.run, batches), start=1
+            ):
                 caught[ecosystem] += count
                 misses.extend({"ecosystem": ecosystem, **m} for m in missed)
                 if done % 20 == 0:
@@ -179,9 +218,10 @@ class Check:
             "misses": misses,
         }
         RESULT.parent.mkdir(parents=True, exist_ok=True)
-        RESULT.write_text(json.dumps(report, indent=1) + "\n")
+        RESULT.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
         print(json.dumps({k: v for k, v in report.items() if k != "misses"}, indent=1))
         print("misses", len(misses), json.dumps(misses[:10], indent=1))
+
 
 class RecordCount:
     """The malicious records themselves, as against the (record, version) checks made of them."""
@@ -191,7 +231,9 @@ class RecordCount:
         count = 0
         for path in sorted(DATA.glob("advisories-*.json.gz")):
             with gzip.open(path) as handle:
-                count += sum(1 for r in json.load(handle) if isinstance(r, dict) and r.get("malicious"))
+                count += sum(
+                    1 for r in json.load(handle) if isinstance(r, dict) and r.get("malicious")
+                )
         return count
 
 
