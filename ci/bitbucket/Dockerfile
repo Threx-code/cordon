@@ -4,7 +4,10 @@ FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1
 COPY action/requirements.txt /tmp/cordon-requirements.txt
 RUN python -m pip install --no-cache-dir --disable-pip-version-check --require-hashes --no-deps \
       -r /tmp/cordon-requirements.txt \
- && rm /tmp/cordon-requirements.txt
+ && rm /tmp/cordon-requirements.txt \
+ # pip installed the scanner and has no job after that. The base image's copy carried four high
+ # advisories into the pipe, found by scanning it; a tool the pipe never runs is only exposure.
+ && python -m pip uninstall --yes --quiet pip
 COPY ci/bitbucket/pipe.sh /pipe.sh
 USER 65534:65534
 ENTRYPOINT ["/bin/sh", "/pipe.sh"]

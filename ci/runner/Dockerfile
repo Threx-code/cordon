@@ -21,6 +21,9 @@ FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
+    # The runtime never installs anything: the scanner is copied in from the build stage. The
+    # base image's pip carried four high advisories into the runner, found by scanning it.
+    && python -m pip uninstall --yes --quiet pip \
     && useradd --uid 10001 --user-group --home-dir /work --create-home --shell /usr/sbin/nologin cordon
 COPY --from=build /install /app
 ENV PYTHONPATH=/app \
