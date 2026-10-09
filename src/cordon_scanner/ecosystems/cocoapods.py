@@ -216,22 +216,41 @@ class Podspec:
             return BaseEcosystem._err(content, ecosystem, f"not a readable podspec: {exc}")
         if content.basename.endswith(".podspec.json"):
             return BaseEcosystem._err(content, ecosystem, "a JSON podspec is not read")
+        opened = sum(1 for _, line in lines if re.search(r"\bdo\s*(?:\|[^|]*\|)?\s*$", line))
+        closed = sum(1 for _, line in lines if re.match(r"\s*end\b", line))
+        if opened > closed:
+            # A podspec is one `Pod::Spec.new do |s| ... end` block: a block left open is a file
+            # cut short, whatever it had declared before the cut.
+            return BaseEcosystem._err(
+                content, ecosystem, "a block is never closed: the file is cut short"
+            )
         name = None
         declared: dict[str, DeclaredDependency] = {}
         hooks: list[Hook] = []
+        # `s.test_spec 'Tests' do |test_spec|` and `s.app_spec ... do |app_spec|`: the block's own
+        # variable carries its dependencies, which a test or a demo app needs and the pod does not.
+        scoped: dict[str, Scope] = {}
         for _, line in lines:
+            block = re.search(r"\.(test_spec|app_spec)\b.*\bdo\s*\|\s*(\w+)\s*\|", line)
+            if block:
+                scoped[block.group(2)] = Scope.TEST if block.group(1) == "test_spec" else Scope.DEV
             found = re.search(r"\.name\s*=\s*['\"]([^'\"]+)['\"]", line)
             if found and name is None:
                 name = found.group(1)
-            dependency = re.search(r"\.dependency\s*\(?\s*['\"]([^'\"]+)['\"](.*)$", line)
+            dependency = re.search(r"(\w+)\.dependency\s*\(?\s*['\"]([^'\"]+)['\"](.*)$", line)
             if dependency:
-                pod = PodName.root(dependency.group(1))
+                pod = PodName.root(dependency.group(2))
                 if name and pod == name:
                     continue  # a subspec depending on a sibling subspec of the same pod
-                declared[pod] = DeclaredDependency(
+                scope = scoped.get(dependency.group(1), Scope.RUNTIME)
+                key = pod if scope is Scope.RUNTIME else f"{scope.value}:{pod}"
+                declared[key] = DeclaredDependency(
                     name=pod,
-                    spec=", ".join(RubySource.strings(dependency.group(2))) or "*",
-                    field_name="dependency",
+                    spec=", ".join(RubySource.strings(dependency.group(3))) or "*",
+                    scope=scope,
+                    field_name="dependency"
+                    if scope is Scope.RUNTIME
+                    else f"{dependency.group(1)}.dependency",
                 )
             target = re.search(
                 r"\.(ios|osx|macos|tvos|watchos|visionos)\.deployment_target\s*=\s*['\"]([\d.]+)['\"]",

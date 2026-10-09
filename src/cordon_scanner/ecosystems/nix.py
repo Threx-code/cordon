@@ -426,6 +426,38 @@ class FlakeRef:
         return name or url, url, False
 
 
+class Overlays:
+    """The overlays a flake or a Nix expression applies to nixpkgs.
+
+    An overlay replaces packages: `final: prev: { openssl = ...; }` changes what every package
+    built against it links. One taken from an input lets that input change any package in the
+    build, which its own entry in the lock does not show. Found in `overlays = [ ... ]` lists, by
+    text and never by evaluation: an input's overlay (`inputs.foo.overlays.default`, or `foo.` when
+    `foo` is an input the outputs take) and a local file (`import ./overlays/x.nix`).
+    """
+
+    LIST: ClassVar[re.Pattern[str]] = re.compile(r"\boverlays\s*=\s*\[(.*?)\]", re.DOTALL)
+    FROM_INPUT: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w.-])(?:inputs\.)?([A-Za-z_][\w-]*)\.overlays(?:\.([A-Za-z_][\w-]*))?"
+    )
+    LOCAL: ClassVar[re.Pattern[str]] = re.compile(r"\bimport\s+(\.{1,2}/[\w./-]+)")
+
+    @staticmethod
+    def applied(text: str, inputs: set[str]) -> list[str]:
+        stripped = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
+        stripped = re.sub(r"(?m)(^|\s)#.*$", r"\1", stripped)
+        found: list[str] = []
+        for listing in Overlays.LIST.finditer(stripped):
+            body = listing.group(1)
+            for match in Overlays.FROM_INPUT.finditer(body):
+                name, which = match.group(1), match.group(2)
+                if name in inputs:
+                    found.append(f"overlay from input {name}" + (f" ({which})" if which else ""))
+            for match in Overlays.LOCAL.finditer(body):
+                found.append(f"overlay {match.group(1)}")
+        return list(dict.fromkeys(found))
+
+
 class Flake:
     """flake.nix: its inputs."""
 
@@ -492,6 +524,9 @@ class Flake:
         description = top.get("description")
         if isinstance(description, str):
             sources.insert(0, f"flake {description}")
+        sources.extend(
+            Overlays.applied(content.text, set(inputs) if isinstance(inputs, dict) else set())
+        )
         return Manifest(
             path=content.path,
             ecosystem=ecosystem,

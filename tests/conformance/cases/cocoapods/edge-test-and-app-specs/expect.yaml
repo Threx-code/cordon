@@ -1,0 +1,11 @@
+# A podspec's test spec and app spec declare what its tests and its demo app need: Quick and
+# Nimble for the tests, SnapKit for the demo. They are not the pod's dependencies, and are scoped
+# apart from Alamofire, which is.
+kinds: [edge, valid]
+covers:
+  - cocoapods.test-specs
+dependencies:
+  - {name: Alamofire, version_constraint: "~> 5.9", dependency_type: runtime}
+  - {name: Quick, version_constraint: "~> 7.0", dependency_type: test}
+  - {name: Nimble, version_constraint: "~> 13.0", dependency_type: test}
+  - {name: SnapKit, version_constraint: "~> 5.7", dependency_type: dev}

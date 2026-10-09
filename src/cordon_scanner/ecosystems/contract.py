@@ -428,6 +428,7 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "cocoapods.git-external": "git and external sources",
             "cocoapods.checksums": "checksums",
             "cocoapods.vs-spm": "CocoaPods told apart from SwiftPM in the same app",
+            "cocoapods.test-specs": "test and app specs' dependencies, scoped apart from the pod's",
         },
         {"UNI-17": NO_PROVENANCE},
     ),
@@ -692,6 +693,7 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "nix.nixpkgs": "nixpkgs revisions",
             "nix.git-archive": "git and archive inputs",
             "nix.no-eval": "Nix expressions are read, never evaluated",
+            "nix.overlays": "overlays applied to nixpkgs, from inputs and local files",
         },
         {
             "UNI-17": NO_PROVENANCE,

@@ -1,0 +1,14 @@
+# Overlays replace packages in nixpkgs for everything built against it. Two come from inputs --
+# so those inputs can change any package in the build, which their lock entries do not show --
+# and one from a file here. A commented-out overlay is not applied.
+kinds: [edge, valid]
+covers:
+  - nix.overlays
+dependencies:
+  - {name: nixos/nixpkgs}
+  - {name: oxalica/rust-overlay}
+  - {name: acme/nix-tools}
+sources:
+  - overlay from input rust-overlay (default)
+  - overlay from input acme-tools (openssl-fips)
+  - overlay ./overlays/pinned-curl.nix
