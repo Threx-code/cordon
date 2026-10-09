@@ -179,6 +179,8 @@ include = ["cordon_scanner*", "cordon_sandbox*"]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
 "cordon_scanner.rules.builtin" = ["*.yaml"]
+# Syft's artifact-to-group map for jars named only by their file (scripts/syft_java_groups.py).
+"cordon_scanner.images" = ["data/*.json"]
 # The generated package-name allowlist. A wheel without it falls back to the
 # curated sets in `intel/real.py`, which is a working scanner with a far smaller
 # allowlist -- so the consequence of leaving this out is not a crash, it is

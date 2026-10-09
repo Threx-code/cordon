@@ -26,7 +26,9 @@ import re
 import struct
 import zipfile
 import zlib
+from collections.abc import Mapping
 from dataclasses import replace
+from pathlib import Path
 from typing import IO, Final
 
 from cordon_scanner.images.langpkgs import LanguagePackage
@@ -415,10 +417,17 @@ class BinaryMetadata:
             ),
             None,
         )
-        # The advisory data's coordinate where it knows exactly one; else the stated module name,
-        # less the trailing parts that only repeat the artifact; else the artifact itself.
-        group = KnownGroups.of(artifact) or (
-            KnownGroups.trimmed(stated, artifact) if stated else artifact
+        # The advisory data's coordinate where it knows exactly one; else the group the jar states,
+        # less the trailing parts that only repeat the artifact; else Syft's curated map; else the
+        # manifest read as Syft reads it; else the artifact itself. The jar's own statement comes
+        # before the map, unlike in Syft: the map names Groovy 4's jars `org.codehaus.groovy`, and
+        # they state, correctly, `org.apache.groovy`.
+        group = (
+            KnownGroups.of(artifact)
+            or (KnownGroups.trimmed(stated, artifact) if stated else None)
+            or KnownGroups.curated(artifact)
+            or KnownGroups.from_manifest(manifest)
+            or artifact
         )
         return [LanguagePackage("maven", f"{group}:{artifact}", version, path, named_by_file=True)]
 
@@ -543,6 +552,50 @@ class KnownGroups:
         found = KnownGroups._index().get(artifact.lower(), frozenset())
         return next(iter(found)) if len(found) == 1 else None
 
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _curated() -> dict[str, str]:
+        """Syft's artifact-to-group map (`scripts/syft_java_groups.py`; NOTICE has the source)."""
+        path = Path(__file__).parent / "data" / "java-groups.json"
+        try:
+            groups = json.loads(path.read_text(encoding="utf-8")).get("groups", {})
+        except (OSError, ValueError):
+            return {}
+        return {str(k): str(v) for k, v in groups.items()} if isinstance(groups, dict) else {}
+
+    @staticmethod
+    def curated(artifact: str) -> str | None:
+        return KnownGroups._curated().get(artifact)
+
+    #: Syft's order (cpegenerate.PrimaryJavaManifestGroupIDFields, then the secondary fields),
+    #: and its test of a group: a value that starts with one of these.
+    MANIFEST_PRIMARY: Final = (
+        "Group-Id",
+        "Bundle-SymbolicName",
+        "Extension-Name",
+        "Specification-Vendor",
+        "Implementation-Vendor",
+        "Implementation-Vendor-Id",
+        "Implementation-Title",
+        "Bundle-Activator",
+    )
+    MANIFEST_SECONDARY: Final = ("Automatic-Module-Name", "Main-Class", "Package")
+    DOMAINS: Final = ("com", "org", "net", "io", "be")
+
+    @staticmethod
+    def from_manifest(manifest: Mapping[str, str]) -> str | None:
+        """The group Syft takes from a manifest: of the values that start like a reverse domain,
+        with any OSGi directive removed, the first in sort order -- primary fields first."""
+        for fields in (KnownGroups.MANIFEST_PRIMARY, KnownGroups.MANIFEST_SECONDARY):
+            found = sorted(
+                manifest[key].split(";", 1)[0].split("#", 1)[0].strip()
+                for key in fields
+                if manifest.get(key, "").startswith(KnownGroups.DOMAINS)
+            )
+            if found:
+                return found[0]
+        return None
+
 
 class KnownBinaries:
     """A common program copied into an image without a package database (Clear Linux's swupd
@@ -573,7 +626,17 @@ class KnownBinaries:
         "zstd": re.compile(rb"\bv(\d+\.\d+\.\d+)\x00"),
         "util-linux": re.compile(rb"\butil-linux (\d+\.\d+(?:\.\d+)?)\b"),
         "php-cli": re.compile(rb"X-Powered-By: PHP/(\d+\.\d+\.\d+)"),
+        # Apache's PHP module, beside the CLI in the official PHP and CMS images: Syft names it
+        # `libphp` and its purl `pkg:generic/php`, so the same program is not counted twice.
+        "php": re.compile(rb"X-Powered-By: PHP/(\d+\.\d+\.\d+)"),
+        # The Composer PHAR in /usr/local/bin: its embedded `installed.php` lists the root
+        # package first, which is Composer itself.
+        "composer": re.compile(
+            rb"'pretty_version'\s*=>\s*'(\d+\.\d+\.\d+(?:-?(?:alpha|beta|RC)\d+)?)'"
+        ),
     }
+    #: Programs that are not ELF executables: a PHAR is a PHP script with a stub.
+    NOT_ELF: Final = frozenset({"composer"})
 
     @staticmethod
     def program(path: str) -> str | None:
@@ -584,12 +647,21 @@ class KnownBinaries:
             return "openssl"
         if base == "php" or re.fullmatch(r"php\d(?:\.\d+)?", base):
             return "php-cli"
+        if re.fullmatch(r"libphp\d*(?:\.\d+)*\.so", base):
+            return "php"
+        if base in ("composer", "composer.phar"):
+            return "composer"
         return base if base in KnownBinaries.PATTERNS else None
 
     @staticmethod
     def identify(path: str, data: bytes) -> list[LanguagePackage]:
         program = KnownBinaries.program(path)
-        if program is None or data[:4] != b"\x7fELF":
+        if program is None:
+            return []
+        if program in KnownBinaries.NOT_ELF:
+            if not data.startswith(b"#!") and b"__HALT_COMPILER" not in data[-65536:]:
+                return []
+        elif data[:4] != b"\x7fELF":
             return []
         if program == "zstd" and b"Zstandard CLI" not in data:
             return []

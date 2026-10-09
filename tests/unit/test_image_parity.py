@@ -92,3 +92,72 @@ class TestPhp:
         assert [(p.name, p.version) for p in KnownBinaries.identify("usr/local/bin/php", data)] == [
             ("php-cli", "8.3.35")
         ]
+
+    def test_apaches_php_module_beside_the_cli(self) -> None:
+        """Syft's second PHP entry is not a second name for the CLI: it is Apache's module,
+        /usr/lib/apache2/modules/libphp.so, whose purl Syft writes as pkg:generic/php."""
+        data = b"\x7fELF" + b"\x00" * 60 + b"X-Powered-By: PHP/8.5.11\x00"
+        found = KnownBinaries.identify("usr/lib/apache2/modules/libphp.so", data)
+        assert [(p.name, p.version) for p in found] == [("php", "8.5.11")]
+        assert KnownBinaries.identify("usr/lib/apache2/modules/libphp8.so", data)
+        assert KnownBinaries.identify("usr/lib/apache2/modules/mod_ssl.so", data) == []
+
+    def test_the_composer_phar_by_its_own_install_record(self) -> None:
+        phar = (
+            b"#!/usr/bin/env php\n<?php\n"
+            b"'root' => array('pretty_version' => '2.10.3', 'version' => '2.10.3.0'),\n"
+            b"'composer/ca-bundle' => array('pretty_version' => '1.5.8'),\n"
+        )
+        found = KnownBinaries.identify("usr/local/bin/composer", phar)
+        assert [(p.name, p.version) for p in found] == [("composer", "2.10.3")]
+        assert KnownBinaries.identify("usr/local/bin/composer", b"not a phar") == []
+
+
+class TestJarGroupsAsSyftNamesThem:
+    def test_the_curated_map(self) -> None:
+        assert KnownGroups.curated("ant-antlr") == "org.apache.ant"
+        assert KnownGroups.curated("bcutil-jdk18on") == "org.bouncycastle"
+        assert KnownGroups.curated("no-such-artifact") is None
+
+    def test_the_manifest_as_syft_reads_it(self) -> None:
+        assert (
+            KnownGroups.from_manifest(
+                {"Main-Class": "org.gradle.launcher.daemon.bootstrap.GradleDaemon"}
+            )
+            == "org.gradle.launcher.daemon.bootstrap.GradleDaemon"
+        )
+        # Primary fields before secondary; within a tier, the first in sort order; an OSGi
+        # directive removed; a value that does not start like a reverse domain ignored.
+        manifest = {
+            "Bundle-SymbolicName": "org.zeta.bundle;singleton:=true",
+            "Implementation-Title": "com.alpha.title",
+            "Implementation-Vendor": "The Apache Software Foundation",
+            "Automatic-Module-Name": "com.aaa.module",
+        }
+        assert KnownGroups.from_manifest(manifest) == "com.alpha.title"
+        assert KnownGroups.from_manifest({"Implementation-Vendor": "Gpars team"}) is None
+
+    def test_a_jar_naming_its_own_group_is_believed_before_the_map(self) -> None:
+        """The map has Groovy 4's jars under org.codehaus.groovy; they state org.apache.groovy."""
+        import io
+        import zipfile
+
+        from cordon_scanner.images.binmeta import BinaryMetadata
+
+        def jar(manifest: str) -> bytes:
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("META-INF/MANIFEST.MF", manifest)
+            return buffer.getvalue()
+
+        groovy = jar("Manifest-Version: 1.0\nAutomatic-Module-Name: org.apache.groovy.ant\n")
+        ant = jar("Manifest-Version: 1.0\nImplementation-Vendor: Apache Software Foundation\n")
+        found = {
+            p.name
+            for path, data in (
+                ("opt/groovy/lib/groovy-ant-4.0.33.jar", groovy),
+                ("opt/groovy/lib/ant-antlr-1.10.15.jar", ant),
+            )
+            for p in BinaryMetadata.extract(path, data)
+        }
+        assert {"org.apache.groovy:groovy-ant", "org.apache.ant:ant-antlr"} <= found
