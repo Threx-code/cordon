@@ -1,0 +1,1314 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1009" height="542" viewBox="0 0 1009 542" role="img" aria-label="cordon-scanner scanning a repository, packages, an image and CI pipelines">
+<title>cordon-scanner, in a terminal</title>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:12.4px}
+g{transform-box:view-box}
+@keyframes k0{0.000%{opacity:0}0.000%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k0{animation:k0 83455ms step-end infinite}
+@keyframes k1{0.000%{transform:translateY(0px)}0.000%{transform:translateY(0px)}4.576%{transform:translateY(-17px)}4.602%{transform:translateY(-34px)}4.629%{transform:translateY(-51px)}4.655%{transform:translateY(-68px)}4.682%{transform:translateY(-85px)}4.708%{transform:translateY(-102px)}4.734%{transform:translateY(-119px)}4.761%{transform:translateY(-136px)}4.787%{transform:translateY(-153px)}4.813%{transform:translateY(-170px)}4.840%{transform:translateY(-187px)}4.866%{transform:translateY(-204px)}4.892%{transform:translateY(-221px)}4.919%{transform:translateY(-238px)}4.945%{transform:translateY(-255px)}4.972%{transform:translateY(-272px)}4.998%{transform:translateY(-289px)}5.024%{transform:translateY(-306px)}5.051%{transform:translateY(-323px)}5.077%{transform:translateY(-340px)}5.103%{transform:translateY(-357px)}5.130%{transform:translateY(-374px)}5.156%{transform:translateY(-391px)}5.182%{transform:translateY(-408px)}6.542%{transform:translateY(-425px)}6.569%{transform:translateY(-442px)}14.477%{transform:translateY(0px)}100.000%{transform:translateY(0px)}}
+.k1{animation:k1 83455ms step-end infinite}
+@keyframes k2{0.000%{opacity:0}2.115%{opacity:1}2.426%{opacity:0}100.000%{opacity:0}}
+.k2{animation:k2 83455ms step-end infinite}
+@keyframes k3{0.000%{opacity:0}2.426%{opacity:1}2.738%{opacity:0}100.000%{opacity:0}}
+.k3{animation:k3 83455ms step-end infinite}
+@keyframes k4{0.000%{opacity:0}2.738%{opacity:1}3.050%{opacity:0}100.000%{opacity:0}}
+.k4{animation:k4 83455ms step-end infinite}
+@keyframes k5{0.000%{opacity:0}3.050%{opacity:1}3.121%{opacity:0}100.000%{opacity:0}}
+.k5{animation:k5 83455ms step-end infinite}
+@keyframes k6{0.000%{opacity:0}3.121%{opacity:1}3.193%{opacity:0}100.000%{opacity:0}}
+.k6{animation:k6 83455ms step-end infinite}
+@keyframes k7{0.000%{opacity:0}3.193%{opacity:1}3.265%{opacity:0}100.000%{opacity:0}}
+.k7{animation:k7 83455ms step-end infinite}
+@keyframes k8{0.000%{opacity:0}3.265%{opacity:1}3.337%{opacity:0}100.000%{opacity:0}}
+.k8{animation:k8 83455ms step-end infinite}
+@keyframes k9{0.000%{opacity:0}3.337%{opacity:1}3.409%{opacity:0}100.000%{opacity:0}}
+.k9{animation:k9 83455ms step-end infinite}
+@keyframes k10{0.000%{opacity:0}3.409%{opacity:1}3.481%{opacity:0}100.000%{opacity:0}}
+.k10{animation:k10 83455ms step-end infinite}
+@keyframes k11{0.000%{opacity:0}3.481%{opacity:1}3.553%{opacity:0}100.000%{opacity:0}}
+.k11{animation:k11 83455ms step-end infinite}
+@keyframes k12{0.000%{opacity:0}3.553%{opacity:1}3.864%{opacity:0}100.000%{opacity:0}}
+.k12{animation:k12 83455ms step-end infinite}
+@keyframes k13{0.000%{opacity:0}3.864%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k13{animation:k13 83455ms step-end infinite}
+@keyframes k14{0.000%{opacity:0}3.891%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k14{animation:k14 83455ms step-end infinite}
+@keyframes k15{0.000%{opacity:0}3.917%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k15{animation:k15 83455ms step-end infinite}
+@keyframes k16{0.000%{opacity:0}3.943%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k16{animation:k16 83455ms step-end infinite}
+@keyframes k17{0.000%{opacity:0}3.970%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k17{animation:k17 83455ms step-end infinite}
+@keyframes k18{0.000%{opacity:0}3.996%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k18{animation:k18 83455ms step-end infinite}
+@keyframes k19{0.000%{opacity:0}4.023%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k19{animation:k19 83455ms step-end infinite}
+@keyframes k20{0.000%{opacity:0}4.049%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k20{animation:k20 83455ms step-end infinite}
+@keyframes k21{0.000%{opacity:0}4.075%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k21{animation:k21 83455ms step-end infinite}
+@keyframes k22{0.000%{opacity:0}4.102%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k22{animation:k22 83455ms step-end infinite}
+@keyframes k23{0.000%{opacity:0}4.128%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k23{animation:k23 83455ms step-end infinite}
+@keyframes k24{0.000%{opacity:0}4.154%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k24{animation:k24 83455ms step-end infinite}
+@keyframes k25{0.000%{opacity:0}4.181%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k25{animation:k25 83455ms step-end infinite}
+@keyframes k26{0.000%{opacity:0}4.207%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k26{animation:k26 83455ms step-end infinite}
+@keyframes k27{0.000%{opacity:0}4.233%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k27{animation:k27 83455ms step-end infinite}
+@keyframes k28{0.000%{opacity:0}4.260%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k28{animation:k28 83455ms step-end infinite}
+@keyframes k29{0.000%{opacity:0}4.286%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k29{animation:k29 83455ms step-end infinite}
+@keyframes k30{0.000%{opacity:0}4.313%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k30{animation:k30 83455ms step-end infinite}
+@keyframes k31{0.000%{opacity:0}4.339%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k31{animation:k31 83455ms step-end infinite}
+@keyframes k32{0.000%{opacity:0}4.365%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k32{animation:k32 83455ms step-end infinite}
+@keyframes k33{0.000%{opacity:0}4.392%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k33{animation:k33 83455ms step-end infinite}
+@keyframes k34{0.000%{opacity:0}4.418%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k34{animation:k34 83455ms step-end infinite}
+@keyframes k35{0.000%{opacity:0}4.444%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k35{animation:k35 83455ms step-end infinite}
+@keyframes k36{0.000%{opacity:0}4.471%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k36{animation:k36 83455ms step-end infinite}
+@keyframes k37{0.000%{opacity:0}4.497%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k37{animation:k37 83455ms step-end infinite}
+@keyframes k38{0.000%{opacity:0}4.523%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k38{animation:k38 83455ms step-end infinite}
+@keyframes k39{0.000%{opacity:0}4.550%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k39{animation:k39 83455ms step-end infinite}
+@keyframes k40{0.000%{opacity:0}4.576%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k40{animation:k40 83455ms step-end infinite}
+@keyframes k41{0.000%{opacity:0}4.602%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k41{animation:k41 83455ms step-end infinite}
+@keyframes k42{0.000%{opacity:0}4.629%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k42{animation:k42 83455ms step-end infinite}
+@keyframes k43{0.000%{opacity:0}4.655%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k43{animation:k43 83455ms step-end infinite}
+@keyframes k44{0.000%{opacity:0}4.682%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k44{animation:k44 83455ms step-end infinite}
+@keyframes k45{0.000%{opacity:0}4.708%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k45{animation:k45 83455ms step-end infinite}
+@keyframes k46{0.000%{opacity:0}4.734%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k46{animation:k46 83455ms step-end infinite}
+@keyframes k47{0.000%{opacity:0}4.761%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k47{animation:k47 83455ms step-end infinite}
+@keyframes k48{0.000%{opacity:0}4.787%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k48{animation:k48 83455ms step-end infinite}
+@keyframes k49{0.000%{opacity:0}4.813%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k49{animation:k49 83455ms step-end infinite}
+@keyframes k50{0.000%{opacity:0}4.840%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k50{animation:k50 83455ms step-end infinite}
+@keyframes k51{0.000%{opacity:0}4.866%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k51{animation:k51 83455ms step-end infinite}
+@keyframes k52{0.000%{opacity:0}4.892%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k52{animation:k52 83455ms step-end infinite}
+@keyframes k53{0.000%{opacity:0}4.919%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k53{animation:k53 83455ms step-end infinite}
+@keyframes k54{0.000%{opacity:0}4.945%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k54{animation:k54 83455ms step-end infinite}
+@keyframes k55{0.000%{opacity:0}4.972%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k55{animation:k55 83455ms step-end infinite}
+@keyframes k56{0.000%{opacity:0}4.998%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k56{animation:k56 83455ms step-end infinite}
+@keyframes k57{0.000%{opacity:0}5.024%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k57{animation:k57 83455ms step-end infinite}
+@keyframes k58{0.000%{opacity:0}5.051%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k58{animation:k58 83455ms step-end infinite}
+@keyframes k59{0.000%{opacity:0}5.077%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k59{animation:k59 83455ms step-end infinite}
+@keyframes k60{0.000%{opacity:0}5.103%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k60{animation:k60 83455ms step-end infinite}
+@keyframes k61{0.000%{opacity:0}5.130%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k61{animation:k61 83455ms step-end infinite}
+@keyframes k62{0.000%{opacity:0}5.156%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k62{animation:k62 83455ms step-end infinite}
+@keyframes k63{0.000%{opacity:0}5.182%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k63{animation:k63 83455ms step-end infinite}
+@keyframes k64{0.000%{opacity:0}6.542%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k64{animation:k64 83455ms step-end infinite}
+@keyframes k65{0.000%{opacity:0}6.569%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k65{animation:k65 83455ms step-end infinite}
+@keyframes k66{0.000%{opacity:0}10.164%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k66{animation:k66 83455ms step-end infinite}
+@keyframes k67{0.000%{opacity:0}0.653%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k67{animation:k67 83455ms step-end infinite}
+@keyframes k68{0.000%{opacity:0}0.707%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k68{animation:k68 83455ms step-end infinite}
+@keyframes k69{0.000%{opacity:0}0.761%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k69{animation:k69 83455ms step-end infinite}
+@keyframes k70{0.000%{opacity:0}0.815%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k70{animation:k70 83455ms step-end infinite}
+@keyframes k71{0.000%{opacity:0}0.869%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k71{animation:k71 83455ms step-end infinite}
+@keyframes k72{0.000%{opacity:0}0.923%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k72{animation:k72 83455ms step-end infinite}
+@keyframes k73{0.000%{opacity:0}0.977%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k73{animation:k73 83455ms step-end infinite}
+@keyframes k74{0.000%{opacity:0}1.030%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k74{animation:k74 83455ms step-end infinite}
+@keyframes k75{0.000%{opacity:0}1.084%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k75{animation:k75 83455ms step-end infinite}
+@keyframes k76{0.000%{opacity:0}1.138%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k76{animation:k76 83455ms step-end infinite}
+@keyframes k77{0.000%{opacity:0}1.192%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k77{animation:k77 83455ms step-end infinite}
+@keyframes k78{0.000%{opacity:0}1.246%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k78{animation:k78 83455ms step-end infinite}
+@keyframes k79{0.000%{opacity:0}1.300%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k79{animation:k79 83455ms step-end infinite}
+@keyframes k80{0.000%{opacity:0}1.354%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k80{animation:k80 83455ms step-end infinite}
+@keyframes k81{0.000%{opacity:0}1.462%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k81{animation:k81 83455ms step-end infinite}
+@keyframes k82{0.000%{opacity:0}1.516%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k82{animation:k82 83455ms step-end infinite}
+@keyframes k83{0.000%{opacity:0}1.570%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k83{animation:k83 83455ms step-end infinite}
+@keyframes k84{0.000%{opacity:0}1.624%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k84{animation:k84 83455ms step-end infinite}
+@keyframes k85{0.000%{opacity:0}1.731%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k85{animation:k85 83455ms step-end infinite}
+@keyframes k86{0.000%{opacity:0}5.835%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k86{animation:k86 83455ms step-end infinite}
+@keyframes k87{0.000%{opacity:0}5.889%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k87{animation:k87 83455ms step-end infinite}
+@keyframes k88{0.000%{opacity:0}5.943%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k88{animation:k88 83455ms step-end infinite}
+@keyframes k89{0.000%{opacity:0}5.997%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k89{animation:k89 83455ms step-end infinite}
+@keyframes k90{0.000%{opacity:0}6.105%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k90{animation:k90 83455ms step-end infinite}
+@keyframes k91{0.000%{opacity:0}6.159%{opacity:1}14.477%{opacity:0}100.000%{opacity:0}}
+.k91{animation:k91 83455ms step-end infinite}
+@keyframes k92{0.000%{opacity:0}14.477%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k92{animation:k92 83455ms step-end infinite}
+@keyframes k93{0.000%{transform:translateY(0px)}14.477%{transform:translateY(0px)}31.711%{transform:translateY(0px)}100.000%{transform:translateY(0px)}}
+.k93{animation:k93 83455ms step-end infinite}
+@keyframes k94{0.000%{opacity:0}18.695%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k94{animation:k94 83455ms step-end infinite}
+@keyframes k95{0.000%{opacity:0}18.721%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k95{animation:k95 83455ms step-end infinite}
+@keyframes k96{0.000%{opacity:0}21.214%{opacity:1}21.525%{opacity:0}100.000%{opacity:0}}
+.k96{animation:k96 83455ms step-end infinite}
+@keyframes k97{0.000%{opacity:0}21.525%{opacity:1}21.837%{opacity:0}100.000%{opacity:0}}
+.k97{animation:k97 83455ms step-end infinite}
+@keyframes k98{0.000%{opacity:0}21.837%{opacity:1}22.005%{opacity:0}100.000%{opacity:0}}
+.k98{animation:k98 83455ms step-end infinite}
+@keyframes k99{0.000%{opacity:0}22.005%{opacity:1}22.172%{opacity:0}100.000%{opacity:0}}
+.k99{animation:k99 83455ms step-end infinite}
+@keyframes k100{0.000%{opacity:0}22.172%{opacity:1}22.340%{opacity:0}100.000%{opacity:0}}
+.k100{animation:k100 83455ms step-end infinite}
+@keyframes k101{0.000%{opacity:0}22.340%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k101{animation:k101 83455ms step-end infinite}
+@keyframes k102{0.000%{opacity:0}22.376%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k102{animation:k102 83455ms step-end infinite}
+@keyframes k103{0.000%{opacity:0}22.412%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k103{animation:k103 83455ms step-end infinite}
+@keyframes k104{0.000%{opacity:0}22.448%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k104{animation:k104 83455ms step-end infinite}
+@keyframes k105{0.000%{opacity:0}22.484%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k105{animation:k105 83455ms step-end infinite}
+@keyframes k106{0.000%{opacity:0}22.520%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k106{animation:k106 83455ms step-end infinite}
+@keyframes k107{0.000%{opacity:0}22.556%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k107{animation:k107 83455ms step-end infinite}
+@keyframes k108{0.000%{opacity:0}22.592%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k108{animation:k108 83455ms step-end infinite}
+@keyframes k109{0.000%{opacity:0}22.628%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k109{animation:k109 83455ms step-end infinite}
+@keyframes k110{0.000%{opacity:0}22.664%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k110{animation:k110 83455ms step-end infinite}
+@keyframes k111{0.000%{opacity:0}22.700%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k111{animation:k111 83455ms step-end infinite}
+@keyframes k112{0.000%{opacity:0}22.736%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k112{animation:k112 83455ms step-end infinite}
+@keyframes k113{0.000%{opacity:0}22.772%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k113{animation:k113 83455ms step-end infinite}
+@keyframes k114{0.000%{opacity:0}22.808%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k114{animation:k114 83455ms step-end infinite}
+@keyframes k115{0.000%{opacity:0}22.843%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k115{animation:k115 83455ms step-end infinite}
+@keyframes k116{0.000%{opacity:0}22.879%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k116{animation:k116 83455ms step-end infinite}
+@keyframes k117{0.000%{opacity:0}22.915%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k117{animation:k117 83455ms step-end infinite}
+@keyframes k118{0.000%{opacity:0}22.951%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k118{animation:k118 83455ms step-end infinite}
+@keyframes k119{0.000%{opacity:0}22.987%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k119{animation:k119 83455ms step-end infinite}
+@keyframes k120{0.000%{opacity:0}23.023%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k120{animation:k120 83455ms step-end infinite}
+@keyframes k121{0.000%{opacity:0}23.059%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k121{animation:k121 83455ms step-end infinite}
+@keyframes k122{0.000%{opacity:0}23.095%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k122{animation:k122 83455ms step-end infinite}
+@keyframes k123{0.000%{opacity:0}23.131%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k123{animation:k123 83455ms step-end infinite}
+@keyframes k124{0.000%{opacity:0}23.167%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k124{animation:k124 83455ms step-end infinite}
+@keyframes k125{0.000%{opacity:0}23.203%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k125{animation:k125 83455ms step-end infinite}
+@keyframes k126{0.000%{opacity:0}27.397%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k126{animation:k126 83455ms step-end infinite}
+@keyframes k127{0.000%{opacity:0}15.130%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k127{animation:k127 83455ms step-end infinite}
+@keyframes k128{0.000%{opacity:0}15.184%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k128{animation:k128 83455ms step-end infinite}
+@keyframes k129{0.000%{opacity:0}15.238%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k129{animation:k129 83455ms step-end infinite}
+@keyframes k130{0.000%{opacity:0}15.346%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k130{animation:k130 83455ms step-end infinite}
+@keyframes k131{0.000%{opacity:0}15.400%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k131{animation:k131 83455ms step-end infinite}
+@keyframes k132{0.000%{opacity:0}15.454%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k132{animation:k132 83455ms step-end infinite}
+@keyframes k133{0.000%{opacity:0}15.508%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k133{animation:k133 83455ms step-end infinite}
+@keyframes k134{0.000%{opacity:0}15.616%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k134{animation:k134 83455ms step-end infinite}
+@keyframes k135{0.000%{opacity:0}15.670%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k135{animation:k135 83455ms step-end infinite}
+@keyframes k136{0.000%{opacity:0}15.723%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k136{animation:k136 83455ms step-end infinite}
+@keyframes k137{0.000%{opacity:0}15.777%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k137{animation:k137 83455ms step-end infinite}
+@keyframes k138{0.000%{opacity:0}15.831%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k138{animation:k138 83455ms step-end infinite}
+@keyframes k139{0.000%{opacity:0}15.885%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k139{animation:k139 83455ms step-end infinite}
+@keyframes k140{0.000%{opacity:0}15.939%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k140{animation:k140 83455ms step-end infinite}
+@keyframes k141{0.000%{opacity:0}15.993%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k141{animation:k141 83455ms step-end infinite}
+@keyframes k142{0.000%{opacity:0}16.047%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k142{animation:k142 83455ms step-end infinite}
+@keyframes k143{0.000%{opacity:0}16.101%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k143{animation:k143 83455ms step-end infinite}
+@keyframes k144{0.000%{opacity:0}16.155%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k144{animation:k144 83455ms step-end infinite}
+@keyframes k145{0.000%{opacity:0}16.209%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k145{animation:k145 83455ms step-end infinite}
+@keyframes k146{0.000%{opacity:0}16.263%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k146{animation:k146 83455ms step-end infinite}
+@keyframes k147{0.000%{opacity:0}16.317%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k147{animation:k147 83455ms step-end infinite}
+@keyframes k148{0.000%{opacity:0}16.370%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k148{animation:k148 83455ms step-end infinite}
+@keyframes k149{0.000%{opacity:0}16.424%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k149{animation:k149 83455ms step-end infinite}
+@keyframes k150{0.000%{opacity:0}16.478%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k150{animation:k150 83455ms step-end infinite}
+@keyframes k151{0.000%{opacity:0}16.586%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k151{animation:k151 83455ms step-end infinite}
+@keyframes k152{0.000%{opacity:0}16.640%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k152{animation:k152 83455ms step-end infinite}
+@keyframes k153{0.000%{opacity:0}16.748%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k153{animation:k153 83455ms step-end infinite}
+@keyframes k154{0.000%{opacity:0}16.802%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k154{animation:k154 83455ms step-end infinite}
+@keyframes k155{0.000%{opacity:0}16.856%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k155{animation:k155 83455ms step-end infinite}
+@keyframes k156{0.000%{opacity:0}16.964%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k156{animation:k156 83455ms step-end infinite}
+@keyframes k157{0.000%{opacity:0}17.018%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k157{animation:k157 83455ms step-end infinite}
+@keyframes k158{0.000%{opacity:0}17.071%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k158{animation:k158 83455ms step-end infinite}
+@keyframes k159{0.000%{opacity:0}17.125%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k159{animation:k159 83455ms step-end infinite}
+@keyframes k160{0.000%{opacity:0}17.233%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k160{animation:k160 83455ms step-end infinite}
+@keyframes k161{0.000%{opacity:0}17.287%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k161{animation:k161 83455ms step-end infinite}
+@keyframes k162{0.000%{opacity:0}17.341%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k162{animation:k162 83455ms step-end infinite}
+@keyframes k163{0.000%{opacity:0}17.395%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k163{animation:k163 83455ms step-end infinite}
+@keyframes k164{0.000%{opacity:0}17.449%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k164{animation:k164 83455ms step-end infinite}
+@keyframes k165{0.000%{opacity:0}17.503%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k165{animation:k165 83455ms step-end infinite}
+@keyframes k166{0.000%{opacity:0}17.557%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k166{animation:k166 83455ms step-end infinite}
+@keyframes k167{0.000%{opacity:0}17.611%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k167{animation:k167 83455ms step-end infinite}
+@keyframes k168{0.000%{opacity:0}17.665%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k168{animation:k168 83455ms step-end infinite}
+@keyframes k169{0.000%{opacity:0}17.719%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k169{animation:k169 83455ms step-end infinite}
+@keyframes k170{0.000%{opacity:0}17.772%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k170{animation:k170 83455ms step-end infinite}
+@keyframes k171{0.000%{opacity:0}17.826%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k171{animation:k171 83455ms step-end infinite}
+@keyframes k172{0.000%{opacity:0}17.880%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k172{animation:k172 83455ms step-end infinite}
+@keyframes k173{0.000%{opacity:0}17.934%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k173{animation:k173 83455ms step-end infinite}
+@keyframes k174{0.000%{opacity:0}17.988%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k174{animation:k174 83455ms step-end infinite}
+@keyframes k175{0.000%{opacity:0}18.042%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k175{animation:k175 83455ms step-end infinite}
+@keyframes k176{0.000%{opacity:0}18.096%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k176{animation:k176 83455ms step-end infinite}
+@keyframes k177{0.000%{opacity:0}18.150%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k177{animation:k177 83455ms step-end infinite}
+@keyframes k178{0.000%{opacity:0}18.204%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k178{animation:k178 83455ms step-end infinite}
+@keyframes k179{0.000%{opacity:0}18.258%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k179{animation:k179 83455ms step-end infinite}
+@keyframes k180{0.000%{opacity:0}18.312%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k180{animation:k180 83455ms step-end infinite}
+@keyframes k181{0.000%{opacity:0}19.375%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k181{animation:k181 83455ms step-end infinite}
+@keyframes k182{0.000%{opacity:0}19.428%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k182{animation:k182 83455ms step-end infinite}
+@keyframes k183{0.000%{opacity:0}19.482%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k183{animation:k183 83455ms step-end infinite}
+@keyframes k184{0.000%{opacity:0}19.536%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k184{animation:k184 83455ms step-end infinite}
+@keyframes k185{0.000%{opacity:0}19.590%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k185{animation:k185 83455ms step-end infinite}
+@keyframes k186{0.000%{opacity:0}19.644%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k186{animation:k186 83455ms step-end infinite}
+@keyframes k187{0.000%{opacity:0}19.698%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k187{animation:k187 83455ms step-end infinite}
+@keyframes k188{0.000%{opacity:0}19.752%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k188{animation:k188 83455ms step-end infinite}
+@keyframes k189{0.000%{opacity:0}19.806%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k189{animation:k189 83455ms step-end infinite}
+@keyframes k190{0.000%{opacity:0}19.860%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k190{animation:k190 83455ms step-end infinite}
+@keyframes k191{0.000%{opacity:0}19.914%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k191{animation:k191 83455ms step-end infinite}
+@keyframes k192{0.000%{opacity:0}19.968%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k192{animation:k192 83455ms step-end infinite}
+@keyframes k193{0.000%{opacity:0}20.022%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k193{animation:k193 83455ms step-end infinite}
+@keyframes k194{0.000%{opacity:0}20.075%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k194{animation:k194 83455ms step-end infinite}
+@keyframes k195{0.000%{opacity:0}20.183%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k195{animation:k195 83455ms step-end infinite}
+@keyframes k196{0.000%{opacity:0}20.237%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k196{animation:k196 83455ms step-end infinite}
+@keyframes k197{0.000%{opacity:0}20.291%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k197{animation:k197 83455ms step-end infinite}
+@keyframes k198{0.000%{opacity:0}20.345%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k198{animation:k198 83455ms step-end infinite}
+@keyframes k199{0.000%{opacity:0}20.453%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k199{animation:k199 83455ms step-end infinite}
+@keyframes k200{0.000%{opacity:0}20.507%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k200{animation:k200 83455ms step-end infinite}
+@keyframes k201{0.000%{opacity:0}20.561%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k201{animation:k201 83455ms step-end infinite}
+@keyframes k202{0.000%{opacity:0}20.615%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k202{animation:k202 83455ms step-end infinite}
+@keyframes k203{0.000%{opacity:0}20.669%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k203{animation:k203 83455ms step-end infinite}
+@keyframes k204{0.000%{opacity:0}20.723%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k204{animation:k204 83455ms step-end infinite}
+@keyframes k205{0.000%{opacity:0}20.776%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k205{animation:k205 83455ms step-end infinite}
+@keyframes k206{0.000%{opacity:0}20.830%{opacity:1}31.711%{opacity:0}100.000%{opacity:0}}
+.k206{animation:k206 83455ms step-end infinite}
+@keyframes k207{0.000%{opacity:0}31.711%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k207{animation:k207 83455ms step-end infinite}
+@keyframes k208{0.000%{transform:translateY(0px)}31.711%{transform:translateY(0px)}52.403%{transform:translateY(0px)}100.000%{transform:translateY(0px)}}
+.k208{animation:k208 83455ms step-end infinite}
+@keyframes k209{0.000%{opacity:0}38.409%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k209{animation:k209 83455ms step-end infinite}
+@keyframes k210{0.000%{opacity:0}38.435%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k210{animation:k210 83455ms step-end infinite}
+@keyframes k211{0.000%{opacity:0}38.461%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k211{animation:k211 83455ms step-end infinite}
+@keyframes k212{0.000%{opacity:0}41.763%{opacity:1}42.074%{opacity:0}100.000%{opacity:0}}
+.k212{animation:k212 83455ms step-end infinite}
+@keyframes k213{0.000%{opacity:0}42.074%{opacity:1}42.577%{opacity:0}100.000%{opacity:0}}
+.k213{animation:k213 83455ms step-end infinite}
+@keyframes k214{0.000%{opacity:0}42.577%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k214{animation:k214 83455ms step-end infinite}
+@keyframes k215{0.000%{opacity:0}42.625%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k215{animation:k215 83455ms step-end infinite}
+@keyframes k216{0.000%{opacity:0}42.673%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k216{animation:k216 83455ms step-end infinite}
+@keyframes k217{0.000%{opacity:0}42.721%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k217{animation:k217 83455ms step-end infinite}
+@keyframes k218{0.000%{opacity:0}42.769%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k218{animation:k218 83455ms step-end infinite}
+@keyframes k219{0.000%{opacity:0}42.817%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k219{animation:k219 83455ms step-end infinite}
+@keyframes k220{0.000%{opacity:0}42.865%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k220{animation:k220 83455ms step-end infinite}
+@keyframes k221{0.000%{opacity:0}42.913%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k221{animation:k221 83455ms step-end infinite}
+@keyframes k222{0.000%{opacity:0}42.961%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k222{animation:k222 83455ms step-end infinite}
+@keyframes k223{0.000%{opacity:0}43.009%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k223{animation:k223 83455ms step-end infinite}
+@keyframes k224{0.000%{opacity:0}43.057%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k224{animation:k224 83455ms step-end infinite}
+@keyframes k225{0.000%{opacity:0}43.105%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k225{animation:k225 83455ms step-end infinite}
+@keyframes k226{0.000%{opacity:0}43.153%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k226{animation:k226 83455ms step-end infinite}
+@keyframes k227{0.000%{opacity:0}43.201%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k227{animation:k227 83455ms step-end infinite}
+@keyframes k228{0.000%{opacity:0}43.248%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k228{animation:k228 83455ms step-end infinite}
+@keyframes k229{0.000%{opacity:0}43.296%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k229{animation:k229 83455ms step-end infinite}
+@keyframes k230{0.000%{opacity:0}48.089%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k230{animation:k230 83455ms step-end infinite}
+@keyframes k231{0.000%{opacity:0}32.364%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k231{animation:k231 83455ms step-end infinite}
+@keyframes k232{0.000%{opacity:0}32.417%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k232{animation:k232 83455ms step-end infinite}
+@keyframes k233{0.000%{opacity:0}32.471%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k233{animation:k233 83455ms step-end infinite}
+@keyframes k234{0.000%{opacity:0}32.579%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k234{animation:k234 83455ms step-end infinite}
+@keyframes k235{0.000%{opacity:0}32.633%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k235{animation:k235 83455ms step-end infinite}
+@keyframes k236{0.000%{opacity:0}32.687%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k236{animation:k236 83455ms step-end infinite}
+@keyframes k237{0.000%{opacity:0}32.741%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k237{animation:k237 83455ms step-end infinite}
+@keyframes k238{0.000%{opacity:0}32.795%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k238{animation:k238 83455ms step-end infinite}
+@keyframes k239{0.000%{opacity:0}32.849%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k239{animation:k239 83455ms step-end infinite}
+@keyframes k240{0.000%{opacity:0}32.903%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k240{animation:k240 83455ms step-end infinite}
+@keyframes k241{0.000%{opacity:0}32.957%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k241{animation:k241 83455ms step-end infinite}
+@keyframes k242{0.000%{opacity:0}33.065%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k242{animation:k242 83455ms step-end infinite}
+@keyframes k243{0.000%{opacity:0}33.118%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k243{animation:k243 83455ms step-end infinite}
+@keyframes k244{0.000%{opacity:0}33.172%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k244{animation:k244 83455ms step-end infinite}
+@keyframes k245{0.000%{opacity:0}33.226%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k245{animation:k245 83455ms step-end infinite}
+@keyframes k246{0.000%{opacity:0}33.280%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k246{animation:k246 83455ms step-end infinite}
+@keyframes k247{0.000%{opacity:0}33.334%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k247{animation:k247 83455ms step-end infinite}
+@keyframes k248{0.000%{opacity:0}33.388%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k248{animation:k248 83455ms step-end infinite}
+@keyframes k249{0.000%{opacity:0}33.442%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k249{animation:k249 83455ms step-end infinite}
+@keyframes k250{0.000%{opacity:0}33.496%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k250{animation:k250 83455ms step-end infinite}
+@keyframes k251{0.000%{opacity:0}33.604%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k251{animation:k251 83455ms step-end infinite}
+@keyframes k252{0.000%{opacity:0}33.658%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k252{animation:k252 83455ms step-end infinite}
+@keyframes k253{0.000%{opacity:0}33.712%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k253{animation:k253 83455ms step-end infinite}
+@keyframes k254{0.000%{opacity:0}33.766%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k254{animation:k254 83455ms step-end infinite}
+@keyframes k255{0.000%{opacity:0}33.819%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k255{animation:k255 83455ms step-end infinite}
+@keyframes k256{0.000%{opacity:0}33.873%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k256{animation:k256 83455ms step-end infinite}
+@keyframes k257{0.000%{opacity:0}33.927%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k257{animation:k257 83455ms step-end infinite}
+@keyframes k258{0.000%{opacity:0}33.981%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k258{animation:k258 83455ms step-end infinite}
+@keyframes k259{0.000%{opacity:0}34.035%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k259{animation:k259 83455ms step-end infinite}
+@keyframes k260{0.000%{opacity:0}34.089%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k260{animation:k260 83455ms step-end infinite}
+@keyframes k261{0.000%{opacity:0}34.143%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k261{animation:k261 83455ms step-end infinite}
+@keyframes k262{0.000%{opacity:0}34.251%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k262{animation:k262 83455ms step-end infinite}
+@keyframes k263{0.000%{opacity:0}34.305%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k263{animation:k263 83455ms step-end infinite}
+@keyframes k264{0.000%{opacity:0}34.359%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k264{animation:k264 83455ms step-end infinite}
+@keyframes k265{0.000%{opacity:0}34.413%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k265{animation:k265 83455ms step-end infinite}
+@keyframes k266{0.000%{opacity:0}34.466%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k266{animation:k266 83455ms step-end infinite}
+@keyframes k267{0.000%{opacity:0}34.574%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k267{animation:k267 83455ms step-end infinite}
+@keyframes k268{0.000%{opacity:0}34.628%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k268{animation:k268 83455ms step-end infinite}
+@keyframes k269{0.000%{opacity:0}34.682%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k269{animation:k269 83455ms step-end infinite}
+@keyframes k270{0.000%{opacity:0}34.736%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k270{animation:k270 83455ms step-end infinite}
+@keyframes k271{0.000%{opacity:0}34.790%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k271{animation:k271 83455ms step-end infinite}
+@keyframes k272{0.000%{opacity:0}34.844%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k272{animation:k272 83455ms step-end infinite}
+@keyframes k273{0.000%{opacity:0}34.898%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k273{animation:k273 83455ms step-end infinite}
+@keyframes k274{0.000%{opacity:0}34.952%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k274{animation:k274 83455ms step-end infinite}
+@keyframes k275{0.000%{opacity:0}35.006%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k275{animation:k275 83455ms step-end infinite}
+@keyframes k276{0.000%{opacity:0}35.060%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k276{animation:k276 83455ms step-end infinite}
+@keyframes k277{0.000%{opacity:0}35.114%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k277{animation:k277 83455ms step-end infinite}
+@keyframes k278{0.000%{opacity:0}35.167%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k278{animation:k278 83455ms step-end infinite}
+@keyframes k279{0.000%{opacity:0}35.221%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k279{animation:k279 83455ms step-end infinite}
+@keyframes k280{0.000%{opacity:0}35.275%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k280{animation:k280 83455ms step-end infinite}
+@keyframes k281{0.000%{opacity:0}35.329%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k281{animation:k281 83455ms step-end infinite}
+@keyframes k282{0.000%{opacity:0}35.383%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k282{animation:k282 83455ms step-end infinite}
+@keyframes k283{0.000%{opacity:0}35.437%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k283{animation:k283 83455ms step-end infinite}
+@keyframes k284{0.000%{opacity:0}35.491%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k284{animation:k284 83455ms step-end infinite}
+@keyframes k285{0.000%{opacity:0}35.545%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k285{animation:k285 83455ms step-end infinite}
+@keyframes k286{0.000%{opacity:0}35.599%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k286{animation:k286 83455ms step-end infinite}
+@keyframes k287{0.000%{opacity:0}35.653%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k287{animation:k287 83455ms step-end infinite}
+@keyframes k288{0.000%{opacity:0}35.707%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k288{animation:k288 83455ms step-end infinite}
+@keyframes k289{0.000%{opacity:0}35.761%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k289{animation:k289 83455ms step-end infinite}
+@keyframes k290{0.000%{opacity:0}35.868%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k290{animation:k290 83455ms step-end infinite}
+@keyframes k291{0.000%{opacity:0}35.922%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k291{animation:k291 83455ms step-end infinite}
+@keyframes k292{0.000%{opacity:0}36.030%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k292{animation:k292 83455ms step-end infinite}
+@keyframes k293{0.000%{opacity:0}36.084%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k293{animation:k293 83455ms step-end infinite}
+@keyframes k294{0.000%{opacity:0}36.138%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k294{animation:k294 83455ms step-end infinite}
+@keyframes k295{0.000%{opacity:0}36.246%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k295{animation:k295 83455ms step-end infinite}
+@keyframes k296{0.000%{opacity:0}36.300%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k296{animation:k296 83455ms step-end infinite}
+@keyframes k297{0.000%{opacity:0}36.354%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k297{animation:k297 83455ms step-end infinite}
+@keyframes k298{0.000%{opacity:0}36.408%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k298{animation:k298 83455ms step-end infinite}
+@keyframes k299{0.000%{opacity:0}36.515%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k299{animation:k299 83455ms step-end infinite}
+@keyframes k300{0.000%{opacity:0}36.569%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k300{animation:k300 83455ms step-end infinite}
+@keyframes k301{0.000%{opacity:0}36.623%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k301{animation:k301 83455ms step-end infinite}
+@keyframes k302{0.000%{opacity:0}36.677%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k302{animation:k302 83455ms step-end infinite}
+@keyframes k303{0.000%{opacity:0}36.731%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k303{animation:k303 83455ms step-end infinite}
+@keyframes k304{0.000%{opacity:0}36.785%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k304{animation:k304 83455ms step-end infinite}
+@keyframes k305{0.000%{opacity:0}36.839%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k305{animation:k305 83455ms step-end infinite}
+@keyframes k306{0.000%{opacity:0}36.893%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k306{animation:k306 83455ms step-end infinite}
+@keyframes k307{0.000%{opacity:0}36.947%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k307{animation:k307 83455ms step-end infinite}
+@keyframes k308{0.000%{opacity:0}37.001%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k308{animation:k308 83455ms step-end infinite}
+@keyframes k309{0.000%{opacity:0}37.055%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k309{animation:k309 83455ms step-end infinite}
+@keyframes k310{0.000%{opacity:0}37.109%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k310{animation:k310 83455ms step-end infinite}
+@keyframes k311{0.000%{opacity:0}37.163%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k311{animation:k311 83455ms step-end infinite}
+@keyframes k312{0.000%{opacity:0}37.216%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k312{animation:k312 83455ms step-end infinite}
+@keyframes k313{0.000%{opacity:0}37.270%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k313{animation:k313 83455ms step-end infinite}
+@keyframes k314{0.000%{opacity:0}37.324%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k314{animation:k314 83455ms step-end infinite}
+@keyframes k315{0.000%{opacity:0}37.378%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k315{animation:k315 83455ms step-end infinite}
+@keyframes k316{0.000%{opacity:0}37.432%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k316{animation:k316 83455ms step-end infinite}
+@keyframes k317{0.000%{opacity:0}37.486%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k317{animation:k317 83455ms step-end infinite}
+@keyframes k318{0.000%{opacity:0}37.540%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k318{animation:k318 83455ms step-end infinite}
+@keyframes k319{0.000%{opacity:0}37.594%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k319{animation:k319 83455ms step-end infinite}
+@keyframes k320{0.000%{opacity:0}37.648%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k320{animation:k320 83455ms step-end infinite}
+@keyframes k321{0.000%{opacity:0}37.702%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k321{animation:k321 83455ms step-end infinite}
+@keyframes k322{0.000%{opacity:0}37.756%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k322{animation:k322 83455ms step-end infinite}
+@keyframes k323{0.000%{opacity:0}37.810%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k323{animation:k323 83455ms step-end infinite}
+@keyframes k324{0.000%{opacity:0}37.864%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k324{animation:k324 83455ms step-end infinite}
+@keyframes k325{0.000%{opacity:0}37.917%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k325{animation:k325 83455ms step-end infinite}
+@keyframes k326{0.000%{opacity:0}37.971%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k326{animation:k326 83455ms step-end infinite}
+@keyframes k327{0.000%{opacity:0}38.025%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k327{animation:k327 83455ms step-end infinite}
+@keyframes k328{0.000%{opacity:0}39.114%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k328{animation:k328 83455ms step-end infinite}
+@keyframes k329{0.000%{opacity:0}39.168%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k329{animation:k329 83455ms step-end infinite}
+@keyframes k330{0.000%{opacity:0}39.222%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k330{animation:k330 83455ms step-end infinite}
+@keyframes k331{0.000%{opacity:0}39.276%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k331{animation:k331 83455ms step-end infinite}
+@keyframes k332{0.000%{opacity:0}39.330%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k332{animation:k332 83455ms step-end infinite}
+@keyframes k333{0.000%{opacity:0}39.384%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k333{animation:k333 83455ms step-end infinite}
+@keyframes k334{0.000%{opacity:0}39.438%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k334{animation:k334 83455ms step-end infinite}
+@keyframes k335{0.000%{opacity:0}39.492%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k335{animation:k335 83455ms step-end infinite}
+@keyframes k336{0.000%{opacity:0}39.546%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k336{animation:k336 83455ms step-end infinite}
+@keyframes k337{0.000%{opacity:0}39.600%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k337{animation:k337 83455ms step-end infinite}
+@keyframes k338{0.000%{opacity:0}39.654%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k338{animation:k338 83455ms step-end infinite}
+@keyframes k339{0.000%{opacity:0}39.708%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k339{animation:k339 83455ms step-end infinite}
+@keyframes k340{0.000%{opacity:0}39.762%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k340{animation:k340 83455ms step-end infinite}
+@keyframes k341{0.000%{opacity:0}39.815%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k341{animation:k341 83455ms step-end infinite}
+@keyframes k342{0.000%{opacity:0}39.923%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k342{animation:k342 83455ms step-end infinite}
+@keyframes k343{0.000%{opacity:0}39.977%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k343{animation:k343 83455ms step-end infinite}
+@keyframes k344{0.000%{opacity:0}40.031%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k344{animation:k344 83455ms step-end infinite}
+@keyframes k345{0.000%{opacity:0}40.085%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k345{animation:k345 83455ms step-end infinite}
+@keyframes k346{0.000%{opacity:0}40.193%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k346{animation:k346 83455ms step-end infinite}
+@keyframes k347{0.000%{opacity:0}40.247%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k347{animation:k347 83455ms step-end infinite}
+@keyframes k348{0.000%{opacity:0}40.301%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k348{animation:k348 83455ms step-end infinite}
+@keyframes k349{0.000%{opacity:0}40.355%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k349{animation:k349 83455ms step-end infinite}
+@keyframes k350{0.000%{opacity:0}40.409%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k350{animation:k350 83455ms step-end infinite}
+@keyframes k351{0.000%{opacity:0}40.463%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k351{animation:k351 83455ms step-end infinite}
+@keyframes k352{0.000%{opacity:0}40.516%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k352{animation:k352 83455ms step-end infinite}
+@keyframes k353{0.000%{opacity:0}40.570%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k353{animation:k353 83455ms step-end infinite}
+@keyframes k354{0.000%{opacity:0}40.624%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k354{animation:k354 83455ms step-end infinite}
+@keyframes k355{0.000%{opacity:0}40.678%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k355{animation:k355 83455ms step-end infinite}
+@keyframes k356{0.000%{opacity:0}40.732%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k356{animation:k356 83455ms step-end infinite}
+@keyframes k357{0.000%{opacity:0}40.786%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k357{animation:k357 83455ms step-end infinite}
+@keyframes k358{0.000%{opacity:0}40.840%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k358{animation:k358 83455ms step-end infinite}
+@keyframes k359{0.000%{opacity:0}40.894%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k359{animation:k359 83455ms step-end infinite}
+@keyframes k360{0.000%{opacity:0}40.948%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k360{animation:k360 83455ms step-end infinite}
+@keyframes k361{0.000%{opacity:0}41.002%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k361{animation:k361 83455ms step-end infinite}
+@keyframes k362{0.000%{opacity:0}41.056%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k362{animation:k362 83455ms step-end infinite}
+@keyframes k363{0.000%{opacity:0}41.110%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k363{animation:k363 83455ms step-end infinite}
+@keyframes k364{0.000%{opacity:0}41.164%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k364{animation:k364 83455ms step-end infinite}
+@keyframes k365{0.000%{opacity:0}41.217%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k365{animation:k365 83455ms step-end infinite}
+@keyframes k366{0.000%{opacity:0}41.271%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k366{animation:k366 83455ms step-end infinite}
+@keyframes k367{0.000%{opacity:0}41.325%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k367{animation:k367 83455ms step-end infinite}
+@keyframes k368{0.000%{opacity:0}41.379%{opacity:1}52.403%{opacity:0}100.000%{opacity:0}}
+.k368{animation:k368 83455ms step-end infinite}
+@keyframes k369{0.000%{opacity:0}52.403%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k369{animation:k369 83455ms step-end infinite}
+@keyframes k370{0.000%{transform:translateY(0px)}52.403%{transform:translateY(0px)}70.748%{transform:translateY(0px)}100.000%{transform:translateY(0px)}}
+.k370{animation:k370 83455ms step-end infinite}
+@keyframes k371{0.000%{opacity:0}55.812%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k371{animation:k371 83455ms step-end infinite}
+@keyframes k372{0.000%{opacity:0}59.221%{opacity:1}59.533%{opacity:0}100.000%{opacity:0}}
+.k372{animation:k372 83455ms step-end infinite}
+@keyframes k373{0.000%{opacity:0}59.533%{opacity:1}59.844%{opacity:0}100.000%{opacity:0}}
+.k373{animation:k373 83455ms step-end infinite}
+@keyframes k374{0.000%{opacity:0}59.844%{opacity:1}60.156%{opacity:0}100.000%{opacity:0}}
+.k374{animation:k374 83455ms step-end infinite}
+@keyframes k375{0.000%{opacity:0}60.156%{opacity:1}60.204%{opacity:0}100.000%{opacity:0}}
+.k375{animation:k375 83455ms step-end infinite}
+@keyframes k376{0.000%{opacity:0}60.204%{opacity:1}60.252%{opacity:0}100.000%{opacity:0}}
+.k376{animation:k376 83455ms step-end infinite}
+@keyframes k377{0.000%{opacity:0}60.252%{opacity:1}60.300%{opacity:0}100.000%{opacity:0}}
+.k377{animation:k377 83455ms step-end infinite}
+@keyframes k378{0.000%{opacity:0}60.300%{opacity:1}60.347%{opacity:0}100.000%{opacity:0}}
+.k378{animation:k378 83455ms step-end infinite}
+@keyframes k379{0.000%{opacity:0}60.347%{opacity:1}60.395%{opacity:0}100.000%{opacity:0}}
+.k379{animation:k379 83455ms step-end infinite}
+@keyframes k380{0.000%{opacity:0}60.395%{opacity:1}60.443%{opacity:0}100.000%{opacity:0}}
+.k380{animation:k380 83455ms step-end infinite}
+@keyframes k381{0.000%{opacity:0}60.443%{opacity:1}60.491%{opacity:0}100.000%{opacity:0}}
+.k381{animation:k381 83455ms step-end infinite}
+@keyframes k382{0.000%{opacity:0}60.491%{opacity:1}60.539%{opacity:0}100.000%{opacity:0}}
+.k382{animation:k382 83455ms step-end infinite}
+@keyframes k383{0.000%{opacity:0}60.539%{opacity:1}60.587%{opacity:0}100.000%{opacity:0}}
+.k383{animation:k383 83455ms step-end infinite}
+@keyframes k384{0.000%{opacity:0}60.587%{opacity:1}60.635%{opacity:0}100.000%{opacity:0}}
+.k384{animation:k384 83455ms step-end infinite}
+@keyframes k385{0.000%{opacity:0}60.635%{opacity:1}60.683%{opacity:0}100.000%{opacity:0}}
+.k385{animation:k385 83455ms step-end infinite}
+@keyframes k386{0.000%{opacity:0}60.683%{opacity:1}60.731%{opacity:0}100.000%{opacity:0}}
+.k386{animation:k386 83455ms step-end infinite}
+@keyframes k387{0.000%{opacity:0}60.731%{opacity:1}60.779%{opacity:0}100.000%{opacity:0}}
+.k387{animation:k387 83455ms step-end infinite}
+@keyframes k388{0.000%{opacity:0}60.779%{opacity:1}60.827%{opacity:0}100.000%{opacity:0}}
+.k388{animation:k388 83455ms step-end infinite}
+@keyframes k389{0.000%{opacity:0}60.827%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k389{animation:k389 83455ms step-end infinite}
+@keyframes k390{0.000%{opacity:0}60.868%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k390{animation:k390 83455ms step-end infinite}
+@keyframes k391{0.000%{opacity:0}60.908%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k391{animation:k391 83455ms step-end infinite}
+@keyframes k392{0.000%{opacity:0}60.949%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k392{animation:k392 83455ms step-end infinite}
+@keyframes k393{0.000%{opacity:0}60.990%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k393{animation:k393 83455ms step-end infinite}
+@keyframes k394{0.000%{opacity:0}61.030%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k394{animation:k394 83455ms step-end infinite}
+@keyframes k395{0.000%{opacity:0}61.071%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k395{animation:k395 83455ms step-end infinite}
+@keyframes k396{0.000%{opacity:0}61.112%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k396{animation:k396 83455ms step-end infinite}
+@keyframes k397{0.000%{opacity:0}61.153%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k397{animation:k397 83455ms step-end infinite}
+@keyframes k398{0.000%{opacity:0}61.193%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k398{animation:k398 83455ms step-end infinite}
+@keyframes k399{0.000%{opacity:0}61.234%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k399{animation:k399 83455ms step-end infinite}
+@keyframes k400{0.000%{opacity:0}61.275%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k400{animation:k400 83455ms step-end infinite}
+@keyframes k401{0.000%{opacity:0}61.316%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k401{animation:k401 83455ms step-end infinite}
+@keyframes k402{0.000%{opacity:0}61.356%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k402{animation:k402 83455ms step-end infinite}
+@keyframes k403{0.000%{opacity:0}61.397%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k403{animation:k403 83455ms step-end infinite}
+@keyframes k404{0.000%{opacity:0}61.438%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k404{animation:k404 83455ms step-end infinite}
+@keyframes k405{0.000%{opacity:0}61.479%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k405{animation:k405 83455ms step-end infinite}
+@keyframes k406{0.000%{opacity:0}61.519%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k406{animation:k406 83455ms step-end infinite}
+@keyframes k407{0.000%{opacity:0}61.560%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k407{animation:k407 83455ms step-end infinite}
+@keyframes k408{0.000%{opacity:0}61.601%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k408{animation:k408 83455ms step-end infinite}
+@keyframes k409{0.000%{opacity:0}61.642%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k409{animation:k409 83455ms step-end infinite}
+@keyframes k410{0.000%{opacity:0}66.435%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k410{animation:k410 83455ms step-end infinite}
+@keyframes k411{0.000%{opacity:0}53.056%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k411{animation:k411 83455ms step-end infinite}
+@keyframes k412{0.000%{opacity:0}53.110%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k412{animation:k412 83455ms step-end infinite}
+@keyframes k413{0.000%{opacity:0}53.164%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k413{animation:k413 83455ms step-end infinite}
+@keyframes k414{0.000%{opacity:0}53.218%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k414{animation:k414 83455ms step-end infinite}
+@keyframes k415{0.000%{opacity:0}53.272%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k415{animation:k415 83455ms step-end infinite}
+@keyframes k416{0.000%{opacity:0}53.326%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k416{animation:k416 83455ms step-end infinite}
+@keyframes k417{0.000%{opacity:0}53.434%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k417{animation:k417 83455ms step-end infinite}
+@keyframes k418{0.000%{opacity:0}53.488%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k418{animation:k418 83455ms step-end infinite}
+@keyframes k419{0.000%{opacity:0}53.541%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k419{animation:k419 83455ms step-end infinite}
+@keyframes k420{0.000%{opacity:0}53.595%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k420{animation:k420 83455ms step-end infinite}
+@keyframes k421{0.000%{opacity:0}53.703%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k421{animation:k421 83455ms step-end infinite}
+@keyframes k422{0.000%{opacity:0}53.757%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k422{animation:k422 83455ms step-end infinite}
+@keyframes k423{0.000%{opacity:0}53.811%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k423{animation:k423 83455ms step-end infinite}
+@keyframes k424{0.000%{opacity:0}53.865%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k424{animation:k424 83455ms step-end infinite}
+@keyframes k425{0.000%{opacity:0}53.919%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k425{animation:k425 83455ms step-end infinite}
+@keyframes k426{0.000%{opacity:0}53.973%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k426{animation:k426 83455ms step-end infinite}
+@keyframes k427{0.000%{opacity:0}54.027%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k427{animation:k427 83455ms step-end infinite}
+@keyframes k428{0.000%{opacity:0}54.081%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k428{animation:k428 83455ms step-end infinite}
+@keyframes k429{0.000%{opacity:0}54.135%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k429{animation:k429 83455ms step-end infinite}
+@keyframes k430{0.000%{opacity:0}54.188%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k430{animation:k430 83455ms step-end infinite}
+@keyframes k431{0.000%{opacity:0}54.242%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k431{animation:k431 83455ms step-end infinite}
+@keyframes k432{0.000%{opacity:0}54.296%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k432{animation:k432 83455ms step-end infinite}
+@keyframes k433{0.000%{opacity:0}54.350%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k433{animation:k433 83455ms step-end infinite}
+@keyframes k434{0.000%{opacity:0}54.458%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k434{animation:k434 83455ms step-end infinite}
+@keyframes k435{0.000%{opacity:0}54.512%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k435{animation:k435 83455ms step-end infinite}
+@keyframes k436{0.000%{opacity:0}54.620%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k436{animation:k436 83455ms step-end infinite}
+@keyframes k437{0.000%{opacity:0}54.674%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k437{animation:k437 83455ms step-end infinite}
+@keyframes k438{0.000%{opacity:0}54.728%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k438{animation:k438 83455ms step-end infinite}
+@keyframes k439{0.000%{opacity:0}54.782%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k439{animation:k439 83455ms step-end infinite}
+@keyframes k440{0.000%{opacity:0}54.836%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k440{animation:k440 83455ms step-end infinite}
+@keyframes k441{0.000%{opacity:0}54.889%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k441{animation:k441 83455ms step-end infinite}
+@keyframes k442{0.000%{opacity:0}54.943%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k442{animation:k442 83455ms step-end infinite}
+@keyframes k443{0.000%{opacity:0}54.997%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k443{animation:k443 83455ms step-end infinite}
+@keyframes k444{0.000%{opacity:0}55.051%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k444{animation:k444 83455ms step-end infinite}
+@keyframes k445{0.000%{opacity:0}55.105%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k445{animation:k445 83455ms step-end infinite}
+@keyframes k446{0.000%{opacity:0}55.159%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k446{animation:k446 83455ms step-end infinite}
+@keyframes k447{0.000%{opacity:0}55.213%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k447{animation:k447 83455ms step-end infinite}
+@keyframes k448{0.000%{opacity:0}55.267%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k448{animation:k448 83455ms step-end infinite}
+@keyframes k449{0.000%{opacity:0}55.321%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k449{animation:k449 83455ms step-end infinite}
+@keyframes k450{0.000%{opacity:0}55.375%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k450{animation:k450 83455ms step-end infinite}
+@keyframes k451{0.000%{opacity:0}55.429%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k451{animation:k451 83455ms step-end infinite}
+@keyframes k452{0.000%{opacity:0}56.465%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k452{animation:k452 83455ms step-end infinite}
+@keyframes k453{0.000%{opacity:0}56.519%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k453{animation:k453 83455ms step-end infinite}
+@keyframes k454{0.000%{opacity:0}56.573%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k454{animation:k454 83455ms step-end infinite}
+@keyframes k455{0.000%{opacity:0}56.627%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k455{animation:k455 83455ms step-end infinite}
+@keyframes k456{0.000%{opacity:0}56.681%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k456{animation:k456 83455ms step-end infinite}
+@keyframes k457{0.000%{opacity:0}56.735%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k457{animation:k457 83455ms step-end infinite}
+@keyframes k458{0.000%{opacity:0}56.789%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k458{animation:k458 83455ms step-end infinite}
+@keyframes k459{0.000%{opacity:0}56.843%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k459{animation:k459 83455ms step-end infinite}
+@keyframes k460{0.000%{opacity:0}56.897%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k460{animation:k460 83455ms step-end infinite}
+@keyframes k461{0.000%{opacity:0}56.950%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k461{animation:k461 83455ms step-end infinite}
+@keyframes k462{0.000%{opacity:0}57.004%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k462{animation:k462 83455ms step-end infinite}
+@keyframes k463{0.000%{opacity:0}57.058%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k463{animation:k463 83455ms step-end infinite}
+@keyframes k464{0.000%{opacity:0}57.112%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k464{animation:k464 83455ms step-end infinite}
+@keyframes k465{0.000%{opacity:0}57.166%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k465{animation:k465 83455ms step-end infinite}
+@keyframes k466{0.000%{opacity:0}57.274%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k466{animation:k466 83455ms step-end infinite}
+@keyframes k467{0.000%{opacity:0}57.328%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k467{animation:k467 83455ms step-end infinite}
+@keyframes k468{0.000%{opacity:0}57.382%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k468{animation:k468 83455ms step-end infinite}
+@keyframes k469{0.000%{opacity:0}57.436%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k469{animation:k469 83455ms step-end infinite}
+@keyframes k470{0.000%{opacity:0}57.544%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k470{animation:k470 83455ms step-end infinite}
+@keyframes k471{0.000%{opacity:0}57.598%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k471{animation:k471 83455ms step-end infinite}
+@keyframes k472{0.000%{opacity:0}57.651%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k472{animation:k472 83455ms step-end infinite}
+@keyframes k473{0.000%{opacity:0}57.705%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k473{animation:k473 83455ms step-end infinite}
+@keyframes k474{0.000%{opacity:0}57.759%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k474{animation:k474 83455ms step-end infinite}
+@keyframes k475{0.000%{opacity:0}57.813%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k475{animation:k475 83455ms step-end infinite}
+@keyframes k476{0.000%{opacity:0}57.867%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k476{animation:k476 83455ms step-end infinite}
+@keyframes k477{0.000%{opacity:0}57.921%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k477{animation:k477 83455ms step-end infinite}
+@keyframes k478{0.000%{opacity:0}57.975%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k478{animation:k478 83455ms step-end infinite}
+@keyframes k479{0.000%{opacity:0}58.029%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k479{animation:k479 83455ms step-end infinite}
+@keyframes k480{0.000%{opacity:0}58.083%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k480{animation:k480 83455ms step-end infinite}
+@keyframes k481{0.000%{opacity:0}58.137%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k481{animation:k481 83455ms step-end infinite}
+@keyframes k482{0.000%{opacity:0}58.191%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k482{animation:k482 83455ms step-end infinite}
+@keyframes k483{0.000%{opacity:0}58.245%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k483{animation:k483 83455ms step-end infinite}
+@keyframes k484{0.000%{opacity:0}58.298%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k484{animation:k484 83455ms step-end infinite}
+@keyframes k485{0.000%{opacity:0}58.352%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k485{animation:k485 83455ms step-end infinite}
+@keyframes k486{0.000%{opacity:0}58.460%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k486{animation:k486 83455ms step-end infinite}
+@keyframes k487{0.000%{opacity:0}58.514%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k487{animation:k487 83455ms step-end infinite}
+@keyframes k488{0.000%{opacity:0}58.568%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k488{animation:k488 83455ms step-end infinite}
+@keyframes k489{0.000%{opacity:0}58.622%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k489{animation:k489 83455ms step-end infinite}
+@keyframes k490{0.000%{opacity:0}58.676%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k490{animation:k490 83455ms step-end infinite}
+@keyframes k491{0.000%{opacity:0}58.730%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k491{animation:k491 83455ms step-end infinite}
+@keyframes k492{0.000%{opacity:0}58.784%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k492{animation:k492 83455ms step-end infinite}
+@keyframes k493{0.000%{opacity:0}58.838%{opacity:1}70.748%{opacity:0}100.000%{opacity:0}}
+.k493{animation:k493 83455ms step-end infinite}
+@keyframes k494{0.000%{opacity:0}70.748%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k494{animation:k494 83455ms step-end infinite}
+@keyframes k495{0.000%{transform:translateY(0px)}70.748%{transform:translateY(0px)}86.418%{transform:translateY(0px)}100.000%{transform:translateY(0px)}}
+.k495{animation:k495 83455ms step-end infinite}
+@keyframes k496{0.000%{opacity:0}75.559%{opacity:1}75.871%{opacity:0}100.000%{opacity:0}}
+.k496{animation:k496 83455ms step-end infinite}
+@keyframes k497{0.000%{opacity:0}75.871%{opacity:1}75.997%{opacity:0}100.000%{opacity:0}}
+.k497{animation:k497 83455ms step-end infinite}
+@keyframes k498{0.000%{opacity:0}75.997%{opacity:1}76.122%{opacity:0}100.000%{opacity:0}}
+.k498{animation:k498 83455ms step-end infinite}
+@keyframes k499{0.000%{opacity:0}76.122%{opacity:1}76.248%{opacity:0}100.000%{opacity:0}}
+.k499{animation:k499 83455ms step-end infinite}
+@keyframes k500{0.000%{opacity:0}76.248%{opacity:1}76.374%{opacity:0}100.000%{opacity:0}}
+.k500{animation:k500 83455ms step-end infinite}
+@keyframes k501{0.000%{opacity:0}76.374%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k501{animation:k501 83455ms step-end infinite}
+@keyframes k502{0.000%{opacity:0}76.415%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k502{animation:k502 83455ms step-end infinite}
+@keyframes k503{0.000%{opacity:0}76.456%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k503{animation:k503 83455ms step-end infinite}
+@keyframes k504{0.000%{opacity:0}76.496%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k504{animation:k504 83455ms step-end infinite}
+@keyframes k505{0.000%{opacity:0}76.537%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k505{animation:k505 83455ms step-end infinite}
+@keyframes k506{0.000%{opacity:0}76.578%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k506{animation:k506 83455ms step-end infinite}
+@keyframes k507{0.000%{opacity:0}76.619%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k507{animation:k507 83455ms step-end infinite}
+@keyframes k508{0.000%{opacity:0}76.659%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k508{animation:k508 83455ms step-end infinite}
+@keyframes k509{0.000%{opacity:0}76.700%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k509{animation:k509 83455ms step-end infinite}
+@keyframes k510{0.000%{opacity:0}76.741%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k510{animation:k510 83455ms step-end infinite}
+@keyframes k511{0.000%{opacity:0}76.781%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k511{animation:k511 83455ms step-end infinite}
+@keyframes k512{0.000%{opacity:0}76.822%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k512{animation:k512 83455ms step-end infinite}
+@keyframes k513{0.000%{opacity:0}76.863%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k513{animation:k513 83455ms step-end infinite}
+@keyframes k514{0.000%{opacity:0}76.904%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k514{animation:k514 83455ms step-end infinite}
+@keyframes k515{0.000%{opacity:0}76.944%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k515{animation:k515 83455ms step-end infinite}
+@keyframes k516{0.000%{opacity:0}76.985%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k516{animation:k516 83455ms step-end infinite}
+@keyframes k517{0.000%{opacity:0}77.026%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k517{animation:k517 83455ms step-end infinite}
+@keyframes k518{0.000%{opacity:0}77.067%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k518{animation:k518 83455ms step-end infinite}
+@keyframes k519{0.000%{opacity:0}77.107%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k519{animation:k519 83455ms step-end infinite}
+@keyframes k520{0.000%{opacity:0}77.148%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k520{animation:k520 83455ms step-end infinite}
+@keyframes k521{0.000%{opacity:0}77.189%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k521{animation:k521 83455ms step-end infinite}
+@keyframes k522{0.000%{opacity:0}77.230%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k522{animation:k522 83455ms step-end infinite}
+@keyframes k523{0.000%{opacity:0}77.270%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k523{animation:k523 83455ms step-end infinite}
+@keyframes k524{0.000%{opacity:0}77.311%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k524{animation:k524 83455ms step-end infinite}
+@keyframes k525{0.000%{opacity:0}82.104%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k525{animation:k525 83455ms step-end infinite}
+@keyframes k526{0.000%{opacity:0}71.401%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k526{animation:k526 83455ms step-end infinite}
+@keyframes k527{0.000%{opacity:0}71.455%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k527{animation:k527 83455ms step-end infinite}
+@keyframes k528{0.000%{opacity:0}71.509%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k528{animation:k528 83455ms step-end infinite}
+@keyframes k529{0.000%{opacity:0}71.563%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k529{animation:k529 83455ms step-end infinite}
+@keyframes k530{0.000%{opacity:0}71.617%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k530{animation:k530 83455ms step-end infinite}
+@keyframes k531{0.000%{opacity:0}71.671%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k531{animation:k531 83455ms step-end infinite}
+@keyframes k532{0.000%{opacity:0}71.725%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k532{animation:k532 83455ms step-end infinite}
+@keyframes k533{0.000%{opacity:0}71.779%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k533{animation:k533 83455ms step-end infinite}
+@keyframes k534{0.000%{opacity:0}71.833%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k534{animation:k534 83455ms step-end infinite}
+@keyframes k535{0.000%{opacity:0}71.887%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k535{animation:k535 83455ms step-end infinite}
+@keyframes k536{0.000%{opacity:0}71.941%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k536{animation:k536 83455ms step-end infinite}
+@keyframes k537{0.000%{opacity:0}71.994%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k537{animation:k537 83455ms step-end infinite}
+@keyframes k538{0.000%{opacity:0}72.048%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k538{animation:k538 83455ms step-end infinite}
+@keyframes k539{0.000%{opacity:0}72.102%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k539{animation:k539 83455ms step-end infinite}
+@keyframes k540{0.000%{opacity:0}72.210%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k540{animation:k540 83455ms step-end infinite}
+@keyframes k541{0.000%{opacity:0}72.264%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k541{animation:k541 83455ms step-end infinite}
+@keyframes k542{0.000%{opacity:0}72.318%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k542{animation:k542 83455ms step-end infinite}
+@keyframes k543{0.000%{opacity:0}72.372%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k543{animation:k543 83455ms step-end infinite}
+@keyframes k544{0.000%{opacity:0}72.480%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k544{animation:k544 83455ms step-end infinite}
+@keyframes k545{0.000%{opacity:0}72.588%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k545{animation:k545 83455ms step-end infinite}
+@keyframes k546{0.000%{opacity:0}72.642%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k546{animation:k546 83455ms step-end infinite}
+@keyframes k547{0.000%{opacity:0}72.695%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k547{animation:k547 83455ms step-end infinite}
+@keyframes k548{0.000%{opacity:0}72.749%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k548{animation:k548 83455ms step-end infinite}
+@keyframes k549{0.000%{opacity:0}72.803%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k549{animation:k549 83455ms step-end infinite}
+@keyframes k550{0.000%{opacity:0}72.857%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k550{animation:k550 83455ms step-end infinite}
+@keyframes k551{0.000%{opacity:0}72.911%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k551{animation:k551 83455ms step-end infinite}
+@keyframes k552{0.000%{opacity:0}72.965%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k552{animation:k552 83455ms step-end infinite}
+@keyframes k553{0.000%{opacity:0}73.019%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k553{animation:k553 83455ms step-end infinite}
+@keyframes k554{0.000%{opacity:0}73.127%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k554{animation:k554 83455ms step-end infinite}
+@keyframes k555{0.000%{opacity:0}73.181%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k555{animation:k555 83455ms step-end infinite}
+@keyframes k556{0.000%{opacity:0}73.235%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k556{animation:k556 83455ms step-end infinite}
+@keyframes k557{0.000%{opacity:0}73.289%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k557{animation:k557 83455ms step-end infinite}
+@keyframes k558{0.000%{opacity:0}73.343%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k558{animation:k558 83455ms step-end infinite}
+@keyframes k559{0.000%{opacity:0}73.396%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k559{animation:k559 83455ms step-end infinite}
+@keyframes k560{0.000%{opacity:0}73.450%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k560{animation:k560 83455ms step-end infinite}
+@keyframes k561{0.000%{opacity:0}73.504%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k561{animation:k561 83455ms step-end infinite}
+@keyframes k562{0.000%{opacity:0}73.558%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k562{animation:k562 83455ms step-end infinite}
+@keyframes k563{0.000%{opacity:0}73.612%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k563{animation:k563 83455ms step-end infinite}
+@keyframes k564{0.000%{opacity:0}73.666%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k564{animation:k564 83455ms step-end infinite}
+@keyframes k565{0.000%{opacity:0}73.720%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k565{animation:k565 83455ms step-end infinite}
+@keyframes k566{0.000%{opacity:0}73.828%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k566{animation:k566 83455ms step-end infinite}
+@keyframes k567{0.000%{opacity:0}73.882%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k567{animation:k567 83455ms step-end infinite}
+@keyframes k568{0.000%{opacity:0}73.936%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k568{animation:k568 83455ms step-end infinite}
+@keyframes k569{0.000%{opacity:0}73.990%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k569{animation:k569 83455ms step-end infinite}
+@keyframes k570{0.000%{opacity:0}74.043%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k570{animation:k570 83455ms step-end infinite}
+@keyframes k571{0.000%{opacity:0}74.097%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k571{animation:k571 83455ms step-end infinite}
+@keyframes k572{0.000%{opacity:0}74.151%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k572{animation:k572 83455ms step-end infinite}
+@keyframes k573{0.000%{opacity:0}74.205%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k573{animation:k573 83455ms step-end infinite}
+@keyframes k574{0.000%{opacity:0}74.259%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k574{animation:k574 83455ms step-end infinite}
+@keyframes k575{0.000%{opacity:0}74.367%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k575{animation:k575 83455ms step-end infinite}
+@keyframes k576{0.000%{opacity:0}74.421%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k576{animation:k576 83455ms step-end infinite}
+@keyframes k577{0.000%{opacity:0}74.475%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k577{animation:k577 83455ms step-end infinite}
+@keyframes k578{0.000%{opacity:0}74.529%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k578{animation:k578 83455ms step-end infinite}
+@keyframes k579{0.000%{opacity:0}74.583%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k579{animation:k579 83455ms step-end infinite}
+@keyframes k580{0.000%{opacity:0}74.637%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k580{animation:k580 83455ms step-end infinite}
+@keyframes k581{0.000%{opacity:0}74.691%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k581{animation:k581 83455ms step-end infinite}
+@keyframes k582{0.000%{opacity:0}74.744%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k582{animation:k582 83455ms step-end infinite}
+@keyframes k583{0.000%{opacity:0}74.798%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k583{animation:k583 83455ms step-end infinite}
+@keyframes k584{0.000%{opacity:0}74.852%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k584{animation:k584 83455ms step-end infinite}
+@keyframes k585{0.000%{opacity:0}74.906%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k585{animation:k585 83455ms step-end infinite}
+@keyframes k586{0.000%{opacity:0}74.960%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k586{animation:k586 83455ms step-end infinite}
+@keyframes k587{0.000%{opacity:0}75.014%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k587{animation:k587 83455ms step-end infinite}
+@keyframes k588{0.000%{opacity:0}75.068%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k588{animation:k588 83455ms step-end infinite}
+@keyframes k589{0.000%{opacity:0}75.122%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k589{animation:k589 83455ms step-end infinite}
+@keyframes k590{0.000%{opacity:0}75.176%{opacity:1}86.418%{opacity:0}100.000%{opacity:0}}
+.k590{animation:k590 83455ms step-end infinite}
+@keyframes k591{0.000%{opacity:0}86.418%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k591{animation:k591 83455ms step-end infinite}
+@keyframes k592{0.000%{transform:translateY(0px)}86.418%{transform:translateY(0px)}100.000%{transform:translateY(0px)}100.000%{transform:translateY(0px)}}
+.k592{animation:k592 83455ms step-end infinite}
+@keyframes k593{0.000%{opacity:0}89.395%{opacity:1}89.707%{opacity:0}100.000%{opacity:0}}
+.k593{animation:k593 83455ms step-end infinite}
+@keyframes k594{0.000%{opacity:0}89.707%{opacity:1}89.959%{opacity:0}100.000%{opacity:0}}
+.k594{animation:k594 83455ms step-end infinite}
+@keyframes k595{0.000%{opacity:0}89.959%{opacity:1}90.210%{opacity:0}100.000%{opacity:0}}
+.k595{animation:k595 83455ms step-end infinite}
+@keyframes k596{0.000%{opacity:0}90.210%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k596{animation:k596 83455ms step-end infinite}
+@keyframes k597{0.000%{opacity:0}90.246%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k597{animation:k597 83455ms step-end infinite}
+@keyframes k598{0.000%{opacity:0}90.282%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k598{animation:k598 83455ms step-end infinite}
+@keyframes k599{0.000%{opacity:0}90.318%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k599{animation:k599 83455ms step-end infinite}
+@keyframes k600{0.000%{opacity:0}90.354%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k600{animation:k600 83455ms step-end infinite}
+@keyframes k601{0.000%{opacity:0}90.390%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k601{animation:k601 83455ms step-end infinite}
+@keyframes k602{0.000%{opacity:0}90.426%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k602{animation:k602 83455ms step-end infinite}
+@keyframes k603{0.000%{opacity:0}90.462%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k603{animation:k603 83455ms step-end infinite}
+@keyframes k604{0.000%{opacity:0}90.498%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k604{animation:k604 83455ms step-end infinite}
+@keyframes k605{0.000%{opacity:0}90.534%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k605{animation:k605 83455ms step-end infinite}
+@keyframes k606{0.000%{opacity:0}90.570%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k606{animation:k606 83455ms step-end infinite}
+@keyframes k607{0.000%{opacity:0}90.606%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k607{animation:k607 83455ms step-end infinite}
+@keyframes k608{0.000%{opacity:0}90.642%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k608{animation:k608 83455ms step-end infinite}
+@keyframes k609{0.000%{opacity:0}90.678%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k609{animation:k609 83455ms step-end infinite}
+@keyframes k610{0.000%{opacity:0}90.714%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k610{animation:k610 83455ms step-end infinite}
+@keyframes k611{0.000%{opacity:0}90.750%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k611{animation:k611 83455ms step-end infinite}
+@keyframes k612{0.000%{opacity:0}90.785%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k612{animation:k612 83455ms step-end infinite}
+@keyframes k613{0.000%{opacity:0}90.821%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k613{animation:k613 83455ms step-end infinite}
+@keyframes k614{0.000%{opacity:0}90.857%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k614{animation:k614 83455ms step-end infinite}
+@keyframes k615{0.000%{opacity:0}90.893%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k615{animation:k615 83455ms step-end infinite}
+@keyframes k616{0.000%{opacity:0}95.686%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k616{animation:k616 83455ms step-end infinite}
+@keyframes k617{0.000%{opacity:0}87.071%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k617{animation:k617 83455ms step-end infinite}
+@keyframes k618{0.000%{opacity:0}87.125%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k618{animation:k618 83455ms step-end infinite}
+@keyframes k619{0.000%{opacity:0}87.179%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k619{animation:k619 83455ms step-end infinite}
+@keyframes k620{0.000%{opacity:0}87.287%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k620{animation:k620 83455ms step-end infinite}
+@keyframes k621{0.000%{opacity:0}87.340%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k621{animation:k621 83455ms step-end infinite}
+@keyframes k622{0.000%{opacity:0}87.394%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k622{animation:k622 83455ms step-end infinite}
+@keyframes k623{0.000%{opacity:0}87.448%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k623{animation:k623 83455ms step-end infinite}
+@keyframes k624{0.000%{opacity:0}87.502%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k624{animation:k624 83455ms step-end infinite}
+@keyframes k625{0.000%{opacity:0}87.556%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k625{animation:k625 83455ms step-end infinite}
+@keyframes k626{0.000%{opacity:0}87.664%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k626{animation:k626 83455ms step-end infinite}
+@keyframes k627{0.000%{opacity:0}87.718%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k627{animation:k627 83455ms step-end infinite}
+@keyframes k628{0.000%{opacity:0}87.826%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k628{animation:k628 83455ms step-end infinite}
+@keyframes k629{0.000%{opacity:0}87.880%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k629{animation:k629 83455ms step-end infinite}
+@keyframes k630{0.000%{opacity:0}87.934%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k630{animation:k630 83455ms step-end infinite}
+@keyframes k631{0.000%{opacity:0}87.988%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k631{animation:k631 83455ms step-end infinite}
+@keyframes k632{0.000%{opacity:0}88.095%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k632{animation:k632 83455ms step-end infinite}
+@keyframes k633{0.000%{opacity:0}88.149%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k633{animation:k633 83455ms step-end infinite}
+@keyframes k634{0.000%{opacity:0}88.203%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k634{animation:k634 83455ms step-end infinite}
+@keyframes k635{0.000%{opacity:0}88.257%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k635{animation:k635 83455ms step-end infinite}
+@keyframes k636{0.000%{opacity:0}88.311%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k636{animation:k636 83455ms step-end infinite}
+@keyframes k637{0.000%{opacity:0}88.365%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k637{animation:k637 83455ms step-end infinite}
+@keyframes k638{0.000%{opacity:0}88.473%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k638{animation:k638 83455ms step-end infinite}
+@keyframes k639{0.000%{opacity:0}88.527%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k639{animation:k639 83455ms step-end infinite}
+@keyframes k640{0.000%{opacity:0}88.581%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k640{animation:k640 83455ms step-end infinite}
+@keyframes k641{0.000%{opacity:0}88.689%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k641{animation:k641 83455ms step-end infinite}
+@keyframes k642{0.000%{opacity:0}88.742%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k642{animation:k642 83455ms step-end infinite}
+@keyframes k643{0.000%{opacity:0}88.796%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k643{animation:k643 83455ms step-end infinite}
+@keyframes k644{0.000%{opacity:0}88.850%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k644{animation:k644 83455ms step-end infinite}
+@keyframes k645{0.000%{opacity:0}88.904%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k645{animation:k645 83455ms step-end infinite}
+@keyframes k646{0.000%{opacity:0}88.958%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k646{animation:k646 83455ms step-end infinite}
+@keyframes k647{0.000%{opacity:0}89.012%{opacity:1}100.000%{opacity:0}100.000%{opacity:0}}
+.k647{animation:k647 83455ms step-end infinite}
+@media (prefers-reduced-motion: reduce){[class^="k"]{animation-play-state:paused}}
+</style>
+<defs><clipPath id="screen"><rect x="0" y="46" width="1009" height="496"/></clipPath></defs>
+<rect width="1009" height="542" rx="12" fill="#0b1110" stroke="#22302c"/>
+<path d="M12 0.5h985a11.5 11.5 0 0 1 11.5 11.5v22h-1008v-22a11.5 11.5 0 0 1 11.5-11.5z" fill="#121a18"/>
+<circle cx="20" cy="17" r="5.5" fill="#ff5f57"/><circle cx="38" cy="17" r="5.5" fill="#febc2e"/><circle cx="56" cy="17" r="5.5" fill="#28c840"/>
+<g class="k0"><text x="504.5" y="22" text-anchor="middle" fill="#6d827b">zsh  payments-api  ·  repository  ·  1/6</text><g clip-path="url(#screen)"><g transform="translate(16 50)"><g class="k1"><g class="k0"><text x="0.0" y="17" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="17" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="17" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="17" fill="#56d4c4" xml:space="preserve">payments-api</text><text x="214.6" y="17" fill="#6d827b" xml:space="preserve">git:(</text><text x="251.6" y="17" fill="#e8c468" xml:space="preserve">feat/assistant</text><text x="355.2" y="17" fill="#6d827b" xml:space="preserve">)</text><text x="370.0" y="17" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k2"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">identifyin</text><text x="74.0" y="34" fill="#6d827b" xml:space="preserve">...</text></g><g class="k3"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">reading   </text><text x="74.0" y="34" fill="#6d827b" xml:space="preserve">...</text></g><g class="k4"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">dependenci</text><text x="74.0" y="34" fill="#6d827b" xml:space="preserve">...</text></g><g class="k5"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[###</text><text x="103.6" y="34" fill="#6d827b" xml:space="preserve">-----------------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  1/7  14%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.github/workflows/assistant.yml</text></g><g class="k6"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[######</text><text x="125.8" y="34" fill="#6d827b" xml:space="preserve">--------------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  2/7  29%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.cursor/mcp.json</text></g><g class="k7"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[#########</text><text x="148.0" y="34" fill="#6d827b" xml:space="preserve">-----------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  3/7  43%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.mcp.json</text></g><g class="k8"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[###########</text><text x="162.8" y="34" fill="#6d827b" xml:space="preserve">---------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  4/7  57%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">CLAUDE.md</text></g><g class="k9"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[##############</text><text x="185.0" y="34" fill="#6d827b" xml:space="preserve">------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  5/7  71%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">model.pkl</text></g><g class="k10"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[#################</text><text x="207.2" y="34" fill="#6d827b" xml:space="preserve">---</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  6/7  86%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">requirements.txt</text></g><g class="k11"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[####################</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  7/7  100%  </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">statement.pdf</text></g><g class="k12"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">graph     </text><text x="74.0" y="34" fill="#6d827b" xml:space="preserve">...</text></g><g class="k13"><text x="0.0" y="34" fill="#d6e2de" xml:space="preserve">cordon 0.6.0 · rulepack 0.2.0 </text><text x="222.0" y="34" fill="#6d827b" xml:space="preserve">(93d71a527ed205f4)</text></g><g class="k16"><text x="0.0" y="85" fill="#56d4c4" font-weight="600" xml:space="preserve">model.pkl</text><text x="81.4" y="85" fill="#6d827b" xml:space="preserve">2 findings</text></g><g class="k17"><text x="0.0" y="102" fill="#d6e2de" xml:space="preserve"> -     </text><rect x="51.8" y="89" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="102" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="102" fill="#d6e2de" xml:space="preserve">  This pickle imports a callable that runs ...       </text><text x="518.0" y="102" fill="#6d827b" xml:space="preserve">MALWARE.MODEL.PICKLE_EXEC.001</text></g><g class="k18"><text x="0.0" y="119" fill="#d6e2de" xml:space="preserve"> 1:1   </text><rect x="51.8" y="106" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="119" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="119" fill="#d6e2de" xml:space="preserve">  A URL, a shell command.                            </text><text x="518.0" y="119" fill="#6d827b" xml:space="preserve">SUSPECT.BINARY.STRINGS.001</text></g><g class="k20"><text x="0.0" y="153" fill="#56d4c4" font-weight="600" xml:space="preserve">.github/workflows/assistant.yml</text><text x="244.2" y="153" fill="#6d827b" xml:space="preserve">4 findings</text></g><g class="k21"><text x="0.0" y="170" fill="#d6e2de" xml:space="preserve"> 17:1  </text><rect x="51.8" y="157" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="170" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="170" fill="#d6e2de" xml:space="preserve">  This workflow runs an AI coding agent on an ...    </text><text x="518.0" y="170" fill="#6d827b" xml:space="preserve">SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001</text></g><g class="k22"><rect x="51.8" y="174" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="187" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="187" fill="#d6e2de" xml:space="preserve">  This workflow pins an AI agent action to a ...     </text><text x="518.0" y="187" fill="#6d827b" xml:space="preserve">VULNERABLE.AGENT.ACTION_VERSION.001</text></g><g class="k23"><text x="0.0" y="204" fill="#d6e2de" xml:space="preserve"> 20:44 </text><rect x="51.8" y="191" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="204" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="204" fill="#d6e2de" xml:space="preserve">  This workflow interpolates text from an ...        </text><text x="518.0" y="204" fill="#6d827b" xml:space="preserve">SUSPECT.AGENT.CI_PROMPT_INJECTION.001</text></g><g class="k24"><text x="0.0" y="221" fill="#d6e2de" xml:space="preserve"> 17:9  </text><rect x="51.8" y="208" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="221" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="221" fill="#d6e2de" xml:space="preserve">  A third-party action is referenced by tag ...      </text><text x="518.0" y="221" fill="#6d827b" xml:space="preserve">POLICY.CI.UNPINNED_ACTION.001</text></g><g class="k26"><text x="0.0" y="255" fill="#56d4c4" font-weight="600" xml:space="preserve">.cursor/mcp.json</text><text x="133.2" y="255" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k27"><text x="0.0" y="272" fill="#d6e2de" xml:space="preserve"> 7:10  </text><rect x="51.8" y="259" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="272" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="272" fill="#d6e2de" xml:space="preserve">  This MCP server's launch command downloads ...     </text><text x="518.0" y="272" fill="#6d827b" xml:space="preserve">SUSPECT.MCP.SHELL_LAUNCH.001</text></g><g class="k29"><text x="0.0" y="306" fill="#56d4c4" font-weight="600" xml:space="preserve">.mcp.json</text><text x="81.4" y="306" fill="#6d827b" xml:space="preserve">4 findings</text></g><g class="k30"><text x="0.0" y="323" fill="#d6e2de" xml:space="preserve"> 11:15 </text><rect x="51.8" y="310" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="323" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="323" fill="#d6e2de" xml:space="preserve">  This MCP server is reached over unencrypted HTTP.  </text><text x="518.0" y="323" fill="#6d827b" xml:space="preserve">SUSPECT.MCP.INSECURE_TRANSPORT.001</text></g><g class="k31"><text x="0.0" y="340" fill="#d6e2de" xml:space="preserve"> 20:28 </text><rect x="51.8" y="327" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="340" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="340" fill="#d6e2de" xml:space="preserve">  This MCP configuration carries a credential ...    </text><text x="518.0" y="340" fill="#6d827b" xml:space="preserve">SECRET.MCP.INLINE_CREDENTIAL.001</text></g><g class="k32"><text x="0.0" y="357" fill="#d6e2de" xml:space="preserve"> 7:10  </text><rect x="51.8" y="344" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="357" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="357" fill="#d6e2de" xml:space="preserve">  This MCP server is started by downloading a ...    </text><text x="518.0" y="357" fill="#6d827b" xml:space="preserve">SUSPECT.MCP.UNPINNED.001</text></g><g class="k33"><text x="0.0" y="374" fill="#d6e2de" xml:space="preserve"> 17:10 </text><rect x="51.8" y="361" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="374" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="374" fill="#d6e2de" xml:space="preserve">  This MCP server is started by downloading a ...    </text><text x="518.0" y="374" fill="#6d827b" xml:space="preserve">SUSPECT.MCP.UNPINNED.001</text></g><g class="k35"><text x="0.0" y="408" fill="#56d4c4" font-weight="600" xml:space="preserve">CLAUDE.md</text><text x="81.4" y="408" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k36"><text x="0.0" y="425" fill="#d6e2de" xml:space="preserve"> 3:31  </text><rect x="51.8" y="412" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="425" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="425" fill="#d6e2de" xml:space="preserve">  This agent instruction file contains ...           </text><text x="518.0" y="425" fill="#6d827b" xml:space="preserve">SUSPECT.AGENT.HIDDEN_TEXT.001</text></g><g class="k38"><text x="0.0" y="459" fill="#56d4c4" font-weight="600" xml:space="preserve">requirements.txt</text><text x="133.2" y="459" fill="#6d827b" xml:space="preserve">7 findings</text></g><g class="k39"><text x="0.0" y="476" fill="#d6e2de" xml:space="preserve"> -     </text><rect x="51.8" y="463" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="476" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="476" fill="#d6e2de" xml:space="preserve">  requests 2.32.3 is named by PYSEC-2026-2275.       </text><text x="518.0" y="476" fill="#6d827b" xml:space="preserve">VULNERABLE.DEPENDENCY.KNOWN.001</text></g><g class="k40"><rect x="51.8" y="480" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="493" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="493" fill="#d6e2de" xml:space="preserve">  requests 2.32.3 is named by PYSEC-2026-1872.       </text><text x="518.0" y="493" fill="#6d827b" xml:space="preserve">VULNERABLE.DEPENDENCY.KNOWN.001</text></g><g class="k41"><rect x="51.8" y="497" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="510" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="510" fill="#d6e2de" xml:space="preserve">  huggingface-cli is a name AI assistants ...        </text><text x="518.0" y="510" fill="#6d827b" xml:space="preserve">SUSPECT.DEPENDENCY.HALLUCINATED.001</text></g><g class="k42"><rect x="51.8" y="514" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="527" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="527" fill="#d6e2de" xml:space="preserve">  None of the 2 entries in this lockfile carry ...   </text><text x="518.0" y="527" fill="#6d827b" xml:space="preserve">POLICY.LOCKFILE.INTEGRITY.001</text></g><g class="k43"><rect x="51.8" y="531" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="544" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="544" fill="#d6e2de" xml:space="preserve">  requests 2.32.3 is named by GHSA-gc5v-m9x4-r6x2.   </text><text x="518.0" y="544" fill="#6d827b" xml:space="preserve">VULNERABLE.DEPENDENCY.KNOWN.001</text></g><g class="k44"><rect x="51.8" y="548" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="561" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="561" fill="#d6e2de" xml:space="preserve">  requests 2.32.3 is named by GHSA-9hjg-9r4m-mvj7.   </text><text x="518.0" y="561" fill="#6d827b" xml:space="preserve">VULNERABLE.DEPENDENCY.KNOWN.001</text></g><g class="k45"><rect x="51.8" y="565" width="74.0" height="16" fill="#56d4c4"/><text x="51.8" y="578" fill="#0b1110" font-weight="600" xml:space="preserve">   LOW    </text><text x="125.8" y="578" fill="#d6e2de" xml:space="preserve">  huggingface-cli@0.1.1 is pinned by version ...     </text><text x="518.0" y="578" fill="#6d827b" xml:space="preserve">POLICY.DEPENDENCY.INTEGRITY.001</text></g><g class="k47"><text x="0.0" y="612" fill="#56d4c4" font-weight="600" xml:space="preserve">statement.pdf</text><text x="111.0" y="612" fill="#6d827b" xml:space="preserve">2 findings</text></g><g class="k48"><text x="0.0" y="629" fill="#d6e2de" xml:space="preserve"> -     </text><rect x="51.8" y="616" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="629" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="629" fill="#d6e2de" xml:space="preserve">  This PDF contains a /Launch action, which ...      </text><text x="518.0" y="629" fill="#6d827b" xml:space="preserve">SUSPECT.DOCUMENT.PDF_LAUNCH.001</text></g><g class="k49"><rect x="51.8" y="633" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="646" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="646" fill="#d6e2de" xml:space="preserve">  This PDF declares an action that runs on ...       </text><text x="518.0" y="646" fill="#6d827b" xml:space="preserve">SUSPECT.DOCUMENT.PDF_AUTO_ACTION.001</text></g><g class="k50"><text x="0.0" y="663" fill="#6d827b" xml:space="preserve">----------------------------------------------------------------------------</text></g><g class="k51"><text x="0.0" y="680" fill="#f2f7f5" font-weight="600" xml:space="preserve">scan coverage</text><text x="111.0" y="680" fill="#6d827b" xml:space="preserve">3 note(s) about the scan itself</text></g><g class="k52"><text x="14.8" y="697" fill="#6d827b" xml:space="preserve">.mcp.json  MCP server 'search' runs npm package search-mcp@latest, whose code was not examined: fetching it needs --online.</text></g><g class="k53"><text x="14.8" y="714" fill="#6d827b" xml:space="preserve">.  2 file(s) were not examined as source because they are binary artefacts: model.pkl, statement.pdf.</text></g><g class="k55"><text x="7.4" y="748" fill="#ff4d5e" font-weight="600" xml:space="preserve">2 critical</text><text x="81.4" y="748" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="118.4" y="748" fill="#ff6b7a" xml:space="preserve">11 high</text><text x="170.2" y="748" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="207.2" y="748" fill="#e8c468" xml:space="preserve">7 medium</text><text x="266.4" y="748" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="303.4" y="748" fill="#56d4c4" xml:space="preserve">1 low</text></g><g class="k56"><text x="0.0" y="765" fill="#d6e2de" xml:space="preserve">7 files · 475ms</text></g><g class="k57"><text x="0.0" y="782" fill="#6d827b" xml:space="preserve">intel: bundle, 5d old</text></g><g class="k58"><text x="0.0" y="799" fill="#d6e2de" xml:space="preserve">scan complete</text></g><g class="k60"><text x="0.0" y="833" fill="#6d827b" xml:space="preserve">Run again with -v for the evidence, the score derivation and the fix for each finding.</text></g><g class="k62"><text x="0.0" y="867" fill="#ff6b7a" xml:space="preserve">FAILED:</text><text x="51.8" y="867" fill="#d6e2de" xml:space="preserve"> 10 finding(s) met the failure policy (highest: critical)</text></g><g class="k63"><text x="0.0" y="884" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="884" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="884" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="884" fill="#56d4c4" xml:space="preserve">payments-api</text><text x="214.6" y="884" fill="#6d827b" xml:space="preserve">git:(</text><text x="251.6" y="884" fill="#e8c468" xml:space="preserve">feat/assistant</text><text x="355.2" y="884" fill="#6d827b" xml:space="preserve">)</text><text x="370.0" y="884" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k64"><text x="0.0" y="901" fill="#d6e2de" xml:space="preserve">1</text></g><g class="k65"><text x="0.0" y="918" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="918" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="918" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="918" fill="#56d4c4" xml:space="preserve">payments-api</text><text x="214.6" y="918" fill="#6d827b" xml:space="preserve">git:(</text><text x="251.6" y="918" fill="#e8c468" xml:space="preserve">feat/assistant</text><text x="355.2" y="918" fill="#6d827b" xml:space="preserve">)</text><text x="370.0" y="918" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k66"><text x="0.0" y="918" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="918" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="918" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="918" fill="#56d4c4" xml:space="preserve">payments-api</text><text x="214.6" y="918" fill="#6d827b" xml:space="preserve">git:(</text><text x="251.6" y="918" fill="#e8c468" xml:space="preserve">feat/assistant</text><text x="355.2" y="918" fill="#6d827b" xml:space="preserve">)</text><text x="370.0" y="918" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><text class="k67" x="384.8" y="17" fill="#d6e2de">c</text><text class="k68" x="392.2" y="17" fill="#d6e2de">o</text><text class="k69" x="399.6" y="17" fill="#d6e2de">r</text><text class="k70" x="407.0" y="17" fill="#d6e2de">d</text><text class="k71" x="414.4" y="17" fill="#d6e2de">o</text><text class="k72" x="421.8" y="17" fill="#d6e2de">n</text><text class="k73" x="429.2" y="17" fill="#d6e2de">-</text><text class="k74" x="436.6" y="17" fill="#d6e2de">s</text><text class="k75" x="444.0" y="17" fill="#d6e2de">c</text><text class="k76" x="451.4" y="17" fill="#d6e2de">a</text><text class="k77" x="458.8" y="17" fill="#d6e2de">n</text><text class="k78" x="466.2" y="17" fill="#d6e2de">n</text><text class="k79" x="473.6" y="17" fill="#d6e2de">e</text><text class="k80" x="481.0" y="17" fill="#d6e2de">r</text><text class="k81" x="495.8" y="17" fill="#d6e2de">s</text><text class="k82" x="503.2" y="17" fill="#d6e2de">c</text><text class="k83" x="510.6" y="17" fill="#d6e2de">a</text><text class="k84" x="518.0" y="17" fill="#d6e2de">n</text><text class="k85" x="532.8" y="17" fill="#d6e2de">.</text><text class="k86" x="384.8" y="884" fill="#d6e2de">e</text><text class="k87" x="392.2" y="884" fill="#d6e2de">c</text><text class="k88" x="399.6" y="884" fill="#d6e2de">h</text><text class="k89" x="407.0" y="884" fill="#d6e2de">o</text><text class="k90" x="421.8" y="884" fill="#d6e2de">$</text><text class="k91" x="429.2" y="884" fill="#d6e2de">?</text></g></g></g></g>
+<g class="k92"><text x="504.5" y="22" text-anchor="middle" fill="#6d827b">zsh  vendor-review  ·  npm package  ·  2/6</text><g clip-path="url(#screen)"><g transform="translate(16 50)"><g class="k93"><g class="k92"><text x="0.0" y="17" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="17" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="17" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="17" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="17" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k94"><text x="0.0" y="34" fill="#d6e2de" xml:space="preserve">event-strem-1.0.3.tgz</text></g><g class="k95"><text x="0.0" y="51" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="51" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="51" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="51" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="51" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k96"><text x="0.0" y="68" fill="#56d4c4" xml:space="preserve">identifyin</text><text x="74.0" y="68" fill="#6d827b" xml:space="preserve">...</text></g><g class="k97"><text x="0.0" y="68" fill="#56d4c4" xml:space="preserve">reading   </text><text x="74.0" y="68" fill="#6d827b" xml:space="preserve">...</text></g><g class="k98"><text x="0.0" y="68" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="68" fill="#d6e2de" xml:space="preserve">[#######</text><text x="133.2" y="68" fill="#6d827b" xml:space="preserve">-------------</text><text x="229.4" y="68" fill="#d6e2de" xml:space="preserve">]  1/3  33%   </text><text x="333.0" y="68" fill="#6d827b" xml:space="preserve">package.json</text></g><g class="k99"><text x="0.0" y="68" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="68" fill="#d6e2de" xml:space="preserve">[#############</text><text x="177.6" y="68" fill="#6d827b" xml:space="preserve">-------</text><text x="229.4" y="68" fill="#d6e2de" xml:space="preserve">]  2/3  67%   </text><text x="333.0" y="68" fill="#6d827b" xml:space="preserve">scripts/setup.js</text></g><g class="k100"><text x="0.0" y="68" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="68" fill="#d6e2de" xml:space="preserve">[####################</text><text x="229.4" y="68" fill="#d6e2de" xml:space="preserve">]  3/3  100%  </text><text x="333.0" y="68" fill="#6d827b" xml:space="preserve">.github/workflows/release.yml</text></g><g class="k101"><text x="0.0" y="68" fill="#d6e2de" xml:space="preserve">cordon 0.6.0 · rulepack 0.2.0 </text><text x="222.0" y="68" fill="#6d827b" xml:space="preserve">(93d71a527ed205f4)</text></g><g class="k104"><text x="0.0" y="119" fill="#56d4c4" font-weight="600" xml:space="preserve">.github/workflows/release.yml</text><text x="229.4" y="119" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k105"><text x="0.0" y="136" fill="#d6e2de" xml:space="preserve"> 7:35  </text><rect x="51.8" y="123" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="136" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="136" fill="#d6e2de" xml:space="preserve">  This workflow renders the whole secret context ... </text><text x="518.0" y="136" fill="#6d827b" xml:space="preserve">MALWARE.CI.SECRET_EXFIL.001</text></g><g class="k107"><text x="0.0" y="170" fill="#56d4c4" font-weight="600" xml:space="preserve">scripts/setup.js</text><text x="133.2" y="170" fill="#6d827b" xml:space="preserve">5 findings</text></g><g class="k108"><text x="0.0" y="187" fill="#d6e2de" xml:space="preserve"> 7:48  </text><rect x="51.8" y="174" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="187" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="187" fill="#d6e2de" xml:space="preserve">  This install or build script reads credentials or  </text><text x="518.0" y="187" fill="#6d827b" xml:space="preserve">MALWARE.EXFIL.001</text></g><g class="k109"><text x="0.0" y="204" fill="#d6e2de" xml:space="preserve"> 7:31  </text><rect x="51.8" y="191" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="204" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="204" fill="#d6e2de" xml:space="preserve">  This install or build script identifies the ...    </text><text x="518.0" y="204" fill="#6d827b" xml:space="preserve">MALWARE.EXFIL.BEACON.001</text></g><g class="k110"><text x="0.0" y="221" fill="#d6e2de" xml:space="preserve"> 10:1  </text><rect x="51.8" y="208" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="221" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="221" fill="#d6e2de" xml:space="preserve">  This install or build script retrieves content ... </text><text x="518.0" y="221" fill="#6d827b" xml:space="preserve">MALWARE.DROPPER.001</text></g><g class="k111"><rect x="51.8" y="225" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="238" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="238" fill="#d6e2de" xml:space="preserve">  An install or build script reads a browser login . </text><text x="518.0" y="238" fill="#6d827b" xml:space="preserve">MALWARE.EXFIL.CREDENTIAL_STORE.001</text></g><g class="k112"><rect x="51.8" y="242" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="255" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="255" fill="#d6e2de" xml:space="preserve">  This file reads credential material, opens an ...  </text><text x="518.0" y="255" fill="#6d827b" xml:space="preserve">SUSPECT.EXFIL.001</text></g><g class="k114"><text x="0.0" y="289" fill="#56d4c4" font-weight="600" xml:space="preserve">package.json</text><text x="103.6" y="289" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k115"><text x="0.0" y="306" fill="#d6e2de" xml:space="preserve"> 7:1   </text><rect x="51.8" y="293" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="306" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="306" fill="#d6e2de" xml:space="preserve">  The 'postinstall' script runs automatically ...    </text><text x="518.0" y="306" fill="#6d827b" xml:space="preserve">SUSPECT.INSTALL.SCRIPT.001</text></g><g class="k116"><text x="0.0" y="323" fill="#6d827b" xml:space="preserve">----------------------------------------------------------------------------</text></g><g class="k117"><text x="7.4" y="340" fill="#ff4d5e" font-weight="600" xml:space="preserve">6 critical</text><text x="81.4" y="340" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="118.4" y="340" fill="#ff6b7a" xml:space="preserve">1 high</text><text x="162.8" y="340" fill="#d6e2de" xml:space="preserve">  ·  0 medium  ·  0 low </text></g><g class="k118"><text x="0.0" y="357" fill="#d6e2de" xml:space="preserve">3 files · 27ms</text></g><g class="k119"><text x="0.0" y="374" fill="#6d827b" xml:space="preserve">intel: package, 8d old</text></g><g class="k120"><text x="0.0" y="391" fill="#d6e2de" xml:space="preserve">scan complete</text></g><g class="k122"><text x="0.0" y="425" fill="#6d827b" xml:space="preserve">Run again with -v for the evidence, the score derivation and the fix for each finding.</text></g><g class="k124"><text x="0.0" y="459" fill="#ff6b7a" xml:space="preserve">FAILED:</text><text x="51.8" y="459" fill="#d6e2de" xml:space="preserve"> 7 finding(s) met the failure policy (highest: critical)</text></g><g class="k125"><text x="0.0" y="476" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="476" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="476" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="476" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="476" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k126"><text x="0.0" y="476" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="476" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="476" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="476" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="476" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><text class="k127" x="236.8" y="17" fill="#d6e2de">n</text><text class="k128" x="244.2" y="17" fill="#d6e2de">p</text><text class="k129" x="251.6" y="17" fill="#d6e2de">m</text><text class="k130" x="266.4" y="17" fill="#d6e2de">p</text><text class="k131" x="273.8" y="17" fill="#d6e2de">a</text><text class="k132" x="281.2" y="17" fill="#d6e2de">c</text><text class="k133" x="288.6" y="17" fill="#d6e2de">k</text><text class="k134" x="303.4" y="17" fill="#d6e2de">e</text><text class="k135" x="310.8" y="17" fill="#d6e2de">v</text><text class="k136" x="318.2" y="17" fill="#d6e2de">e</text><text class="k137" x="325.6" y="17" fill="#d6e2de">n</text><text class="k138" x="333.0" y="17" fill="#d6e2de">t</text><text class="k139" x="340.4" y="17" fill="#d6e2de">-</text><text class="k140" x="347.8" y="17" fill="#d6e2de">s</text><text class="k141" x="355.2" y="17" fill="#d6e2de">t</text><text class="k142" x="362.6" y="17" fill="#d6e2de">r</text><text class="k143" x="370.0" y="17" fill="#d6e2de">e</text><text class="k144" x="377.4" y="17" fill="#d6e2de">m</text><text class="k145" x="384.8" y="17" fill="#d6e2de">@</text><text class="k146" x="392.2" y="17" fill="#d6e2de">1</text><text class="k147" x="399.6" y="17" fill="#d6e2de">.</text><text class="k148" x="407.0" y="17" fill="#d6e2de">0</text><text class="k149" x="414.4" y="17" fill="#d6e2de">.</text><text class="k150" x="421.8" y="17" fill="#d6e2de">3</text><text class="k151" x="436.6" y="17" fill="#d6e2de">&amp;</text><text class="k152" x="444.0" y="17" fill="#d6e2de">&amp;</text><text class="k153" x="458.8" y="17" fill="#d6e2de">t</text><text class="k154" x="466.2" y="17" fill="#d6e2de">a</text><text class="k155" x="473.6" y="17" fill="#d6e2de">r</text><text class="k156" x="488.4" y="17" fill="#d6e2de">-</text><text class="k157" x="495.8" y="17" fill="#d6e2de">x</text><text class="k158" x="503.2" y="17" fill="#d6e2de">z</text><text class="k159" x="510.6" y="17" fill="#d6e2de">f</text><text class="k160" x="525.4" y="17" fill="#d6e2de">e</text><text class="k161" x="532.8" y="17" fill="#d6e2de">v</text><text class="k162" x="540.2" y="17" fill="#d6e2de">e</text><text class="k163" x="547.6" y="17" fill="#d6e2de">n</text><text class="k164" x="555.0" y="17" fill="#d6e2de">t</text><text class="k165" x="562.4" y="17" fill="#d6e2de">-</text><text class="k166" x="569.8" y="17" fill="#d6e2de">s</text><text class="k167" x="577.2" y="17" fill="#d6e2de">t</text><text class="k168" x="584.6" y="17" fill="#d6e2de">r</text><text class="k169" x="592.0" y="17" fill="#d6e2de">e</text><text class="k170" x="599.4" y="17" fill="#d6e2de">m</text><text class="k171" x="606.8" y="17" fill="#d6e2de">-</text><text class="k172" x="614.2" y="17" fill="#d6e2de">1</text><text class="k173" x="621.6" y="17" fill="#d6e2de">.</text><text class="k174" x="629.0" y="17" fill="#d6e2de">0</text><text class="k175" x="636.4" y="17" fill="#d6e2de">.</text><text class="k176" x="643.8" y="17" fill="#d6e2de">3</text><text class="k177" x="651.2" y="17" fill="#d6e2de">.</text><text class="k178" x="658.6" y="17" fill="#d6e2de">t</text><text class="k179" x="666.0" y="17" fill="#d6e2de">g</text><text class="k180" x="673.4" y="17" fill="#d6e2de">z</text><text class="k181" x="236.8" y="51" fill="#d6e2de">c</text><text class="k182" x="244.2" y="51" fill="#d6e2de">o</text><text class="k183" x="251.6" y="51" fill="#d6e2de">r</text><text class="k184" x="259.0" y="51" fill="#d6e2de">d</text><text class="k185" x="266.4" y="51" fill="#d6e2de">o</text><text class="k186" x="273.8" y="51" fill="#d6e2de">n</text><text class="k187" x="281.2" y="51" fill="#d6e2de">-</text><text class="k188" x="288.6" y="51" fill="#d6e2de">s</text><text class="k189" x="296.0" y="51" fill="#d6e2de">c</text><text class="k190" x="303.4" y="51" fill="#d6e2de">a</text><text class="k191" x="310.8" y="51" fill="#d6e2de">n</text><text class="k192" x="318.2" y="51" fill="#d6e2de">n</text><text class="k193" x="325.6" y="51" fill="#d6e2de">e</text><text class="k194" x="333.0" y="51" fill="#d6e2de">r</text><text class="k195" x="347.8" y="51" fill="#d6e2de">s</text><text class="k196" x="355.2" y="51" fill="#d6e2de">c</text><text class="k197" x="362.6" y="51" fill="#d6e2de">a</text><text class="k198" x="370.0" y="51" fill="#d6e2de">n</text><text class="k199" x="384.8" y="51" fill="#d6e2de">p</text><text class="k200" x="392.2" y="51" fill="#d6e2de">a</text><text class="k201" x="399.6" y="51" fill="#d6e2de">c</text><text class="k202" x="407.0" y="51" fill="#d6e2de">k</text><text class="k203" x="414.4" y="51" fill="#d6e2de">a</text><text class="k204" x="421.8" y="51" fill="#d6e2de">g</text><text class="k205" x="429.2" y="51" fill="#d6e2de">e</text><text class="k206" x="436.6" y="51" fill="#d6e2de">/</text></g></g></g></g>
+<g class="k207"><text x="504.5" y="22" text-anchor="middle" fill="#6d827b">zsh  vendor-review  ·  PyPI package  ·  3/6</text><g clip-path="url(#screen)"><g transform="translate(16 50)"><g class="k208"><g class="k207"><text x="0.0" y="17" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="17" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="17" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="17" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="17" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k209"><text x="0.0" y="34" fill="#d6e2de" xml:space="preserve">Saved ./reqeusts_toolbelt-0.11.tar.gz</text></g><g class="k210"><text x="0.0" y="51" fill="#d6e2de" xml:space="preserve">Successfully downloaded reqeusts-toolbelt</text></g><g class="k211"><text x="0.0" y="68" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="68" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="68" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="68" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="68" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k212"><text x="0.0" y="85" fill="#56d4c4" xml:space="preserve">identifyin</text><text x="74.0" y="85" fill="#6d827b" xml:space="preserve">...</text></g><g class="k213"><text x="0.0" y="85" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="85" fill="#d6e2de" xml:space="preserve">[####################</text><text x="229.4" y="85" fill="#d6e2de" xml:space="preserve">]  1/1  100%  </text><text x="333.0" y="85" fill="#6d827b" xml:space="preserve">setup.py</text></g><g class="k214"><text x="0.0" y="85" fill="#d6e2de" xml:space="preserve">cordon 0.6.0 · rulepack 0.2.0 </text><text x="222.0" y="85" fill="#6d827b" xml:space="preserve">(93d71a527ed205f4)</text></g><g class="k217"><text x="0.0" y="136" fill="#56d4c4" font-weight="600" xml:space="preserve">setup.py</text><text x="74.0" y="136" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k218"><text x="0.0" y="153" fill="#d6e2de" xml:space="preserve"> 9:31  </text><rect x="51.8" y="140" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="153" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="153" fill="#d6e2de" xml:space="preserve">  This install or build script reads credentials or  </text><text x="518.0" y="153" fill="#6d827b" xml:space="preserve">MALWARE.EXFIL.001</text></g><g class="k219"><text x="0.0" y="170" fill="#6d827b" xml:space="preserve">----------------------------------------------------------------------------</text></g><g class="k220"><text x="7.4" y="187" fill="#ff4d5e" font-weight="600" xml:space="preserve">1 critical</text><text x="81.4" y="187" fill="#d6e2de" xml:space="preserve">  ·  0 high  ·  0 medium  ·  0 low </text></g><g class="k221"><text x="0.0" y="204" fill="#d6e2de" xml:space="preserve">1 files · 20ms</text></g><g class="k222"><text x="0.0" y="221" fill="#6d827b" xml:space="preserve">intel: package, 8d old</text></g><g class="k223"><text x="0.0" y="238" fill="#d6e2de" xml:space="preserve">scan complete</text></g><g class="k225"><text x="0.0" y="272" fill="#6d827b" xml:space="preserve">Run again with -v for the evidence, the score derivation and the fix for each finding.</text></g><g class="k227"><text x="0.0" y="306" fill="#ff6b7a" xml:space="preserve">FAILED:</text><text x="51.8" y="306" fill="#d6e2de" xml:space="preserve"> 1 finding(s) met the failure policy (highest: critical)</text></g><g class="k228"><text x="0.0" y="323" fill="#6d827b" xml:space="preserve">Nothing was installed. setup.py was read, not run.</text></g><g class="k229"><text x="0.0" y="340" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="340" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="340" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="340" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="340" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k230"><text x="0.0" y="340" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="340" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="340" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="340" fill="#56d4c4" xml:space="preserve">vendor-review</text><text x="222.0" y="340" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><text class="k231" x="236.8" y="17" fill="#d6e2de">p</text><text class="k232" x="244.2" y="17" fill="#d6e2de">i</text><text class="k233" x="251.6" y="17" fill="#d6e2de">p</text><text class="k234" x="266.4" y="17" fill="#d6e2de">d</text><text class="k235" x="273.8" y="17" fill="#d6e2de">o</text><text class="k236" x="281.2" y="17" fill="#d6e2de">w</text><text class="k237" x="288.6" y="17" fill="#d6e2de">n</text><text class="k238" x="296.0" y="17" fill="#d6e2de">l</text><text class="k239" x="303.4" y="17" fill="#d6e2de">o</text><text class="k240" x="310.8" y="17" fill="#d6e2de">a</text><text class="k241" x="318.2" y="17" fill="#d6e2de">d</text><text class="k242" x="333.0" y="17" fill="#d6e2de">-</text><text class="k243" x="340.4" y="17" fill="#d6e2de">-</text><text class="k244" x="347.8" y="17" fill="#d6e2de">n</text><text class="k245" x="355.2" y="17" fill="#d6e2de">o</text><text class="k246" x="362.6" y="17" fill="#d6e2de">-</text><text class="k247" x="370.0" y="17" fill="#d6e2de">d</text><text class="k248" x="377.4" y="17" fill="#d6e2de">e</text><text class="k249" x="384.8" y="17" fill="#d6e2de">p</text><text class="k250" x="392.2" y="17" fill="#d6e2de">s</text><text class="k251" x="407.0" y="17" fill="#d6e2de">-</text><text class="k252" x="414.4" y="17" fill="#d6e2de">-</text><text class="k253" x="421.8" y="17" fill="#d6e2de">n</text><text class="k254" x="429.2" y="17" fill="#d6e2de">o</text><text class="k255" x="436.6" y="17" fill="#d6e2de">-</text><text class="k256" x="444.0" y="17" fill="#d6e2de">b</text><text class="k257" x="451.4" y="17" fill="#d6e2de">i</text><text class="k258" x="458.8" y="17" fill="#d6e2de">n</text><text class="k259" x="466.2" y="17" fill="#d6e2de">a</text><text class="k260" x="473.6" y="17" fill="#d6e2de">r</text><text class="k261" x="481.0" y="17" fill="#d6e2de">y</text><text class="k262" x="495.8" y="17" fill="#d6e2de">:</text><text class="k263" x="503.2" y="17" fill="#d6e2de">a</text><text class="k264" x="510.6" y="17" fill="#d6e2de">l</text><text class="k265" x="518.0" y="17" fill="#d6e2de">l</text><text class="k266" x="525.4" y="17" fill="#d6e2de">:</text><text class="k267" x="540.2" y="17" fill="#d6e2de">r</text><text class="k268" x="547.6" y="17" fill="#d6e2de">e</text><text class="k269" x="555.0" y="17" fill="#d6e2de">q</text><text class="k270" x="562.4" y="17" fill="#d6e2de">e</text><text class="k271" x="569.8" y="17" fill="#d6e2de">u</text><text class="k272" x="577.2" y="17" fill="#d6e2de">s</text><text class="k273" x="584.6" y="17" fill="#d6e2de">t</text><text class="k274" x="592.0" y="17" fill="#d6e2de">s</text><text class="k275" x="599.4" y="17" fill="#d6e2de">-</text><text class="k276" x="606.8" y="17" fill="#d6e2de">t</text><text class="k277" x="614.2" y="17" fill="#d6e2de">o</text><text class="k278" x="621.6" y="17" fill="#d6e2de">o</text><text class="k279" x="629.0" y="17" fill="#d6e2de">l</text><text class="k280" x="636.4" y="17" fill="#d6e2de">b</text><text class="k281" x="643.8" y="17" fill="#d6e2de">e</text><text class="k282" x="651.2" y="17" fill="#d6e2de">l</text><text class="k283" x="658.6" y="17" fill="#d6e2de">t</text><text class="k284" x="666.0" y="17" fill="#d6e2de">=</text><text class="k285" x="673.4" y="17" fill="#d6e2de">=</text><text class="k286" x="680.8" y="17" fill="#d6e2de">0</text><text class="k287" x="688.2" y="17" fill="#d6e2de">.</text><text class="k288" x="695.6" y="17" fill="#d6e2de">1</text><text class="k289" x="703.0" y="17" fill="#d6e2de">1</text><text class="k290" x="717.8" y="17" fill="#d6e2de">&amp;</text><text class="k291" x="725.2" y="17" fill="#d6e2de">&amp;</text><text class="k292" x="740.0" y="17" fill="#d6e2de">t</text><text class="k293" x="747.4" y="17" fill="#d6e2de">a</text><text class="k294" x="754.8" y="17" fill="#d6e2de">r</text><text class="k295" x="769.6" y="17" fill="#d6e2de">-</text><text class="k296" x="777.0" y="17" fill="#d6e2de">x</text><text class="k297" x="784.4" y="17" fill="#d6e2de">z</text><text class="k298" x="791.8" y="17" fill="#d6e2de">f</text><text class="k299" x="806.6" y="17" fill="#d6e2de">r</text><text class="k300" x="814.0" y="17" fill="#d6e2de">e</text><text class="k301" x="821.4" y="17" fill="#d6e2de">q</text><text class="k302" x="828.8" y="17" fill="#d6e2de">e</text><text class="k303" x="836.2" y="17" fill="#d6e2de">u</text><text class="k304" x="843.6" y="17" fill="#d6e2de">s</text><text class="k305" x="851.0" y="17" fill="#d6e2de">t</text><text class="k306" x="858.4" y="17" fill="#d6e2de">s</text><text class="k307" x="865.8" y="17" fill="#d6e2de">_</text><text class="k308" x="873.2" y="17" fill="#d6e2de">t</text><text class="k309" x="880.6" y="17" fill="#d6e2de">o</text><text class="k310" x="888.0" y="17" fill="#d6e2de">o</text><text class="k311" x="895.4" y="17" fill="#d6e2de">l</text><text class="k312" x="902.8" y="17" fill="#d6e2de">b</text><text class="k313" x="910.2" y="17" fill="#d6e2de">e</text><text class="k314" x="917.6" y="17" fill="#d6e2de">l</text><text class="k315" x="925.0" y="17" fill="#d6e2de">t</text><text class="k316" x="932.4" y="17" fill="#d6e2de">-</text><text class="k317" x="939.8" y="17" fill="#d6e2de">0</text><text class="k318" x="947.2" y="17" fill="#d6e2de">.</text><text class="k319" x="954.6" y="17" fill="#d6e2de">1</text><text class="k320" x="962.0" y="17" fill="#d6e2de">1</text><text class="k321" x="969.4" y="17" fill="#d6e2de">.</text><text class="k322" x="976.8" y="17" fill="#d6e2de">t</text><text class="k323" x="984.2" y="17" fill="#d6e2de">a</text><text class="k324" x="991.6" y="17" fill="#d6e2de">r</text><text class="k325" x="999.0" y="17" fill="#d6e2de">.</text><text class="k326" x="1006.4" y="17" fill="#d6e2de">g</text><text class="k327" x="1013.8" y="17" fill="#d6e2de">z</text><text class="k328" x="236.8" y="68" fill="#d6e2de">c</text><text class="k329" x="244.2" y="68" fill="#d6e2de">o</text><text class="k330" x="251.6" y="68" fill="#d6e2de">r</text><text class="k331" x="259.0" y="68" fill="#d6e2de">d</text><text class="k332" x="266.4" y="68" fill="#d6e2de">o</text><text class="k333" x="273.8" y="68" fill="#d6e2de">n</text><text class="k334" x="281.2" y="68" fill="#d6e2de">-</text><text class="k335" x="288.6" y="68" fill="#d6e2de">s</text><text class="k336" x="296.0" y="68" fill="#d6e2de">c</text><text class="k337" x="303.4" y="68" fill="#d6e2de">a</text><text class="k338" x="310.8" y="68" fill="#d6e2de">n</text><text class="k339" x="318.2" y="68" fill="#d6e2de">n</text><text class="k340" x="325.6" y="68" fill="#d6e2de">e</text><text class="k341" x="333.0" y="68" fill="#d6e2de">r</text><text class="k342" x="347.8" y="68" fill="#d6e2de">s</text><text class="k343" x="355.2" y="68" fill="#d6e2de">c</text><text class="k344" x="362.6" y="68" fill="#d6e2de">a</text><text class="k345" x="370.0" y="68" fill="#d6e2de">n</text><text class="k346" x="384.8" y="68" fill="#d6e2de">r</text><text class="k347" x="392.2" y="68" fill="#d6e2de">e</text><text class="k348" x="399.6" y="68" fill="#d6e2de">q</text><text class="k349" x="407.0" y="68" fill="#d6e2de">e</text><text class="k350" x="414.4" y="68" fill="#d6e2de">u</text><text class="k351" x="421.8" y="68" fill="#d6e2de">s</text><text class="k352" x="429.2" y="68" fill="#d6e2de">t</text><text class="k353" x="436.6" y="68" fill="#d6e2de">s</text><text class="k354" x="444.0" y="68" fill="#d6e2de">-</text><text class="k355" x="451.4" y="68" fill="#d6e2de">t</text><text class="k356" x="458.8" y="68" fill="#d6e2de">o</text><text class="k357" x="466.2" y="68" fill="#d6e2de">o</text><text class="k358" x="473.6" y="68" fill="#d6e2de">l</text><text class="k359" x="481.0" y="68" fill="#d6e2de">b</text><text class="k360" x="488.4" y="68" fill="#d6e2de">e</text><text class="k361" x="495.8" y="68" fill="#d6e2de">l</text><text class="k362" x="503.2" y="68" fill="#d6e2de">t</text><text class="k363" x="510.6" y="68" fill="#d6e2de">-</text><text class="k364" x="518.0" y="68" fill="#d6e2de">0</text><text class="k365" x="525.4" y="68" fill="#d6e2de">.</text><text class="k366" x="532.8" y="68" fill="#d6e2de">1</text><text class="k367" x="540.2" y="68" fill="#d6e2de">1</text><text class="k368" x="547.6" y="68" fill="#d6e2de">/</text></g></g></g></g>
+<g class="k369"><text x="504.5" y="22" text-anchor="middle" fill="#6d827b">zsh  images  ·  container image  ·  4/6</text><g clip-path="url(#screen)"><g transform="translate(16 50)"><g class="k370"><g class="k369"><text x="0.0" y="17" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="17" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="17" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="17" fill="#56d4c4" xml:space="preserve">images</text><text x="170.2" y="17" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k371"><text x="0.0" y="34" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="34" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="34" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="34" fill="#56d4c4" xml:space="preserve">images</text><text x="170.2" y="34" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k372"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">identifyin</text><text x="74.0" y="51" fill="#6d827b" xml:space="preserve">...</text></g><g class="k373"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">reading   </text><text x="74.0" y="51" fill="#6d827b" xml:space="preserve">...</text></g><g class="k374"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">dependenci</text><text x="74.0" y="51" fill="#6d827b" xml:space="preserve">...</text></g><g class="k375"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[#</text><text x="88.8" y="51" fill="#6d827b" xml:space="preserve">-------------------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  1/14  7%    </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">etc/os-release</text></g><g class="k376"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[###</text><text x="103.6" y="51" fill="#6d827b" xml:space="preserve">-----------------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  2/14  14%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">var/lib/rpm/rpmdb.sqlite</text></g><g class="k377"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[####</text><text x="111.0" y="51" fill="#6d827b" xml:space="preserve">----------------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  3/14  21%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">usr/bin/curl</text></g><g class="k378"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[######</text><text x="125.8" y="51" fill="#6d827b" xml:space="preserve">--------------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  4/14  29%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">usr/lib64/libcurl.so.4</text></g><g class="k379"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[#######</text><text x="133.2" y="51" fill="#6d827b" xml:space="preserve">-------------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  5/14  36%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">usr/lib64/libxml2.so.2</text></g><g class="k380"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[#########</text><text x="148.0" y="51" fill="#6d827b" xml:space="preserve">-----------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  6/14  43%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">etc/yum.conf</text></g><g class="k381"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[##########</text><text x="155.4" y="51" fill="#6d827b" xml:space="preserve">----------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  7/14  50%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">etc/passwd</text></g><g class="k382"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[###########</text><text x="162.8" y="51" fill="#6d827b" xml:space="preserve">---------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  8/14  57%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">etc/group</text></g><g class="k383"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[#############</text><text x="177.6" y="51" fill="#6d827b" xml:space="preserve">-------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  9/14  64%   </text><text x="340.4" y="51" fill="#6d827b" xml:space="preserve">root/.bashrc</text></g><g class="k384"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[##############</text><text x="185.0" y="51" fill="#6d827b" xml:space="preserve">------</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  10/14  71%   </text><text x="347.8" y="51" fill="#6d827b" xml:space="preserve">etc/hosts</text></g><g class="k385"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[################</text><text x="199.8" y="51" fill="#6d827b" xml:space="preserve">----</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  11/14  79%   </text><text x="347.8" y="51" fill="#6d827b" xml:space="preserve">usr/bin/python2.7</text></g><g class="k386"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[#################</text><text x="207.2" y="51" fill="#6d827b" xml:space="preserve">---</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  12/14  86%   </text><text x="347.8" y="51" fill="#6d827b" xml:space="preserve">etc/pki/tls/cert.pem</text></g><g class="k387"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[###################</text><text x="222.0" y="51" fill="#6d827b" xml:space="preserve">-</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  13/14  93%   </text><text x="347.8" y="51" fill="#6d827b" xml:space="preserve">etc/system-release</text></g><g class="k388"><text x="0.0" y="51" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="51" fill="#d6e2de" xml:space="preserve">[####################</text><text x="229.4" y="51" fill="#d6e2de" xml:space="preserve">]  14/14  100%  </text><text x="347.8" y="51" fill="#6d827b" xml:space="preserve">etc/shadow</text></g><g class="k389"><text x="0.0" y="51" fill="#d6e2de" xml:space="preserve">cordon 0.6.0 · rulepack 0.2.0 </text><text x="222.0" y="51" fill="#6d827b" xml:space="preserve">(93d71a527ed205f4)</text></g><g class="k392"><text x="0.0" y="102" fill="#56d4c4" font-weight="600" xml:space="preserve">var/lib/rpm/rpmdb.sqlite</text><text x="192.4" y="102" fill="#6d827b" xml:space="preserve">3 findings</text></g><g class="k393"><text x="0.0" y="119" fill="#d6e2de" xml:space="preserve"> -     </text><rect x="51.8" y="106" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="119" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="119" fill="#d6e2de" xml:space="preserve">  curl 8.3.0-1.amzn2.0.12 is named by ALAS2-2026-395 </text><text x="518.0" y="119" fill="#6d827b" xml:space="preserve">VULNERABLE.IMAGE.PACKAGE.001</text></g><g class="k394"><rect x="51.8" y="123" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="136" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="136" fill="#d6e2de" xml:space="preserve">  libcurl 8.3.0-1.amzn2.0.12 is named by ALAS2-2026- </text><text x="518.0" y="136" fill="#6d827b" xml:space="preserve">VULNERABLE.IMAGE.PACKAGE.001</text></g><g class="k395"><rect x="51.8" y="140" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="153" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="153" fill="#d6e2de" xml:space="preserve">  libxml2 2.9.1-6.amzn2.5.26 is named by ALAS2-2026- </text><text x="518.0" y="153" fill="#6d827b" xml:space="preserve">VULNERABLE.IMAGE.PACKAGE.001</text></g><g class="k396"><text x="0.0" y="170" fill="#6d827b" xml:space="preserve">----------------------------------------------------------------------------</text></g><g class="k397"><text x="0.0" y="187" fill="#f2f7f5" font-weight="600" xml:space="preserve">scan coverage</text><text x="111.0" y="187" fill="#6d827b" xml:space="preserve">1 note(s) about the scan itself</text></g><g class="k398"><text x="14.8" y="204" fill="#6d827b" xml:space="preserve">.  14 files the image adds beyond its distribution's packages were scanned, and 0 installed language packages were inventoried.</text></g><g class="k399"><text x="14.8" y="221" fill="#6d827b" xml:space="preserve">   106 operating-system packages read from the final layer's rpmdb, after whiteouts. Nothing in the image was run.</text></g><g class="k401"><text x="0.0" y="255" fill="#d6e2de" xml:space="preserve"> 0 critical  ·  </text><text x="118.4" y="255" fill="#ff6b7a" xml:space="preserve">2 high</text><text x="162.8" y="255" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="199.8" y="255" fill="#e8c468" xml:space="preserve">1 medium</text><text x="259.0" y="255" fill="#d6e2de" xml:space="preserve">  ·  0 low </text></g><g class="k402"><text x="0.0" y="272" fill="#d6e2de" xml:space="preserve">14 files · 1991ms</text></g><g class="k403"><text x="0.0" y="289" fill="#6d827b" xml:space="preserve">intel: bundle, 5d old</text></g><g class="k404"><text x="0.0" y="306" fill="#d6e2de" xml:space="preserve">scan complete</text></g><g class="k406"><text x="0.0" y="340" fill="#6d827b" xml:space="preserve">Run again with -v for the evidence, the score derivation and the fix for each finding.</text></g><g class="k408"><text x="0.0" y="374" fill="#ff6b7a" xml:space="preserve">FAILED:</text><text x="51.8" y="374" fill="#d6e2de" xml:space="preserve"> 2 finding(s) met the failure policy (highest: high)</text></g><g class="k409"><text x="0.0" y="391" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="391" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="391" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="391" fill="#56d4c4" xml:space="preserve">images</text><text x="170.2" y="391" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k410"><text x="0.0" y="391" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="391" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="391" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="391" fill="#56d4c4" xml:space="preserve">images</text><text x="170.2" y="391" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><text class="k411" x="185.0" y="17" fill="#d6e2de">d</text><text class="k412" x="192.4" y="17" fill="#d6e2de">o</text><text class="k413" x="199.8" y="17" fill="#d6e2de">c</text><text class="k414" x="207.2" y="17" fill="#d6e2de">k</text><text class="k415" x="214.6" y="17" fill="#d6e2de">e</text><text class="k416" x="222.0" y="17" fill="#d6e2de">r</text><text class="k417" x="236.8" y="17" fill="#d6e2de">s</text><text class="k418" x="244.2" y="17" fill="#d6e2de">a</text><text class="k419" x="251.6" y="17" fill="#d6e2de">v</text><text class="k420" x="259.0" y="17" fill="#d6e2de">e</text><text class="k421" x="273.8" y="17" fill="#d6e2de">a</text><text class="k422" x="281.2" y="17" fill="#d6e2de">m</text><text class="k423" x="288.6" y="17" fill="#d6e2de">a</text><text class="k424" x="296.0" y="17" fill="#d6e2de">z</text><text class="k425" x="303.4" y="17" fill="#d6e2de">o</text><text class="k426" x="310.8" y="17" fill="#d6e2de">n</text><text class="k427" x="318.2" y="17" fill="#d6e2de">l</text><text class="k428" x="325.6" y="17" fill="#d6e2de">i</text><text class="k429" x="333.0" y="17" fill="#d6e2de">n</text><text class="k430" x="340.4" y="17" fill="#d6e2de">u</text><text class="k431" x="347.8" y="17" fill="#d6e2de">x</text><text class="k432" x="355.2" y="17" fill="#d6e2de">:</text><text class="k433" x="362.6" y="17" fill="#d6e2de">2</text><text class="k434" x="377.4" y="17" fill="#d6e2de">-</text><text class="k435" x="384.8" y="17" fill="#d6e2de">o</text><text class="k436" x="399.6" y="17" fill="#d6e2de">a</text><text class="k437" x="407.0" y="17" fill="#d6e2de">m</text><text class="k438" x="414.4" y="17" fill="#d6e2de">a</text><text class="k439" x="421.8" y="17" fill="#d6e2de">z</text><text class="k440" x="429.2" y="17" fill="#d6e2de">o</text><text class="k441" x="436.6" y="17" fill="#d6e2de">n</text><text class="k442" x="444.0" y="17" fill="#d6e2de">l</text><text class="k443" x="451.4" y="17" fill="#d6e2de">i</text><text class="k444" x="458.8" y="17" fill="#d6e2de">n</text><text class="k445" x="466.2" y="17" fill="#d6e2de">u</text><text class="k446" x="473.6" y="17" fill="#d6e2de">x</text><text class="k447" x="481.0" y="17" fill="#d6e2de">2</text><text class="k448" x="488.4" y="17" fill="#d6e2de">.</text><text class="k449" x="495.8" y="17" fill="#d6e2de">t</text><text class="k450" x="503.2" y="17" fill="#d6e2de">a</text><text class="k451" x="510.6" y="17" fill="#d6e2de">r</text><text class="k452" x="185.0" y="34" fill="#d6e2de">c</text><text class="k453" x="192.4" y="34" fill="#d6e2de">o</text><text class="k454" x="199.8" y="34" fill="#d6e2de">r</text><text class="k455" x="207.2" y="34" fill="#d6e2de">d</text><text class="k456" x="214.6" y="34" fill="#d6e2de">o</text><text class="k457" x="222.0" y="34" fill="#d6e2de">n</text><text class="k458" x="229.4" y="34" fill="#d6e2de">-</text><text class="k459" x="236.8" y="34" fill="#d6e2de">s</text><text class="k460" x="244.2" y="34" fill="#d6e2de">c</text><text class="k461" x="251.6" y="34" fill="#d6e2de">a</text><text class="k462" x="259.0" y="34" fill="#d6e2de">n</text><text class="k463" x="266.4" y="34" fill="#d6e2de">n</text><text class="k464" x="273.8" y="34" fill="#d6e2de">e</text><text class="k465" x="281.2" y="34" fill="#d6e2de">r</text><text class="k466" x="296.0" y="34" fill="#d6e2de">s</text><text class="k467" x="303.4" y="34" fill="#d6e2de">c</text><text class="k468" x="310.8" y="34" fill="#d6e2de">a</text><text class="k469" x="318.2" y="34" fill="#d6e2de">n</text><text class="k470" x="333.0" y="34" fill="#d6e2de">a</text><text class="k471" x="340.4" y="34" fill="#d6e2de">m</text><text class="k472" x="347.8" y="34" fill="#d6e2de">a</text><text class="k473" x="355.2" y="34" fill="#d6e2de">z</text><text class="k474" x="362.6" y="34" fill="#d6e2de">o</text><text class="k475" x="370.0" y="34" fill="#d6e2de">n</text><text class="k476" x="377.4" y="34" fill="#d6e2de">l</text><text class="k477" x="384.8" y="34" fill="#d6e2de">i</text><text class="k478" x="392.2" y="34" fill="#d6e2de">n</text><text class="k479" x="399.6" y="34" fill="#d6e2de">u</text><text class="k480" x="407.0" y="34" fill="#d6e2de">x</text><text class="k481" x="414.4" y="34" fill="#d6e2de">2</text><text class="k482" x="421.8" y="34" fill="#d6e2de">.</text><text class="k483" x="429.2" y="34" fill="#d6e2de">t</text><text class="k484" x="436.6" y="34" fill="#d6e2de">a</text><text class="k485" x="444.0" y="34" fill="#d6e2de">r</text><text class="k486" x="458.8" y="34" fill="#d6e2de">-</text><text class="k487" x="466.2" y="34" fill="#d6e2de">-</text><text class="k488" x="473.6" y="34" fill="#d6e2de">o</text><text class="k489" x="481.0" y="34" fill="#d6e2de">n</text><text class="k490" x="488.4" y="34" fill="#d6e2de">l</text><text class="k491" x="495.8" y="34" fill="#d6e2de">i</text><text class="k492" x="503.2" y="34" fill="#d6e2de">n</text><text class="k493" x="510.6" y="34" fill="#d6e2de">e</text></g></g></g></g>
+<g class="k494"><text x="504.5" y="22" text-anchor="middle" fill="#6d827b">zsh  platform-ci  ·  CI pipelines  ·  5/6</text><g clip-path="url(#screen)"><g transform="translate(16 50)"><g class="k495"><g class="k494"><text x="0.0" y="17" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="17" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="17" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="17" fill="#56d4c4" xml:space="preserve">platform-ci</text><text x="207.2" y="17" fill="#6d827b" xml:space="preserve">git:(</text><text x="244.2" y="17" fill="#e8c468" xml:space="preserve">main</text><text x="273.8" y="17" fill="#6d827b" xml:space="preserve">)</text><text x="288.6" y="17" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k496"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">identifyin</text><text x="74.0" y="34" fill="#6d827b" xml:space="preserve">...</text></g><g class="k497"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[#####</text><text x="118.4" y="34" fill="#6d827b" xml:space="preserve">---------------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  1/4  25%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.github/workflows/release.yml</text></g><g class="k498"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[##########</text><text x="155.4" y="34" fill="#6d827b" xml:space="preserve">----------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  2/4  50%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.github/workflows/pr.yml</text></g><g class="k499"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[###############</text><text x="192.4" y="34" fill="#6d827b" xml:space="preserve">-----</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  3/4  75%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.github/workflows/build.yml</text></g><g class="k500"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[####################</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  4/4  100%  </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.gitlab-ci.yml</text></g><g class="k501"><text x="0.0" y="34" fill="#d6e2de" xml:space="preserve">cordon 0.6.0 · rulepack 0.2.0 </text><text x="222.0" y="34" fill="#6d827b" xml:space="preserve">(93d71a527ed205f4)</text></g><g class="k504"><text x="0.0" y="85" fill="#56d4c4" font-weight="600" xml:space="preserve">.github/workflows/release.yml</text><text x="229.4" y="85" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k505"><text x="0.0" y="102" fill="#d6e2de" xml:space="preserve"> 8:35  </text><rect x="51.8" y="89" width="74.0" height="16" fill="#d42b3c"/><text x="51.8" y="102" fill="#ffffff" font-weight="600" xml:space="preserve"> CRITICAL </text><text x="125.8" y="102" fill="#d6e2de" xml:space="preserve">  This workflow renders the whole secret context ... </text><text x="518.0" y="102" fill="#6d827b" xml:space="preserve">MALWARE.CI.SECRET_EXFIL.001</text></g><g class="k507"><text x="0.0" y="136" fill="#56d4c4" font-weight="600" xml:space="preserve">.github/workflows/pr.yml</text><text x="192.4" y="136" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k508"><text x="0.0" y="153" fill="#d6e2de" xml:space="preserve"> 11:1  </text><rect x="51.8" y="140" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="153" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="153" fill="#d6e2de" xml:space="preserve">  A field an outside contributor controls -- a ...   </text><text x="518.0" y="153" fill="#6d827b" xml:space="preserve">SUSPECT.CI.EXPRESSION_INJECTION.001</text></g><g class="k510"><text x="0.0" y="187" fill="#56d4c4" font-weight="600" xml:space="preserve">.github/workflows/build.yml</text><text x="214.6" y="187" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k511"><text x="0.0" y="204" fill="#d6e2de" xml:space="preserve"> 3:1   </text><rect x="51.8" y="191" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="204" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="204" fill="#d6e2de" xml:space="preserve">  pull_request_target runs with a writable token ... </text><text x="518.0" y="204" fill="#6d827b" xml:space="preserve">SUSPECT.CI.PR_TARGET.001</text></g><g class="k513"><text x="0.0" y="238" fill="#56d4c4" font-weight="600" xml:space="preserve">.gitlab-ci.yml</text><text x="118.4" y="238" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k514"><text x="0.0" y="255" fill="#d6e2de" xml:space="preserve"> 8:7   </text><rect x="51.8" y="242" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="255" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="255" fill="#d6e2de" xml:space="preserve">  A named secret and a network call appear in the .. </text><text x="518.0" y="255" fill="#6d827b" xml:space="preserve">SUSPECT.CI.SECRET_EGRESS.001</text></g><g class="k515"><text x="0.0" y="272" fill="#6d827b" xml:space="preserve">----------------------------------------------------------------------------</text></g><g class="k516"><text x="7.4" y="289" fill="#ff4d5e" font-weight="600" xml:space="preserve">1 critical</text><text x="81.4" y="289" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="118.4" y="289" fill="#ff6b7a" xml:space="preserve">2 high</text><text x="162.8" y="289" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="199.8" y="289" fill="#e8c468" xml:space="preserve">1 medium</text><text x="259.0" y="289" fill="#d6e2de" xml:space="preserve">  ·  0 low </text></g><g class="k517"><text x="0.0" y="306" fill="#d6e2de" xml:space="preserve">4 files · 70ms</text></g><g class="k518"><text x="0.0" y="323" fill="#6d827b" xml:space="preserve">intel: bundle, 5d old</text></g><g class="k519"><text x="0.0" y="340" fill="#d6e2de" xml:space="preserve">scan complete</text></g><g class="k521"><text x="0.0" y="374" fill="#6d827b" xml:space="preserve">Run again with -v for the evidence, the score derivation and the fix for each finding.</text></g><g class="k523"><text x="0.0" y="408" fill="#ff6b7a" xml:space="preserve">FAILED:</text><text x="51.8" y="408" fill="#d6e2de" xml:space="preserve"> 1 finding(s) met the failure policy (highest: critical)</text></g><g class="k524"><text x="0.0" y="425" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="425" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="425" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="425" fill="#56d4c4" xml:space="preserve">platform-ci</text><text x="207.2" y="425" fill="#6d827b" xml:space="preserve">git:(</text><text x="244.2" y="425" fill="#e8c468" xml:space="preserve">main</text><text x="273.8" y="425" fill="#6d827b" xml:space="preserve">)</text><text x="288.6" y="425" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k525"><text x="0.0" y="425" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="425" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="425" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="425" fill="#56d4c4" xml:space="preserve">platform-ci</text><text x="207.2" y="425" fill="#6d827b" xml:space="preserve">git:(</text><text x="244.2" y="425" fill="#e8c468" xml:space="preserve">main</text><text x="273.8" y="425" fill="#6d827b" xml:space="preserve">)</text><text x="288.6" y="425" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><text class="k526" x="303.4" y="17" fill="#d6e2de">c</text><text class="k527" x="310.8" y="17" fill="#d6e2de">o</text><text class="k528" x="318.2" y="17" fill="#d6e2de">r</text><text class="k529" x="325.6" y="17" fill="#d6e2de">d</text><text class="k530" x="333.0" y="17" fill="#d6e2de">o</text><text class="k531" x="340.4" y="17" fill="#d6e2de">n</text><text class="k532" x="347.8" y="17" fill="#d6e2de">-</text><text class="k533" x="355.2" y="17" fill="#d6e2de">s</text><text class="k534" x="362.6" y="17" fill="#d6e2de">c</text><text class="k535" x="370.0" y="17" fill="#d6e2de">a</text><text class="k536" x="377.4" y="17" fill="#d6e2de">n</text><text class="k537" x="384.8" y="17" fill="#d6e2de">n</text><text class="k538" x="392.2" y="17" fill="#d6e2de">e</text><text class="k539" x="399.6" y="17" fill="#d6e2de">r</text><text class="k540" x="414.4" y="17" fill="#d6e2de">s</text><text class="k541" x="421.8" y="17" fill="#d6e2de">c</text><text class="k542" x="429.2" y="17" fill="#d6e2de">a</text><text class="k543" x="436.6" y="17" fill="#d6e2de">n</text><text class="k544" x="451.4" y="17" fill="#d6e2de">.</text><text class="k545" x="466.2" y="17" fill="#d6e2de">-</text><text class="k546" x="473.6" y="17" fill="#d6e2de">-</text><text class="k547" x="481.0" y="17" fill="#d6e2de">i</text><text class="k548" x="488.4" y="17" fill="#d6e2de">n</text><text class="k549" x="495.8" y="17" fill="#d6e2de">c</text><text class="k550" x="503.2" y="17" fill="#d6e2de">l</text><text class="k551" x="510.6" y="17" fill="#d6e2de">u</text><text class="k552" x="518.0" y="17" fill="#d6e2de">d</text><text class="k553" x="525.4" y="17" fill="#d6e2de">e</text><text class="k554" x="540.2" y="17" fill="#d6e2de">'</text><text class="k555" x="547.6" y="17" fill="#d6e2de">.</text><text class="k556" x="555.0" y="17" fill="#d6e2de">g</text><text class="k557" x="562.4" y="17" fill="#d6e2de">i</text><text class="k558" x="569.8" y="17" fill="#d6e2de">t</text><text class="k559" x="577.2" y="17" fill="#d6e2de">h</text><text class="k560" x="584.6" y="17" fill="#d6e2de">u</text><text class="k561" x="592.0" y="17" fill="#d6e2de">b</text><text class="k562" x="599.4" y="17" fill="#d6e2de">/</text><text class="k563" x="606.8" y="17" fill="#d6e2de">*</text><text class="k564" x="614.2" y="17" fill="#d6e2de">*</text><text class="k565" x="621.6" y="17" fill="#d6e2de">'</text><text class="k566" x="636.4" y="17" fill="#d6e2de">-</text><text class="k567" x="643.8" y="17" fill="#d6e2de">-</text><text class="k568" x="651.2" y="17" fill="#d6e2de">i</text><text class="k569" x="658.6" y="17" fill="#d6e2de">n</text><text class="k570" x="666.0" y="17" fill="#d6e2de">c</text><text class="k571" x="673.4" y="17" fill="#d6e2de">l</text><text class="k572" x="680.8" y="17" fill="#d6e2de">u</text><text class="k573" x="688.2" y="17" fill="#d6e2de">d</text><text class="k574" x="695.6" y="17" fill="#d6e2de">e</text><text class="k575" x="710.4" y="17" fill="#d6e2de">'</text><text class="k576" x="717.8" y="17" fill="#d6e2de">.</text><text class="k577" x="725.2" y="17" fill="#d6e2de">g</text><text class="k578" x="732.6" y="17" fill="#d6e2de">i</text><text class="k579" x="740.0" y="17" fill="#d6e2de">t</text><text class="k580" x="747.4" y="17" fill="#d6e2de">l</text><text class="k581" x="754.8" y="17" fill="#d6e2de">a</text><text class="k582" x="762.2" y="17" fill="#d6e2de">b</text><text class="k583" x="769.6" y="17" fill="#d6e2de">-</text><text class="k584" x="777.0" y="17" fill="#d6e2de">c</text><text class="k585" x="784.4" y="17" fill="#d6e2de">i</text><text class="k586" x="791.8" y="17" fill="#d6e2de">.</text><text class="k587" x="799.2" y="17" fill="#d6e2de">y</text><text class="k588" x="806.6" y="17" fill="#d6e2de">m</text><text class="k589" x="814.0" y="17" fill="#d6e2de">l</text><text class="k590" x="821.4" y="17" fill="#d6e2de">'</text></g></g></g></g>
+<g class="k591"><text x="504.5" y="22" text-anchor="middle" fill="#6d827b">zsh  payments-api  ·  pre-commit  ·  6/6</text><g clip-path="url(#screen)"><g transform="translate(16 50)"><g class="k592"><g class="k591"><text x="0.0" y="17" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="17" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="17" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="17" fill="#56d4c4" xml:space="preserve">payments-api</text><text x="214.6" y="17" fill="#6d827b" xml:space="preserve">git:(</text><text x="251.6" y="17" fill="#e8c468" xml:space="preserve">feat/search-mcp</text><text x="362.6" y="17" fill="#6d827b" xml:space="preserve">)</text><text x="377.4" y="17" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k593"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">identifyin</text><text x="74.0" y="34" fill="#6d827b" xml:space="preserve">...</text></g><g class="k594"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[##########</text><text x="155.4" y="34" fill="#6d827b" xml:space="preserve">----------</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  1/2  50%   </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">.mcp.json</text></g><g class="k595"><text x="0.0" y="34" fill="#56d4c4" xml:space="preserve">scanning  </text><text x="74.0" y="34" fill="#d6e2de" xml:space="preserve">[####################</text><text x="229.4" y="34" fill="#d6e2de" xml:space="preserve">]  2/2  100%  </text><text x="333.0" y="34" fill="#6d827b" xml:space="preserve">CLAUDE.md</text></g><g class="k596"><text x="0.0" y="34" fill="#d6e2de" xml:space="preserve">cordon 0.6.0 · rulepack 0.2.0 </text><text x="222.0" y="34" fill="#6d827b" xml:space="preserve">(93d71a527ed205f4)</text></g><g class="k599"><text x="0.0" y="85" fill="#56d4c4" font-weight="600" xml:space="preserve">.mcp.json</text><text x="81.4" y="85" fill="#6d827b" xml:space="preserve">4 findings</text></g><g class="k600"><text x="0.0" y="102" fill="#d6e2de" xml:space="preserve"> 11:15 </text><rect x="51.8" y="89" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="102" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="102" fill="#d6e2de" xml:space="preserve">  This MCP server is reached over unencrypted HTTP.  </text><text x="518.0" y="102" fill="#6d827b" xml:space="preserve">SUSPECT.MCP.INSECURE_TRANSPORT.001</text></g><g class="k601"><text x="0.0" y="119" fill="#d6e2de" xml:space="preserve"> 20:28 </text><rect x="51.8" y="106" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="119" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="119" fill="#d6e2de" xml:space="preserve">  This MCP configuration carries a credential as a . </text><text x="518.0" y="119" fill="#6d827b" xml:space="preserve">SECRET.MCP.INLINE_CREDENTIAL.001</text></g><g class="k602"><text x="0.0" y="136" fill="#d6e2de" xml:space="preserve"> 7:10  </text><rect x="51.8" y="123" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="136" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="136" fill="#d6e2de" xml:space="preserve">  This MCP server is started by downloading a ...    </text><text x="518.0" y="136" fill="#6d827b" xml:space="preserve">SUSPECT.MCP.UNPINNED.001</text></g><g class="k603"><text x="0.0" y="153" fill="#d6e2de" xml:space="preserve"> 17:10 </text><rect x="51.8" y="140" width="74.0" height="16" fill="#e8c468"/><text x="51.8" y="153" fill="#0b1110" font-weight="600" xml:space="preserve">  MEDIUM  </text><text x="125.8" y="153" fill="#d6e2de" xml:space="preserve">  This MCP server is started by downloading a ...    </text><text x="518.0" y="153" fill="#6d827b" xml:space="preserve">SUSPECT.MCP.UNPINNED.001</text></g><g class="k605"><text x="0.0" y="187" fill="#56d4c4" font-weight="600" xml:space="preserve">CLAUDE.md</text><text x="81.4" y="187" fill="#6d827b" xml:space="preserve">1 finding</text></g><g class="k606"><text x="0.0" y="204" fill="#d6e2de" xml:space="preserve"> 3:31  </text><rect x="51.8" y="191" width="74.0" height="16" fill="#ff8a8a"/><text x="51.8" y="204" fill="#0b1110" font-weight="600" xml:space="preserve">   HIGH   </text><text x="125.8" y="204" fill="#d6e2de" xml:space="preserve">  This agent instruction file contains characters .. </text><text x="518.0" y="204" fill="#6d827b" xml:space="preserve">SUSPECT.AGENT.HIDDEN_TEXT.001</text></g><g class="k607"><text x="0.0" y="221" fill="#6d827b" xml:space="preserve">----------------------------------------------------------------------------</text></g><g class="k608"><text x="0.0" y="238" fill="#d6e2de" xml:space="preserve"> 0 critical  ·  </text><text x="118.4" y="238" fill="#ff6b7a" xml:space="preserve">3 high</text><text x="162.8" y="238" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="199.8" y="238" fill="#e8c468" xml:space="preserve">2 medium</text><text x="259.0" y="238" fill="#d6e2de" xml:space="preserve">  ·  </text><text x="296.0" y="238" fill="#56d4c4" xml:space="preserve">1 low</text></g><g class="k609"><text x="0.0" y="255" fill="#d6e2de" xml:space="preserve">2 files · 198ms</text></g><g class="k610"><text x="0.0" y="272" fill="#6d827b" xml:space="preserve">intel: bundle, 5d old</text></g><g class="k611"><text x="0.0" y="289" fill="#d6e2de" xml:space="preserve">scan complete</text></g><g class="k613"><text x="0.0" y="323" fill="#ff6b7a" xml:space="preserve">FAILED:</text><text x="51.8" y="323" fill="#d6e2de" xml:space="preserve"> 3 finding(s) met the failure policy (highest: high)</text></g><g class="k614"><text x="0.0" y="340" fill="#6d827b" xml:space="preserve">cordon-scanner guard read the git index, not the working tree. Nothing was committed.</text></g><g class="k615"><text x="0.0" y="357" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="357" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="357" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="357" fill="#56d4c4" xml:space="preserve">payments-api</text><text x="214.6" y="357" fill="#6d827b" xml:space="preserve">git:(</text><text x="251.6" y="357" fill="#e8c468" xml:space="preserve">feat/search-mcp</text><text x="362.6" y="357" fill="#6d827b" xml:space="preserve">)</text><text x="377.4" y="357" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><g class="k616"><text x="0.0" y="357" fill="#8bd49c" xml:space="preserve">abc</text><text x="22.2" y="357" fill="#6d827b" xml:space="preserve">@</text><text x="29.6" y="357" fill="#8bd49c" xml:space="preserve">ab-mbp-0231</text><text x="118.4" y="357" fill="#56d4c4" xml:space="preserve">payments-api</text><text x="214.6" y="357" fill="#6d827b" xml:space="preserve">git:(</text><text x="251.6" y="357" fill="#e8c468" xml:space="preserve">feat/search-mcp</text><text x="362.6" y="357" fill="#6d827b" xml:space="preserve">)</text><text x="377.4" y="357" fill="#f2f7f5" font-weight="600" xml:space="preserve">$</text></g><text class="k617" x="392.2" y="17" fill="#d6e2de">g</text><text class="k618" x="399.6" y="17" fill="#d6e2de">i</text><text class="k619" x="407.0" y="17" fill="#d6e2de">t</text><text class="k620" x="421.8" y="17" fill="#d6e2de">c</text><text class="k621" x="429.2" y="17" fill="#d6e2de">o</text><text class="k622" x="436.6" y="17" fill="#d6e2de">m</text><text class="k623" x="444.0" y="17" fill="#d6e2de">m</text><text class="k624" x="451.4" y="17" fill="#d6e2de">i</text><text class="k625" x="458.8" y="17" fill="#d6e2de">t</text><text class="k626" x="473.6" y="17" fill="#d6e2de">-</text><text class="k627" x="481.0" y="17" fill="#d6e2de">m</text><text class="k628" x="495.8" y="17" fill="#d6e2de">"</text><text class="k629" x="503.2" y="17" fill="#d6e2de">a</text><text class="k630" x="510.6" y="17" fill="#d6e2de">d</text><text class="k631" x="518.0" y="17" fill="#d6e2de">d</text><text class="k632" x="532.8" y="17" fill="#d6e2de">s</text><text class="k633" x="540.2" y="17" fill="#d6e2de">e</text><text class="k634" x="547.6" y="17" fill="#d6e2de">a</text><text class="k635" x="555.0" y="17" fill="#d6e2de">r</text><text class="k636" x="562.4" y="17" fill="#d6e2de">c</text><text class="k637" x="569.8" y="17" fill="#d6e2de">h</text><text class="k638" x="584.6" y="17" fill="#d6e2de">M</text><text class="k639" x="592.0" y="17" fill="#d6e2de">C</text><text class="k640" x="599.4" y="17" fill="#d6e2de">P</text><text class="k641" x="614.2" y="17" fill="#d6e2de">s</text><text class="k642" x="621.6" y="17" fill="#d6e2de">e</text><text class="k643" x="629.0" y="17" fill="#d6e2de">r</text><text class="k644" x="636.4" y="17" fill="#d6e2de">v</text><text class="k645" x="643.8" y="17" fill="#d6e2de">e</text><text class="k646" x="651.2" y="17" fill="#d6e2de">r</text><text class="k647" x="658.6" y="17" fill="#d6e2de">"</text></g></g></g></g>
+</svg>

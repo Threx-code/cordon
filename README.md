@@ -24,17 +24,19 @@ in common use — against Cordon's own rules and 815 of the
 optional judge (`--judge`) has a language model read that text for wordings no rule
 anticipated ([tutorial 18](https://github.com/Threx-code/cordon/blob/v0.6.0/tutorials/18-agents-and-mcp.md)).
 
-Seventeen package ecosystems, from npm and PyPI to Conan, Hex, CRAN and Bazel —
-the file-by-file list, and which checks each one gets, is in
+Twenty-eight ecosystems: package managers from npm and PyPI to Conan, Hex, CRAN,
+Hackage and Bazel, and GitHub Actions, Terraform, Helm, Ansible, Nix, Homebrew and
+container images — the file-by-file list, and which checks each one gets, is in
 [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/07-ECOSYSTEMS.md).
 
 ```
    ┌─────────────────────────────────────────────────────────────────────────┐
    │  Cordon READS.  It never executes the code it scans, and never sends    │
    │  anything about your code or your dependencies anywhere unless you      │
-   │  ask.  By default it makes no network request at all; --offline         │
-   │  guarantees it.  Safe on hostile packages, safe in an air-gap,          │
-   │  and its results are reproducible.                                      │
+   │  ask.  By default it asks OSV which advisories changed since its        │
+   │  intel was built: the same requests for everyone, naming no package.    │
+   │  --offline makes no request at all.  Safe on hostile packages, safe     │
+   │  in an air-gap, and its results are reproducible.                       │
    └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -54,20 +56,26 @@ cordon-scanner scan .
 
 > **New here?** The
 > [tutorials](https://github.com/Threx-code/cordon/tree/v0.6.0/tutorials) are
-> short, diagram-first walkthroughs — one per use case.
+> short, diagram-first walkthroughs — one per use case. Something failed? Start at
+> [troubleshooting](https://github.com/Threx-code/cordon/blob/main/tutorials/29-troubleshooting.md).
 
 ---
 
 ## What it looks like
 
-A package whose `postinstall` posts the environment to a webhook and pipes a
-download into a shell, and a workflow that sends a publish token to a remote host:
+A repository with a poisoned model and an agent workflow, an npm and a PyPI package
+read before they are installed, a container image, CI pipelines, and the pre-commit
+guard — on a loop:
 
-![Terminal output: seven critical findings in a compromised npm package](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/demo.svg)
+![cordon-scanner in a terminal: a repository, packages, an image, CI pipelines and a pre-commit hook, scanned one after another](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/terminal.svg)
 
-Real output, rendered from a captured run. It is an SVG, not a GIF — text, so it
-can be read in a diff before it is trusted. A tool that flags committed binaries
-should not ship one to advertise itself. Regenerate with `python scripts/render_demo.py`.
+The sessions are the website's terminal, recorded from real scans, and the image is
+drawn from the same recordings. It is an SVG, not a GIF — text, so it can be read in a
+diff before it is trusted, and a tool that flags committed binaries should not ship one
+to advertise itself. The single, static capture is
+[docs/assets/demo.svg](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/demo.svg)
+(`python scripts/render_demo.py`); the animation is redrawn from the site's sessions by
+`scripts/readme-terminal/render.mjs` in the frontend repository.
 
 ```
   Map of this page
@@ -116,7 +124,7 @@ signed keylessly with `cosign`, and carry SLSA build provenance — the same
 controls the wheel and sdist get.
 
 ```bash
-cordon --version
+cordon-scanner --version
 cordon-scanner rules list      # what will run
 ```
 
@@ -183,7 +191,7 @@ cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
 ```
    inventory .            what is this repo, and the evidence
    rules list|show|test   what can fire · one rule · run every rule's samples
-   config explain         effective settings + which layer supplied each
+   config explain         the settings in effect, and a hash to compare runs by
    guard install|verify   fail-closed git hooks (tutorial 10); --global for every
                           repository cloned or created from now on
    clone URL              clone, scanned from git's objects before checkout
@@ -221,6 +229,7 @@ here wrote.
 | Widely used open-source repositories (0.4.0 run) | **1,427** | 85.4% pass the default gate |
 | Reference infrastructure, as its vendors publish it (0.4.0 run) | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
 | Known-vulnerable releases, by advisory | **940 pins, 11 ecosystems** | 100% reported |
+| What container images contain, against Syft | **175 public images** | **99.9%** of OS packages the same; 95.1% mean per image (adjusted) |
 
 Per ecosystem and per attack technique, with the method for each and what the
 numbers are not: **[docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/08-ACCURACY.md)**.
