@@ -2638,4 +2638,4 @@ rule's own samples.
 | [`ATR-2026-02682`](https://agentthreatrule.org/en/rules/ATR-2026-02682) | medium | production | XML/SVG Entity Expansion Bomb in Content Returned to an Agent |
 | [`ATR-2026-02707`](https://agentthreatrule.org/en/rules/ATR-2026-02707) | high | production | Mail or Attachment Tool Argument Splits into a New Header via Embedded CRLF |
 
-Back to the start: **[the tutorial map](README.md)**.
+Next: **[29 · Troubleshooting](29-troubleshooting.md)**.

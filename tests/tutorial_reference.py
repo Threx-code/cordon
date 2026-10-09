@@ -661,7 +661,7 @@ rule's own samples.
             )
             parts.append("")
         parts.extend(RuleTutorial.atr())
-        parts.append("Back to the start: **[the tutorial map](README.md)**.\n")
+        parts.append("Next: **[29 · Troubleshooting](29-troubleshooting.md)**.\n")
         return "\n".join(parts)
 
     @staticmethod
