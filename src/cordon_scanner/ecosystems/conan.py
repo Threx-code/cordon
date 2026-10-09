@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 
 REFERENCE = re.compile(
-    r"^(?P<name>[a-z0-9_][a-z0-9_+.\-]{0,100})/(?P<version>\[[^\]]{1,200}\]|[A-Za-z0-9_+.\-]{1,100})"
+    r"^(?P<name>[A-Za-z0-9_][A-Za-z0-9_+.\-]{0,100})/(?P<version>\[[^\]]{1,200}\]|[A-Za-z0-9_+.\-]{1,100})"
     r"(?:@(?P<user>[A-Za-z0-9_+.\-]{1,100})(?:/(?P<channel>[A-Za-z0-9_+.\-]{1,100}))?)?"
     r"(?:#(?P<revision>[^%:#\s]{1,64})(?:%[0-9.]+)?)?"
     r"(?::(?P<package_id>[0-9a-fA-F]{1,64})(?:#(?P<package_revision>[0-9a-fA-F]{1,64})(?:%[0-9.]+)?)?)?$"

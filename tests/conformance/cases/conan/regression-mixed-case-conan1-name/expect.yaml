@@ -1,0 +1,12 @@
+# Found comparing against Conan's own conanfile.txt reader on real repositories: Conan 1 allowed a
+# capital in a recipe name (`Poco/1.9.0@pocoproject/stable`, from the Bintray era) and Conan 2
+# still reads one, but Cordon's reference pattern was lowercase only, and the whole file was
+# refused as "not a Conan reference".
+kinds: [regression, valid]
+covers:
+  - conan.versions-1-2
+  - UNI-02
+dependencies:
+  - {name: Poco, version_constraint: 1.9.0, platform_constraints: [user pocoproject, channel stable]}
+  - {name: zlib, version_constraint: 1.2.13}
+only: true
