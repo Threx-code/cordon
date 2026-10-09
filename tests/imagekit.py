@@ -99,6 +99,47 @@ class ImageKit:
         return buffer.getvalue()
 
     @staticmethod
+    def oci_multi_platform(platforms: dict[str, list[bytes]], *, attestation: bool = True) -> bytes:
+        """An OCI layout whose index lists one image per platform (`"linux/arm64/v8"`), and, as
+        buildx writes, an attestation manifest under `unknown/unknown`, which is no platform."""
+        blobs: dict[str, bytes] = {}
+
+        def blob(data: bytes) -> str:
+            digest = hashlib.sha256(data).hexdigest()
+            blobs[digest] = data
+            return f"sha256:{digest}"
+
+        manifests = []
+        for label, layers in platforms.items():
+            parts = label.split("/")
+            manifest = {"schemaVersion": 2, "layers": [{"digest": blob(data)} for data in layers]}
+            platform = {"os": parts[0], "architecture": parts[1]}
+            if len(parts) > 2:
+                platform["variant"] = parts[2]
+            manifests.append({"digest": blob(json.dumps(manifest).encode()), "platform": platform})
+        if attestation:
+            statement = {"schemaVersion": 2, "layers": [{"digest": blob(b"{}")}]}
+            manifests.append(
+                {
+                    "digest": blob(json.dumps(statement).encode()),
+                    "platform": {"os": "unknown", "architecture": "unknown"},
+                }
+            )
+        image_index = {"schemaVersion": 2, "manifests": manifests}
+        index = json.dumps(
+            {"schemaVersion": 2, "manifests": [{"digest": blob(json.dumps(image_index).encode())}]}
+        ).encode()
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            entries = [("oci-layout", b'{"imageLayoutVersion":"1.0.0"}'), ("index.json", index)]
+            entries += [(f"blobs/sha256/{d}", data) for d, data in blobs.items()]
+            for name, data in entries:
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        return buffer.getvalue()
+
+    @staticmethod
     def rpm_header(tags: dict[int, str | int]) -> bytes:
         index, store = b"", b""
         for tag, value in sorted(tags.items()):

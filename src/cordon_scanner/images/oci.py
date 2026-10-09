@@ -260,6 +260,11 @@ class ImageIdentity:
 @dataclass
 class ImageInventory:
     identity: ImageIdentity = field(default_factory=ImageIdentity)
+    platform: str = ""
+    """The platform this inventory is of, for a multi-platform image."""
+    other_platforms: list[ImageInventory] = field(default_factory=list)
+    """A multi-platform image's other platforms, their operating-system packages inventoried too;
+    the files are content-scanned on the first platform only."""
     release: pkgdb.OsRelease | None = None
     packages: list[pkgdb.OsPackage] = field(default_factory=list)
     language_packages: list[langpkgs.LanguagePackage] = field(default_factory=list)
@@ -340,8 +345,56 @@ class ImageLayers:
         return {ImageLayers._normalise(m.name): m.name for m in archive.getmembers()}
 
     @staticmethod
-    def _layer_paths(archive: tarfile.TarFile, problems: list[str]) -> list[str]:
-        """The image's layer members, bottom first. The first image when a tarball holds several."""
+    def _real_platforms(manifests: list[Any]) -> list[tuple[int, str]]:
+        """`(index, "os/arch[/variant]")` for each manifest of an image index that is an image for
+        a platform. buildx adds attestation manifests under `unknown/unknown`: not platforms."""
+        out: list[tuple[int, str]] = []
+        for index, descriptor in enumerate(manifests):
+            platform = descriptor.get("platform") if isinstance(descriptor, dict) else None
+            if not isinstance(platform, dict):
+                out.append((index, ""))
+                continue
+            label = "/".join(
+                str(platform[key]) for key in ("os", "architecture", "variant") if platform.get(key)
+            )
+            if label and not label.startswith("unknown"):
+                out.append((index, label))
+        return out
+
+    @staticmethod
+    def platforms(data: bytes) -> list[tuple[int, str]]:
+        """The platforms of a multi-platform image, as `(manifest index, label)`; [] for one."""
+        try:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+                by_path = ImageLayers._members_by_path(archive)
+                if "index.json" not in by_path:
+                    return []
+                document = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                for _ in range(4):
+                    manifests = document.get("manifests") or []
+                    real = ImageLayers._real_platforms(manifests)
+                    if len(real) > 1:
+                        return real
+                    if len(manifests) != 1:
+                        return []
+                    digest = str(manifests[0].get("digest", ""))
+                    algorithm, _, hexdigest = digest.partition(":")
+                    member = by_path.get(f"blobs/{algorithm}/{hexdigest}")
+                    if member is None:
+                        return []
+                    document = json.loads(ImageLayers._read_member(archive, member))
+                    if "layers" in document:
+                        return []
+        except (tarfile.TarError, OSError, ValueError, KeyError):
+            return []
+        return []
+
+    @staticmethod
+    def _layer_paths(
+        archive: tarfile.TarFile, problems: list[str], platform: int | None = None
+    ) -> list[str]:
+        """The image's layer members, bottom first. The first image when a tarball holds several;
+        for a multi-platform image, the manifest `platform` names, else the first real platform."""
         by_path = ImageLayers._members_by_path(archive)
         if "manifest.json" in by_path:
             manifest = json.loads(ImageLayers._read_member(archive, by_path["manifest.json"]))
@@ -373,9 +426,12 @@ class ImageLayers:
             if not manifests:
                 break
             if len(manifests) > 1:
-                problems.append(
-                    f"the image index lists {len(manifests)} platforms; only the first was inventoried"
-                )
+                real = ImageLayers._real_platforms(manifests)
+                chosen = platform if platform is not None else (real[0][0] if real else 0)
+                if not 0 <= chosen < len(manifests):
+                    raise ValueError(f"the image index has no manifest {chosen}")
+                descriptor = manifests[chosen]
+                continue
             descriptor = manifests[0]
         raise ValueError("the OCI layout names no image manifest")
 
@@ -480,12 +536,15 @@ class ImageLayers:
         count_layers: bool,
         removed: Removed | None = None,
         peek: Peek | None = None,
+        platform: int | None = None,
     ) -> dict[str, bytes]:
         files: dict[str, bytes] = {}
         origin: dict[str, int] = {}
         remaining = [budget]
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
-            paths = ImageLayers._layer_paths(archive, inventory.problems if count_layers else [])
+            paths = ImageLayers._layer_paths(
+                archive, inventory.problems if count_layers else [], platform
+            )
             if len(paths) > MAX_LAYERS:
                 raise ValueError(f"the image has more than {MAX_LAYERS} layers")
             for number, name in enumerate(paths, start=1):
@@ -517,7 +576,7 @@ class ImageLayers:
         return files
 
     @staticmethod
-    def squash(data: bytes) -> tuple[dict[str, bytes], ImageInventory]:
+    def squash(data: bytes, platform: int | None = None) -> tuple[dict[str, bytes], ImageInventory]:
         """The package databases, their file lists and `os-release`, as the top layer leaves them."""
         inventory = ImageInventory()
         files = ImageLayers._squash(
@@ -526,13 +585,15 @@ class ImageLayers:
             MAX_WANTED_BYTES,
             inventory,
             count_layers=True,
+            platform=platform,
         )
         return files, inventory
 
     @staticmethod
-    def read_image(data: bytes) -> ImageInventory:
-        """The operating-system inventory of an image tarball, and what its packages own."""
-        files, inventory = ImageLayers.squash(data)
+    def read_image(data: bytes, platform: int | None = None) -> ImageInventory:
+        """The operating-system inventory of an image tarball, and what its packages own. For a
+        multi-platform image, of the platform whose manifest index is given, else the first."""
+        files, inventory = ImageLayers.squash(data, platform)
         try:
             inventory.identity = ImageIdentity.read(data)
         except (KeyError, ValueError, tarfile.TarError, OSError) as exc:

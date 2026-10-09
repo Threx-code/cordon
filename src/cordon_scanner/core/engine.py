@@ -3199,6 +3199,21 @@ class Engine:
                 )
             )
             return None
+        platforms = oci.ImageLayers.platforms(data)
+        if len(platforms) > 1:
+            # Every platform's operating-system packages, each read from its own manifest; the
+            # files are content-scanned on the first platform only, and the contents note says so.
+            inventory.platform = platforms[0][1]
+            for index, label in platforms[1:]:
+                try:
+                    other = oci.ImageLayers.read_image(data, index)
+                except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
+                    inventory.problems.append(
+                        f"the {label} image could not be read ({type(exc).__name__})"
+                    )
+                    continue
+                other.platform = label
+                inventory.other_platforms.append(other)
         release = inventory.release
         if inventory.packages and (release is None or release.advisory_source is None):
             inventory.problems.append(
@@ -3434,6 +3449,45 @@ class Engine:
 
     @staticmethod
     def _image_dependencies(inventory: Any) -> tuple[Dependency, ...]:
+        """An image's installed dependencies; for a multi-platform image, every platform's.
+
+        An operating-system package installed on every platform is listed once, unlabelled; one
+        installed on some is labelled with exactly those. Language packages come from the files,
+        content-scanned on the first platform, and are not labelled: they would read as present on
+        that platform alone."""
+        primary = Engine._image_dependencies_of(inventory)
+        others = getattr(inventory, "other_platforms", None) or []
+        if not others:
+            return primary
+        from cordon_scanner.images.packages import OsPackage
+
+        system = set(OsPackage.PURL_TYPE.values())
+        merged: dict[tuple[str, str, str | None], Dependency] = {}
+        seen_on: dict[tuple[str, str, str | None], list[str]] = {}
+        for platform_inventory, dependencies in (
+            (inventory, primary),
+            *((other, Engine._image_dependencies_of(other)) for other in others),
+        ):
+            for dependency in dependencies:
+                key = (dependency.ecosystem, dependency.name, dependency.version)
+                merged.setdefault(key, dependency)
+                seen_on.setdefault(key, []).append(platform_inventory.platform)
+        everywhere = 1 + len(others)
+        return tuple(
+            replace(
+                dependency,
+                platform=(
+                    *dependency.platform,
+                    *(f"platform {label}" for label in seen_on[key] if label),
+                ),
+            )
+            if dependency.ecosystem in system and len(seen_on[key]) < everywhere
+            else dependency
+            for key, dependency in merged.items()
+        )
+
+    @staticmethod
+    def _image_dependencies_of(inventory: Any) -> tuple[Dependency, ...]:
         from cordon_scanner.core.inventory import NAMED_BY_FILE
         from cordon_scanner.images.packages import OsPackage
 
