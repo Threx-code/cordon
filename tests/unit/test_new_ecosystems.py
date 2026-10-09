@@ -296,12 +296,14 @@ class TestConda:
 
     def test_a_pip_entry_keeps_the_field_it_came_from(self) -> None:
         text = "name: d\ndependencies:\n  - pip:\n      - requests==2.31.0\n"
-        (entry,) = (
+        entry, implied = (
             CondaEcosystem()
             .parse_manifest(NewEcosystemsHelpers.fc("environment.yml", text))
             .dependencies
         )
         assert entry.field_name == "dependencies.pip"
+        # conda installs pip itself to install the subsection, listed or not.
+        assert (implied.name, implied.ecosystem) == ("pip", None)
 
 
 class TestBazel:

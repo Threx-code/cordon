@@ -162,6 +162,21 @@ class Environment:
                     source=f"registry:{channel}" if channel else None,
                 )
             )
+        pip_section = any(
+            isinstance(i, dict) and isinstance(i.get("pip"), list) for i in dependencies
+        )
+        if pip_section and not any(d.name == "pip" and d.ecosystem is None for d in declared):
+            # conda installs pip itself for a pip: subsection that does not list it ("I'm adding
+            # one for you, but still nagging you"), from the environment's channels.
+            declared.append(
+                DeclaredDependency(
+                    name="pip",
+                    spec="*",
+                    scope=Scope.RUNTIME,
+                    field_name="dependencies",
+                    note="not listed: conda installs pip itself to install the pip: subsection",
+                )
+            )
         channels = data.get("channels")
         sources = tuple(
             f"channel {i + 1}: {c}"

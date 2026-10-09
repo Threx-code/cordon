@@ -1,0 +1,11 @@
+# Found comparing against conda on real environments: a pip: subsection without pip itself in the
+# list. conda installs pip anyway, from the environment's channels ("I'm adding one for you, but
+# still nagging you"), so the environment holds a package the file never names.
+kinds: [edge, valid]
+covers:
+  - file:environment.yml
+  - UNI-02
+dependencies:
+  - {name: pip, version_constraint: "*", dependency_type: runtime}
+  - {name: numpy, version_constraint: ">=1.26"}
+  - {name: requests, version_constraint: "==2.32.3"}
