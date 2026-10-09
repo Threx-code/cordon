@@ -277,6 +277,10 @@ class HclParser:
         if first is not None and first[0] == "str":
             self.take()
             value = first[1]
+        elif first is not None and first[1] in ("{", "[") and self._comprehension():
+            # `{ for k, v in var.m : k => v }`, `[for s in var.l : upper(s)]`: an expression,
+            # read to its closing bracket.
+            self._past_close()
         elif first == ("punct", "{"):
             self.take()
             value = self.object(depth + 1)
@@ -301,6 +305,25 @@ class HclParser:
         if value is None:
             return Expression(HclParser.render(self.tokens[start : self.index]))
         return value
+
+    def _comprehension(self) -> bool:
+        """Whether the bracket at the cursor opens a `for` expression (newlines may lead it)."""
+        index = self.index + 1
+        while index < len(self.tokens) and self.tokens[index][0] == "nl":
+            index += 1
+        return index < len(self.tokens) and self.tokens[index] == ("ident", "for")
+
+    def _past_close(self) -> None:
+        """Take the bracket at the cursor and everything up to and including its partner."""
+        nesting = 0
+        while True:
+            token = self.take()
+            if token[1] in ("{", "[", "("):
+                nesting += 1
+            elif token[1] in ("}", "]", ")"):
+                nesting -= 1
+                if nesting == 0:
+                    return
 
     @staticmethod
     def render(tokens: list[tuple[str, str]]) -> str:
@@ -330,8 +353,13 @@ class HclParser:
                 continue
             if token == ("punct", "}"):
                 return out
-            if token[0] not in ("ident", "str"):
-                # A computed key (`(var.x) = ...`): read past it.
+            if token == ("punct", "("):
+                # A computed key (`(local.name) = ...`): read past it, brackets and all.
+                self.index -= 1
+                self._past_close()
+                key = None
+            elif token[0] not in ("ident", "str"):
+                # Some other key expression: read up to its separator.
                 self.expression(depth + 1, stops=("=", ":"))
                 key = None
             else:
@@ -433,7 +461,7 @@ class TerraformConfiguration:
             for providers in entries(terraform.get("required_providers")):
                 block.blocks.append(Block("required_providers", [], dict(providers)))
             root.blocks.append(block)
-        for kind in ("module", "provider"):
+        for kind in ("module", "provider", "resource", "data"):
             for group in entries(data.get(kind)):
                 for label, bodies in group.items():
                     for body in entries(bodies):
@@ -495,6 +523,39 @@ class TerraformConfiguration:
             ecosystem=ecosystem,
             dependencies=tuple(declared),
             sources=tuple(sources),
+        )
+
+    @staticmethod
+    def local_names(root: Block) -> tuple[set[str], set[str]]:
+        """The provider local names a file declares in required_providers, and those it uses: a
+        `provider` block, or a resource or data source whose type leads with the name."""
+        declared: set[str] = set()
+        used: set[str] = set()
+        for block in root.blocks:
+            if block.type == "terraform":
+                for providers in (b for b in block.blocks if b.type == "required_providers"):
+                    declared.update(providers.attributes)
+            elif block.type == "provider" and block.labels:
+                used.add(block.labels[0])
+            elif block.type in ("resource", "data") and block.labels:
+                explicit = block.attributes.get("provider")
+                if isinstance(explicit, Expression):
+                    used.add(explicit.text.split(".")[0])  # `provider = google-beta.west`
+                else:
+                    used.add(block.labels[0].split("_")[0])
+        # `terraform_data` and `terraform_remote_state` belong to the built-in provider.
+        used.discard("terraform")
+        return declared, used
+
+    @staticmethod
+    def implied(local_name: str) -> DeclaredDependency:
+        """A provider used without being declared: Terraform installs `hashicorp/<name>`."""
+        return DeclaredDependency(
+            name=f"hashicorp/{local_name}",
+            spec="*",
+            scope=Scope.TOOL,
+            field_name=f"implied.{local_name}",
+            note=f"not in required_providers: Terraform installs hashicorp/{local_name}, at the newest version, for a provider it is not told the source of",
         )
 
     @staticmethod
@@ -614,6 +675,8 @@ class TerraformEcosystem(BaseEcosystem):
         module above it, which Terraform writes for the whole configuration."""
         manifest = TerraformConfiguration.parse(content, self.id)
         directory = content.path.rpartition("/")[0]
+        if not manifest.parse_error:
+            manifest = self._with_implied_providers(manifest, content, directory, files)
         if (
             manifest.parse_error
             or (f"{directory}/.terraform.lock.hcl" if directory else ".terraform.lock.hcl") in files
@@ -625,6 +688,43 @@ class TerraformEcosystem(BaseEcosystem):
             if (f"{ancestor}/.terraform.lock.hcl" if ancestor else ".terraform.lock.hcl") in files:
                 return dataclasses.replace(manifest, locked_by=ancestor)
         return manifest
+
+    def _with_implied_providers(
+        self,
+        manifest: Manifest,
+        content: FileContent,
+        directory: str,
+        files: Mapping[str, FileContent],
+    ) -> Manifest:
+        """Providers this file uses that no file of its module directory declares: Terraform
+        reads a module directory as one, and installs `hashicorp/<name>` for each. Reported by the
+        first file (by path) of the directory that uses it, so once per module."""
+        siblings = sorted(
+            path
+            for path in files
+            if path.rpartition("/")[0] == directory and path.endswith((".tf", ".tf.json"))
+        )
+        if content.path not in siblings:
+            siblings = sorted([*siblings, content.path])
+        declared: set[str] = set()
+        first_use: dict[str, str] = {}
+        for path in siblings:
+            try:
+                root = TerraformConfiguration.blocks(files.get(path, content))
+            except (HclError, json.JSONDecodeError, ValueError):
+                continue
+            names, used = TerraformConfiguration.local_names(root)
+            declared |= names
+            for name in used:
+                first_use.setdefault(name, path)
+        implied = [
+            TerraformConfiguration.implied(name)
+            for name, path in sorted(first_use.items())
+            if path == content.path and name not in declared and re.fullmatch(r"[a-z0-9-]+", name)
+        ]
+        if not implied:
+            return manifest
+        return dataclasses.replace(manifest, dependencies=(*manifest.dependencies, *implied))
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return TerraformLock.parse(content, self.id)

@@ -1,0 +1,17 @@
+# Found comparing against HashiCorp's terraform-config-inspect on real modules: a provider used
+# without a required_providers entry -- a `provider "aws"` block, an `aws_*` resource -- is still
+# installed, as hashicorp/<name>, at whatever version is newest. Cordon listed only declared ones.
+# A module directory is read as one: a name declared in versions.tf is not implied by main.tf,
+# and an implied provider is listed once however many files use it.
+kinds: [edge, valid]
+covers:
+  - terraform.providers
+  - UNI-02
+dependencies:
+  - {name: hashicorp/aws, version_constraint: "*", dependency_type: tool}
+  - {name: hashicorp/random, version_constraint: "*", dependency_type: tool}
+  - {name: cloudflare/cloudflare, version_constraint: "~> 4.0", dependency_type: tool}
+absent:
+  - hashicorp/cloudflare
+  - hashicorp/terraform
+only: true

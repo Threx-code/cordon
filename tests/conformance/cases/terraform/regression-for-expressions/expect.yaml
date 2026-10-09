@@ -1,0 +1,12 @@
+# Found comparing against HashiCorp's terraform-config-inspect on real modules: a `for` expression
+# inside braces (`{ for k, v in var.m : k => v }`) was read as an object, failed, and dropped the
+# whole file -- terraform-aws-modules/ecs's examples lost all four registry modules to it.
+kinds: [regression, valid]
+covers:
+  - terraform.modules
+  - UNI-28
+dependencies:
+  - {name: hashicorp/aws, version_constraint: ">= 6.0", dependency_type: tool}
+  - {name: terraform-aws-modules/alb/aws, version_constraint: "~> 10.0"}
+  - {name: terraform-aws-modules/vpc/aws, version_constraint: "~> 6.0"}
+only: true
