@@ -168,7 +168,15 @@ class _Reader:
                 value = self.scalar(rest, number, depth)
             else:
                 index += 1
-                if index < len(self.lines) and self.lines[index][0] > indent:
+                if (
+                    index < len(self.lines)
+                    and self.lines[index][0] > indent
+                    and self.plain_below(index)
+                ):
+                    # `description:` and the text on the lines below it, wrapped: one scalar.
+                    text, index = self.continued(self.lines[index][1], index, indent)
+                    value = self.scalar(text, number, depth)
+                elif index < len(self.lines) and self.lines[index][0] > indent:
                     value, index = self.block(index, self.lines[index][0], depth + 1)
                 elif (
                     index < len(self.lines)
@@ -237,6 +245,17 @@ class _Reader:
             if quoted and _Reader._closing_quote(" ".join(parts), text[0]) > 0:
                 break
         return " ".join(parts), index
+
+    def plain_below(self, index: int) -> bool:
+        """Whether the indented line at `index` begins a plain scalar rather than a block: neither
+        a sequence item, nor a key, nor a flow collection or a block-scalar indicator."""
+        line = self.lines[index][1]
+        return not (
+            line == "-"
+            or line.startswith("- ")
+            or line[0] in "[{|>&*!"
+            or _Reader._opens_mapping(line)
+        )
 
     @staticmethod
     def _opens_mapping(item: str) -> bool:

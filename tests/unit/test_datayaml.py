@@ -56,6 +56,33 @@ class TestLockfileShapes:
         )
         assert data == {"a": "b", "url": "http://h/#frag", "text": "one\ntwo"}
 
+    def test_a_scalar_that_starts_below_its_key(self) -> None:
+        # ansible.netcommon's galaxy.yml: the description wrapped under its key. Read as an
+        # unreadable file until compared with ansible-galaxy, which lost the collection's
+        # dependencies with it.
+        text = (
+            "dependencies:\n"
+            '  "ansible.utils": ">=3.0.0"\n'
+            "description:\n"
+            "  Ansible Collection with common content to help automate\n"
+            "  the management of network devices.\n"
+            "summary:\n"
+            '  "quoted, and\n'
+            '  wrapped"\n'
+            "name: netcommon\n"
+        )
+        data = DataYaml.load(text)
+        assert data["dependencies"] == {"ansible.utils": ">=3.0.0"}
+        assert data["description"] == (
+            "Ansible Collection with common content to help automate the management of network devices."
+        )
+        assert data["summary"] == "quoted, and wrapped"
+        assert data["name"] == "netcommon"
+
+    def test_a_key_in_a_scalar_below_its_key_is_still_an_error(self) -> None:
+        with pytest.raises(DataYamlError, match="mapping values are not allowed"):
+            DataYaml.load("a:\n  plain text\n  then: a key\n")
+
 
 class TestHostileInput:
     @pytest.mark.parametrize(
