@@ -2601,7 +2601,14 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
             b"  }\n"
             b"}\n"
         )
-        assert not Scanner().scan(tmp_path).findings, "nothing at the default threshold"
+        from cordon_scanner.core.models import Category
+
+        # Nothing about the sample at the default threshold. The scan's own notes stay: the
+        # aws_* resource implies hashicorp/aws, which no advisory source covers.
+        findings = Scanner().scan(tmp_path).findings
+        assert not [f for f in findings if f.category is not Category.OPERATIONAL], (
+            "nothing at the default threshold"
+        )
         result = self.everything(tmp_path)
         iac = [f for f in result.findings if f.rule_id.startswith("SUSPECT.IAC.")]
         assert iac, "the rule still runs"

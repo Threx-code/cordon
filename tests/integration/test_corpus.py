@@ -259,7 +259,14 @@ class TestScanGuarantees(CorpusFixtures):
 
     def test_scan_reports_completeness(self, scanner: Scanner) -> None:
         result = scanner.scan(BENIGN)
-        assert result.complete is True
+        # Complete exactly when nothing degraded coverage. The one thing that does here is
+        # true: config/infra.tf uses AWS resources, so Terraform installs hashicorp/aws, and no
+        # advisory source covers Terraform providers.
+        degraded = [f for f in result.findings if f.degrades_coverage]
+        assert result.complete is not degraded
+        assert [(f.rule_id, "terraform" in f.message) for f in degraded] == [
+            ("OPERATIONAL.ADVISORY.NO_FEED.001", True)
+        ]
 
     def test_result_records_what_produced_it(self, scanner: Scanner) -> None:
         """A result must be self-describing: months later it should still be
