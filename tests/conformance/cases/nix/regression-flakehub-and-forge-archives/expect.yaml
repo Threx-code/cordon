@@ -1,0 +1,17 @@
+# Found comparing against `nix flake metadata` on real flakes: an input fetched as a tarball was
+# named by the last segment of its URL, so FlakeHub's nixpkgs became "0.1" (and, in a lock,
+# "source", from .../source.tar.gz) and a Forgejo archive became a commit hash. A FlakeHub flake
+# is named by the GitHub repository it is published from; a forge archive by its repository.
+kinds: [regression, valid]
+covers:
+  - file:flake.nix
+  - UNI-02
+dependencies:
+  - {name: nixos/nixpkgs, version_constraint: "https://flakehub.com/f/NixOS/nixpkgs/0.1"}
+  - {name: nix-select}
+  - {name: tools}
+absent:
+  - "0.1"
+  - 3d1e3860bef36857a01a2ddecba7cdb0a14c35a9
+  - tools-v2.1.0
+only: true

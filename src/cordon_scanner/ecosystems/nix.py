@@ -377,6 +377,19 @@ class FlakeRef:
     ARCHIVE: ClassVar[re.Pattern[str]] = re.compile(
         r"^https://github\.com/([^/]+)/([^/]+)/archive/([^/?#]+?)(?:\.tar\.gz|\.zip)$"
     )
+    #: A FlakeHub flake, `https://flakehub.com/f/NixOS/nixpkgs/0.1`, and the pinned tarball its
+    #: lock records, `https://api.flakehub.com/f/pinned/NixOS/nixpkgs/0.1.9/<id>/source.tar.gz`:
+    #: published from the GitHub repository of the same owner and name.
+    FLAKEHUB: ClassVar[re.Pattern[str]] = re.compile(
+        r"^https://(?:api\.)?flakehub\.com/f/(?:pinned/)?([^/]+)/([^/?#]+?)(?:\.tar\.gz)?(?:/|$|\?)"
+    )
+    #: Another forge's archive of a revision -- `https://<host>/<owner>/<repo>/archive/<rev>.tar.gz`
+    #: (Forgejo, Codeberg), `https://gitlab.com/<group>/<repo>/-/archive/<ref>/<file>` (GitLab), `https://<host>/api/v1/repos/<owner>/<repo>/archive/<rev>.tar.gz`
+    #: (Gitea's API): named by its repository, as a git input from that host is.
+    FORGE_ARCHIVE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^https://[^/]+/(?:api/v1/repos/)?(?:[^/?#]+/)+?([^/?#]+)"
+        r"/(?:archive/[^/?#]+|-/archive/[^/?#]+/[^/?#]+)$"
+    )
 
     @staticmethod
     def read(ref: str) -> tuple[str, str, bool]:
@@ -420,6 +433,12 @@ class FlakeRef:
             # A GitHub archive names a revision (pinned) or a branch or tag (which rolls).
             owner, repo, ref = archive.group(1), archive.group(2), archive.group(3)
             return f"{owner}/{repo}".lower(), f"git+https://github.com/{owner}/{repo}#{ref}", False
+        flakehub = FlakeRef.FLAKEHUB.match(url)
+        if flakehub:
+            return f"{flakehub.group(1)}/{flakehub.group(2)}".lower(), url, False
+        forge = FlakeRef.FORGE_ARCHIVE.match(url.split("?")[0])
+        if forge:
+            return forge.group(1).removesuffix(".git"), url, False
         name = re.sub(
             r"\.(?:tar\.gz|tar\.xz|tgz|zip)$", "", url.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
         )
