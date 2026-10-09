@@ -1,0 +1,23 @@
+---
+version: 3
+
+images:
+  base_image:
+    name: quay.io/ansible/creator-ee:v24.2.0
+
+dependencies:
+  ansible_core:
+    package_pip: ansible-core==2.16.6
+  ansible_runner:
+    package_pip: ansible-runner==2.4.0
+  galaxy:
+    collections:
+      - name: community.general
+        version: 9.1.0
+      - name: kubernetes.core
+        version: ">=3.0.0"
+  python:
+    - kubernetes==29.0.0
+    - jmespath>=1.0.1
+  system:
+    - openssh-clients [platform:rpm]

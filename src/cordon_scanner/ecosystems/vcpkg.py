@@ -20,11 +20,13 @@ here -- that is stated rather than guessed.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import posixpath
 import re
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.models import Scope
+from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -33,7 +35,7 @@ from cordon_scanner.ecosystems.base import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection, Mapping
 
     from cordon_scanner.core.content import FileContent
 
@@ -343,6 +345,35 @@ class VcpkgEcosystem(BaseEcosystem):
 
     def parse_manifest(self, content: FileContent) -> Manifest:
         return self.parse_in_tree(content, {content.path: content})
+
+    def hooks_from_tree(self, manifest: Manifest, paths: Collection[str]) -> Manifest:
+        """A custom triplet is CMake run for every port it builds -- compiler flags, toolchains,
+        whatever the file does. The triplet files in the overlay-triplets directories a
+        configuration names are recorded as build hooks, as a Bazel module extension is."""
+        if manifest.parse_error:
+            return manifest
+        base = manifest.path.rpartition("/")[0]
+        directories: list[str] = []
+        for source in manifest.sources:
+            if source.startswith("overlay triplets "):
+                directories.extend(source.removeprefix("overlay triplets ").split(", "))
+        hooks = []
+        for directory in directories:
+            root = posixpath.normpath(posixpath.join(base, directory) if base else directory)
+            for path in sorted(paths):
+                if path.startswith(f"{root}/") and path.endswith(".cmake"):
+                    hooks.append(
+                        Hook(
+                            kind="build",
+                            path=manifest.path,
+                            name=f"triplet {posixpath.basename(path).removesuffix('.cmake')}",
+                            command=path,
+                            ecosystem=self.id,
+                        )
+                    )
+        if not hooks:
+            return manifest
+        return dataclasses.replace(manifest, hooks=(*manifest.hooks, *hooks))
 
     def parse_in_tree(self, content: FileContent, files: Mapping[str, FileContent]) -> Manifest:
         basename = content.basename

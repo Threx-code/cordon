@@ -1599,12 +1599,15 @@ class Engine:
         lockfiles: dict[str, list[str]] = {}
         total_bytes = 0
         file_count = 0
+        seen_paths: set[str] = set()
+        deferred: list[tuple[Path, str, str]] = []
 
         for entry in traversal:
             if entry.is_symlink:
                 continue
             file_count += 1
             total_bytes += entry.size
+            seen_paths.add(entry.rel_path)
 
             language = LanguageRegistry.identify_language(entry.rel_path)
             if language:
@@ -1624,10 +1627,19 @@ class Engine:
             eco = EcosystemRegistry.manifest_ecosystem(entry.rel_path)
             if eco:
                 manifests.setdefault(eco, []).append(entry.rel_path)
-                hooks.extend(self._manifest_hooks(entry.real_path, entry.rel_path, eco))
+                if hasattr(EcosystemRegistry.get(eco), "hooks_from_tree"):
+                    # Its install-time code is a file beside the manifest: read once the whole
+                    # tree has been walked, as the manifest detector reads it.
+                    deferred.append((entry.real_path, entry.rel_path, eco))
+                else:
+                    hooks.extend(self._manifest_hooks(entry.real_path, entry.rel_path, eco))
             lock = EcosystemRegistry.lockfile_ecosystem(entry.rel_path)
             if lock:
                 lockfiles.setdefault(lock, []).append(entry.rel_path)
+
+        frozen = frozenset(seen_paths)
+        for real_path, rel_path, eco in deferred:
+            hooks.extend(self._manifest_hooks(real_path, rel_path, eco, frozen))
 
         stats = tuple(
             LanguageStat(
@@ -2277,7 +2289,13 @@ class Engine:
             at_root = False
         return (True, info.revision, info.remote, at_root)
 
-    def _manifest_hooks(self, real_path: Path, rel_path: str, ecosystem_id: str) -> list[Hook]:
+    def _manifest_hooks(
+        self,
+        real_path: Path,
+        rel_path: str,
+        ecosystem_id: str,
+        tree: frozenset[str] | None = None,
+    ) -> list[Hook]:
         """Lifecycle hooks declared inside a manifest.
 
         Parsed during inventory rather than inferred from the filename, because
@@ -2292,7 +2310,11 @@ class Engine:
         if isinstance(loaded, Skipped):
             return []
         try:
-            return list(ecosystem.parse_manifest(loaded).hooks)
+            manifest = ecosystem.parse_manifest(loaded)
+            hooks_from_tree = getattr(ecosystem, "hooks_from_tree", None)
+            if tree is not None and hooks_from_tree is not None:
+                manifest = hooks_from_tree(manifest, tree)
+            return list(manifest.hooks)
         except Exception:
             return []
 

@@ -271,6 +271,8 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "gradle.lock-state": "lock state",
             "gradle.verification": "verification metadata",
             "gradle.no-exec": "build logic is read, never run",
+            "gradle.substitutions": "dependency substitutions and forced versions: what resolution rules fetch",
+            "gradle.capabilities": "capabilities a dependency requires, selecting its variant",
         },
         {},
     ),
@@ -442,6 +444,8 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "conda.pip": "pip subsections, as PyPI",
             "conda.explicit": "explicit exports",
             "conda.partial": "a partial environment is not reported as a resolved graph",
+            "conda.channel-priority": "channel order and priority from .condarc",
+            "conda.variables": "environment variables an environment sets, named and never valued",
         },
         {
             "UNI-17": NO_PROVENANCE,
@@ -555,6 +559,7 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "vcpkg.platform": "platform expressions",
             "vcpkg.port-versions": "ports and port versions",
             "vcpkg.git-ports": "git-based port sources",
+            "vcpkg.triplets": "custom triplets from overlay directories, recorded as build code",
         },
         {
             "UNI-17": NO_PROVENANCE,
@@ -611,6 +616,8 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "ansible.nested": "nested role dependencies",
             "ansible.collection-deps": "collection dependencies",
             "ansible.playbooks": "playbooks and tasks checked for unsafe configuration, kept apart from package findings",
+            "ansible.execution-environment": "execution environments: base image, collections, pip and system packages",
+            "ansible.compatibility": "the ansible-core versions a collection supports (requires_ansible)",
         },
         {
             "UNI-17": NO_PROVENANCE,
@@ -631,6 +638,8 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "bazel.overrides": "overrides",
             "bazel.checksums": "archive checksums",
             "bazel.git": "external git repositories and commit pins",
+            "bazel.apparent-names": "a repo_name kept as the apparent name, the module named by its own",
+            "bazel.migration": "a WORKSPACE beside MODULE.bazel said to be unread where Bazel does not read it",
         },
         {"UNI-17": NO_PROVENANCE},
     ),

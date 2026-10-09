@@ -1,0 +1,18 @@
+# What a playbook runs with, as ansible-builder defines it: a base image, ansible-core and
+# ansible-runner from pip, Galaxy collections inline, pip packages (PyPI's, matched against PyPI's
+# advisories), and system packages for bindep. A collection's meta/runtime.yml states the
+# ansible-core versions it supports.
+kinds: [edge, valid]
+covers:
+  - ansible.execution-environment
+  - ansible.compatibility
+dependencies:
+  - {name: quay.io/ansible/creator-ee, version_constraint: v24.2.0}
+  - {name: ansible-core, version_constraint: ==2.16.6}
+  - {name: ansible-runner, version_constraint: ==2.4.0}
+  - {name: community.general, version_constraint: 9.1.0}
+  - {name: kubernetes.core, version_constraint: ">=3.0.0"}
+  - {name: kubernetes, version_constraint: ==29.0.0}
+  - {name: jmespath, version_constraint: ">=1.0.1"}
+  - {name: ansible-core, version_constraint: ">=2.15.0,<2.19", dependency_type: platform}
+  - {name: ansible.netcommon, version_constraint: ">=6.0.0"}

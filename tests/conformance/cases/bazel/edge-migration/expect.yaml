@@ -1,0 +1,14 @@
+# Part way through the move to Bzlmod: MODULE.bazel beside the WORKSPACE it replaces, on Bazel
+# 8, which reads no WORKSPACE without --enable_workspace. The WORKSPACE's repositories stay in
+# the inventory -- the flag can turn it back on -- and each says it is not read. A bazel_dep's
+# repo_name is its apparent name; the record keeps the module's own.
+kinds: [edge, valid]
+covers:
+  - bazel.apparent-names
+  - bazel.migration
+dependencies:
+  - {name: rules_go, declared_name: io_bazel_rules_go, version_constraint: 0.50.1}
+  - {name: gazelle, version_constraint: 0.39.1}
+  - name: rules_python
+    resolution_status: unresolved
+    resolution_reason: "not read by Bazel 8.1.0, which reads no WORKSPACE without --enable_workspace; a repository rule: the lock records modules, not repositories; this one is pinned by its checksum"

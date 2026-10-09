@@ -1,0 +1,8 @@
+namespace: acme
+name: netops
+version: 1.4.0
+readme: README.md
+authors:
+  - Platform Team
+dependencies:
+  ansible.netcommon: ">=6.0.0"

@@ -1,0 +1,18 @@
+# The channels conda searches, in order, and how strictly it keeps to that order: with
+# `channel_priority: flexible` the solver may take a package from conda-forge although the
+# internal channel listed first has one of the same name -- the order is recorded with the
+# priority so the risk can be read. Environment variables the environment sets are named,
+# never valued.
+kinds: [edge, valid]
+covers:
+  - conda.channel-priority
+  - conda.variables
+dependencies:
+  # conda's `name=1.26.4` is the 1.26.4 series.
+  - {name: numpy, version_constraint: 1.26.4.*}
+  - {name: acme-features, version_constraint: 2.3.0.*}
+sources:
+  - "channel 1: https://conda.acme.example.internal/channels/ml"
+  - "channel 2: conda-forge"
+  - channel_priority flexible
+  - "sets MODEL_STORE, OMP_NUM_THREADS on activation"

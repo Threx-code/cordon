@@ -111,6 +111,12 @@ class Requirements:
             data = {"roles": data}  # the older form: a bare list of roles
         if not isinstance(data, dict) or not ({"roles", "collections"} & set(data)):
             return None
+        return Requirements.from_data(data, content, ecosystem)
+
+    @staticmethod
+    def from_data(data: dict[str, Any], content: FileContent, ecosystem: str) -> Manifest:
+        """Roles and collections from a requirements document already loaded (a requirements.yml,
+        or an execution environment's inline `galaxy:`)."""
         declared: list[DeclaredDependency] = []
         sources: list[str] = []
         for section in ("roles", "collections"):
@@ -157,6 +163,132 @@ class Requirements:
             dependencies=tuple(declared),
             sources=tuple(dict.fromkeys(sources)),
         )
+
+
+class ExecutionEnvironment:
+    """execution-environment.yml: what ansible-builder puts in the container a playbook runs in.
+
+    A base image; Galaxy collections and roles (inline, or a requirements file named here and
+    read as one); pip packages, ansible-core and ansible-runner among them, recorded as PyPI's;
+    system packages for bindep, which no feed covers and are only listed. Schema versions 1 to 3.
+    """
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        try:
+            data = DataYaml.load(content.text, source=content.path)
+        except ValueError as exc:
+            return BaseEcosystem._err(
+                content, ecosystem, f"invalid execution-environment.yml: {exc}"
+            )
+        if not isinstance(data, dict):
+            return BaseEcosystem._err(content, ecosystem, "an execution environment is not a map")
+        dependencies = data.get("dependencies") or {}
+        if not isinstance(dependencies, dict):
+            return BaseEcosystem._err(content, ecosystem, "`dependencies` is not a map")
+        declared: list[DeclaredDependency] = []
+        sources: list[str] = []
+        image = ExecutionEnvironment.base_image(data)
+        if image:
+            reference, _, tag = (
+                image.rpartition(":") if ":" in image.rsplit("/", 1)[-1] else (image, "", "")
+            )
+            declared.append(
+                DeclaredDependency(
+                    name=reference,
+                    spec=tag or "latest",
+                    scope=Scope.TOOL,
+                    field_name="images.base_image",
+                    ecosystem="image",
+                )
+            )
+        galaxy = dependencies.get("galaxy")
+        if isinstance(galaxy, dict):
+            inline = Requirements.from_data(galaxy, content, ecosystem)
+            if inline.parse_error:
+                return inline
+            declared.extend(
+                dataclasses.replace(d, field_name=f"dependencies.galaxy.{d.field_name}")
+                for d in inline.dependencies
+            )
+        elif isinstance(galaxy, str):
+            sources.append(f"galaxy requirements from {galaxy}")
+        from cordon_scanner.ecosystems.pypi import PypiRequirement
+
+        pip: list[tuple[str, str]] = []
+        python = dependencies.get("python")
+        if isinstance(python, list):
+            pip.extend((str(r), "dependencies.python") for r in python)
+        elif isinstance(python, str):
+            sources.append(f"python requirements from {python}")
+        for key in ("ansible_core", "ansible_runner"):
+            entry = dependencies.get(key)
+            if isinstance(entry, dict) and isinstance(entry.get("package_pip"), str):
+                pip.append((entry["package_pip"], f"dependencies.{key}"))
+        for requirement, field_name in pip:
+            parsed = PypiRequirement.parse(requirement)
+            if parsed is None:
+                continue
+            name, _extras, spec, marker, _url = parsed
+            declared.append(
+                DeclaredDependency(
+                    name=name,
+                    spec=spec or "*",
+                    field_name=field_name,
+                    ecosystem="pypi",
+                    platform=(f"marker {marker}",) if marker else (),
+                )
+            )
+        system = dependencies.get("system")
+        if isinstance(system, list) and system:
+            sources.append(f"{len(system)} system package(s) for bindep, which no feed covers")
+        elif isinstance(system, str):
+            sources.append(f"system packages from {system}")
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            dependencies=tuple(declared),
+            sources=tuple(sources),
+        )
+
+    @staticmethod
+    def base_image(data: dict[str, Any]) -> str | None:
+        images = data.get("images")
+        if isinstance(images, dict):
+            base = images.get("base_image")
+            if isinstance(base, dict) and isinstance(base.get("name"), str):
+                return str(base["name"])
+        defaults = data.get("build_arg_defaults")
+        if isinstance(defaults, dict) and isinstance(defaults.get("EE_BASE_IMAGE"), str):
+            return str(defaults["EE_BASE_IMAGE"])
+        return None
+
+
+class CollectionRuntime:
+    """meta/runtime.yml: `requires_ansible`, the ansible-core versions a collection supports."""
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        try:
+            data = DataYaml.load(content.text, source=content.path)
+        except ValueError as exc:
+            return BaseEcosystem._err(content, ecosystem, f"invalid meta/runtime.yml: {exc}")
+        if not isinstance(data, dict):
+            return BaseEcosystem._err(content, ecosystem, "meta/runtime.yml is not a map")
+        required = data.get("requires_ansible")
+        declared = (
+            (
+                DeclaredDependency(
+                    name="ansible-core",
+                    spec=str(required),
+                    scope=Scope.PLATFORM,
+                    field_name="requires_ansible",
+                ),
+            )
+            if isinstance(required, str) and required.strip()
+            else ()
+        )
+        return Manifest(path=content.path, ecosystem=ecosystem, dependencies=declared)
 
 
 class GalaxyFile:
@@ -315,6 +447,9 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
         "**/collections/requirements.yml",
         "**/galaxy.yml",
         "**/meta/main.yml",
+        "**/meta/runtime.yml",
+        "**/execution-environment.yml",
+        "**/execution-environment.yaml",
     )
     lockfile_globs: tuple[str, ...] = (
         "**/ansible_collections/*/*/MANIFEST.json",
@@ -335,6 +470,10 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
         directory = content.path.rpartition("/")[0]
         if basename == "galaxy.yml":
             return GalaxyFile.parse(content, self.id)
+        if basename in ("execution-environment.yml", "execution-environment.yaml"):
+            return ExecutionEnvironment.parse(content, self.id)
+        if basename == "runtime.yml":
+            return CollectionRuntime.parse(content, self.id)
         if basename == "main.yml":
             # An installed role's own metadata: its dependencies were installed as roles of their
             # own, each with its install info, and are read there.

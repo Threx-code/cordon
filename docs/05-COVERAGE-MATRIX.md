@@ -525,6 +525,7 @@ rather than a document.
 | `SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.ANSIBLE_UNSIGNED_PACKAGES.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.CREDENTIALS_INLINE.TERRAFORM.001` | high | `iac` | misconfiguration |
+| `SUSPECT.IAC.EXTERNAL_PROGRAM.TERRAFORM.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.HOST_MOUNT.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.IAM_WILDCARD.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.IMDSV1.AWS_INSTANCE.001` | medium | `iac` | misconfiguration |

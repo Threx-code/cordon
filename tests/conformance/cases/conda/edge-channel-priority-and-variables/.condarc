@@ -1,0 +1,4 @@
+channels:
+  - https://conda.acme.example.internal/channels/ml
+  - conda-forge
+channel_priority: flexible

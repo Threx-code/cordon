@@ -22,6 +22,7 @@ project commits one, is the resolution.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -368,6 +369,11 @@ class GradleBuild:
 
     dependencies: list[DeclaredDependency] = field(default_factory=list)
     constraints: dict[str, str] = field(default_factory=dict)
+    forced: dict[str, str] = field(default_factory=dict)
+    substituted: set[str] = field(default_factory=set)
+    """Modules a substitution replaces: requested, never fetched, so not in the inventory. The
+    module substituted in records which one it replaced."""
+    """`resolutionStrategy.force` versions: unlike a constraint, they win over a declared one."""
     sources: list[str] = field(default_factory=list)
     includes: list[str] = field(default_factory=list)
     included_builds: list[str] = field(default_factory=list)
@@ -482,6 +488,10 @@ class GradleReader:
                 self._plugins(statement.closure, context)
             elif head in ("repositories",):
                 self._repositories(statement.closure)
+            elif head.startswith(
+                ("configurations", "resolutionStrategy", "dependencySubstitution")
+            ):
+                self._resolution(statement.closure, context)
             elif head in (
                 "buildscript",
                 "allprojects",
@@ -607,7 +617,7 @@ class GradleReader:
         scope, extra = scoped
         if argument.startswith("(") and argument.endswith(")"):
             argument = argument[1:-1].strip()
-        exclusions, strict = self._closure(statement.closure)
+        exclusions, strict, capabilities = self._closure(statement.closure)
         for name, spec, platform, note, local in self._coordinates(argument):
             if local is not None:
                 # Another project of this build: its source, read here, not a download.
@@ -624,10 +634,78 @@ class GradleReader:
                 spec=strict or spec or "*",
                 scope=scope,
                 field_name=configuration,
-                platform=(*conditions, *extra, *platform),
+                platform=(*conditions, *extra, *platform, *capabilities),
                 exclusions=exclusions,
                 note=note,
             )
+
+    SUBSTITUTE: ClassVar[re.Pattern[str]] = re.compile(
+        r"""substitute\s*\(?\s*(module|project)\s*\(\s*(["'])([^"'\n]{1,200})\2\s*\)\s*\)?"""
+        r"""\s*\.?\s*(?:using|with)\s*\(?\s*(module|project)\s*\(\s*(["'])([^"'\n]{1,200})\5"""
+    )
+    FORCE: ClassVar[re.Pattern[str]] = re.compile(r"""^force\s*\(?\s*(.*?)\)?$""", re.DOTALL)
+
+    @staticmethod
+    def _flatten(statements: list[Statement] | None) -> Iterator[Statement]:
+        for statement in statements or ():
+            yield statement
+            yield from GradleReader._flatten(statement.closure)
+
+    def _resolution(self, statements: list[Statement] | None, context: tuple[str, ...]) -> None:
+        """`configurations { resolutionStrategy { ... } }`: rules that change what resolves.
+
+        A substitution replaces one module with another everywhere it is requested, so what is
+        fetched is the module substituted in -- inventoried here, with what it replaces in its
+        note. `force` pins a version, as a constraint does."""
+        buildscript = "buildscript" in context
+        scope, extra = self.scope_of("implementation", buildscript=buildscript) or (
+            Scope.RUNTIME,
+            (),
+        )
+        for statement in GradleReader._flatten(statements):
+            for match in self.SUBSTITUTE.finditer(statement.text):
+                kind, original, target_kind, target = (
+                    match.group(1),
+                    match.group(3),
+                    match.group(4),
+                    match.group(6),
+                )
+                if kind == "module":
+                    # `group:name`, without a version a substitution matches every one of.
+                    self.build.substituted.add(":".join(original.split(":")[:2]))
+                note = f"substituted for {original} by a resolution rule"
+                if target_kind == "project":
+                    path = target.lstrip(":").replace(":", "/")
+                    self.build.dependencies.append(
+                        DeclaredDependency(
+                            name=path.rpartition("/")[2] or path or ".",
+                            spec=f"path:{self.project_path(path or '.')}",
+                            scope=scope,
+                            field_name="dependencySubstitution",
+                            platform=extra,
+                            note=note,
+                        )
+                    )
+                    continue
+                for name, spec, platform, coordinate_note, _local in self._coordinates(
+                    f'"{target}"'
+                ):
+                    self.build.dependencies.append(
+                        DeclaredDependency(
+                            name=name,
+                            spec=spec or "*",
+                            scope=scope,
+                            field_name="dependencySubstitution",
+                            platform=(*extra, *platform),
+                            note=note if spec else f"{note}; {coordinate_note}",
+                        )
+                    )
+            forced = self.FORCE.match(statement.text) if statement.head == "force" else None
+            if forced:
+                for literal in self.STRING.finditer(forced.group(1)):
+                    for name, spec, _platform, _note, _local in self._coordinates(literal.group(0)):
+                        if spec:
+                            self.build.forced[name] = spec
 
     def project_path(self, project: str) -> str:
         """A `project(":a:b")` path, relative to this script's directory."""
@@ -637,10 +715,23 @@ class GradleReader:
         here = self.path.rpartition("/")[0] or "."
         return posixpath.relpath(target or ".", here)
 
-    def _closure(self, closure: list[Statement] | None) -> tuple[tuple[str, ...], str]:
+    def _closure(
+        self, closure: list[Statement] | None
+    ) -> tuple[tuple[str, ...], str, tuple[str, ...]]:
         exclusions: list[str] = []
         strict = ""
+        capabilities: list[str] = []
         for inner in closure or ():
+            if inner.head == "capabilities" and inner.closure is not None:
+                # `requireCapability("g:n")` selects the variant of the module that provides it:
+                # a different artefact from the default one, recorded as a constraint on it.
+                for required in inner.closure:
+                    capabilities.extend(
+                        f"capability {m.group(2)}"
+                        for m in re.finditer(
+                            r"""requireCapability\s*\(?\s*(["'])([^"'\n]{1,200})\1""", required.text
+                        )
+                    )
             if inner.head == "exclude":
                 entries = {k: v for k, _, v in self.MAP_ENTRY.findall(inner.text)}
                 group, module = entries.get("group", "*"), entries.get("module", "*")
@@ -653,7 +744,7 @@ class GradleReader:
                     )
                     if found and not strict:
                         strict = found.group(3)
-        return tuple(exclusions), strict
+        return tuple(exclusions), strict, tuple(capabilities)
 
     def _coordinates(
         self, argument: str
@@ -1148,14 +1239,25 @@ class GradleEcosystem(BaseEcosystem):
             ),
         )
         project_name = self._project_name(content.path, files) if build.group else ""
+        dependencies = [
+            dataclasses.replace(
+                declared,
+                spec=build.forced[declared.name],
+                note=f"forced from {declared.spec} by a resolution rule",
+            )
+            if declared.name in build.forced and declared.spec != build.forced[declared.name]
+            else declared
+            for declared in build.dependencies
+            if declared.name not in build.substituted
+        ]
         return Manifest(
             path=content.path,
             ecosystem=self.id,
             name=f"{build.group}:{project_name}" if build.group and project_name else None,
             version=build.version,
-            dependencies=tuple(build.dependencies),
+            dependencies=tuple(dependencies),
             hooks=hooks,
-            overrides=dict(build.constraints),
+            overrides={**build.constraints, **build.forced},
             sources=tuple(dict.fromkeys(build.sources)),
         )
 

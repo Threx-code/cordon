@@ -25,7 +25,8 @@ Roles and collections a playbook installs. Ecosystem id `ansible`.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ MANIFESTS       requirements.yml, requirements.yaml,                       │
 │                 roles/requirements.yml, collections/requirements.yml,      │
-│                 galaxy.yml, meta/main.yml                                  │
+│                 galaxy.yml, meta/main.yml, meta/runtime.yml, execution-    │
+│                 environment.yml, execution-environment.yaml                │
 │ LOCKFILES       ansible_collections/*/*/MANIFEST.json,                     │
 │                 meta/.galaxy_install_info                                  │
 │                                                                            │
@@ -179,7 +180,7 @@ Conda-forge and Anaconda packages. Ecosystem id `conda`.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ MANIFESTS       environment.yml, environment.yaml, meta.yaml               │
+│ MANIFESTS       environment.yml, environment.yaml, meta.yaml, .condarc     │
 │ LOCKFILES       conda-lock.yml, conda-lock.yaml, explicit*.txt,            │
 │                 conda-*.lock                                               │
 │                                                                            │
@@ -442,6 +443,8 @@ Formulae and casks in a Brewfile. Ecosystem id `homebrew`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

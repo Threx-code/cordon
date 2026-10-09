@@ -115,6 +115,10 @@ class Environment:
             )
         if not isinstance(dependencies, list):
             return BaseEcosystem._err(content, ecosystem, "`dependencies` is not a list")
+        if any(item is None for item in dependencies):
+            # A bare `- `, which conda refuses: most often a file cut short mid-list, with
+            # everything after it lost.
+            return BaseEcosystem._err(content, ecosystem, "an empty entry in `dependencies`")
         selectors = Environment.selectors(content.text)
         declared: list[DeclaredDependency] = []
         for item in dependencies or []:
@@ -163,6 +167,14 @@ class Environment:
             f"channel {i + 1}: {c}"
             for i, c in enumerate(channels if isinstance(channels, list) else [])
         )
+        variables = data.get("variables")
+        if isinstance(variables, dict) and variables:
+            # Set in the environment when it is activated. Named, never valued: a value here is as
+            # likely a token as a path, and the secret detectors read the file for those.
+            sources = (
+                *sources,
+                f"sets {', '.join(sorted(str(k) for k in variables))} on activation",
+            )
         return Manifest(
             path=content.path,
             ecosystem=ecosystem,
@@ -170,6 +182,35 @@ class Environment:
             dependencies=tuple(declared),
             sources=sources,
         )
+
+
+class Condarc:
+    """`.condarc`: the channels conda searches, and how strictly it keeps to their order.
+
+    `channel_priority: strict` takes a package from the first channel that has it at all. Flexible
+    (the default before conda 23.10) or disabled lets the solver take it from a later channel --
+    so with a private channel first and a public one after, a public package of the same name can
+    be chosen. Recorded with the channels, in order.
+    """
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        try:
+            data = DataYaml.load(content.text, source=content.path)
+        except ValueError as exc:
+            return BaseEcosystem._err(content, ecosystem, f"invalid .condarc: {exc}")
+        if data is None:
+            return Manifest(path=content.path, ecosystem=ecosystem)
+        if not isinstance(data, dict):
+            return BaseEcosystem._err(content, ecosystem, ".condarc is not a map")
+        channels = [str(c) for c in data.get("channels") or () if isinstance(c, (str, int))]
+        priority = data.get("channel_priority")
+        sources = [f"channel {i + 1}: {c}" for i, c in enumerate(channels)]
+        if isinstance(priority, str):
+            sources.append(f"channel_priority {priority.strip().lower()}")
+        elif priority is False:
+            sources.append("channel_priority disabled")
+        return Manifest(path=content.path, ecosystem=ecosystem, sources=tuple(sources))
 
 
 class Recipe:
@@ -402,7 +443,12 @@ class CondaEcosystem(BaseEcosystem):
 
     id = "conda"
     purl_type = "conda"
-    manifest_globs: tuple[str, ...] = ("**/environment.yml", "**/environment.yaml", "**/meta.yaml")
+    manifest_globs: tuple[str, ...] = (
+        "**/environment.yml",
+        "**/environment.yaml",
+        "**/meta.yaml",
+        "**/.condarc",
+    )
     lockfile_globs: tuple[str, ...] = (
         "**/conda-lock.yml",
         "**/conda-lock.yaml",
@@ -428,6 +474,8 @@ class CondaEcosystem(BaseEcosystem):
     def parse_manifest(self, content: FileContent) -> Manifest:
         if content.basename == "meta.yaml":
             return Recipe.parse(content, self.id)
+        if content.basename == ".condarc":
+            return Condarc.parse(content, self.id)
         return Environment.parse(content, self.id)
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:

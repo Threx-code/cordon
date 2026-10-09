@@ -22,8 +22,10 @@ literal arguments of calls are read.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -681,8 +683,57 @@ class BazelEcosystem(BaseEcosystem):
             return BuildFile.parse(content, self.id)
         return Workspace.parse(content, self.id)
 
+    def parse_in_tree(self, content: FileContent, files: Mapping[str, Any]) -> Manifest:
+        """A repository part way through the move to Bzlmod keeps its WORKSPACE beside MODULE.bazel,
+        and whether Bazel still reads it depends on the files around it, so each of its
+        dependencies says so: with WORKSPACE.bzlmod present, Bzlmod reads that file instead, and
+        Bazel 8 reads no WORKSPACE without --enable_workspace. They stay in the inventory --
+        Bzlmod can be turned off -- but are not presented as what a build fetches."""
+        manifest = self.parse_manifest(content)
+        if content.basename not in ("WORKSPACE", "WORKSPACE.bazel") or manifest.parse_error:
+            return manifest
+        reason = Migration.superseded(content.path, files)
+        if reason is None:
+            return manifest
+        return dataclasses.replace(
+            manifest,
+            dependencies=tuple(
+                dataclasses.replace(d, note=f"{reason}{'; ' + d.note if d.note else ''}")
+                for d in manifest.dependencies
+            ),
+            sources=(*manifest.sources, f"legacy WORKSPACE: {reason}"),
+        )
+
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return ModuleLock.parse(content, self.id)
+
+
+class Migration:
+    """Whether a WORKSPACE is still read, in a repository moving to Bzlmod."""
+
+    @staticmethod
+    def _text(files: Mapping[str, Any], path: str) -> str | None:
+        found = files.get(path)
+        if found is None:
+            return None
+        return getattr(found, "text", None) if not isinstance(found, str) else found
+
+    @staticmethod
+    def superseded(path: str, files: Mapping[str, Any]) -> str | None:
+        directory = path.rpartition("/")[0]
+        prefix = f"{directory}/" if directory else ""
+        if f"{prefix}WORKSPACE.bzlmod" in files:
+            return "not read while Bzlmod is enabled: WORKSPACE.bzlmod replaces it"
+        if f"{prefix}MODULE.bazel" not in files:
+            return None
+        version = (Migration._text(files, f"{prefix}.bazelversion") or "").strip()
+        major = version.split(".", 1)[0]
+        rc = Migration._text(files, f"{prefix}.bazelrc") or ""
+        if major.isdigit() and int(major) >= 8 and "--enable_workspace" not in rc:
+            return (
+                f"not read by Bazel {version}, which reads no WORKSPACE without --enable_workspace"
+            )
+        return None
 
 
 __all__ = [

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-33 container rules and a policy table of 1,082 controls, over the files that
+33 container rules and a policy table of 1,083 controls, over the files that
 describe *where your code runs*. Cordon reads the definitions -- it never
 contacts a cluster, a cloud account or a registry to do it.
 
@@ -70,12 +70,12 @@ express absence over a region it has no notion of.
 
 `storage_encrypted` absent from an `aws_db_instance` is an unencrypted
 database, and the file does not mention it. That is the half the pattern rules
-could not reach, and it is where most of the 1,082 controls live: encryption at
+could not reach, and it is where most of the 1,083 controls live: encryption at
 rest and in transit, public exposure, logging, backups, deletion protection,
 obsolete TLS, and the Kubernetes and Compose settings that hand a container
 the node.
 
-220 of them are written by hand, and 862 are generated. The rest are generated from the
+221 of them are written by hand, and 862 are generated. The rest are generated from the
 providers' own schemas, because which resources have `storage_encrypted` is a
 fact rather than a memory, and a policy naming an attribute a provider does not
 have can never fire -- it looks exactly like a clean scan.

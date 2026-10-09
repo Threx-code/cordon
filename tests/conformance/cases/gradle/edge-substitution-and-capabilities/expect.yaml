@@ -1,0 +1,14 @@
+# Resolution rules change what a build fetches. A substitution replaces log4j 1.x's binding with
+# reload4j's everywhere it is requested: the module substituted in is what is fetched, and the one
+# it replaces is not. `force` pins Guava over the declared version. `requireCapability` selects a
+# variant of the module, recorded as a constraint on it.
+kinds: [edge, valid]
+covers:
+  - gradle.substitutions
+  - gradle.capabilities
+dependencies:
+  - {name: org.slf4j:slf4j-reload4j, version_constraint: 2.0.13}
+  - {name: com.google.guava:guava, version_constraint: 33.2.1-jre}
+  - {name: org.asynchttpclient:async-http-client, version_constraint: 2.12.3, platform_constraints: [capability org.asynchttpclient:async-http-client-netty-utils]}
+absent:
+  - org.slf4j:slf4j-log4j12

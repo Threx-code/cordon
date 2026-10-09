@@ -1,0 +1,13 @@
+# A custom triplet, from the overlay-triplets directory the configuration names, is CMake run for
+# every port it builds: recorded as a build hook, as a Bazel module extension is. The directory
+# is recorded as a source.
+kinds: [edge, valid]
+covers:
+  - vcpkg.triplets
+dependencies:
+  - {name: fmt}
+  - {name: zlib}
+sources:
+  - overlay triplets ./triplets
+hooks:
+  - {kind: build, name: triplet x64-linux-hardened}

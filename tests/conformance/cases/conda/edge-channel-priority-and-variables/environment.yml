@@ -1,0 +1,11 @@
+name: forecasting
+channels:
+  - https://conda.acme.example.internal/channels/ml
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy=1.26.4
+  - acme-features=2.3.0
+variables:
+  MODEL_STORE: /srv/models
+  OMP_NUM_THREADS: "4"

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,384 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,385 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -592,7 +592,7 @@ rule's own samples.
 
 ## Infrastructure as code
 
-818 rules.
+819 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1231,6 +1231,7 @@ rule's own samples.
 | `SUSPECT.IAC.ENCRYPT_IN_TRANSIT.GOOGLE_OS_CONFIG_V2_POLICY_ORCHESTRATOR.001` | medium | google_os_config_v2_policy_orchestrator: insecure transport is allowed |
 | `SUSPECT.IAC.ENCRYPT_IN_TRANSIT.GOOGLE_OS_CONFIG_V2_POLICY_ORCHESTRATOR_FOR_FOLDER.001` | medium | google_os_config_v2_policy_orchestrator_for_folder: insecure transport is allowed |
 | `SUSPECT.IAC.ENCRYPT_IN_TRANSIT.GOOGLE_OS_CONFIG_V2_POLICY_ORCHESTRATOR_FOR_ORGANIZATION.001` | medium | google_os_config_v2_policy_orchestrator_for_organization: insecure transport is allowed |
+| `SUSPECT.IAC.EXTERNAL_PROGRAM.TERRAFORM.001` | medium | A data source runs a local program when the plan is made |
 | `SUSPECT.IAC.HOST_MOUNT.001` | high | Host path mounted into a container |
 | `SUSPECT.IAC.HOST_NAMESPACE.AWS_BATCH_JOB_DEFINITION.001` | high | aws_batch_job_definition: the pod shares the node's network namespace |
 | `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_CRON_JOB.001` | high | kubernetes_cron_job: the pod shares the node's network namespace |
