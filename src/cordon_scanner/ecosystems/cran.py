@@ -269,6 +269,7 @@ class Description:
 
 class RenvLock:
     TOOLS: ClassVar[frozenset[str]] = frozenset({"renv", "BiocManager", "BiocVersion"})
+    NA: ClassVar[re.Pattern[str]] = re.compile(r"((?:^|[\[,:])\s*)NA(?=\s*[,\]}])", re.MULTILINE)
 
     @staticmethod
     def requirements(package: dict[str, Any]) -> tuple[str, ...]:
@@ -296,9 +297,14 @@ class RenvLock:
         try:
             data = BaseEcosystem._json_object(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
-            return LockGraph(
-                path=content.path, ecosystem=ecosystem, parse_error=f"invalid JSON: {exc}"
-            )
+            # renv before 1.0 wrote R's missing value bare (`"OS_type": NA`), which renv itself
+            # reads back: as null, and only where a value stands, when the strict read fails.
+            try:
+                data = BaseEcosystem._json_object(RenvLock.NA.sub(r"\1null", content.text))
+            except (json.JSONDecodeError, ValueError):
+                return LockGraph(
+                    path=content.path, ecosystem=ecosystem, parse_error=f"invalid JSON: {exc}"
+                )
         packages = data.get("Packages")
         if not isinstance(packages, dict):
             return LockGraph(

@@ -1,0 +1,11 @@
+# Found comparing against renv on real lockfiles: renv before 1.0 wrote R's missing value bare
+# (`"OS_type": NA`), which is not JSON, and renv::lockfile_read() reads it back as null. Cordon
+# refused the whole lock as invalid JSON. A bare NA where a value stands is now null, and only
+# after the strict read fails.
+kinds: [regression, valid]
+covers:
+  - file:renv.lock
+  - UNI-01
+dependencies:
+  - {name: jsonlite, resolved_version: 1.8.0}
+  - {name: renv, resolved_version: 0.16.0, dependency_type: tool}
