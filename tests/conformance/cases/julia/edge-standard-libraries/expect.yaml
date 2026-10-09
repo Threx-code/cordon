@@ -1,0 +1,15 @@
+# Found comparing against Pkg on real packages: a standard library named in Project.toml was read
+# as a registry package, while the same library in a Manifest.toml was read as part of Julia.
+# Pkg knows them by UUID (Pkg.Types.stdlibs()); so does Cordon now, in both files.
+kinds: [edge, valid]
+covers:
+  - file:Project.toml
+  - julia.uuid
+  - UNI-02
+dependencies:
+  - {name: Tables, version_constraint: "1.10", dependency_type: runtime}
+  - {name: Dates, dependency_type: platform}
+  - {name: LinearAlgebra, dependency_type: platform}
+  - {name: Test, dependency_type: platform}
+  - {name: Aqua, dependency_type: test}
+  - {name: SparseArrays, dependency_type: platform}
