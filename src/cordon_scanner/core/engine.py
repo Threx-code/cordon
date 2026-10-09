@@ -3284,6 +3284,13 @@ class Engine:
                     )
                     + f", and {len(inventory.language_packages)} installed language packages were "
                     f"inventoried. Not content-scanned: {skipped or 'nothing'}."
+                    + (
+                        f" A multi-platform image: the operating-system packages of all "
+                        f"{1 + len(inventory.other_platforms)} platforms were inventoried, and the "
+                        f"files content-scanned on {inventory.platform}."
+                        if getattr(inventory, "other_platforms", None)
+                        else ""
+                    )
                 ),
                 remediation="None needed; the counts say what this scan covered.",
             )

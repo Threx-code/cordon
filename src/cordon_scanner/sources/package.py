@@ -51,6 +51,10 @@ class PackageTarget:
         "hex": "hex",
         "pub": "pub",
         "maven": "maven",
+        # A container image, pulled from its registry: `pkg:docker/nginx@1.27`,
+        # `pkg:docker/ghcr.io/acme/app@sha256:...` (the registry host leads the name).
+        "docker": "image",
+        "oci": "image",
     }
     _NAME: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9@._~+-][A-Za-z0-9@._~+/-]{0,213}$")
     _VERSION: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._+~!-]{1,128}$")
@@ -80,6 +84,8 @@ class PackageTarget:
             raise PackageTargetError(
                 f"cannot fetch {kind!r} packages; supported: {', '.join(sorted(cls.TYPES))}"
             )
+        if ecosystem == "image":
+            return cls._image(urllib.parse.unquote(rest))
         # The version follows the last `@` that does not begin a path segment: in
         # `pkg:npm/@scope/name@1.0.0` the first `@` is the scope and the second the version.
         split = rest.rfind("@")
@@ -105,6 +111,32 @@ class PackageTarget:
             raise PackageTargetError(f"not a valid version: {version!r}")
         return cls(ecosystem=ecosystem, name=name, version=version)
 
+    @classmethod
+    def _image(cls, rest: str) -> PackageTarget:
+        """`name@tag` or `name@sha256:...`, the name led by its registry host where it is not
+        Docker Hub's; validated as the Docker client validates a reference."""
+        from cordon_scanner.ecosystems.image import ImageReference
+
+        name, at, version = rest.rpartition("@")
+        if not at:
+            name, version = rest, ""
+        written = (
+            f"{name}@{version}"
+            if version.startswith("sha256:")
+            else f"{name}:{version or 'latest'}"
+        )
+        reference = ImageReference.parse(written)
+        if reference is None:
+            raise PackageTargetError(f"not a valid image reference: {rest[:120]!r}")
+        full = (
+            f"{reference.registry}/{reference.repository}"
+            if reference.registry
+            else reference.repository
+        )
+        return cls(
+            ecosystem="image", name=full, version=reference.digest or reference.tag or "latest"
+        )
+
     @property
     def label(self) -> str:
         return f"{self.ecosystem}:{self.name}@{self.version or 'latest'}"
@@ -114,6 +146,10 @@ class PackageTarget:
         """The verified archive on disk in a private directory for the length of the block."""
         from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
+        if self.ecosystem == "image":
+            with self._pulled_image() as pulled:
+                yield pulled
+            return
         try:
             archive = RegistryClient.package_archive(self.ecosystem, self.name, self.version)
         except RegistryError as exc:
@@ -126,6 +162,32 @@ class PackageTarget:
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(archive.data)
+            yield path
+        finally:
+            Trees.remove(directory)
+
+    @contextmanager
+    def _pulled_image(self) -> Iterator[Path]:
+        """The image as an OCI layout archive, every blob checked against its digest."""
+        from cordon_scanner.ecosystems.image import ImageReference
+        from cordon_scanner.intel.registry_image import RegistryImage, RegistryImageError
+
+        reference = ImageReference.parse(self.name)
+        if reference is None:
+            raise PackageTargetError(f"not a valid image reference: {self.name!r}")
+        try:
+            data, _pull = RegistryImage(reference.registry, reference.repository).pull(
+                self.version or "latest"
+            )
+        except RegistryImageError as exc:
+            raise PackageTargetError(f"could not pull {self.label}: {exc}") from exc
+        directory = Path(tempfile.mkdtemp(prefix="cordon-image-"))
+        try:
+            directory.chmod(stat.S_IRWXU)
+            path = directory / "image.tar"
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(data)
             yield path
         finally:
             Trees.remove(directory)

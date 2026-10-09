@@ -235,11 +235,14 @@ The images a Dockerfile, compose file or workload runs. Ecosystem id `image`.
 │                 agreement                                                  │
 │                 provenance: whether a build attestation exists, and        │
 │                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:docker/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 

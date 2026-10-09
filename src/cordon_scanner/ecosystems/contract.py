@@ -735,6 +735,7 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "image.secrets": "secrets, including in deleted layers",
             "image.offline": "offline archives",
             "image.multi-platform": "every platform of a multi-platform image, attestation manifests skipped",
+            "image.registry": "an image pulled from its registry, every blob verified against its digest",
         },
         {
             "UNI-13": "image references are not package names: base-image trust is image.base-provenance"

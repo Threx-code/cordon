@@ -126,7 +126,8 @@ class CommandLine:
             default=".",
             help=(
                 "path to scan (default: .), or a package URL such as pkg:npm/name@1.0.0 "
-                "(npm, pypi, cargo, gem, nuget; needs --online)"
+                "(npm, pypi, cargo, gem, nuget, golang, hex, pub, maven), or a container image as "
+                "pkg:docker/nginx@1.27, pulled from its registry; needs --online"
             ),
         )
 

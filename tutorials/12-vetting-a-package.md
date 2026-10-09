@@ -130,6 +130,19 @@ cordon-scanner scan pkg.tgz --online
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+### An image, before you run it
+
+The same question of a container image, pulled from its registry without Docker: every layer
+checked against its digest, every platform of a multi-platform image inventoried.
+
+```bash
+cordon-scanner scan pkg:docker/nginx@1.27 --online
+cordon-scanner scan pkg:docker/ghcr.io/acme/app@sha256:<digest> --online
+```
+
+A public image needs no account. One that asks for credentials is refused with the way round it:
+pull it with your own, `docker save` it, and scan the archive.
+
 ## Reading the verdict
 
 ```

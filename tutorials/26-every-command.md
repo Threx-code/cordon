@@ -33,7 +33,9 @@ Scan a directory, file or archive.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ target                    path to scan (default: .), or a package URL such │
 │                           as pkg:npm/name@1.0.0 (npm, pypi, cargo, gem,    │
-│                           nuget; needs --online)                           │
+│                           nuget, golang, hex, pub, maven), or a container  │
+│                           image as pkg:docker/nginx@1.27, pulled from its  │
+│                           registry; needs --online                         │
 │ --host                    read TARGET as the root of an installed system   │
 │                           (default /): its OS packages and the language    │
 │                           packages installed outside any project, matched  │
