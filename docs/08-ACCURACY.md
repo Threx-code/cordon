@@ -134,7 +134,10 @@ read for the Maven artifacts it records, and is now walked entry by entry; metab
 
 After them, an image's inventory is what is installed in it, as Syft reads one: a lockfile or
 manifest inside the image counts only where its package is installed, and a distribution's own
-Python, Ruby or npm package is not listed again under the language's name. Installed R packages,
+Python, Ruby or npm package is listed under the language's name as well as its own, as Syft lists
+it. (0.6.0 skipped those as already counted; on ten images that ship them, listing them raised
+agreement on every one -- odoo from 0.85 to 1.0 -- and added nothing Syft does not list, so 0.6.1
+lists them.) Installed R packages,
 PECL extensions, every `composer/installed.json`, every `package.json` that names itself, programs
 copied in without a package database (bash, curl, OpenSSL, xz, zstd, util-linux, PHP), a Go
 toolchain's own programs, and jars nested two levels down are read. Measured again, image by image:

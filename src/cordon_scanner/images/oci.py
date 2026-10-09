@@ -717,11 +717,11 @@ class ImageLayers:
             if path.endswith(".jar"):
                 inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
                 continue
-            if path in inventory.owned:
-                # A distribution's own Python, Ruby or npm package (python3-cryptography's
-                # METADATA): already in the inventory as that OS package, and patched by the
-                # distribution, so not counted again under the language's name.
-                continue
+            # A distribution's own Python, Ruby or npm package (python3-cryptography's METADATA) is
+            # listed under the language's name as well as the OS package's, as Syft lists it. It
+            # was once skipped as already counted; measured against Syft on ten images that ship
+            # them, listing them raised agreement on every one (odoo 0.85 to 1.0) and added no
+            # package Syft does not list.
             inventory.language_packages.extend(langpkgs.LanguagePackages.parse_all(path, payload))
         inventory.skipped = skipped
         inventory.added_files = len(files)
