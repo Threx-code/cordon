@@ -15,13 +15,14 @@ Both YAML files are read with the data-only YAML reader (`core/datayaml.py`).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import posixpath
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.core.datayaml import DataYaml
-from cordon_scanner.core.models import Scope
+from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -31,7 +32,7 @@ from cordon_scanner.ecosystems.base import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection, Mapping
 
     from cordon_scanner.core.content import FileContent
 
@@ -119,7 +120,21 @@ class PubManifest:
         overrides: dict[str, str] = {}
         for name, value in sorted((data.get("dependency_overrides") or {}).items()):
             overrides[str(name)] = PubSpec.spec(value, directory)[0]
+        if "environment" in data and not isinstance(data.get("environment"), dict):
+            # pub requires `environment` to be a map holding the SDK constraint. Empty, it is
+            # most often a file cut short just after the key, with everything below it lost.
+            return BaseEcosystem._err(
+                content, ecosystem, "`environment` is not a map of SDK constraints"
+            )
         environment = data.get("environment") or {}
+        # `platforms:` names the operating systems the package supports; absent, every one. They
+        # constrain the package as a whole, so they are recorded on its SDK requirement.
+        platforms = data.get("platforms")
+        supported = (
+            tuple(f"os:{name}" for name in sorted(str(k) for k in platforms))
+            if isinstance(platforms, dict)
+            else ()
+        )
         if isinstance(environment, dict):
             for platform in ("sdk", "flutter"):
                 if isinstance(environment.get(platform), str):
@@ -131,6 +146,7 @@ class PubManifest:
                             spec=str(environment[platform]),
                             scope=Scope.PLATFORM,
                             field_name=f"environment.{platform}",
+                            platform=supported,
                         )
                     )
         locked_by = None
@@ -320,6 +336,31 @@ class PubEcosystem(BaseEcosystem):
 
     def parse_in_tree(self, content: FileContent, files: Mapping[str, FileContent]) -> Manifest:
         return PubManifest.parse(content, self.id, files)
+
+    #: Dart's build hooks: run for every package in the graph when an app that depends on it is
+    #: built, unasked, on the building machine. `build.dart` at the package root is the
+    #: experimental form that preceded `hook/`.
+    BUILD_HOOKS: ClassVar[tuple[str, ...]] = ("hook/build.dart", "hook/link.dart", "build.dart")
+
+    def hooks_from_tree(self, manifest: Manifest, paths: Collection[str]) -> Manifest:
+        if manifest.parse_error:
+            return manifest
+        directory = manifest.path.rpartition("/")[0]
+        prefix = f"{directory}/" if directory else ""
+        hooks = [
+            Hook(
+                kind="install",
+                path=manifest.path,
+                name="install",
+                command=f"dart {prefix}{script}",
+                ecosystem=self.id,
+            )
+            for script in PubEcosystem.BUILD_HOOKS
+            if f"{prefix}{script}" in paths
+        ]
+        if not hooks:
+            return manifest
+        return dataclasses.replace(manifest, hooks=(*manifest.hooks, *hooks))
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         if content.basename == "package_config.json":

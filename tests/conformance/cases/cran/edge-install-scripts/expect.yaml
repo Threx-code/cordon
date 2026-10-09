@@ -1,0 +1,10 @@
+# An R source package runs code when it is installed: `R CMD INSTALL` runs its `configure`
+# script, unasked, on the installing machine, then compiles src/. The script is reported as an
+# install hook; the compiled code is recorded as a build hook in the inventory.
+kinds: [edge, valid]
+covers:
+  - UNI-18
+dependencies:
+  - {name: Rcpp, version_constraint: ">= 1.0.10"}
+findings:
+  - {rule: SUSPECT.INSTALL.SCRIPT.001, path: pkg/DESCRIPTION}

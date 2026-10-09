@@ -1,0 +1,14 @@
+# A Dart package with a build hook: hook/build.dart runs when any app depending on the package
+# is built, unasked, on the building machine -- here to compile a C library. Reported as an
+# install hook. `platforms:` says which operating systems it supports, and is recorded on its
+# SDK requirement.
+kinds: [edge, valid]
+covers:
+  - pub.platforms
+  - UNI-18
+dependencies:
+  - {name: native_toolchain_c, version_constraint: ^0.9.0}
+  - {name: hooks, version_constraint: ^0.20.0}
+  - {name: dart-sdk, version_constraint: ^3.6.0, platform_constraints: [os:android, os:ios, os:linux]}
+findings:
+  - {rule: SUSPECT.INSTALL.SCRIPT.001, path: pubspec.yaml}

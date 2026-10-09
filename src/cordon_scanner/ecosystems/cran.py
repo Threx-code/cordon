@@ -16,11 +16,13 @@ R's base packages (`methods`, `utils`, ...) ship with R itself and are never dep
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
+from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.models import Scope
+from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -199,6 +201,19 @@ class Description:
                         name=name, spec=text, scope=Scope.PLATFORM, field_name="SystemRequirements"
                     )
                 )
+        hooks: tuple[Hook, ...] = ()
+        if fields.get("NeedsCompilation", "").strip().lower() == "yes":
+            # Compiled when installed from source: the package's C, C++ or Fortran is built, by
+            # its own Makevars, on the installing machine.
+            hooks = (
+                Hook(
+                    kind="build",
+                    path=content.path,
+                    name="NeedsCompilation",
+                    command="R CMD INSTALL compiles src/",
+                    ecosystem=ecosystem,
+                ),
+            )
         return Manifest(
             path=content.path,
             ecosystem=ecosystem,
@@ -206,7 +221,50 @@ class Description:
             version=fields.get("Version"),
             dependencies=tuple(declared),
             sources=("repository bioconductor",) if bioconductor else (),
+            hooks=hooks,
         )
+
+    #: What `R CMD INSTALL` runs from a source package before and after building it.
+    INSTALL_SCRIPTS: ClassVar[tuple[str, ...]] = (
+        "configure",
+        "configure.win",
+        "cleanup",
+        "cleanup.win",
+    )
+
+    @staticmethod
+    def with_install_scripts(manifest: Manifest, files: Collection[str]) -> Manifest:
+        """A source package's `configure` and `cleanup` beside its DESCRIPTION: shell scripts
+        `R CMD INSTALL` runs on the installing machine, unasked, as an npm `postinstall` runs.
+        Reported as install hooks; a `src/` directory as compiled code, when NeedsCompilation
+        did not already say so."""
+        if manifest.parse_error:
+            return manifest
+        directory = manifest.path.rpartition("/")[0]
+        prefix = f"{directory}/" if directory else ""
+        hooks = list(manifest.hooks)
+        for script in Description.INSTALL_SCRIPTS:
+            if f"{prefix}{script}" in files:
+                hooks.append(
+                    Hook(
+                        kind="install",
+                        path=manifest.path,
+                        name="install",
+                        command=f"sh {prefix}{script}",
+                        ecosystem=manifest.ecosystem,
+                    )
+                )
+        if not hooks and any(path.startswith(f"{prefix}src/") for path in files):
+            hooks.append(
+                Hook(
+                    kind="build",
+                    path=manifest.path,
+                    name="src",
+                    command="R CMD INSTALL compiles src/",
+                    ecosystem=manifest.ecosystem,
+                )
+            )
+        return dataclasses.replace(manifest, hooks=tuple(hooks)) if hooks else manifest
 
 
 class RenvLock:
@@ -395,6 +453,15 @@ class CranEcosystem(BaseEcosystem):
         if content.basename == "PACKAGES":
             return PackagesIndex.parse(content, self.id)
         return Description.parse(content, self.id)
+
+    def parse_in_tree(self, content: FileContent, files: Mapping[str, Any]) -> Manifest:
+        return self.hooks_from_tree(self.parse_manifest(content), files)
+
+    def hooks_from_tree(self, manifest: Manifest, paths: Collection[str]) -> Manifest:
+        """A source package's `configure` and `cleanup` are files beside DESCRIPTION."""
+        if not manifest.path.endswith("DESCRIPTION"):
+            return manifest
+        return Description.with_install_scripts(manifest, paths)
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return RenvLock.parse(content, self.id)

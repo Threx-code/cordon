@@ -62,7 +62,9 @@ UNSIGNED_IMAGE_RULE = "POLICY.CONTAINER.UNSIGNED_IMAGE.001"
 #: Ecosystems whose attestation format this can fetch and convert. Others carry
 #: no publish-time attestation to verify yet, so the detector stays silent for
 #: them rather than reporting an absence that means nothing.
-SUPPORTED_ECOSYSTEMS = frozenset({"npm", "pypi", "maven", "gradle", "rubygems", "image"})
+SUPPORTED_ECOSYSTEMS = frozenset(
+    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew"}
+)
 
 _GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
 
@@ -179,7 +181,8 @@ class ProvenanceDetector(BaseDetector):
             if d.ecosystem in SUPPORTED_ECOSYSTEMS
             # An image pinned by digest alone is asked about by that digest; what a Dockerfile
             # `ADD`s from a URL is no registry's.
-            and (d.version or (d.ecosystem == "image" and d.integrity))
+            # A Brewfile names a formula without a version: its bottles are the current version's.
+            and (d.version or (d.ecosystem == "image" and d.integrity) or d.ecosystem == "homebrew")
             and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
             # Maven signs each file: a classifier jar or a WAR has its own bundle, and the
             # registry's is the plain jar's. Comparing the plain jar's signature with a
@@ -226,6 +229,9 @@ class ProvenanceDetector(BaseDetector):
         )
 
     def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        if dependency.ecosystem == "homebrew":
+            yield from self._verify_homebrew(dependency, ctx)
+            return
         from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
         asked = dependency.version or (
@@ -351,6 +357,40 @@ class ProvenanceDetector(BaseDetector):
                     f"the build attestation for {dependency.name}@{dependency.version} "
                     f"could not be verified: {last.detail if last else 'no result'}"
                 ),
+            )
+
+    def _verify_homebrew(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """Each bottle against its own GitHub build attestation (`intel/homebrew_provenance`)."""
+        from cordon_scanner.intel.homebrew_provenance import HomebrewProvenance
+
+        if not attest.SigstoreVerification.available():
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"{dependency.name}'s bottles were not verified: the [attest] extra is not installed",
+            )
+            return
+        check = HomebrewProvenance.check(dependency.name, dependency.version)
+        label = f"{dependency.name}" + (f"@{check.version}" if check.version else "")
+        if check.outcome == "verified":
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+        elif check.outcome == "absent":
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the build attestation for {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the build attestation for {label} could not be verified: {check.detail}",
             )
 
     @staticmethod

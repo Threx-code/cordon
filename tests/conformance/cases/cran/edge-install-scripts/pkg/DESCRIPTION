@@ -1,0 +1,11 @@
+Package: fastfold
+Type: Package
+Title: Folding Over Large Vectors
+Version: 0.4.2
+Authors@R: person("Ada", "Example", email = "ada@example.invalid", role = c("aut", "cre"))
+Description: Folds over large numeric vectors in compiled code.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Imports: Rcpp (>= 1.0.10)
+LinkingTo: Rcpp
+NeedsCompilation: yes

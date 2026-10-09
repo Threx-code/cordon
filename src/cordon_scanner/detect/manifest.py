@@ -765,6 +765,11 @@ class ManifestDetector(BaseDetector):
             return ()
 
         manifest = ecosystem.parse_manifest(unit.content)
+        hooks_from_tree = getattr(ecosystem, "hooks_from_tree", None)
+        if hooks_from_tree is not None:
+            # Install-time code that is a file beside the manifest rather than a field in it (an R
+            # package's `configure`, a Dart package's `hook/build.dart`), seen from the tree's paths.
+            manifest = hooks_from_tree(manifest, ctx.tree_paths)
 
         if manifest.parse_error:
             # A manifest that could not be read is a manifest whose contents

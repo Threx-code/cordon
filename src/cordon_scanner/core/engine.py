@@ -1045,6 +1045,7 @@ class Engine:
             ctx,
             dependencies=Engine._packages(dependencies),
             install_hook_paths=frozenset(hook_paths),
+            tree_paths=frozenset(unit.path for unit in units),
             install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=deferred,
@@ -1409,6 +1410,7 @@ class Engine:
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
+            tree_paths=frozenset(unit.path for unit in units),
             install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=self._hook_deferred_lines(units, hook_paths, entries),

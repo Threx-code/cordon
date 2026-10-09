@@ -381,8 +381,9 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "pub.sdk-packages": "SDK packages told apart from registry packages",
             "pub.workspace": "pub workspaces",
             "pub.graph": "transitive resolution",
+            "pub.platforms": "the platforms a package declares it supports",
         },
-        {"UNI-18": NO_INSTALL_HOOKS, "UNI-17": NO_PROVENANCE},
+        {"UNI-17": NO_PROVENANCE},
     ),
     EcosystemContract(
         "swift",
@@ -462,7 +463,7 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "cran.remotes": "GitHub and remotes dependencies",
             "cran.sysreqs": "system requirements",
         },
-        {"UNI-17": NO_PROVENANCE, "UNI-18": NO_INSTALL_HOOKS},
+        {"UNI-17": NO_PROVENANCE},
     ),
     EcosystemContract(
         "hackage",
@@ -667,7 +668,7 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "homebrew.categories": "bundle categories (brew, cask, mas, vscode, whalebrew)",
             "homebrew.declared-vs-installed": "declared bundle entries told apart from installed versions",
         },
-        {"UNI-17": NO_PROVENANCE},
+        {},
     ),
     EcosystemContract(
         "nix",
@@ -702,9 +703,9 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "terraform.module-pinning": "module pinning",
             "terraform.aliases": "provider aliases",
             "terraform.iac": "insecure resources, IAM, network exposure and secret references",
+            "terraform.tfvars": "variable files read for what static analysis applies: secrets",
         },
         {
-            "UNI-18": NO_INSTALL_HOOKS,
             "UNI-17": "a provider release's SHA256SUMS is GPG-signed and terraform init verifies the signature; the lock's zip hashes are compared with those sums (UNI-16)",
         },
     ),

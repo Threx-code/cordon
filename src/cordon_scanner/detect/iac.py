@@ -185,6 +185,11 @@ class IacPolicy:
 
     def applies_to(self, kind: str) -> bool:
         for wanted in self.resources:
+            # A data source is read only by a policy that names it (`data:external`): the
+            # wildcard policies were written for resources, and a `require` among them would
+            # demand a resource's attribute of every data source.
+            if kind.startswith("data:") and not wanted.startswith("data:"):
+                continue
             if wanted.endswith("*"):
                 if kind.startswith(wanted[:-1]):
                     return True
@@ -233,9 +238,16 @@ class IacBlocks:
             if end is None:
                 continue
             block = header.group("block")
+            if header.group("dtype"):
+                # A data source, as `data:<type>`: `data "external"` runs a program at plan time.
+                kind, name = f"data:{header.group('dtype')}", header.group("dname") or ""
+            elif block is None:
+                kind, name = header.group("type"), header.group("name") or ""
+            else:
+                kind, name = f"{block}:{header.group('label')}", header.group("label") or ""
             yield Block(
-                kind=header.group("type") if block is None else f"{block}:{header.group('label')}",
-                name=(header.group("name") if block is None else header.group("label")) or "",
+                kind=kind,
+                name=name,
                 body=text[body_start + 1 : end],
                 start=header.start(),
                 body_start=body_start + 1,
@@ -523,6 +535,7 @@ class IacBlocks:
 _TF_HEADER = re.compile(
     r"""^[ \t]*(?:
         resource[ \t]+"(?P<type>[A-Za-z0-9_\-]+)"[ \t]+"(?P<name>[^"]*)"
+        |data[ \t]+"(?P<dtype>[A-Za-z0-9_\-]+)"[ \t]+"(?P<dname>[^"]*)"
         |(?P<block>provider|backend|module)[ \t]+"(?P<label>[^"]*)"
     )[ \t]*\{""",
     re.MULTILINE | re.VERBOSE,

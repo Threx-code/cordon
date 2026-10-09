@@ -1,0 +1,15 @@
+# What a Terraform configuration runs, beside what it depends on: a `data "external"` program
+# runs when the plan is made, which a pull request's CI does on proposed code; a `local-exec`
+# provisioner runs on whoever applies it. A data source that only reads is not reported. A
+# `.tfvars` file is read for what static analysis applies to it: a credential written into it.
+# The password is a made-up value for this case.
+kinds: [edge, valid]
+covers:
+  - terraform.tfvars
+  - UNI-18
+dependencies:
+  - {name: hashicorp/aws, version_constraint: "~> 5.60", dependency_type: tool}
+findings:
+  - {rule: SUSPECT.IAC.EXTERNAL_PROGRAM.TERRAFORM.001, path: main.tf}
+  - {rule: SUSPECT.IAC.LOCAL_EXEC.TERRAFORM.001, path: main.tf}
+  - {rule: SECRET.GENERIC.ASSIGNMENT.001, path: prod.tfvars}
