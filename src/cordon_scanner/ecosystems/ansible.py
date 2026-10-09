@@ -84,6 +84,12 @@ class AnsibleSource:
 class Requirements:
     """requirements.yml: roles and collections."""
 
+    #: What a role requirement may say (ansible-galaxy's RoleRequirement); anything else makes a
+    #: bare list something other than a list of roles.
+    ROLE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"src", "name", "version", "scm", "include", "role", "path"}
+    )
+
     @staticmethod
     def entries(value: object) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -108,6 +114,10 @@ class Requirements:
             # name (pip's is requirements.txt), and an unread file must not pass for an empty one.
             return BaseEcosystem._err(content, ecosystem, f"invalid requirements.yml: {exc}")
         if isinstance(data, list):
+            if any(isinstance(e, dict) and set(e) - Requirements.ROLE_KEYS for e in data):
+                # A task list that happens to be called requirements.yml (a role's
+                # tasks/requirements.yml): `- name: Install ...` with a module beside it.
+                return None
             data = {"roles": data}  # the older form: a bare list of roles
         if not isinstance(data, dict) or not ({"roles", "collections"} & set(data)):
             return None

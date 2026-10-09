@@ -1,0 +1,7 @@
+---
+- src: geerlingguy.mysql
+  version: 4.3.4
+- name: nginx
+  src: https://github.com/nginxinc/ansible-role-nginx
+  scm: git
+  version: 0.24.0

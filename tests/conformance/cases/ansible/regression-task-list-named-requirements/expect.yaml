@@ -1,0 +1,15 @@
+# Found comparing against ansible-galaxy on real collections: ansible.mysql keeps a task list at
+# tasks/requirements.yml, and Cordon read it as the older bare list of roles -- "Add the vendor
+# signing key", "Install python3-debian" and "{{ item }}" became role dependencies. A bare list
+# is roles only when every entry says only what a role requirement may say.
+kinds: [regression, valid]
+covers:
+  - file:requirements.yml
+  - UNI-02
+dependencies:
+  - {name: geerlingguy.mysql, version_constraint: 4.3.4}
+  - {name: nginx, version_constraint: "git+https://github.com/nginxinc/ansible-role-nginx#0.24.0"}
+absent:
+  - Add the vendor signing key
+  - Install python3-debian
+only: true
