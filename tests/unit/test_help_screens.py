@@ -40,7 +40,7 @@ FACTS = [
     Fact("Intel", "bundled · 1d old", "ok"),
     Fact("Hooks", "pre-push runs cordon", "ok"),
     Fact("Cloud", "not signed in", "off"),
-    Fact("Mode", "offline by default · executes nothing"),
+    Fact("Mode", "reads only · asks OSV what changed · executes nothing"),
 ]
 
 

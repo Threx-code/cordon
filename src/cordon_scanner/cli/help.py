@@ -474,8 +474,13 @@ class Environment:
 
     @staticmethod
     def _mode() -> tuple[str, str]:
-        offline = " (CORDON_OFFLINE)" if os.environ.get("CORDON_OFFLINE") else ""
-        return f"offline by default{offline} · executes nothing", "text"
+        # What a default scan does on the network: since 0.6.0 it asks OSV what changed since
+        # the bundled intel was built, unless told not to. "Offline by default" stopped being true.
+        if os.environ.get("CORDON_OFFLINE"):
+            return "offline (CORDON_OFFLINE) · executes nothing", "text"
+        if os.environ.get("CORDON_NO_ADVISORY_REFRESH"):
+            return "no advisory refresh · executes nothing", "text"
+        return "reads only · asks OSV what changed · executes nothing", "text"
 
 
 class HelpScreen:

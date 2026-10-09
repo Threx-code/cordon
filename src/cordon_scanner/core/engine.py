@@ -1226,8 +1226,11 @@ class Engine:
                         f"malware and advisories may not be matched.{reason}"
                     ),
                     remediation=(
-                        "Allow the scan to reach the feed, run `cordon-scanner intel update`, "
-                        "or install a current signed bundle with `cordon-scanner bundle install`."
+                        "Let the scan reach OSV (osv-vulnerabilities.storage.googleapis.com), "
+                        "which it asks for what changed unless --offline, CORDON_OFFLINE or "
+                        "CORDON_NO_ADVISORY_REFRESH is set; or run `cordon-scanner advisories "
+                        "sync`, `cordon-scanner intel update`, or install a current signed "
+                        "bundle with `cordon-scanner bundle install`."
                     ),
                     severity=Severity.MEDIUM,
                 )
