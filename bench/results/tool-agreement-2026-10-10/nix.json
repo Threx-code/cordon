@@ -1,0 +1,259 @@
+{
+ "ecosystem": "nix",
+ "repositories": 30,
+ "reference": 433,
+ "cordon": 432,
+ "agree": 431,
+ "precision": 0.9977,
+ "recall": 0.9954,
+ "f1": 0.9965,
+ "repositories_in_full_agreement": 27,
+ "rows": [
+  {
+   "repo": "0xc000022070/zen-browser-flake",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Frost-Phoenix/nixos-config",
+   "reference": 18,
+   "cordon": 18,
+   "agree": 18,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Mic92/dotfiles",
+   "reference": 50,
+   "cordon": 50,
+   "agree": 50,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "NotAShelf/nvf",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Ovyerus/prismaliser",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Sly-Harvey/NixOS",
+   "reference": 39,
+   "cordon": 39,
+   "agree": 39,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "XNM1/linux-nixos-hyprland-config-dotfiles",
+   "reference": 14,
+   "cordon": 13,
+   "agree": 13,
+   "only_reference": [
+    "nix-systems/default"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "Yazelix/nova",
+   "reference": 31,
+   "cordon": 31,
+   "agree": 31,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "astro/deadnix",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "badele/nix-homelab",
+   "reference": 44,
+   "cordon": 45,
+   "agree": 44,
+   "only_reference": [],
+   "only_cordon": [
+    "https://spectrum-os.org/git/spectrum"
+   ]
+  },
+  {
+   "repo": "catppuccin/nix",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "colemickens/nixcfg",
+   "reference": 43,
+   "cordon": 43,
+   "agree": 43,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "divnix/digga",
+   "reference": 14,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "dustinlyons/nixos-config",
+   "reference": 18,
+   "cordon": 18,
+   "agree": 18,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "gytis-ivaskevicius/flake-utils-plus",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "hlissner/dotfiles",
+   "reference": 27,
+   "cordon": 27,
+   "agree": 27,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "max-baz/dotfiles",
+   "reference": 30,
+   "cordon": 30,
+   "agree": 30,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "microvm-nix/microvm.nix",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nix-community/nh",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "numtide/flake-utils",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nvmd/nixos-raspberrypi",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "oddlama/nix-topology",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ryan4yin/nix-config",
+   "reference": 46,
+   "cordon": 46,
+   "agree": 46,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ryan4yin/nixos-and-flakes-book",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "serokell/deploy-rs",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "sodiboo/niri-flake",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "teslamate-org/teslamate",
+   "reference": 14,
+   "cordon": 13,
+   "agree": 13,
+   "only_reference": [
+    "file:///dev/null"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "uiriansan/SilentSDDM",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "wimpysworld/nix-config",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "winapps-org/winapps",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

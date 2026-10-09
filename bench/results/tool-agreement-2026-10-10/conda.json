@@ -1,0 +1,253 @@
+{
+ "ecosystem": "conda",
+ "repositories": 30,
+ "reference": 546,
+ "cordon": 546,
+ "agree": 546,
+ "precision": 1.0,
+ "recall": 1.0,
+ "f1": 1.0,
+ "repositories_in_full_agreement": 30,
+ "rows": [
+  {
+   "repo": "1minds3t/omnipkg",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Anaconda-Labs/building-intelligent-apps-with-anaconda",
+   "reference": 32,
+   "cordon": 32,
+   "agree": 32,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "AtsushiSakai/PythonRobotics",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "CCI-Tools/cate",
+   "reference": 50,
+   "cordon": 50,
+   "agree": 50,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "XingangPan/DragGAN",
+   "reference": 14,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ageron/handson-ml2",
+   "reference": 32,
+   "cordon": 32,
+   "agree": 32,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "amitbeka/conda-merge",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bactopia/bactopia",
+   "reference": 17,
+   "cordon": 17,
+   "agree": 17,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda-incubator/conda-store",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda-incubator/unidep",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda/conda",
+   "reference": 32,
+   "cordon": 32,
+   "agree": 32,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda/conda-build",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda/conda-libmamba-solver",
+   "reference": 69,
+   "cordon": 69,
+   "agree": 69,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda/conda-lock",
+   "reference": 48,
+   "cordon": 48,
+   "agree": 48,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda/grayskull",
+   "reference": 25,
+   "cordon": 25,
+   "agree": 25,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conda/rattler",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "jvelezmagic/cookiecutter-conda-data-science",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "louiejtaylor/grabseqs",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mamba-org/boa",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mamba-org/gator",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mamba-org/mamba",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mamba-org/setup-micromamba",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mamba-org/vscode-micromamba",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nf-core/sarek",
+   "reference": 53,
+   "cordon": 53,
+   "agree": 53,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "omanges/turfpy",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "oskopek/mvae",
+   "reference": 19,
+   "cordon": 19,
+   "agree": 19,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "prefix-dev/pixi",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "spacetelescope/jwql",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "urmi-21/pyrpipe",
+   "reference": 76,
+   "cordon": 76,
+   "agree": 76,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "wfondrie/mokapot",
+   "reference": 22,
+   "cordon": 22,
+   "agree": 22,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

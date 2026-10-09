@@ -1,0 +1,245 @@
+{
+ "ecosystem": "helm",
+ "repositories": 29,
+ "reference": 176,
+ "cordon": 176,
+ "agree": 176,
+ "precision": 1.0,
+ "recall": 1.0,
+ "f1": 1.0,
+ "repositories_in_full_agreement": 29,
+ "rows": [
+  {
+   "repo": "InseeFrLab/helm-charts-datascience",
+   "reference": 14,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "balihb/pvc-exporter",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bryopsida/psa-restricted-patcher",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "devopstales/helm-charts",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "evryfs/helm-charts",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "factly/helm-charts",
+   "reference": 10,
+   "cordon": 10,
+   "agree": 10,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "gera-corp-org/helm-seafile",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "gradiant/charts",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "infinity-server/dockerset",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "jeffresc/charts",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "k8s-at-home/charts",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ksoclabs/ksoc-plugins-helm-chart",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "kubernetes-incubator/external-storage",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "kubernetes/charts",
+   "reference": 32,
+   "cordon": 32,
+   "agree": 32,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mileshin/zerossl-issuer",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nghiattr/phppgadmin-helm",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nlamirault/portefaix-hub",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "opsved/artifacts",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "p2p-org/avs-helm-charts",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "quenchworks/charts",
+   "reference": 63,
+   "cordon": 63,
+   "agree": 63,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "redhat-appstudio/rhtap-installer",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "rridane/helm-argocd-cloudnative-kit",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "salemgolemugoo/argocd-bitbucket-proxy",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "seaweedfs/seaweedfs-csi-driver",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "sighupio/opa-notary-connector",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "splicemachine/charts",
+   "reference": 30,
+   "cordon": 30,
+   "agree": 30,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "upbothq/upbot-operator",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "worawutchan/helm-charts",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "zncdatadev/kubedoop-helm-charts",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

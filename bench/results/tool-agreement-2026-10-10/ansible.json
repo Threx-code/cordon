@@ -1,0 +1,263 @@
+{
+ "ecosystem": "ansible",
+ "repositories": 30,
+ "reference": 67,
+ "cordon": 64,
+ "agree": 62,
+ "precision": 0.9688,
+ "recall": 0.9254,
+ "f1": 0.9466,
+ "repositories_in_full_agreement": 27,
+ "rows": [
+  {
+   "repo": "CiscoDevNet/ansible-aci",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "O-X-L/ansible-opnsense",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/amazon.aws",
+   "reference": 4,
+   "cordon": 5,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": [
+    "community.aws"
+   ]
+  },
+  {
+   "repo": "ansible-collections/ansible.mysql",
+   "reference": 5,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [
+    "add mysql gpg key to trusted keyring",
+    "add mysql repository",
+    "install python3-debian for deb822_repository module",
+    "{{ role_name }} | requirements | install linux packages",
+    "{{ role_name }} | requirements | install python packages"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/ansible.netcommon",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/ansible.posix",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/ansible.windows",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/azure",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/collection_template",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.aws",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.digitalocean",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.docker",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.general",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.grafana",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.kubernetes",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.postgresql",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.routeros",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.vmware",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.windows",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/community.zabbix",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/hetzner.hcloud",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/kubernetes.core",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-collections/vmware.vmware_rest",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible-middleware/keycloak",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ansible/event-driven-ansible",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "artis3n/ansible-collection-tailscale",
+   "reference": 1,
+   "cordon": 2,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": [
+    "community.docker"
+   ]
+  },
+  {
+   "repo": "dev-sec/ansible-collection-hardening",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "grafana/grafana-ansible-collection",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "lucasheld/ansible-uptime-kuma",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nextcloud/ansible-collection-nextcloud-admin",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

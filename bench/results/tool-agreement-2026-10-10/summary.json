@@ -1,0 +1,134 @@
+[
+ {
+  "ecosystem": "terraform",
+  "repositories": 30,
+  "reference": 182,
+  "cordon": 182,
+  "agree": 182,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "repositories_in_full_agreement": 30
+ },
+ {
+  "ecosystem": "helm",
+  "repositories": 29,
+  "reference": 176,
+  "cordon": 176,
+  "agree": 176,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "repositories_in_full_agreement": 29
+ },
+ {
+  "ecosystem": "julia",
+  "repositories": 30,
+  "reference": 131,
+  "cordon": 130,
+  "agree": 129,
+  "precision": 0.9923,
+  "recall": 0.9847,
+  "f1": 0.9885,
+  "repositories_in_full_agreement": 28
+ },
+ {
+  "ecosystem": "opam",
+  "repositories": 30,
+  "reference": 282,
+  "cordon": 282,
+  "agree": 282,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "repositories_in_full_agreement": 30
+ },
+ {
+  "ecosystem": "bazel",
+  "repositories": 25,
+  "reference": 864,
+  "cordon": 869,
+  "agree": 864,
+  "precision": 0.9942,
+  "recall": 1.0,
+  "f1": 0.9971,
+  "repositories_in_full_agreement": 23
+ },
+ {
+  "ecosystem": "actions",
+  "repositories": 17,
+  "reference": 66,
+  "cordon": 69,
+  "agree": 66,
+  "precision": 0.9565,
+  "recall": 1.0,
+  "f1": 0.9778,
+  "repositories_in_full_agreement": 15
+ },
+ {
+  "ecosystem": "nix",
+  "repositories": 30,
+  "reference": 433,
+  "cordon": 432,
+  "agree": 431,
+  "precision": 0.9977,
+  "recall": 0.9954,
+  "f1": 0.9965,
+  "repositories_in_full_agreement": 27
+ },
+ {
+  "ecosystem": "ansible",
+  "repositories": 30,
+  "reference": 67,
+  "cordon": 64,
+  "agree": 62,
+  "precision": 0.9688,
+  "recall": 0.9254,
+  "f1": 0.9466,
+  "repositories_in_full_agreement": 27
+ },
+ {
+  "ecosystem": "vcpkg",
+  "repositories": 30,
+  "reference": 1893,
+  "cordon": 1893,
+  "agree": 1893,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "repositories_in_full_agreement": 30
+ },
+ {
+  "ecosystem": "conan",
+  "repositories": 26,
+  "reference": 225,
+  "cordon": 228,
+  "agree": 225,
+  "precision": 0.9868,
+  "recall": 1.0,
+  "f1": 0.9934,
+  "repositories_in_full_agreement": 25
+ },
+ {
+  "ecosystem": "cran",
+  "repositories": 30,
+  "reference": 4196,
+  "cordon": 4196,
+  "agree": 4196,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "repositories_in_full_agreement": 30
+ },
+ {
+  "ecosystem": "conda",
+  "repositories": 30,
+  "reference": 546,
+  "cordon": 546,
+  "agree": 546,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "repositories_in_full_agreement": 30
+ }
+]

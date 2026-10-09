@@ -1,0 +1,225 @@
+{
+ "ecosystem": "conan",
+ "repositories": 26,
+ "reference": 225,
+ "cordon": 228,
+ "agree": 225,
+ "precision": 0.9868,
+ "recall": 1.0,
+ "f1": 0.9934,
+ "repositories_in_full_agreement": 25,
+ "rows": [
+  {
+   "repo": "DavidAce/CMakeTemplate",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "George-lewis/DVDBounce",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "LazyDeveloperHelper/LazyDeveloperHelper",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Mathieu-Lala/Kawaii_Engine",
+   "reference": 11,
+   "cordon": 11,
+   "agree": 11,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Maverobot/cpp_playground",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "aminya/project_options",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conan-io/cmake-conan",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conan-io/conan-docker-tools",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "dmerejkowsky/chucknorris",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ed-asriyan/lottie-converter",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ess-dmsc/graylog-logger",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "expresscpp/expresscpp",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "falltergeist/falltergeist",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "florianvazelle/VulkanStarter",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "htfy96/cpp-boilerplate",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "includeos/mana",
+   "reference": 0,
+   "cordon": 3,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": [
+    "lest",
+    "mana",
+    "vmbuild"
+   ]
+  },
+  {
+   "repo": "inspircd/inspircd",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "madduci/moderncpp-project-template",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "matheusgomes28/base64pp",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "prince-chrismc/user-management",
+   "reference": 14,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "qqiangwu/cppship",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "siemens/continuous-clearing",
+   "reference": 17,
+   "cordon": 17,
+   "agree": 17,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "suryanshvermaa/create-drogon-app",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "wu-vincent/scikit-build-core-conan",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "yowidin/serial-plotter",
+   "reference": 34,
+   "cordon": 34,
+   "agree": 34,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "zrythm/zrythm",
+   "reference": 71,
+   "cordon": 71,
+   "agree": 71,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

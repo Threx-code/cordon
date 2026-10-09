@@ -1,0 +1,154 @@
+{
+ "ecosystem": "actions",
+ "repositories": 17,
+ "reference": 66,
+ "cordon": 69,
+ "agree": 66,
+ "precision": 0.9565,
+ "recall": 1.0,
+ "f1": 0.9778,
+ "repositories_in_full_agreement": 15,
+ "rows": [
+  {
+   "repo": "AceFire6/file_changes",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "actions-marketplace-validations/defi-wonderland_check-crypto-action",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "actions-marketplace-validations/lyleokoth_pytest-coverage-ytest",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "actions-marketplace-validations/ogotalski_check-run-action",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ahmadnassri/template-action-docker",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "austenstone/copilot-license-cleanup",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "cobraz/todoist-action",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "egor-tensin/build-boost",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ftos-forks/cli",
+   "reference": 6,
+   "cordon": 8,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": [
+    "actions/stale",
+    "julb/action-manage-label"
+   ]
+  },
+  {
+   "repo": "kaizhu256/node-utility2",
+   "reference": 2,
+   "cordon": 3,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": [
+    "kaizhu256/node-utility2"
+   ]
+  },
+  {
+   "repo": "kaskadi/action-s3cp",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mohitjohri/auto-release-draft-javascript",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "oilbeater/smart-review",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "shink/bark-action",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "tiobe/tics-github-action",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "useblacksmith/stickydisk-delete",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "yogevbd/pr-lint-action",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

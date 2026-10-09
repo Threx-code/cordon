@@ -1,0 +1,253 @@
+{
+ "ecosystem": "cran",
+ "repositories": 30,
+ "reference": 4196,
+ "cordon": 4196,
+ "agree": 4196,
+ "precision": 1.0,
+ "recall": 1.0,
+ "f1": 1.0,
+ "repositories_in_full_agreement": 30,
+ "rows": [
+  {
+   "repo": "ThinkR-open/dockerfiler",
+   "reference": 55,
+   "cordon": 55,
+   "agree": 55,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "adamkaplan0/PML_Good_coding_practices",
+   "reference": 67,
+   "cordon": 67,
+   "agree": 67,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "brycewang-stanford/StatsPAI",
+   "reference": 354,
+   "cordon": 354,
+   "agree": 354,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ccao-data/model-res-avm",
+   "reference": 230,
+   "cordon": 230,
+   "agree": 230,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "chschoenenberger/covid19_dashboard",
+   "reference": 120,
+   "cordon": 120,
+   "agree": 120,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "computorg/template-computo-R",
+   "reference": 43,
+   "cordon": 43,
+   "agree": 43,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "danhalligan/ISLRv2-solutions",
+   "reference": 165,
+   "cordon": 165,
+   "agree": 165,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "edavidaja/you-should-use-renv",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "gabors-data-analysis/da_case_studies",
+   "reference": 280,
+   "cordon": 280,
+   "agree": 280,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "gjkerns/IPSUR",
+   "reference": 164,
+   "cordon": 164,
+   "agree": 164,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "globeandmail/startr",
+   "reference": 144,
+   "cordon": 144,
+   "agree": 144,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "irlcode/RFSD",
+   "reference": 13,
+   "cordon": 13,
+   "agree": 13,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "jakubnowicki/r-codespaces",
+   "reference": 66,
+   "cordon": 66,
+   "agree": 66,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "jrnold/r4ds-exercise-solutions",
+   "reference": 179,
+   "cordon": 179,
+   "agree": 179,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "jrosell/playground4rocker",
+   "reference": 66,
+   "cordon": 66,
+   "agree": 66,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "lachlandeer/snakemake-econ-r",
+   "reference": 106,
+   "cordon": 106,
+   "agree": 106,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "meedstrom/eva",
+   "reference": 35,
+   "cordon": 35,
+   "agree": 35,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mikenguyen13/data_analysis",
+   "reference": 690,
+   "cordon": 690,
+   "agree": 690,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mine-cetinkaya-rundel/quarto-tdg",
+   "reference": 111,
+   "cordon": 111,
+   "agree": 111,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "moderndive/ModernDive_book",
+   "reference": 190,
+   "cordon": 190,
+   "agree": 190,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "pedrohcgs/JEL-DiD",
+   "reference": 203,
+   "cordon": 203,
+   "agree": 203,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "pharmaR/riskassessment",
+   "reference": 219,
+   "cordon": 219,
+   "agree": 219,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "philiporlando/docker-duckdb-r",
+   "reference": 80,
+   "cordon": 80,
+   "agree": 80,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "r-hub/r-minimal",
+   "reference": 43,
+   "cordon": 43,
+   "agree": 43,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "spatial-research/semla",
+   "reference": 151,
+   "cordon": 151,
+   "agree": 151,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terashim/rproject",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "tucca-cellag/tucca-rna-seq",
+   "reference": 334,
+   "cordon": 334,
+   "agree": 334,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "virtualstaticvoid/heroku-buildpack-r",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "virtualstaticvoid/heroku-docker-r",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "wlandau/targets-minimal",
+   "reference": 72,
+   "cordon": 72,
+   "agree": 72,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

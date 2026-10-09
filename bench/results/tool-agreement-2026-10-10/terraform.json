@@ -1,0 +1,253 @@
+{
+ "ecosystem": "terraform",
+ "repositories": 30,
+ "reference": 182,
+ "cordon": 182,
+ "agree": 182,
+ "precision": 1.0,
+ "recall": 1.0,
+ "f1": 1.0,
+ "repositories_in_full_agreement": 30,
+ "rows": [
+  {
+   "repo": "cloudposse/terraform-aws-route53-cluster-hostname",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "cloudposse/terraform-aws-ssm-parameter-store",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "cloudposse/terraform-aws-utils",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "cloudposse/terraform-null-label",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "cloudposse/terraform-yaml-stack-config",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-acm",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-alb",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-cloudfront",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-cloudwatch",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-dynamodb-table",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-ec2-instance",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-ecs",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-eks",
+   "reference": 13,
+   "cordon": 13,
+   "agree": 13,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-eventbridge",
+   "reference": 12,
+   "cordon": 12,
+   "agree": 12,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-iam",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-kms",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-lambda",
+   "reference": 13,
+   "cordon": 13,
+   "agree": 13,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-rds",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-rds-aurora",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-route53",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-s3-bucket",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-security-group",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-sqs",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-aws-modules/terraform-aws-vpc",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-google-modules/terraform-google-cloud-storage",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-google-modules/terraform-google-gcloud",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-google-modules/terraform-google-iam",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-google-modules/terraform-google-kubernetes-engine",
+   "reference": 13,
+   "cordon": 13,
+   "agree": 13,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-google-modules/terraform-google-network",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "terraform-google-modules/terraform-google-project-factory",
+   "reference": 10,
+   "cordon": 10,
+   "agree": 10,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

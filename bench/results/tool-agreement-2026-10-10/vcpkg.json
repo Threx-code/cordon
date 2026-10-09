@@ -1,0 +1,253 @@
+{
+ "ecosystem": "vcpkg",
+ "repositories": 30,
+ "reference": 1893,
+ "cordon": 1893,
+ "agree": 1893,
+ "precision": 1.0,
+ "recall": 1.0,
+ "f1": 1.0,
+ "repositories_in_full_agreement": 30,
+ "rows": [
+  {
+   "repo": "JPersson77/LGTVCompanion",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Kraken-Engine/PyKraken",
+   "reference": 10,
+   "cordon": 10,
+   "agree": 10,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "RealChuan/Qt-App",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "SNMetamorph/PrimeXT",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "SNMetamorph/goldsrc-monitor",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "TerensTare/tnt",
+   "reference": 10,
+   "cordon": 10,
+   "agree": 10,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "aminya/cpp_vcpkg_project",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "aminya/project_options",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bitmeal/vcpkg-cmake-integration",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "build-cpp/vcpkg_template",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "friendlyanon/cmake-init",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "heal-research/operon",
+   "reference": 28,
+   "cordon": 28,
+   "agree": 28,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "hiero-ledger/hiero-sdk-cpp",
+   "reference": 12,
+   "cordon": 12,
+   "agree": 12,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "index1207/netcpp",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "indoorvivants/sn-vcpkg",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "libsese/sese",
+   "reference": 14,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "lukka/CppBuildTasks-Validation",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "lukka/CppCMakeVcpkgTemplate",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "lukka/run-vcpkg",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "luncliff/vcpkg-registry",
+   "reference": 124,
+   "cordon": 124,
+   "agree": 124,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mcgoo/vcpkg-rs",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "meggsOmatic/vulkan-example-cmake-vcpkg",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "microsoft/nearobject-framework",
+   "reference": 10,
+   "cordon": 10,
+   "agree": 10,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "microsoft/vcpkg",
+   "reference": 1429,
+   "cordon": 1429,
+   "agree": 1429,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "miredirex/cmake-vcpkg-example",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "planetpratik/CMake-Jenkins-CPP",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "retifrav/vcpkg-registry",
+   "reference": 187,
+   "cordon": 187,
+   "agree": 187,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "rutura/cpp23m",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "serious-scaffold/ss-cpp",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "upupming/vscode-qt-qml-vcpkg-template",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

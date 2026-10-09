@@ -1,0 +1,258 @@
+{
+ "ecosystem": "julia",
+ "repositories": 30,
+ "reference": 131,
+ "cordon": 130,
+ "agree": 129,
+ "precision": 0.9923,
+ "recall": 0.9847,
+ "f1": 0.9885,
+ "repositories_in_full_agreement": 28,
+ "rows": [
+  {
+   "repo": "JuliaArrays/StaticArrays.jl",
+   "reference": 12,
+   "cordon": 12,
+   "agree": 12,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaArrays/StaticArraysCore.jl",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaCollections/DataStructures.jl",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaCollections/OrderedCollections.jl",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaCollections/SortingAlgorithms.jl",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaData/DataAPI.jl",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaData/Missings.jl",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaData/Parsers.jl",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaData/Tables.jl",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaDocs/DocStringExtensions.jl",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaGPU/Adapt.jl",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaIO/CodecZlib.jl",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaIO/JSON.jl",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaIO/TranscodingStreams.jl",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaLang/Compat.jl",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaLang/MbedTLS.jl",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaLang/PrecompileTools.jl",
+   "reference": 22,
+   "cordon": 20,
+   "agree": 20,
+   "only_reference": [
+    "juliasyntaxhighlighting",
+    "openssl_jll"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaLogging/LoggingExtras.jl",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaMath/IrrationalConstants.jl",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaPackaging/JLLWrappers.jl",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaPackaging/Preferences.jl",
+   "reference": 2,
+   "cordon": 3,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": [
+    "toml"
+   ]
+  },
+  {
+   "repo": "JuliaPackaging/Requires.jl",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaPackaging/Scratch.jl",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaStats/LogExpFunctions.jl",
+   "reference": 14,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaStats/StatsAPI.jl",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaStats/StatsBase.jl",
+   "reference": 14,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "JuliaWeb/OpenSSL.jl",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "LilithHafner/AliasTables.jl",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "LilithHafner/PtrArrays.jl",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "invenia/ExprTools.jl",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

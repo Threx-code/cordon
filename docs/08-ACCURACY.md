@@ -19,6 +19,7 @@ them ships here.
 |---|---|---|
 | Every known-malicious package record in the intel | **249,646 records**, 287,899 checks, 10 ecosystems | **100%** caught |
 | Packages in real lockfiles, read against Trivy | **190,274 packages, 1,687 lockfiles**, 14 registries | **99.6%** agree (98.9% per lockfile); the rest sorted by cause |
+| Dependencies in 12 ecosystems Trivy does not read, against each ecosystem's own tool | **9,061 dependencies, 337 repositories** | **99.9%** agree (F1); every difference read |
 | Real malicious packages | **39,328** (every DataDog npm, PyPI, AI-skill and IDE-extension sample, and malregistry) | **94.2%** detected; **79.7%** by reading the code alone, the rest by matching a known malicious release |
 | The same malware, against GuardDog | **498** (a fixed-seed draw) | **95.2%** vs GuardDog's 85.5% |
 | Popular packages wrongly blocked | top **1,000 PyPI + 1,000 npm** | **1.6%** vs GuardDog's 16.8% |
@@ -111,6 +112,71 @@ the build does not use, or naming a package differently. The comparison found fi
 Cordon defects on the way, each fixed with a test: pnpm 10's two-document lockfiles, npm
 directories linked without a name, pre-1.17 and untidied go.mod files that leave indirect
 modules to go.sum, and a lone go.sum.
+
+### The ecosystems no other scanner reads, against each one's own tool
+
+Trivy reads none of Terraform, Helm, Julia, opam, Bazel, Nix, Ansible, vcpkg, Conan, conda or
+GitHub Actions workflows, and its CRAN coverage gave 5 lockfiles. So `bench/tool_agreement.py`
+compares each with the reader that ecosystem treats as authoritative, on 30 real repositories
+apiece: the most-downloaded packages' repositories where a registry lists them, GitHub topic search
+where it does not (flakes, collections, C++ projects, renv projects). Every tool runs in its own
+image (`bench/tool_reference/run.sh`), and nothing collected is executed.
+
+```
+   9,061 dependencies read by the tools     9,067 by Cordon     9,052 the same
+   ─────────────────────────────────────────────────────────────────────────────
+   precision 99.8%    recall 99.9%    337 repositories, 324 in full agreement
+```
+
+| Ecosystem | Reference | Repositories | Agree | F1 |
+|---|---|---:|---:|---:|
+| Terraform | `terraform-config-inspect` (HashiCorp) | 30 | 182 of 182 | 1.000 |
+| Helm | `helm dependency list` | 29 | 176 of 176 | 1.000 |
+| opam | `opam show --just-file` | 30 | 282 of 282 | 1.000 |
+| vcpkg | `vcpkg format-manifest` | 30 | 1,893 of 1,893 | 1.000 |
+| CRAN (renv.lock) | `renv::lockfile_read` | 30 | 4,196 of 4,196 | 1.000 |
+| conda | conda's `from_file` | 30 | 546 of 546 | 1.000 |
+| Bazel | `bazel mod graph --include_builtin` | 25 | 864 of 864 | 0.997 |
+| Nix | `nix flake metadata` | 30 | 431 of 433 | 0.997 |
+| Conan | Conan 2's conanfile.txt and lock readers | 26 | 225 of 225 | 0.993 |
+| Julia | Pkg (`read_project`, `read_manifest`) | 30 | 129 of 131 | 0.989 |
+| GitHub Actions | GitHub's dependency graph (SBOM API) | 17 | 66 of 66 | 0.978 |
+| Ansible | `ansible-galaxy`'s requirements and galaxy.yml readers | 30 | 62 of 67 | 0.947 |
+
+Homebrew is not in the table: Homebrew Bundle reads a Brewfile by evaluating it as Ruby, and
+running a repository's code is the one thing this comparison does not do. For the same reason
+Conan's row covers conanfile.txt and conan.lock, not conanfile.py. Actions covers the 17
+repositories whose dependency graph GitHub publishes.
+
+The comparison found nine Cordon defects, each fixed with a conformance case before the figures
+above were taken:
+
+| Defect | Found on |
+|---|---|
+| A Terraform `for` expression in braces, and a computed key `(local.x) = ...`, dropped the whole file | terraform-aws-modules/ecs, project-factory |
+| A provider used without `required_providers` was not listed; Terraform installs `hashicorp/<name>` | cloudposse/null-label and others |
+| A Julia standard library in Project.toml was read as a registry package | 26 of 30 Julia packages |
+| A YAML scalar starting on the line below its key failed the file | ansible.netcommon's galaxy.yml |
+| A task list named requirements.yml was read as roles | ansible.mysql |
+| conda installs `pip` for a `pip:` subsection that does not list it | 2 environments |
+| FlakeHub inputs were named "0.1" or "source"; forge archives by commit hash | Sly-Harvey/NixOS, Mic92/dotfiles |
+| A Conan 1 recipe name with a capital (`Poco/1.9.0@pocoproject/stable`) refused the file | Maverobot/cpp_playground |
+| renv before 1.0 wrote a bare `NA`, which renv reads and Cordon refused | edavidaja/you-should-use-renv |
+
+What still differs, every case read:
+
+| Difference | Count |
+|---|---:|
+| Bazel: `http_archive` repositories in MODULE.bazel; Bazel downloads them, `mod graph` lists modules only. Cordon lists them | 5 |
+| Ansible: a task list ansible-galaxy would read as roles if asked; nothing asks it to. Cordon declines | 5 |
+| Ansible: requirements files ansible-galaxy refuses or crashed on (ansible-test's extra keys; a scratch-directory error). Cordon reads them | 2 |
+| Conan: Conan 1's `[build_requires]`, which Conan 2's reader refuses. Cordon reads it | 3 |
+| Actions: `uses:` lines GitHub's graph for a fork omits, and a repository using its own action. Cordon lists them | 3 |
+| Julia: Julia 1.12 standard libraries Pkg 1.11 does not know as such; TOML downloaded from the registry in a pre-1.6 manifest | 2 |
+| Nix: `file:///dev/null`, devenv's way of saying "no input". Cordon does not list it | 1 |
+| Nix: not yet explained (one input each way) | 2 |
+
+Results, repository by repository: `bench/results/tool-agreement-2026-10-10/`.
 
 ### What container images contain, against Syft
 

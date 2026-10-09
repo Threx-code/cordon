@@ -1,0 +1,253 @@
+{
+ "ecosystem": "opam",
+ "repositories": 30,
+ "reference": 282,
+ "cordon": 282,
+ "agree": 282,
+ "precision": 1.0,
+ "recall": 1.0,
+ "f1": 1.0,
+ "repositories_in_full_agreement": 30,
+ "rows": [
+  {
+   "repo": "Lupus/rust-staticlib-gen",
+   "reference": 15,
+   "cordon": 15,
+   "agree": 15,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "SimonGuilloud/orthologic-coq",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "UnixJunkie/bisec-tree",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ahrefs/ocaml-ceph",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "avifenesh/ocaml-valkey",
+   "reference": 16,
+   "cordon": 16,
+   "agree": 16,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "c-cube/calculon",
+   "reference": 23,
+   "cordon": 23,
+   "agree": 23,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "chetmurthy/not-ocamlfind",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "craff/CamlSurf",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "dannywillems/ocaml-cordova-plugin-globalization",
+   "reference": 2,
+   "cordon": 2,
+   "agree": 2,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "diskuv/dkml-dune-dsl",
+   "reference": 11,
+   "cordon": 11,
+   "agree": 11,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "dsheets/ocaml-unix-dirent",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ergl/crdt-ml",
+   "reference": 3,
+   "cordon": 3,
+   "agree": 3,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "fccm/OCamlSDL2_Image",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "gopiandcode/guile-ocaml",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "janestreet/env_config",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "kit-ty-kate/ocaml-docker-hub",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "let-def/sturgeon",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "lukstafi/ocaml-cudajit",
+   "reference": 7,
+   "cordon": 7,
+   "agree": 7,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nguermond/doculib",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ocaml-multicore/eio",
+   "reference": 28,
+   "cordon": 28,
+   "agree": 28,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ocamllibs/pyml",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "ocamlpro/synchronizer",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "rems-project/sail",
+   "reference": 28,
+   "cordon": 28,
+   "agree": 28,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "robur-coop/ocaml-pf",
+   "reference": 10,
+   "cordon": 10,
+   "agree": 10,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "rocq-prover/vsrocq",
+   "reference": 23,
+   "cordon": 23,
+   "agree": 23,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "sapristi/easy_logging",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "savonet/Camomile",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "thevilledev/ocaml-secret",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "tmattio/dream-accept",
+   "reference": 4,
+   "cordon": 4,
+   "agree": 4,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "tmcgilchrist/ocaml-hedgehog",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

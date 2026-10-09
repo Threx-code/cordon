@@ -1,0 +1,220 @@
+{
+ "ecosystem": "bazel",
+ "repositories": 25,
+ "reference": 864,
+ "cordon": 869,
+ "agree": 864,
+ "precision": 0.9942,
+ "recall": 1.0,
+ "f1": 0.9971,
+ "repositories_in_full_agreement": 23,
+ "rows": [
+  {
+   "repo": "ClickHouse/clickhouse-cpp",
+   "reference": 35,
+   "cordon": 35,
+   "agree": 35,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "Programming-Rivers/rules_scala_native",
+   "reference": 48,
+   "cordon": 48,
+   "agree": 48,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "amartani/rules_mise",
+   "reference": 34,
+   "cordon": 34,
+   "agree": 34,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "aspect-build/aspect-gazelle",
+   "reference": 47,
+   "cordon": 47,
+   "agree": 47,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bazel-contrib/bazel-gazelle",
+   "reference": 27,
+   "cordon": 27,
+   "agree": 27,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bazel-contrib/rules_ruby",
+   "reference": 36,
+   "cordon": 36,
+   "agree": 36,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bfreis/rules_bsx",
+   "reference": 27,
+   "cordon": 27,
+   "agree": 27,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bmw-software-engineering/trlc",
+   "reference": 46,
+   "cordon": 46,
+   "agree": 46,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "bpalermo/protoc-gen-clojure",
+   "reference": 52,
+   "cordon": 52,
+   "agree": 52,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "google/distributed_point_functions",
+   "reference": 48,
+   "cordon": 51,
+   "agree": 48,
+   "only_reference": [],
+   "only_cordon": [
+    "com_github_google_farmhash",
+    "com_github_google_iree",
+    "com_github_google_shell-encryption"
+   ]
+  },
+  {
+   "repo": "google/double-conversion",
+   "reference": 27,
+   "cordon": 27,
+   "agree": 27,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "google/libprotobuf-mutator",
+   "reference": 27,
+   "cordon": 27,
+   "agree": 27,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "grpc-ecosystem/grpc-gateway",
+   "reference": 34,
+   "cordon": 34,
+   "agree": 34,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "hermeticbuild/codesign.bzl",
+   "reference": 35,
+   "cordon": 35,
+   "agree": 35,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "hermeticbuild/linux.bzl",
+   "reference": 50,
+   "cordon": 50,
+   "agree": 50,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "hermeticbuild/rules_qemu",
+   "reference": 35,
+   "cordon": 35,
+   "agree": 35,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "hermeticbuild/windows_support",
+   "reference": 33,
+   "cordon": 33,
+   "agree": 33,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "hw-bzl/rules_riviera",
+   "reference": 32,
+   "cordon": 32,
+   "agree": 32,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "jeremy-rifkin/cpptrace",
+   "reference": 31,
+   "cordon": 33,
+   "agree": 31,
+   "only_reference": [],
+   "only_cordon": [
+    "libdwarf",
+    "libunwind"
+   ]
+  },
+  {
+   "repo": "lemire/fast_double_parser",
+   "reference": 28,
+   "cordon": 28,
+   "agree": 28,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "maliput/maliput_sparse",
+   "reference": 31,
+   "cordon": 31,
+   "agree": 31,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mboworks/bzl",
+   "reference": 18,
+   "cordon": 18,
+   "agree": 18,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "mikael-s-persson/bazel_cc_meta",
+   "reference": 27,
+   "cordon": 27,
+   "agree": 27,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "scottpledger/rules_auto_dotnet",
+   "reference": 29,
+   "cordon": 29,
+   "agree": 29,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "stackb/jvm_image",
+   "reference": 27,
+   "cordon": 27,
+   "agree": 27,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}
