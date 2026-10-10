@@ -774,6 +774,11 @@ class CabalFreeze:
                 parse_error=f"not a readable freeze file: {exc}",
             )
         values = CabalLayout.fields(nodes, "constraints")
+        if not values and CabalLayout.fields(nodes, "index-state"):
+            # Only the package index pinned (`index-state: hackage.haskell.org 2026-08-10T...`),
+            # PostgREST's way: every version is resolved from that snapshot when it builds, so none
+            # is locked -- which is a lock that pins nothing, not one that could not be read.
+            return LockGraph(path=content.path, ecosystem=ecosystem)
         if not values:
             return LockGraph(
                 path=content.path,

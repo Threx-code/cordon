@@ -1,0 +1,13 @@
+# A freeze file that pins only the package index -- PostgREST's, found scanning real projects --
+# was reported unreadable ("a freeze file with no `constraints`"), so the scan said it could not
+# check the lock. It pins nothing else: every version is resolved from that snapshot at build, so
+# the dependencies are what the .cabal file declares, none of them locked.
+kinds: [regression, valid]
+covers:
+  - file:cabal.project.freeze
+  - file:app.cabal
+  - UNI-02
+dependencies:
+  - {name: aeson, version_constraint: ">=2.1 && <2.3", resolved_version: null, direct: true}
+no_findings:
+  - OPERATIONAL.LOCKFILE.UNPARSED
