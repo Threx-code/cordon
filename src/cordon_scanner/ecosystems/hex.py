@@ -176,6 +176,30 @@ class BeamTerms:
             self.position = found.end()
             literal = self.attributes.get(found.group(1))
             return literal if literal is not None else Opaque(found.group(0))
+        if character == "&" and not self.erlang:
+            # A function capture (`docs: &docs/0`, Phoenix's mix.exs; `&Mod.fun/2`; `&(&1 + 1)`),
+            # kept as written, as code.
+            # `&String.starts_with?(&1, "test/")` too, the capture of a call.
+            start = self.position
+            head = re.compile(r"&[A-Za-z_][\w.]*[?!]?").match(text, self.position)
+            arity = re.compile(r"/\d+").match(text, head.end()) if head else None
+            if arity:
+                self.position = arity.end()
+            elif head and text.startswith("(", head.end()):
+                self.position = head.end()
+                self.balanced("(", ")")
+            elif text.startswith("&(", self.position):
+                self.position += 1
+                self.balanced("(", ")")
+            else:
+                raise self.fail("malformed function capture")
+            return Opaque(text[start : self.position])
+        if character == "~" and not self.erlang:
+            # A sigil (`test_load_filters: [~r/.*_test\.exs/]`, Elixir's own mix.exs fixtures):
+            # kept as written, as code.
+            start = self.position
+            self.sigil()
+            return Opaque(text[start : self.position])
         number = re.compile(r"-?\d[\d_]*(?:\.\d+)?").match(text, self.position)
         if number:
             self.position = number.end()
@@ -191,6 +215,11 @@ class BeamTerms:
                 return None
             if self.erlang and name[0].islower() and "." not in name:
                 return Atom(name)
+            if name == "fn" and not self.erlang:
+                # An anonymous function (`aliases: [mytask: fn _ -> ... end]`), to its `end`.
+                start = self.position - 2
+                self.to_end()
+                return Opaque(text[start : self.position])
             # A call or a variable: consume its argument list and keep it opaque.
             if self.peek() == "(":
                 start = self.position
@@ -198,6 +227,83 @@ class BeamTerms:
                 return Opaque(name + text[start : self.position])
             return Opaque(name)
         raise self.fail("unexpected character")
+
+    #: A sigil's opening delimiters and what closes each (Elixir's `Kernel` sigil syntax).
+    SIGIL_CLOSERS: ClassVar[dict[str, str]] = {
+        "/": "/",
+        "|": "|",
+        '"': '"',
+        "'": "'",
+        "(": ")",
+        "[": "]",
+        "{": "}",
+        "<": ">",
+    }
+
+    def sigil(self) -> None:
+        """Past a sigil: `~`, a lowercase letter or uppercase letters, a delimiter (or a `\"\"\"`
+        or `'''` heredoc), the text to its closer -- a backslash escaping the next character in a
+        lowercase sigil only -- then any modifier letters."""
+        text = self.text
+        found = re.compile(r"~([a-z]|[A-Z]+)").match(text, self.position)
+        if not found:
+            raise self.fail("malformed sigil")
+        self.position = found.end()
+        escapes = found.group(1).islower()
+        for heredoc in ('"""', "'''"):
+            if text.startswith(heredoc, self.position):
+                end = text.find(heredoc, self.position + 3)
+                if end < 0:
+                    raise self.fail("a sigil is never closed")
+                self.position = end + 3
+                break
+        else:
+            opening = text[self.position : self.position + 1]
+            closing = self.SIGIL_CLOSERS.get(opening)
+            if closing is None:
+                raise self.fail("malformed sigil")
+            self.position += 1
+            while self.position < len(text) and text[self.position] != closing:
+                self.position += 2 if escapes and text[self.position] == "\\" else 1
+            if self.position >= len(text):
+                raise self.fail("a sigil is never closed")
+            self.position += 1
+        modifiers = re.compile(r"[a-zA-Z]*").match(text, self.position)
+        self.position = modifiers.end() if modifiers else self.position
+
+    def to_end(self) -> None:
+        """Past the `end` closing a block just opened (`fn`): nested `fn`/`do` ... `end` counted,
+        strings, sigils and comments stepped over."""
+        text = self.text
+        depth = 1
+        keyword = re.compile(r"\b(fn|do|end)\b")
+        while self.position < len(text):
+            character = text[self.position]
+            if character in "\"'":
+                self.string(character)
+                continue
+            if character == "~" and re.match(r"~([a-z]|[A-Z]+)", text[self.position :]):
+                self.sigil()
+                continue
+            if character == "#":
+                newline = text.find("\n", self.position)
+                self.position = len(text) if newline < 0 else newline + 1
+                continue
+            found = keyword.match(text, self.position)
+            if found and (
+                self.position == 0
+                or not (text[self.position - 1].isalnum() or text[self.position - 1] in "_:.")
+            ):
+                self.position = found.end()
+                if found.group(1) == "end":
+                    depth -= 1
+                    if depth == 0:
+                        return
+                elif found.group(1) == "fn" or text[found.end() : found.end() + 1] != ":":
+                    depth += 1
+                continue
+            self.position += 1
+        raise self.fail("a block is never closed with `end`")
 
     def balanced(self, opening: str, closing: str) -> None:
         depth = 0

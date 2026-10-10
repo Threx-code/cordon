@@ -1,0 +1,12 @@
+# Found scanning real repositories: Elixir's own mix.exs fixtures use sigils (`~r/.../`) and an
+# anonymous function (`fn _ -> ... end`), and Phoenix's mix.exs function captures
+# (`&docs/0`, `&String.starts_with?(&1, ...)`); each refused the file. They are code, kept
+# opaque; the dependencies beside them are read.
+kinds: [regression, valid]
+covers:
+  - hex.declared-vs-locked
+  - UNI-01
+dependencies:
+  - {name: jason, version_constraint: "~> 1.4", direct: true}
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED
