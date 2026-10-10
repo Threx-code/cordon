@@ -274,22 +274,36 @@ class CondaPackage:
         return body, total
 
     @staticmethod
-    def _zstd(blob: bytes) -> bytes:
+    def _zstd_stream(blob: bytes) -> io.RawIOBase:
+        """`blob` decompressed as it is read, to at most MAX_STREAM_BYTES."""
         try:
             from compression import zstd  # type: ignore[import-not-found]  # Python 3.14+
 
-            out: bytes = zstd.decompress(blob)
+            stream: Any = zstd.ZstdFile(io.BytesIO(blob))
         except ImportError:
             try:
                 import zstandard  # type: ignore[import-not-found]
             except ImportError as exc:
                 raise CondaPackage.NeedsZstd from exc
-            out = zstandard.ZstdDecompressor().decompress(
-                blob, max_output_size=CondaPackage.MAX_INFO_BYTES
-            )
-        if len(out) > CondaPackage.MAX_INFO_BYTES:
-            raise ValueError("info too large")
-        return out
+            stream = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(blob))
+        return CondaPackage._Bounded(stream, CondaPackage.MAX_STREAM_BYTES)
+
+    class _Bounded(io.RawIOBase):
+        """A stream that fails once more than `limit` bytes are read from it."""
+
+        def __init__(self, inner: Any, limit: int) -> None:
+            self.inner, self.left = inner, limit
+
+        def readable(self) -> bool:
+            return True
+
+        def readinto(self, buffer: Any) -> int:
+            data = self.inner.read(len(buffer))
+            self.left -= len(data)
+            if self.left < 0:
+                raise ValueError("info too large")
+            buffer[: len(data)] = data
+            return len(data)
 
     class NeedsZstd(Exception):
         """Neither Python 3.14's zstd nor the `zstandard` package is available."""
@@ -362,7 +376,9 @@ class CondaPackage:
             body, _ = CondaPackage._range(
                 url, f"bytes={local + skip}-{local + skip + compressed - 1}", compressed
             )
-            with tarfile.open(fileobj=io.BytesIO(CondaPackage._zstd(body)), mode="r:") as archive:
+            # Read as a stream, to the recipe: info/ may hold far more than the recipe (a test
+            # suite, every path), so it is never decompressed whole.
+            with tarfile.open(fileobj=CondaPackage._zstd_stream(body), mode="r|") as archive:
                 return CondaPackage._from_tar(archive)
         return None
 

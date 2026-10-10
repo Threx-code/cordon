@@ -891,3 +891,22 @@ class TestProtocolTwoRefs:
             "https://git.postgresql.org/git/postgresql.git", "14.5", ("postgresql",), "x"
         )
         assert isinstance(found, Upstream) and found.query == {"commit": "e" * 40}
+
+
+class TestCondaInfoStream:
+    def test_the_recipe_is_read_past_a_large_info_member(self) -> None:
+        zstandard = pytest.importorskip("zstandard")
+        from cordon_scanner.intel.upstream_advisories import CondaPackage
+
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode="w") as archive:
+            for name, data in (
+                ("info/test/big.bin", b"\0" * (20 << 20)),
+                ("info/recipe/meta.yaml", b"package:\n  name: x\n"),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        blob = zstandard.ZstdCompressor().compress(raw.getvalue())
+        with tarfile.open(fileobj=CondaPackage._zstd_stream(blob), mode="r|") as archive:
+            assert CondaPackage._from_tar(archive) == "package:\n  name: x\n"
