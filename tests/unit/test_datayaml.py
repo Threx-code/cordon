@@ -56,6 +56,14 @@ class TestLockfileShapes:
         )
         assert data == {"a": "b", "url": "http://h/#frag", "text": "one\ntwo"}
 
+    @pytest.mark.parametrize("header", ["|2", "|-2", "|2-", ">+1", ">1+", "|2 # note", "|-", ">"])
+    def test_every_block_scalar_header(self, header: str) -> None:
+        # ingress-nginx's index.yaml writes `artifacthub.io/changes: |2`; read as an unreadable
+        # index until compared with a real one, which lost every chart in it.
+        data = DataYaml.load(f"changes: {header}\n   - one\n   - two\nversion: 4.8.0\n")
+        assert data["version"] == "4.8.0"
+        assert "- one" in data["changes"]
+
     def test_a_scalar_that_starts_below_its_key(self) -> None:
         # ansible.netcommon's galaxy.yml: the description wrapped under its key. Read as an
         # unreadable file until compared with ansible-galaxy, which lost the collection's

@@ -30,6 +30,10 @@ MAX_FLOW_CONTINUATION: Final = 200
 #: A plain key ends at the first colon followed by a space or the end of the line; a colon inside
 #: a word (`lodash@npm:4.17.21`, `https://...`) is part of it.
 _KEY_END: Final = re.compile(r":(?=\s|$)")
+#: A block scalar's header (YAML 1.2 §8.1.1): `|` or `>`, an indentation indicator and a chomping
+#: indicator in either order, each optional, then an optional comment -- `|2` is how Helm's
+#: index.yaml writes an annotation whose first line is indented.
+_BLOCK_SCALAR: Final = re.compile(r"[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#.*)?")
 
 
 class DataYamlError(ValueError):
@@ -161,7 +165,7 @@ class _Reader:
                 break
             key, rest = self.key(content, number)
             value: Any
-            if rest in ("|", ">", "|-", ">-", "|+", ">+"):
+            if _BLOCK_SCALAR.fullmatch(rest):
                 value, index = self.block_scalar(index + 1, indent, rest)
             elif rest:
                 rest, index = self.continued(rest, index, indent)
