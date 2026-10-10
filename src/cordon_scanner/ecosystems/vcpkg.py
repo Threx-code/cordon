@@ -212,7 +212,8 @@ class VcpkgManifest:
                     overrides,
                     unresolved
                     if on
-                    else f"a dependency of the optional feature `{feature}`: installed only when the feature is asked for",
+                    # The baseline still says which port it would be: kept with the reason.
+                    else f"a dependency of the optional feature `{feature}`: installed only when the feature is asked for; {unresolved}",
                     (f"feature {feature}",),
                     revisions,
                 )
