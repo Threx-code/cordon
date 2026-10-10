@@ -309,6 +309,17 @@ class PodfileLock:
     EDGE: ClassVar[re.Pattern[str]] = re.compile(r'^    - "?([^\s"(]+)"?')
 
     @staticmethod
+    def is_trunk(repository: str | None) -> bool:
+        """CocoaPods' public spec repository, however a lockfile names it: `trunk` (its CDN,
+        since 1.7.2), the CDN's address, or the git repository it was before -- written
+        `CocoaPods/Specs` or `cocoapods/specs`, with or without `.git`. None: a lockfile from
+        before SPEC REPOS, when trunk was the only source."""
+        if repository is None or repository == "trunk":
+            return True
+        normal = repository.lower().rstrip("/").removesuffix(".git")
+        return normal in ("https://github.com/cocoapods/specs", "https://cdn.cocoapods.org")
+
+    @staticmethod
     def sections(text: str) -> dict[str, list[str]]:
         out: dict[str, list[str]] = {}
         current = ""
@@ -403,11 +414,7 @@ class PodfileLock:
                 resolved_from = f"git+{options['git']}#{reference}"
             elif "podspec" in options:
                 resolved_from = options["podspec"]
-            elif repositories.get(name) not in (
-                None,
-                "trunk",
-                "https://github.com/CocoaPods/Specs.git",
-            ):
+            elif not PodfileLock.is_trunk(repositories.get(name)):
                 resolved_from = f"registry:{repositories[name]}"
             subspecs = sorted(slot["subspecs"])  # type: ignore[call-overload]
             checksum = checksums.get(name)
