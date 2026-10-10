@@ -29,6 +29,7 @@ import io
 import json
 import re
 import tarfile
+import threading
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Final
@@ -47,7 +48,10 @@ CONAN_CENTER: Final = "https://center2.conan.io/v2/conans"
 HOMEBREW_API: Final = "https://formulae.brew.sh/api/formula"
 TERRAFORM_REGISTRY: Final = "https://registry.terraform.io/v1/providers"
 VCPKG_RAW: Final = "https://raw.githubusercontent.com/microsoft/vcpkg"
-MAX_PACKAGES: Final = 400
+MAX_PACKAGES: Final = 20_000
+#: Packages whose upstream is looked up at once: each is a few HTTP requests, and a proof one
+#: download, so a conda lock of a thousand artifacts is not read one at a time.
+WORKERS: Final = 8
 """Packages resolved per scan. Past it the rest are reported unchecked, never silently skipped."""
 MAX_EXPORT_BYTES: Final = 1 << 20
 SUPPORTED: Final = frozenset(
@@ -1367,6 +1371,7 @@ class ContentProof:
     EMPTY_BLOB: ClassVar[str] = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
     """Git's id for an empty file."""
     MAX_ARCHIVE_BYTES: ClassVar[int] = 256 << 20
+    _running: ClassVar[threading.BoundedSemaphore] = threading.BoundedSemaphore(2)
     _results: ClassVar[dict[tuple[str, str, str], tuple[str, str]]] = {}
 
     @staticmethod
@@ -1459,7 +1464,10 @@ class ContentProof:
         cached = ContentProof._results.get(key)
         if cached is not None:
             return cached
-        result = ContentProof._check(archive, repository, commit, tag)
+        # A release archive and its tag's tree are held at once: two proofs at a time, whatever
+        # the number of lookups running.
+        with ContentProof._running:
+            result = ContentProof._check(archive, repository, commit, tag)
         ContentProof._results[key] = result
         return result
 
@@ -2274,17 +2282,21 @@ class UpstreamAdvisories:
 
     @staticmethod
     def check(dependencies: Iterable[Dependency]) -> UpstreamResult:
+        from concurrent.futures import ThreadPoolExecutor
+
         from cordon_scanner.intel.osv_import import OsvImport
 
         result = UpstreamResult()
         named: list[tuple[Dependency, Upstream]] = []
-        for index, dependency in enumerate(dependencies):
-            if index >= MAX_PACKAGES:
-                result.unchecked[dependency.purl] = (
-                    f"past the {MAX_PACKAGES}-package ceiling for one scan"
-                )
-                continue
-            upstream = UpstreamAdvisories.name(dependency)
+        listed = list(dependencies)
+        for dependency in listed[MAX_PACKAGES:]:
+            result.unchecked[dependency.purl] = (
+                f"past the {MAX_PACKAGES}-package ceiling for one scan"
+            )
+        within = listed[:MAX_PACKAGES]
+        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+            answers = list(pool.map(UpstreamAdvisories.name, within))
+        for dependency, upstream in zip(within, answers, strict=True):
             if isinstance(upstream, Unnamed):
                 if upstream.nothing:
                     result.checked.add(dependency.purl)
