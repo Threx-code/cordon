@@ -946,3 +946,58 @@ class TestGnuProjectsElsewhere:
             and not found.inferred
             and found.query == {"commit": "f" * 40}
         )
+
+
+class TestExactCommitsAndHosts:
+    def test_a_conan_source_cloned_at_a_commit(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import ConanCenter
+
+        sha = "191bcb948f7191c36eefe634336f5fc5c0c4c2be"
+        found = ConanCenter.committed(
+            {"url": "https://https.git.savannah.gnu.org/git/config.git", "commit": sha}, "x"
+        )
+        assert found is not None and found.query == {"commit": sha}
+        assert ConanCenter.committed({"url": "https://x/y.git", "commit": "main"}, "x") is None
+
+    def test_a_cgit_snapshot_of_a_commit(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import RepositoryArchive
+
+        sha = "191bcb948f7191c36eefe634336f5fc5c0c4c2be"
+        assert RepositoryArchive.parse(
+            f"http://git.savannah.gnu.org/cgit/config.git/snapshot/config-{sha}.tar.gz"
+        ) == (
+            "https://git.savannah.gnu.org/cgit/config.git",
+            sha,
+        )
+
+    def test_hosts_and_spellings(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import Conventions, TagInference
+
+        for url, repository in (
+            (
+                "https://distfiles.ariadne.space/pkgconf/pkgconf-2.5.1.tar.xz",
+                "https://github.com/pkgconf/pkgconf",
+            ),
+            (
+                "https://ffmpeg.org//releases/ffmpeg-7.1.1.tar.bz2",
+                "https://git.ffmpeg.org/ffmpeg.git",
+            ),
+            (
+                "https://www.x.org/archive//individual/lib/libpciaccess-0.17.tar.xz",
+                "https://gitlab.freedesktop.org/xorg/lib/libpciaccess",
+            ),
+            (
+                "https://download.savannah.gnu.org/releases/freetype/freetype-2.12.1.tar.gz",
+                "https://gitlab.freedesktop.org/freetype/freetype",
+            ),
+        ):
+            assert repository in Conventions.repositories([url]), url
+        monkeypatch.setattr(
+            TagInference,
+            "refs",
+            staticmethod(lambda repository: {"VER-2-12-1": "a" * 40, "n7.1.1": "b" * 40}),
+        )
+        first = TagInference.infer("https://r", "2.12.1", (), "x")
+        second = TagInference.infer("https://s", "7.1.1", (), "x")
+        assert isinstance(first, Upstream) and first.query == {"commit": "a" * 40}
+        assert isinstance(second, Upstream) and second.query == {"commit": "b" * 40}

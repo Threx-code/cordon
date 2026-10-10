@@ -108,6 +108,12 @@ class RepositoryArchive:
         re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/(?:raw|blob)/([0-9a-f]{40})/"),
         re.compile(r"^https://raw\.githubusercontent\.com/([\w.-]+)/([\w.-]+)/([0-9a-f]{40})/"),
     )
+    #: cgit's snapshot of a commit (savannah's gnu-config: `cgit/config.git/snapshot/
+    #: config-<sha>.tar.gz`): the commit is exact, on the snapshot's own repository.
+    CGIT_SNAPSHOT: ClassVar[re.Pattern[str]] = re.compile(
+        r"^https?://([\w.-]+)/((?:cgit/)?[\w./+-]+?)/snapshot/[\w.+-]*?-([0-9a-f]{40})"
+        r"\.(?:tar\.gz|tar\.xz|tar\.bz2|zip)$"
+    )
     #: Codeberg (Forgejo): `/<owner>/<repo>/archive/<ref>.tar.gz`.
     CODEBERG: ClassVar[re.Pattern[str]] = re.compile(
         r"^https://codeberg\.org/([\w.-]+)/([\w.-]+)/archive/(.+?)(?:\.tar\.gz|\.zip)$"
@@ -132,6 +138,9 @@ class RepositoryArchive:
                     f"https://github.com/{owner}/{repo.removesuffix('.git')}",
                     urllib.parse.unquote(ref),
                 )
+        found = RepositoryArchive.CGIT_SNAPSHOT.match(url)
+        if found:
+            return f"https://{found.group(1)}/{found.group(2)}", found.group(3)
         found = RepositoryArchive.CODEBERG.match(url)
         if found:
             return (
@@ -1362,6 +1371,7 @@ class TagInference:
         spellings = {s for v in forms for s in (v, f"v{v}", f"release-{v}", f"version-{v}")}
         # PostgreSQL's `REL_14_5`, `REL9_6_24`: the underscore form behind its own prefix.
         spellings |= {f"REL_{version.replace('.', '_')}", f"REL{version.replace('.', '_')}"}
+        spellings |= {f"n{version}", f"VER-{version.replace('.', '-')}"}
         for name in names:
             if name:
                 spellings |= {
@@ -1476,6 +1486,60 @@ class Conventions:
             "https://github.com/sqlite/sqlite",
         ),
         (
+            re.compile(r"^https?://distfiles\.(?:ariadne\.space|dereferenced\.org)/(pkgconf)/"),
+            "https://github.com/pkgconf/pkgconf",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?nasm\.us/pub/(nasm)/"),
+            "https://github.com/netwide-assembler/nasm",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?tortall\.net/projects/(yasm)/"),
+            "https://github.com/yasm/yasm",
+        ),
+        (
+            re.compile(
+                r"^https?://(?:download|downloads)\.sourceforge\.net/(?:project/)?(libpng)/"
+            ),
+            "https://github.com/pnggroup/libpng",
+        ),
+        (
+            re.compile(r"^https?://download\.osgeo\.org/(libtiff)/"),
+            "https://gitlab.com/libtiff/libtiff",
+        ),
+        (
+            re.compile(
+                r"^https?://storage\.googleapis\.com/downloads\.webmproject\.org/releases/webp/(libwebp)-"
+            ),
+            "https://github.com/webmproject/libwebp",
+        ),
+        (
+            re.compile(r"^https?://downloads\.videolan\.org/(?:pub/)?videolan/(dav1d)/"),
+            "https://code.videolan.org/videolan/dav1d",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?ffmpeg\.org/+releases/(ffmpeg)-"),
+            "https://git.ffmpeg.org/ffmpeg.git",
+        ),
+        (
+            re.compile(r"^https?://dri\.freedesktop\.org/(libdrm)/"),
+            "https://gitlab.freedesktop.org/mesa/drm",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?sourceware\.org/(elfutils)/ftp/"),
+            "https://sourceware.org/git/elfutils.git",
+        ),
+        (
+            re.compile(
+                r"^https?://(?:cdn|mirrors\.edge|www)\.kernel\.org/pub/linux/utils/(util-linux)/"
+            ),
+            "https://github.com/util-linux/util-linux",
+        ),
+        (
+            re.compile(r"^https?://download\.savannah\.(?:gnu|nongnu)\.org/releases/(freetype)/"),
+            "https://gitlab.freedesktop.org/freetype/freetype",
+        ),
+        (
             re.compile(r"^https?://cache\.ruby-lang\.org/pub/(ruby)/"),
             "https://github.com/ruby/{0}",
         ),
@@ -1486,7 +1550,9 @@ class Conventions:
             "https://gitlab.gnome.org/GNOME/{0}",
         ),
         (
-            re.compile(r"^https?://(?:www\.)?x\.org/releases/individual/([\w-]+)/([\w.+-]+?)-\d"),
+            re.compile(
+                r"^https?://(?:www\.)?x\.org/(?:releases|archive)/+individual/([\w-]+)/([\w.+-]+?)-\d"
+            ),
             "https://gitlab.freedesktop.org/xorg/{0}/{1}",
         ),
         (
@@ -1759,6 +1825,17 @@ class ConanCenter:
                     archive = Archive(tuple(found), f"sha256:{sha256}")
                 stack.extend(v for k, v in node.items() if k not in ("url", "sha256"))
         return list(dict.fromkeys(urls)), archive
+
+    @staticmethod
+    def committed(source: object, how: str) -> Upstream | None:
+        """A source cloned at a commit (gnu-config: `url: <git repository>`, `commit: <sha>`):
+        that commit, exactly -- on any host, since a commit names the same code everywhere."""
+        if not isinstance(source, dict):
+            return None
+        commit, url = source.get("commit"), source.get("url")
+        if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit):
+            return Upstream({"commit": commit}, f"{how} ({url}), at commit {commit[:12]}")
+        return None
 
     @staticmethod
     def exact(urls: list[str], how: str) -> Upstream | Unnamed:
@@ -2051,7 +2128,7 @@ class Upstreams:
         urls, pinned = ConanCenter.leaves(source)
         # Where this version's sources name no repository (zlib 1.2.11: only zlib.net), the
         # recipe's other versions may: one repository named across them is a candidate.
-        exact = ConanCenter.exact(urls, how)
+        exact = ConanCenter.committed(source, how) or ConanCenter.exact(urls, how)
         if isinstance(exact, Upstream):
             return exact
         current = ConanCenter.repositories(name) or set()
