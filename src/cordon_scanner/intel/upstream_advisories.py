@@ -649,7 +649,8 @@ class VcpkgPorts:
 
         while index < length:
             character = raw[index]
-            if character.isspace():
+            if character.isspace() or character in "()":
+                # Whitespace, or a nested parenthesis (`if(A AND (B OR C))`), separates arguments.
                 index += 1
             elif character == "#":
                 newline = raw.find("\n", index)

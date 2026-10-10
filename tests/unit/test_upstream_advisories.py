@@ -627,3 +627,10 @@ class TestConanCenterSources:
             Unnamed("x"), ["https://github.com/ruby/ruby"], "3.2.2", ("ruby",), "x"
         )
         assert isinstance(found, Upstream) and found.query == {"commit": "f" * 40}
+
+
+class TestCMakeArguments:
+    def test_nested_parentheses_separate_arguments_and_end(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        assert VcpkgPorts._arguments('A AND (B OR "C") ( )', {}) == ["A", "AND", "B", "OR", "C"]
