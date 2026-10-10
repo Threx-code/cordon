@@ -1,0 +1,16 @@
+# `version: @version` -- a module attribute, the idiom of most mix.exs files -- refused the whole
+# file at the `@` ("unexpected character"): jason's mix.exs, found scanning real hex.pm projects,
+# and with it every dependency it declares. An attribute the module sets once, to a plain string,
+# reads as that string, as Elixir reads it at compile time; one set twice is left as written,
+# never evaluated.
+kinds: [regression, valid]
+covers:
+  - file:mix.exs
+  - UNI-01
+  - UNI-02
+dependencies:
+  - {name: phoenix, version_constraint: "~> 1.7.14", direct: true}
+  - {name: jason, version_constraint: "~> 1.4", direct: true}
+  - {name: ecto_sql, direct: true}
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED

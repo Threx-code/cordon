@@ -66,11 +66,13 @@ class BeamTerms:
     MAX_DEPTH: ClassVar[int] = 64
     MAX_ITEMS: ClassVar[int] = 200_000
 
-    def __init__(self, text: str, erlang: bool) -> None:
+    def __init__(self, text: str, erlang: bool, attributes: dict[str, str] | None = None) -> None:
         self.text = text
         self.erlang = erlang
         self.position = 0
         self.items = 0
+        self.attributes = attributes or {}
+        """Module attributes (`@version`) the module sets once to a string literal."""
 
     # -- lexing -----------------------------------------------------------------------------------
 
@@ -165,6 +167,15 @@ class BeamTerms:
                 raise self.fail("malformed atom")
             self.position = found.end()
             return Atom(found.group(0))
+        if character == "@" and not self.erlang:
+            # A module attribute (`version: @version`): its literal value where the module sets
+            # it once to a string, else kept as written. jason's mix.exs was refused at the `@`.
+            found = re.compile(r"@([a-z_][\w]*)").match(text, self.position)
+            if not found:
+                raise self.fail("malformed module attribute")
+            self.position = found.end()
+            literal = self.attributes.get(found.group(1))
+            return literal if literal is not None else Opaque(found.group(0))
         number = re.compile(r"-?\d[\d_]*(?:\.\d+)?").match(text, self.position)
         if number:
             self.position = number.end()
@@ -339,9 +350,24 @@ class Mixfile:
         bracket = text.find("[", start)
         if bracket < 0:
             return None
-        reader = BeamTerms(text, erlang=False)
+        reader = BeamTerms(text, erlang=False, attributes=Mixfile.attributes(text))
         reader.position = bracket
         return reader.term()
+
+    @staticmethod
+    def attributes(text: str) -> dict[str, str]:
+        """The module attributes set exactly once, to a plain string (`@version "1.4.5"`): the
+        value a later `@version` reads. One set twice, or to anything else, is left unread."""
+        sets: dict[str, list[str]] = {}
+        for found in re.finditer(r"(?m)^\s*@([a-z_]\w*)\s+(\S.*?)\s*$", text):
+            sets.setdefault(found.group(1), []).append(found.group(2))
+        literal = re.compile(r'"((?:[^"\\#]|\\.)*)"')
+        out: dict[str, str] = {}
+        for name, values in sets.items():
+            plain = literal.fullmatch(values[0]) if len(values) == 1 else None
+            if plain:
+                out[name] = plain.group(1)
+        return out
 
     @staticmethod
     def balanced(text: str) -> bool:
