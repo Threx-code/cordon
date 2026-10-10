@@ -461,7 +461,7 @@ class Brewfile:
                 )
             else:
                 args = re.search(r"args:\s*\[([^\]]*)\]", rest)
-                tap, name = Brewfile.qualified(value)
+                from_tap, name = Brewfile.qualified(value)
                 declared.append(
                     DeclaredDependency(
                         # Formula names are lower case, matched by brew in any case; the spelling
@@ -472,7 +472,7 @@ class Brewfile:
                         field_name=kind,
                         extras=tuple(re.findall(r'"([^"]+)"', args.group(1))) if args else (),
                         platform=conditions,
-                        source=f"registry:{tap}" if tap else None,
+                        source=f"registry:{from_tap}" if from_tap else None,
                         alias=value if value != name.lower() else None,
                         note="brew bundle installs the current version: a Brewfile pins nothing",
                     )
