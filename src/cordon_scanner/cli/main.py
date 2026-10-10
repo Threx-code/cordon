@@ -383,6 +383,21 @@ class CommandLine:
             ),
         )
         execution.add_argument(
+            "--keyring",
+            dest="keyrings",
+            action="append",
+            metavar="FILE",
+            default=[
+                p for p in os.environ.get("CORDON_KEYRINGS", "").split(os.pathsep) if p.strip()
+            ],
+            help=(
+                "with --online, verify a Helm chart's provenance file against the OpenPGP keys in "
+                "FILE, as `helm verify --keyring` does: armored, binary or a GnuPG keybox "
+                "(repeatable; needs the [attest] extra). Never set from a repository's own "
+                "configuration (env: CORDON_KEYRINGS, separated by the path separator)"
+            ),
+        )
+        execution.add_argument(
             "--yara",
             metavar="RULES",
             default=os.environ.get("CORDON_YARA") or None,
@@ -1039,6 +1054,8 @@ class CommandLine:
             overrides["expand_archives"] = False
         if getattr(args, "clamav", None):
             overrides["clamav"] = args.clamav
+        if getattr(args, "keyrings", None):
+            overrides["keyrings"] = tuple(args.keyrings)
         if getattr(args, "yara", None):
             overrides["yara"] = args.yara
         if getattr(args, "registry_tokens", None):

@@ -395,6 +395,8 @@ Charts a chart depends on. Ecosystem id `helm`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

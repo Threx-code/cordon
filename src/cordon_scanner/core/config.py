@@ -363,6 +363,11 @@ class Config:
     """A YARA rules file to match every file against (`--yara`). Set only by the operator, for the
     reason `clamav` is: a repository that chose the rules run against it would choose rules that
     never match. See `detect/yara_rules`."""
+    keyrings: tuple[str, ...] = ()
+    """OpenPGP keyrings whose keys a Helm chart's provenance file may be signed by (`--keyring`,
+    `CORDON_KEYRINGS`), as `helm verify --keyring` takes them. Set only by the operator, never
+    from any configuration file: a repository that chose the keys it is verified against would
+    bring its own. See `intel/openpgp`."""
     judge: str | None = None
     """A language model to judge agent-facing text (`--judge`): `ollama:<model>`,
     `openai:<model>`, `anthropic[:<model>]` or `cordon-cloud`. Set only by the operator, for the
@@ -910,6 +915,7 @@ class Config:
             intel_feed=self.intel_feed and org.intel_feed,
             clamav=self.clamav or org.clamav,
             yara=self.yara or org.yara,
+            keyrings=self.keyrings or org.keyrings,
             judge=self.judge or org.judge,
             judge_blocks=self.judge_blocks or org.judge_blocks,
             judge_max_calls=min(self.judge_max_calls, org.judge_max_calls),
@@ -1006,6 +1012,7 @@ class Config:
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
             "yara": bool(self.yara),
+            "keyrings": bool(self.keyrings),
             "judge": bool(self.judge),
             "evidence": str(self.evidence),
         }
@@ -1087,6 +1094,7 @@ class Config:
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
             "yara": bool(self.yara),
+            "keyrings": bool(self.keyrings),
             "judge": bool(self.judge),
             "detectors": dict(sorted(self.detectors.items())),
             "exclude": list(self.exclude),

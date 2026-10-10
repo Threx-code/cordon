@@ -22,6 +22,7 @@ registry detector it complements.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
@@ -63,7 +64,7 @@ UNSIGNED_IMAGE_RULE = "POLICY.CONTAINER.UNSIGNED_IMAGE.001"
 #: no publish-time attestation to verify yet, so the detector stays silent for
 #: them rather than reporting an absence that means nothing.
 SUPPORTED_ECOSYSTEMS = frozenset(
-    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel"}
+    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel", "helm"}
 )
 
 _GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
@@ -191,6 +192,12 @@ class ProvenanceDetector(BaseDetector):
             # A Bazel module is attested in the Bazel Central Registry: one from another registry,
             # or a Maven artefact a Bazel extension installs, is not asked there.
             and not (d.ecosystem == "bazel" and (d.resolved_from or d.local or ":" in d.name))
+            # A Helm chart is asked of the repository it came from: over HTTPS or OCI, not one
+            # named only (`@name`) or the project's own (`file://`).
+            and not (
+                d.ecosystem == "helm"
+                and not (d.resolved_from or "").startswith(("https://", "oci://"))
+            )
         ]
         findings: list[Finding] = []
         for index, dependency in enumerate(candidates[:MAX_QUERIES]):
@@ -237,6 +244,9 @@ class ProvenanceDetector(BaseDetector):
             return
         if dependency.ecosystem == "bazel":
             yield from self._verify_bazel(dependency, ctx)
+            return
+        if dependency.ecosystem == "helm":
+            yield from self._verify_helm(dependency, ctx)
             return
         from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
@@ -398,6 +408,57 @@ class ProvenanceDetector(BaseDetector):
                 dependency=dependency,
                 detail=f"the build attestation for {label} could not be verified: {check.detail}",
             )
+
+    def _verify_helm(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A chart's provenance file against the operator's keyring (`intel/helm_provenance`)."""
+        from cordon_scanner.intel.helm_provenance import HelmProvenance
+        from cordon_scanner.intel.openpgp import OpenPgp
+
+        if not OpenPgp.available():
+            # Without the extra nothing is fetched: whether the chart is signed is not known.
+            return
+        paths = ctx.config.keyrings
+        stamp = tuple((p, self._modified(p)) for p in paths)
+        cached = getattr(self, "_keyring", None)
+        if cached is None or cached[0] != stamp:
+            # Read once per scan rather than once per chart, and again when a file changes: a
+            # detector outlives one scan in a long-running server.
+            cached = (stamp, OpenPgp.load(paths))
+            self._keyring = cached
+        check = HelmProvenance.check(
+            dependency.name,
+            dependency.version or "",
+            dependency.resolved_from,
+            dependency.integrity,
+            cached[1],
+        )
+        label = f"{dependency.name}@{dependency.version}"
+        if check.outcome == "verified":
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+        elif check.outcome == "absent":
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the provenance file of chart {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the provenance of chart {label} could not be verified: {check.detail}",
+            )
+
+    @staticmethod
+    def _modified(path: str) -> float:
+        try:
+            return Path(path).expanduser().stat().st_mtime
+        except OSError:
+            return -1.0
 
     def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A BCR module's attestations against what the lock pinned (`intel/bazel_provenance`)."""

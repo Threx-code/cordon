@@ -190,3 +190,121 @@ class TestItReportsAFailedVerification(ProvenanceFixtures):
 
         ProvenanceHelpers.ids(ProvenanceHelpers.dependency())
         assert seen["source_repo"] == ("github.com", "Owner", "Repo")
+
+
+class OwnVerifiers:
+    """Stand-ins for the Bazel and Helm verifiers: what each was asked, how often a keyring was
+    read, and the outcome every check answers."""
+
+    def __init__(self, monkeypatch) -> None:
+        from cordon_scanner.intel.bazel_provenance import BazelProvenance, ModuleCheck
+        from cordon_scanner.intel.helm_provenance import ChartCheck, HelmProvenance
+        from cordon_scanner.intel.openpgp import Keyring, OpenPgp
+
+        self.modules: list[str] = []
+        self.charts: list[tuple[str, str | None, tuple[str, ...]]] = []
+        self.keyring_reads: list[tuple[str, ...]] = []
+        self.outcome = "verified"
+
+        def load(paths: tuple[str, ...]) -> Keyring:
+            self.keyring_reads.append(paths)
+            return Keyring(paths=paths)
+
+        def module(name, version, integrity):
+            self.modules.append(name)
+            return ModuleCheck(self.outcome, "stood in")
+
+        def chart(name, version, source, integrity, keyring):
+            self.charts.append((name, source, keyring.paths))
+            return ChartCheck(self.outcome, "stood in")
+
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+        monkeypatch.setattr(OpenPgp, "available", staticmethod(lambda: True))
+        monkeypatch.setattr(OpenPgp, "load", staticmethod(load))
+        monkeypatch.setattr(BazelProvenance, "check", staticmethod(module))
+        monkeypatch.setattr(HelmProvenance, "check", staticmethod(chart))
+
+
+class TestTheEcosystemsVerifiedOutsideTheRegistryClient:
+    """Bazel modules and Helm charts are verified by their own modules: which dependencies reach
+    them, and what each of their answers becomes."""
+
+    @staticmethod
+    def dependency(ecosystem: str, name: str, resolved_from: str | None) -> Dependency:
+        return Dependency(
+            purl=f"pkg:{ecosystem}/{name}@1.0.0",
+            ecosystem=ecosystem,
+            name=name,
+            version="1.0.0",
+            direct=True,
+            resolved_from=resolved_from,
+            integrity=_INTEGRITY,
+            declared_in="Chart.lock" if ecosystem == "helm" else "MODULE.bazel.lock",
+        )
+
+    @staticmethod
+    def run(deps: tuple[Dependency, ...], keyrings: tuple[str, ...] = ()) -> list[str]:
+        from dataclasses import replace
+
+        ctx = ScanContext(
+            config=replace(Config.default(), keyrings=keyrings),
+            rules=RuleSet(RuleLoader.load_builtin()),
+            offline=False,
+        )
+        return [f.rule_id for f in ProvenanceDetector().inspect(GraphUnit(dependencies=deps), ctx)]
+
+    def test_only_charts_from_a_repository_are_asked_and_the_keyring_is_read_once(
+        self, monkeypatch
+    ) -> None:
+        stand_in = OwnVerifiers(monkeypatch)
+        deps = (
+            self.dependency("helm", "a", "https://charts.example.invalid"),
+            self.dependency("helm", "b", "oci://registry.example.invalid/charts"),
+            self.dependency("helm", "c", "registry:internal"),
+            self.dependency("helm", "d", None),
+        )
+        assert self.run(deps, ("/keys/ring.asc",)) == []
+        assert [name for name, _, _ in stand_in.charts] == ["a", "b"]
+        assert {paths for _, _, paths in stand_in.charts} == {("/keys/ring.asc",)}
+        assert stand_in.keyring_reads == [("/keys/ring.asc",)]
+
+    def test_only_bcr_modules_are_asked(self, monkeypatch) -> None:
+        stand_in = OwnVerifiers(monkeypatch)
+        self.run(
+            (
+                self.dependency("bazel", "rules_x", None),
+                self.dependency("bazel", "rules_y", "https://registry.example.invalid/"),
+                self.dependency("bazel", "com.example:lib", None),
+            )
+        )
+        assert stand_in.modules == ["rules_x"]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+            ("unconfigured", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_chart_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        stand_in = OwnVerifiers(monkeypatch)
+        stand_in.outcome = outcome
+        assert self.run((self.dependency("helm", "a", "https://charts.example.invalid"),)) == rules
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+            ("unpinned", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_module_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        stand_in = OwnVerifiers(monkeypatch)
+        stand_in.outcome = outcome
+        assert self.run((self.dependency("bazel", "rules_x", None),)) == rules

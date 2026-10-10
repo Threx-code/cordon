@@ -449,7 +449,12 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "conda.variables": "environment variables an environment sets, named and never valued",
         },
         {
-            "UNI-17": NO_PROVENANCE,
+            "UNI-17": (
+                "conda-forge and the defaults channel publish no attestation (no repodata field for "
+                "one, October 2026); prefix.dev's CEP-27 attestations are signed by each "
+                "publisher's own workflow, which nothing in an environment or lock file names to "
+                "verify the signer against"
+            ),
             "UNI-18": "a conda package's post-link scripts run from the archive, which content scanning reads; the environment file declares none",
         },
     ),
@@ -621,7 +626,13 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "ansible.compatibility": "the ansible-core versions a collection supports (requires_ansible)",
         },
         {
-            "UNI-17": NO_PROVENANCE,
+            "UNI-17": (
+                "a collection's signatures are OpenPGP signatures over its MANIFEST.json, served by a "
+                "Galaxy server or listed under `signatures:` in a requirements file; measured "
+                "October 2026, galaxy.ansible.com served none for 600 of 600 collections, and no "
+                "public requirements file in Sourcegraph's index lists any: they exist only on "
+                "private Galaxy NG and Automation Hub servers, behind credentials"
+            ),
             "UNI-15": "Galaxy requirement files record no hash; git sources are judged by commit pinning (ansible.git)",
             "UNI-18": "ansible-galaxy install runs no code from a role or collection; what they run, they run in plays, which the playbook rules read (ansible.playbooks)",
         },
@@ -660,7 +671,6 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "helm.k8s": "Kubernetes resources checked for deployment risks, kept apart from chart dependencies",
         },
         {
-            "UNI-17": NO_PROVENANCE,
             "UNI-18": "charts run no code at install beyond hooks, which are Kubernetes resources checked under helm.k8s",
             "UNI-15": "a chart lock records no per-chart hash; a downloaded archive's is computed from its bytes, never read, so no recorded value can be malformed -- a mismatch with the repository's digest is UNI-16",
             "UNI-14": "every chart dependency names its repository's URL: there is no shared public namespace an internal chart's name could be taken in",
