@@ -51,6 +51,24 @@ class Ruby:
     """The few Ruby forms Homebrew's DSL is written in."""
 
     BLOCK_OPEN: ClassVar[re.Pattern[str]] = re.compile(r"\bdo(?:\s*\|[^|]*\|)?\s*(?:#.*)?$")
+    #: A keyword that opens a block `end` closes: at the start of a statement, or where Ruby reads
+    #: an expression -- after `=`, `<<`, `||`, `&&`, an opening bracket or a comma (curl's formula:
+    #: `args << if OS.mac?` ... `end`). After a statement, or after `return`, it is a modifier:
+    #: git's `return unless OS.mac?`.
+    KEYWORD_OPEN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|(?:[=(\[{,]|<<|\|\||&&)\s*)"
+        r"(?:class|module|def|if|unless|case|begin|while|until)\b"
+    )
+
+    @staticmethod
+    def opens_block(stripped: str) -> bool:
+        """Whether a line opens a block a later `end` closes: a `do` block, or a keyword one not
+        closed on the same line and not Ruby 3's endless `def name = expr`."""
+        if Ruby.BLOCK_OPEN.search(stripped):
+            return True
+        if not Ruby.KEYWORD_OPEN.search(stripped) or re.search(r"(?:^|[\s;])end\s*$", stripped):
+            return False
+        return not re.match(r"^def\s+[\w.?!]+(?:\([^)]*\)\s*|\s+)=(?![=~>])", stripped)
 
     @staticmethod
     def lines(text: str) -> Iterator[tuple[int, str]]:
@@ -104,11 +122,7 @@ class Ruby:
         depth = 0
         for _number, line in Ruby.lines(text):
             stripped = line.strip()
-            # A keyword opener starts its line; a trailing `if` / `unless` modifier opens nothing.
-            keyword = re.match(
-                r"^(?:class|module|def|if|unless|case|begin|while|until)\b", stripped
-            ) and not re.search(r"\bend$", stripped)
-            if Ruby.BLOCK_OPEN.search(stripped) or keyword:
+            if Ruby.opens_block(stripped):
                 depth += 1
             if re.match(r"^end\b", stripped):
                 depth -= 1
@@ -177,6 +191,11 @@ class Formula:
                         )
                     )
                 pending = {}
+                continue
+            if Ruby.opens_block(stripped) and not stripped.startswith("class "):
+                # Any other block -- `if` ... `end`, `Dir.glob do` -- so that its `end` closes it
+                # and not the named block around it. The class itself is the top level.
+                stack.append("block")
                 continue
             if re.match(r"^end\b", stripped):
                 if stack:
@@ -472,7 +491,7 @@ class Brewfile:
                         scope=Scope.DEV,
                         field_name=kind,
                         extras=tuple(re.findall(r'"([^"]+)"', args.group(1))) if args else (),
-                        platform=conditions,
+                        platform=(*conditions, "cask") if kind == "cask" else conditions,
                         source=f"registry:{from_tap}" if from_tap else None,
                         alias=value if value != name.lower() else None,
                         note="brew bundle installs the current version: a Brewfile pins nothing",
@@ -566,6 +585,8 @@ class BrewfileLock:
                         integrity=f"sha256:{digest}" if digest else None,
                         scope=Scope.DEV,
                         direct=True,
+                        # A cask is an application, not a formula: one name can be both (docker).
+                        platform=("cask",) if kind == "cask" else (),
                     )
                 )
         return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
