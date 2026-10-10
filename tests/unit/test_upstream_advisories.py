@@ -846,3 +846,48 @@ class TestHomebrewAliases:
         self.registry(monkeypatch, {f"{self.CORE}/formula_renames.json": b'{"annie": "lux"}'})
         found = HomebrewBottles.formula_data("exa", "0.9.0")
         assert isinstance(found, Unnamed) and "no longer has this formula" in found.reason
+
+
+class TestProtocolTwoRefs:
+    def test_ls_refs_lists_tags_peeled(self, monkeypatch) -> None:
+        import io as _io
+        import urllib.request
+
+        from cordon_scanner.intel.gitfetch import GitFetch
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        answer = b"".join(
+            [
+                GitFetch._pkt(f"{'a' * 40} refs/tags/REL_14_5 peeled:{'b' * 40}\n"),
+                GitFetch._pkt(f"{'c' * 40} refs/tags/REL_14_6\n"),
+                b"0000",
+            ]
+        )
+        asked: list[bytes] = []
+
+        class Response(_io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                return None
+
+        def urlopen(request, timeout=0):
+            asked.append(request.data)
+            return Response(answer)
+
+        monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+        found = TagInference.ls_refs("https://git.postgresql.org/git/postgresql.git")
+        assert found == {"REL_14_5": "b" * 40, "REL_14_6": "c" * 40}
+        assert b"command=ls-refs" in asked[0] and b"ref-prefix refs/tags/" in asked[0]
+
+    def test_postgresqls_tag_spelling(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"REL_14_5": "e" * 40})
+        )
+        found = TagInference.infer(
+            "https://git.postgresql.org/git/postgresql.git", "14.5", ("postgresql",), "x"
+        )
+        assert isinstance(found, Upstream) and found.query == {"commit": "e" * 40}

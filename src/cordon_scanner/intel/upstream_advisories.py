@@ -1261,11 +1261,23 @@ class TagInference:
                     with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
                         kind = str(response.headers.get("Content-Type") or "")
                         body: bytes = response.read(TagInference.MAX_REFS_BYTES + 1)
+                        final = str(response.geturl())
                     break
                 except OSError:
                     if attempt == 2:
                         raise
-            if "git-upload-pack-advertisement" in kind and len(body) <= TagInference.MAX_REFS_BYTES:
+            if (
+                "git-upload-pack-advertisement" in kind
+                and b"version 2" in body[:64]
+                and final.startswith("https://")
+            ):
+                # A server that answers in protocol v2 unasked (git.postgresql.org) lists no
+                # refs here: they are asked for with `ls-refs`, peeled.
+                found = TagInference.ls_refs(final.split("/info/refs", 1)[0])
+                TagInference._tips[repository] = dict(found)
+            elif (
+                "git-upload-pack-advertisement" in kind and len(body) <= TagInference.MAX_REFS_BYTES
+            ):
                 found = {}
                 peeled: dict[str, str] = {}
                 for line in re.findall(rb"[0-9a-f]{4}([0-9a-f]{40}) (refs/tags/[^\x00\n]+)", body):
@@ -1284,6 +1296,46 @@ class TagInference:
         return found
 
     @staticmethod
+    def ls_refs(base: str) -> dict[str, str]:
+        """`tag -> commit` by protocol v2's `ls-refs`, annotated tags peeled."""
+        import urllib.request
+
+        from cordon_scanner.intel.gitfetch import GitFetch
+
+        body = b"".join(
+            [
+                GitFetch._pkt("command=ls-refs\n"),
+                GitFetch._pkt("agent=git/2.45.0 (cordon-scanner)\n"),
+                b"0001",
+                GitFetch._pkt("peel\n"),
+                GitFetch._pkt("ref-prefix refs/tags/\n"),
+                b"0000",
+            ]
+        )
+        request = urllib.request.Request(  # noqa: S310 - https, checked by the caller
+            f"{base}/git-upload-pack",
+            data=body,
+            headers={
+                "User-Agent": "git/2.45.0 (cordon-scanner)",
+                "Git-Protocol": "version=2",
+                "Content-Type": "application/x-git-upload-pack-request",
+                "Accept": "application/x-git-upload-pack-result",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
+            answer: bytes = response.read(TagInference.MAX_REFS_BYTES + 1)
+        if len(answer) > TagInference.MAX_REFS_BYTES:
+            raise ValueError("ref listing too large")
+        found: dict[str, str] = {}
+        for line in GitFetch._lines(answer):
+            listed = re.match(
+                rb"([0-9a-f]{40}) refs/tags/(\S+)(?: peeled:([0-9a-f]{40}))?", line or b""
+            )
+            if listed:
+                found[listed.group(2).decode()] = (listed.group(3) or listed.group(1)).decode()
+        return found
+
+    @staticmethod
     def infer(repository: str, version: str, names: Iterable[str], how: str) -> Upstream | Unnamed:
         tags = TagInference.refs(repository)
         if tags is None:
@@ -1291,7 +1343,9 @@ class TagInference:
         # The version as written, and with its dots as underscores (Ruby's `v3_2_2`, curl's
         # `curl-8_0_0`): the same version, spelled the way some projects tag.
         forms = {version, version.replace(".", "_")}
-        spellings = {s for v in forms for s in (v, f"v{v}", f"release-{v}")}
+        spellings = {s for v in forms for s in (v, f"v{v}", f"release-{v}", f"version-{v}")}
+        # PostgreSQL's `REL_14_5`, `REL9_6_24`: the underscore form behind its own prefix.
+        spellings |= {f"REL_{version.replace('.', '_')}", f"REL{version.replace('.', '_')}"}
         for name in names:
             if name:
                 spellings |= {
@@ -1368,6 +1422,22 @@ class Conventions:
         (
             re.compile(r"^https?://(?:www\.)?netfilter\.org/projects/([\w.-]+)/files/"),
             "https://git.netfilter.org/{}",
+        ),
+        (
+            re.compile(r"^https?://ftp\.postgresql\.org/pub/source/v[\d.]+/(postgresql)-"),
+            "https://git.postgresql.org/git/{}.git",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?gnupg\.org/ftp/gcrypt/([\w.+-]+)/"),
+            "https://dev.gnupg.org/source/{}.git",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?python\.org/ftp/(python)/"),
+            "https://github.com/python/cpython",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?sqlite\.org/\d{4}/(sqlite)-"),
+            "https://github.com/sqlite/sqlite",
         ),
         (
             re.compile(r"^https?://cache\.ruby-lang\.org/pub/(ruby)/"),
