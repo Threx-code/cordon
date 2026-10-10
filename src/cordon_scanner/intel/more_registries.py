@@ -140,6 +140,14 @@ _RELEASE_TAG: Final = re.compile(rb"<(release|latest)>\s*([^<\s]{1,128})\s*</(?:
 _DIGEST_LINE: Final = re.compile(r"^\s*([0-9a-fA-F]{40,128})\b")
 
 
+class Redirected(RegistryError):
+    """A registry answered with a redirect, which `_get` never follows on its own."""
+
+    def __init__(self, message: str, location: str) -> None:
+        super().__init__(message)
+        self.location = location
+
+
 class MoreRegistries:
     """Readers for the registries `RegistryClient` does not speak, returning the same `PackageFacts`."""
 
@@ -169,6 +177,11 @@ class MoreRegistries:
                 if exc.code in (404, 410):
                     # The Go proxy answers 410 Gone for a module it will not serve.
                     raise PackageNotFound(f"{parsed.netloc} has no package by that name") from exc
+                location = str(exc.headers.get("Location", "")) if exc.headers else ""
+                if exc.code in (301, 302, 303, 307, 308) and location.startswith("https://"):
+                    # Not followed here: the caller decides whether this destination is one it
+                    # trusts (`_cocoapods_spec`), and every other reader refuses it.
+                    raise Redirected(f"HTTP {exc.code} from {parsed.netloc}", location) from exc
                 if exc.code not in base.RETRY_STATUSES or attempt == base.RETRY_ATTEMPTS - 1:
                     raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
                 time.sleep(base.RETRY_BACKOFF_SECONDS * (2**attempt))
@@ -1392,6 +1405,22 @@ class MoreRegistries:
         digest = hashlib.md5(name.encode("utf-8"), usedforsecurity=False).hexdigest()
         return digest[0], digest[1], digest[2]
 
+    #: Where trunk's CDN now sends every podspec: a 301 to jsDelivr's mirror of the Specs repository
+    #: (October 2026; the body hashes to the lock's SPEC CHECKSUMS value, as before).
+    COCOAPODS_SPECS_MIRROR: Final = "https://cdn.jsdelivr.net/cocoa/Specs/"
+
+    @staticmethod
+    def _cocoapods_spec(url: str) -> bytes:
+        """A podspec, following trunk's one redirect to the Specs mirror and no other. Every
+        spec request had answered 301, which the redirect-free reader refused: no CocoaPods lock
+        was compared with its registry (YandexMobileMetrica, Alamofire, Firebase checked)."""
+        try:
+            return MoreRegistries._get(url)
+        except Redirected as moved:
+            if not moved.location.startswith(MoreRegistries.COCOAPODS_SPECS_MIRROR):
+                raise
+            return MoreRegistries._get(moved.location)
+
     @staticmethod
     def cocoapods(name: str, version: str | None) -> PackageFacts:
         """CocoaPods trunk's CDN: the shard's `all_pods_versions_<a>_<b>_<c>.txt` lists every
@@ -1416,7 +1445,7 @@ class MoreRegistries:
         digests: tuple[str, ...] = ()
         deprecated = None
         if version and version in versions:
-            body = MoreRegistries._get(
+            body = MoreRegistries._cocoapods_spec(
                 f"{HOSTS['cocoapods']}/Specs/{a}/{b}/{c}/{name}/{version}/{name}.podspec.json"
             )
             digests = (f"sha1:{hashlib.sha1(body, usedforsecurity=False).hexdigest()}",)
@@ -1437,7 +1466,8 @@ class MoreRegistries:
             # Trunk keeps every version it published: a version missing from the listing while the
             # pod exists was deleted by its owner.
             yanked=bool(version) and version not in versions,
-            latest=versions[-1] if versions else None,
+            # The listing is in text order, 9.6.0 after 12.x: the newest by version, not the last.
+            latest=MoreRegistries._latest(versions),
             digests=digests,
             deprecated=deprecated,
             releases=len(versions),

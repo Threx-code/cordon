@@ -685,6 +685,42 @@ class TestCocoaPodsTrunk(RegistryFixtures):
         assert facts.deprecated == "deprecated in favour of Alamofire2"
         assert served.asked == [listing, podspec]
 
+    @pytest.mark.conformance("cocoapods", "UNI-16", "UNI-22")
+    def test_the_redirect_to_the_specs_mirror_is_followed_and_no_other(self, serve) -> None:
+        # Since trunk's CDN answers every podspec with a 301 to jsDelivr, no CocoaPods lock had
+        # been compared with its registry: the redirect-free reader refused them all.
+        import hashlib
+
+        from cordon_scanner.intel.more_registries import Redirected
+
+        listing, podspec = self.urls()
+        a, b, c = MoreRegistries.cocoapods_shard("Alamofire")
+        mirror = f"https://cdn.jsdelivr.net/cocoa/Specs/{a}/{b}/{c}/Alamofire/5.9.1/Alamofire.podspec.json"
+        served = serve(
+            {
+                listing: "Alamofire/5.9.1/5.10.0/5.9.0\n",
+                podspec: Redirected("HTTP 301 from cdn.cocoapods.org", mirror),
+                mirror: self.PODSPEC,
+            }
+        )
+        facts = MoreRegistries.cocoapods("Alamofire", "5.9.1")
+        assert facts.digests == (
+            f"sha1:{hashlib.sha1(self.PODSPEC, usedforsecurity=False).hexdigest()}",
+        )
+        assert served.asked == [listing, podspec, mirror]
+        # The listing is in text order; the newest is by version.
+        assert facts.latest == "5.10.0"
+        serve(
+            {
+                listing: "Alamofire/5.9.1\n",
+                podspec: Redirected(
+                    "HTTP 301 from cdn.cocoapods.org", "https://elsewhere.example/x"
+                ),
+            }
+        )
+        with pytest.raises(Redirected):
+            MoreRegistries.cocoapods("Alamofire", "5.9.1")
+
     @pytest.mark.conformance("cocoapods", "UNI-16")
     def test_a_version_trunk_no_longer_lists_was_deleted(self, serve) -> None:
         listing, _ = self.urls()
