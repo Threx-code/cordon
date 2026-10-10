@@ -81,3 +81,13 @@ class TestTheProof:
     def test_a_release_not_matching_the_recipes_digest_is_not_used(self, monkeypatch) -> None:
         outcome, detail = self.check(monkeypatch, {"a": b"x"}, digest="sha256:" + "0" * 64)
         assert outcome == "unprovable" and "digest" in detail
+
+    def test_a_release_laid_out_elsewhere_is_paired_by_file_name(self, monkeypatch) -> None:
+        # The tag keeps its sources flat; the release puts them under src/.
+        tag = {f"lfile{i}.c": f"int l{i};\n".encode() for i in range(110)}
+        release = {f"src/{name}": data for name, data in tag.items()}
+        outcome, detail = self.check(monkeypatch, release, tag)
+        assert outcome == "proven" and "paired by file name" in detail
+        release["src/lfile3.c"] = b"int other;\n"
+        outcome, detail = self.check(monkeypatch, release, tag)
+        assert outcome == "refuted" and "lfile3.c" in detail

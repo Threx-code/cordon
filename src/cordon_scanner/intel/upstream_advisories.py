@@ -25,6 +25,7 @@ Network use is the scan's `--online` only, over HTTPS, to the hosts above and ap
 
 from __future__ import annotations
 
+import collections
 import io
 import json
 import re
@@ -1757,37 +1758,59 @@ class ContentProof:
             for path, blob in theirs.items()
             if not any(part.startswith(".") for part in path.split("/"))
         }
-        common = [path for path in source if path in ours]
-        differing = [path for path in common if ours[path] != source[path]]
+        # Files paired by path; where that pairs too few, by name -- a release laid out in other
+        # directories than its tag (Lua's tarball keeps src/ and doc/, its repository is flat),
+        # paired only where a name is unique on both sides.
+        pairs = [(path, path) for path in source if path in ours]
+        relocated = False
+        if not ContentProof._enough(len(pairs), len(source)):
+
+            def unique(paths: Iterable[str]) -> dict[str, str]:
+                names = collections.Counter(path.rsplit("/", 1)[-1] for path in paths)
+                return {
+                    path.rsplit("/", 1)[-1]: path
+                    for path in paths
+                    if names[path.rsplit("/", 1)[-1]] == 1
+                }
+
+            mine, tagged = unique(ours), unique(source)
+            by_name = [(mine[name], tagged[name]) for name in mine if name in tagged]
+            if len(by_name) > len(pairs):
+                pairs, relocated = by_name, True
+        differing = [(a, b) for a, b in pairs if ours[a] != source[b]]
         # Git writes a file marked `text eol=crlf` out with CRLF and stores it with LF (git's .bat
         # files): the same content by git's own conversion, which nothing else is excused by.
         converted = [
-            path
-            for path in differing
-            if b"\r\n" in raw[path]
-            and GitPack.blob_id(raw[path].replace(b"\r\n", b"\n")) == source[path]
+            (a, b)
+            for a, b in differing
+            if b"\r\n" in raw[a] and GitPack.blob_id(raw[a].replace(b"\r\n", b"\n")) == source[b]
         ]
-        differing = [path for path in differing if path not in converted]
+        differing = [pair for pair in differing if pair not in converted]
         # A file the tag holds empty that the release fills in (GNU's ChangeLog, written from the
         # git log by `make dist`): a placeholder for something generated, not different source.
-        filled = [path for path in differing if source[path] == ContentProof.EMPTY_BLOB]
-        differing = [path for path in differing if path not in filled]
+        filled = [(a, b) for a, b in differing if source[b] == ContentProof.EMPTY_BLOB]
+        differing = [pair for pair in differing if pair not in filled]
         if differing:
-            return "refuted", f"{len(differing)} of the files both hold differ ({differing[0]})"
-        enough = len(common) >= ContentProof.MIN_SHARED or (
-            len(common) >= ContentProof.MIN_SMALL
-            and len(common) >= ContentProof.MIN_SHARE * len(source)
-        )
-        if not enough:
+            return "refuted", f"{len(differing)} of the files both hold differ ({differing[0][1]})"
+        if not ContentProof._enough(len(pairs), len(source)):
             return (
                 "unprovable",
-                f"the release holds {len(common)} of the tag's {len(source)} files",
+                f"the release holds {len(pairs)} of the tag's {len(source)} files",
             )
         return (
             "proven",
-            f"the release archive holds {len(common)} of its {len(source)} files, each with the same git blob id"
+            f"the release archive holds {len(pairs)} of its {len(source)} files, each with the same git blob id"
+            + (" (paired by file name: the release lays them out elsewhere)" if relocated else "")
             + (f" ({len(converted)} after git's end-of-line conversion)" if converted else "")
             + (f" ({len(filled)} empty in the tag, filled by the release)" if filled else ""),
+        )
+
+    @staticmethod
+    def _enough(shared: int, tagged: int) -> bool:
+        """Enough identical files to mean something: MIN_SHARED, or for a small project MIN_SMALL
+        that are MIN_SHARE of the tag's."""
+        return shared >= ContentProof.MIN_SHARED or (
+            shared >= ContentProof.MIN_SMALL and shared >= ContentProof.MIN_SHARE * tagged
         )
 
 
