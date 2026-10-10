@@ -34,6 +34,7 @@ policy:
   fail_on_incomplete: false
   min_confidence_to_fail: medium
   advisory_domains: [infrastructure, container, cicd]   # reported, not failed
+  accept_no_feed: []             # ecosystems with no advisory source whose gap you accept
 evidence: masked                 # none | masked | hash_only
 rules:
   packs: [cordon-builtin]
@@ -49,6 +50,13 @@ suppressions:
 
 Unknown keys are refused with a suggestion — a silently-ignored `sevrity_threshold`
 would leave you believing a threshold is in force when the default is.
+
+`accept_no_feed` names ecosystems no advisory source covers -- today Homebrew, Nix, CocoaPods,
+Bazel, conda, Helm, Terraform and vcpkg -- whose gap the project accepts. Their dependencies are
+still listed as unchecked in every report (`OPERATIONAL.ADVISORY.NO_FEED.001`), but no longer make
+the scan incomplete, so `fail_on_incomplete` keeps meaning "something Cordon was given went
+unread". Unset, it accepts nothing. An organisation policy that sets it caps the repository's:
+only an ecosystem both accept counts.
 
 An organisation policy may tighten any of the three: `expand_archives` and a shorter
 `max_intel_age` win over the repository, and `intel_feed: false` (an air-gapped estate) cannot

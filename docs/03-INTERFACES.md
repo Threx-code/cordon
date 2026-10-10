@@ -584,6 +584,10 @@ policy:
     - high
     - category: malicious        # any severity
   fail_on_incomplete: false
+  # Ecosystems no advisory source covers whose gap the project accepts: still reported as
+  # unchecked (OPERATIONAL.ADVISORY.NO_FEED.001), no longer an incomplete scan. Unset accepts
+  # none; an organisation policy that sets it keeps only what both accept.
+  accept_no_feed: [homebrew]
   # Reported in full, and not a reason to stop a release: these describe how a
   # project configured its own infrastructure and pipelines. `[]` fails on
   # everything, which is the pre-0.3 behaviour. A `malicious` finding in one of

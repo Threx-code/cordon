@@ -274,6 +274,16 @@ class Policy:
     (not reported), `report` (`POLICY.LICENSE.UNKNOWN.001`, low) or `deny` (the same, high). With an
     allow list set, unknown is never approved: `allow` is read as `report`."""
 
+    accept_no_feed: frozenset[str] | None = None
+    """Ecosystems whose lack of any advisory source this project accepts. Their dependencies are
+    still reported unchecked (`OPERATIONAL.ADVISORY.NO_FEED.001`, naming them), but no longer
+    make the scan incomplete: an ecosystem no source covers can never be checked, and a gate that
+    can never pass teaches a team to switch `fail_on_incomplete` off, which hides real gaps.
+
+    Strict by default, and a choice made where reviewers see it. `None` is "not said", which a
+    merge with an organisation policy that does say leaves to that policy; two that both say keep
+    only what both accept."""
+
     @classmethod
     def default(cls) -> Policy:
         return cls()
@@ -287,6 +297,9 @@ class Policy:
             "advisory_domains": sorted(str(d) for d in self.advisory_domains),
             "max_major_drift": self.max_major_drift,
             "packages": {"deny": list(self.package_deny), "allow": list(self.package_allow)},
+            "accept_no_feed": sorted(self.accept_no_feed)
+            if self.accept_no_feed is not None
+            else None,
             "licenses": {
                 "deny": list(self.license_deny),
                 "allow": list(self.license_allow),
@@ -1063,6 +1076,11 @@ class Config:
                 "min_confidence_to_fail": str(self.policy.min_confidence_to_fail),
                 "advisory_domains": sorted(str(d) for d in self.policy.advisory_domains),
                 "max_major_drift": self.policy.max_major_drift,
+                **(
+                    {"accept_no_feed": sorted(self.policy.accept_no_feed)}
+                    if self.policy.accept_no_feed is not None
+                    else {}
+                ),
                 "packages": {
                     "deny": list(self.policy.package_deny),
                     "allow": list(self.policy.package_allow),
@@ -1137,6 +1155,7 @@ _POLICY_KEYS = frozenset(
         "max_major_drift",
         "packages",
         "licenses",
+        "accept_no_feed",
     }
 )
 _PACKAGE_LIST_KEYS = frozenset({"deny", "allow"})
@@ -1845,6 +1864,22 @@ class ConfigParser:
                 hint=f"got {unknown!r}",
             )
 
+        accepted: frozenset[str] | None = None
+        if "accept_no_feed" in raw:
+            from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+            ecosystems = ConfigParser._as_str_tuple(
+                raw["accept_no_feed"], f"{source}: policy.accept_no_feed"
+            )
+            known = {e.id for e in EcosystemRegistry.all_ecosystems()}
+            unknown_names = [n for n in ecosystems if n not in known]
+            if unknown_names:
+                raise ConfigError(
+                    f"{source}: policy.accept_no_feed names no ecosystem Cordon reads: "
+                    f"{', '.join(unknown_names)}",
+                    hint=f"one of: {', '.join(sorted(known))}",
+                )
+            accepted = frozenset(ecosystems)
         return Policy(
             fail_on_severity=severity,
             fail_on_categories=frozenset(categories),
@@ -1852,6 +1887,7 @@ class ConfigParser:
             min_confidence_to_fail=min_conf,
             advisory_domains=advisory,
             max_major_drift=drift,
+            accept_no_feed=accepted,
             package_deny=ConfigParser._as_str_tuple(
                 packages.get("deny"), f"{source}: policy.packages.deny"
             ),
@@ -1985,6 +2021,14 @@ class ConfigParser:
             # The tighter of the two, for the same reason: merging must never
             # end weaker than either side asked for.
             max_major_drift=min(a.max_major_drift, b.max_major_drift),
+            # Unsaid on one side, the other side's; said on both, only what both accept.
+            accept_no_feed=(
+                b.accept_no_feed
+                if a.accept_no_feed is None
+                else a.accept_no_feed
+                if b.accept_no_feed is None
+                else a.accept_no_feed & b.accept_no_feed
+            ),
             # Deny lists add up; allow lists narrow (an empty one allows everything, so the other
             # side's applies); unknown licences take the stricter handling. A repository's own file
             # cannot loosen what the organisation set.

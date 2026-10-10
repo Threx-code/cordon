@@ -271,7 +271,7 @@ class AdvisoryDetector(BaseDetector):
         if scope_note is not None:
             findings.append(scope_note)
 
-        no_feed = self._no_feed_note(unit)
+        no_feed = self._no_feed_note(unit, ctx.config.policy.accept_no_feed or frozenset())
         if no_feed is not None:
             findings.append(no_feed)
 
@@ -424,7 +424,7 @@ class AdvisoryDetector(BaseDetector):
             )
             break
 
-    def _no_feed_note(self, unit: GraphUnit) -> Finding | None:
+    def _no_feed_note(self, unit: GraphUnit, accepted: frozenset[str]) -> Finding | None:
         """Name the scanned ecosystems no advisory source covers.
 
         Cordon reads seventeen ecosystems and the bundled database holds records
@@ -460,6 +460,10 @@ class AdvisoryDetector(BaseDetector):
         if not uncovered:
             return None
         counted = sum(1 for d in unit.dependencies if d.ecosystem in uncovered)
+        # `policy.accept_no_feed`: still named here, every time, but no longer a scan that did
+        # not finish -- unless an ecosystem the policy does not accept is among them.
+        unaccepted = [e for e in uncovered if e not in accepted]
+        taken = [e for e in uncovered if e in accepted]
         return self.operational(
             path=".",
             message=(
@@ -468,10 +472,15 @@ class AdvisoryDetector(BaseDetector):
                 f"known-malicious releases. They were not checked and found clean; "
                 f"they were not checked. Everything else about them -- typosquats, "
                 f"install hooks, lockfile integrity, licences -- was examined."
+                + (
+                    f" The policy accepts this for {', '.join(taken)} (policy.accept_no_feed)."
+                    if taken
+                    else ""
+                )
             ),
             detail="advisories",
             rule_id=NO_FEED_RULE,
-            degrades_coverage=True,
+            degrades_coverage=bool(unaccepted),
         )
 
     def _database_age_note(self) -> Finding | None:
