@@ -80,6 +80,10 @@ class TestRepositoryArchive:
                 ("https://gitlab.com/group/sub/proj", "v1.0"),
             ),
             (
+                "https://gitlab.freedesktop.org/libopenraw/exempi/-/archive/2.6.6/exempi-2.6.6.tar.gz",
+                ("https://gitlab.freedesktop.org/libopenraw/exempi", "2.6.6"),
+            ),
+            (
                 "https://gitlab.arm.com/bazel/download_utils/-/releases/v1.0.1/downloads/src.tar.gz",
                 ("https://gitlab.arm.com/bazel/download_utils", "v1.0.1"),
             ),

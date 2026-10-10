@@ -108,7 +108,8 @@ class RepositoryArchive:
         r"^(https://[\w.-]+(?::\d+)?/[\w.~-]+(?:/[\w.~-]+){1,8}?)/-/releases/([^/]+)/downloads/[^/]+$"
     )
     GITLAB: ClassVar[re.Pattern[str]] = re.compile(
-        r"^https://gitlab\.com/([\w.-][\w./-]{0,200}?)/-/archive/([^/]+)/[^/]+$"
+        # On any GitLab (gitlab.com, gitlab.freedesktop.org, gitlab.gnome.org): the form is GitLab's.
+        r"^(https://[\w.-]+(?::\d+)?/[\w.-][\w./-]{0,200}?)/-/archive/([^/]+)/[^/]+$"
     )
 
     @staticmethod
@@ -133,7 +134,7 @@ class RepositoryArchive:
             return found.group(1), urllib.parse.unquote(found.group(2))
         found = RepositoryArchive.GITLAB.match(url)
         if found:
-            return f"https://gitlab.com/{found.group(1)}", urllib.parse.unquote(found.group(2))
+            return found.group(1), urllib.parse.unquote(found.group(2))
         return None
 
     @staticmethod
@@ -916,6 +917,13 @@ class Conventions:
                 r"^https?://(?:mirror\.bazel\.build/)?(?:www\.)?sourceware\.org/pub/([\w.+-]+)/"
             ),
             "https://sourceware.org/git/{0}.git",
+        ),
+        (
+            re.compile(
+                r"^https?://(?:download-mirror\.savannah\.(?:gnu|nongnu)\.org"
+                r"|download\.savannah\.gnu\.org)/releases/([\w.+-]+)/"
+            ),
+            "https://git.savannah.gnu.org/git/{0}.git",
         ),
         (
             re.compile(r"^https?://download\.gnome\.org/sources/([\w.+-]+)/"),
