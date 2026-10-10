@@ -761,3 +761,48 @@ class TestCocoaPodsItself:
             "package": {"name": "cocoapods", "ecosystem": "RubyGems"},
             "version": "1.7.5",
         }
+
+
+class TestQtBeforePortData:
+    DETAILS = "set(QT_VERSION 6.8.2)\nset(QT_FROM_GITHUB qtcoap qtopcua qtmqtt)\n"
+    DATA = 'set(qtsvg_HASH "' + "a" * 128 + '")\n'
+
+    def qtbase(self, filename: str) -> str:
+        return self.DETAILS if filename.endswith("details.cmake") else self.DATA
+
+    @staticmethod
+    def missing(filename: str) -> str:
+        raise OSError("404")
+
+    def test_a_module_mirrored_on_github_is_its_tag(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        found = VcpkgPorts.qt("qtmqtt", "6.8.2", self.missing, "x", self.qtbase)
+        assert isinstance(found, Upstream)
+        assert found.query == {
+            "package": {"name": "https://github.com/qt/qtmqtt", "ecosystem": "GIT"},
+            "version": "v6.8.2",
+        }
+
+    def test_a_release_module_is_proved_by_its_digest(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import Archive, Upstreams, VcpkgPorts
+
+        seen: list[Archive | None] = []
+
+        def inferred(first, homes, version, names, how, archive=None):
+            seen.append(archive)
+            return first
+
+        monkeypatch.setattr(Upstreams, "inferred", staticmethod(inferred))
+        VcpkgPorts.qt("qtsvg", "6.8.2", self.missing, "x", self.qtbase)
+        assert seen[0] is not None and seen[0].digest == "sha512:" + "a" * 128
+        assert (
+            "https://download.qt.io/archive/qt/6.8/6.8.2/submodules/qtsvg-everywhere-src-6.8.2.tar.xz"
+            in seen[0].urls
+        )
+
+    def test_another_qt_version_than_the_baselines_is_not_read(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        found = VcpkgPorts.qt("qtsvg", "6.7.0", self.missing, "x", self.qtbase)
+        assert isinstance(found, Unnamed) and "no Qt 6.7.0" in found.reason

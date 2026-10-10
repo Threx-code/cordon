@@ -520,16 +520,21 @@ class VcpkgPorts:
         ).decode("utf-8", "replace")
 
     @staticmethod
-    def qt(port: str, version: str, other: Any, how: str) -> Upstream | Unnamed:
+    def qt(port: str, version: str, other: Any, how: str, qtbase: Any = None) -> Upstream | Unnamed:
         """A Qt module, fetched by vcpkg's Qt helpers from what its port.data.cmake records --
         written by vcpkg's own generator (`qt_port_details.cmake`), which resolves the tag
         `v<version>` in `code.qt.io/qt/<module>.git`: a commit (`<module>_REF`), or the release
         tarballs and their SHA-512 (`<module>_URL`, `<module>_HASH`)."""
+        from cordon_scanner.intel.registry_client import RegistryError
+
+        field = re.escape(port)
         try:
             data = other("port.data.cmake")
-        except (OSError, ValueError) as exc:
-            return Unnamed(f"the Qt port's data could not be read ({type(exc).__name__})")
-        field = re.escape(port)
+        except (RegistryError, OSError, ValueError):
+            # Before port.data.cmake (2025), every module's SHA-512 was in qtbase's
+            # cmake/qt_port_data.cmake, and its URL was built from QT_VERSION by
+            # qt_port_details.cmake.
+            return VcpkgPorts.qt_before_port_data(port, version, how, qtbase)
         ref = re.search(rf"set\({field}_REF\s+\"?([0-9a-f]{{40}})\"?\)", data)
         repositories = [f"https://code.qt.io/qt/{port}.git", f"https://github.com/qt/{port}"]
         if ref:
@@ -550,6 +555,56 @@ class VcpkgPorts:
             (port,),
             how,
             archive,
+        )
+
+    @staticmethod
+    def qt_before_port_data(port: str, version: str, how: str, qtbase: Any) -> Upstream | Unnamed:
+        """A Qt module in vcpkg's older layout. qt_port_details.cmake names the one QT_VERSION
+        all modules are built at, the modules fetched from GitHub by tag (`QT_FROM_GITHUB`), and
+        otherwise the release tarball on download.qt.io, whose SHA-512 qt_port_data.cmake holds.
+        That tarball's address is built here as vcpkg builds it; the digest is what makes it the
+        release, so a wrong address can only fail to prove, never prove the wrong tag."""
+        if qtbase is None:
+            return Unnamed("the Qt port's data could not be read")
+        from cordon_scanner.intel.registry_client import RegistryError
+
+        try:
+            details, data = (
+                qtbase("cmake/qt_port_details.cmake"),
+                qtbase("cmake/qt_port_data.cmake"),
+            )
+        except (RegistryError, OSError, ValueError):
+            return Unnamed("the Qt port's data could not be read")
+        stated = re.search(r"set\(QT_VERSION\s+([\w.]+)\)", details)
+        if not stated or stated.group(1) != version:
+            return Unnamed(f"qtbase's port details at this baseline name no Qt {version}")
+        field = re.escape(port)
+        repositories = [f"https://code.qt.io/qt/{port}.git", f"https://github.com/qt/{port}"]
+        github = re.search(r"set\(QT_FROM_GITHUB\s+([^)]*)\)", details)
+        if github and port in github.group(1).split():
+            return RepositoryArchive.upstream(
+                repositories[1], f"v{version}", f"{how} ({repositories[1]})"
+            )
+        ref = re.search(rf"set\({field}_REF\s+\"?([0-9a-f]{{40}})\"?\)", data)
+        if ref:
+            return RepositoryArchive.upstream(
+                repositories[1], ref.group(1), f"{how} ({repositories[0]})"
+            )
+        sha512 = re.search(rf"set\({field}_HASH\s+\"([0-9a-f]{{128}})\"\)", data)
+        major_minor = ".".join(version.split(".")[:2])
+        filename = f"{port}-everywhere-src-{version}.tar.xz"
+        urls = tuple(
+            f"{mirror}{kind}/qt/{major_minor}/{version}/submodules/{filename}"
+            for kind in ("archive", "official_releases")
+            for mirror in ("https://download.qt.io/", "https://mirrors.ocf.berkeley.edu/qt/")
+        )
+        return Upstreams.inferred(
+            Unnamed("a Qt module, fetched by vcpkg's Qt helpers"),
+            repositories,
+            version,
+            (port,),
+            how,
+            Archive(urls, f"sha512:{sha512.group(1)}") if sha512 else None,
         )
 
     FETCHES: ClassVar[frozenset[str]] = frozenset(
@@ -2015,7 +2070,13 @@ class Upstreams:
         if re.search(
             r"\bqt_(?:install_submodule|submodule_installation|download_submodule)\s*\(", portfile
         ):
-            return VcpkgPorts.qt(dependency.name, version.split("#", 1)[0], other, how)
+
+            def qtbase(filename: str) -> str:
+                return Upstreams._get(f"{VCPKG_RAW}/{baseline}/ports/qtbase/{filename}").decode(
+                    "utf-8", "replace"
+                )
+
+            return VcpkgPorts.qt(dependency.name, version.split("#", 1)[0], other, how, qtbase)
         first, archive = VcpkgPorts.read(portfile, version, dependency.name, how)
         if isinstance(first, Unnamed) and first.nothing:
             return first
