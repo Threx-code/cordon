@@ -79,6 +79,10 @@ class TestRepositoryArchive:
                 "https://gitlab.com/group/sub/proj/-/archive/v1.0/proj-v1.0.tar.gz",
                 ("https://gitlab.com/group/sub/proj", "v1.0"),
             ),
+            (
+                "https://gitlab.arm.com/bazel/download_utils/-/releases/v1.0.1/downloads/src.tar.gz",
+                ("https://gitlab.arm.com/bazel/download_utils", "v1.0.1"),
+            ),
         ],
     )
     def test_the_forges_fixed_forms(self, url: str, expected: tuple[str, str]) -> None:

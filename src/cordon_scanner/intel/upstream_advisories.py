@@ -103,6 +103,10 @@ class RepositoryArchive:
     CODEBERG: ClassVar[re.Pattern[str]] = re.compile(
         r"^https://codeberg\.org/([\w.-]+)/([\w.-]+)/archive/(.+?)(?:\.tar\.gz|\.zip)$"
     )
+    #: A GitLab release's asset, on any GitLab: `<project>/-/releases/<tag>/downloads/<file>`.
+    GITLAB_RELEASE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(https://[\w.-]+(?::\d+)?/[\w.~-]+(?:/[\w.~-]+){1,8}?)/-/releases/([^/]+)/downloads/[^/]+$"
+    )
     GITLAB: ClassVar[re.Pattern[str]] = re.compile(
         r"^https://gitlab\.com/([\w.-][\w./-]{0,200}?)/-/archive/([^/]+)/[^/]+$"
     )
@@ -124,6 +128,9 @@ class RepositoryArchive:
                 f"https://codeberg.org/{found.group(1)}/{found.group(2)}",
                 urllib.parse.unquote(found.group(3)),
             )
+        found = RepositoryArchive.GITLAB_RELEASE.match(url)
+        if found:
+            return found.group(1), urllib.parse.unquote(found.group(2))
         found = RepositoryArchive.GITLAB.match(url)
         if found:
             return f"https://gitlab.com/{found.group(1)}", urllib.parse.unquote(found.group(2))
