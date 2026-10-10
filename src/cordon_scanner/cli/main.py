@@ -2577,7 +2577,17 @@ class CommandLine:
             destination = Path(args.output)
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(payload, encoding="utf-8")
-            written = len(document.get("components", ())) + len(document.get("services", ()))
+            if "packages" in document:
+                # SPDX lists the root among its packages, as the one the document DESCRIBES;
+                # CycloneDX keeps it apart. Counted the same way, so the two formats agree.
+                described = {
+                    r.get("relatedSpdxElement")
+                    for r in document.get("relationships", ())
+                    if r.get("relationshipType") == "DESCRIBES"
+                }
+                written = sum(1 for p in document["packages"] if p.get("SPDXID") not in described)
+            else:
+                written = len(document.get("components", ())) + len(document.get("services", ()))
             print(f"wrote {destination} ({written} component(s), {args.format})")
         else:
             sys.stdout.write(payload)

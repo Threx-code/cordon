@@ -73,3 +73,24 @@ class TestSbomExclude:
         assert code == int(ExitCode.CLEAN)
         names = {c.get("name") for c in json.loads(out.read_text(encoding="utf-8"))["components"]}
         assert "real-dependency" in names and "fixture-dependency" not in names
+
+
+class TestSbomCount:
+    def test_both_formats_report_the_components_they_wrote(self, tmp_path, capsys) -> None:
+        # The count read CycloneDX's `components` from an SPDX document, which has none: axios's
+        # SPDX bill of 1,252 packages was reported as "0 component(s)".
+        root = Project.make(tmp_path)
+        counts = {}
+        for fmt in ("cyclonedx", "spdx"):
+            out = tmp_path / f"bom.{fmt}.json"
+            CommandLine.run(["sbom", "generate", "--format", fmt, "-o", str(out), str(root)])
+            message = capsys.readouterr().out
+            document = json.loads(out.read_text(encoding="utf-8"))
+            listed = (
+                len(document["components"])
+                if fmt == "cyclonedx"
+                else len(document["packages"]) - 1  # less the root the document describes
+            )
+            assert f"({listed} component(s), {fmt})" in message
+            counts[fmt] = listed
+        assert counts["cyclonedx"] == counts["spdx"] > 0
