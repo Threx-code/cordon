@@ -1,0 +1,16 @@
+# Two shapes found scanning real repositories, each of which refused its whole file:
+# - Homebrew's own Dockerfile writes `FROM ubuntu:"${version}"`. BuildKit's shell lexer removes the
+#   quotes and expands the variable (`ubuntu:24.04`); the reader kept the quotes. A Dockerfile word
+#   is now read as BuildKit reads it.
+# - A Compose file anchors a scalar (`x-node-image: &node-image node:22...`) and names it by alias
+#   (`image: *node-image`), which was taken for an image reference. An alias reads as its value.
+kinds: [regression, valid]
+covers:
+  - image.multi-stage
+  - UNI-01
+dependencies:
+  - {name: ubuntu, resolved_version: "24.04", dependency_type: build}
+  - {name: alpine, resolved_version: "3.20", dependency_type: runtime}
+  - {name: node, resolved_version: 22-bookworm-slim, integrity: "sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3"}
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED

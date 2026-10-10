@@ -214,6 +214,55 @@ class Interpolation:
             "\x00", "$"
         ), tuple(missing)
 
+    @staticmethod
+    def word(text: str, values: Mapping[str, str]) -> tuple[str, tuple[str, ...]]:
+        """One Dockerfile word as BuildKit's shell lexer processes it (`frontend/dockerfile/
+        shell/lex.go`): quotes removed, variables expanded outside single quotes, a backslash
+        escaping the next character. Homebrew's own Dockerfile writes `FROM ubuntu:"${version}"`,
+        which BuildKit reads as `ubuntu:24.04` and which was refused, quotes and all."""
+        out: list[str] = []
+        missing: list[str] = []
+        index = 0
+        quote = ""
+
+        def variable(at: int) -> int:
+            found = Interpolation.VARIABLE.match(text, at)
+            if not found:
+                out.append("$")
+                return at + 1
+            value, absent = Interpolation.expand(found.group(0), values)
+            out.append(value)
+            missing.extend(absent)
+            return found.end()
+
+        while index < len(text):
+            character = text[index]
+            if quote == "'":
+                if character == "'":
+                    quote = ""
+                else:
+                    out.append(character)
+                index += 1
+            elif character == "\\" and index + 1 < len(text):
+                following = text[index + 1]
+                # Inside double quotes only `"`, `$` and the escape itself are escaped.
+                if quote == '"' and following not in '"$\\':
+                    out.append(character)
+                out.append(following)
+                index += 2
+            elif character == "$":
+                index = variable(index)
+            elif character in "'\"" and not quote:
+                quote = character
+                index += 1
+            elif character == '"' and quote == '"':
+                quote = ""
+                index += 1
+            else:
+                out.append(character)
+                index += 1
+        return "".join(out), tuple(missing)
+
 
 class Dockerfile:
     """A Dockerfile, as BuildKit reads it."""
@@ -367,10 +416,10 @@ class Dockerfile:
                         ecosystem,
                         f"line {line}: FROM takes an image and an optional AS name",
                     )
-                written, missing = Interpolation.expand(words[0], defaults)
+                written, missing = Interpolation.word(words[0], defaults)
                 platform: tuple[str, ...] = ()
                 if "platform" in flags:
-                    expanded, _ = Interpolation.expand(flags["platform"], defaults)
+                    expanded, _ = Interpolation.word(flags["platform"], defaults)
                     platform = (f"platform {expanded}",)
                 stages.append(words[2].lower() if len(words) == 3 else None)
                 if missing:
@@ -404,7 +453,7 @@ class Dockerfile:
                         if found:
                             sources_from.append(found.group(1))
                 for value in sources_from:
-                    written, missing = Interpolation.expand(value, defaults)
+                    written, missing = Interpolation.word(value, defaults)
                     if (
                         missing
                         or written.isdigit()
@@ -645,6 +694,23 @@ class Compose:
         problem = ComposeLines.malformed(lines)
         if problem:
             return BaseEcosystem._err(content, ecosystem, problem)
+        # A scalar anchor (`x-node-image: &node-image node:22@sha256:...`) and the aliases that
+        # name it (`image: *node-image`, `NODE_IMAGE: *node-image`): each alias reads as the value
+        # it names, as YAML reads it. An alias was taken for an image reference and refused the
+        # whole file.
+        scalars: dict[str, str] = {}
+        for _number, _level, text in lines:
+            found = re.search(r"^(?:-\s+)?[^\s:][^:]*:\s*&([A-Za-z0-9_.-]+)\s+(\S.*)$", text)
+            if found:
+                scalars[found.group(1)] = found.group(2)
+        if scalars:
+            resolved: list[tuple[int, int, str]] = []
+            for number, level, text in lines:
+                alias = re.match(r"^(.*?(?::\s+|^-\s+))\*([A-Za-z0-9_.-]+)\s*$", text)
+                if alias and alias.group(2) in scalars:
+                    text = alias.group(1) + scalars[alias.group(2)]
+                resolved.append((number, level, text))
+            lines = resolved
         top = ComposeLines.children(lines)
         # Anchors anywhere: `x-common: &common` and its children, to follow `<<: *common` by name.
         anchors: dict[str, list[tuple[int, int, str]]] = {}
