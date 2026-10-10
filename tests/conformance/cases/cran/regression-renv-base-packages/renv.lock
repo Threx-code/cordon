@@ -1,0 +1,28 @@
+{
+  "R": {
+    "Version": "4.5.2",
+    "Repositories": [
+      {"Name": "CRAN", "URL": "https://cloud.r-project.org"}
+    ]
+  },
+  "Packages": {
+    "gridExtra": {
+      "Package": "gridExtra",
+      "Version": "2.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": ["grid", "gtable"]
+    },
+    "grid": {
+      "Package": "grid",
+      "Version": "4.5.2",
+      "Source": "R"
+    },
+    "gtable": {
+      "Package": "gtable",
+      "Version": "0.3.6",
+      "Source": "Repository",
+      "Repository": "CRAN"
+    }
+  }
+}

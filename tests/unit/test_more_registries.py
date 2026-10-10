@@ -1814,6 +1814,23 @@ class TestTheDetectorAsksTheNewRegistries:
         local = replace(self.dependency(ecosystem, "appmetrica"), local=True)
         assert self.ids(local) == [] and asked == []
 
+    def test_the_platform_and_what_ships_inside_a_package_are_never_asked(
+        self, monkeypatch
+    ) -> None:
+        # R's `grid` (`"Source": "R"`) was asked of CRAN and reported withdrawn.
+        from dataclasses import replace
+
+        asked: list[str] = []
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registry_client.RegistryClient.facts",
+            lambda ecosystem, name, version: (
+                asked.append(name) or PackageFacts(name=name, version=version, yanked=True)
+            ),
+        )
+        platform = replace(self.dependency("cran", "grid"), scope=Scope.PLATFORM)
+        bundled = replace(self.dependency("npm", "inner"), bundled=True)
+        assert self.ids(platform) == [] and self.ids(bundled) == [] and asked == []
+
     def test_a_go_sum_hash_the_checksum_database_contradicts_is_critical(self, answer) -> None:
         mine = "h1:" + base64.b64encode(b"\x01" * 32).decode()
         theirs = "h1:" + base64.b64encode(b"\x02" * 32).decode()

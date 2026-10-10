@@ -1,0 +1,12 @@
+# A renv.lock records a package that ships with R as `"Source": "R"`. Read as a CRAN package,
+# `grid` 4.5.2 was asked of CRAN -- whose record of `grid` says archived -- and reported withdrawn
+# (a real renv project, scanned --online). It is part of R, and no registry is asked about it.
+kinds: [regression, valid]
+covers:
+  - file:renv.lock
+  - UNI-02
+  - UNI-08
+dependencies:
+  - {name: gridExtra, resolved_version: "2.3", direct: true}
+  - {name: gtable, resolved_version: 0.3.6}
+  - {name: grid, dependency_type: platform}

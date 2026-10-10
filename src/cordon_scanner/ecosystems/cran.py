@@ -323,6 +323,19 @@ class RenvLock:
                 )
                 continue
             source = str(package.get("Source", "Repository"))
+            if source == "R" or name in BASE_PACKAGES:
+                # Shipped with R itself (`"Source": "R"`): the installation meets it, no repository
+                # serves it. Read as a CRAN package, `grid` 4.5.2 was asked of CRAN, whose record
+                # of `grid` says archived, and reported withdrawn.
+                entries.append(
+                    LockEntry(
+                        name=name,
+                        version=str(package.get("Version", "")),
+                        scope=Scope.PLATFORM,
+                        bundled=True,
+                    )
+                )
+                continue
             resolved_from = None
             local = False
             if source in ("GitHub", "GitLab", "Bitbucket"):
@@ -366,6 +379,7 @@ class RenvLock:
                 integrity=e.integrity,
                 resolved_from=e.resolved_from,
                 local=e.local,
+                bundled=e.bundled,
                 scope=e.scope,
                 dependencies=e.dependencies,
                 direct=e.scope is not Scope.TOOL and e.name.lower() not in required,

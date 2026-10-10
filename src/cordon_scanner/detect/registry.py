@@ -68,6 +68,7 @@ from cordon_scanner.core.models import (
     Finding,
     Location,
     RedactionMode,
+    Scope,
     Severity,
 )
 from cordon_scanner.core.scoring import ScoringContext
@@ -701,6 +702,10 @@ class RegistryDetector(BaseDetector):
             # no registry's: asking leaks its name to the public one, and the answer was false --
             # `appmetrica` "not on the public pub registry", `FlutterMacOS` "withdrawn".
             if not d.local
+            # Part of the platform -- a language's own library (R's `grid`, Julia's stdlibs), the
+            # runtime or OS it targets -- or shipped inside another package: no registry's either.
+            and d.scope is not Scope.PLATFORM
+            and not d.bundled
             # A jar named only by its file has no real Maven coordinate to ask about: "absent from
             # Maven Central" would be true of a name Cordon made up, and read as dependency confusion.
             and d.resolved_from != NAMED_BY_FILE
