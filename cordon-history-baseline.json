@@ -16,6 +16,7 @@
     "83687ec72c0c03b3",
     "95cfc9acd5d6717f",
     "adbe339edea1b4c2",
+    "b4d1c1b979c671ee",
     "c6219db277e6d97f",
     "cbd1144a7bd31e54",
     "cdc739734f6d7024",
@@ -209,6 +210,12 @@
       "rule": "OPERATIONAL.LOCKFILE.UNSUPPORTED",
       "path": "tests/conformance/cases/npm/edge-bun-lockb/bun.lockb",
       "note": "a conformance fixture: Bun's legacy binary lockfile, kept to prove it is reported as unread rather than read as empty. Reviewed 2026-10-08."
+    },
+    {
+      "fingerprint": "b4d1c1b979c671ee",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/conformance/cases/terraform/edge-execution-and-tfvars/prod.tfvars",
+      "note": "a conformance fixture (a612aec): a fabricated db_password a tfvars file carries, the shape the secrets detector must report there. Reviewed 2026-10-10; nothing to rotate."
     }
   ]
 }
