@@ -1798,6 +1798,29 @@ class TestTheDetectorAsksTheNewRegistries:
         answer(PackageFacts(name="x", version="1.0.0", yanked=True))
         assert "SUSPECT.DEPENDENCY.YANKED.001" in self.ids(self.dependency("cargo", "x"))
 
+    @pytest.mark.parametrize(
+        ("reason", "said"),
+        [
+            (None, "x@1.0.0 was withdrawn by its publisher"),
+            ("archived by CRAN", "x@1.0.0 was withdrawn (archived by CRAN)"),
+            ("not a version CRAN published", "x@1.0.0 is not a version CRAN published"),
+        ],
+    )
+    def test_the_withdrawal_is_told_as_the_registry_tells_it(self, answer, reason, said) -> None:
+        # "withdrawn by its publisher (archived by CRAN)" put CRAN's act on the publisher.
+        answer(PackageFacts(name="x", version="1.0.0", yanked=True, yanked_reason=reason))
+        ctx = ScanContext(
+            config=Config.default(), rules=RuleSet(RuleLoader.load_builtin()), offline=False
+        )
+        messages = [
+            f.message
+            for f in RegistryDetector().inspect(
+                GraphUnit(dependencies=(self.dependency("cran", "x"),)), ctx
+            )
+            if f.rule_id == "SUSPECT.DEPENDENCY.YANKED.001"
+        ]
+        assert messages and messages[0].startswith(said)
+
     @pytest.mark.parametrize("ecosystem", ["pub", "cocoapods", "cargo", "npm"])
     def test_the_projects_own_code_is_never_asked(self, monkeypatch, ecosystem) -> None:
         # A path dependency asked of the public registry leaked its name and came back "not on

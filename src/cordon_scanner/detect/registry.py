@@ -937,14 +937,21 @@ class RegistryDetector(BaseDetector):
             )
 
         if observed.yanked and self._withdrawal_applies(dependency):
-            reason = f" ({observed.yanked_reason})" if observed.yanked_reason else ""
+            # Who withdrew it is the registry's to say: "archived by CRAN" is CRAN's act, and "not
+            # a version CRAN published" is no withdrawal at all. Only a bare yank (npm, PyPI) is
+            # the publisher's.
+            reason = observed.yanked_reason or ""
+            label = f"{dependency.name}@{dependency.version}"
             yield self._finding(
                 "SUSPECT.DEPENDENCY.YANKED.001",
                 ctx,
                 dependency=dependency,
                 detail=(
-                    f"{dependency.name}@{dependency.version} was withdrawn by its "
-                    f"publisher{reason}, and this lockfile still pins it"
+                    f"{label} is {reason}, and this lockfile pins it"
+                    if reason.startswith("not a ")
+                    else f"{label} was withdrawn ({reason}), and this lockfile still pins it"
+                    if reason
+                    else f"{label} was withdrawn by its publisher, and this lockfile still pins it"
                 ),
             )
 
