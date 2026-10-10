@@ -254,6 +254,19 @@ class TestCran:
         assert by_name["testthat"].scope is Scope.DEV
         assert by_name["jsonlite"].spec == ">= 1.8.0"
 
+    def test_a_shiny_apps_description_is_not_a_packages(self) -> None:
+        """`Type: Shiny` describes an app for shiny's showcase mode and names no package; shiny's
+        own 22 example apps were refused as a DESCRIPTION without `Package`."""
+        text = "Title: Hello Shiny!\nAuthor: RStudio, Inc.\nLicense: MIT\nType: Shiny\n"
+        manifest = CranEcosystem().parse_manifest(NewEcosystemsHelpers.fc("DESCRIPTION", text))
+        assert manifest.parse_error is None
+        assert manifest.dependencies == ()
+        # Without `Type: Shiny`, a DESCRIPTION missing `Package` is still a damaged one.
+        damaged = CranEcosystem().parse_manifest(
+            NewEcosystemsHelpers.fc("DESCRIPTION", "Title: x\nLicense: MIT\n")
+        )
+        assert damaged.parse_error is not None
+
 
 class TestConan:
     def test_conanfile_txt_sections_carry_scope(self) -> None:

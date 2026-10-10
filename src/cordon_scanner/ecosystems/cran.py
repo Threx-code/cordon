@@ -138,6 +138,14 @@ class Description:
             records = Dcf.records(content.text)
         except ValueError as exc:
             return BaseEcosystem._err(content, ecosystem, f"not a readable DESCRIPTION: {exc}")
+        if records and "Package" not in records[0] and records[0].get("Type") == "Shiny":
+            # A Shiny app's DESCRIPTION, which shiny reads for its title and showcase mode: an
+            # app, not a package (shiny's own inst/examples, 22 of them, were refused).
+            return Manifest(
+                path=content.path,
+                ecosystem=ecosystem,
+                sources=("a Shiny app's DESCRIPTION (Type: Shiny), which describes no package",),
+            )
         if not records or "Package" not in records[0]:
             return BaseEcosystem._err(content, ecosystem, "a DESCRIPTION has no `Package` field")
         fields = records[0]
