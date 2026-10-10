@@ -571,3 +571,59 @@ class TestRubyGemsAttestations:
     def test_a_locked_checksum_is_the_digest_bound(self) -> None:
         digest = "ab" * 32
         assert attest.AttestationDocuments.parse_integrity(f"sha256:{digest}") == ("sha256", digest)
+
+
+class TestWhatIsNotARejection:
+    """Two answers sigstore gives that are not a forged attestation, found on real npm lockfiles:
+    39 packages' genuine attestations, and typedoc's, had been reported VULNERABLE.PROVENANCE.INVALID."""
+
+    @staticmethod
+    def certificate(repository: str):
+        pytest.importorskip("cryptography")
+        import datetime
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.x509.oid import NameOID
+
+        key = ec.generate_private_key(ec.SECP256R1())
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "conformance")])
+        now = datetime.datetime.now(datetime.UTC)
+        return (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(1)
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(minutes=10))
+            # GitHub Actions' workflow-repository claim, raw bytes, as Fulcio writes it.
+            .add_extension(
+                x509.UnrecognizedExtension(
+                    x509.ObjectIdentifier("1.3.6.1.4.1.57264.1.5"), repository.encode()
+                ),
+                critical=False,
+            )
+            .sign(key, hashes.SHA256())
+        )
+
+    def test_an_entry_sigstore_does_not_support_is_unverifiable(self) -> None:
+        pytest.importorskip("sigstore")
+        from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
+
+        unsupported = VerificationError(
+            "Integrated time only supported for dsse/hashedrekord 0.0.1 types"
+        )
+        assert attest.SigstoreVerification._refused(unsupported).outcome is Outcome.UNVERIFIABLE
+        forged = VerificationError("Signature is invalid for input")
+        assert attest.SigstoreVerification._refused(forged).outcome is Outcome.INVALID
+
+    def test_the_repository_is_compared_without_regard_to_case(self) -> None:
+        pytest.importorskip("sigstore")
+        from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
+
+        check = attest.SigstoreVerification._repository_policy("TypeStrong/TypeDoc")
+        check.verify(self.certificate("TypeStrong/typedoc"))
+        with pytest.raises(VerificationError, match="does not match"):
+            check.verify(self.certificate("TypeStrong/typedoc-fork"))

@@ -252,7 +252,7 @@ class SigstoreVerification:
         try:
             payload_type, payload = verifier.verify_dsse(bundle, policy)
         except VerificationError as exc:
-            return Result(Outcome.INVALID, f"verification failed: {exc}")
+            return SigstoreVerification._refused(exc)
         except SigstoreError as exc:
             return Result(
                 Outcome.UNVERIFIABLE, f"verification could not complete: {type(exc).__name__}"
@@ -315,12 +315,58 @@ class SigstoreVerification:
         try:
             verifier.verify_artifact(hashed, bundle, policy)
         except VerificationError as exc:
-            return Result(Outcome.INVALID, f"verification failed: {exc}")
+            return SigstoreVerification._refused(exc)
         except SigstoreError as exc:
             return Result(
                 Outcome.UNVERIFIABLE, f"verification could not complete: {type(exc).__name__}"
             )
         return Result(Outcome.VERIFIED, "the signature covers the pinned digest")
+
+    #: What sigstore-python says when it declines to establish a timestamp from a transparency-log
+    #: entry kind it does not handle (`Verifier._establish_time`: only dsse and hashedrekord
+    #: 0.0.1). npm published intoto 0.0.2 entries until 2025; npm's own verifier reads them.
+    _UNSUPPORTED_ENTRY = "Integrated time only supported for"
+
+    @staticmethod
+    def _refused(exc: Exception) -> Result:
+        """A `VerificationError`, as a rejection -- or, where sigstore declined a log entry it
+        does not support, as the unanswered question it is. Measured on real npm lockfiles in
+        October 2026: 39 packages' genuine attestations reported as failed verifications."""
+        if str(exc).startswith(SigstoreVerification._UNSUPPORTED_ENTRY):
+            return Result(
+                Outcome.UNVERIFIABLE,
+                f"this sigstore cannot check the bundle's transparency-log entry ({exc})",
+            )
+        return Result(Outcome.INVALID, f"verification failed: {exc}")
+
+    @staticmethod
+    def _repository_policy(repository: str) -> Any:
+        """sigstore's `GitHubWorkflowRepository`, compared without regard to case: GitHub holds no
+        two repositories whose names differ only in case, and a manifest's spelling need not be
+        the stored one (typedoc declares `TypeStrong/TypeDoc`; its certificates say
+        `TypeStrong/typedoc`). The extension is read exactly as sigstore reads it."""
+        from cryptography.x509 import ExtensionNotFound
+        from sigstore.verify import policy
+        from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
+
+        # The class keeps sigstore's name: messages and policy listings name it.
+        class GitHubWorkflowRepository(policy.GitHubWorkflowRepository):
+            def verify(self, cert: Any) -> None:
+                try:
+                    ext = cert.extensions.get_extension_for_oid(self.oid).value
+                except ExtensionNotFound:
+                    raise VerificationError(
+                        f"Certificate does not contain GitHubWorkflowRepository "
+                        f"({self.oid.dotted_string}) extension"
+                    ) from None
+                value = ext.value.decode()
+                if value.lower() != self._value.lower():
+                    raise VerificationError(
+                        f"Certificate's GitHubWorkflowRepository does not match "
+                        f"(got '{value}', expected '{self._value}')"
+                    )
+
+        return GitHubWorkflowRepository(repository)
 
     @staticmethod
     def _identity_policy(source_repo: tuple[str, str, str] | None) -> Any:
@@ -344,7 +390,7 @@ class SigstoreVerification:
         return policy.AllOf(
             [
                 policy.OIDCIssuer(GITHUB_OIDC_ISSUER),
-                policy.GitHubWorkflowRepository(f"{owner}/{name}"),
+                SigstoreVerification._repository_policy(f"{owner}/{name}"),
             ]
         )
 
