@@ -2007,6 +2007,8 @@ class Upstreams:
         ):
             return VcpkgPorts.qt(dependency.name, version.split("#", 1)[0], other, how)
         first, archive = VcpkgPorts.read(portfile, version, dependency.name, how)
+        if isinstance(first, Unnamed) and first.nothing:
+            return first
         return Upstreams.inferred(
             first,
             [manifest.get("homepage")],
