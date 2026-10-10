@@ -86,6 +86,28 @@ class RubySource:
                 out.append((number, stripped))
         return out
 
+    #: The keywords that open a block `end` closes, when they begin a statement. Placed after an
+    #: expression (`return x if y`) `if`, `unless`, `while` and `until` are modifiers and open
+    #: nothing; a line starts with one only as the statement form.
+    KEYWORD_BLOCK: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:def|class|module|if|unless|while|until|case|begin|for)\b"
+    )
+    #: Ruby 3's endless method, `def name = expr` or `def name(args) = expr`, has no `end`. A
+    #: setter (`def name=(value)`) and `def ==(other)` are not it.
+    ENDLESS_DEF: ClassVar[re.Pattern[str]] = re.compile(
+        r"^def\s+[\w.?!]+(?:\([^)]*\)\s*|\s+)=(?![=~>])"
+    )
+
+    @staticmethod
+    def opens_keyword_block(line: str) -> bool:
+        """Whether a statement opens a block with a keyword (`def`, `if`, `unless`, ...) that a
+        later `end` closes: not where the same line closes it (`if x then y end`, `def x; end`),
+        nor for an endless method. The standard Flutter Podfile opens `def flutter_root` and
+        `unless File.exist?(...)`, which the Podfile reader had counted as no block at all."""
+        if not RubySource.KEYWORD_BLOCK.match(line) or RubySource.ENDLESS_DEF.match(line):
+            return False
+        return not re.search(r"(?:^|[\s;])end\s*$", line)
+
     @staticmethod
     def strings(text: str) -> list[str]:
         return [m.group(2) for m in RubySource.STRING.finditer(text)]
@@ -196,8 +218,12 @@ class Gemfile:
             opens = bool(Gemfile.OPENS.search(line))
             head = re.match(r"^(\w+)", line)
             word = head.group(1) if head else ""
-            if Gemfile.CONDITIONAL.match(line) and not opens:
-                stack.append(GemfileBlock("condition", condition=line[:80]))
+            if RubySource.opens_keyword_block(line) and not opens:
+                stack.append(
+                    GemfileBlock("condition", condition=line[:80])
+                    if Gemfile.CONDITIONAL.match(line)
+                    else GemfileBlock("other")
+                )
                 continue
             if word == "group" and opens:
                 stack.append(

@@ -1,0 +1,15 @@
+# The Gemfile reader opened a block for `if`, `unless`, `case`, `while`, `until` and `begin`, not
+# for `def`, `class`, `module` or `for`: a helper method's `end` closed nothing, and a one-line
+# `if ... then ... end` opened a block no `end` followed. A keyword that begins a statement opens
+# a block unless the same line closes it. Found with the same fix for Flutter's Podfile, which
+# reads Ruby the same way.
+kinds: [regression, valid]
+covers:
+  - file:Gemfile
+  - UNI-01
+dependencies:
+  - {name: rack, version_constraint: "~> 3.0", resolved_version: 3.1.8, direct: true}
+  - {name: puma, version_constraint: "~> 6.4", resolved_version: 6.4.3, direct: true}
+  - {name: nio4r, resolved_version: 2.7.3, direct: false}
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED

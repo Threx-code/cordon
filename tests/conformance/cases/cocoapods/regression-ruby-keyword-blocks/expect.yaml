@@ -1,0 +1,18 @@
+# Flutter's Podfile -- `def flutter_root` with an `unless ... end` inside -- was refused whole:
+# the reader counted only `do` as opening a block, so the first `end` closed nothing ("`end`
+# with no block open"), and the post_install hook and every pod went unread. Found by scanning
+# real pub.dev projects. A keyword that begins a statement opens a block; a trailing `if` and a
+# one-line `if ... then ... end` do not.
+kinds: [regression, valid]
+covers:
+  - file:Podfile
+  - cocoapods.constraints
+  - UNI-01
+  - UNI-18
+dependencies:
+  - {name: Alamofire, version_constraint: "~> 5.9", resolved_version: 5.9.1, direct: true}
+  - {name: ios, dependency_type: platform, version_constraint: ">= 13.0"}
+hooks:
+  - {kind: build, name: post_install, path: Podfile}
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED

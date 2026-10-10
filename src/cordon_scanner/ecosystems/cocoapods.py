@@ -66,6 +66,12 @@ class Podfile:
             head = re.match(r"^(\w+!?)", line)
             word = head.group(0) if head else ""
             opens = bool(Podfile.OPENS.search(line))
+            if RubySource.opens_keyword_block(line) and not opens:
+                # `def`, `if`, `unless` ...: a block, not a target; inside one, it is the target's.
+                depth += 1
+                if targets:
+                    targets.append(targets[-1])
+                continue
             if opens:
                 depth += 1
                 if word in ("target", "abstract_target"):

@@ -1,0 +1,30 @@
+# The shape of the Podfile `flutter create` writes: a helper method whose body opens `unless` and
+# `do` blocks, closed by `end` like any other.
+platform :ios, '13.0'
+
+def app_root
+  settings = File.expand_path(File.join('..', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(settings)
+    raise "#{settings} must exist"
+  end
+
+  File.foreach(settings) do |line|
+    matches = line.match(/APP_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise 'APP_ROOT not found'
+end
+
+target 'Runner' do
+  use_frameworks!
+  pod 'Alamofire', '~> 5.9'
+  if ENV['WITH_JSON'] then pod 'SwiftyJSON', '5.0.2' end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+    end
+  end
+end
