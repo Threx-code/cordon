@@ -262,7 +262,7 @@ class SuppressCommand:
         add = actions.add_parser(
             "add", parents=[common], help="add a suppression, checked as the scanner checks it"
         )
-        add.add_argument("rule", help="the rule id, e.g. SUSPECT.SPAWN.001")
+        add.add_argument("rule", help="the rule id, e.g. SUSPECT.REGISTRY.SELF_PUBLISH.001")
         add.add_argument("path", help="the path it applies to (no `**`)")
         add.add_argument(
             "--justification",

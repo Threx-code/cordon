@@ -596,12 +596,12 @@ policy:
 evidence: masked                 # none | masked | full
 
 suppressions:
-  - rule: SUSPECT.SPAWN.001
-    path: scripts/sync-core.mjs
+  - rule: SUSPECT.REGISTRY.SELF_PUBLISH.001
+    path: scripts/release.mjs
     justification: >
-      Reads upstream git provenance for the vendored core. A commit id typed
-      by a human is not provenance, and there is no way to ask a checkout
-      what commit it is on without asking git.
+      The release script publishes this package from the release workflow.
+      It is repository tooling, left out of the published files, so nothing
+      that installs the package runs it.
     approved_by: security-team
     expires: 2027-01-01
 

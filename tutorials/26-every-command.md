@@ -485,7 +485,8 @@ List, add and prune suppressions in the repository config.
 │                           cordon.yaml)                                     │
 │ --policy POLICY           organisation policy whose ceiling suppressions   │
 │                           must respect                                     │
-│ rule                      the rule id, e.g. SUSPECT.SPAWN.001              │
+│ rule                      the rule id, e.g.                                │
+│                           SUSPECT.REGISTRY.SELF_PUBLISH.001                │
 │ path                      the path it applies to (no `**`)                 │
 │ --justification JUSTIFICATION                                              │
 │                           why this is safe here (at least 40 characters)   │

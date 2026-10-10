@@ -549,11 +549,12 @@ be able to hang the scanner, and organisations author their own rules.
 
 ```yaml
 suppressions:
-  - rule: SUSPECT.SPAWN.001
-    path: tools/release.py
+  - rule: SUSPECT.REGISTRY.SELF_PUBLISH.001
+    path: scripts/release.mjs
     justification: >
-      Invokes git to read the commit being released. The value is provenance
-      and cannot be supplied by hand without defeating its purpose.
+      The release script publishes this package from the release workflow.
+      It is repository tooling, left out of the published files, so nothing
+      that installs the package runs it.
     approved_by: security-team
     expires: 2027-01-01
 ```

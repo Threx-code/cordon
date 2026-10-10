@@ -646,3 +646,54 @@ class TestDocumentationIsPinnedToThisVersion:
         from cordon_scanner.version import __version__
 
         assert f"/tree/v{__version__}/tutorials" in EPILOG
+
+
+class TestRuleIdentifiers:
+    """Every rule id a document cites is one the scanner can report.
+
+    Found by trying the documents' own examples: `suppress add`'s help, and the suppression in
+    three documents, named `SUSPECT.SPAWN.001`, which no rule has ever been -- and `suppress add`
+    refuses it -- and a tutorial named the dependency-confusion family
+    `SUSPECT.DEPENDENCYCONFUSION`, a spelling no finding carries. The ids the scanner can report
+    are the ones written in its source and its rule packs; a document may cite one, or a family by
+    a prefix of one (`SUSPECT.TYPOSQUAT.*`).
+    """
+
+    ID = re.compile(
+        r"\b(?:MALWARE|SUSPECT|VULNERABLE|POLICY|OPERATIONAL|CAP)\.[A-Z0-9_]+(?:\.[A-Z0-9_]+)*"
+    )
+
+    @staticmethod
+    def known() -> set[str]:
+        """What `rules list` lists -- the packs' rules and the detectors' declared ones -- and the
+        ids written in the source, which is where the engine's own notices are."""
+        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.detect.catalogue import RuleCatalogue
+        from cordon_scanner.rules.loader import RuleLoader
+
+        found = {compiled.rule.id for pack in RuleLoader.load_builtin() for compiled in pack}
+        found.update(rule.id for rule in RuleCatalogue.from_detectors(Registry().detectors()))
+        for path in (ROOT / "src" / "cordon_scanner").rglob("*.py"):
+            found.update(TestRuleIdentifiers.ID.findall(path.read_text(encoding="utf-8")))
+        return found
+
+    @staticmethod
+    def cited() -> dict[str, set[str]]:
+        documents = [*DOCUMENTS, *sorted((ROOT / "tutorials").glob("*.md"))]
+        cited: dict[str, set[str]] = {}
+        for document in documents:
+            for rule_id in TestRuleIdentifiers.ID.findall(document.read_text(encoding="utf-8")):
+                cited.setdefault(rule_id, set()).add(document.name)
+        return cited
+
+    def test_every_cited_rule_id_is_one_the_scanner_reports(self) -> None:
+        known = self.known()
+        unknown = {
+            rule_id: sorted(where)
+            for rule_id, where in self.cited().items()
+            if rule_id not in known and not any(k.startswith(rule_id + ".") for k in known)
+        }
+        assert not unknown, f"documents cite rule ids no rule has: {unknown}"
+
+    def test_the_check_sees_rule_ids(self) -> None:
+        assert len(self.known()) > 500 and len(self.cited()) > 100

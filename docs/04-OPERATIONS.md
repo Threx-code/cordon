@@ -375,7 +375,7 @@ Every scan optionally appends a structured JSON line:
   "files_scanned": 412,
   "findings": {"critical": 1, "high": 0, "medium": 3, "suppressed": 2},
   "suppressions_applied": [
-    {"rule": "SUSPECT.SPAWN.001", "path": "scripts/sync-core.mjs",
+    {"rule": "SUSPECT.REGISTRY.SELF_PUBLISH.001", "path": "scripts/release.mjs",
      "approved_by": "security-team", "expires": "2027-01-01"}
   ],
   "complete": true,
