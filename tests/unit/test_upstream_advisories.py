@@ -723,3 +723,20 @@ class TestConanRemovedVersions:
         )
         found = ConanCenter.removed("r", "1.0")
         assert isinstance(found, Upstream) and found.query["version"] == "v1.0"
+
+
+class TestGoRelease:
+    def test_gos_source_release_is_the_standard_library(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import RegistryArchive
+
+        assert RegistryArchive.parse("https://go.dev/dl/go1.23.3.src.tar.gz") == (
+            "Go",
+            "stdlib",
+            "1.23.3",
+        )
+        assert RegistryArchive.parse("https://dl.google.com/go/go1.20.src.tar.gz") == (
+            "Go",
+            "stdlib",
+            "1.20.0",
+        )
+        assert RegistryArchive.parse("https://go.dev/dl/go1.22rc1.src.tar.gz") is None

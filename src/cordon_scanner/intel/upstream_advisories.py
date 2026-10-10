@@ -211,9 +211,21 @@ class RegistryArchive:
         ),
     )
 
+    GO_RELEASE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^https://(?:go\.dev|golang\.org|dl\.google\.com/go|storage\.googleapis\.com/golang)"
+        r"/(?:dl/)?go(\d+\.\d+(?:\.\d+)?)\.src\.tar\.gz$"
+    )
+
     @staticmethod
     def parse(url: str) -> tuple[str, str, str] | None:
         """`(OSV ecosystem, name, version)`, or None."""
+        # Go's own source release: the standard library, which the Go vulnerability database
+        # (in OSV) covers as `stdlib`, versioned `1.23.3` -- `go1.20` is 1.20.0. Stable releases
+        # only: a beta or release candidate is spelled otherwise there.
+        toolchain = RegistryArchive.GO_RELEASE.match(url)
+        if toolchain:
+            parts = toolchain.group(1).split(".")
+            return "Go", "stdlib", ".".join(parts + ["0"] * (3 - len(parts)))
         for ecosystem, form in RegistryArchive.FORMS:
             found = form.match(url)
             if found:
