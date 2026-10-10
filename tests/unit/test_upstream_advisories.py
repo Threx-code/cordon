@@ -441,3 +441,129 @@ class TestConfidence:
         ctx = ScanContext(config=Config.default(), rules=RuleSet(RuleLoader.load_builtin()))
         finding = AdvisoryDetector()._finding(dependency, advisory, ctx)
         assert finding.confidence.name == expected
+
+
+class TestVcpkgPortfiles:
+    """A portfile read as CMake reads it: what real ports in vcpkg's registry write."""
+
+    @staticmethod
+    def read(portfile: str, version: str, port: str) -> Upstream | Unnamed:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        return VcpkgPorts.source(portfile, version, port, "x")
+
+    def test_7zips_regex_replace_and_escaped_dollar(self) -> None:
+        found = self.read(
+            'string(REGEX REPLACE "[.]([0-9])\\$" ".0\\\\1" upstream_version "${VERSION}")\n'
+            'vcpkg_from_github(OUT_SOURCE_PATH S REPO ip7z/7zip REF "${upstream_version}" '
+            "SHA512 0 HEAD_REF main)\n",
+            "25.1",
+            "7zip",
+        )
+        assert isinstance(found, Upstream) and found.query["version"] == "25.01"
+
+    def test_a_bracket_argument_is_taken_as_written(self) -> None:
+        found = self.read(
+            "string(REGEX MATCH [[^[0-9][0-9]*\\.[1-9][0-9]*]] MM ${VERSION})\n"
+            'vcpkg_download_distfile(A URLS "https://github.com/o/r/archive/refs/tags/v${MM}.tar.gz" '
+            "FILENAME f SHA512 0)\n",
+            "2.38.0",
+            "p",
+        )
+        assert isinstance(found, Upstream) and found.query["version"] == "v2.38"
+
+    def test_a_gitlab_url_with_a_group(self) -> None:
+        found = self.read(
+            "vcpkg_from_gitlab(GITLAB_URL https://gitlab.com/inivation OUT_SOURCE_PATH S "
+            'REPO dv/dv-processing REF "${VERSION}" HEAD_REF master)\n',
+            "1.7.9",
+            "dv-processing",
+        )
+        assert isinstance(found, Upstream)
+        assert found.query["package"]["name"] == "https://gitlab.com/inivation/dv/dv-processing"
+
+    def test_the_first_unconditional_fetch_is_the_source(self) -> None:
+        # amd-amf downloads its licence after its headers.
+        found = self.read(
+            'vcpkg_download_distfile(A URLS "https://github.com/o/amf/releases/download/v${VERSION}/h.tar.gz" '
+            "FILENAME h SHA512 0)\n"
+            'vcpkg_download_distfile(L URLS "https://example.invalid/LICENSE.txt" FILENAME l SHA512 0)\n',
+            "1.4",
+            "amd-amf",
+        )
+        assert isinstance(found, Upstream) and found.query["version"] == "v1.4"
+
+    def test_conditional_fetches_count_only_when_they_agree(self) -> None:
+        same = (
+            'if("tao" IN_LIST FEATURES)\n'
+            '  vcpkg_from_github(OUT_SOURCE_PATH S REPO o/r REF "v${VERSION}" SHA512 0)\n'
+            "else()\n"
+            '  vcpkg_from_github(OUT_SOURCE_PATH S REPO o/r REF "v${VERSION}" SHA512 0)\n'
+            "endif()\n"
+        )
+        assert isinstance(self.read(same, "1.0", "ace"), Upstream)
+        differ = same.replace("REPO o/r REF", "REPO o/other REF", 1)
+        found = self.read(differ, "1.0", "ace")
+        assert isinstance(found, Unnamed) and "by platform or feature" in found.reason
+
+    def test_an_empty_port_has_nothing_to_check(self) -> None:
+        found = self.read("SET(VCPKG_POLICY_EMPTY_PACKAGE enabled)\n", "1.0", "atl")
+        assert isinstance(found, Unnamed) and found.nothing
+
+    def test_a_qt_module_is_proved_or_inferred_from_its_port_data(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference, VcpkgPorts
+
+        data = (
+            'set(qtsvg_HASH "' + "a" * 128 + '")\n'
+            'set(qtsvg_URL "https://download.qt.io/qtsvg-everywhere-src-6.11.2.tar.xz")\n'
+        )
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"v6.11.2": "c" * 40})
+        )
+        monkeypatch.setattr(
+            "cordon_scanner.intel.upstream_advisories.ContentProof.check",
+            staticmethod(lambda archive, repository, commit, tag="": ("unprovable", "stood in")),
+        )
+        found = VcpkgPorts.qt("qtsvg", "6.11.2", lambda filename: data, "x")
+        assert isinstance(found, Upstream) and found.inferred
+        assert found.query == {"commit": "c" * 40}
+
+
+class TestHomebrewTaps:
+    def test_a_tap_locked_to_a_commit_is_that_commit(self, monkeypatch) -> None:
+        Stand.serve(monkeypatch, {})
+        found = UpstreamAdvisories.name(Stand.dep("homebrew", "buo/cask-upgrade", "e" * 40))
+        assert isinstance(found, Upstream) and found.query == {"commit": "e" * 40}
+
+    def test_an_old_version_without_a_bottle_is_inferred_from_the_formulas_repository(
+        self, monkeypatch
+    ) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewBottles, TagInference
+
+        head = "b" * 40
+        formula = b'class Bat < Formula\n  url "https://github.com/sharkdp/bat/archive/refs/tags/v0.26.0.tar.gz"\n  head "https://github.com/sharkdp/bat.git", branch: "master"\nend\n'
+        api = json.dumps(
+            {
+                "versions": {"stable": "0.26.0"},
+                "tap_git_head": head,
+                "ruby_source_path": "Formula/b/bat.rb",
+            }
+        ).encode()
+        Stand.serve(
+            monkeypatch,
+            {
+                "https://formulae.brew.sh/api/formula/bat.json": api,
+                f"https://raw.githubusercontent.com/Homebrew/homebrew-core/{head}/Formula/b/bat.rb": formula,
+            },
+        )
+
+        def no_bottle(name, version):
+            raise OSError("no such bottle")
+
+        monkeypatch.setattr(HomebrewBottles, "formula", staticmethod(no_bottle))
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"v0.12.1": "d" * 40})
+        )
+        found = UpstreamAdvisories.name(Stand.dep("homebrew", "bat", "0.12.1"))
+        assert isinstance(found, Upstream) and found.inferred
+        assert found.query == {"commit": "d" * 40}

@@ -71,6 +71,9 @@ class Upstream:
 @dataclass(frozen=True)
 class Unnamed:
     reason: str
+    nothing: bool = False
+    """Nothing to check: the package installs no code (an empty vcpkg port wrapping a system
+    component). Counted as checked, with nothing to match."""
 
 
 @dataclass
@@ -461,6 +464,80 @@ class VcpkgPorts:
             return Unnamed(f"the port at that version could not be fetched ({exc})")
         return text, wanted
 
+    @staticmethod
+    def file_at_version(baseline: str, port: str, version: str, filename: str) -> str:
+        """Another file of the port at that version (a Qt port's port.data.cmake), from the same
+        tree, by git."""
+        from cordon_scanner.intel.gitfetch import GitFetch
+
+        name = urllib.parse.quote(port, safe="")
+        database = json.loads(
+            Upstreams._get(f"{VCPKG_RAW}/{baseline}/versions/{port[0]}-/{name}.json")
+        )
+        wanted = version.split("#", 1)[0]
+        entries = [
+            e
+            for e in database.get("versions") or []
+            if isinstance(e, dict)
+            and wanted
+            in (
+                e.get("version"),
+                e.get("version-semver"),
+                e.get("version-date"),
+                e.get("version-string"),
+            )
+        ]
+        entry = next(
+            (e for e in entries if not e.get("port-version")), entries[0] if entries else {}
+        )
+        tree = str(entry.get("git-tree") or "")
+        listing = json.loads(
+            VcpkgPorts._cached(
+                "tree",
+                tree,
+                lambda: json.dumps(GitFetch.tree(VcpkgPorts.REPOSITORY, tree)).encode(),
+            )
+        )
+        blob = str(listing.get(filename) or "")
+        if not re.fullmatch(r"[0-9a-f]{40}", blob):
+            raise ValueError(f"the port has no {filename}")
+        return VcpkgPorts._cached(
+            "blob", blob, lambda: GitFetch.blob(VcpkgPorts.REPOSITORY, blob)
+        ).decode("utf-8", "replace")
+
+    @staticmethod
+    def qt(port: str, version: str, other: Any, how: str) -> Upstream | Unnamed:
+        """A Qt module, fetched by vcpkg's Qt helpers from what its port.data.cmake records --
+        written by vcpkg's own generator (`qt_port_details.cmake`), which resolves the tag
+        `v<version>` in `code.qt.io/qt/<module>.git`: a commit (`<module>_REF`), or the release
+        tarballs and their SHA-512 (`<module>_URL`, `<module>_HASH`)."""
+        try:
+            data = other("port.data.cmake")
+        except (OSError, ValueError) as exc:
+            return Unnamed(f"the Qt port's data could not be read ({type(exc).__name__})")
+        field = re.escape(port)
+        ref = re.search(rf"set\({field}_REF\s+\"?([0-9a-f]{{40}})\"?\)", data)
+        repositories = [f"https://code.qt.io/qt/{port}.git", f"https://github.com/qt/{port}"]
+        if ref:
+            return RepositoryArchive.upstream(
+                repositories[1], ref.group(1), f"{how} ({repositories[0]})"
+            )
+        urls = re.search(rf"set\({field}_URL\s+\"([^\"]+)\"\)", data)
+        sha512 = re.search(rf"set\({field}_HASH\s+\"([0-9a-f]{{128}})\"\)", data)
+        archive = (
+            Archive(tuple(u for u in urls.group(1).split(";") if u), f"sha512:{sha512.group(1)}")
+            if urls and sha512
+            else None
+        )
+        return Upstreams.inferred(
+            Unnamed("a Qt module, fetched by vcpkg's Qt helpers"),
+            repositories,
+            version,
+            (port,),
+            how,
+            archive,
+        )
+
     FETCHES: ClassVar[frozenset[str]] = frozenset(
         {
             "vcpkg_from_github",
@@ -542,28 +619,100 @@ class VcpkgPorts:
         """CMake's arguments: quoted or not, `${VAR}` expanded; None for one naming a variable
         whose value is not known."""
         out: list[str | None] = []
-        for quoted, bare in re.findall(
-            r'"((?:\\.|[^"\\])*)"|([^\s"#()]+)', re.sub(r"#[^\n]*", "", raw)
-        ):
-            text = quoted if quoted or not bare else bare
-            unknown = False
+        escapes = {"n": "\n", "t": "\t", "r": "\r", "0": "\0"}
+        index, length = 0, len(raw)
 
-            def expand(match: re.Match[str]) -> str:
-                nonlocal unknown
-                value = values.get(match.group(1))
-                if value is None:
-                    unknown = True
-                    return ""
-                return value
+        def evaluate(text: str) -> str | None:
+            """CMake's escape sequences and `${VAR}` references, in one pass: an escaped `\\$`
+            is a dollar sign, never a reference (7zip's `"[.]([0-9])\\$"`)."""
+            result: list[str] = []
+            position = 0
+            while position < len(text):
+                character = text[position]
+                if character == "\\" and position + 1 < len(text):
+                    following = text[position + 1]
+                    result.append(escapes.get(following, following))
+                    position += 2
+                elif text.startswith("${", position):
+                    end = text.find("}", position)
+                    if end < 0:
+                        return None
+                    value = values.get(text[position + 2 : end])
+                    if value is None:
+                        return None
+                    result.append(value)
+                    position = end + 1
+                else:
+                    result.append(character)
+                    position += 1
+            return "".join(result)
 
-            expanded = re.sub(r"\$\{([A-Za-z0-9_.+-]+)\}", expand, text)
-            out.append(None if unknown else expanded.replace('\\"', '"'))
+        while index < length:
+            character = raw[index]
+            if character.isspace():
+                index += 1
+            elif character == "#":
+                newline = raw.find("\n", index)
+                index = length if newline < 0 else newline
+            elif character == '"':
+                end = index + 1
+                while end < length and raw[end] != '"':
+                    end += 2 if raw[end] == "\\" else 1
+                out.append(evaluate(raw[index + 1 : end]))
+                index = end + 1
+            elif (bracket := re.match(r"\[(=*)\[", raw[index:])) is not None:
+                # A bracket argument (`[[^[0-9]+]]`): taken as written, nothing expanded.
+                closing = f"]{bracket.group(1)}]"
+                end = raw.find(closing, index + len(bracket.group(0)))
+                end = length if end < 0 else end
+                out.append(raw[index + len(bracket.group(0)) : end])
+                index = end + len(closing)
+            else:
+                end = index
+                while end < length and not raw[end].isspace() and raw[end] not in '"#()':
+                    end += 2 if raw[end] == "\\" else 1
+                out.append(evaluate(raw[index:end]))
+                index = end
         return out
 
     @staticmethod
+    def _regex(pattern: str, text: str, replacement: str | None) -> str | None:
+        """CMake's `string(REGEX ...)` in Python's `re`, which reads every construct CMake's
+        regular expressions have. A replacement's `\\0`..`\\9` name the match and its groups.
+        None when the pattern does not compile -- never a guessed value."""
+        if len(pattern) > 512 or len(text) > 4096:
+            return None
+        try:
+            compiled = re.compile(pattern)
+        except re.error:
+            return None
+        if replacement is None:
+            found = compiled.search(text)
+            return found.group(0) if found else ""
+        template = re.sub(
+            r"\\([0-9])", lambda m: f"\\g<{m.group(1)}>", replacement.replace("\\\\", "\0")
+        )
+        try:
+            return compiled.sub(template.replace("\0", "\\\\"), text)
+        except (re.error, IndexError):
+            return None
+
+    @staticmethod
     def source(portfile: str, version: str, port: str, how: str) -> Upstream | Unnamed:
+        return VcpkgPorts.read(portfile, version, port, how)[0]
+
+    @staticmethod
+    def read(
+        portfile: str, version: str, port: str, how: str
+    ) -> tuple[Upstream | Unnamed, Archive | None]:
+        """The port's upstream, and the archive it pins (for `ContentProof`). Every fetch is read,
+        under an `if()` too: when they all name one source -- ace downloads from one release
+        whichever features are on -- that is the port's; when they differ, it depends on the
+        platform or features, which a lock does not record."""
         values: dict[str, str | None] = {"VERSION": version, "PORT": port}
         depth = 0
+        results: list[tuple[int, Upstream | Unnamed]] = []
+        archive: Archive | None = None
         for name, raw in VcpkgPorts.commands(portfile):
             if name == "if":
                 depth += 1
@@ -591,6 +740,34 @@ class VcpkgPorts:
                         if known
                         else None
                     )
+                elif (
+                    operation == "REGEX"
+                    and len(args) >= 5
+                    and str(args[1]).upper() == "MATCH"
+                    and args[3]
+                ):
+                    # `string(REGEX MATCH <regex> <out> <input>...)`: the first match, or "".
+                    pattern, inputs = args[2], args[4:]
+                    values[args[3]] = (
+                        None
+                        if depth or pattern is None or None in inputs
+                        else VcpkgPorts._regex(pattern, "".join(i for i in inputs if i), None)
+                    )
+                elif (
+                    operation == "REGEX"
+                    and len(args) >= 6
+                    and str(args[1]).upper() == "REPLACE"
+                    and args[4]
+                ):
+                    # `string(REGEX REPLACE <regex> <replace> <out> <input>...)`: every match.
+                    pattern, replacement, inputs = args[2], args[3], args[5:]
+                    values[args[4]] = (
+                        None
+                        if depth or pattern is None or replacement is None or None in inputs
+                        else VcpkgPorts._regex(
+                            pattern, "".join(i for i in inputs if i), replacement
+                        )
+                    )
                 elif operation in ("TOLOWER", "TOUPPER") and len(args) >= 3 and args[2]:
                     given = args[1]
                     values[args[2]] = (
@@ -602,7 +779,7 @@ class VcpkgPorts:
                     )
                 elif len(args) >= 3 and args[-1]:
                     values[args[-1]] = None  # any other string() result is not evaluated here
-            elif name in VcpkgPorts.FETCHES and not depth:
+            elif name in VcpkgPorts.FETCHES or name == "vcpkg_from_sourceforge":
                 keyed: dict[str, list[str | None]] = {}
                 current = ""
                 for a in args:
@@ -611,44 +788,86 @@ class VcpkgPorts:
                         keyed.setdefault(a, [])
                     elif current:
                         keyed[current].append(a)
-                ref = (keyed.get("REF") or [None])[0]
-                if name == "vcpkg_download_distfile":
-                    urls = keyed.get("URLS") or []
-                    if any(u is None for u in urls):
-                        return Unnamed("its portfile's download URL is computed")
-                    return Upstreams.from_urls([u for u in urls if u], how)
-                if ref is None:
-                    return Unnamed(f"its portfile's REF is computed or missing ({name})")
-                repo = (keyed.get("REPO") or [None])[0]
-                if name == "vcpkg_from_github":
-                    host = (keyed.get("GITHUB_HOST") or ["https://github.com"])[0]
-                    if host != "https://github.com" or not repo:
-                        return Unnamed(
-                            "its portfile fetches from a GitHub host other than github.com"
-                        )
-                    repository = f"https://github.com/{repo}"
-                elif name == "vcpkg_from_gitlab":
-                    # The host is named exactly: gitlab.com, or gitlab.freedesktop.org (fontconfig).
-                    host = (keyed.get("GITLAB_URL") or [None])[0]
-                    if (
-                        not host
-                        or not repo
-                        or not re.fullmatch(r"https://[\w.-]+(?::\d+)?/?", host)
-                    ):
-                        return Unnamed("its portfile's GitLab host or repository is computed")
-                    repository = f"{host.rstrip('/')}/{repo}"
-                elif name == "vcpkg_from_bitbucket":
-                    if not repo:
-                        return Unnamed("its portfile's Bitbucket repository is computed")
-                    repository = f"https://bitbucket.org/{repo}"
-                else:
-                    given = (keyed.get("URL") or [None])[0]
-                    named = RepositoryArchive.repository(given or "")
-                    if not named:
-                        return Unnamed("its portfile's git URL is not on GitHub or GitLab")
-                    repository = named
-                return RepositoryArchive.upstream(repository, ref, f"{how} ({repository})")
-        return Unnamed("its portfile fetches its source in no form read here")
+                results.append((depth, VcpkgPorts._fetched(name, keyed, how)))
+                sha512 = (keyed.get("SHA512") or [None])[0]
+                if archive is None and sha512 and re.fullmatch(r"[0-9a-f]{128}", sha512):
+                    urls = VcpkgPorts._archive_urls(name, keyed)
+                    if urls:
+                        archive = Archive(tuple(urls), f"sha512:{sha512}")
+        if not results:
+            if re.search(r"(?i)set\s*\(\s*VCPKG_POLICY_EMPTY_PACKAGE\s+enabled", portfile):
+                return Unnamed("an empty port: it installs no code", nothing=True), archive
+            return Unnamed("its portfile fetches its source in no form read here"), archive
+        # The first fetch made unconditionally always runs: the source. Later ones are a licence
+        # file or a feature's extra (amd-amf downloads its licence after its headers).
+        unconditional = [result for level, result in results if level == 0]
+        if unconditional:
+            return unconditional[0], archive
+        # Every fetch under a condition: one source only if they all name it (ace).
+        found = [result for _, result in results]
+        named = [r for r in found if isinstance(r, Upstream)]
+        if len(named) == len(found) and all(r.query == named[0].query for r in named):
+            return named[0], archive
+        if named:
+            return Unnamed("its portfile fetches different sources by platform or feature"), archive
+        return found[0], archive
+
+    @staticmethod
+    def _archive_urls(name: str, keyed: dict[str, list[str | None]]) -> list[str]:
+        """Where a pinned archive is downloaded from: a distfile's URLS, or SourceForge's address
+        for a project, path and file (`vcpkg_from_sourceforge`)."""
+        if name == "vcpkg_download_distfile":
+            return [u for u in keyed.get("URLS") or [] if u]
+        if name == "vcpkg_from_sourceforge":
+            project = (keyed.get("REPO") or [None])[0]
+            ref = (keyed.get("REF") or [""])[0]
+            filename = (keyed.get("FILENAME") or [None])[0]
+            if project and filename and ref is not None:
+                path = f"{ref}/{filename}" if ref else filename
+                return [f"https://downloads.sourceforge.net/project/{project}/{path}"]
+        return []
+
+    @staticmethod
+    def _fetched(name: str, keyed: dict[str, list[str | None]], how: str) -> Upstream | Unnamed:
+        ref = (keyed.get("REF") or [None])[0]
+        if name == "vcpkg_download_distfile":
+            urls = keyed.get("URLS") or []
+            if any(u is None for u in urls):
+                return Unnamed("its portfile's download URL is computed")
+            return Upstreams.from_urls([u for u in urls if u], how)
+        if name == "vcpkg_from_sourceforge":
+            return Unnamed("its portfile downloads from SourceForge, which names no repository")
+        if ref is None:
+            return Unnamed(f"its portfile's REF is computed or missing ({name})")
+        repo = (keyed.get("REPO") or [None])[0]
+        if name == "vcpkg_from_github":
+            host = (keyed.get("GITHUB_HOST") or ["https://github.com"])[0]
+            if host != "https://github.com" or not repo:
+                return Unnamed("its portfile fetches from a GitHub host other than github.com")
+            repository = f"https://github.com/{repo}"
+        elif name == "vcpkg_from_gitlab":
+            # The host is named exactly: gitlab.com, or gitlab.freedesktop.org (fontconfig).
+            host = (keyed.get("GITLAB_URL") or [None])[0]
+            # A group may be part of it (`GITLAB_URL https://gitlab.com/inivation`): vcpkg joins it
+            # and REPO with a slash.
+            if (
+                not host
+                or not repo
+                or not re.fullmatch(r"https://[\w.-]+(?::\d+)?(?:/[\w.~-]+){0,8}/?", host)
+            ):
+                return Unnamed("its portfile's GitLab host or repository is computed")
+            repository = f"{host.rstrip('/')}/{repo}"
+        elif name == "vcpkg_from_bitbucket":
+            if not repo:
+                return Unnamed("its portfile's Bitbucket repository is computed")
+            repository = f"https://bitbucket.org/{repo}"
+        else:
+            given = (keyed.get("URL") or [None])[0]
+            named = RepositoryArchive.repository(given or "")
+            if not named:
+                return Unnamed("its portfile's git URL is not on GitHub or GitLab")
+            repository = named
+        return RepositoryArchive.upstream(repository, ref, f"{how} ({repository})")
 
 
 class HomebrewBottles:
@@ -672,6 +891,61 @@ class HomebrewBottles:
         return body
 
     MAX_BOTTLE_BYTES: ClassVar[int] = 128 << 20
+
+    @staticmethod
+    def current_formula(data: dict[str, Any]) -> str:
+        """The formula file formulae.brew.sh describes now, at the commit it names."""
+        head, path = str(data.get("tap_git_head") or ""), str(data.get("ruby_source_path") or "")
+        if not re.fullmatch(r"[0-9a-f]{40}", head) or not re.fullmatch(
+            r"Formula/[\w@+./-]+\.rb", path
+        ):
+            return ""
+        return Upstreams._get(
+            f"https://raw.githubusercontent.com/Homebrew/homebrew-core/{head}/{path}"
+        ).decode("utf-8", "replace")
+
+    @staticmethod
+    def tap_formula(tap: str, formula: str, installed: str) -> Upstream | Unnamed:
+        """A formula from a third-party tap (`<owner>/<tap>`), read from the tap's own repository,
+        `github.com/<owner>/homebrew-<tap>`, where brew finds it: `Formula/<name>.rb`,
+        `Formula/<letter>/<name>.rb`, `HomebrewFormula/<name>.rb` or `<name>.rb`."""
+        owner, name = tap.split("/")
+        repository = f"https://github.com/{owner}/homebrew-{name.removeprefix('homebrew-')}"
+        base = (
+            repository.replace("https://github.com/", "https://raw.githubusercontent.com/")
+            + "/HEAD"
+        )
+        text = ""
+        for path in (
+            f"Formula/{formula}.rb",
+            f"Formula/{formula[:1]}/{formula}.rb",
+            f"HomebrewFormula/{formula}.rb",
+            f"{formula}.rb",
+        ):
+            try:
+                text = Upstreams._get(f"{base}/{path}").decode("utf-8", "replace")
+                break
+            except (OSError, ValueError):
+                continue
+        if not text:
+            return Unnamed(f"the tap {tap} holds no formula {formula}")
+        version = re.sub(r"_\d+$", "", installed)
+        how = f"the {formula} formula in {repository}"
+        source = HomebrewBottles.source(text, how)
+        # The tap's formula is as it is now: its source is the installed one only if it names
+        # that version; otherwise the version's tag is looked for in the repository it names.
+        names_installed = bool(version) and version in text
+        heads = re.findall(r'^\s*(?:head\s+|url\s+)"([^"]+?)(?:\.git)?"', text, re.MULTILINE)
+        return Upstreams.inferred(
+            source
+            if names_installed
+            else Unnamed(f"the tap's formula now builds another version than {version}"),
+            heads,
+            version,
+            (formula,),
+            how,
+            HomebrewBottles.archive(text) if names_installed else None,
+        )
 
     @staticmethod
     def formula(name: str, version: str) -> str:
@@ -1403,15 +1677,25 @@ class Upstreams:
     @staticmethod
     def homebrew(dependency: Dependency) -> Upstream | Unnamed:
         name = dependency.name
+        installed = dependency.version or ""
         if "cask" in dependency.platform:
             return Unnamed("a cask: a macOS application, which no advisory source covers by name")
+        if name.count("/") == 1 and re.fullmatch(r"[0-9a-f]{40}", installed):
+            # A tap, locked to a commit of its repository (`<owner>/homebrew-<tap>`).
+            owner, tap = name.split("/")
+            repository = f"https://github.com/{owner}/homebrew-{tap.removeprefix('homebrew-')}"
+            return RepositoryArchive.upstream(
+                repository, installed, f"the tap {name} at its locked commit"
+            )
+        given = dependency.resolved_from or ""
+        if given.startswith("registry:") and given.count("/") == 1:
+            return HomebrewBottles.tap_formula(given.removeprefix("registry:"), name, installed)
         if "/" in name or dependency.resolved_from is not None:
             return Unnamed("it is from a tap, which formulae.brew.sh does not describe")
         data = json.loads(
             Upstreams._get(f"{HOMEBREW_API}/{urllib.parse.quote(name, safe='@+')}.json")
         )
         stable = str((data.get("versions") or {}).get("stable") or "")
-        installed = dependency.version or ""
         if not installed or re.sub(r"_\d+$", "", installed) == stable:
             # The formula the API describes, at the commit it names, checked against the SHA-256
             # it gives: its mirrors are read too (curl's include GitHub's release asset).
@@ -1437,11 +1721,25 @@ class Upstreams:
             how = f"the {name} {stable} formula"
         else:
             # An older version: the formula its bottle was built from, which the bottle carries.
-            text, version = (
-                HomebrewBottles.formula(name, installed),
-                re.sub(r"_\d+$", "", installed),
-            )
-            how = f"the {name} {installed} formula its bottle carries"
+            version = re.sub(r"_\d+$", "", installed)
+            try:
+                text = HomebrewBottles.formula(name, installed)
+                how = f"the {name} {installed} formula its bottle carries"
+            except (OSError, ValueError, tarfile.TarError, EOFError):
+                # No bottle (one from before ghcr.io): the current formula still names the
+                # repository, in which the installed version's tag is looked for. Nothing pins
+                # the old release archive, so it cannot be proved: an inference, said as one.
+                current = HomebrewBottles.current_formula(data)
+                heads = re.findall(
+                    r'^\s*(?:head\s+|url\s+)"([^"]+?)(?:\.git)?"', current, re.MULTILINE
+                )
+                return Upstreams.inferred(
+                    Unnamed(f"no bottle of {installed} remains to read its formula from"),
+                    [*heads, data.get("homepage")],
+                    version,
+                    (name.split("@", 1)[0],),
+                    f"the {name} formula's repository",
+                )
         # Where the stable source names no tag, the formula's `head` and homepage name the
         # repository to look for the version's tag in.
         heads = re.findall(r'^\s*(?:head\s+|url\s+)"([^"]+\.git)"', text, re.MULTILINE)
@@ -1489,18 +1787,34 @@ class Upstreams:
             if isinstance(files, Unnamed):
                 return files
             portfile, version = files
+
+            def other(filename: str) -> str:
+                return VcpkgPorts.file_at_version(baseline, dependency.name, wanted or "", filename)
+
         else:
             portfile = Upstreams._get(f"{VCPKG_RAW}/{baseline}/ports/{port}/portfile.cmake").decode(
                 "utf-8", "replace"
             )
             version = at_baseline
+
+            def other(filename: str) -> str:
+                return Upstreams._get(f"{VCPKG_RAW}/{baseline}/ports/{port}/{filename}").decode(
+                    "utf-8", "replace"
+                )
+
         how = f"the {dependency.name} {version} port"
+        if re.search(
+            r"\bqt_(?:install_submodule|submodule_installation|download_submodule)\s*\(", portfile
+        ):
+            return VcpkgPorts.qt(dependency.name, version.split("#", 1)[0], other, how)
+        first, archive = VcpkgPorts.read(portfile, version, dependency.name, how)
         return Upstreams.inferred(
-            VcpkgPorts.source(portfile, version, dependency.name, how),
+            first,
             [manifest.get("homepage")],
             version.split("#", 1)[0],
             (dependency.name,),
             how,
+            archive,
         )
 
     @staticmethod
@@ -1700,6 +2014,9 @@ class UpstreamAdvisories:
                 continue
             upstream = UpstreamAdvisories.name(dependency)
             if isinstance(upstream, Unnamed):
+                if upstream.nothing:
+                    result.checked.add(dependency.purl)
+                    continue
                 result.unchecked[dependency.purl] = upstream.reason
             else:
                 named.append((dependency, upstream))
