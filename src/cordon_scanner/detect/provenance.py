@@ -443,7 +443,7 @@ class ProvenanceDetector(BaseDetector):
                 INVALID_RULE,
                 ctx,
                 dependency=dependency,
-                detail=f"the provenance file of chart {label} did not verify: {check.detail}",
+                detail=f"chart {label} did not verify: {check.detail}",
             )
         else:
             yield self._finding(
