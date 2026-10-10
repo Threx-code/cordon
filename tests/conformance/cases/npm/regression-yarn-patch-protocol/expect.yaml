@@ -1,0 +1,13 @@
+# Yarn 4 applies its built-in compatibility patch to TypeScript and records the result as a second
+# entry of the same version (`typescript@patch:...builtin<compat/typescript>`), with the checksum of
+# the patched package. Found scanning a real repository (affaan-m/ECC): the two checksums were
+# reported as one version locked with two hashes. The patched entry is built here, not fetched;
+# the registry's own entry keeps its checksum. The entries are the ones in that lockfile.
+kinds: [regression, valid]
+covers:
+  - npm.yarn-berry
+  - UNI-15
+dependencies:
+  - {name: typescript, resolved_version: 6.0.3, direct: true}
+no_findings:
+  - SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001

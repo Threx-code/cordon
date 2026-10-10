@@ -225,9 +225,16 @@ class LockfileDetector(BaseDetector):
         # Keyed by the artefact, not only the version: one version built for several platforms
         # (conda's linux-64 and osx-arm64 builds, a native gem's platform variants) is several
         # artefacts with several hashes, and that is the format, not a conflict.
+        # And an entry built here rather than fetched is not that artefact at all: Yarn's `patch:`
+        # (`typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>`) records
+        # the checksum of the patched package, one entry away from the registry's own.
         seen: dict[tuple[str, str, tuple[str, ...]], set[str]] = {}
         for entry in graph.entries:
-            if entry.integrity and not entry.integrity.startswith(Coordinate.MALFORMED):
+            if (
+                entry.integrity
+                and not entry.integrity.startswith(Coordinate.MALFORMED)
+                and not entry.local
+            ):
                 algorithm = (
                     entry.integrity.split("-", 1)[0].split(":", 1)[0]
                     if entry.integrity[:3].isalpha()
