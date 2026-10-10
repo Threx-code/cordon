@@ -100,7 +100,9 @@ class RepositoryArchive:
         ),
         re.compile(
             r"^https://api\.github\.com/repos/([\w.-]+)/([\w.-]+)/(?:tarball|zipball)/(.+)$"
-        ),
+        ),  # One file at a commit (glext's `.../raw/<sha>/api/GL/glext.h`): the commit is exact.
+        re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/(?:raw|blob)/([0-9a-f]{40})/"),
+        re.compile(r"^https://raw\.githubusercontent\.com/([\w.-]+)/([\w.-]+)/([0-9a-f]{40})/"),
     )
     #: Codeberg (Forgejo): `/<owner>/<repo>/archive/<ref>.tar.gz`.
     CODEBERG: ClassVar[re.Pattern[str]] = re.compile(
@@ -1205,12 +1207,42 @@ class Conventions:
             ),
             "https://git.savannah.gnu.org/git/{0}.git",
         ),
+        # SourceForge's git: `git.code.sf.net/p/<project>/code` (or `/git`), where a project
+        # keeps one.
+        (
+            re.compile(
+                r"^https?://(?:downloads\.)?sourceforge\.net/projects?/([\w.-]+)/"
+                r"|^https?://prdownloads\.sourceforge\.net/([\w.-]+)/"
+            ),
+            "https://git.code.sf.net/p/{}/code",
+        ),
+        (
+            re.compile(
+                r"^https?://(?:downloads\.)?sourceforge\.net/projects?/([\w.-]+)/"
+                r"|^https?://prdownloads\.sourceforge\.net/([\w.-]+)/"
+            ),
+            "https://git.code.sf.net/p/{}/git",
+        ),
+        # The Apache Software Foundation's releases, and its mirrors of each project on GitHub.
+        (
+            re.compile(
+                r"^https?://(?:archive\.apache\.org/dist|downloads\.apache\.org|dlcdn\.apache\.org"
+                r"|www\.apache\.org/dist)/([\w.-]+)/"
+            ),
+            "https://github.com/apache/{}",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?netfilter\.org/projects/([\w.-]+)/files/"),
+            "https://git.netfilter.org/{}",
+        ),
         (
             re.compile(r"^https?://cache\.ruby-lang\.org/pub/(ruby)/"),
             "https://github.com/ruby/{0}",
         ),
         (
-            re.compile(r"^https?://download\.gnome\.org/sources/([\w.+-]+)/"),
+            re.compile(
+                r"^https?://(?:download\.gnome\.org|ftp\.gnome\.org/pub/(?:gnome|GNOME))/sources/([\w.+-]+)/"
+            ),
             "https://gitlab.gnome.org/GNOME/{0}",
         ),
         (
@@ -1232,7 +1264,8 @@ class Conventions:
             for form, template in Conventions.FORMS:
                 found = form.match(url)
                 if found:
-                    out.append(template.format(*found.groups()))
+                    # A form with alternatives has a group per alternative: those that matched.
+                    out.append(template.format(*(g for g in found.groups() if g is not None)))
         return list(dict.fromkeys(out))
 
 
@@ -1494,18 +1527,18 @@ class ConanCenter:
             return Unnamed("its sources name different repositories or tags by platform")
         return Upstreams.from_urls(urls, how)
 
-    _repositories: ClassVar[dict[str, set[str] | None]] = {}
+    _index: ClassVar[dict[str, dict[str, object] | None]] = {}
 
     @staticmethod
-    def repositories(name: str) -> set[str] | None:
-        """The repositories the package's current recipe in conan-center-index names, across all
-        its versions' sources; None when the index cannot be read."""
-        if name in ConanCenter._repositories:
-            return ConanCenter._repositories[name]
+    def index(name: str) -> dict[str, object] | None:
+        """`version -> source` from the package's current recipe in conan-center-index, across
+        all its recipe folders; None when the index cannot be read."""
+        if name in ConanCenter._index:
+            return ConanCenter._index[name]
         from cordon_scanner.core.datayaml import DataYaml
 
         package = urllib.parse.quote(name, safe="")
-        found: set[str] | None = set()
+        found: dict[str, object] | None = {}
         try:
             config = DataYaml.load(
                 Upstreams._get(f"{ConanCenter.INDEX}/{package}/config.yml").decode()
@@ -1515,28 +1548,47 @@ class ConanCenter:
                 for entry in ((config or {}).get("versions") or {}).values()
                 if isinstance(entry, dict) and entry.get("folder")
             }
-            named: set[str] = set()
+            sources: dict[str, object] = {}
             for folder in sorted(folders):
                 data = DataYaml.load(
                     Upstreams._get(f"{ConanCenter.INDEX}/{package}/{folder}/conandata.yml").decode()
                 )
-                urls, _ = ConanCenter.leaves((data or {}).get("sources"))
-                named |= {parsed[0] for url in urls if (parsed := RepositoryArchive.parse(url))}
-            found = named
+                given = (data or {}).get("sources") if isinstance(data, dict) else None
+                if isinstance(given, dict):
+                    sources.update({str(k): v for k, v in given.items()})
+            found = sources
         except (OSError, ValueError):
             found = None
-        ConanCenter._repositories[name] = found
+        ConanCenter._index[name] = found
         return found
 
     @staticmethod
+    def repositories(name: str) -> set[str] | None:
+        """The repositories the current recipe's sources name, across all its versions."""
+        sources = ConanCenter.index(name)
+        if sources is None:
+            return None
+        urls, _ = ConanCenter.leaves(list(sources.values()))
+        return {parsed[0] for url in urls if (parsed := RepositoryArchive.parse(url))}
+
+    @staticmethod
     def removed(name: str, version: str) -> Upstream | Unnamed:
-        """A version Conan Center no longer serves: the package's current recipe in
-        conan-center-index lists its versions' sources; when they all name one repository, the
-        version's tag is looked for in it -- an inference, with nothing pinned to prove it by."""
-        repositories = ConanCenter.repositories(name)
-        if repositories is None:
+        """A version Conan Center no longer serves. conan-center-index's current recipe may
+        still list it -- its sources and their digest, read as for any recipe; otherwise, when
+        its other versions all name one repository, the version's tag is looked for in it -- an
+        inference, with nothing pinned to prove it by."""
+        sources = ConanCenter.index(name)
+        if sources is None:
             return Unnamed(
                 "Conan Center no longer serves this version, and its index could not be read"
+            )
+        how = f"conan-center-index's {name} recipe, for {version}"
+        repositories = ConanCenter.repositories(name) or set()
+        homes = sorted(repositories) if len(repositories) == 1 else []
+        if version in sources:
+            urls, pinned = ConanCenter.leaves(sources[version])
+            return Upstreams.inferred(
+                ConanCenter.exact(urls, how), homes, version, (name,), how, pinned
             )
         if len(repositories) != 1:
             return Unnamed(
@@ -1545,7 +1597,7 @@ class ConanCenter:
             )
         return Upstreams.inferred(
             Unnamed("Conan Center no longer serves this version"),
-            sorted(repositories),
+            homes,
             version,
             (name,),
             f"the repository Conan Center's current {name} recipe names",

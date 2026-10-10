@@ -663,3 +663,63 @@ class TestCMakeArguments:
         from cordon_scanner.intel.upstream_advisories import VcpkgPorts
 
         assert VcpkgPorts._arguments('A AND (B OR "C") ( )', {}) == ["A", "AND", "B", "OR", "C"]
+
+
+class TestMoreSourceHosts:
+    def test_one_file_at_a_commit_is_that_commit(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import RepositoryArchive
+
+        sha = "8e729daa702d45597ccffa0c964bba1eca10a9e6"
+        for url in (
+            f"https://github.com/KhronosGroup/OpenGL-Registry/raw/{sha}/api/GL/glext.h",
+            f"https://raw.githubusercontent.com/KhronosGroup/OpenGL-Registry/{sha}/api/GL/glext.h",
+        ):
+            assert RepositoryArchive.parse(url) == (
+                "https://github.com/KhronosGroup/OpenGL-Registry",
+                sha,
+            )
+        # A branch is no fixed point.
+        assert RepositoryArchive.parse("https://github.com/o/r/raw/main/x.h") is None
+
+    def test_download_hosts_imply_repositories_to_prove_against(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import Conventions
+
+        assert Conventions.repositories(
+            ["https://archive.apache.org/dist/apr/apr-1.7.6.tar.bz2"]
+        ) == ["https://github.com/apache/apr"]
+        assert Conventions.repositories(
+            ["https://www.netfilter.org/projects/libmnl/files/libmnl-1.0.5.tar.bz2"]
+        ) == ["https://git.netfilter.org/libmnl"]
+        assert Conventions.repositories(
+            ["http://ftp.gnome.org/pub/gnome/sources/at-spi2-atk/2.38/at-spi2-atk-2.38.0.tar.xz"]
+        ) == ["https://gitlab.gnome.org/GNOME/at-spi2-atk"]
+        assert Conventions.repositories(
+            ["https://prdownloads.sourceforge.net/argtable/argtable2-13.tar.gz"]
+        ) == [
+            "https://git.code.sf.net/p/argtable/code",
+            "https://git.code.sf.net/p/argtable/git",
+        ]
+
+
+class TestConanRemovedVersions:
+    def test_a_version_the_index_still_lists_is_read_from_its_data(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import ConanCenter
+
+        monkeypatch.setattr(
+            ConanCenter,
+            "index",
+            staticmethod(
+                lambda name: {
+                    "1.0": {
+                        "url": "https://github.com/o/r/archive/refs/tags/v1.0.tar.gz",
+                        "sha256": "a" * 64,
+                    },
+                    "2.0": {
+                        "url": "https://github.com/o/r/archive/refs/tags/v2.0.tar.gz",
+                        "sha256": "b" * 64,
+                    },
+                }
+            ),
+        )
+        found = ConanCenter.removed("r", "1.0")
+        assert isinstance(found, Upstream) and found.query["version"] == "v1.0"
