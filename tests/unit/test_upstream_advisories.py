@@ -806,3 +806,43 @@ class TestQtBeforePortData:
 
         found = VcpkgPorts.qt("qtsvg", "6.7.0", self.missing, "x", self.qtbase)
         assert isinstance(found, Unnamed) and "no Qt 6.7.0" in found.reason
+
+
+class TestHomebrewAliases:
+    API = "https://formulae.brew.sh/api/formula"
+    CORE = "https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD"
+
+    @staticmethod
+    def registry(monkeypatch, pages: dict[str, bytes]) -> None:
+        """What a registry serves; anything else is its 404, PackageNotFound."""
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        def get(url: str, limit: int = 0) -> bytes:
+            if url not in pages:
+                raise PackageNotFound(f"no such page: {url}")
+            return pages[url]
+
+        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+
+    def test_an_alias_is_followed_to_the_installed_versions_series(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewBottles
+
+        record = json.dumps({"versions": {"stable": "3.13.9"}}).encode()
+        self.registry(
+            monkeypatch,
+            {
+                f"{self.CORE}/Aliases/python3": b"../Formula/p/python@3.15.rb",
+                f"{self.API}/python@3.13.json": record,
+                f"{self.API}/python@3.15.json": record,
+            },
+        )
+        found = HomebrewBottles.formula_data("python3", "3.13.0_1")
+        assert not isinstance(found, Unnamed) and found[0] == "python@3.13"
+
+    def test_a_formula_homebrew_no_longer_has_is_said_so(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewBottles
+
+        HomebrewBottles._renames = None
+        self.registry(monkeypatch, {f"{self.CORE}/formula_renames.json": b'{"annie": "lux"}'})
+        found = HomebrewBottles.formula_data("exa", "0.9.0")
+        assert isinstance(found, Unnamed) and "no longer has this formula" in found.reason

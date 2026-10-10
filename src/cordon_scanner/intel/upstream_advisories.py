@@ -966,6 +966,69 @@ class HomebrewBottles:
 
     MAX_BOTTLE_BYTES: ClassVar[int] = 128 << 20
 
+    _renames: ClassVar[dict[str, str] | None] = None
+
+    @staticmethod
+    def formula_data(name: str, installed: str) -> tuple[str, dict[str, Any]] | Unnamed:
+        """`(formula, its formulae.brew.sh record)` for the name a Brewfile wrote. That may be an
+        alias (`python3`, `gpg`, `pkg-config`), which homebrew-core keeps as a symlink in
+        Aliases/, or an old name in its formula_renames.json. An alias to a versioned formula
+        (`python3` -> `python@3.15`) is first looked for at the installed version's series
+        (`python@3.13`), which exists only if Homebrew has it; the bottle then says exactly."""
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        def record(formula: str) -> dict[str, Any] | None:
+            try:
+                answer = json.loads(
+                    Upstreams._get(f"{HOMEBREW_API}/{urllib.parse.quote(formula, safe='@+')}.json")
+                )
+            except PackageNotFound:
+                return None
+            return answer if isinstance(answer, dict) else None
+
+        data = record(name)
+        if data is not None:
+            return name, data
+        target = ""
+        try:
+            link = Upstreams._get(
+                f"https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD/Aliases/"
+                f"{urllib.parse.quote(name, safe='@+')}"
+            ).decode("utf-8", "replace")
+            pointed = re.fullmatch(r"\.\./Formula/(?:[\w]/)?([\w@+.-]+)\.rb\s*", link)
+            target = pointed.group(1) if pointed else ""
+        except PackageNotFound:
+            pass
+        if not target:
+            if HomebrewBottles._renames is None:
+                try:
+                    renames = json.loads(
+                        Upstreams._get(
+                            "https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD/"
+                            "formula_renames.json"
+                        )
+                    )
+                except (PackageNotFound, ValueError):
+                    renames = {}
+                HomebrewBottles._renames = {
+                    str(k): str(v) for k, v in (renames or {}).items() if isinstance(v, str)
+                }
+            target = HomebrewBottles._renames.get(name, "")
+        if not target:
+            return Unnamed("Homebrew no longer has this formula, under this name or another")
+        series = re.fullmatch(r"([\w+.-]+)@[\d.]+", target)
+        numbers = re.match(r"(\d+)(?:\.(\d+))?", installed)
+        candidates = []
+        if series and numbers:
+            major, minor = numbers.group(1), numbers.group(2)
+            candidates += [f"{series.group(1)}@{major}.{minor}"] if minor else []
+            candidates += [f"{series.group(1)}@{major}"]
+        for formula in [*candidates, target]:
+            data = record(formula)
+            if data is not None:
+                return formula, data
+        return Unnamed(f"Homebrew's formula for {name}, {target}, could not be read")
+
     @staticmethod
     def current_formula(data: dict[str, Any]) -> str:
         """The formula file formulae.brew.sh describes now, at the commit it names."""
@@ -1964,9 +2027,10 @@ class Upstreams:
             return HomebrewBottles.tap_formula(given.removeprefix("registry:"), name, installed)
         if "/" in name or dependency.resolved_from is not None:
             return Unnamed("it is from a tap, which formulae.brew.sh does not describe")
-        data = json.loads(
-            Upstreams._get(f"{HOMEBREW_API}/{urllib.parse.quote(name, safe='@+')}.json")
-        )
+        found = HomebrewBottles.formula_data(name, installed)
+        if isinstance(found, Unnamed):
+            return found
+        name, data = found
         stable = str((data.get("versions") or {}).get("stable") or "")
         if not installed or re.sub(r"_\d+$", "", installed) == stable:
             # The formula the API describes, at the commit it names, checked against the SHA-256
