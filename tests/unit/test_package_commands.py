@@ -24,7 +24,7 @@ from cordon_scanner.cli.deps import DependencyView
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cli.suppressions import SuppressCommand, SuppressionFile, SuppressionRules
 from cordon_scanner.core.config import OrgConstraints
-from cordon_scanner.core.errors import ConfigError
+from cordon_scanner.core.errors import ConfigError, ExitCode
 from cordon_scanner.core.models import Category, Suppression
 from cordon_scanner.intel import more_registries, registry_client
 from cordon_scanner.intel.more_registries import MoreRegistries
@@ -542,6 +542,20 @@ class TestDeps:
             .render_text(direct_only=False)[0]
             .startswith("no dependencies found")
         )
+
+    def test_an_incomplete_graph_exits_incomplete_not_as_a_scanner_error(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        # Found by running `deps --online` on axios: an advisory source that covers no package
+        # of an ecosystem leaves the scan incomplete, and deps answered 2 -- "a bug in Cordon".
+        import cordon_scanner
+        from cordon_scanner.core.models import ScanResult
+
+        monkeypatch.setattr(
+            cordon_scanner.Scanner, "scan", lambda self, target: ScanResult(complete=False)
+        )
+        assert CommandLine.run(["deps", str(tmp_path)]) == int(ExitCode.INCOMPLETE)
+        assert "incomplete" in capsys.readouterr().err
 
     def test_a_missing_target_is_an_error(self, tmp_path, capsys) -> None:
         assert CommandLine.run(["deps", str(tmp_path / "nope")]) != 0

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -153,4 +154,13 @@ class DepsCommand:
             print(json.dumps({"complete": view.complete, "dependencies": payload}, indent=2))
         else:
             print("\n".join(view.render_text(direct_only=args.direct_only)))
-        return int(ExitCode.CLEAN if view.complete else ExitCode.SCANNER_ERROR)
+        if not view.complete:
+            # Incomplete is its own exit code (4): 2 says Cordon itself failed, which an
+            # unreachable feed or an unread file is not.
+            print(
+                "cordon-scanner: the scan behind this graph was incomplete; packages may be "
+                "missing or unchecked",
+                file=sys.stderr,
+            )
+            return int(ExitCode.INCOMPLETE)
+        return int(ExitCode.CLEAN)
