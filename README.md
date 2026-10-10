@@ -66,7 +66,7 @@ A repository with a poisoned model and an agent workflow, an npm and a PyPI pack
 read before they are installed, a container image, CI pipelines, and the pre-commit
 guard — on a loop:
 
-![cordon-scanner in a terminal: a repository, packages, an image, CI pipelines and a pre-commit hook, scanned one after another](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/terminal.svg)
+![cordon-scanner in a terminal: a repository, packages, an image, CI pipelines and a pre-commit hook, scanned one after another](https://raw.githubusercontent.com/Threx-code/cordon/release/0.6.1/docs/assets/terminal.svg)
 
 The sessions are the website's terminal, recorded from real scans, and the image is
 drawn from the same recordings. It is an SVG, not a GIF — text, so it can be read in a
