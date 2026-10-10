@@ -4248,9 +4248,12 @@ class SecretDetector(BaseDetector):
     #: the tool it configures and the literal form trips the rule it documents.
     #:
     #: `>>>` and `...` are Python's doctest prompts; `$` and `#` are a shell
-    #: transcript; `In [n]:` is IPython's.
+    #: transcript; `In [n]:` is IPython's; `iex>` and `iex(1)>` are Elixir's (its doctests
+    #: run them -- Phoenix.Token's documentation signs with an example secret that way);
+    #: `irb(main):001:0>` and `pry(main)>` are Ruby's.
     EXAMPLE_PROMPT = re.compile(
-        r"""^\s*(?:>>>|\.\.\.|\$\s|#\s|In\s\[\d+\]:)""",
+        r"""^\s*(?:>>>|\.\.\.|\$\s|#\s|In\s\[\d+\]:|iex(?:\(\d+\))?>|"""
+        r"""irb\([^)\n]{1,40}\)(?::\d+){1,2}>|pry\([^)\n]{1,40}\)>)""",
     )
 
     def _inside_test_module(self, unit: FileUnit, offset: int) -> bool:
