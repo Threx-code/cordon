@@ -428,12 +428,13 @@ class Brewfile:
             )
             if kind == "tap":
                 custom = re.match(rf"\s*,\s*{STRING}", rest)
-                owner, _, repo = value.partition("/")
+                tap = Brewfile.tap_name(value)
+                owner, _, repo = tap.partition("/")
                 url = custom.group(1) if custom else f"https://github.com/{owner}/homebrew-{repo}"
-                if value.lower() not in Brewfile.CORE_TAPS:
+                if tap.lower() not in Brewfile.CORE_TAPS:
                     declared.append(
                         DeclaredDependency(
-                            name=value,
+                            name=tap,
                             spec=url,
                             scope=Scope.DEV,
                             field_name="tap",
@@ -488,12 +489,20 @@ class Brewfile:
         )
 
     @staticmethod
+    def tap_name(value: str) -> str:
+        """A tap as brew names it: `user/homebrew-repo` and `user/repo` are the same tap, the
+        repository github.com/user/homebrew-repo, and brew calls it `user/repo`."""
+        owner, slash, repo = value.partition("/")
+        return f"{owner}/{repo.removeprefix('homebrew-')}" if slash else value
+
+    @staticmethod
     def qualified(value: str) -> tuple[str | None, str]:
         """`user/repo/name` -> (`user/repo`, `name`): a formula from a named tap. Homebrew's own
         taps are the registry, so theirs is no source."""
         if value.count("/") != 2:
             return None, value
         tap, _, name = value.rpartition("/")
+        tap = Brewfile.tap_name(tap)
         return (None if tap.lower() in Brewfile.CORE_TAPS else tap), name
 
 
@@ -630,6 +639,14 @@ class HomebrewEcosystem(BaseEcosystem):
     purl_type = "brew"
     manifest_globs: tuple[str, ...] = (
         "**/Brewfile",
+        # The names Brewfiles go by in real dotfiles: `brew bundle --global` reads ~/.Brewfile, and
+        # dotfile managers keep one as Brewfile.symlink or Brewfile.txt, or one per machine as
+        # work.Brewfile. (Brewfile.lock.json is the lock, below.)
+        "**/.Brewfile",
+        "**/Brewfile.txt",
+        "**/Brewfile.local",
+        "**/Brewfile.symlink",
+        "**/*.Brewfile",
         "**/Formula/*.rb",
         "**/Casks/*.rb",
         "**/Formula/*/*.rb",

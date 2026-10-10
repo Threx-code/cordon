@@ -274,6 +274,20 @@ class TestNoFormatNoise:
         assert any("widgets" in p for p in flagged)
         assert not any("hashicorp/aws" in p for p in flagged)
 
-    def test_a_brewfile_extension_is_judged(self, tmp_path) -> None:
-        result = InfraHelpers.scan(tmp_path, {"Brewfile": 'brew "jq"\nvscode "ellacrity.recoil"\n'})
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "Brewfile",
+            # Found comparing with Homebrew Bundle on real dotfiles: by these names a Brewfile was
+            # neither read nor checked for the extensions it installs.
+            ".Brewfile",
+            "Brewfile.txt",
+            "Brewfile.local",
+            "homebrew/Brewfile.symlink",
+            "work.Brewfile",
+        ],
+    )
+    def test_a_brewfile_extension_is_judged(self, tmp_path, name) -> None:
+        result = InfraHelpers.scan(tmp_path, {name: 'brew "jq"\nvscode "ellacrity.recoil"\n'})
         assert any(f.rule_id == "MALWARE.EXTENSION.KNOWN.001" for f in result.findings)
+        assert "jq" in {d.name for d in result.dependencies}

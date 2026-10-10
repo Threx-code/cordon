@@ -480,8 +480,16 @@ EXTENSION_PATHS: Final = (
     "**/*.code-workspace",
 )
 GITPOD_PATHS: Final = ("**/.gitpod.yml", "**/.gitpod.yaml")
-BREWFILE_PATHS: Final = ("**/Brewfile",)
-"""`brew bundle` installs `vscode "publisher.name"` lines into VS Code."""
+BREWFILE_PATHS: Final = (
+    "**/Brewfile",
+    "**/.Brewfile",
+    "**/Brewfile.txt",
+    "**/Brewfile.local",
+    "**/Brewfile.symlink",
+    "**/*.Brewfile",
+)
+"""`brew bundle` installs `vscode "publisher.name"` lines into VS Code, from a Brewfile by any of
+the names the Homebrew reader knows (`HomebrewEcosystem.manifest_globs`)."""
 """Gitpod installs `vscode.extensions` from Open VSX into every workspace it starts, by id, by
 `id@version`, or by a URL to a .vsix."""
 VSIX_MANIFEST: Final = "extension/package.json"

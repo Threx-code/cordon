@@ -1,0 +1,20 @@
+# Found comparing against Homebrew Bundle (`brew bundle list`, run sandboxed) on real dotfiles:
+# - a Brewfile named .Brewfile (what `brew bundle --global` reads), Brewfile.txt,
+#   Brewfile.symlink or work.Brewfile was not read at all, nor checked for the VS Code
+#   extensions it installs;
+# - `tap 'browsh-org/homebrew-browsh'` is the tap brew calls browsh-org/browsh: Cordon kept the
+#   prefix, and built the repository URL with it twice (homebrew-homebrew-browsh).
+kinds: [regression, valid]
+covers:
+  - homebrew.taps
+  - UNI-01
+  - UNI-04
+dependencies:
+  - {name: browsh-org/browsh, source_url: "https://github.com/browsh-org/homebrew-browsh", manifest_location: {path: .Brewfile}}
+  - {name: browsh, manifest_location: {path: .Brewfile}}
+  - {name: browsh-tools, manifest_location: {path: .Brewfile}}
+  - {name: awscli, manifest_location: {path: work.Brewfile}}
+  - {name: slack, manifest_location: {path: work.Brewfile}}
+  - {name: ripgrep, manifest_location: {path: homebrew/Brewfile.symlink}}
+absent:
+  - browsh-org/homebrew-browsh

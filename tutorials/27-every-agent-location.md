@@ -124,6 +124,11 @@ Extensions and plugins a repository asks to have installed, checked against the 
 | `.gitpod.yml` | Gitpod |
 | `.gitpod.yaml` | Gitpod |
 | `Brewfile` | Homebrew, into VS Code |
+| `.Brewfile` | Homebrew, into VS Code |
+| `Brewfile.txt` | Homebrew, into VS Code |
+| `Brewfile.local` | Homebrew, into VS Code |
+| `Brewfile.symlink` | Homebrew, into VS Code |
+| `*.Brewfile` | Homebrew, into VS Code |
 | `.claude-plugin/marketplace.json` | Claude Code |
 
 ## Agents in CI

@@ -434,8 +434,9 @@ Formulae and casks in a Brewfile. Ecosystem id `homebrew`.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ MANIFESTS       Brewfile, Formula/*.rb, Casks/*.rb, Formula/*/*.rb,        │
-│                 Casks/*/*.rb                                               │
+│ MANIFESTS       Brewfile, .Brewfile, Brewfile.txt, Brewfile.local,         │
+│                 Brewfile.symlink, *.Brewfile, Formula/*.rb, Casks/*.rb,    │
+│                 Formula/*/*.rb, Casks/*/*.rb                               │
 │ LOCKFILES       Brewfile.lock.json, Cellar/*/*/INSTALL_RECEIPT.json        │
 │                                                                            │
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │
