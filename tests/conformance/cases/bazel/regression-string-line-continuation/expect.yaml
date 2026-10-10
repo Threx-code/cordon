@@ -1,0 +1,11 @@
+# A BUILD.bazel string that continues across lines with `\` -- Kong's, found scanning real
+# repositories -- refused the whole file ("a character that is not part of Starlark"): an escape
+# took any character but a newline.
+kinds: [regression, valid]
+covers:
+  - file:BUILD.bazel
+  - UNI-01
+dependencies:
+  - {name: rules_cc, version_constraint: 0.0.17, direct: true}
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED

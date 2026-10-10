@@ -67,7 +67,10 @@ UNREAD = Unread()
 class Starlark:
     TOKEN: ClassVar[re.Pattern[str]] = re.compile(
         r"""(?P<space>[ \t\r]+)|(?P<newline>\n)|(?P<comment>\#[^\n]*)"""
-        r'''|(?P<string>[rRbB]{0,2}(?:"""(?:\\.|[^\\])*?"""|\'\'\'(?:\\.|[^\\])*?\'\'\'|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'))'''
+        # An escape takes any character, a newline too: `\` ending a line inside a string is a
+        # continuation (Kong's BUILD.bazel runs a `sed` across lines that way), and `\\.` left
+        # the whole file unreadable because `.` matches no newline.
+        r'''|(?P<string>[rRbB]{0,2}(?:"""(?:\\[\s\S]|[^\\])*?"""|\'\'\'(?:\\[\s\S]|[^\\])*?\'\'\'|"(?:\\[\s\S]|[^"\\\n])*"|'(?:\\[\s\S]|[^'\\\n])*'))'''
         r"""|(?P<number>\d+(?:\.\d+)?)|(?P<name>[A-Za-z_][A-Za-z0-9_]*)"""
         r"""|(?P<punct>\*\*|==|!=|<=|>=|//|[()\[\]{},:=.+\-*/%<>|&^~])"""
     )

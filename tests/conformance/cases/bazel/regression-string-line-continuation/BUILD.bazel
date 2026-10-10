@@ -1,0 +1,8 @@
+# A string whose lines end in `\`, as Kong's genrule runs `sed` across lines.
+genrule(
+    name = "config",
+    outs = ["config.h"],
+    cmd = ("""sed -e 's/$${MAJOR}/%d/g' \
+           -e 's/$${MINOR}/%d/g' \
+           $< >$@""" % (1, 2)),
+)
