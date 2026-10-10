@@ -1,0 +1,14 @@
+# Found scanning real repositories: elixir keeps composite actions in folders under
+# `.github/workflows/`, which GitHub does not run as workflows -- they were refused as workflows
+# without `jobs` -- and koreader reuses a step by YAML anchor and alias (`- *CHECKOUT`), which was
+# refused as a step with neither uses nor run.
+kinds: [regression, valid]
+covers:
+  - actions.uses
+  - UNI-01
+dependencies:
+  - {name: actions/checkout, resolved_version: 4.2.2, integrity: 11bd71901bbe5b1630ceea73d27597364c9af683}
+  - {name: actions/setup-java, resolved_version: 4.7.1}
+only: true
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED

@@ -208,8 +208,13 @@ class ActionsFile:
                 steps.append([line])
             elif steps:
                 steps[-1].append(line)
+        # A YAML anchor may open a step (`- &CHECKOUT`, its keys below or after it) and an alias
+        # may be one (`- *CHECKOUT`): koreader reuses its checkout step that way, and GitHub reads
+        # anchors and aliases.
         mapping = re.compile(
-            r"""^[ \t]*-(?:[ \t]*$|[ \t]+(?:["'][^"']+["']|[\w-]+)[ \t]*:(?:[ \t]|$))"""
+            r"""^[ \t]*-(?:[ \t]*$"""
+            r"""|[ \t]+[*&][\w-]+[ \t]*(?:#.*)?$"""
+            r"""|[ \t]+(?:&[\w-]+[ \t]+)?(?:["'][^"']+["']|[\w-]+)[ \t]*:(?:[ \t]|$))"""
         )
         return any(not mapping.match(step[0]) for step in steps)
 
@@ -219,7 +224,10 @@ class ActionsFile:
         # against `\n`, and with CRLF a local action's steps and a job's container went unread.
         # Only line ends change: line numbers are counted, never columns.
         text = content.text.replace("\r\n", "\n")
-        workflow = "/.github/workflows/" in f"/{content.path}"
+        # A workflow is a file directly in `.github/workflows/`: GitHub runs no file in a folder
+        # below it, and elixir keeps composite actions there (`.github/workflows/ort/action.yml`),
+        # which were refused as workflows without `jobs`.
+        workflow = re.search(r"(?:^|/)\.github/workflows/[^/]+$", content.path) is not None
         if workflow and not re.search(r"(?m)^jobs[ \t]*:", text):
             return BaseEcosystem._err(content, ecosystem, "a workflow without `jobs`")
         if not workflow and not re.search(r"(?m)^runs[ \t]*:", text):
