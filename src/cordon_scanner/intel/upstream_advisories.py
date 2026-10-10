@@ -208,6 +208,10 @@ class RegistryArchive:
             re.compile(r"^https://static\.crates\.io/crates/([\w-]+)/[\w-]+?-(\d[\w.+-]*)\.crate$"),
         ),
         (
+            "NuGet",
+            re.compile(r"^https://(?:www\.)?nuget\.org/api/v2/package/([\w.-]+?)/(\d[\w.+-]*)$"),
+        ),
+        (
             "RubyGems",
             re.compile(r"^https://rubygems\.org/(?:downloads|gems)/([\w.-]+?)-(\d[\w.]*)\.gem$"),
         ),
@@ -458,29 +462,77 @@ class VcpkgPorts:
             pass
         return body
 
+    #: Anything that brings code into a port from outside the registry.
+    #: Anything that may bring code into a port from outside the registry: a fetch, a download,
+    #: an acquired tool, a pip install, or any helper whose name says it does one of these.
+    DOWNLOADS: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)\b(?:\w*(?:download|fetch|acquire|from_git|from_github|from_gitlab|from_bitbucket"
+        r"|from_sourceforge|python_packages|submodule)\w*|ExternalProject_Add)\s*\("
+        r"|\bfile\s*\(\s*DOWNLOAD\b"
+    )
+
+    @staticmethod
+    def manifest(baseline: str, port: str) -> dict[str, Any]:
+        """The port's manifest at the baseline: its vcpkg.json, or before 2021 its CONTROL file
+        (`Source:`, `Version:`, `Port-Version:`, `Homepage:`), read as the same fields."""
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        try:
+            data = json.loads(Upstreams._get(f"{VCPKG_RAW}/{baseline}/ports/{port}/vcpkg.json"))
+            return data if isinstance(data, dict) else {}
+        except PackageNotFound:
+            control = Upstreams._get(f"{VCPKG_RAW}/{baseline}/ports/{port}/CONTROL").decode(
+                "utf-8", "replace"
+            )
+        # The first paragraph is the port's own; later ones are its features.
+        fields = dict(
+            re.findall(r"^([A-Za-z-]+):[ \t]*(.*?)\s*$", control.split("\n\n", 1)[0], re.MULTILINE)
+        )
+        out: dict[str, Any] = {}
+        if fields.get("Version"):
+            out["version-string"] = fields["Version"]
+        if fields.get("Port-Version", "").isdigit():
+            out["port-version"] = int(fields["Port-Version"])
+        if fields.get("Homepage"):
+            out["homepage"] = fields["Homepage"]
+        return out
+
     @staticmethod
     def at_version(baseline: str, port: str, version: str) -> tuple[str, str] | Unnamed:
         """The portfile of `port` at `version`: the git tree the version database names for it,
         read from GitHub's API by that tree's id."""
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
         name = urllib.parse.quote(port, safe="")
-        database = json.loads(
-            Upstreams._get(f"{VCPKG_RAW}/{baseline}/versions/{port[0]}-/{name}.json")
-        )
         wanted = version.split("#", 1)[0]
-        entries = [
-            e
-            for e in database.get("versions") or []
-            if isinstance(e, dict)
-            and wanted
-            in (
-                e.get("version"),
-                e.get("version-semver"),
-                e.get("version-date"),
-                e.get("version-string"),
-            )
-        ]
+        entries: list[dict[str, Any]] = []
+        # The baseline's version database, then the registry's current one: vcpkg reads the
+        # database of the checkout it runs from, which a `version>=` above the baseline needs to
+        # be newer. Entries are only ever added, never changed, so a version's git tree is the
+        # same in every database that lists it.
+        for at in (baseline, "HEAD"):
+            try:
+                database = json.loads(
+                    Upstreams._get(f"{VCPKG_RAW}/{at}/versions/{port[0]}-/{name}.json")
+                )
+            except PackageNotFound:
+                continue
+            entries = [
+                e
+                for e in database.get("versions") or []
+                if isinstance(e, dict)
+                and wanted
+                in (
+                    e.get("version"),
+                    e.get("version-semver"),
+                    e.get("version-date"),
+                    e.get("version-string"),
+                )
+            ]
+            if entries:
+                break
         if not entries:
-            return Unnamed(f"the version database at the baseline holds no {wanted}")
+            return Unnamed(f"vcpkg's version database holds no {wanted}")
         # An override names no port-version, which vcpkg reads as 0.
         entry = next((e for e in entries if not e.get("port-version")), entries[0])
         tree = str(entry.get("git-tree") or "")
@@ -1381,7 +1433,10 @@ class TagInference:
                     # GCC's `releases/gcc-15.2.0`.
                     for s in (f"{name}-{v}", f"{name}-v{v}", f"{name}_{v}", f"releases/{name}-{v}")
                 }
-        matched = {tag: tags[tag] for tag in spellings if tag in tags}
+        # Spelled in any case (OpenSSL's `OpenSSL_1_1_1n` for openssl 1.1.1n): every tag that
+        # matches still has to name the one commit.
+        wanted = {spelling.lower() for spelling in spellings}
+        matched = {tag: commit for tag, commit in tags.items() if tag.lower() in wanted}
         if not matched:
             return Unnamed(f"{repository} has no tag spelled as version {version}")
         commits = set(matched.values())
@@ -1539,6 +1594,11 @@ class Conventions:
         (
             re.compile(r"^https?://download\.savannah\.(?:gnu|nongnu)\.org/releases/(freetype)/"),
             "https://gitlab.freedesktop.org/freetype/freetype",
+        ),
+        (re.compile(r"^https?://(?:www\.)?lua\.org/ftp/(lua)-"), "https://github.com/lua/lua"),
+        (
+            re.compile(r"^https?://(?:www\.)?openssl\.org/source/(?:old/[\w.]+/)?(openssl)-"),
+            "https://github.com/openssl/openssl",
         ),
         (
             re.compile(r"^https?://cache\.ruby-lang\.org/pub/(ruby)/"),
@@ -2320,7 +2380,7 @@ class Upstreams:
         if not found:
             return Unnamed("no baseline commit says which port it is")
         baseline, port = found.group(1), urllib.parse.quote(dependency.name, safe="")
-        manifest = json.loads(Upstreams._get(f"{VCPKG_RAW}/{baseline}/ports/{port}/vcpkg.json"))
+        manifest = VcpkgPorts.manifest(baseline, port)
         scheme, at_baseline = next(
             (
                 (k, str(manifest[k]))
@@ -2373,6 +2433,13 @@ class Upstreams:
         first, archive = VcpkgPorts.read(portfile, version, dependency.name, how)
         if isinstance(first, Unnamed) and first.nothing:
             return first
+        if isinstance(first, Unnamed) and not VcpkgPorts.DOWNLOADS.search(portfile):
+            # A port that downloads nothing (vcpkg-cmake, a helper of CMake scripts; cuda, which
+            # finds the system's): what it installs is the registry's own files, so its upstream
+            # is the vcpkg repository at the baseline -- exactly.
+            return RepositoryArchive.upstream(
+                VcpkgPorts.REPOSITORY, baseline, f"{how}: its files are vcpkg's own"
+            )
         return Upstreams.inferred(
             first,
             [manifest.get("homepage")],

@@ -1001,3 +1001,66 @@ class TestExactCommitsAndHosts:
         second = TagInference.infer("https://s", "7.1.1", (), "x")
         assert isinstance(first, Upstream) and first.query == {"commit": "a" * 40}
         assert isinstance(second, Upstream) and second.query == {"commit": "b" * 40}
+
+
+class TestVcpkgRegistryEras:
+    BASE = "9f6157af4e5b04ab3cc63150a20b1bad901a7d0b"
+    RAW = "https://raw.githubusercontent.com/microsoft/vcpkg"
+
+    @staticmethod
+    def registry(monkeypatch, pages: dict[str, bytes]) -> None:
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        def get(url: str, limit: int = 0) -> bytes:
+            if url not in pages:
+                raise PackageNotFound(url)
+            return pages[url]
+
+        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+
+    def test_a_control_file_is_the_ports_manifest(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        control = b"Source: pybind11\nVersion: 2.6.0\nPort-Version: 1\nHomepage: https://github.com/pybind/pybind11\n\nFeature: x\n"
+        self.registry(monkeypatch, {f"{self.RAW}/{self.BASE}/ports/pybind11/CONTROL": control})
+        assert VcpkgPorts.manifest(self.BASE, "pybind11") == {
+            "version-string": "2.6.0",
+            "port-version": 1,
+            "homepage": "https://github.com/pybind/pybind11",
+        }
+
+    def test_a_port_that_downloads_nothing_is_vcpkgs_own_files(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        assert not VcpkgPorts.DOWNLOADS.search(
+            'file(INSTALL "${CMAKE_CURRENT_LIST_DIR}/x.cmake" DESTINATION y)'
+        )
+        for fetching in (
+            "vcpkg_from_github(OUT_SOURCE_PATH S REPO a/b)",
+            "file(DOWNLOAD https://x/y z)",
+            "x_vcpkg_get_python_packages(PACKAGES z)",
+            "vcpkg_download_distfile(A URLS u)",
+        ):
+            assert VcpkgPorts.DOWNLOADS.search(fetching), fetching
+
+    def test_nuget_package_downloads(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import RegistryArchive
+
+        assert RegistryArchive.parse(
+            "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.3800.47"
+        ) == (
+            "NuGet",
+            "Microsoft.Web.WebView2",
+            "1.0.3800.47",
+        )
+
+    def test_a_tag_spelled_in_another_case(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"OpenSSL_1_1_1n": "c" * 40})
+        )
+        found = TagInference.infer(
+            "https://github.com/openssl/openssl", "1.1.1n", ("openssl",), "x"
+        )
+        assert isinstance(found, Upstream) and found.query == {"commit": "c" * 40}
