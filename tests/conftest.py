@@ -37,9 +37,14 @@ class SharedFixtures:
     """Fixtures for every test in the suite, registered as a plugin below."""
 
     @pytest.fixture(autouse=True)
-    def _clean_environment(self, monkeypatch) -> None:
+    def _clean_environment(self, monkeypatch, tmp_path_factory: pytest.TempPathFactory) -> None:
         for name in AMBIENT:
             monkeypatch.delenv(name, raising=False)
+        # The cache root holds what `advisories sync` wrote, and a scan prefers that database to
+        # the bundled one: with ~/.cache/cordon as the root, a machine that had synced read
+        # express 4.18.2 as vulnerable and failed a VEX test the bundled data passes. Each test
+        # starts from an empty cache of its own; one that wants another sets it.
+        monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path_factory.mktemp("cordon-cache")))
 
     @pytest.fixture(autouse=True)
     def _no_osv_refresh(self, monkeypatch) -> None:

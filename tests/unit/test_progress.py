@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import os
 import re
+from pathlib import Path
 
 import pytest
 
@@ -328,9 +329,15 @@ class TestTheSuiteControlsItsOwnEnvironment:
     back without anything failing.
     """
 
-    @pytest.mark.parametrize("name", ["CI", "CORDON_POLICY", "CORDON_CACHE_DIR", "XDG_CACHE_HOME"])
+    @pytest.mark.parametrize("name", ["CI", "CORDON_POLICY", "XDG_CACHE_HOME"])
     def test_the_ambient_value_is_cleared(self, name: str) -> None:
         assert name not in os.environ
+
+    def test_the_cache_is_the_tests_own(self, tmp_path_factory) -> None:
+        # Not the machine's: a database `advisories sync` left there changed what scans found.
+        cache = os.environ["CORDON_CACHE_DIR"]
+        assert cache.startswith(str(tmp_path_factory.getbasetemp()))
+        assert not any(Path(cache).iterdir())
 
     def test_a_test_can_still_set_one(self, monkeypatch) -> None:
         monkeypatch.setenv("CI", "true")
