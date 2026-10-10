@@ -45,6 +45,7 @@ from cordon_scanner.core.models import (
     MatchKind,
     Severity,
 )
+from cordon_scanner.core.pysyntax import PythonSyntax
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.samples import SampleKinds
 from cordon_scanner.core.scoring import RiskScorer, ScoringContext
@@ -811,7 +812,7 @@ class CapabilityDetector(BaseDetector):
         if not content.path.endswith(".py"):
             return False
         try:
-            tree = ast.parse(content.text)
+            tree = PythonSyntax.parse(content.text)
         except (SyntaxError, ValueError, RecursionError):
             return False
 
@@ -1195,7 +1196,7 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _python_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
         try:
-            tree = ast.parse(content.text)
+            tree = PythonSyntax.parse(content.text)
         except (SyntaxError, ValueError, RecursionError):
             return []
         functions = [

@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.core.models import Severity
+from cordon_scanner.core.pysyntax import PythonSyntax
 from cordon_scanner.intel.advisory_text import AdvisoryTextSymbols
 
 if TYPE_CHECKING:
@@ -185,7 +186,7 @@ class ImportReachability:
                 continue
             if unit.language == "python":
                 with contextlib.suppress(SyntaxError, ValueError, RecursionError):
-                    python.append(ast.parse(unit.content.text))
+                    python.append(PythonSyntax.parse(unit.content.text))
             elif unit.language in ("javascript", "typescript"):
                 javascript.append(unit.content.text)
         words = ImportReachability._js_word_counts(javascript)

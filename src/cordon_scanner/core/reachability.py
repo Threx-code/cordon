@@ -68,6 +68,8 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core.pysyntax import PythonSyntax
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
@@ -316,7 +318,7 @@ class CallReachability:
             if source is None:
                 continue
             try:
-                trees[path] = ast.parse(source)
+                trees[path] = PythonSyntax.parse(source)
             except (SyntaxError, ValueError, RecursionError):
                 # Unparseable: defer nothing, so every capability in it keeps
                 # the context it has today.

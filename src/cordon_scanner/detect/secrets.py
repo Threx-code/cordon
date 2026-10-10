@@ -45,6 +45,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.prose import Prose
+from cordon_scanner.core.pysyntax import PythonSyntax
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.samples import SampleKinds
 from cordon_scanner.core.scoring import ScoringContext
@@ -2623,7 +2624,7 @@ class SourceSpans:
         import ast
 
         try:
-            tree = ast.parse(text)
+            tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError, RecursionError):
             return ()
 

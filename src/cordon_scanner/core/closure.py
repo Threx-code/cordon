@@ -32,6 +32,8 @@ import ast
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core.pysyntax import PythonSyntax
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
@@ -80,7 +82,7 @@ class ImportClosure:
         than this helper does.
         """
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
 

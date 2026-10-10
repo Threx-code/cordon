@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.models import Capability
+from cordon_scanner.core.pysyntax import PythonSyntax
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -260,7 +261,7 @@ class PythonSource:
         standing -- the safe direction.
         """
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return frozenset()
 
@@ -504,7 +505,7 @@ class PythonAnalyzer:
         fixture would do is not something the suite does.
         """
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
         analyzer = cls()
@@ -677,7 +678,7 @@ class PythonAnalyzer:
         `exec(` and `os.environ` and cannot tell what follows; the caller drops its hits on these
         lines and keeps every other."""
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return {}
         analyzer = cls()
@@ -760,7 +761,7 @@ class PythonAnalyzer:
         replacement.
         """
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
         analyzer = cls()
@@ -944,7 +945,7 @@ class PythonAnalyzer:
         rather than its spelling.
         """
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
 
@@ -994,7 +995,7 @@ class PythonAnalyzer:
         rather than quietly treating an unreadable file as an uninteresting
         one."""
         try:
-            ast.parse(source)
+            PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return False
         return True
@@ -1156,7 +1157,7 @@ class PythonAnalyzer:
         if source is None or len(source) > 200:
             return None
         try:
-            expression = ast.parse(source.strip(), mode="eval").body
+            expression = PythonSyntax.parse(source.strip(), mode="eval").body
         except (SyntaxError, ValueError, RecursionError):
             return None
         if isinstance(expression, ast.Name | ast.Attribute | ast.Call):
@@ -1437,7 +1438,7 @@ class PythonAnalyzer:
         ):
             return
         try:
-            inner_tree = ast.parse(value)
+            inner_tree = PythonSyntax.parse(value)
         except (SyntaxError, ValueError, RecursionError):
             return
         inner = type(self)()

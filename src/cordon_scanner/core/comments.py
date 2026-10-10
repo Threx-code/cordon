@@ -49,6 +49,8 @@ from __future__ import annotations
 import functools
 import re
 
+from cordon_scanner.core.pysyntax import PythonSyntax
+
 HASH = ("#",)
 SLASHES = ("//",)
 DASHES = ("--",)
@@ -315,7 +317,7 @@ class SourceComments:
         import ast
 
         try:
-            tree = ast.parse(raw)
+            tree = PythonSyntax.parse(raw)
         except (SyntaxError, ValueError, RecursionError):
             return ()
 

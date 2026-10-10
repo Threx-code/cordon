@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from cordon_scanner.core.datayaml import DataYaml
 from cordon_scanner.core.models import Hook, Scope
+from cordon_scanner.core.pysyntax import PythonSyntax
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -181,7 +182,7 @@ class ConanRecipe:
         if len(content.text) > ConanRecipe.MAX_BYTES:
             return BaseEcosystem._err(content, ecosystem, "a recipe larger than a recipe is")
         try:
-            tree = ast.parse(content.text, filename="conanfile.py")
+            tree = PythonSyntax.parse(content.text, filename="conanfile.py")
         except (SyntaxError, ValueError, RecursionError):
             manifest = BaseEcosystem._err(content, ecosystem, "not a readable Python recipe")
             return Manifest(

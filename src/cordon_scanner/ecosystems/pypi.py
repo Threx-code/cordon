@@ -17,6 +17,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.core.models import Hook, Scope
+from cordon_scanner.core.pysyntax import PythonSyntax
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -433,7 +434,7 @@ class PypiEcosystem(BaseEcosystem):
         ]
 
         try:
-            tree = ast.parse(content.text, filename=content.path)
+            tree = PythonSyntax.parse(content.text, filename=content.path)
         except SyntaxError as exc:
             return Manifest(
                 path=content.path,
