@@ -534,7 +534,8 @@ class Reference:
         names.discard("")
         return names or None
 
-    #: Libraries cabal treats as non-reinstallable: they are the compiler.
+    #: Libraries cabal treats as non-reinstallable: they are the compiler. ghc-internal (GHC 9.10),
+    #: ghc-heap, ghci and system-cxx-std-lib (9.4) are among them in the newer compilers.
     GHC_BOOT: ClassVar[frozenset[str]] = frozenset(
         {
             "base",
@@ -546,6 +547,10 @@ class Reference:
             "template-haskell",
             "ghc-boot-th",
             "ghc",
+            "ghc-internal",
+            "ghc-heap",
+            "ghci",
+            "system-cxx-std-lib",
         }
     )
 

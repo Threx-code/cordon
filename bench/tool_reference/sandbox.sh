@@ -42,10 +42,15 @@ DOCKERFILE
           4.20.*) ghc=9.10.2 ;; 4.21.*) ghc=9.12.2 ;; *) ghc=9.8 ;;
         esac
         echo "  $repo: base ${base:-unpinned}, ghc $ghc"
+        # pkg-config and zlib's headers: a `pkgconfig-depends` flag a freeze file pins (digest's)
+        # is solved by querying them. The images on Debian buster, whose archive has moved, keep
+        # without (no project solved with them needs it).
+        printf 'FROM haskell:%s\nRUN apt-get update -qq && apt-get install -y -qq --no-install-recommends pkgconf zlib1g-dev >/dev/null && rm -rf /var/lib/apt/lists/*\n' "$ghc" \
+          | docker build -q -t "cordon-ref-cabal:$ghc" - >/dev/null 2>&1 || docker tag "haskell:$ghc" "cordon-ref-cabal:$ghc"
         # The network stays on here: cabal clones a project's source-repository-packages before
         # solving, and --dry-run builds nothing and runs no Setup.hs, so no project code runs.
         docker run --rm --cap-drop ALL --security-opt no-new-privileges -v "$data:/vol:ro" -v "$out:/out" -v "$here:/ref:ro" \
-          -e ONLY="$repo" -v cordon-cabal-index:/root/.cabal --entrypoint sh "haskell:$ghc" -c \
+          -e ONLY="$repo" -v cordon-cabal-index:/root/.cabal --entrypoint sh "cordon-ref-cabal:$ghc" -c \
           'mkdir -p /out/hackage && ln -s /vol/tool-agreement /data && ln -sf "$(command -v ghc)" "/usr/local/bin/ghc-$(ghc --numeric-version)" 2>/dev/null; sh /ref/hackage.sh'
       done ;;
   esac
