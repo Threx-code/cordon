@@ -302,6 +302,17 @@ class CabalFile:
                 scope = CabalFile.COMPONENTS.get(kind)
                 if scope is None:
                     continue
+                if not node.children and any(
+                    CabalFile._declares(other.children, commons, 0)
+                    for other in nodes
+                    if not other.is_field
+                    and other is not node
+                    and other.head.lower().split()[0] in CabalFile.COMPONENTS
+                ):
+                    # An empty `library` beside named sublibraries: Cabal 3 allows it, and packages
+                    # write one so that other projects can depend on their internal libraries.
+                    # Nothing in it to lose; a file where nothing declares anything still fails.
+                    continue
                 if kind != "custom-setup" and not CabalFile._declares(node.children, commons, 0):
                     # Nothing compiles without base: a component that depends on nothing is one
                     # whose build-depends was lost.

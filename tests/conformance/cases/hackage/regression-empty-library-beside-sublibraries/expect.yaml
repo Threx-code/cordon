@@ -1,0 +1,14 @@
+# Found comparing against cabal's own install plans on real projects: granule.cabal opens with an
+# empty `library` -- the dummy Cabal 3 packages write so that other projects can depend on their
+# named sublibraries -- and Cordon took the empty component for a file cut short and refused the
+# whole file, every dependency of every component with it. An empty component beside components
+# that declare is now read as what it is; a file where no component declares anything still fails.
+kinds: [regression, valid]
+covers:
+  - file:app.cabal
+  - UNI-02
+  - UNI-03
+dependencies:
+  - {name: containers, version_constraint: ==0.6.7}
+  - {name: megaparsec, version_constraint: ">=9.2"}
+  - {name: tasty-expected-failure, dependency_type: test}

@@ -1,0 +1,29 @@
+cabal-version:  3.4
+name:           granule
+version:        0.9.7.0
+build-type:     Simple
+
+common granule-dependencies
+  build-depends:
+      base          ==4.17.2.1
+    , containers    ==0.6.7
+    , text          ==2.0.2
+
+-- Dummy toplevel library component that is needed for external projects that depend on internal sublibraries.
+library
+
+library frontend
+  import: granule-dependencies
+  visibility: public
+  exposed-modules: Language.Granule.Syntax
+  build-depends:
+      megaparsec    >=9.2
+
+test-suite gr-golden
+  import: granule-dependencies
+  type: exitcode-stdio-1.0
+  main-is: Golden.hs
+  build-depends:
+      granule:frontend
+    , tasty
+    , tasty-expected-failure
