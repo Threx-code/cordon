@@ -1777,6 +1777,22 @@ class TestTheDetectorAsksTheNewRegistries:
         answer(PackageFacts(name="x", version="1.0.0", yanked=True))
         assert "SUSPECT.DEPENDENCY.YANKED.001" in self.ids(self.dependency("cargo", "x"))
 
+    @pytest.mark.parametrize("ecosystem", ["pub", "cocoapods", "cargo", "npm"])
+    def test_the_projects_own_code_is_never_asked(self, monkeypatch, ecosystem) -> None:
+        # A path dependency asked of the public registry leaked its name and came back "not on
+        # the public pub registry" (appmetrica) or "withdrawn" (FlutterMacOS).
+        from dataclasses import replace
+
+        asked: list[str] = []
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registry_client.RegistryClient.facts",
+            lambda ecosystem, name, version: (
+                asked.append(name) or PackageFacts(name=name, version=version, yanked=True)
+            ),
+        )
+        local = replace(self.dependency(ecosystem, "appmetrica"), local=True)
+        assert self.ids(local) == [] and asked == []
+
     def test_a_go_sum_hash_the_checksum_database_contradicts_is_critical(self, answer) -> None:
         mine = "h1:" + base64.b64encode(b"\x01" * 32).decode()
         theirs = "h1:" + base64.b64encode(b"\x02" * 32).decode()
