@@ -293,7 +293,15 @@ class VcpkgManifest:
             field_name=field_name,
             platform=platform,
             extras=tuple(features),
-            note=None if override else unresolved,
+            # A pinned port still comes from the version database at the baseline, which is what
+            # names its files (and so its upstream source); unpinned, it is what resolves it.
+            note=(
+                f"pinned by an override; vcpkg reads the port at baseline {at.group(1)}"
+                if (at := re.search(r"\bat baseline ([0-9a-f]{40})\b", unresolved or ""))
+                else None
+            )
+            if override
+            else unresolved,
         )
 
 

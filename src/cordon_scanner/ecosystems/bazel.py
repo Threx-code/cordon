@@ -641,10 +641,15 @@ class ModuleLock:
             integrity = (attributes or {}).get("integrity")
             urls = (attributes or {}).get("urls")
             deps = node.get("deps") if isinstance(node.get("deps"), dict) else {}
+            # `bazel_tools@_` and `local_config_platform@_`: modules built into Bazel itself, which
+            # no registry serves -- part of the platform, as R's base packages are part of R.
+            builtin = version == "_"
             entries.append(
                 LockEntry(
                     name=name,
                     version=version,
+                    scope=Scope.PLATFORM if builtin else Scope.RUNTIME,
+                    bundled=builtin,
                     integrity=integrity if isinstance(integrity, str) else None,
                     resolved_from=urls[0]
                     if isinstance(urls, list)

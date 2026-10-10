@@ -377,8 +377,12 @@ class CondaLock:
                     name=name,
                     version=version,
                     integrity=slot["hash"],
+                    # The artefact's own URL on the public channels: where it was resolved from,
+                    # and what names its channel (conda-forge and main are different builds).
                     resolved_from=None
-                    if manager == "pip" or channel in (None, "conda-forge", "main", "defaults")
+                    if manager == "pip" or channel is None
+                    else str(slot["url"]).split("#", 1)[0]
+                    if channel in ("conda-forge", "main", "defaults")
                     else f"registry:{channel}",
                     scope=Scope.OPTIONAL if slot["optional"] else Scope.RUNTIME,
                     dependencies=tuple(sorted(slot["edges"])),
@@ -438,7 +442,7 @@ class ExplicitExport:
                     name=name,
                     version=version,
                     integrity=digest,
-                    resolved_from=None
+                    resolved_from=url.split("#", 1)[0]
                     if channel in ("conda-forge", "main", "defaults")
                     else f"registry:{channel}",
                     platform=(f"subdir {subdir}", f"build {build}"),
