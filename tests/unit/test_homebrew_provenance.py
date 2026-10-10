@@ -96,3 +96,22 @@ class TestHomebrewBottles:
 
         monkeypatch.setattr(HomebrewProvenance, "_get", staticmethod(down))
         assert HomebrewProvenance.check("wget", None).outcome == "unverifiable"
+
+    def test_githubs_rate_limit_is_named(self, monkeypatch) -> None:
+        # 162 bottles of four real Brewfiles came back "could not be read (HTTPError)": GitHub's
+        # unauthenticated limit, which the detail now says.
+        import email.message
+
+        headers = email.message.Message()
+        headers["X-RateLimit-Remaining"] = "0"
+        limited = urllib.error.HTTPError("https://api.github.com/x", 403, "rate", headers, None)
+        FakeApis(monkeypatch)
+
+        def bundles(digest: str):
+            raise limited
+
+        monkeypatch.setattr(HomebrewProvenance, "bundles", staticmethod(bundles))
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        result = HomebrewProvenance.check("wget", None)
+        assert result.outcome == "unverifiable" and "rate limit" in result.detail
+        assert "GITHUB_TOKEN" in result.detail

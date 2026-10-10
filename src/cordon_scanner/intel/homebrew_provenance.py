@@ -103,6 +103,21 @@ class HomebrewProvenance:
         ]
 
     @staticmethod
+    def _why(exc: Exception) -> str:
+        """What stopped the request: GitHub's rate limit, named as such -- 60 requests an hour
+        without `GITHUB_TOKEN`, and a Brewfile asks up to eight per formula -- else the status."""
+        if isinstance(exc, urllib.error.HTTPError):
+            remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+            if exc.code in (403, 429) and remaining == "0":
+                return (
+                    "its rate limit was reached: 60 requests an hour without GITHUB_TOKEN, which raises it"
+                    if not os.environ.get("GITHUB_TOKEN")
+                    else "its rate limit was reached"
+                )
+            return f"HTTP {exc.code}"
+        return type(exc).__name__
+
+    @staticmethod
     def check(name: str, version: str | None) -> BottleCheck:
         """Every bottle of the formula's current version, each against its own attestation."""
         if "/" in name:
@@ -135,7 +150,7 @@ class HomebrewProvenance:
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 return BottleCheck(
                     "unverifiable",
-                    f"GitHub's attestation API could not be read ({type(exc).__name__})",
+                    f"GitHub's attestation API could not be read ({HomebrewProvenance._why(exc)})",
                     current,
                 )
             if not bundles:
