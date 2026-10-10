@@ -30,3 +30,16 @@ class TestATruncatedFileIsNamed:
         assert result.complete is False
         rules = [f.rule_id for f in result.findings]
         assert rules.count("OPERATIONAL.FILE.TRUNCATED") == 1
+
+    def test_an_archive_read_in_part_is_reported_once(self, tmp_path) -> None:
+        import io
+        import zipfile
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+            archive.writestr("big.bin", bytes(range(256)) * 1_000)
+        (tmp_path / "app.war").write_bytes(buffer.getvalue())
+        result = Scanner(self.CONFIG).scan(tmp_path)
+        about = [f.rule_id for f in result.findings if f.location.path == "app.war"]
+        assert about.count("OPERATIONAL.ARCHIVE.REJECTED") == 1
+        assert "OPERATIONAL.FILE.TRUNCATED" not in about
