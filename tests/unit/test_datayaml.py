@@ -54,7 +54,7 @@ class TestLockfileShapes:
         data = DataYaml.load(
             "# head\na: b # trailing\nurl: http://h/#frag\ntext: |\n  one\n  two\n"
         )
-        assert data == {"a": "b", "url": "http://h/#frag", "text": "one\ntwo"}
+        assert data == {"a": "b", "url": "http://h/#frag", "text": "one\ntwo\n"}
 
     @pytest.mark.parametrize("header", ["|2", "|-2", "|2-", ">+1", ">1+", "|2 # note", "|-", ">"])
     def test_every_block_scalar_header(self, header: str) -> None:
@@ -125,3 +125,82 @@ class TestHostileInput:
         for text in ('"a: 1\n', "a: {x: 1\n", "a: b\n  c: d\n"):
             with pytest.raises(DataYamlError):
                 DataYaml.load(text)
+
+    def test_a_control_character_is_an_error_as_yaml_has_it(self) -> None:
+        # YAML 1.2 §5.1. A damaged file must not pass for one that is merely not this format.
+        with pytest.raises(DataYamlError, match="U\\+0000"):
+            DataYaml.load("\x00{[<256: abc\nkey: value\n")
+
+
+class TestScalarsAsYamlReadsThem:
+    """Block and multi-line scalars, each expected value PyYAML's for the same text. Found reading
+    real repositories: Kubernetes manifests whose container images were lost when the document
+    was refused, Gateway API CRDs, Compose templates and Actions definitions."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("a: |\n  one\n\n  two\nb: x\n", {"a": "one\n\ntwo\n", "b": "x"}),
+            ("a: |\n  one\n    two\n  three\n", {"a": "one\n  two\nthree\n"}),
+            ("a: |\n  # not a comment\n  x # y\n", {"a": "# not a comment\nx # y\n"}),
+            ("a: |-\n  one\n  two\n\n", {"a": "one\ntwo"}),
+            ("a: |+\n  one\n\n\nb: x\n", {"a": "one\n\n\n", "b": "x"}),
+            (
+                "a: >\n  one\n  two\n\n  three\n    indented\n  four\n",
+                {"a": "one two\nthree\n  indented\nfour\n"},
+            ),
+            ("  k: |2\n      four\n    two\n", {"k": "  four\ntwo\n"}),
+            ("- |\n  one\n  two\n- x\n", ["one\ntwo\n", "x"]),
+            ("- k: |\n    one\n  j: x\n", [{"k": "one\n", "j": "x"}]),
+            ("a: |\n  [ unbalanced\n  more\nb: x\n", {"a": "[ unbalanced\nmore\n", "b": "x"}),
+            ("a: |\nb: x\n", {"a": "", "b": "x"}),
+            ("a: |\n  one", {"a": "one"}),
+            ("a: |\n\n  one\n", {"a": "\none\n"}),
+        ],
+    )
+    def test_block_scalars(self, text: str, expected: object) -> None:
+        assert DataYaml.load(text) == expected
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            # A Gateway API CRD's description: brackets, a colon and escaped quotes inside it.
+            (
+                'd: "Config: remove: [\\"h1\\", \\"h3\\"] \\n\n  Output: GET"\nt: x\n',
+                {"d": 'Config: remove: ["h1", "h3"] \n Output: GET', "t": "x"},
+            ),
+            ('a: "x\n\n  y"\n', {"a": "x\ny"}),
+            ('a: "one \\\n  two"\n', {"a": "one two"}),
+            ('a: "x # not\n  y" # c\nb: x\n', {"a": "x # not y", "b": "x"}),
+            ("a: 'it''s\n  more'\n", {"a": "it's more"}),
+            ('- "one\n  two"\n- b\n', ["one two", "b"]),
+            ('a: "x\n  [ y\n  #z"\n', {"a": "x [ y #z"}),
+            ("a: one\n  two\n\n  three\nb: x\n", {"a": "one two\nthree", "b": "x"}),
+            # A plain description with a brace in it opens no flow collection.
+            (
+                "d: type FooStatus struct{\n  stat\nt: x\n",
+                {"d": "type FooStatus struct{ stat", "t": "x"},
+            ),
+        ],
+    )
+    def test_multi_line_scalars(self, text: str, expected: object) -> None:
+        assert DataYaml.load(text) == expected
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            # Compose's healthcheck: the flow sequence on the line below its key.
+            ('test:\n  ["CMD", "curl", "-f"]\n', {"test": ["CMD", "curl", "-f"]}),
+            ("- - a\n  - b\n- - - c\n", [["a", "b"], [["c"]]]),
+            (
+                'x: "#!/bin/sh\\nset -e ; # not a comment \\"q\\""\n',
+                {"x": '#!/bin/sh\nset -e ; # not a comment "q"'},
+            ),
+        ],
+    )
+    def test_collections_and_escapes(self, text: str, expected: object) -> None:
+        assert DataYaml.load(text) == expected
+
+    def test_a_quoted_scalar_left_open_is_an_error(self) -> None:
+        with pytest.raises(DataYamlError, match="unterminated quoted string"):
+            DataYaml.load('a: "one\n  two\nb: c\n')
