@@ -371,25 +371,9 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._destination_capabilities(content, unit.language))
         hits.extend(self._js_downloaded_and_run(content, unit.language))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
-        findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
-
-        # A truncated file was only partly examined, so say so. Claiming a clean
-        # result for content that was never read is the failure this project
-        # treats as unacceptable.
-        if content.truncated:
-            findings.append(
-                self.operational(
-                    path=content.path,
-                    message=(
-                        f"Only the first {len(content.raw)} bytes of this "
-                        f"{content.size}-byte file were examined."
-                    ),
-                    detail="max_file_bytes",
-                    rule_id="OPERATIONAL.FILE.TRUNCATED",
-                )
-            )
-
-        return findings
+        # A truncated file is reported by the engine, which reads every file and so sees every
+        # truncation; this detector returns early for some.
+        return list(self._composite_findings(unit, ctx, hits, candidates))
 
     # -- Labelling -------------------------------------------------------
 

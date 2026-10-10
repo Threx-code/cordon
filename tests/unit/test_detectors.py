@@ -478,16 +478,6 @@ class TestCapabilityDetector(DetectorsFixtures):
             == []
         )
 
-    def test_truncated_files_report_reduced_coverage(self, rules) -> None:
-        content = FileContent.from_bytes("big.js", EXFIL_JS.encode())
-        object.__setattr__(content, "truncated", True)
-        findings = list(
-            CapabilityDetector().inspect(
-                FileUnit(content=content, language="javascript"), DetectorsHelpers.context(rules)
-            )
-        )
-        assert any(f.category is Category.OPERATIONAL for f in findings)
-
     def test_capabilities_are_recorded_on_the_finding(self, rules) -> None:
         findings = DetectorsHelpers.run(
             CapabilityDetector(), "a.js", EXFIL_JS, DetectorsHelpers.context(rules)

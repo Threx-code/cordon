@@ -2569,6 +2569,24 @@ class Engine:
                 # config, which reads as ordinary tuning and pads a payload out
                 # of reach.
                 acc.complete = False
+                # Said here, for every such file. It was said by the capability detector, which
+                # returns before it for a binary file and for one no rule applies to -- so a
+                # repository with a 12 MB font was incomplete, failed the Action's default gate,
+                # and gave no reason.
+                acc.append(
+                    Engine._operational(
+                        path=entry.rel_path,
+                        rule_id="OPERATIONAL.FILE.TRUNCATED",
+                        message=(
+                            f"Only the first {len(loaded.raw)} bytes of this "
+                            f"{loaded.size}-byte file were examined."
+                        ),
+                        remediation=(
+                            "Raise limits.max_file_bytes, or exclude the file deliberately if it "
+                            "is a known artefact (a font, a model, a vendored binary)."
+                        ),
+                    )
+                )
 
             retained += len(loaded.raw)
             if 0 < self.config.limits.max_memory_bytes <= retained:
