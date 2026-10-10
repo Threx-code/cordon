@@ -784,11 +784,15 @@ class AdvisoryDatabase:
         one of them is not a fix if the next advisory names it too.
         """
         self._load(ecosystem)
-        found: list[Advisory] = []
+        # Equal records under two spellings are one record, kept in first-seen order. A dict, not
+        # `a not in found` over a list: that compared every record with every other, and a
+        # package with thousands of records (the Linux kernel's, Go's standard library) made one
+        # scan spend ten minutes here.
+        found: dict[Advisory, None] = {}
         for spelling in AdvisoryDatabase.spellings(ecosystem, name):
             key = (ecosystem, spelling)
             self._materialise(key)
-            found.extend(a for a in self._by_key.get(key, ()) if a not in found)
+            found.update(dict.fromkeys(self._by_key.get(key, ())))
         return tuple(found)
 
     @staticmethod

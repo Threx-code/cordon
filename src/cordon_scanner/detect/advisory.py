@@ -117,6 +117,7 @@ class AdvisoryDetector(BaseDetector):
         # act on" got the shipped list instead, which is the substitution this
         # project argues against everywhere else.
         self._database = AdvisoryDatabase.bundled() if database is None else database
+        self._advice: dict[tuple[str | None, str, str | None], str] = {}
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -209,6 +210,8 @@ class AdvisoryDetector(BaseDetector):
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, GraphUnit):
             return ()
+        # Per inspection: the database a long-running server holds can be replaced between scans.
+        self._advice = {}
 
         findings: list[Finding] = []
 
@@ -539,6 +542,15 @@ class AdvisoryDetector(BaseDetector):
         )
 
     def _upgrade_advice(self, dependency: Dependency) -> str:
+        """`_advise`, once per package version in an inspection, however many advisories name it."""
+        key = (dependency.ecosystem, dependency.name, dependency.version)
+        cached = self._advice.get(key)
+        if cached is None:
+            cached = self._advise(dependency)
+            self._advice[key] = cached
+        return cached
+
+    def _advise(self, dependency: Dependency) -> str:
         """Where to move to, rather than where not to stay.
 
         "Upgrade to a version the advisory does not name" is true and useless:

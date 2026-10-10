@@ -59,6 +59,9 @@ class Versions:
     """Ordering versions within an ecosystem."""
 
     @staticmethod
+    # A pure function of three strings, asked the same question thousands of times in a scan:
+    # deciding the version to upgrade to checks every `fixed` version against every advisory.
+    @functools.lru_cache(maxsize=1 << 16)
     def compare(ecosystem: str, a: str, b: str) -> int:
         """-1 if `a` orders before `b`, 0 if equal, 1 if `a` orders after `b`.
 
