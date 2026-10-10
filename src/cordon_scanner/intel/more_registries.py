@@ -268,7 +268,16 @@ class MoreRegistries:
         versions = MoreRegistries._mapping(document.get("versions"))
         timeline = MoreRegistries._mapping(document.get("timeline"))
         archived = document.get("archived") is True
-        known = bool(version) and version in versions
+        # R reads a version as integers separated by single `.` or `-` (`package_version`):
+        # `1.2.16` and `1.2-16` are one version. A renv.lock pinning AER `1.2.16` -- CRAN's
+        # `1.2-16` -- was reported withdrawn, as were 60 more of one real lock.
+        wanted = MoreRegistries._r_version(version) if version else None
+        known = bool(version) and (
+            version in versions
+            or (
+                wanted is not None and any(MoreRegistries._r_version(v) == wanted for v in versions)
+            )
+        )
         latest = (
             MoreRegistries._mapping(document.get("latest"))
             if isinstance(document.get("latest"), dict)
@@ -283,11 +292,23 @@ class MoreRegistries:
             if archived
             else ("not a version CRAN published" if version and not known else None),
             latest=MoreRegistries._str(latest.get("Version"))
-            or (sorted(versions)[-1] if versions else None),
+            or (
+                max(versions, key=lambda v: MoreRegistries._r_version(v) or ())
+                if versions
+                else None
+            ),
             first_published=min(dates) if dates else None,
             last_published=max(dates) if dates else None,
             releases=len(versions),
         )
+
+    @staticmethod
+    def _r_version(value: str) -> tuple[int, ...] | None:
+        """An R package version as R compares it: its integers, separated by `.` or `-`. None
+        for a string that is not one."""
+        if not re.fullmatch(r"\d+(?:[.-]\d+)+", value):
+            return None
+        return tuple(int(part) for part in re.split(r"[.-]", value))
 
     # -- Container images ------------------------------------------------------------------
 

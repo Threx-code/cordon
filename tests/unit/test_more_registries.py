@@ -724,6 +724,16 @@ class TestCran(RegistryFixtures):
         facts = MoreRegistries.cran("jsonlite", "9.9.9")
         assert facts.yanked and facts.yanked_reason == "not a version CRAN published"
 
+    @pytest.mark.conformance("cran", "UNI-16")
+    def test_a_version_is_compared_as_r_compares_it(self, serve) -> None:
+        # R reads `1.2.16` and `1.2-16` as one version; a renv.lock pinning AER `1.2.16` was
+        # reported withdrawn. Ordered by R too: 1.2-17 is newer than 1.2-9.
+        url = "https://crandb.r-pkg.org/AER/all"
+        serve({url: {"versions": {"1.2-9": {}, "1.2-16": {}, "1.2-17": {}}, "archived": False}})
+        facts = MoreRegistries.cran("AER", "1.2.16")
+        assert not facts.yanked and facts.latest == "1.2-17"
+        assert MoreRegistries.cran("AER", "1.2.15").yanked
+
     @pytest.mark.conformance("cran", "UNI-22")
     def test_an_unreachable_registry_and_a_hostile_name(self, serve) -> None:
         serve({self.URL: RegistryError("connection timed out")})
