@@ -910,3 +910,39 @@ class TestCondaInfoStream:
         blob = zstandard.ZstdCompressor().compress(raw.getvalue())
         with tarfile.open(fileobj=CondaPackage._zstd_stream(blob), mode="r|") as archive:
             assert CondaPackage._from_tar(archive) == "package:\n  name: x\n"
+
+
+class TestGnuProjectsElsewhere:
+    def test_gnu_projects_not_on_savannah(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import Conventions
+
+        assert Conventions.repositories(
+            ["https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.gz"]
+        )[0] == ("https://gcc.gnu.org/git/gcc.git")
+        assert Conventions.repositories(["https://ftp.gnu.org/gnu/binutils/binutils-2.40.tar.bz2"])[
+            0
+        ] == ("https://sourceware.org/git/binutils-gdb.git")
+        assert Conventions.repositories(["https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz"])[0] == (
+            "https://gitlab.inria.fr/mpc/mpc.git"
+        )
+
+    def test_the_release_files_name_is_a_tag_prefix(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import Archive, ContentProof, TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"releases/gcc-13.2.0": "f" * 40})
+        )
+        monkeypatch.setattr(
+            ContentProof,
+            "check",
+            staticmethod(lambda archive, repository, commit, tag="": ("proven", "all files")),
+        )
+        url = "https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.gz"
+        found = Upstreams.inferred(
+            Unnamed("x"), [], "13.2.0", ("libgcc-ng",), "x", Archive((url,), "sha256:" + "0" * 64)
+        )
+        assert (
+            isinstance(found, Upstream)
+            and not found.inferred
+            and found.query == {"commit": "f" * 40}
+        )

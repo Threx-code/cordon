@@ -1365,7 +1365,10 @@ class TagInference:
         for name in names:
             if name:
                 spellings |= {
-                    s for v in forms for s in (f"{name}-{v}", f"{name}-v{v}", f"{name}_{v}")
+                    s
+                    for v in forms
+                    # GCC's `releases/gcc-15.2.0`.
+                    for s in (f"{name}-{v}", f"{name}-v{v}", f"{name}_{v}", f"releases/{name}-{v}")
                 }
         matched = {tag: tags[tag] for tag in spellings if tag in tags}
         if not matched:
@@ -1390,7 +1393,24 @@ class Conventions:
     `git/<name>.git`, GNOME's `sources/<name>/` and its GitLab. A guess by itself, so used only
     to be proved against the release (`ContentProof`), never as an inference."""
 
+    #: GNU's release directories (ftp.gnu.org and its mirrors), for the projects below.
+    GNU: ClassVar[str] = (
+        r"^https?://(?:mirror\.bazel\.build/)?(?:ftp\.gnu\.org/(?:pub/)?gnu|ftpmirror\.gnu\.org(?:/gnu)?|mirrors\.kernel\.org/gnu)/"
+    )
     FORMS: ClassVar[tuple[tuple[re.Pattern[str], str], ...]] = (
+        # GNU projects whose repository is not savannah's.
+        (re.compile(GNU + r"gcc/"), "https://gcc.gnu.org/git/gcc.git"),
+        (re.compile(GNU + r"(?:binutils|gdb)/"), "https://sourceware.org/git/binutils-gdb.git"),
+        (re.compile(GNU + r"glibc/"), "https://sourceware.org/git/glibc.git"),
+        (re.compile(GNU + r"(mpc|mpfr)/"), "https://gitlab.inria.fr/{0}/{0}.git"),
+        # XZ Utils: SourceForge's lzmautils and tukaani.org serve its releases.
+        (
+            re.compile(
+                r"^https?://(?:(?:downloads\.)?sourceforge\.net/projects?/lzmautils/"
+                r"|tukaani\.org/xz/|github\.com/tukaani-project/xz/releases/)"
+            ),
+            "https://github.com/tukaani-project/xz",
+        ),
         (
             re.compile(
                 r"^https?://(?:mirror\.bazel\.build/)?(?:ftp\.gnu\.org/gnu|ftpmirror\.gnu\.org(?:/gnu)?"
@@ -1878,6 +1898,21 @@ class Upstreams:
         if isinstance(first, Upstream):
             return first
         tried: list[str] = []
+        # The release file's own name is a tag prefix too: conda's libgcc-ng is built from
+        # gcc-15.2.0.tar.gz, tagged `releases/gcc-15.2.0`.
+        names = [
+            *names,
+            *(
+                stem.group(1)
+                for url in (archive.urls if archive and version else ())
+                if (
+                    stem := re.match(
+                        rf"([A-Za-z][\w+.-]*?)-v?{re.escape(version)}(?:[._-]|$)",
+                        url.rsplit("/", 1)[-1],
+                    )
+                )
+            ),
+        ]
         named = [TagInference.repository(h) if isinstance(h, str) else None for h in homes]
         # Then the repositories a download host's own layout implies (`Conventions`): tried only
         # to be proved -- a wrong one fails the proof, and none is ever used as a bare inference.
