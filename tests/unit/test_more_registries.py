@@ -1309,6 +1309,21 @@ class TestHelmRepositories(RegistryFixtures):
             "postgresql", "9.9.9", "oci://registry.example.invalid/charts"
         ).yanked
 
+    def test_an_oci_tag_holds_a_version_s_plus_as_an_underscore(self, monkeypatch) -> None:
+        # helm pushes 1.0.0+build.1 as the tag 1.0.0_build.1; an older chart's layer has the
+        # legacy media type.
+        answers = {
+            "https://registry.example.invalid/v2/charts/app/tags/list": {"tags": ["1.0.0_build.1"]},
+            "https://registry.example.invalid/v2/charts/app/manifests/1.0.0_build.1": {
+                "layers": [{"mediaType": "application/tar+gzip", "digest": f"sha256:{self.DIGEST}"}]
+            },
+        }
+        monkeypatch.setattr(MoreRegistries, "_oci", staticmethod(lambda url, accept: answers[url]))
+        facts = MoreRegistries.helm("app", "1.0.0+build.1", "oci://registry.example.invalid/charts")
+        assert not facts.yanked
+        assert facts.latest == "1.0.0+build.1"
+        assert facts.digests == (f"sha256:{self.DIGEST}",)
+
     @pytest.mark.conformance("helm", "UNI-22")
     def test_unreachable_absent_and_unaskable(self, serve) -> None:
         serve({f"{self.REPO}/index.yaml": RegistryError("connection reset")})

@@ -663,14 +663,16 @@ class MoreRegistries:
         tags = MoreRegistries._mapping(
             MoreRegistries._oci(f"https://{host}/v2/{repository}/tags/list", "application/json")
         )
-        listed = [str(t) for t in tags.get("tags") or [] if isinstance(t, str)]
+        # helm `pkg/registry/reference.go` pushes version `1.0.0+build` as tag `1.0.0_build`, and
+        # reads a tag back with `_` as `+` (`client.go`, Tags).
+        listed = [str(t).replace("_", "+") for t in tags.get("tags") or [] if isinstance(t, str)]
         if not listed:
             raise PackageNotFound(f"{host} has no chart {repository}")
         digests: tuple[str, ...] = ()
         if version is not None and version in listed:
             manifest = MoreRegistries._mapping(
                 MoreRegistries._oci(
-                    f"https://{host}/v2/{repository}/manifests/{version}",
+                    f"https://{host}/v2/{repository}/manifests/{version.replace('+', '_')}",
                     "application/vnd.oci.image.manifest.v1+json",
                 )
             )
@@ -678,7 +680,11 @@ class MoreRegistries:
             chart = [
                 str(layer["digest"])
                 for layer in layers
-                if "helm.chart.content" in str(layer.get("mediaType"))
+                # The chart layer's media type, and the legacy one older charts were pushed with.
+                if (
+                    "helm.chart.content" in str(layer.get("mediaType"))
+                    or layer.get("mediaType") == "application/tar+gzip"
+                )
                 and isinstance(layer.get("digest"), str)
             ]
             digests = tuple(d.lower() for d in chart if re.fullmatch(r"sha256:[0-9a-fA-F]{64}", d))
