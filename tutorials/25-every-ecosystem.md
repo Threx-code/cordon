@@ -64,6 +64,8 @@ Modules from the Bazel Central Registry. Ecosystem id `bazel`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

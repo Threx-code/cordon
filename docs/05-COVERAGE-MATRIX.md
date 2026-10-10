@@ -71,8 +71,9 @@ rather than a document.
 - **Online checks** (withdrawal, version distance, registry hash verification,
   and provenance/attestation verification) require `--online` and do not run by
   default. They ask npm, PyPI, crates.io, RubyGems, NuGet, the Go module proxy and
-  sum.golang.org, Maven Central, Packagist, pub.dev and Hex. Provenance is asked
-  of npm and PyPI only; the others publish none a scanner can read.
+  sum.golang.org, Maven Central, Packagist, pub.dev and Hex. Provenance is
+  verified for npm, PyPI, Maven, RubyGems, container images, Homebrew bottles and
+  Bazel Central Registry modules; the others publish none a scanner can read.
 
 ---
 

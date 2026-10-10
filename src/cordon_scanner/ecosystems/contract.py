@@ -642,7 +642,7 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "bazel.apparent-names": "a repo_name kept as the apparent name, the module named by its own",
             "bazel.migration": "a WORKSPACE beside MODULE.bazel said to be unread where Bazel does not read it",
         },
-        {"UNI-17": NO_PROVENANCE},
+        {},
     ),
     EcosystemContract(
         "helm",

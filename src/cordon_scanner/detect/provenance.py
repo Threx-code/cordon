@@ -63,7 +63,7 @@ UNSIGNED_IMAGE_RULE = "POLICY.CONTAINER.UNSIGNED_IMAGE.001"
 #: no publish-time attestation to verify yet, so the detector stays silent for
 #: them rather than reporting an absence that means nothing.
 SUPPORTED_ECOSYSTEMS = frozenset(
-    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew"}
+    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel"}
 )
 
 _GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
@@ -188,6 +188,9 @@ class ProvenanceDetector(BaseDetector):
             # registry's is the plain jar's. Comparing the plain jar's signature with a
             # classified artefact's checksum would call an honest signature a forgery.
             and not (d.ecosystem in ("maven", "gradle") and "?" in d.purl)
+            # A Bazel module is attested in the Bazel Central Registry: one from another registry,
+            # or a Maven artefact a Bazel extension installs, is not asked there.
+            and not (d.ecosystem == "bazel" and (d.resolved_from or d.local or ":" in d.name))
         ]
         findings: list[Finding] = []
         for index, dependency in enumerate(candidates[:MAX_QUERIES]):
@@ -231,6 +234,9 @@ class ProvenanceDetector(BaseDetector):
     def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         if dependency.ecosystem == "homebrew":
             yield from self._verify_homebrew(dependency, ctx)
+            return
+        if dependency.ecosystem == "bazel":
+            yield from self._verify_bazel(dependency, ctx)
             return
         from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
@@ -391,6 +397,43 @@ class ProvenanceDetector(BaseDetector):
                 ctx,
                 dependency=dependency,
                 detail=f"the build attestation for {label} could not be verified: {check.detail}",
+            )
+
+    def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A BCR module's attestations against what the lock pinned (`intel/bazel_provenance`)."""
+        from cordon_scanner.intel.bazel_provenance import BazelProvenance
+
+        label = f"{dependency.name}@{dependency.version}"
+        if not attest.SigstoreVerification.available():
+            # Without the extra nothing is fetched: whether the module is attested at all is
+            # not known, so nothing is claimed about it either way.
+            return
+        check = BazelProvenance.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        if check.outcome == "verified":
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+        elif check.outcome == "absent":
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the build attestation for {label} did not verify: {check.detail}",
+            )
+        else:
+            reason = (
+                "no sha256 is pinned for it, so there is nothing to bind the attestation to"
+                if check.outcome == "unpinned"
+                else check.detail
+            )
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"{label} is attested in the Bazel Central Registry, but could not be verified: {reason}",
             )
 
     @staticmethod

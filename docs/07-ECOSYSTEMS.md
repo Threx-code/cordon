@@ -32,7 +32,7 @@ result that was never checked.
 |---|---|---|---|---|---|---|---|
 | `actions` | `.github/workflows/*.yml`, `.github/workflows/*.yaml`, `action.yml`, `action.yaml` | -- | yes | yes | yes | -- | 178 |
 | `ansible` | `requirements.yml`, `requirements.yaml`, `roles/requirements.yml`, `collections/requirements.yml`, `galaxy.yml`, `meta/main.yml`, `meta/runtime.yml`, `execution-environment.yml`, `execution-environment.yaml` | `ansible_collections/*/*/MANIFEST.json`, `meta/.galaxy_install_info` | -- | yes | yes | -- | 43 |
-| `bazel` | `MODULE.bazel`, `WORKSPACE`, `WORKSPACE.bazel`, `WORKSPACE.bzlmod`, `BUILD.bazel` | `MODULE.bazel.lock` | -- | yes | yes | -- | 54 |
+| `bazel` | `MODULE.bazel`, `WORKSPACE`, `WORKSPACE.bazel`, `WORKSPACE.bzlmod`, `BUILD.bazel` | `MODULE.bazel.lock` | -- | yes | yes | yes | 54 |
 | `cargo` | `Cargo.toml`, `.cargo/config.toml`, `.cargo/config` | `Cargo.lock` | yes | yes | yes | -- | 19,999 |
 | `cocoapods` | `Podfile`, `*.podspec` | `Podfile.lock` | -- | yes | yes | -- | 200 |
 | `composer` | `composer.json`, `composer.lock`, `auth.json` | `composer.lock` | yes | yes | yes | -- | 904 |
