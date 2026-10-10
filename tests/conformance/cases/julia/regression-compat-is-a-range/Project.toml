@@ -1,0 +1,10 @@
+name = "Demo"
+uuid = "5d0b2c1a-4f1e-4e5b-9c3a-2b7a1f6e8d90"
+version = "0.1.0"
+
+[deps]
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+
+[compat]
+PrecompileTools = "1"
+julia = "1.10"

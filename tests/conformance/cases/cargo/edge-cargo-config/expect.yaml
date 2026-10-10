@@ -5,7 +5,9 @@ covers:
   - file:.cargo/config.toml
   - cargo.registry-replacement
 dependencies:
-  - {name: itoa, version_constraint: 1.0.11, resolved_version: 1.0.11}
+  # No Cargo.lock: `itoa = "1.0.11"` is `^1.0.11`, which Cargo resolves to the newest match, so no
+  # version is known. It was once taken for exactly 1.0.11.
+  - {name: itoa, version_constraint: 1.0.11, resolved_version: null}
   - {name: acme-tools, version_constraint: 2.1.0, source_type: registry, source_url: "registry:internal"}
 sources:
   - "registry internal: sparse+https://cargo.example.internal/index/"

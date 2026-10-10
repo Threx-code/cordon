@@ -4287,7 +4287,7 @@ class Engine:
                 # Forced when the override names this exact version, or applies to every
                 # version and resolved to this one -- or is a range (mix's `override: true` on
                 # `"~> 2.0"`), which governs whatever version the tree resolved under it.
-                exact = Engine._exact_pin(spec)
+                exact = Engine._exact_pin(spec, dependency.ecosystem)
                 if spec.lstrip("=v") == dependency.version or (
                     selected is None
                     and (
@@ -4351,7 +4351,7 @@ class Engine:
             if key in matched or key in present:
                 continue
             project, ecosystem_id, name = key
-            pinned = Engine._exact_pin(entry.spec)
+            pinned = Engine._exact_pin(entry.spec, ecosystem_id)
             implementation = EcosystemRegistry.get(ecosystem_id)
             if defined is None:
                 defined = Engine._workspace_members(units)
@@ -4485,6 +4485,13 @@ class Engine:
             ),
         )
 
+    #: Ecosystems where a bare version is a range resolved to its newest match, exact only with
+    #: `=`: Cargo reads `1.2.3` as `^1.2.3`, Julia's `[compat]` reads `"1"` as `^1`.
+    #: StaticArrays.jl's compat `PrecompileTools = "1"` was taken for version 1, which the General
+    #: registry has never held, and reported withdrawn. (NuGet's `1.0` is `1.0` or higher too, but
+    #: NuGet installs the lowest match: the version written.)
+    BARE_VERSION_IS_A_RANGE: ClassVar[frozenset[str]] = frozenset({"cargo", "julia"})
+
     _EXACT_PIN = re.compile(r"^(?:==|=)?\s*v?(\d[A-Za-z0-9.+\-_]*)$")
     """A specification that names one version and no other.
 
@@ -4495,9 +4502,11 @@ class Engine:
     """
 
     @staticmethod
-    def _exact_pin(spec: str) -> str | None:
+    def _exact_pin(spec: str, ecosystem: str | None = None) -> str | None:
         """The version a specification pins to, or None if it is a range."""
         text = spec.strip().strip("'\"")
+        if ecosystem in Engine.BARE_VERSION_IS_A_RANGE and not text.startswith("="):
+            return None
         bracketed = re.fullmatch(r"\[\s*([^,\[\]\s]{1,64})\s*\]", text)
         if bracketed:
             # `[1.2.3]`: NuGet's and Maven's notation for exactly one version.
@@ -4645,7 +4654,12 @@ class Engine:
                 # decision the resolver has not made yet -- unless a constraints
                 # file pins it, which is the resolver's own input.
                 # An ecosystem whose versions are not version numbers (an image's tag) says what pins.
-                pinned = getattr(implementation, "exact_pin", Engine._exact_pin)(declared.spec)
+                own = getattr(implementation, "exact_pin", None)
+                pinned = (
+                    own(declared.spec)
+                    if own is not None
+                    else Engine._exact_pin(declared.spec, declared_id)
+                )
                 constrained = None if pinned or declared.editable else pins.get(name)
                 if constrained is not None:
                     pinned = constrained[0]

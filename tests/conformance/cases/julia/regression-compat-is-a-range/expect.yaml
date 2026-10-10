@@ -1,0 +1,12 @@
+# With no Manifest.toml, a [compat] entry is what is known: `PrecompileTools = "1"` is `^1`, which
+# Pkg resolves to the newest 1.x. It was taken for exactly version 1 -- one the General registry
+# has never held -- and with --online reported as withdrawn (StaticArrays.jl, scanning real
+# packages). A bare version is exact only where the ecosystem reads it so; in Julia and Cargo only
+# `=1.2.3` is.
+kinds: [regression, valid]
+covers:
+  - file:Project.toml
+  - UNI-02
+  - UNI-04
+dependencies:
+  - {name: PrecompileTools, version_constraint: "1", resolved_version: null, direct: true}
