@@ -629,6 +629,35 @@ class TestConanCenterSources:
         assert isinstance(found, Upstream) and found.query == {"commit": "f" * 40}
 
 
+class TestCocoaPodsCheckouts:
+    @staticmethod
+    def pod(resolved_from: str) -> Dependency:
+        return Dependency(
+            # name() keeps one answer per package: each case is its own.
+            purl=f"pkg:cocoapods/X{len(resolved_from)}@1.0",
+            ecosystem="cocoapods",
+            name=f"X{len(resolved_from)}",
+            version="1.0",
+            direct=True,
+            resolved_from=resolved_from,
+        )
+
+    def test_a_commit_checkout_is_exact(self) -> None:
+        found = UpstreamAdvisories.name(self.pod("git+https://github.com/o/r.git#" + "c" * 40))
+        assert isinstance(found, Upstream) and found.query == {"commit": "c" * 40}
+
+    def test_a_tag_checkout_is_exact_once_the_repository_shows_the_tag(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"1.0": "d" * 40})
+        )
+        found = UpstreamAdvisories.name(self.pod("git+https://github.com/o/r.git#1.0"))
+        assert isinstance(found, Upstream) and found.query["version"] == "1.0"
+        branch = UpstreamAdvisories.name(self.pod("git+https://github.com/o/r.git#main"))
+        assert isinstance(branch, Unnamed) and "not a tag" in branch.reason
+
+
 class TestCMakeArguments:
     def test_nested_parentheses_separate_arguments_and_end(self) -> None:
         from cordon_scanner.intel.upstream_advisories import VcpkgPorts

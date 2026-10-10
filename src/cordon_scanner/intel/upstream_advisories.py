@@ -1760,7 +1760,20 @@ class Upstreams:
     def cocoapods(dependency: Dependency) -> Upstream | Unnamed:
         from cordon_scanner.intel.more_registries import HOSTS, MoreRegistries
 
-        if dependency.resolved_from is not None:
+        given = dependency.resolved_from
+        if given is not None:
+            # `pod 'X', :git => ..., :commit|:tag => ...`: Podfile.lock's CHECKOUT OPTIONS hold
+            # what was checked out: a commit is exact; a ref only once the repository shows it is
+            # a tag -- a branch moves, so it is no fixed point.
+            git = re.fullmatch(r"git\+(\S+)#(\S+)", given)
+            repository = RepositoryArchive.repository(git.group(1)) if git else None
+            if git and repository:
+                ref, how = git.group(2), f"the {dependency.name} checkout ({repository})"
+                if re.fullmatch(r"[0-9a-f]{40}", ref) or ref in (
+                    TagInference.refs(repository) or {}
+                ):
+                    return RepositoryArchive.upstream(repository, ref, how)
+                return Unnamed(f"its checkout names {ref}, which is not a tag of {repository}")
             return Unnamed("it is not from CocoaPods trunk")
         name, version = dependency.name.split("/", 1)[0], dependency.version or ""
         a, b, c = MoreRegistries.cocoapods_shard(name)
