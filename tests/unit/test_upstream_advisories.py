@@ -740,3 +740,24 @@ class TestGoRelease:
             "1.20.0",
         )
         assert RegistryArchive.parse("https://go.dev/dl/go1.22rc1.src.tar.gz") is None
+
+
+class TestCocoaPodsItself:
+    def test_the_cocoapods_line_is_the_rubygem(self) -> None:
+        from cordon_scanner.core.models import Scope
+
+        found = UpstreamAdvisories.name(
+            Dependency(
+                purl="pkg:cocoapods/cocoapods@1.7.5",
+                ecosystem="cocoapods",
+                name="cocoapods",
+                version="1.7.5",
+                direct=True,
+                scope=Scope.TOOL,
+            )
+        )
+        assert isinstance(found, Upstream)
+        assert found.query == {
+            "package": {"name": "cocoapods", "ecosystem": "RubyGems"},
+            "version": "1.7.5",
+        }

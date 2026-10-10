@@ -1822,8 +1822,18 @@ class Upstreams:
 
     @staticmethod
     def cocoapods(dependency: Dependency) -> Upstream | Unnamed:
+        from cordon_scanner.core.models import Scope
         from cordon_scanner.intel.more_registries import HOSTS, MoreRegistries
 
+        if dependency.scope == Scope.TOOL and dependency.name == "cocoapods":
+            # Podfile.lock's COCOAPODS line: the version of CocoaPods itself, a RubyGem.
+            return Upstream(
+                {
+                    "package": {"name": "cocoapods", "ecosystem": "RubyGems"},
+                    "version": dependency.version or "",
+                },
+                f"CocoaPods {dependency.version}, the RubyGem",
+            )
         given = dependency.resolved_from
         if given is not None:
             # `pod 'X', :git => ..., :commit|:tag => ...`: Podfile.lock's CHECKOUT OPTIONS hold
