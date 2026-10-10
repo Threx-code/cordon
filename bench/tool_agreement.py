@@ -13,17 +13,20 @@ are read by the ecosystem's own tool and by Cordon, and the two dependency lists
     compare      Cordon reads the same files; per ecosystem, the names both found, the names only
                  one found, repository by repository, every difference kept
 
-Nothing collected is executed. Collection keeps dependency files from repository tarballs as
-bytes; every reference tool reads files without building or running them. That rules two out:
-Homebrew Bundle reads a Brewfile by evaluating it as Ruby, and Conan a conanfile.py by importing
-it, so Homebrew has no comparison and Conan's covers conanfile.txt and conan.lock only. Where a
-tool cannot see what Cordon reads -- a flake without its lock, offline; a MODULE.bazel below the
-root -- the comparison covers what both read.
+Collection keeps dependency files from repository tarballs as bytes and runs nothing. The
+reference tools read files without building them, except two that evaluate what they read:
+Homebrew Bundle a Brewfile (Ruby) and Conan a conanfile.py (Python). Those run sealed --
+bench/tool_reference/sandbox.sh: no network, no capabilities, the files mounted read-only, output
+to a volume of their own. cabal solves each project with the GHC its freeze file pins, with
+`--dry-run`, which builds nothing and runs no Setup.hs. Where a tool cannot read what Cordon
+reads -- a flake without its lock, offline; a MODULE.bazel below the root; a recipe that imports
+what its repository does not contain -- the comparison covers what both read.
 
     docker volume create cordon-tool-agreement
     docker run --rm -v cordon-tool-agreement:/data -v "$PWD/bench:/bench:ro" python:3.12-slim \
         python /bench/tool_agreement.py collect --data /data/tool-agreement
     sh bench/tool_reference/run.sh
+    sh bench/tool_reference/sandbox.sh homebrew conan hackage
     docker run --rm -v cordon-tool-agreement:/data <an image with cordon-scanner installed> \
         python bench/tool_agreement.py compare --data /data/tool-agreement --results <dir>
 """
@@ -62,6 +65,8 @@ class Ecosystem:
     searches: tuple[str, ...] = ()
     per: int = 30
     siblings: tuple[str, ...] = ()
+    required: str | None = None
+    """A basename glob a repository must contain to be kept (Hackage: a committed freeze file)."""
 
 
 ECOSYSTEMS: dict[str, Ecosystem] = {
@@ -96,8 +101,19 @@ ECOSYSTEMS: dict[str, Ecosystem] = {
         ),
         Ecosystem(
             "conan",
-            ("conanfile.txt", "conan.lock"),
+            ("conanfile.txt", "conanfile.py", "conan.lock"),
             searches=("topic:conan stars:>10", "conan in:readme language:C++ stars:>300"),
+        ),
+        Ecosystem(
+            "homebrew",
+            ("Brewfile", "Brewfile.*", "*.Brewfile", ".Brewfile"),
+            searches=("topic:dotfiles stars:>200", "Brewfile in:readme stars:>100"),
+        ),
+        Ecosystem(
+            "hackage",
+            ("cabal.project", "cabal.project.freeze", "cabal.project.local", "*.cabal"),
+            searches=("language:Haskell stars:>300", "topic:haskell stars:>100"),
+            required="cabal.project.freeze",
         ),
         Ecosystem(
             "cran",
@@ -231,7 +247,12 @@ class Collector:
             if len(kept) >= ecosystem.per:
                 break
             files = Collector.files(ecosystem, repo)
-            if not files:
+            if not files or (
+                ecosystem.required
+                and not any(
+                    fnmatch.fnmatchcase(PurePosixPath(p).name, ecosystem.required) for p in files
+                )
+            ):
                 continue
             target = folder / repo.replace("/", "__")
             for path, data in files.items():
@@ -379,10 +400,11 @@ class Reference:
         flake with its lock (offline, it cannot lock one)."""
         if ecosystem == "bazel":
             return {""}  # `bazel mod graph` runs on the root module
-        if ecosystem != "nix":
+        if ecosystem not in ("nix", "hackage"):
             return None
+        index = "flakes.tsv" if ecosystem == "nix" else "plans.tsv"
         out = set()
-        for line in Reference._lines(repo / ".reference" / "flakes.tsv"):
+        for line in Reference._lines(repo / ".reference" / index):
             directory = line.partition("\t")[0]
             if directory.startswith("/"):  # the repository's own root, written whole
                 directory = directory.split(f"/{repo.name}", 1)[-1]
@@ -411,12 +433,29 @@ class Reference:
         return names
 
     @staticmethod
+    def _conan_results(repo: Path) -> dict[str, dict[str, Any]]:
+        """Every file Conan read, by path: conanfile.txt and conan.lock (conan.json); each
+        conanfile.py as Conan 2 evaluated it (conan_py.json), or Conan 1 for a recipe Conan 2
+        cannot load (conan1_py.json). A recipe neither could load is left out."""
+        results: dict[str, dict[str, Any]] = {}
+        for name in ("conan.json", "conan_py.json", "conan1_py.json"):
+            path = repo / ".reference" / name
+            if path.exists():
+                for file, result in json.loads(path.read_text(encoding="utf-8")).items():
+                    read = "error" not in result and (
+                        result.get("requires") or not result.get("errors")
+                    )
+                    if read:
+                        results[file] = result
+        return results
+
+    @staticmethod
     def conan(repo: Path) -> set[str] | None:
-        path = repo / ".reference" / "conan.json"
-        if not path.exists():
+        results = Reference._conan_results(repo)
+        if not results:
             return None
         names: set[str] = set()
-        for file in json.loads(path.read_text(encoding="utf-8")).values():
+        for file in results.values():
             for key in (
                 "requires",
                 "tool_requires",
@@ -425,8 +464,107 @@ class Reference:
                 "python_requires",
             ):
                 for reference in file.get(key, ()):
-                    names.add(str(reference).split("/", 1)[0].lower())
+                    text = reference["ref"] if isinstance(reference, dict) else str(reference)
+                    names.add(text.split("/", 1)[0].lower())
         return names
+
+    @staticmethod
+    def _brewfiles(repo: Path) -> dict[str, set[str]]:
+        """Each Brewfile Homebrew Bundle read, with its entries (`kind\tname`). A Brewfile brew
+        refuses (a newer DSL word, a syntax error) lists nothing and is left out."""
+        out: dict[str, set[str]] = {}
+        current = None
+        for line in Reference._lines(repo / ".reference" / "brew.txt"):
+            if line.startswith("### "):
+                current = line[4:].strip()
+            elif current and "\t" in line:
+                kind, name = line.split("\t", 1)
+                out.setdefault(current, set()).add(f"{kind}\t{name.strip()}")
+        return out
+
+    @staticmethod
+    def homebrew(repo: Path) -> set[str] | None:
+        entries = Reference._brewfiles(repo)
+        if not entries:
+            return None
+        return {e.split("\t", 1)[1].lower() for found in entries.values() for e in found}
+
+    @staticmethod
+    def hackage(repo: Path) -> set[str] | None:
+        if not (repo / ".reference" / "plans.tsv").exists():
+            return None
+        names: set[str] = set()
+        directories = {
+            line.partition("\t")[0] for line in Reference._lines(repo / ".reference" / "plans.tsv")
+        }
+        pinned = any(
+            "constraints:"
+            in Reference._read(
+                Path(directory.replace("/data/", "/data/tool-agreement/", 1))
+                / "cabal.project.freeze"
+            )
+            or "constraints:"
+            in Reference._read(repo / directory.strip("/") / "cabal.project.freeze")
+            for directory in directories
+        )
+        for plan in Reference._indexed(repo, "plans.tsv"):
+            units = plan.get("install-plan", ())
+            by_id = {u.get("id"): str(u.get("pkg-name", "")) for u in units}
+            local = [
+                u
+                for u in units
+                if u.get("style") == "local" or (u.get("pkg-src") or {}).get("type") == "local"
+            ]
+            local_names = {str(u.get("pkg-name", "")) for u in local}
+            if pinned:
+                chosen = {str(u.get("pkg-name", "")) for u in units if u not in local}
+            else:
+                # A freeze file that pins nothing (an index-state only): cabal resolves the rest on
+                # the day, so what the files say is the direct dependencies of the project's own
+                # packages, which is what is compared.
+                chosen = set()
+                for unit in local:
+                    for component in (unit.get("components") or {}).values():
+                        chosen.update(by_id.get(d, "") for d in component.get("depends", ()))
+                    chosen.update(by_id.get(d, "") for d in unit.get("depends", ()))
+            names.update(n.lower() for n in chosen - local_names)
+        # GHC's own libraries, which cabal never reinstalls: part of the compiler, as Cordon reads
+        # them (platform).
+        names -= Reference.GHC_BOOT
+        names.discard("")
+        return names or None
+
+    #: Libraries cabal treats as non-reinstallable: they are the compiler.
+    GHC_BOOT: ClassVar[frozenset[str]] = frozenset(
+        {
+            "base",
+            "ghc-prim",
+            "ghc-bignum",
+            "integer-gmp",
+            "integer-simple",
+            "rts",
+            "template-haskell",
+            "ghc-boot-th",
+            "ghc",
+        }
+    )
+
+    @staticmethod
+    def _read(path: Path) -> str:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    @staticmethod
+    def files(repo: Path, ecosystem: str) -> set[str] | None:
+        """The files the reference read, where it could read some of an ecosystem's and not
+        others: a conanfile.py that imports what is not there cannot be evaluated by Conan."""
+        if ecosystem == "conan":
+            return set(Reference._conan_results(repo))
+        if ecosystem == "homebrew":
+            return set(Reference._brewfiles(repo))
+        return None
 
     @staticmethod
     def vcpkg(repo: Path) -> set[str] | None:
@@ -528,20 +666,25 @@ class Source:
 
 
 class Cordon:
-    #: The files of an ecosystem the reference can read. Conan reads a conanfile.py only by
-    #: executing it, which this comparison never does: there, the text formats only.
-    FILES: ClassVar[dict[str, tuple[str, ...]]] = {"conan": ("conanfile.txt", "conan.lock")}
-
     @staticmethod
     def identity(ecosystem: str, dependency: Any) -> str:
         if ecosystem == "nix":
             url = dependency.resolved_from or ""
             if url.startswith(("git+", "http")):
                 return Source.identity(url)
+        if ecosystem == "homebrew" and dependency.alias:
+            # `brew "stripe/stripe-cli/stripe"`: Cordon names it stripe, from the tap it records as
+            # the source, and keeps the qualified name brew prints as the alias.
+            return dependency.alias.lower()
         return dependency.name.lower()
 
     @staticmethod
-    def names(repo: Path, ecosystem: str, directories: set[str] | None = None) -> set[str]:
+    def names(
+        repo: Path,
+        ecosystem: str,
+        directories: set[str] | None = None,
+        files: set[str] | None = None,
+    ) -> set[str]:
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import Config
 
@@ -549,14 +692,16 @@ class Cordon:
             use_cache=False, offline=True, exclude=(".reference/**",)
         )
         result = Scanner(config, detectors=()).scan(repo)
-        files = Cordon.FILES.get(ecosystem)
         return {
             Cordon.identity(ecosystem, d)
             for d in result.dependencies
             if d.ecosystem == ecosystem
-            and (files is None or d.declared_in.rsplit("/", 1)[-1] in files)
+            and (files is None or d.declared_in in files)
             and (directories is None or d.declared_in.rpartition("/")[0] in directories)
             and not (d.declared_spec or "").startswith(("path:", "file:"))
+            # A package of this repository (a sibling in the same cabal.project, a workspace member):
+            # recorded as local, as the tools leave their own packages out.
+            and not d.local
             # opam's depexts are system packages (apt, brew), not opam packages.
             and not d.name.startswith("depext:")
             # A platform requirement (Terraform's required_version, Helm's kubeVersion, Julia's
@@ -576,7 +721,12 @@ class Comparison:
             reference = reader(repo)
             if reference is None:
                 continue
-            ours = Cordon.names(repo, ecosystem, Reference.directories(repo, ecosystem))
+            ours = Cordon.names(
+                repo,
+                ecosystem,
+                Reference.directories(repo, ecosystem),
+                Reference.files(repo, ecosystem),
+            )
             rows.append(
                 {
                     "repo": repo.name.replace("__", "/"),

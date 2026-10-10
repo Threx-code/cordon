@@ -1,0 +1,178 @@
+{
+ "ecosystem": "homebrew",
+ "repositories": 12,
+ "reference": 853,
+ "cordon": 798,
+ "agree": 796,
+ "precision": 0.9975,
+ "recall": 0.9332,
+ "f1": 0.9643,
+ "repositories_in_full_agreement": 3,
+ "rows": [
+  {
+   "repo": "ChristianChiarulli/machfiles",
+   "reference": 84,
+   "cordon": 77,
+   "agree": 77,
+   "only_reference": [
+    "1yib.rust-bundle",
+    "dustypomerleau.rust-syntax",
+    "homebrew/bundle",
+    "rust-lang.rust-analyzer",
+    "serayuzgur.crates",
+    "tamasfe.even-better-toml",
+    "vscodevim.vim"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "driesvints/dotfiles",
+   "reference": 64,
+   "cordon": 59,
+   "agree": 59,
+   "only_reference": [
+    "homebrew/cask-versions",
+    "keynote",
+    "mywoosh",
+    "numbers",
+    "speedtest"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "freekmurze/dotfiles",
+   "reference": 42,
+   "cordon": 42,
+   "agree": 42,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "holman/dotfiles",
+   "reference": 34,
+   "cordon": 33,
+   "agree": 33,
+   "only_reference": [
+    "homebrew/bundle"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "joshmedeski/dotfiles",
+   "reference": 104,
+   "cordon": 100,
+   "agree": 100,
+   "only_reference": [
+    "homebrew/bundle",
+    "homebrew/cask",
+    "homebrew/core",
+    "homebrew/services"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "joshukraine/dotfiles",
+   "reference": 156,
+   "cordon": 147,
+   "agree": 147,
+   "only_reference": [
+    "1password for safari",
+    "e-sword x",
+    "keynote",
+    "logic pro",
+    "marked 2",
+    "numbers",
+    "pages",
+    "the unarchiver",
+    "toggl track"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "lissy93/dotfiles",
+   "reference": 176,
+   "cordon": 172,
+   "agree": 172,
+   "only_reference": [
+    "homebrew/bundle",
+    "homebrew/cask-fonts",
+    "homebrew/core",
+    "homebrew/services"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "mislav/dotfiles",
+   "reference": 16,
+   "cordon": 14,
+   "agree": 14,
+   "only_reference": [
+    "1password",
+    "ia writer"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "mscoutermarsh/dotfiles",
+   "reference": 9,
+   "cordon": 9,
+   "agree": 9,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "nicksp/dotfiles",
+   "reference": 103,
+   "cordon": 79,
+   "agree": 78,
+   "only_reference": [
+    "astro-build.astro-vscode",
+    "bierner.markdown-preview-github-styles",
+    "bradlc.vscode-tailwindcss",
+    "dart-code.dart-code",
+    "dart-code.flutter",
+    "davidanson.vscode-markdownlint",
+    "dbaeumer.vscode-eslint",
+    "editorconfig.editorconfig",
+    "esbenp.prettier-vscode",
+    "github.vscode-pull-request-github",
+    "iconchanger",
+    "ms-azuretools.vscode-containers",
+    "ms-azuretools.vscode-docker",
+    "naumovs.color-highlight",
+    "oxc.oxc-vscode",
+    "redhat.vscode-yaml",
+    "sapegin.icons-squirrelppuccinlight",
+    "sapegin.just-blame",
+    "sapegin.mini-markdown",
+    "sapegin.theme-squirrelsonglight",
+    "sapegin.todo-tomorrow",
+    "sleistner.vscode-fileutils",
+    "streetsidesoftware.code-spell-checker",
+    "tekumara.typos-vscode",
+    "usernamehw.errorlens"
+   ],
+   "only_cordon": [
+    "bengerthelorf/tap/iconchanger"
+   ]
+  },
+  {
+   "repo": "paulsp94/omacosy",
+   "reference": 15,
+   "cordon": 16,
+   "agree": 15,
+   "only_reference": [],
+   "only_cordon": [
+    "omniwm"
+   ]
+  },
+  {
+   "repo": "webpro/dotfiles",
+   "reference": 50,
+   "cordon": 50,
+   "agree": 50,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

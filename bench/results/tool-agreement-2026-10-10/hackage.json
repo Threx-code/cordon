@@ -1,0 +1,45 @@
+{
+ "ecosystem": "hackage",
+ "repositories": 4,
+ "reference": 602,
+ "cordon": 602,
+ "agree": 602,
+ "precision": 1.0,
+ "recall": 1.0,
+ "f1": 1.0,
+ "repositories_in_full_agreement": 4,
+ "rows": [
+  {
+   "repo": "PostgREST/postgrest",
+   "reference": 77,
+   "cordon": 77,
+   "agree": 77,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "avh4/elm-format",
+   "reference": 112,
+   "cordon": 112,
+   "agree": 112,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "granule-project/granule",
+   "reference": 174,
+   "cordon": 174,
+   "agree": 174,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "lierdakil/pandoc-crossref",
+   "reference": 239,
+   "cordon": 239,
+   "agree": 239,
+   "only_reference": [],
+   "only_cordon": []
+  }
+ ]
+}

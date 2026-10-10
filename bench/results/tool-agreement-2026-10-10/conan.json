@@ -1,51 +1,35 @@
 {
  "ecosystem": "conan",
- "repositories": 26,
- "reference": 225,
- "cordon": 228,
- "agree": 225,
- "precision": 0.9868,
- "recall": 1.0,
- "f1": 0.9934,
- "repositories_in_full_agreement": 25,
+ "repositories": 27,
+ "reference": 779,
+ "cordon": 916,
+ "agree": 773,
+ "precision": 0.8439,
+ "recall": 0.9923,
+ "f1": 0.9121,
+ "repositories_in_full_agreement": 19,
  "rows": [
   {
-   "repo": "DavidAce/CMakeTemplate",
-   "reference": 8,
-   "cordon": 8,
-   "agree": 8,
+   "repo": "ConchFeng/conch-cpp",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
    "only_reference": [],
    "only_cordon": []
   },
   {
-   "repo": "George-lewis/DVDBounce",
-   "reference": 2,
-   "cordon": 2,
-   "agree": 2,
+   "repo": "Esri/cityengine_for_houdini",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
    "only_reference": [],
    "only_cordon": []
   },
   {
-   "repo": "LazyDeveloperHelper/LazyDeveloperHelper",
+   "repo": "Samuel-Tyler/fast_ber",
    "reference": 1,
    "cordon": 1,
    "agree": 1,
-   "only_reference": [],
-   "only_cordon": []
-  },
-  {
-   "repo": "Mathieu-Lala/Kawaii_Engine",
-   "reference": 11,
-   "cordon": 11,
-   "agree": 11,
-   "only_reference": [],
-   "only_cordon": []
-  },
-  {
-   "repo": "Maverobot/cpp_playground",
-   "reference": 3,
-   "cordon": 3,
-   "agree": 3,
    "only_reference": [],
    "only_cordon": []
   },
@@ -58,12 +42,204 @@
    "only_cordon": []
   },
   {
-   "repo": "conan-io/cmake-conan",
-   "reference": 7,
-   "cordon": 7,
-   "agree": 7,
+   "repo": "bincrafters/community",
+   "reference": 53,
+   "cordon": 60,
+   "agree": 53,
+   "only_reference": [],
+   "only_cordon": [
+    "libjpeg-turbo",
+    "mozjpeg",
+    "msys2",
+    "portaudio",
+    "pthreads4w",
+    "readline",
+    "zeromq"
+   ]
+  },
+  {
+   "repo": "bincrafters/conan-ffmpeg",
+   "reference": 22,
+   "cordon": 25,
+   "agree": 22,
+   "only_reference": [],
+   "only_cordon": [
+    "msys2",
+    "sdl2",
+    "zeromq"
+   ]
+  },
+  {
+   "repo": "bincrafters/conan-qt",
+   "reference": 1,
+   "cordon": 3,
+   "agree": 1,
+   "only_reference": [],
+   "only_cordon": [
+    "jom",
+    "meson"
+   ]
+  },
+  {
+   "repo": "bincrafters/templates",
+   "reference": 1,
+   "cordon": 1,
+   "agree": 1,
    "only_reference": [],
    "only_cordon": []
+  },
+  {
+   "repo": "blockspacer/CXXCTP",
+   "reference": 18,
+   "cordon": 21,
+   "agree": 18,
+   "only_reference": [],
+   "only_cordon": [
+    "catch2",
+    "fakeit",
+    "gtest"
+   ]
+  },
+  {
+   "repo": "conan-io/cmake-conan",
+   "reference": 8,
+   "cordon": 8,
+   "agree": 8,
+   "only_reference": [],
+   "only_cordon": []
+  },
+  {
+   "repo": "conan-io/conan-center-index",
+   "reference": 585,
+   "cordon": 709,
+   "agree": 585,
+   "only_reference": [],
+   "only_cordon": [
+    "arsenalgear",
+    "azure-sdk-for-cpp",
+    "basu",
+    "breakpad",
+    "brunsli",
+    "capnproto",
+    "cassandra-cpp-driver",
+    "catch2",
+    "cccl",
+    "cgif",
+    "cjson",
+    "clipp",
+    "coal",
+    "coz",
+    "cpputest",
+    "crashpad",
+    "crunch",
+    "cuda-samples",
+    "cutlass",
+    "cxxopts",
+    "dcmtk",
+    "dirent",
+    "duckdb",
+    "easyloggingpp",
+    "eudev",
+    "exprtk",
+    "flint",
+    "fltk",
+    "folly",
+    "freeglut",
+    "gas-preprocessor",
+    "getopt-for-visual-studio",
+    "glad",
+    "gobject-introspection",
+    "google-cloud-cpp",
+    "gperftools",
+    "gsoap",
+    "hdf4",
+    "iceoryx",
+    "imagemagick",
+    "intel-ipp",
+    "intel-mkl",
+    "intel-neon2sse",
+    "ittapi",
+    "ixwebsocket",
+    "jemalloc",
+    "jom",
+    "jsoncons",
+    "jwasm",
+    "kealib",
+    "libaec",
+    "libatomic_ops",
+    "libb2",
+    "libbasisu",
+    "libdb",
+    "libdc1394",
+    "libdispatch",
+    "libecwj2",
+    "libesmtp",
+    "libgta",
+    "libharu",
+    "libkml",
+    "libnice",
+    "libpfm4",
+    "librasterlite2",
+    "libsoup",
+    "libunifex",
+    "libxpm",
+    "libxshmfence",
+    "llvm-core",
+    "log4cplus",
+    "luajit",
+    "magnum-plugins",
+    "matio",
+    "mdnsresponder",
+    "metal-cpp",
+    "moltenvk",
+    "mongo-cxx-driver",
+    "mozilla-build",
+    "mozjpeg",
+    "mpir",
+    "msgpack-c",
+    "naive-tsearch",
+    "nas",
+    "netcdf",
+    "nlopt",
+    "norm",
+    "npcap",
+    "nss",
+    "ogre",
+    "openapv",
+    "openimageio",
+    "openldap",
+    "openmp",
+    "openmpi",
+    "openpam",
+    "openvdb",
+    "openvino",
+    "openvr",
+    "orc",
+    "pdfium",
+    "pffft",
+    "pfr",
+    "podofo",
+    "poppler",
+    "protobuf-c",
+    "pthreads4w",
+    "shaderc",
+    "soxr",
+    "sqlcipher",
+    "sse2neon",
+    "szip",
+    "tcp-wrappers",
+    "tesseract",
+    "tiledb",
+    "tinyalsa",
+    "tinycbor",
+    "tinyxml",
+    "whisper-cpp",
+    "wil",
+    "wolfssl",
+    "zfp",
+    "zint",
+    "zlib-ng"
+   ]
   },
   {
    "repo": "conan-io/conan-docker-tools",
@@ -82,22 +258,6 @@
    "only_cordon": []
   },
   {
-   "repo": "ed-asriyan/lottie-converter",
-   "reference": 2,
-   "cordon": 2,
-   "agree": 2,
-   "only_reference": [],
-   "only_cordon": []
-  },
-  {
-   "repo": "ess-dmsc/graylog-logger",
-   "reference": 6,
-   "cordon": 6,
-   "agree": 6,
-   "only_reference": [],
-   "only_cordon": []
-  },
-  {
    "repo": "expresscpp/expresscpp",
    "reference": 4,
    "cordon": 4,
@@ -106,15 +266,30 @@
    "only_cordon": []
   },
   {
-   "repo": "falltergeist/falltergeist",
-   "reference": 7,
-   "cordon": 7,
-   "agree": 7,
+   "repo": "florianvazelle/VulkanStarter",
+   "reference": 5,
+   "cordon": 5,
+   "agree": 5,
    "only_reference": [],
    "only_cordon": []
   },
   {
-   "repo": "florianvazelle/VulkanStarter",
+   "repo": "fptn-project/fptn",
+   "reference": 18,
+   "cordon": 17,
+   "agree": 15,
+   "only_reference": [
+    "cmake",
+    "meson",
+    "openssl"
+   ],
+   "only_cordon": [
+    "mimalloc",
+    "qt"
+   ]
+  },
+  {
+   "repo": "franneck94/CppProjectTemplate",
    "reference": 5,
    "cordon": 5,
    "agree": 5,
@@ -130,22 +305,10 @@
    "only_cordon": []
   },
   {
-   "repo": "includeos/mana",
-   "reference": 0,
-   "cordon": 3,
-   "agree": 0,
-   "only_reference": [],
-   "only_cordon": [
-    "lest",
-    "mana",
-    "vmbuild"
-   ]
-  },
-  {
-   "repo": "inspircd/inspircd",
-   "reference": 8,
-   "cordon": 8,
-   "agree": 8,
+   "repo": "inexorgame-obsolete/conan-grpc",
+   "reference": 6,
+   "cordon": 6,
+   "agree": 6,
    "only_reference": [],
    "only_cordon": []
   },
@@ -166,12 +329,35 @@
    "only_cordon": []
   },
   {
-   "repo": "prince-chrismc/user-management",
-   "reference": 14,
-   "cordon": 14,
-   "agree": 14,
+   "repo": "mpusz/mp-units",
+   "reference": 4,
+   "cordon": 1,
+   "agree": 1,
+   "only_reference": [
+    "blaze",
+    "eigen",
+    "glm"
+   ],
+   "only_cordon": []
+  },
+  {
+   "repo": "neXenio/panoptes",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
    "only_reference": [],
    "only_cordon": []
+  },
+  {
+   "repo": "qchateau/packio",
+   "reference": 5,
+   "cordon": 7,
+   "agree": 5,
+   "only_reference": [],
+   "only_cordon": [
+    "asio",
+    "spdlog"
+   ]
   },
   {
    "repo": "qqiangwu/cppship",
@@ -190,34 +376,10 @@
    "only_cordon": []
   },
   {
-   "repo": "suryanshvermaa/create-drogon-app",
-   "reference": 4,
-   "cordon": 4,
-   "agree": 4,
-   "only_reference": [],
-   "only_cordon": []
-  },
-  {
-   "repo": "wu-vincent/scikit-build-core-conan",
-   "reference": 1,
-   "cordon": 1,
-   "agree": 1,
-   "only_reference": [],
-   "only_cordon": []
-  },
-  {
-   "repo": "yowidin/serial-plotter",
-   "reference": 34,
-   "cordon": 34,
-   "agree": 34,
-   "only_reference": [],
-   "only_cordon": []
-  },
-  {
-   "repo": "zrythm/zrythm",
-   "reference": 71,
-   "cordon": 71,
-   "agree": 71,
+   "repo": "sonatype-nexus-community/nexus-repository-conan",
+   "reference": 0,
+   "cordon": 0,
+   "agree": 0,
    "only_reference": [],
    "only_cordon": []
   }

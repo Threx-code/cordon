@@ -99,17 +99,6 @@
   "repositories_in_full_agreement": 30
  },
  {
-  "ecosystem": "conan",
-  "repositories": 26,
-  "reference": 225,
-  "cordon": 228,
-  "agree": 225,
-  "precision": 0.9868,
-  "recall": 1.0,
-  "f1": 0.9934,
-  "repositories_in_full_agreement": 25
- },
- {
   "ecosystem": "cran",
   "repositories": 30,
   "reference": 4196,
@@ -130,5 +119,38 @@
   "recall": 1.0,
   "f1": 1.0,
   "repositories_in_full_agreement": 30
+ },
+ {
+  "ecosystem": "conan",
+  "repositories": 27,
+  "reference": 779,
+  "cordon": 916,
+  "agree": 773,
+  "precision": 0.8439,
+  "recall": 0.9923,
+  "f1": 0.9121,
+  "repositories_in_full_agreement": 19
+ },
+ {
+  "ecosystem": "hackage",
+  "repositories": 4,
+  "reference": 602,
+  "cordon": 602,
+  "agree": 602,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "repositories_in_full_agreement": 4
+ },
+ {
+  "ecosystem": "homebrew",
+  "repositories": 12,
+  "reference": 853,
+  "cordon": 798,
+  "agree": 796,
+  "precision": 0.9975,
+  "recall": 0.9332,
+  "f1": 0.9643,
+  "repositories_in_full_agreement": 3
  }
 ]
