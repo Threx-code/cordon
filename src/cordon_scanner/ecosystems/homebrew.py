@@ -66,18 +66,71 @@ class Ruby:
         closed on the same line and not Ruby 3's endless `def name = expr`."""
         if Ruby.BLOCK_OPEN.search(stripped):
             return True
-        if not Ruby.KEYWORD_OPEN.search(stripped) or re.search(r"(?:^|[\s;])end\s*$", stripped):
+        # A keyword inside a string is not code: aws-sso-util's desc says "..., until AWS ...".
+        # (`do` is read on the line as written: a regex literal may hold a quote, bash's
+        # `scan(/["' >]/).each do |match|`.)
+        if not Ruby.KEYWORD_OPEN.search(Ruby.unquoted(stripped)) or re.search(
+            r"(?:^|[\s;])end\s*$", stripped
+        ):
             return False
         return not re.match(r"^def\s+[\w.?!]+(?:\([^)]*\)\s*|\s+)=(?![=~>])", stripped)
 
     @staticmethod
     def lines(text: str) -> Iterator[tuple[int, str]]:
         """`(number, code)`, comments dropped -- a `#` outside a string -- and a single-quoted
-        literal written as the double-quoted one it equals (`brew 'jq'` is `brew "jq"`)."""
+        literal written as the double-quoted one it equals (`brew 'jq'` is `brew "jq"`). A
+        heredoc's body (`<<~EOS` to `EOS`) is text, not code: python's formula writes Python in
+        one, whose `if ...:` lines are no Ruby block. Nor is anything after `__END__`."""
+        pending: list[tuple[bool, str]] = []
         for number, raw in enumerate(text.splitlines(), start=1):
+            if raw.rstrip() == "__END__" and not pending:
+                # The rest is the file's DATA (`patch :DATA`'s diff), not code.
+                return
+            if pending:
+                indented, terminator = pending[0]
+                if (raw.strip() if indented else raw.rstrip()) == terminator:
+                    pending.pop(0)
+                continue
             code = Ruby.strip_comment(raw).rstrip()
             if code.strip():
+                pending = Ruby.heredocs(code) if "<<" in code else []
                 yield number, Ruby.double_quoted(code)
+
+    #: `<<~EOS`, `<<-EOS`, `<<EOS`: an uppercase identifier, which `args << "x"` never is.
+    HEREDOC: ClassVar[re.Pattern[str]] = re.compile(r"<<([~-]?)([A-Z_][A-Z0-9_]*)\b")
+    #: `<<~'EOS'`, `<<~"EOS"`: the quoted forms.
+    HEREDOC_QUOTED: ClassVar[re.Pattern[str]] = re.compile(r"<<([~-]?)(['\"])([A-Z_][A-Z0-9_]*)\2")
+
+    @staticmethod
+    def heredocs(code: str) -> list[tuple[bool, str]]:
+        """`(indented terminator, terminator)` of each heredoc a line opens, in order. A bare
+        marker counts only outside string literals (`"<<EOS"` in a string opens none)."""
+        found = [
+            (match.start(), match.group(1) != "", match.group(2))
+            for match in Ruby.HEREDOC.finditer(Ruby.unquoted(code))
+        ]
+        found += [
+            (match.start(), match.group(1) != "", match.group(3))
+            for match in Ruby.HEREDOC_QUOTED.finditer(code)
+        ]
+        return [(indented, name) for _, indented, name in sorted(found)]
+
+    @staticmethod
+    def unquoted(code: str) -> str:
+        """The code outside string literals (each literal emptied), so that `"<<EOS"` written in a
+        string opens no heredoc."""
+        out: list[str] = []
+        quote = ""
+        for index, char in enumerate(code):
+            if quote:
+                if char == quote and code[index - 1] != "\\":
+                    quote = ""
+                    out.append(char)
+                continue
+            if char in "\"'":
+                quote = char
+            out.append(char)
+        return "".join(out)
 
     @staticmethod
     def double_quoted(code: str) -> str:
@@ -156,7 +209,9 @@ class Formula:
     @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:
         text = content.text
-        declared_class = re.search(r"^class\s+(\w+)\s*<\s*Formula\b", text, re.MULTILINE)
+        declared_class = re.search(
+            r"^class\s+(\w+)\s*<\s*(?:Portable)?Formula\b", text, re.MULTILINE
+        )
         if declared_class is None:
             return BaseEcosystem._err(
                 content, ecosystem, "a formula without its `class ... < Formula`"
