@@ -310,3 +310,77 @@ class TestTheEcosystemsVerifiedOutsideTheRegistryClient:
         stand_in = OwnVerifiers(monkeypatch)
         stand_in.outcome = outcome
         assert self.run((self.dependency("bazel", "rules_x", None),)) == rules
+
+
+class TestAnsibleCollectionsReachTheirVerifier:
+    """Which Ansible dependencies are checked, and how: the signatures an install recorded, over
+    the MANIFEST.json in the tree; else galaxy.ansible.com's, for one exact version from there."""
+
+    @staticmethod
+    def dependency(**fields: object) -> Dependency:
+        base: dict[str, object] = {
+            "purl": "pkg:ansible/demo.signed@1.0.0",
+            "ecosystem": "ansible",
+            "name": "demo.signed",
+            "version": "1.0.0",
+            "direct": True,
+            "declared_in": "requirements.yml",
+        }
+        base.update(fields)
+        return Dependency(**base)  # type: ignore[arg-type]
+
+    @pytest.fixture
+    def asked(self, monkeypatch) -> list[tuple[str, object]]:
+        from cordon_scanner.intel.ansible_signatures import AnsibleSignatures, CollectionCheck
+        from cordon_scanner.intel.openpgp import Keyring, OpenPgp
+
+        asked: list[tuple[str, object]] = []
+
+        def installed(name, version, manifest, signatures, keyring):
+            asked.append(("installed", manifest))
+            return CollectionCheck("invalid", "stood in")
+
+        def remote(name, version, sources, keyring):
+            asked.append(("remote", sources))
+            return CollectionCheck("verified", "stood in")
+
+        monkeypatch.setattr(OpenPgp, "available", staticmethod(lambda: True))
+        monkeypatch.setattr(OpenPgp, "load", staticmethod(lambda paths: Keyring(paths=paths)))
+        monkeypatch.setattr(AnsibleSignatures, "installed", staticmethod(installed))
+        monkeypatch.setattr(AnsibleSignatures, "remote", staticmethod(remote))
+        return asked
+
+    def test_recorded_signatures_are_checked_over_the_installed_manifest(self, asked) -> None:
+        rules = TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(
+            (self.dependency(signatures=("sig",), signed=b"{}"),)
+        )
+        assert asked == [("installed", b"{}")]
+        assert rules == [INVALID_RULE]
+
+    def test_a_galaxy_collection_is_checked_with_its_requirements_signatures(self, asked) -> None:
+        rules = TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(
+            (self.dependency(signature_sources=("https://s.example.invalid/a.asc",)),)
+        )
+        assert asked == [("remote", ("https://s.example.invalid/a.asc",))]
+        assert rules == []
+
+    def test_a_git_source_or_an_unpinned_one_is_not_asked(self, asked) -> None:
+        TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(
+            (
+                self.dependency(resolved_from="git+https://github.com/x/y.git#v1"),
+                self.dependency(version=None),
+            )
+        )
+        assert asked == []
+
+    def test_signatures_for_an_artifact_off_galaxy_are_reported_unverified(self, asked) -> None:
+        rules = TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(
+            (
+                self.dependency(
+                    resolved_from="registry:hub.example.invalid",
+                    signature_sources=("https://s.example.invalid/a.asc",),
+                ),
+            )
+        )
+        assert asked == []
+        assert rules == [UNVERIFIED_RULE]

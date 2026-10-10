@@ -113,10 +113,11 @@ rather than a document.
   default. They ask npm, PyPI, crates.io, RubyGems, NuGet, the Go module proxy and
   sum.golang.org, Maven Central, Packagist, pub.dev and Hex. Provenance is
   verified for npm, PyPI, Maven, RubyGems, container images, Homebrew bottles,
-  Bazel Central Registry modules and Helm charts (a chart's OpenPGP provenance
-  file, against the keys given with `--keyring`, as `helm verify` checks it); the
-  others publish none a scanner can read, or, like Ansible's collection
-  signatures, none outside private servers.
+  Bazel Central Registry modules, Helm charts (a chart's OpenPGP provenance file,
+  against the keys given with `--keyring`, as `helm verify` checks it) and Ansible
+  collections (their OpenPGP signatures over MANIFEST.json, recorded at install or
+  served by galaxy.ansible.com, against the same keys, as `ansible-galaxy collection
+  verify` checks them); the others publish none a scanner can read.
 
 ---
 """

@@ -158,6 +158,16 @@ class Requirements:
                     name = f"{artefact.group(1)}.{artefact.group(2)}" if artefact else tail
                 if server:
                     sources.append(f"galaxy server {entry.get('source')}")
+                # ansible-galaxy checks a collection's `signatures:` against its keyring: a URL
+                # each, or a single one.
+                given = entry.get("signatures") if section == "collections" else None
+                signed_at = (
+                    [str(s) for s in given]
+                    if isinstance(given, list)
+                    else [given]
+                    if isinstance(given, str)
+                    else []
+                )
                 declared.append(
                     DeclaredDependency(
                         name=name,
@@ -165,6 +175,7 @@ class Requirements:
                         scope=Scope.RUNTIME,
                         field_name=section,
                         source=server,
+                        signature_sources=tuple(signed_at),
                     )
                 )
         return Manifest(
@@ -511,6 +522,41 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
         if content.basename == "MANIFEST.json":
             return Installed.collection(content, self.id)
         return Installed.role(content, self.id)
+
+    def parse_lockfile_in_tree(
+        self, content: FileContent, files: Mapping[str, FileContent]
+    ) -> LockGraph:
+        """An installed collection with the signatures `ansible-galaxy install` recorded for it,
+        in `ansible_collections/<ns>.<name>-<version>.info/GALAXY.yml` (`write_source_metadata`):
+        each a detached signature over the collection's MANIFEST.json, which `ansible-galaxy
+        collection verify --offline` checks against its keyring."""
+        graph = self.parse_lockfile(content)
+        if content.basename != "MANIFEST.json" or graph.parse_error or len(graph.entries) != 1:
+            return graph
+        entry = graph.entries[0]
+        parts = content.path.split("/")
+        if len(parts) < 4:
+            return graph
+        info = "/".join([*parts[:-3], f"{entry.name}-{entry.version}.info", "GALAXY.yml"])
+        recorded = files.get(info)
+        if recorded is None:
+            return graph
+        try:
+            data = DataYaml.load(recorded.text, source=info)
+        except ValueError:
+            return graph
+        listed = data.get("signatures") if isinstance(data, dict) else None
+        signatures = tuple(
+            str(item["signature"])
+            for item in listed or ()
+            if isinstance(item, dict) and isinstance(item.get("signature"), str)
+        )
+        if not signatures:
+            return graph
+        return dataclasses.replace(
+            graph,
+            entries=(dataclasses.replace(entry, signatures=signatures, signed=content.raw),),
+        )
 
 
 __all__ = [

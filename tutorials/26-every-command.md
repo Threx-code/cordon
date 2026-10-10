@@ -140,12 +140,14 @@ Scan a directory, file or archive.
 │                           repository's configuration (env:                 │
 │                           CORDON_REGISTRY_TOKENS)                          │
 │ --keyring FILE            with --online, verify a Helm chart's provenance  │
-│                           file against the OpenPGP keys in FILE, as `helm  │
-│                           verify --keyring` does: armored, binary or a     │
-│                           GnuPG keybox (repeatable; needs the [attest]     │
-│                           extra). Never set from a repository's own        │
-│                           configuration (env: CORDON_KEYRINGS, separated   │
-│                           by the path separator)                           │
+│                           file and an Ansible collection's signatures      │
+│                           against the OpenPGP keys in FILE, as `helm       │
+│                           verify --keyring` and `ansible-galaxy collection │
+│                           verify --keyring` do: armored, binary or a GnuPG │
+│                           keybox (repeatable; needs the [attest] extra).   │
+│                           Never set from a repository's own configuration  │
+│                           (env: CORDON_KEYRINGS, separated by the path     │
+│                           separator)                                       │
 │ --yara RULES              also match every file against a YARA rules file  │
 │                           (needs the yara-python module). Off by default;  │
 │                           never set from a repository's own configuration  │

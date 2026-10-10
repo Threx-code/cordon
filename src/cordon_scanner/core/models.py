@@ -1351,6 +1351,16 @@ class Dependency:
     """It arrives inside another package's archive and is verified by that archive's hash. See
     `LockEntry.bundled`."""
 
+    signatures: tuple[str, ...] = ()
+    """Detached signatures recorded with the installed package, over `signed`. See
+    `LockEntry.signatures`. Not in any report: the provenance detector verifies them."""
+
+    signed: bytes | None = field(default=None, repr=False)
+    """The bytes `signatures` cover. See `LockEntry.signed`."""
+
+    signature_sources: tuple[str, ...] = ()
+    """Where the declaration says its signatures are. See `DeclaredDependency.signature_sources`."""
+
     extras: tuple[str, ...] = ()
     """Optional features requested (`requests[socks]`, Cargo features). See
     `DeclaredDependency.extras`."""

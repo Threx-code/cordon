@@ -203,6 +203,10 @@ class DeclaredDependency:
     """A hash the declaration itself pins (a GitHub Action's commit SHA), where the manifest is the
     only file that records one."""
 
+    signature_sources: tuple[str, ...] = ()
+    """Where the declaration says signatures over the package are (a requirements.yml
+    collection's `signatures:` URLs), which `ansible-galaxy` checks against its keyring."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
         object.__setattr__(self, "integrity", Coordinate.integrity(self.integrity))
@@ -381,6 +385,13 @@ class LockEntry:
     ecosystem: str | None = None
     """The package's ecosystem when it is not the lockfile's own: a conda-lock file's pip entries
     are PyPI packages, matched against PyPI's advisories."""
+
+    signatures: tuple[str, ...] = ()
+    """Detached OpenPGP signatures recorded with the installed package (an Ansible collection's
+    `.info/GALAXY.yml`), over `signed`."""
+
+    signed: bytes | None = None
+    """The exact bytes those signatures cover (the collection's MANIFEST.json)."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
@@ -644,6 +655,8 @@ class BaseEcosystem:
                 alias=entry.alias,
                 bundled=entry.bundled,
                 deprecated=entry.deprecated,
+                signatures=entry.signatures,
+                signed=entry.signed,
             )
             for index, entry in sorted(
                 enumerate(entries), key=lambda pair: (pair[1].name, pair[1].version)

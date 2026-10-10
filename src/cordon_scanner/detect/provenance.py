@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.core.models import Dependency
     from cordon_scanner.detect.base import Unit
+    from cordon_scanner.intel.openpgp import Keyring
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
@@ -64,7 +65,7 @@ UNSIGNED_IMAGE_RULE = "POLICY.CONTAINER.UNSIGNED_IMAGE.001"
 #: no publish-time attestation to verify yet, so the detector stays silent for
 #: them rather than reporting an absence that means nothing.
 SUPPORTED_ECOSYSTEMS = frozenset(
-    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel", "helm"}
+    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel", "helm", "ansible"}
 )
 
 _GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
@@ -250,6 +251,9 @@ class ProvenanceDetector(BaseDetector):
         if dependency.ecosystem == "helm":
             yield from self._verify_helm(dependency, ctx)
             return
+        if dependency.ecosystem == "ansible":
+            yield from self._verify_ansible(dependency, ctx)
+            return
         from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
         asked = dependency.version or (
@@ -431,6 +435,72 @@ class ProvenanceDetector(BaseDetector):
                 detail=f"the build attestation for {label} could not be verified: {check.detail}",
             )
 
+    def _keyring_for(self, ctx: ScanContext) -> Keyring:
+        """The operator's OpenPGP keyring (`--keyring`), read once per scan rather than once per
+        package, and again when a file changes: a detector outlives one scan in a server."""
+        from cordon_scanner.intel.openpgp import OpenPgp
+
+        paths = ctx.config.keyrings
+        stamp = tuple((p, self._modified(p)) for p in paths)
+        cached = getattr(self, "_keyring", None)
+        if cached is None or cached[0] != stamp:
+            cached = (stamp, OpenPgp.load(paths))
+            self._keyring = cached
+        return cached[1]
+
+    def _verify_ansible(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A collection's signatures, as `ansible-galaxy` checks them (`intel/ansible_signatures`):
+        those its install recorded, over the MANIFEST.json in the tree; else Galaxy's and the
+        requirement's own, over the artifact Galaxy serves."""
+        from cordon_scanner.intel.ansible_signatures import AnsibleSignatures, CollectionCheck
+        from cordon_scanner.intel.openpgp import OpenPgp
+
+        if not OpenPgp.available():
+            return
+        if dependency.signatures and dependency.signed is not None:
+            check = AnsibleSignatures.installed(
+                dependency.name,
+                dependency.version or "",
+                dependency.signed,
+                dependency.signatures,
+                self._keyring_for(ctx),
+            )
+        elif dependency.version and dependency.resolved_from is None:
+            # From galaxy.ansible.com, at one version. A git or archive URL carries no signature
+            # Galaxy serves, and a private server's API is the organisation's.
+            check = AnsibleSignatures.remote(
+                dependency.name,
+                dependency.version,
+                dependency.signature_sources,
+                self._keyring_for(ctx),
+            )
+        elif dependency.signature_sources:
+            check = CollectionCheck(
+                "unverifiable",
+                f"its artifact is not on galaxy.ansible.com ({dependency.resolved_from or 'no exact version'}), "
+                "so the MANIFEST.json its signatures cover could not be fetched",
+            )
+        else:
+            return
+        label = f"{dependency.name}@{dependency.version}"
+        if check.outcome in ("verified", "absent"):
+            ctx.checks.record(dependency.purl, "provenance", check.outcome)
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"collection {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the signatures of collection {label} could not be verified: {check.detail}",
+            )
+
     def _verify_helm(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A chart's provenance file against the operator's keyring (`intel/helm_provenance`)."""
         from cordon_scanner.intel.helm_provenance import HelmProvenance
@@ -439,20 +509,12 @@ class ProvenanceDetector(BaseDetector):
         if not OpenPgp.available():
             # Without the extra nothing is fetched: whether the chart is signed is not known.
             return
-        paths = ctx.config.keyrings
-        stamp = tuple((p, self._modified(p)) for p in paths)
-        cached = getattr(self, "_keyring", None)
-        if cached is None or cached[0] != stamp:
-            # Read once per scan rather than once per chart, and again when a file changes: a
-            # detector outlives one scan in a long-running server.
-            cached = (stamp, OpenPgp.load(paths))
-            self._keyring = cached
         check = HelmProvenance.check(
             dependency.name,
             dependency.version or "",
             dependency.resolved_from,
             dependency.integrity,
-            cached[1],
+            self._keyring_for(ctx),
         )
         label = f"{dependency.name}@{dependency.version}"
         if check.outcome == "verified":

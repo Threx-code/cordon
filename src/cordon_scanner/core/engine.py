@@ -3600,6 +3600,7 @@ class Engine:
         # manifest is resolved by the root lockfile, so it is joined to that graph, not graphed
         # again on its own (which put a second, unresolved copy of each of its dependencies in).
         workspace_members: dict[tuple[str, str], str | None] = {}
+        tree: dict[str, Any] | None = None
         for unit in units:
             if "!" in unit.path and not self._scanning_archive:
                 # A lockfile inside a vendored archive describes that artefact's own
@@ -3620,7 +3621,15 @@ class Engine:
             # lockfile terminated the whole scan with exit 2, which reads as
             # "the scanner broke" and gets a pipeline to skip the step.
             try:
-                graph = ecosystem.parse_lockfile(unit.content)
+                # A lockfile read with the files beside it, where the ecosystem keeps part of the
+                # record apart (an Ansible collection's signatures, in its `.info/GALAXY.yml`).
+                in_tree = getattr(ecosystem, "parse_lockfile_in_tree", None)
+                if in_tree is not None:
+                    if tree is None:
+                        tree = {u.path: u.content for u in units}
+                    graph = in_tree(unit.content, tree)
+                else:
+                    graph = ecosystem.parse_lockfile(unit.content)
             except Exception as exc:
                 acc.complete = False
                 acc.append(
@@ -4333,6 +4342,7 @@ class Engine:
                     alias=dependency.alias or entry.alias,
                     extras=dependency.extras or entry.extras,
                     editable=dependency.editable or entry.editable,
+                    signature_sources=dependency.signature_sources or entry.signature_sources,
                     exclusions=dependency.exclusions or entry.exclusions,
                     # Where the lockfile does not say where it came from (NuGet's does not), the
                     # source the project configures for it (package source mapping) does.
@@ -4398,6 +4408,7 @@ class Engine:
                     exclusions=entry.exclusions,
                     # A value that is no digest is never echoed: recorded as `malformed:<hash>`.
                     integrity=Coordinate.integrity(entry.integrity),
+                    signature_sources=entry.signature_sources,
                     resolution_note=entry.note
                     or "declared in the manifest but absent from the lockfile beside it",
                 )
@@ -4702,6 +4713,7 @@ class Engine:
                         alias=declared.alias,
                         extras=declared.extras,
                         editable=declared.editable,
+                        signature_sources=declared.signature_sources,
                         # Strapi's `packages/cli/cloud` declares `"vitest-config": "5.56.0"`, and
                         # `packages/utils/vitest-config` is that package: the workspace resolves
                         # it locally. Squatters register exactly these names on the registry.

@@ -626,13 +626,6 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "ansible.compatibility": "the ansible-core versions a collection supports (requires_ansible)",
         },
         {
-            "UNI-17": (
-                "a collection's signatures are OpenPGP signatures over its MANIFEST.json, served by a "
-                "Galaxy server or listed under `signatures:` in a requirements file; measured "
-                "October 2026, galaxy.ansible.com served none for 600 of 600 collections, and no "
-                "public requirements file in Sourcegraph's index lists any: they exist only on "
-                "private Galaxy NG and Automation Hub servers, behind credentials"
-            ),
             "UNI-15": "Galaxy requirement files record no hash; git sources are judged by commit pinning (ansible.git)",
             "UNI-18": "ansible-galaxy install runs no code from a role or collection; what they run, they run in plays, which the playbook rules read (ansible.playbooks)",
         },

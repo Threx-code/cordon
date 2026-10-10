@@ -62,8 +62,9 @@ are reported as unscanned by the AST tier, never silently skipped. `[attest]`
 adds `sigstore` and `pypi-attestations` so the provenance detector can verify a
 dependency's build attestation -- the Fulcio certificate, the Rekor inclusion
 proof, the DSSE signature over the pinned digest, and the signer-to-repository
-identity -- and `pysequoia`, so a Helm chart's OpenPGP provenance file is
-verified against the keys the operator gives with `--keyring`; without it a
+identity -- and `pysequoia`, so a Helm chart's OpenPGP provenance file and an
+Ansible collection's signatures are verified against the keys the operator gives
+with `--keyring`; without it a
 package's provenance stays at the presence check and
 anything unverifiable is reported as `POLICY.PROVENANCE.UNVERIFIED`, never an
 error. An extra is opt-in and must degrade to a documented reduced capability,
