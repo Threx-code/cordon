@@ -255,6 +255,7 @@ class FeedClient:
         # Advisories OSV published or changed since the database was built (`intel/osv_delta`):
         # without this, bundled intel misses everything after its build until the next release.
         delta_through = 0.0
+        osv_current = False
         from cordon_scanner.intel import osv_delta
 
         if use_feed and osv_delta.ENABLED:
@@ -267,6 +268,9 @@ class FeedClient:
 
                 _advisories.ShippedAdvisories.reset_caches()
             delta_through = delta.through()
+            # `through` advances only when every ecosystem was read in full, and each check writes
+            # `checked_at`: the last check was complete when the first has caught up with it.
+            osv_current = delta_through > 0 and delta_through >= delta.checked_at()
         elif use_feed and not feed.enabled:
             error = "no feed root is pinned in this build"
 
@@ -314,6 +318,7 @@ class FeedClient:
             stale=stale,
             max_age_seconds=effective,
             feed_enabled=feed.enabled,
+            osv_current=osv_current,
         )
 
 
@@ -558,6 +563,10 @@ class IntelStatus:
     stale: bool = False
     max_age_seconds: int | None = None
     feed_enabled: bool = False
+    osv_current: bool = False
+    """Whether OSV's changes since the database was built (`intel/osv_delta`) are applied in
+    full: the last check -- this run's, or one within its recheck window -- read every
+    ecosystem down to where the previous one stopped."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -569,6 +578,7 @@ class IntelStatus:
             "stale": self.stale,
             "max_age_seconds": self.max_age_seconds,
             "feed_enabled": self.feed_enabled,
+            "osv_current": self.osv_current,
         }
 
 

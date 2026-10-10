@@ -148,3 +148,42 @@ class TestRefresh:
         monkeypatch.setattr(osv_delta, "ENABLED", False)
         OsvDelta.refresh(since=BUILT, now=NOW)
         assert osv.requests == []
+
+
+class TestIntelUpdate:
+    """`intel update` in a build without the feed's root -- every build until its key ceremony --
+    refreshes from OSV's changes, and says whether that worked. It used to exit 2 ("Cordon itself
+    failed") after a refresh that had worked, because only the feed counted as a refresh."""
+
+    @pytest.fixture
+    def osv(self, monkeypatch, tmp_path) -> FakeOsv:
+        fake = FakeOsv()
+        monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.delenv("CORDON_OFFLINE", raising=False)
+        monkeypatch.setattr(osv_delta, "ENABLED", True)
+        monkeypatch.setattr(OsvDelta, "_get", staticmethod(fake.get))
+        monkeypatch.setattr(OsvDelta, "state_dir", staticmethod(lambda: tmp_path / "delta"))
+        advisories.ShippedAdvisories.reset_caches()
+        yield fake
+        advisories.ShippedAdvisories.reset_caches()
+
+    @staticmethod
+    def update(capsys) -> tuple[int, dict]:
+        from cordon_scanner.cli.main import CommandLine
+
+        code = CommandLine.run(["intel", "update", "--json"])
+        return code, json.loads(capsys.readouterr().out)
+
+    def test_a_complete_refresh_from_osv_is_an_update(self, osv: FakeOsv, capsys) -> None:
+        code, status = self.update(capsys)
+        assert status["feed_enabled"] is False and status["osv_current"] is True
+        assert code == 0
+
+    def test_an_unreachable_ecosystem_is_a_failed_update_and_says_why(
+        self, osv: FakeOsv, capsys
+    ) -> None:
+        osv.down.add("PyPI")
+        code, status = self.update(capsys)
+        assert status["osv_current"] is False
+        assert "pypi" in status["error"].lower()
+        assert code == 2

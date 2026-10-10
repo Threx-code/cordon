@@ -2321,7 +2321,14 @@ class CommandLine:
             )
             if current.error:
                 print(f"note:    {current.error}")
-        if action == "update" and not current.refreshed:
+        # Updated means the intel is now current from either source: the signed feed, or -- in
+        # every build until the feed's root is pinned -- OSV's changes since the database was
+        # built (`intel/osv_delta`). Only the feed set `refreshed`, so an update that worked
+        # exited 2 with nothing to say.
+        updated = current.refreshed or current.osv_current
+        if action == "update" and not updated:
+            if not args.json and not current.error:
+                print("note:    no source could refresh the intel", file=sys.stderr)
             return int(ExitCode.SCANNER_ERROR)
         return int(ExitCode.CLEAN)
 
