@@ -1151,10 +1151,15 @@ class TagInference:
         tags = TagInference.refs(repository)
         if tags is None:
             return Unnamed(f"{repository} could not be read as a git repository")
-        spellings = {version, f"v{version}", f"release-{version}"}
+        # The version as written, and with its dots as underscores (Ruby's `v3_2_2`, curl's
+        # `curl-8_0_0`): the same version, spelled the way some projects tag.
+        forms = {version, version.replace(".", "_")}
+        spellings = {s for v in forms for s in (v, f"v{v}", f"release-{v}")}
         for name in names:
             if name:
-                spellings |= {f"{name}-{version}", f"{name}-v{version}"}
+                spellings |= {
+                    s for v in forms for s in (f"{name}-{v}", f"{name}-v{v}", f"{name}_{v}")
+                }
         matched = {tag: tags[tag] for tag in spellings if tag in tags}
         if not matched:
             return Unnamed(f"{repository} has no tag spelled as version {version}")
@@ -1198,6 +1203,10 @@ class Conventions:
                 r"|download\.savannah\.gnu\.org)/releases/([\w.+-]+)/"
             ),
             "https://git.savannah.gnu.org/git/{0}.git",
+        ),
+        (
+            re.compile(r"^https?://cache\.ruby-lang\.org/pub/(ruby)/"),
+            "https://github.com/ruby/{0}",
         ),
         (
             re.compile(r"^https?://download\.gnome\.org/sources/([\w.+-]+)/"),
@@ -1438,6 +1447,110 @@ class ContentProof:
         )
 
 
+class ConanCenter:
+    """A Conan Center recipe's sources, in the shapes its conandata.yml writes them."""
+
+    INDEX: ClassVar[str] = (
+        "https://raw.githubusercontent.com/conan-io/conan-center-index/HEAD/recipes"
+    )
+
+    @staticmethod
+    def leaves(source: object) -> tuple[list[str], Archive | None]:
+        """Every URL under a version's source, however it is keyed -- by platform and
+        architecture for a binary tool (cmake: `Linux: armv8: url`) -- and the first one pinned
+        with a sha256, for the proof."""
+        urls: list[str] = []
+        archive: Archive | None = None
+        stack: list[object] = [source]
+        while stack:
+            node = stack.pop(0)
+            if isinstance(node, list):
+                stack.extend(node)
+            elif isinstance(node, dict):
+                given = node.get("url")
+                found = (
+                    [given]
+                    if isinstance(given, str)
+                    else [u for u in given or [] if isinstance(u, str)]
+                    if isinstance(given, list)
+                    else []
+                )
+                urls += found
+                sha256 = node.get("sha256")
+                if archive is None and found and isinstance(sha256, str):
+                    archive = Archive(tuple(found), f"sha256:{sha256}")
+                stack.extend(v for k, v in node.items() if k not in ("url", "sha256"))
+        return list(dict.fromkeys(urls)), archive
+
+    @staticmethod
+    def exact(urls: list[str], how: str) -> Upstream | Unnamed:
+        """The repository and tag every forge URL names -- one, or the sources disagree."""
+        named = {parsed for url in urls if (parsed := RepositoryArchive.parse(url))}
+        if len(named) == 1:
+            repository, ref = named.pop()
+            return RepositoryArchive.upstream(repository, ref, how)
+        if len(named) > 1:
+            return Unnamed("its sources name different repositories or tags by platform")
+        return Upstreams.from_urls(urls, how)
+
+    _repositories: ClassVar[dict[str, set[str] | None]] = {}
+
+    @staticmethod
+    def repositories(name: str) -> set[str] | None:
+        """The repositories the package's current recipe in conan-center-index names, across all
+        its versions' sources; None when the index cannot be read."""
+        if name in ConanCenter._repositories:
+            return ConanCenter._repositories[name]
+        from cordon_scanner.core.datayaml import DataYaml
+
+        package = urllib.parse.quote(name, safe="")
+        found: set[str] | None = set()
+        try:
+            config = DataYaml.load(
+                Upstreams._get(f"{ConanCenter.INDEX}/{package}/config.yml").decode()
+            )
+            folders = {
+                str(entry.get("folder"))
+                for entry in ((config or {}).get("versions") or {}).values()
+                if isinstance(entry, dict) and entry.get("folder")
+            }
+            named: set[str] = set()
+            for folder in sorted(folders):
+                data = DataYaml.load(
+                    Upstreams._get(f"{ConanCenter.INDEX}/{package}/{folder}/conandata.yml").decode()
+                )
+                urls, _ = ConanCenter.leaves((data or {}).get("sources"))
+                named |= {parsed[0] for url in urls if (parsed := RepositoryArchive.parse(url))}
+            found = named
+        except (OSError, ValueError):
+            found = None
+        ConanCenter._repositories[name] = found
+        return found
+
+    @staticmethod
+    def removed(name: str, version: str) -> Upstream | Unnamed:
+        """A version Conan Center no longer serves: the package's current recipe in
+        conan-center-index lists its versions' sources; when they all name one repository, the
+        version's tag is looked for in it -- an inference, with nothing pinned to prove it by."""
+        repositories = ConanCenter.repositories(name)
+        if repositories is None:
+            return Unnamed(
+                "Conan Center no longer serves this version, and its index could not be read"
+            )
+        if len(repositories) != 1:
+            return Unnamed(
+                "Conan Center no longer serves this version, and its current recipe names "
+                + ("no repository" if not repositories else "more than one repository")
+            )
+        return Upstreams.inferred(
+            Unnamed("Conan Center no longer serves this version"),
+            sorted(repositories),
+            version,
+            (name,),
+            f"the repository Conan Center's current {name} recipe names",
+        )
+
+
 class Upstreams:
     """What each ecosystem says a package was built from."""
 
@@ -1593,13 +1706,20 @@ class Upstreams:
             return Unnamed("it is not from Conan Center")
         name, version = dependency.name, dependency.version or ""
         base = f"{CONAN_CENTER}/{urllib.parse.quote(name, safe='')}/{urllib.parse.quote(version, safe='')}/_/_/revisions"
+        from cordon_scanner.intel.registry_client import RegistryError
+
         locked = (dependency.integrity or "").removeprefix("md5:")
-        if not re.fullmatch(r"[0-9a-f]{32}", locked):
-            revisions = json.loads(Upstreams._get(base)).get("revisions") or []
-            if not revisions:
-                return Unnamed("Conan Center holds no recipe for this version")
-            locked = str(revisions[0].get("revision") or "")
-        export = Upstreams._get(f"{base}/{locked}/files/conan_export.tgz", MAX_EXPORT_BYTES)
+        try:
+            if not re.fullmatch(r"[0-9a-f]{32}", locked):
+                revisions = json.loads(Upstreams._get(base)).get("revisions") or []
+                if not revisions:
+                    return Unnamed("Conan Center holds no recipe for this version")
+                locked = str(revisions[0].get("revision") or "")
+            export = Upstreams._get(f"{base}/{locked}/files/conan_export.tgz", MAX_EXPORT_BYTES)
+        except (RegistryError, OSError, ValueError):
+            # A version Conan Center has since dropped (ruby 3.2.2): the package's current recipe
+            # still names its repository.
+            return ConanCenter.removed(name, version)
         # `MoreRegistries._get` inflates a gzip answer itself, so this may already be a plain tar.
         with tarfile.open(fileobj=io.BytesIO(export), mode="r:*") as archive:
             member = archive.extractfile("conandata.yml")
@@ -1614,24 +1734,25 @@ class Upstreams:
         data = DataYaml.load(text) if text else {}
         sources = (data.get("sources") or {}) if isinstance(data, dict) else {}
         source = sources.get(version) if isinstance(sources, dict) else None
-        urls: list[str] = []
-        if isinstance(source, dict):
-            given = source.get("url")
-            urls = (
-                [given]
-                if isinstance(given, str)
-                else [u for u in given or [] if isinstance(u, str)]
-            )
         how = f"Conan Center's recipe {name}/{version}#{locked[:8]}"
         homepage = re.search(r'^\s*homepage\s*=\s*["\']([^"\']+)["\']', conanfile, re.MULTILINE)
-        sha256 = source.get("sha256") if isinstance(source, dict) else None
+        urls, pinned = ConanCenter.leaves(source)
+        # Where this version's sources name no repository (zlib 1.2.11: only zlib.net), the
+        # recipe's other versions may: one repository named across them is a candidate.
+        exact = ConanCenter.exact(urls, how)
+        if isinstance(exact, Upstream):
+            return exact
+        current = ConanCenter.repositories(name) or set()
         return Upstreams.inferred(
-            Upstreams.from_urls(urls, how),
-            [homepage.group(1)] if homepage else [],
+            exact,
+            [
+                *([homepage.group(1)] if homepage else []),
+                *(sorted(current) if len(current) == 1 else []),
+            ],
             version,
             (name,),
             how,
-            Archive(tuple(urls), f"sha256:{sha256}") if urls and isinstance(sha256, str) else None,
+            pinned,
         )
 
     @staticmethod

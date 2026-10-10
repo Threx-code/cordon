@@ -403,9 +403,21 @@ class TestTagInference:
     def test_no_tag_spelled_as_the_version_is_no_guess(self, monkeypatch) -> None:
         from cordon_scanner.intel.upstream_advisories import TagInference
 
-        self.tags(monkeypatch, {"curl-8_0_0": "a" * 40, "8.0.1": "b" * 40})
+        self.tags(monkeypatch, {"curl-8_0_1": "a" * 40, "8.0.1": "b" * 40, "8.0.0-rc1": "c" * 40})
         found = TagInference.infer("https://example.invalid/curl.git", "8.0.0", ("curl",), "x")
         assert isinstance(found, Unnamed) and "no tag spelled as version 8.0.0" in found.reason
+
+    def test_dots_written_as_underscores_are_the_same_version(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        # curl tags `curl-8_0_0`; a tag spelled otherwise naming another commit would refuse it.
+        self.tags(monkeypatch, {"curl-8_0_0": "a" * 40})
+        found = TagInference.infer("https://example.invalid/curl.git", "8.0.0", ("curl",), "x")
+        assert isinstance(found, Upstream) and found.query == {"commit": "a" * 40}
+        self.tags(monkeypatch, {"curl-8_0_0": "a" * 40, "v8.0.0": "b" * 40})
+        assert isinstance(
+            TagInference.infer("https://example.invalid/curl.git", "8.0.0", ("curl",), "x"), Unnamed
+        )
 
     def test_an_exact_upstream_is_never_replaced_by_an_inferred_one(self, monkeypatch) -> None:
         exact = Upstream({"commit": "a" * 40}, "exact")
@@ -567,3 +579,51 @@ class TestHomebrewTaps:
         found = UpstreamAdvisories.name(Stand.dep("homebrew", "bat", "0.12.1"))
         assert isinstance(found, Upstream) and found.inferred
         assert found.query == {"commit": "d" * 40}
+
+
+class TestConanCenterSources:
+    def test_a_binary_tools_sources_keyed_by_platform(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import ConanCenter
+
+        source = {
+            "Linux": {
+                "armv8": {
+                    "sha256": "a" * 64,
+                    "url": [
+                        "https://cmake.org/files/v3.31/cmake-3.31.12-linux-aarch64.tar.gz",
+                        "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-linux-aarch64.tar.gz",
+                    ],
+                },
+                "x86_64": {
+                    "sha256": "b" * 64,
+                    "url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-linux-x86_64.tar.gz",
+                },
+            }
+        }
+        urls, archive = ConanCenter.leaves(source)
+        assert len(urls) == 3 and archive is not None and archive.digest == "sha256:" + "a" * 64
+        found = ConanCenter.exact(urls, "x")
+        assert isinstance(found, Upstream) and found.query["version"] == "v3.31.12"
+
+    def test_sources_naming_different_tags_are_not_one_upstream(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import ConanCenter
+
+        found = ConanCenter.exact(
+            [
+                "https://github.com/o/r/archive/refs/tags/v1.0.tar.gz",
+                "https://github.com/o/r/archive/refs/tags/v1.1.tar.gz",
+            ],
+            "x",
+        )
+        assert isinstance(found, Unnamed)
+
+    def test_a_tag_with_underscores_for_dots_is_the_version(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"v3_2_2": "f" * 40})
+        )
+        found = Upstreams.inferred(
+            Unnamed("x"), ["https://github.com/ruby/ruby"], "3.2.2", ("ruby",), "x"
+        )
+        assert isinstance(found, Upstream) and found.query == {"commit": "f" * 40}
