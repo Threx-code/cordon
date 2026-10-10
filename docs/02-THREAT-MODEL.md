@@ -244,17 +244,23 @@ silently treating a timed-out scan as clean is itself the vulnerability.
 
 ### T12 — Network exposure
 
-**Current state.** A scan never sends anything about the code or its
-dependencies. The intel-feed client pulls Cordon's feed -- static, signed files
-that are identical for everyone, verified TUF-style (root, timestamp, snapshot,
-targets; rollback and freeze refused) with a three-second budget, so the request
-reveals only that someone fetched the feed -- but only in a build that pins a
-feed root key, and 0.5.2 pins none. Until one does, a default scan makes no
-network request at all and matches against the advisory database shipped in the
-package, refreshed by `cordon-scanner advisories sync`. `--offline` or
-`CORDON_OFFLINE=1` guarantees no network attempt either way. Everything that names a package -- registry
-checks, OSV or ALAS matching of an image's packages, fetching an MCP server's
-package -- needs `--online`. Fetching a `--policy` URL needs `--allow-network`
+**Current state.** A default scan sends nothing about the code or its
+dependencies. It does make one kind of request: unless the scan is offline, it
+reads the top of OSV's per-ecosystem change lists from OSV's public bucket, at
+most once every 15 minutes, to pick up advisories published since the bundled
+database was built. Those requests are the same for everyone and name no
+package. The signed intel feed (static files verified TUF-style: root,
+timestamp, snapshot, targets; rollback and freeze refused) is pulled only in a
+build that pins a feed root key, and none is pinned yet. `--offline` or
+`CORDON_OFFLINE=1` guarantees no network attempt at all. Everything that names a
+package needs `--online`: registry checks, provenance, OSV or ALAS matching of an
+image's packages, fetching an MCP server's package, and matching packages that no
+advisory source covers through their upstream -- which asks each ecosystem's own
+host what a package was built from (bcr.bazel.build or the registry a Bazel lock
+names, center2.conan.io, cdn.jsdelivr.net for CocoaPods, formulae.brew.sh and
+ghcr.io for Homebrew, raw.githubusercontent.com and api.github.com for vcpkg and
+Homebrew formula files, registry.terraform.io, conda.anaconda.org and
+repo.anaconda.com) and then asks api.osv.dev about that upstream. Fetching a `--policy` URL needs `--allow-network`
 and a `#sha256=` digest. Sending results (`--upload`, `--notify`) is opt-in,
 https-only and never carries file contents.
 

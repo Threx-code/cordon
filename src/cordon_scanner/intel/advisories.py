@@ -371,6 +371,12 @@ class Advisory:
     `last_affected` (inclusive). Only consulted when `versions` is empty --
     see `affects`."""
 
+    matched_through: str = ""
+    """How a record not about the package itself was matched to it (`intel/
+    upstream_advisories`): `upstream` through the repository and ref, Go module or registry
+    archive its ecosystem names; `inferred` through a tag found in the repository it names.
+    Empty for a record about the package, matched by its own name and version."""
+
     def __post_init__(self) -> None:
         if self.versions and (self.introduced or self.fixed or self.last_affected):
             raise ValueError(

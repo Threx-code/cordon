@@ -118,6 +118,17 @@ rather than a document.
   collections (their OpenPGP signatures over MANIFEST.json, recorded at install or
   served by galaxy.ansible.com, against the same keys, as `ansible-galaxy collection
   verify` checks them); the others publish none a scanner can read.
+- **Advisories through the upstream.** OSV publishes no Bazel, vcpkg, Conan,
+  Homebrew, CocoaPods, Terraform, Nix or conda ecosystem. With `--online`, each of
+  those packages is matched through what its own ecosystem says it was built from
+  -- a repository and tag or commit (OSV's GIT ecosystem), a Go module (Terraform
+  providers) or a registry archive (a PyPI sdist a conda recipe builds) -- read
+  from BCR's source.json, a Conan Center recipe export, a podspec, a Homebrew
+  formula (from its bottle, for an older version), a vcpkg portfile at the
+  baseline, the Terraform registry, a flake's locked commit, or the recipe inside a
+  conda package. Nothing is guessed: a source downloaded from a project's own site,
+  a branch, or a version its ecosystem no longer describes leaves the package
+  unchecked, and the report names it and why.
 
 ---
 """

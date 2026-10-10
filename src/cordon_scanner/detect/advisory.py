@@ -44,6 +44,8 @@ from cordon_scanner.intel import exploited
 from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase, AdvisoryFiles
 from cordon_scanner.intel.ranges import VersionRanges
 from cordon_scanner.intel.real import RealPackages
+from cordon_scanner.intel.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
+from cordon_scanner.intel.upstream_advisories import UpstreamAdvisories, UpstreamResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -271,7 +273,23 @@ class AdvisoryDetector(BaseDetector):
         if scope_note is not None:
             findings.append(scope_note)
 
-        no_feed = self._no_feed_note(unit, ctx.config.policy.accept_no_feed or frozenset())
+        # Ecosystems no advisory source covers, matched through the upstream their own data names
+        # (`intel/upstream_advisories`), when the scan may use the network.
+        upstream: UpstreamResult | None = None
+        if not ctx.offline:
+            candidates = [
+                d
+                for d in unit.dependencies
+                if not d.local
+                and not d.bundled
+                and d.ecosystem in UPSTREAM_ECOSYSTEMS
+                and not self._database.covers(d.ecosystem)
+            ]
+            if candidates:
+                upstream = UpstreamAdvisories.check(candidates)
+        no_feed = self._no_feed_note(
+            unit, ctx.config.policy.accept_no_feed or frozenset(), upstream
+        )
         if no_feed is not None:
             findings.append(no_feed)
 
@@ -283,8 +301,9 @@ class AdvisoryDetector(BaseDetector):
                 # is not the npm package squatted under that name.
                 continue
             reported: set[str] = set()
-            for advisory in self._database.matching(
-                dependency.ecosystem, dependency.name, dependency.version
+            for advisory in (
+                *self._database.matching(dependency.ecosystem, dependency.name, dependency.version),
+                *(upstream.advisories.get(dependency.purl, ()) if upstream is not None else ()),
             ):
                 # One record can match through its version list and its range both.
                 if advisory.identifier and advisory.identifier in reported:
@@ -424,7 +443,9 @@ class AdvisoryDetector(BaseDetector):
             )
             break
 
-    def _no_feed_note(self, unit: GraphUnit, accepted: frozenset[str]) -> Finding | None:
+    def _no_feed_note(
+        self, unit: GraphUnit, accepted: frozenset[str], upstream: UpstreamResult | None
+    ) -> Finding | None:
         """Name the scanned ecosystems no advisory source covers.
 
         Cordon reads seventeen ecosystems and the bundled database holds records
@@ -459,19 +480,51 @@ class AdvisoryDetector(BaseDetector):
         )
         if not uncovered:
             return None
-        counted = sum(1 for d in unit.dependencies if d.ecosystem in uncovered)
+        # What was asked of OSV through its upstream (`intel/upstream_advisories`) was checked;
+        # the rest is named, with why.
+        unchecked = [
+            d
+            for d in unit.dependencies
+            if d.ecosystem in uncovered
+            and not d.local
+            and not d.bundled
+            and not (upstream is not None and d.purl in upstream.checked)
+        ]
+        if not unchecked:
+            return None
+        ecosystems = sorted({str(d.ecosystem) for d in unchecked})
+        derivable = [e for e in ecosystems if e in UPSTREAM_ECOSYSTEMS]
+        if upstream is None:
+            why = (
+                f" With --online, {', '.join(derivable)} packages are matched through the upstream "
+                f"repository their ecosystem names, asked of OSV."
+                if derivable
+                else ""
+            )
+        else:
+            reasons: dict[str, list[str]] = {}
+            for d in unchecked:
+                reason = upstream.unchecked.get(d.purl)
+                if reason:
+                    reasons.setdefault(reason, []).append(f"{d.name}")
+            why = "".join(
+                f" {', '.join(names[:3])}{f' and {len(names) - 3} more' if len(names) > 3 else ''}: "
+                f"{reason}."
+                for reason, names in sorted(reasons.items(), key=lambda kv: -len(kv[1]))[:5]
+            )
         # `policy.accept_no_feed`: still named here, every time, but no longer a scan that did
         # not finish -- unless an ecosystem the policy does not accept is among them.
-        unaccepted = [e for e in uncovered if e not in accepted]
-        taken = [e for e in uncovered if e in accepted]
+        unaccepted = [e for e in ecosystems if e not in accepted]
+        taken = [e for e in ecosystems if e in accepted]
         return self.operational(
             path=".",
             message=(
-                f"No advisory source covers {', '.join(uncovered)}, so {counted} "
-                f"dependency(ies) were not checked for known vulnerabilities or "
-                f"known-malicious releases. They were not checked and found clean; "
-                f"they were not checked. Everything else about them -- typosquats, "
-                f"install hooks, lockfile integrity, licences -- was examined."
+                f"{len(unchecked)} {', '.join(ecosystems)} dependency(ies) were not checked for "
+                f"known vulnerabilities or known-malicious releases: no advisory source covers "
+                f"them directly. They were not checked and found clean; they were not checked. "
+                f"Everything else about them -- typosquats, install hooks, lockfile integrity, "
+                f"licences -- was examined."
+                + why
                 + (
                     f" The policy accepts this for {', '.join(taken)} (policy.accept_no_feed)."
                     if taken
@@ -678,6 +731,14 @@ class AdvisoryDetector(BaseDetector):
         malicious = advisory.malicious
         rule_id = MALICIOUS_RULE if malicious else VULNERABLE_RULE
         confidence = Confidence.HIGH if advisory.is_range else Confidence.CONFIRMED
+        if advisory.matched_through == "upstream":
+            # The record names the package's upstream, which its ecosystem names exactly: one
+            # step from the package, and a build may carry a patch the upstream did not.
+            confidence = Confidence.HIGH
+        elif advisory.matched_through == "inferred":
+            # Through a tag found in the repository, spelled as the version: still at the
+            # default gate, and set apart from what was named exactly.
+            confidence = Confidence.MEDIUM
         if malicious:
             severity = Severity.CRITICAL
         else:
