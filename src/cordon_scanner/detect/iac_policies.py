@@ -2010,7 +2010,11 @@ _K8S_EXTRA: tuple[tuple[str, str, str, Severity, Category, str, str, str, str], 
     (
         "SECRET_ENV_VALUE",
         "env",
-        r"(?mi)^\s*-?\s*name:\s*[A-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*\s*\n\s*value:\s*\S+",
+        # Not a name for where the credential is: `POSTGRES_PASSWORD_FILE` is the convention for
+        # "read it from this mounted file" (Docker's official images), and caveman's
+        # `CAVEMAN_MIDDLEWARE_TOKEN_MAP_FILE: /etc/caveman/identity/tokens.yaml` was reported.
+        r"(?mi)^\s*-?\s*name:\s*[A-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*"
+        r"(?<!_FILE)(?<!_PATH)(?<!_DIR)\s*\n\s*value:\s*\S+",
         _HIGH,
         Category.SUSPICIOUS,
         "a credential is written into the manifest",
