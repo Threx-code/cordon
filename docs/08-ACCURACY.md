@@ -170,7 +170,7 @@ What still differs, every case read:
 | Bazel: `http_archive` repositories in MODULE.bazel; Bazel downloads them, `mod graph` lists modules only. Cordon lists them | 5 |
 | Ansible: a task list ansible-galaxy would read as roles if asked; nothing asks it to. Cordon declines | 5 |
 | Ansible: requirements files ansible-galaxy refuses or crashed on (ansible-test's extra keys; a scratch-directory error). Cordon reads them | 2 |
-| Conan: Conan 1's `[build_requires]`, which Conan 2's reader refuses. Cordon reads it | 3 |
+| Conan: Conan 1's `build_requires` section, which Conan 2's reader refuses. Cordon reads it | 3 |
 | Actions: `uses:` lines GitHub's graph for a fork omits, and a repository using its own action. Cordon lists them | 3 |
 | Julia: Julia 1.12 standard libraries Pkg 1.11 does not know as such; TOML downloaded from the registry in a pre-1.6 manifest | 2 |
 | Nix: `file:///dev/null`, devenv's way of saying "no input". Cordon does not list it | 1 |
