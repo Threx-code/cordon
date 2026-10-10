@@ -4517,11 +4517,14 @@ class Engine:
                 continue
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id else None
-            if (
-                ecosystem is None
-                or ecosystem_id is None
-                or not getattr(ecosystem, "defines_members", True)
-            ):
+            if ecosystem is None or ecosystem_id is None:
+                continue
+            # Whether a manifest in the tree names one of the project's own packages: for most
+            # ecosystems always; never for Homebrew; for Conan only a workspace's members.
+            defines = getattr(ecosystem, "defines_members", True)
+            if callable(defines):
+                defines = defines(unit.path, contents)
+            if not defines:
                 continue
             try:
                 # With the build in view: a Gradle project's name is in its settings script, a

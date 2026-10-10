@@ -207,6 +207,7 @@ class ConanRecipe:
         overrides: dict[str, str] = {}
         sources: list[str] = []
         name = version = None
+        attributes: dict[str, str] = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
                 for statement in node.body:
@@ -217,6 +218,9 @@ class ConanRecipe:
                     ):
                         continue
                     target = statement.targets[0].id
+                    constant = ConanRecipe.constant(statement.value)
+                    if constant is not None:
+                        attributes[target] = constant
                     if target in ConanRecipe.METHODS:
                         for text in ConanRecipe.strings(statement.value):
                             ConanRecipe.add(
@@ -239,7 +243,7 @@ class ConanRecipe:
                             option, setting = ConanRecipe.constant(key), ConanRecipe.constant(value)
                             if option is not None and setting is not None:
                                 sources.append(f"option {option}={setting}")
-        ConanRecipe.calls(tree.body, (), declared, overrides, 0)
+        ConanRecipe.calls(tree.body, (), declared, overrides, 0, attributes)
         return Manifest(
             path=content.path,
             ecosystem=ecosystem,
@@ -276,6 +280,7 @@ class ConanRecipe:
         declared: list[DeclaredDependency],
         overrides: dict[str, str],
         depth: int,
+        attributes: dict[str, str] | None = None,
     ) -> None:
         """`self.<method>("ref", ...)` calls, with the `if` conditions they sit under."""
         if depth > 64:
@@ -284,10 +289,15 @@ class ConanRecipe:
             if isinstance(statement, ast.If):
                 test = ast.unparse(statement.test)[:200]
                 ConanRecipe.calls(
-                    statement.body, (*conditions, test), declared, overrides, depth + 1
+                    statement.body, (*conditions, test), declared, overrides, depth + 1, attributes
                 )
                 ConanRecipe.calls(
-                    statement.orelse, (*conditions, f"not ({test})"), declared, overrides, depth + 1
+                    statement.orelse,
+                    (*conditions, f"not ({test})"),
+                    declared,
+                    overrides,
+                    depth + 1,
+                    attributes,
                 )
                 continue
             for child_body in ("body", "orelse", "finalbody", "handlers"):
@@ -304,6 +314,7 @@ class ConanRecipe:
                         declared,
                         overrides,
                         depth + 1,
+                        attributes,
                     )
             if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
                 call = statement.value
@@ -317,6 +328,15 @@ class ConanRecipe:
                 ):
                     text = ConanRecipe.constant(call.args[0])
                     if text is None:
+                        computed = ConanRecipe.computed(call.args[0], attributes or {})
+                        if computed is not None:
+                            ConanRecipe.add_computed(
+                                declared,
+                                computed,
+                                ConanRecipe.METHODS[function.attr],
+                                function.attr,
+                                conditions,
+                            )
                         continue
                     keywords = {
                         k.arg: ConanRecipe.constant(k.value) for k in call.keywords if k.arg
@@ -333,6 +353,100 @@ class ConanRecipe:
                         conditions,
                         override=keywords.get("override") == "True",
                     )
+
+    UNKNOWN: ClassVar[str] = "\x00"
+    """Stands for a part of a reference the recipe computes, which reading cannot know."""
+
+    @staticmethod
+    def computed(node: ast.AST, attributes: dict[str, str], depth: int = 0) -> str | None:
+        """A reference the recipe builds rather than writes: `"corrade/{}".format(self.version)`,
+        `f"boost/{self._boost_version}"`, `"zlib/%s" % v`, `"fmt/" + v`. `self.<attribute>` is
+        known where the class assigns it a constant (`version = "2020.06"`); any other part is
+        unknown. None when the node is not one of these shapes."""
+        unknown = ConanRecipe.UNKNOWN
+        if depth > 8:
+            return None
+
+        def part(value: ast.AST) -> str:
+            if isinstance(value, ast.Constant) and isinstance(value.value, (str, int)):
+                return str(value.value)
+            if (
+                isinstance(value, ast.Attribute)
+                and value.attr in attributes
+                and isinstance(value.value, ast.Name)
+                and value.value.id == "self"
+            ):
+                return attributes[value.attr]
+            inner = ConanRecipe.computed(value, attributes, depth + 1)
+            return inner if inner is not None else unknown
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            return "".join(
+                part(v.value) if isinstance(v, ast.FormattedValue) else part(v) for v in node.values
+            )
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "format"
+            and isinstance(node.func.value, ast.Constant)
+            and isinstance(node.func.value.value, str)
+        ):
+            values = [part(a) for a in node.args]
+            named = {k.arg: part(k.value) for k in node.keywords if k.arg}
+            counter = iter(range(len(values)))
+
+            def field(match: re.Match[str]) -> str:
+                key = match.group(1).split(":")[0].split("!")[0]
+                if key == "":
+                    index = next(counter, None)
+                    return values[index] if index is not None and index < len(values) else unknown
+                if key.isdigit():
+                    return values[int(key)] if int(key) < len(values) else unknown
+                return named.get(key, unknown)
+
+            return re.sub(r"\{([^{}]*)\}", field, node.func.value.value)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return part(node.left) + part(node.right)
+        if (
+            isinstance(node, ast.BinOp)
+            and isinstance(node.op, ast.Mod)
+            and isinstance(node.left, ast.Constant)
+            and isinstance(node.left.value, str)
+        ):
+            args = node.right.elts if isinstance(node.right, ast.Tuple) else [node.right]
+            substitutes = iter([part(a) for a in args])
+            return re.sub(r"%[sd]", lambda _m: next(substitutes, unknown), node.left.value)
+        return None
+
+    @staticmethod
+    def add_computed(
+        declared: list[DeclaredDependency],
+        text: str,
+        scope: Scope,
+        field_name: str,
+        conditions: tuple[str, ...],
+    ) -> None:
+        """A computed reference: in full where every part is known, otherwise by its name, with
+        the version left unresolved and said to be the recipe's to choose."""
+        unknown = ConanRecipe.UNKNOWN
+        if unknown not in text:
+            ConanRecipe.add(declared, {}, text, scope, field_name, conditions, override=False)
+            return
+        name = text.split("/", 1)[0]
+        if not name or unknown in name or "/" not in text or Reference.parse(f"{name}/0") is None:
+            return
+        declared.append(
+            DeclaredDependency(
+                name=name,
+                spec="*",
+                scope=scope,
+                field_name=field_name,
+                platform=conditions,
+                note="the version is computed by the recipe when it runs; reading it cannot know it",
+            )
+        )
 
     @staticmethod
     def add(
@@ -641,18 +755,30 @@ class ConanEcosystem(BaseEcosystem):
         manifest = self.parse_manifest(content)
         if content.basename not in ("conanfile.py", "conanfile.txt") or manifest.parse_error:
             return manifest
-        directory = content.path.rpartition("/")[0]
+        root = ConanEcosystem.workspace_of(content.path, files)
+        return manifest if root is None else dataclasses.replace(manifest, locked_by=root)
+
+    @staticmethod
+    def workspace_of(path: str, files: Mapping[str, FileContent]) -> str | None:
+        """The directory of the conanws.yml that lists this recipe's directory as a package."""
+        directory = path.rpartition("/")[0]
         ancestor = directory
         while ancestor:
             ancestor = ancestor.rpartition("/")[0]
             prefix = f"{ancestor}/" if ancestor else ""
             workspace = files.get(f"{prefix}conanws.yml") or files.get(f"{prefix}conanws.yaml")
-            if workspace is None:
-                continue
-            relative = directory[len(prefix) :]
-            if relative in ConanWorkspace.members(workspace):
-                return dataclasses.replace(manifest, locked_by=ancestor)
-        return manifest
+            if workspace is not None and directory[len(prefix) :] in ConanWorkspace.members(
+                workspace
+            ):
+                return ancestor
+        return None
+
+    def defines_members(self, path: str, files: Mapping[str, FileContent]) -> bool:
+        """Whether a recipe in the tree is one of the project's own packages. Only a workspace
+        member is: Conan resolves `zlib/1.3.1` from its remotes unless a conanws.yml (or editable
+        mode) puts the recipe in its place. conan-center-index holds every recipe it publishes, and
+        taking each for the repository's own made every dependency between them local."""
+        return ConanEcosystem.workspace_of(path, files) is not None
 
     def parse_manifest(self, content: FileContent) -> Manifest:
         basename = content.basename

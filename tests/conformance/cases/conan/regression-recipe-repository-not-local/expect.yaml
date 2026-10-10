@@ -1,0 +1,12 @@
+# Found comparing against Conan's own evaluation of conan-center-index: the repository holds every
+# recipe it publishes, and Cordon took each recipe for one of the project's own packages, so
+# libpng's zlib -- like every dependency between recipes -- was recorded as local code, outside
+# the registry checks. Conan resolves zlib from its remotes; a recipe in the tree takes its place
+# only when a conanws.yml lists it (edge-workspace), or in editable mode.
+kinds: [regression, valid]
+covers:
+  - file:conanfile.py
+  - UNI-10
+dependencies:
+  - {name: zlib, version_constraint: ">=1.2.11 <2", source_type: registry, manifest_location: {path: recipes/libpng/all/conanfile.py}}
+only: true

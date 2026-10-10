@@ -1,0 +1,18 @@
+# Found comparing against Conan 2's own evaluation of conan-center-index recipes: a reference
+# the recipe builds -- `"corrade/{}".format(self.version)`, an f-string, `%` or `+` -- was
+# skipped, so magnum's corrade, wasmtime's and others' requirements went unlisted. They are now
+# read statically: a class constant (`version`, `_boost_version`) where the class states one, and a part only running
+# the recipe could know left unresolved, by name, with a note saying so. Nothing runs.
+kinds: [regression, valid]
+covers:
+  - file:conanfile.py
+  - UNI-02
+  - UNI-06
+dependencies:
+  - {name: corrade, version_constraint: "2020.06"}
+  - {name: fmt, version_constraint: 10.2.1}
+  - {name: boost, version_constraint: 1.83.0}
+  - {name: zlib, version_constraint: "*", resolution_status: unresolved}
+  - {name: openal, version_constraint: 1.21.1, platform_constraints: [self.options.with_audio, user community, channel stable]}
+  - {name: cmake, dependency_type: tool, resolution_status: unresolved}
+only: true
