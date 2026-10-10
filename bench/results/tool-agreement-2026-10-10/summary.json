@@ -133,13 +133,13 @@
  },
  {
   "ecosystem": "hackage",
-  "repositories": 4,
-  "reference": 602,
-  "cordon": 602,
-  "agree": 602,
-  "precision": 1.0,
-  "recall": 1.0,
-  "f1": 1.0,
+  "repositories": 6,
+  "reference": 1142,
+  "cordon": 1125,
+  "agree": 1122,
+  "precision": 0.9973,
+  "recall": 0.9825,
+  "f1": 0.9899,
   "repositories_in_full_agreement": 4
  },
  {

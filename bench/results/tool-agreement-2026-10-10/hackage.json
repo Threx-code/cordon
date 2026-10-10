@@ -1,12 +1,12 @@
 {
  "ecosystem": "hackage",
- "repositories": 4,
- "reference": 602,
- "cordon": 602,
- "agree": 602,
- "precision": 1.0,
- "recall": 1.0,
- "f1": 1.0,
+ "repositories": 6,
+ "reference": 1142,
+ "cordon": 1125,
+ "agree": 1122,
+ "precision": 0.9973,
+ "recall": 0.9825,
+ "f1": 0.9899,
  "repositories_in_full_agreement": 4,
  "rows": [
   {
@@ -34,12 +34,54 @@
    "only_cordon": []
   },
   {
+   "repo": "koalaman/shellcheck",
+   "reference": 70,
+   "cordon": 71,
+   "agree": 70,
+   "only_reference": [],
+   "only_cordon": [
+    "unbounded-delays"
+   ]
+  },
+  {
    "repo": "lierdakil/pandoc-crossref",
    "reference": 239,
    "cordon": 239,
    "agree": 239,
    "only_reference": [],
    "only_cordon": []
+  },
+  {
+   "repo": "monoscope-tech/monoscope",
+   "reference": 470,
+   "cordon": 452,
+   "agree": 450,
+   "only_reference": [
+    "ghc-hs-meta",
+    "glob",
+    "hasql-implicits",
+    "hs-opentelemetry-api-types",
+    "hs-opentelemetry-exporter-handle",
+    "hs-opentelemetry-exporter-in-memory",
+    "hs-opentelemetry-exporter-otlp",
+    "hs-opentelemetry-exporter-prometheus",
+    "hs-opentelemetry-otlp",
+    "hs-opentelemetry-propagator-b3",
+    "hs-opentelemetry-propagator-datadog",
+    "hs-opentelemetry-propagator-jaeger",
+    "hs-opentelemetry-propagator-w3c",
+    "hs-opentelemetry-propagator-xray",
+    "hs-opentelemetry-semantic-conventions",
+    "hs-opentelemetry-utils-exceptions",
+    "mmap",
+    "postgresql-connection-string",
+    "reinterpret-cast",
+    "thread-utils-context"
+   ],
+   "only_cordon": [
+    "ptr",
+    "strict-list"
+   ]
   }
  ]
 }

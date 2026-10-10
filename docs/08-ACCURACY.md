@@ -19,7 +19,7 @@ them ships here.
 |---|---|---|
 | Every known-malicious package record in the intel | **249,646 records**, 287,899 checks, 10 ecosystems | **100%** caught |
 | Packages in real lockfiles, read against Trivy | **190,274 packages, 1,687 lockfiles**, 14 registries | **99.6%** agree (98.9% per lockfile); the rest sorted by cause |
-| Dependencies in 14 ecosystems Trivy does not read, against each ecosystem's own tool | **11,070 dependencies, 354 repositories** | **99.4%** recall, 98.6% precision; every difference read |
+| Dependencies in 14 ecosystems Trivy does not read, against each ecosystem's own tool | **11,610 dependencies, 356 repositories** | **99.2%** recall, 98.6% precision; every difference read |
 | Real malicious packages | **39,328** (every DataDog npm, PyPI, AI-skill and IDE-extension sample, and malregistry) | **94.2%** detected; **79.7%** by reading the code alone, the rest by matching a known malicious release |
 | The same malware, against GuardDog | **498** (a fixed-seed draw) | **95.2%** vs GuardDog's 85.5% |
 | Popular packages wrongly blocked | top **1,000 PyPI + 1,000 npm** | **1.6%** vs GuardDog's 16.8% |
@@ -129,9 +129,9 @@ solves a project (`cabal build all --dry-run`, which builds nothing and runs no 
 GHC its freeze file pins.
 
 ```
-   11,070 dependencies read by the tools     11,155 by Cordon     10,998 the same
+   11,610 dependencies read by the tools     11,678 by Cordon     11,518 the same
    ─────────────────────────────────────────────────────────────────────────────────
-   precision 98.6%    recall 99.4%    354 repositories, 325 in full agreement
+   precision 98.6%    recall 99.2%    356 repositories, 325 in full agreement
 ```
 
 | Ecosystem | Reference | Repositories | Agree | F1 |
@@ -142,9 +142,9 @@ GHC its freeze file pins.
 | vcpkg | `vcpkg format-manifest` | 30 | 1,893 of 1,893 | 1.000 |
 | CRAN (renv.lock) | `renv::lockfile_read` | 30 | 4,196 of 4,196 | 1.000 |
 | conda | conda's `from_file` | 30 | 546 of 546 | 1.000 |
-| Hackage | cabal's install plan (`--dry-run`) | 4 | 602 of 602 | 1.000 |
 | Bazel | `bazel mod graph --include_builtin` | 25 | 864 of 864 | 0.997 |
 | Nix | `nix flake metadata` | 30 | 431 of 433 | 0.997 |
+| Hackage | cabal's install plan (`--dry-run`) | 6 | 1,122 of 1,142 | 0.990 |
 | Julia | Pkg (`read_project`, `read_manifest`) | 30 | 129 of 131 | 0.989 |
 | GitHub Actions | GitHub's dependency graph (SBOM API) | 17 | 66 of 66 | 0.978 |
 | Homebrew | `brew bundle list` (sealed) | 12 | 796 of 853 | 0.964 |
@@ -152,11 +152,16 @@ GHC its freeze file pins.
 | Conan | Conan 2 and Conan 1, conanfile.py evaluated (sealed) | 27 | 773 of 779 | 0.912 |
 
 Where a tool could read only part of what Cordon reads, the comparison covers what both read:
-Actions the 17 repositories whose dependency graph GitHub publishes; Hackage the 4 of 11 projects
-cabal can solve (the rest pin a GHC that is not built for the platform, keep their packages as
-hpack files cabal cannot read, or hold a freeze file that is a test fixture); a conanfile.py that
-imports a module its repository does not contain, and so cannot be loaded by Conan either, is left
-out.
+Actions the 17 repositories whose dependency graph GitHub publishes; Hackage the 6 of 11 projects
+cabal can solve; a conanfile.py that imports a module its repository does not contain, and so
+cannot be loaded by Conan either, is left out. The five projects cabal cannot solve, each log read:
+
+| Project | Why cabal finds no plan |
+|---|---|
+| unisonweb/unison, radicle-dev/radicle-alpha | Their packages are hpack `package.yaml` files; the `.cabal` files cabal.project names exist only once hpack has generated them |
+| haskell/cabal | Its only freeze file is a test fixture (`cabal-testsuite/PackageTests/Outdated`) pinning a `base` that cannot exist, on purpose |
+| entropia/tip-toi-reveng | The freeze file pins GHC 9.2's `base` (4.16.4.0) beside GHC 9.4's `ghc-bignum` (1.3); no compiler ships both |
+| input-output-hk/cardano-sl | The freeze file pins 2018 libraries (`vector` 0.12.0.2, `safecopy` 0.9.4.3) and no compiler; GHC 9.8 cannot build them |
 
 The comparison found fourteen Cordon defects, each fixed with a conformance case before the
 figures above were taken:
@@ -191,6 +196,8 @@ What still differs, every case read:
 | Ansible: a task list ansible-galaxy would read as roles if asked; nothing asks it to. Cordon declines | 5 |
 | Ansible: requirements files ansible-galaxy refuses or crashed on (ansible-test's extra keys; a scratch-directory error). Cordon reads them | 2 |
 | Actions: `uses:` lines GitHub's graph for a fork omits, and a repository using its own action. Cordon lists them | 3 |
+| Hackage: packages of a git `source-repository-package` (13 from hs-opentelemetry's subdirectories, ghc-hs-meta), which a freeze file never pins and whose names are in the cloned repository's `.cabal` files, and 6 libraries cabal resolved that no file of the repository names | 20 |
+| Hackage: freeze-file pins today's plan no longer needs (`unbounded-delays`, `ptr`, `strict-list`); cabal ignores them, Cordon reports what the lock says | 3 |
 | Julia: Julia 1.12 standard libraries Pkg 1.11 does not know as such; TOML downloaded from the registry in a pre-1.6 manifest | 2 |
 | Nix: `file:///dev/null`, devenv's way of saying "no input". Cordon does not list it | 1 |
 | Nix: not yet explained (one input each way) | 2 |
