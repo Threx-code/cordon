@@ -697,9 +697,13 @@ class RegistryDetector(BaseDetector):
         askable = [
             d
             for d in self._order(unit.dependencies)
+            # The project's own code (a path pod, a workspace member, an example's `path: ../`) is
+            # no registry's: asking leaks its name to the public one, and the answer was false --
+            # `appmetrica` "not on the public pub registry", `FlutterMacOS` "withdrawn".
+            if not d.local
             # A jar named only by its file has no real Maven coordinate to ask about: "absent from
             # Maven Central" would be true of a name Cordon made up, and read as dependency confusion.
-            if d.resolved_from != NAMED_BY_FILE
+            and d.resolved_from != NAMED_BY_FILE
             and (d.version or (d.ecosystem == "image" and d.integrity))
             and d.ecosystem in REGISTRY_ECOSYSTEMS
             and d not in private_images

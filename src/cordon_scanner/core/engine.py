@@ -4418,7 +4418,22 @@ class Engine:
                 else d
                 for d in joined
             ]
-        return [d for d in joined if not (d.local and not d.parents and d.manifest_path is None)]
+        return [
+            d
+            for d in joined
+            if not (
+                d.local
+                and not d.parents
+                and d.manifest_path is None
+                and d.ecosystem not in Engine.LOCKS_WITHOUT_ROOTS
+            )
+        ]
+
+    #: Lockfiles that never list the project itself, so a local entry in one is always a
+    #: dependency: Podfile.lock lists the pods installed, never the app. Flutter's Podfile adds
+    #: `FlutterMacOS` through a helper (`flutter_install_all_macos_pods`) rather than a `pod` line,
+    #: and the rule above took the pod for the project and dropped it.
+    LOCKS_WITHOUT_ROOTS: ClassVar[frozenset[str]] = frozenset({"cocoapods"})
 
     @staticmethod
     def _routed_source(name: str, patterns: Mapping[str, str]) -> str | None:

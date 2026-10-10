@@ -180,6 +180,8 @@ class ProvenanceDetector(BaseDetector):
             d
             for d in RegistryDetector._order(unit.dependencies)
             if d.ecosystem in SUPPORTED_ECOSYSTEMS
+            # The project's own code has no registry and no attestation to ask about.
+            and not d.local
             # An image pinned by digest alone is asked about by that digest; what a Dockerfile
             # `ADD`s from a URL is no registry's.
             # A Brewfile names a formula without a version: its bottles are the current version's.

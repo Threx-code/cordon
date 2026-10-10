@@ -1,0 +1,12 @@
+# A Flutter macOS app's one pod, FlutterMacOS, from a path. The Podfile names no pod -- a helper
+# adds it -- and the engine took a local lock entry no manifest declared and nothing depended on
+# for the workspace's own root, and dropped it. Podfile.lock lists the pods installed, never the
+# app: its local entries are dependencies. Found scanning real pub.dev projects, once the Podfile
+# itself could be read.
+kinds: [regression, valid]
+covers:
+  - file:Podfile.lock
+  - cocoapods.git-external
+  - UNI-01
+dependencies:
+  - {name: FlutterMacOS, resolved_version: 1.0.0, direct: true, source_type: path}
