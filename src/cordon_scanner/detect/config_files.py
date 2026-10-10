@@ -70,7 +70,7 @@ _ADMIN_PORT = (
     r"(?:from_port|to_port|FromPort|ToPort|destination_port_range|port|Port)"
     r'[ \t]{0,32}[=:][ \t]{0,32}\[?[ \t]{0,32}"?'
     r"(?:22|23|135|139|445|1433|1521|2375|2376|2379|2380|3306|3389|5432|5900"
-    r"|5984|6379|6443|8020|9000|9200|11211|27017|0|\*|-1)\b"
+    r"|5984|6379|6443|8020|9000|9200|11211|27017|0|\*|-1)(?!\w)"
 )
 """Ports where "reachable from the entire internet" is the finding.
 
@@ -204,6 +204,11 @@ class ConfigRule:
     is still a fetch: the bytes are pinned, and the fact that the build reaches the
     network at all is worth a line in the report.
     """
+
+    outbound_exempt: bool = False
+    """Drop a match whose own block is a rule for outbound traffic. See
+    `ConfigDetector._is_outbound`: a rule "from 0.0.0.0/0" is about where traffic comes from,
+    and an egress rule names where it may go."""
 
     in_shell: bool = False
     """Only report a match that lands in something a shell will parse.
@@ -1451,6 +1456,7 @@ RULES: tuple[ConfigRule, ...] = (
         ),
         paths=IAC_PATHS,
         content_marker=K8S_MARKER,
+        outbound_exempt=True,
     ),
     ConfigRule(
         rule_id="SUSPECT.IAC.PRIVILEGED.001",
@@ -2062,6 +2068,9 @@ class ConfigDetector(BaseDetector):
                 # The enclosing YAML document says the rule is about something else.
                 # See `ConfigRule.foreign_kind`.
                 return False
+            if rule.outbound_exempt and ConfigDetector._is_outbound(uncommented, match):
+                # An egress rule. See `ConfigRule.outbound_exempt`.
+                return False
             if rule.enclosing_key and not (
                 set(ConfigDetector._enclosing_keys(uncommented, match)) & set(rule.enclosing_key)
             ):
@@ -2094,6 +2103,46 @@ class ConfigDetector(BaseDetector):
         # Every occurrence is mitigated, so any of them describes the file; the first
         # is the one a reader scrolls to.
         return first
+
+    #: A block that declares outbound traffic: Terraform's `type = "egress"` on an
+    #: `aws_security_group_rule` (or a module's rule map), GCP's and Azure's `direction`.
+    OUTBOUND_FIELD = re.compile(
+        rb"""(?i)\btype["']?[ \t]*[=:][ \t]*["']egress["']"""
+        rb"""|\bdirection["']?[ \t]*[=:][ \t]*["']?(?:egress|outbound)\b"""
+    )
+    #: The line opening a block named for egress: `egress {`, `egress_all = {`.
+    OUTBOUND_OPENER = re.compile(rb"""(?i)[ \t]*["']?egress\w*["']?[ \t]*[=:]?[ \t]*\{""")
+    #: CloudFormation's two lists and two resource types; whichever is nearest above a match
+    #: is the one it belongs to.
+    CLOUDFORMATION_DIRECTION = re.compile(rb"SecurityGroup(In|E)gress")
+
+    @staticmethod
+    def _is_outbound(raw: bytes, match: re.Match[bytes]) -> bool:
+        """Whether the block holding this match is a rule for outbound traffic.
+
+        `cidr_blocks = ["0.0.0.0/0"]` with `from_port = 0` is every port open to the internet
+        in an ingress rule and every destination allowed in an egress one -- and an egress rule
+        open to everywhere is the default every AWS security group starts with. Found scanning
+        terraform-aws-eks, whose recommended node rules end in `egress_all`, reported HIGH as
+        "ingress permitted from the entire internet".
+
+        The innermost braces around the match (the pattern holds none, so it sits in one block)
+        and the line that opens them; for CloudFormation, the nearest of its Ingress and Egress
+        keys above the match, which also covers YAML, where there are no braces.
+        """
+        opening = raw.rfind(b"{", 0, match.start())
+        if opening >= 0:
+            closing = raw.find(b"}", match.end())
+            line_start = raw.rfind(b"\n", 0, opening) + 1
+            if ConfigDetector.OUTBOUND_OPENER.match(raw, line_start, opening + 1):
+                return True
+            block = raw[opening : closing if closing >= 0 else len(raw)]
+            if ConfigDetector.OUTBOUND_FIELD.search(block):
+                return True
+        nearest = None
+        for found in ConfigDetector.CLOUDFORMATION_DIRECTION.finditer(raw, 0, match.start()):
+            nearest = found
+        return nearest is not None and nearest.group(1) == b"E"
 
     #: How far above a match to look for the key whose block holds it. A step's
     #: `with:` or `env:` is a handful of lines up; two hundred is generous for
