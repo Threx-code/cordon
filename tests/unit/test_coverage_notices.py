@@ -102,7 +102,9 @@ class CoverageNoticesFixtures:
             )
             monkeypatch.setattr(
                 "cordon_scanner.intel.registry_client.RegistryClient.attestation_payload",
-                lambda ecosystem, name, version: {"attestations": []} if bundles else None,
+                lambda ecosystem, name, version, digest=None: (
+                    {"attestations": []} if bundles else None
+                ),
             )
             monkeypatch.setattr(
                 attest.AttestationDocuments, "extract_bundles", lambda ecosystem, payload: bundles

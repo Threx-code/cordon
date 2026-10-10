@@ -580,7 +580,7 @@ class RegistryClient:
 
     @staticmethod
     def attestation_payload(
-        ecosystem: str, name: str, version: str | None
+        ecosystem: str, name: str, version: str | None, digest: str | None = None
     ) -> dict[str, Any] | None:
         """The raw attestation document a registry serves for a version, or `None`.
 
@@ -597,7 +597,7 @@ class RegistryClient:
             if ecosystem == "npm":
                 return RegistryClient._npm_attestation_payload(name, version)
             if ecosystem == "pypi":
-                return RegistryClient._pypi_attestation_payload(name, version)
+                return RegistryClient._pypi_attestation_payload(name, version, digest)
             if ecosystem in ("maven", "gradle"):
                 return RegistryClient._maven_attestation_payload(name, version)
             if ecosystem == "rubygems":
@@ -674,7 +674,14 @@ class RegistryClient:
         return RegistryClient._fetch_from_allowlist(url, "npm")
 
     @staticmethod
-    def _pypi_attestation_payload(name: str, version: str) -> dict[str, Any] | None:
+    def _pypi_attestation_payload(
+        name: str, version: str, digest: str | None = None
+    ) -> dict[str, Any] | None:
+        """The provenance of the file the project pinned: PyPI attests each file of a release
+        (every wheel, the sdist) on its own, and its index lists the wheels first, so the first
+        file's provenance was checked against the sdist uv and Poetry pin -- a genuine
+        attestation of another file, reported as invalid (38 packages of one uv.lock). With a
+        digest, only the file whose sha256 it is; none, where no file of the version has it."""
         quoted = urllib.parse.quote(name, safe="")
         simple = RegistryClient._fetch(
             f"{REGISTRY_HOSTS['pypi']}/simple/{quoted}/",
@@ -687,6 +694,9 @@ class RegistryClient:
             if not isinstance(entry, dict):
                 continue
             if not RegistryClient._is_file_for_version(str(entry.get("filename", "")), version):
+                continue
+            hashes = entry.get("hashes") if isinstance(entry.get("hashes"), dict) else {}
+            if digest and str(hashes.get("sha256", "")).lower() != digest.lower():
                 continue
             provenance = entry.get("provenance")
             if isinstance(provenance, str):

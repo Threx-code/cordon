@@ -627,3 +627,103 @@ class TestWhatIsNotARejection:
         check.verify(self.certificate("TypeStrong/typedoc"))
         with pytest.raises(VerificationError, match="does not match"):
             check.verify(self.certificate("TypeStrong/typedoc-fork"))
+
+
+class TestTheAttestationOfThePinnedFile:
+    """PyPI attests each file of a release on its own. Probed on a real uv.lock, 38 packages'
+    genuine attestations were reported invalid: the wheel's, listed first, checked against the
+    sdist uv pins."""
+
+    SDIST = "e" * 64
+    WHEEL = "2" * 64
+
+    def payload(self, monkeypatch, digest: str | None):
+        from cordon_scanner.intel.registry_client import RegistryClient
+
+        simple = {
+            "files": [
+                {
+                    "filename": "colorlog-6.10.1-py3-none-any.whl",
+                    "hashes": {"sha256": self.WHEEL},
+                    "provenance": "https://pypi.org/integrity/colorlog/6.10.1/wheel/provenance",
+                },
+                {
+                    "filename": "colorlog-6.10.1.tar.gz",
+                    "hashes": {"sha256": self.SDIST},
+                    "provenance": "https://pypi.org/integrity/colorlog/6.10.1/sdist/provenance",
+                },
+            ]
+        }
+        monkeypatch.setattr(RegistryClient, "_fetch", staticmethod(lambda url, accept="": simple))
+        monkeypatch.setattr(
+            RegistryClient, "_fetch_from_allowlist", staticmethod(lambda url, eco: {"from": url})
+        )
+        return RegistryClient.attestation_payload("pypi", "colorlog", "6.10.1", digest)
+
+    @pytest.mark.conformance("pypi", "UNI-17")
+    def test_the_file_whose_hash_was_pinned_is_the_one_asked_about(self, monkeypatch) -> None:
+        assert self.payload(monkeypatch, self.SDIST)["from"].endswith("/sdist/provenance")
+        assert self.payload(monkeypatch, self.WHEEL)["from"].endswith("/wheel/provenance")
+
+    def test_a_pin_no_file_of_the_version_has_asks_about_none(self, monkeypatch) -> None:
+        assert self.payload(monkeypatch, "0" * 64) is None
+
+
+class TestARenamedRepository:
+    """filelock declares tox-dev/py-filelock; GitHub renamed it tox-dev/filelock, the name its
+    certificates carry."""
+
+    def test_github_resolves_the_old_name_to_the_new(self, monkeypatch) -> None:
+        import io
+        import json as _json
+        import urllib.request
+
+        from cordon_scanner.intel.github_repository import GitHubRepository
+
+        asked: list[str] = []
+
+        class Opener:
+            def open(self, request, timeout):
+                asked.append(request.full_url)
+                return io.BytesIO(_json.dumps({"full_name": "tox-dev/filelock"}).encode())
+
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: Opener())
+        assert GitHubRepository.current("tox-dev", "py-filelock") == ("tox-dev", "filelock")
+        assert asked == ["https://api.github.com/repos/tox-dev/py-filelock"]
+
+    def test_a_redirect_off_the_api_is_not_followed(self) -> None:
+        from cordon_scanner.intel.github_repository import _ApiRedirects
+
+        handler = _ApiRedirects()
+        assert handler.redirect_request(None, None, 301, "", {}, "https://example.com/x") is None
+
+    def test_the_detector_verifies_against_the_current_name(self, monkeypatch) -> None:
+        from cordon_scanner.detect.provenance import ProvenanceDetector
+        from cordon_scanner.intel.github_repository import GitHubRepository
+
+        monkeypatch.setattr(
+            GitHubRepository, "current", staticmethod(lambda owner, name: ("tox-dev", "filelock"))
+        )
+        refused = attest.Result(
+            Outcome.INVALID,
+            "verification failed: Certificate's GitHubWorkflowRepository does not match "
+            "(got 'tox-dev/filelock', expected 'tox-dev/py-filelock')",
+        )
+        assert ProvenanceDetector._renamed(("github.com", "tox-dev", "py-filelock"), [refused]) == (
+            "github.com",
+            "tox-dev",
+            "filelock",
+        )
+        # A forgery is not retried under another name, nor a repository GitHub names the same.
+        forged = attest.Result(Outcome.INVALID, "verification failed: Signature is invalid")
+        assert (
+            ProvenanceDetector._renamed(("github.com", "tox-dev", "py-filelock"), [forged]) is None
+        )
+        monkeypatch.setattr(
+            GitHubRepository,
+            "current",
+            staticmethod(lambda owner, name: ("Tox-Dev", "PY-filelock")),
+        )
+        assert (
+            ProvenanceDetector._renamed(("github.com", "tox-dev", "py-filelock"), [refused]) is None
+        )

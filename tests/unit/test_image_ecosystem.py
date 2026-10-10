@@ -488,7 +488,7 @@ class TestProvenanceOfImages:
         monkeypatch.setattr("cordon_scanner.intel.registry_client.RegistryClient.facts", facts)
         monkeypatch.setattr(
             "cordon_scanner.intel.registry_client.RegistryClient.attestation_payload",
-            lambda e, n, v: {"bundles": [{}]},
+            lambda e, n, v, digest=None: {"bundles": [{}]},
         )
         monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
         outcome = {"value": Outcome.VERIFIED}

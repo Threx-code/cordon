@@ -302,7 +302,13 @@ class ProvenanceDetector(BaseDetector):
             )
             return
 
-        payload = RegistryClient.attestation_payload(dependency.ecosystem, dependency.name, asked)
+        # The file the project pinned: a release attests each of its files on its own (PyPI).
+        payload = RegistryClient.attestation_payload(
+            dependency.ecosystem,
+            dependency.name,
+            asked,
+            digest[1] if digest[0] == "sha256" else None,
+        )
         bundles = attest.AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
         if not bundles:
             reason = (
@@ -340,6 +346,20 @@ class ProvenanceDetector(BaseDetector):
             )
             for bundle in bundles
         ]
+        renamed = self._renamed(source, results)
+        if renamed is not None:
+            # The declared repository was renamed: verified against the name GitHub gives the
+            # same repository now (`intel/github_repository`).
+            results = [
+                attest.SigstoreVerification.verify(
+                    bundle,
+                    digest_hex=digest_hex,
+                    algorithm=algorithm,
+                    source_repo=renamed,
+                    offline=False,
+                )
+                for bundle in bundles
+            ]
         if any(r.outcome is attest.Outcome.VERIFIED for r in results):
             # The clean case: no finding, and the record says so.
             ctx.checks.record(dependency.purl, "provenance", "verified")
@@ -496,6 +516,30 @@ class ProvenanceDetector(BaseDetector):
                 dependency=dependency,
                 detail=f"{label} is attested in the Bazel Central Registry, but could not be verified: {reason}",
             )
+
+    @staticmethod
+    def _renamed(
+        source: tuple[str, str, str] | None, results: list[attest.Result]
+    ) -> tuple[str, str, str] | None:
+        """The declared GitHub repository under its current name, where a bundle was refused only
+        because the certificate names the repository differently and GitHub resolves the declared
+        one to another name (filelock declares `tox-dev/py-filelock`, renamed `tox-dev/filelock`)."""
+        if source is None or source[0] != "github.com":
+            return None
+        if any(r.outcome is attest.Outcome.VERIFIED for r in results) or not any(
+            r.outcome is attest.Outcome.INVALID
+            and "GitHubWorkflowRepository does not match" in r.detail
+            for r in results
+        ):
+            return None
+        from cordon_scanner.intel.github_repository import GitHubRepository
+
+        current = GitHubRepository.current(source[1], source[2])
+        if current is None or f"{current[0]}/{current[1]}".lower() == (
+            f"{source[1]}/{source[2]}".lower()
+        ):
+            return None
+        return ("github.com", current[0], current[1])
 
     @staticmethod
     def _source_identity(repository: str | None) -> tuple[str, str, str] | None:
