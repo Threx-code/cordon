@@ -268,7 +268,6 @@ class TestComposeFiles:
     @pytest.mark.parametrize(
         ("text", "error"),
         [
-            ("services:\n  db:\n    restart: always\n", "neither an image nor a build context"),
             (
                 "services:\n  db:\n    image: postgres\n    volumes\n",
                 "neither a key nor a list item",
@@ -281,6 +280,21 @@ class TestComposeFiles:
     def test_what_compose_refuses_is_a_diagnostic(self, text, error) -> None:
         manifest = ImageHelpers.compose(text)
         assert manifest.parse_error and error in manifest.parse_error
+
+    def test_a_service_completed_by_another_file_is_noted_not_refused(self) -> None:
+        # Coolify's docker-compose.yml names its images only in docker-compose.prod.yml, merged
+        # over it with `-f`; Compose requires an image or a build after merging, not per file.
+        manifest = ImageHelpers.compose(
+            "services:\n  app:\n    restart: always\n  db:\n    image: postgres:16\n"
+        )
+        assert manifest.parse_error is None
+        assert [(d.name, d.spec) for d in manifest.dependencies] == [("postgres", "16")]
+        assert any("service app names neither an image" in s for s in manifest.sources)
+
+    def test_a_document_start_marker_is_read_past(self) -> None:
+        manifest = ImageHelpers.compose("---\nservices:\n  db:\n    image: mysql:5.7\n")
+        assert manifest.parse_error is None
+        assert [(d.name, d.spec) for d in manifest.dependencies] == [("mysql", "5.7")]
 
     def test_the_environment_file(self) -> None:
         assert Compose.environment('# c\nexport TAG=1.0\nNAME="a b"\nX=y # note\nbad line\n') == {

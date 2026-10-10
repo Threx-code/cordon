@@ -1,0 +1,20 @@
+# Shapes found scanning real repositories, each of which refused its whole file:
+# - a Compose file opening with YAML's `---` (antonputra/tutorials, 28 files);
+# - a service with neither image nor build in this file -- Compose requires one after merging
+#   the files it runs with (`-f base.yml -f prod.yml`, coolify), not per file;
+#   which also means a file cut short before any image reads as such a base file, so a
+#   cut-short copy holds what it still names, here the service listed first;
+# - a `command: >` script holding `members: [...]` and a shallower line after it (vulhub);
+# - `ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-..."`, a default BuildKit expands with the
+#   arguments before it; one naming an unset argument leaves its FROM unresolved, not refused;
+# - Phoenix's `Dockerfile.eex`, a template, not a Dockerfile until rendered.
+kinds: [regression, valid]
+covers:
+  - image.multi-stage
+  - UNI-01
+dependencies:
+  - {name: postgres, resolved_version: "16.4"}
+  - {name: hexpm/elixir, resolved_version: 1.17.3-erlang-27.1.2}
+only: true
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED

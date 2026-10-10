@@ -1,0 +1,12 @@
+---
+services:
+  db:
+    image: postgres:16.4
+  app:
+    restart: always
+    command: >
+      bash -c
+        "mongo --eval \"
+            rs.initiate({ members: [ { _id: 0 } ]})\" &&
+          s=$$? && break;
+        done"

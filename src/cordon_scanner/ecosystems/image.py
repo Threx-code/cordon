@@ -267,6 +267,13 @@ class Interpolation:
 class Dockerfile:
     """A Dockerfile, as BuildKit reads it."""
 
+    #: The file names of a template engine's source: EEx, Jinja, Go templates, ERB, Mustache,
+    #: Handlebars, EJS, Liquid, and the generic `.template`, `.tmpl` and `.tpl`.
+    TEMPLATE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\.(?:eex|j2|jinja2?|tmpl|tpl|template|gotmpl|erb|mustache|hbs|handlebars|ejs|liquid)$",
+        re.IGNORECASE,
+    )
+
     INSTRUCTIONS: ClassVar[frozenset[str]] = frozenset(
         {
             "FROM",
@@ -371,14 +378,54 @@ class Dockerfile:
 
     @staticmethod
     def arguments(declaration: str) -> Iterator[tuple[str, str | None]]:
-        """`ARG A=1 B` -> (A, "1"), (B, None)."""
-        for token in declaration.split():
+        """`ARG A=1 B` -> (A, "1"), (B, None): each default as written, quotes and all, for
+        `Interpolation.word`. Split as BuildKit's lexer splits words -- on whitespace outside
+        quotes, a backslash escaping the next character -- so `ARG A="x y"` is one argument."""
+        for token in Dockerfile.shell_words(declaration):
             name, equals, value = token.partition("=")
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-                yield name, value.strip("\"'") if equals else None
+                yield name, value if equals else None
+
+    @staticmethod
+    def shell_words(text: str) -> list[str]:
+        """Whitespace-separated words, quotes and escapes kept for `Interpolation.word`."""
+        words: list[str] = []
+        current: list[str] = []
+        quote = ""
+        index = 0
+        while index < len(text):
+            character = text[index]
+            if character == "\\" and quote != "'" and index + 1 < len(text):
+                current.append(text[index : index + 2])
+                index += 2
+                continue
+            if quote:
+                if character == quote:
+                    quote = ""
+            elif character in "'\"":
+                quote = character
+            elif character.isspace():
+                if current:
+                    words.append("".join(current))
+                    current = []
+                index += 1
+                continue
+            current.append(character)
+            index += 1
+        if current:
+            words.append("".join(current))
+        return words
 
     @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:
+        if Dockerfile.TEMPLATE.search(content.basename):
+            # A template a tool renders into a Dockerfile (Phoenix's `Dockerfile.eex`, balena's
+            # `Dockerfile.template`): not one until rendered, and refused at its first tag.
+            return Manifest(
+                path=content.path,
+                ecosystem=ecosystem,
+                sources=("a template of a Dockerfile, read once it is rendered",),
+            )
         instructions, error = Dockerfile.instructions(content.text)
         if error:
             return BaseEcosystem._err(content, ecosystem, error)
@@ -399,9 +446,17 @@ class Dockerfile:
                 )
             if keyword == "ARG" and not stages:
                 # A global build argument: visible to every FROM line, with its default.
+                # Each default expanded with the arguments declared before it, as BuildKit
+                # expands them: `ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-..."`. One
+                # naming an argument with no value is left unset, so a FROM using it says so.
                 for name, value in Dockerfile.arguments(arguments):
-                    if value is not None:
-                        defaults[name] = value
+                    if value is None:
+                        continue
+                    expanded, missing = Interpolation.word(value, defaults)
+                    if missing:
+                        defaults.pop(name, None)
+                    else:
+                        defaults[name] = expanded
                 continue
             if keyword == "FROM":
                 flags, rest = Dockerfile.flags(arguments)
@@ -582,16 +637,35 @@ class ComposeLines:
     """Compose YAML read by indentation: anchors, aliases and merge keys followed by name, which
     the hostile-input YAML reader elsewhere refuses on principle."""
 
+    #: A `key:` line (or a list item, which a mapping does not hold but `children` reports).
+    KEY: ClassVar[re.Pattern[str]] = re.compile(
+        r"""^(?:"[^"]*"|'[^']*'|[^"'\s][^:]*?)\s*:(?:\s|$)|^-(?:\s|$)"""
+    )
+
     @staticmethod
     def logical(text: str) -> tuple[list[tuple[int, int, str]], str | None]:
         """`(line, indent, content)` of each non-blank line, comments dropped."""
         out: list[tuple[int, int, str]] = []
+        block: int | None = None  # the indentation of a block scalar's header, while inside it
         for number, raw in enumerate(text.splitlines(), start=1):
+            if not out and re.fullmatch(r"---[ \t]*(?:#.*)?", raw.rstrip("\r")):
+                # YAML's document-start marker, which Compose accepts before the document.
+                continue
+            if block is not None:
+                # A block scalar's lines are its text, however they look: vulhub's
+                # `command: >` script holds `members: [...]` and then a shallower line, which
+                # were read as a key and a malformed line after it.
+                if not raw.strip() or len(raw) - len(raw.lstrip(" ")) > block:
+                    continue
+                block = None
             if "\t" in raw[: len(raw) - len(raw.lstrip())]:
                 return out, f"line {number}: a tab in the indentation, which YAML does not allow"
             content = ComposeLines.uncomment(raw).rstrip()
             if content.strip():
-                out.append((number, len(content) - len(content.lstrip()), content.strip()))
+                indent = len(content) - len(content.lstrip())
+                out.append((number, indent, content.strip()))
+                if re.search(r"(?:^-|:)[ \t]+[|>][-+1-9]*$", content.strip()):
+                    block = indent
         return out, None
 
     @staticmethod
@@ -744,6 +818,23 @@ class Compose:
             return BaseEcosystem._err(content, ecosystem, "a Compose file without services")
         declared: list[DeclaredDependency] = []
         for service, _value, body, number in ComposeLines.children(services):
+            stray = next(
+                (
+                    (line, text)
+                    for line, level, text in body
+                    if level == body[0][1] and not ComposeLines.KEY.match(text)
+                ),
+                None,
+            )
+            if stray is not None:
+                # A service is a mapping, and Compose refuses one that is not. This is what a
+                # file cut inside a key leaves (`sidecar:` then `ima`), and since a service with
+                # no image is not refused per file, it is the line that says the file is damaged.
+                return BaseEcosystem._err(
+                    content,
+                    ecosystem,
+                    f"line {stray[0]}: service {service} holds {stray[1][:40]!r}, not a key",
+                )
             fields = {
                 key: (value, nested) for key, value, nested, _n in ComposeLines.children(body)
             }
@@ -817,11 +908,16 @@ class Compose:
                 if "extends" in fields:
                     sources.append(f"service {service} extends another service's definition")
                     continue
-                return BaseEcosystem._err(
-                    content,
-                    ecosystem,
-                    f"line {number}: service {service} has neither an image nor a build context",
+                # Compose requires one after merging the files it is run with -- `compose.yaml`
+                # with `compose.override.yaml` by default, or `-f base.yml -f prod.yml` -- and a
+                # file read alone cannot see the other. Coolify's docker-compose.yml names its
+                # services' images only in docker-compose.prod.yml; refusing the base file left
+                # every other service in it unread.
+                sources.append(
+                    f"service {service} names neither an image nor a build context in this file "
+                    f"(line {number}); Compose takes it from a file merged over this one"
                 )
+                continue
             written, missing = Interpolation.expand(ComposeLines.scalar(image[0]), environment)
             if missing:
                 sources.append(
