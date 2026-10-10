@@ -101,6 +101,9 @@ class _Accumulator:
 
     findings: list[Finding] = field(default_factory=list)
     complete: bool = True
+    rejected_archives: set[str] = field(default_factory=set)
+    """Archives already reported as read in part (`OPERATIONAL.ARCHIVE.REJECTED`), which the
+    truncation notice would only repeat."""
     files_scanned: int = 0
     files_skipped: int = 0
     bytes_scanned: int = 0
@@ -2573,20 +2576,21 @@ class Engine:
                 # returns before it for a binary file and for one no rule applies to -- so a
                 # repository with a 12 MB font was incomplete, failed the Action's default gate,
                 # and gave no reason.
-                acc.append(
-                    Engine._operational(
-                        path=entry.rel_path,
-                        rule_id="OPERATIONAL.FILE.TRUNCATED",
-                        message=(
-                            f"Only the first {len(loaded.raw)} bytes of this "
-                            f"{loaded.size}-byte file were examined."
-                        ),
-                        remediation=(
-                            "Raise limits.max_file_bytes, or exclude the file deliberately if it "
-                            "is a known artefact (a font, a model, a vendored binary)."
-                        ),
+                if entry.rel_path not in acc.rejected_archives:
+                    acc.append(
+                        Engine._operational(
+                            path=entry.rel_path,
+                            rule_id="OPERATIONAL.FILE.TRUNCATED",
+                            message=(
+                                f"Only the first {len(loaded.raw)} bytes of this "
+                                f"{loaded.size}-byte file were examined."
+                            ),
+                            remediation=(
+                                "Raise limits.max_file_bytes, or exclude the file deliberately if it "
+                                "is a known artefact (a font, a model, a vendored binary)."
+                            ),
+                        )
                     )
-                )
 
             retained += len(loaded.raw)
             if 0 < self.config.limits.max_memory_bytes <= retained:
@@ -4863,6 +4867,7 @@ class Engine:
             if loaded.truncated:
                 members = None
                 acc.complete = False
+                acc.rejected_archives.add(rel_path)
                 acc.append(
                     Engine._operational(
                         path=rel_path,
