@@ -33,14 +33,15 @@ ARCHIVE_PIN = "sha256-" + base64.b64encode(ARCHIVE).decode()
 BUNDLE = b'{"bundle": 1}\n'
 
 
-def entry(url: str, body: bytes = BUNDLE) -> dict[str, str]:
-    return {
-        "url": url,
-        "integrity": "sha256-" + base64.b64encode(hashlib.sha256(body).digest()).decode(),
-    }
-
-
 class Registry:
+    @staticmethod
+    def entry(url: str, body: bytes = BUNDLE) -> dict[str, str]:
+        """An attestations.json entry: the bundle's URL and its hash."""
+        return {
+            "url": url,
+            "integrity": "sha256-" + base64.b64encode(hashlib.sha256(body).digest()).decode(),
+        }
+
     def __init__(
         self,
         monkeypatch,
@@ -55,9 +56,11 @@ class Registry:
             attestations
             if attestations is not None
             else {
-                "source.json": entry(f"{RELEASE}/source.json.intoto.jsonl"),
-                "MODULE.bazel": entry(f"{RELEASE}/MODULE.bazel.intoto.jsonl"),
-                "rules_x-v1.0.0.tar.gz": entry(f"{RELEASE}/rules_x-v1.0.0.tar.gz.intoto.jsonl"),
+                "source.json": Registry.entry(f"{RELEASE}/source.json.intoto.jsonl"),
+                "MODULE.bazel": Registry.entry(f"{RELEASE}/MODULE.bazel.intoto.jsonl"),
+                "rules_x-v1.0.0.tar.gz": Registry.entry(
+                    f"{RELEASE}/rules_x-v1.0.0.tar.gz.intoto.jsonl"
+                ),
             }
         )
         files = {
@@ -130,8 +133,10 @@ class TestBazelModules:
         Registry(
             monkeypatch,
             attestations={
-                "source.json": entry(f"{stranger}/source.json.intoto.jsonl"),
-                "rules_x-v1.0.0.tar.gz": entry(f"{stranger}/rules_x-v1.0.0.tar.gz.intoto.jsonl"),
+                "source.json": Registry.entry(f"{stranger}/source.json.intoto.jsonl"),
+                "rules_x-v1.0.0.tar.gz": Registry.entry(
+                    f"{stranger}/rules_x-v1.0.0.tar.gz.intoto.jsonl"
+                ),
             },
         )
         result = BazelProvenance.check("rules_x", "1.0.0", SOURCE_PIN)
@@ -142,7 +147,7 @@ class TestBazelModules:
         Registry(
             monkeypatch,
             attestations={
-                "rules_x-v1.0.0.tar.gz": entry("https://example.com/rules_x.intoto.jsonl")
+                "rules_x-v1.0.0.tar.gz": Registry.entry("https://example.com/rules_x.intoto.jsonl")
             },
         )
         assert BazelProvenance.check("rules_x", "1.0.0", ARCHIVE_PIN).outcome == "invalid"

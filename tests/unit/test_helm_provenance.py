@@ -36,11 +36,6 @@ entries:
 """
 
 
-@pytest.fixture
-def keyring() -> openpgp.Keyring:
-    return openpgp.OpenPgp.load((str(DATA / "cert-manager.gpg"),))
-
-
 class Repository:
     def __init__(self, monkeypatch, *, prov: bytes | None = PROV, index: bytes = INDEX):
         self.asked: list[str] = []
@@ -57,6 +52,10 @@ class Repository:
 
 
 class TestHelmProvenance:
+    @pytest.fixture
+    def keyring(self) -> openpgp.Keyring:
+        return openpgp.OpenPgp.load((str(DATA / "cert-manager.gpg"),))
+
     @pytest.mark.conformance("helm", "UNI-17")
     def test_a_signed_chart_whose_archive_is_the_signed_one_verifies(
         self, monkeypatch, keyring

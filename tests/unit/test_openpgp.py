@@ -26,12 +26,14 @@ from cordon_scanner.intel.openpgp import Canonical, Keybox, OpenPgp, Outcome  # 
 DATA = Path(__file__).parent / "data" / "openpgp"
 
 
-def read(name: str) -> bytes:
-    return (DATA / name).read_bytes()
+class Files:
+    @staticmethod
+    def read(name: str) -> bytes:
+        return (DATA / name).read_bytes()
 
-
-def signature_block(text: bytes) -> bytes:
-    return text[text.index(b"-----BEGIN PGP SIGNATURE-----") :]
+    @staticmethod
+    def signature_block(text: bytes) -> bytes:
+        return text[text.index(b"-----BEGIN PGP SIGNATURE-----") :]
 
 
 class TestCanonical:
@@ -42,11 +44,11 @@ class TestCanonical:
     def test_an_overstated_value_is_what_sequoia_refuses_and_canonical_makes_readable(
         self, prov: str
     ) -> None:
-        raw = read(prov)
+        raw = Files.read(prov)
         with pytest.raises(RuntimeError, match="Not a signature"):
-            pysequoia.Sig.from_bytes(signature_block(raw))
+            pysequoia.Sig.from_bytes(Files.signature_block(raw))
         fixed = Canonical.signed(raw)
-        assert pysequoia.Sig.from_bytes(signature_block(fixed)).issuer_key_id
+        assert pysequoia.Sig.from_bytes(Files.signature_block(fixed)).issuer_key_id
         # The signed text is not touched, only the signature block.
         assert (
             fixed[: fixed.index(b"-----BEGIN PGP SIGNATURE-----")]
@@ -54,7 +56,7 @@ class TestCanonical:
         )
 
     def test_the_value_itself_is_kept(self) -> None:
-        raw = Canonical.dearmor(signature_block(read("cert-manager-v1.21.2.tgz.prov")))
+        raw = Canonical.dearmor(Files.signature_block(Files.read("cert-manager-v1.21.2.tgz.prov")))
         assert raw is not None
         fixed = Canonical.packets(raw)
         value = lambda packets: int.from_bytes(packets[-512:], "big")  # noqa: E731
@@ -70,7 +72,7 @@ class TestCanonical:
         assert Canonical.signed(signed) == signed
 
     def test_a_block_with_a_wrong_checksum_is_left_alone(self) -> None:
-        raw = read("cert-manager-v1.21.2.tgz.prov")
+        raw = Files.read("cert-manager-v1.21.2.tgz.prov")
         broken = raw.replace(b"=/4RL", b"=AAAA")
         assert Canonical.signed(broken) == broken
 
@@ -81,7 +83,7 @@ class TestCanonical:
 
 class TestKeyring:
     def test_a_key_whose_self_signatures_are_overstated_is_made_usable(self) -> None:
-        raw = read("flowable.asc")
+        raw = Files.read("flowable.asc")
         with pytest.raises(RuntimeError, match="No binding signature"):
             _ = pysequoia.Cert.split_bytes(raw)[0].expiration
         keyring = OpenPgp.load((str(DATA / "flowable.asc"),))
@@ -90,11 +92,11 @@ class TestKeyring:
 
     def test_concatenated_armored_exports_are_one_keyring(self, tmp_path: Path) -> None:
         both = tmp_path / "ring.asc"
-        both.write_bytes(read("flowable.asc") + read("leocolomb.asc"))
+        both.write_bytes(Files.read("flowable.asc") + Files.read("leocolomb.asc"))
         assert len(OpenPgp.load((str(both),)).keys) == 2
 
     def test_a_gnupg_keybox_is_read_as_helm_reads_it(self, tmp_path: Path) -> None:
-        keyblock = bytes(pysequoia.Cert.split_bytes(read("cert-manager.gpg"))[0])
+        keyblock = bytes(pysequoia.Cert.split_bytes(Files.read("cert-manager.gpg"))[0])
 
         def blob(kind: int, body: bytes, flags: int = 0) -> bytes:
             # u32 length, u8 type, u8 version, u16 flags, u32 offset, u32 length, then the keyblock.
@@ -129,7 +131,9 @@ class TestKeyring:
         assert not keyring and keyring.problems
 
     def test_a_key_with_no_user_id_is_left_out_as_helm_leaves_it_out(self, tmp_path: Path) -> None:
-        raw = Canonical.dearmor(read("leocolomb.asc").replace(b"PUBLIC KEY BLOCK", b"SIGNATURE"))
+        raw = Canonical.dearmor(
+            Files.read("leocolomb.asc").replace(b"PUBLIC KEY BLOCK", b"SIGNATURE")
+        )
         assert raw is not None
         packets = Canonical._packets(raw)
         assert packets is not None
@@ -143,7 +147,7 @@ class TestKeyring:
         keyring = OpenPgp.load((str(path),))
         assert not keyring.keys
         assert "no user ID" in keyring.problems[0]
-        result = OpenPgp.verify(read("cisco-nso-7.6.1.tgz.prov"), keyring)
+        result = OpenPgp.verify(Files.read("cisco-nso-7.6.1.tgz.prov"), keyring)
         assert result.outcome is Outcome.UNVERIFIABLE
         assert "holds no usable key" in result.detail
 
@@ -168,34 +172,37 @@ class TestVerify:
     def test_real_signatures_gnupg_accepts_verify(
         self, prov: str, key: str, fingerprint: str
     ) -> None:
-        result = OpenPgp.verify(read(prov), OpenPgp.load((str(DATA / key),)))
+        result = OpenPgp.verify(Files.read(prov), OpenPgp.load((str(DATA / key),)))
         assert result.outcome is Outcome.VERIFIED
         assert result.signer == fingerprint
         assert b"\n...\nfiles:\n" in result.signed
 
     def test_altered_content_under_a_trusted_key_is_invalid(self) -> None:
-        tampered = read("cert-manager-v1.21.2.tgz.prov").replace(b"sha256:73a5", b"sha256:73a6")
+        tampered = Files.read("cert-manager-v1.21.2.tgz.prov").replace(
+            b"sha256:73a5", b"sha256:73a6"
+        )
         result = OpenPgp.verify(tampered, OpenPgp.load((str(DATA / "cert-manager.gpg"),)))
         assert result.outcome is Outcome.INVALID
         assert "altered" in result.detail
 
     def test_a_signer_the_keyring_does_not_hold_is_invalid_and_named(self) -> None:
         result = OpenPgp.verify(
-            read("cert-manager-v1.21.2.tgz.prov"), OpenPgp.load((str(DATA / "flowable.asc"),))
+            Files.read("cert-manager-v1.21.2.tgz.prov"), OpenPgp.load((str(DATA / "flowable.asc"),))
         )
         assert result.outcome is Outcome.INVALID
         assert "1226061C665DF13E" in result.detail and "does not hold" in result.detail
 
     def test_a_key_expired_before_it_signed_is_invalid(self) -> None:
         result = OpenPgp.verify(
-            read("openfga-0.3.16.tgz.prov"), OpenPgp.load((str(DATA / "openfga.asc"),))
+            Files.read("openfga-0.3.16.tgz.prov"), OpenPgp.load((str(DATA / "openfga.asc"),))
         )
         assert result.outcome is Outcome.INVALID
         assert "expired on 2025-03-13, before it made this signature on 2026-10-06" in result.detail
 
     def test_a_key_certified_after_it_signed_is_unverifiable_not_a_forgery(self) -> None:
         result = OpenPgp.verify(
-            read("hivemq-operator-0.11.62.tgz.prov"), OpenPgp.load((str(DATA / "hivemq.asc"),))
+            Files.read("hivemq-operator-0.11.62.tgz.prov"),
+            OpenPgp.load((str(DATA / "hivemq.asc"),)),
         )
         assert result.outcome is Outcome.UNVERIFIABLE
         assert (
@@ -203,7 +210,7 @@ class TestVerify:
         )
 
     def test_no_keyring_is_unverifiable(self) -> None:
-        result = OpenPgp.verify(read("cert-manager-v1.21.2.tgz.prov"), OpenPgp.load(()))
+        result = OpenPgp.verify(Files.read("cert-manager-v1.21.2.tgz.prov"), OpenPgp.load(()))
         assert result.outcome is Outcome.UNVERIFIABLE
         assert "--keyring" in result.detail
 
