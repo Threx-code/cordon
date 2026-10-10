@@ -695,8 +695,9 @@ class RegistryClient:
                 continue
             if not RegistryClient._is_file_for_version(str(entry.get("filename", "")), version):
                 continue
-            hashes = entry.get("hashes") if isinstance(entry.get("hashes"), dict) else {}
-            if digest and str(hashes.get("sha256", "")).lower() != digest.lower():
+            hashes = entry.get("hashes")
+            sha256 = hashes.get("sha256") if isinstance(hashes, dict) else None
+            if digest and str(sha256 or "").lower() != digest.lower():
                 continue
             provenance = entry.get("provenance")
             if isinstance(provenance, str):
