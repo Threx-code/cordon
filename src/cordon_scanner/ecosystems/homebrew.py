@@ -375,7 +375,8 @@ class Cask:
 
 class Brewfile:
     ENTRY: ClassVar[re.Pattern[str]] = re.compile(
-        rf"^\s*(tap|brew|cask|mas|vscode|whalebrew)\s+{STRING}(?P<rest>.*)$"
+        # `brew "x"`, or the same call with its parentheses: `brew("swiftformat")` (fastlane).
+        rf"^\s*(tap|brew|cask|mas|vscode|whalebrew)(?:\s+|\s*\(\s*){STRING}(?P<rest>.*)$"
     )
     CORE_TAPS: ClassVar[frozenset[str]] = frozenset(
         {

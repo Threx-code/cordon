@@ -1,0 +1,12 @@
+# fastlane's swift/formatting/Brewfile is `brew("swiftformat")`: the same Ruby call with its
+# parentheses, which brew bundle reads and which was refused as a Brewfile with no line it reads.
+kinds: [regression, valid]
+covers:
+  - homebrew.taps
+  - UNI-01
+dependencies:
+  - {name: swiftformat}
+  - {name: iterm2}
+only: true
+no_findings:
+  - OPERATIONAL.MANIFEST.UNPARSED
