@@ -13,6 +13,7 @@ advisories follow.
 
 from __future__ import annotations
 
+import http.client
 import json
 import math
 import re
@@ -181,7 +182,7 @@ class OsvClient:
             }
             try:
                 answer = post(f"{API}/querybatch", body)
-            except (urllib.error.URLError, OSError, ValueError) as exc:
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 raise OsvError(f"OSV could not be asked ({type(exc).__name__})") from exc
             for query, result in zip(chunk, answer.get("results") or (), strict=False):
                 ids_by_query[query] = [
@@ -201,7 +202,7 @@ class OsvClient:
         def detail(identifier: str) -> tuple[str, dict[str, Any] | None]:
             try:
                 return identifier, get(f"{API}/vulns/{identifier}")
-            except (urllib.error.URLError, OSError, ValueError):
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
                 return identifier, None
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:

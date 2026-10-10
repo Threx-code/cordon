@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import gzip
+import http.client
 import json
 import os
 import re
@@ -142,7 +143,7 @@ class OsvImport:
                     if written > limit:
                         raise OsvImportError(f"{url}: exceeded {limit} bytes, aborted")
                     out.write(chunk)
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise OsvImportError(f"{type(exc).__name__} fetching {url}") from exc
 
     @staticmethod

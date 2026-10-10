@@ -23,6 +23,7 @@ destination.
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import tarfile
@@ -217,7 +218,7 @@ class AdvisoryBundle:
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
                 body = response.read(MAX_BUNDLE_BYTES + 1)
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
             raise BundleError(f"could not fetch {url}: {type(exc).__name__}") from exc
         if len(body) > MAX_BUNDLE_BYTES:
             raise BundleError(f"{url} exceeded {MAX_BUNDLE_BYTES} bytes and was not downloaded")

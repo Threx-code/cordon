@@ -19,6 +19,7 @@ webhook can only be tested by posting to it -- are not checked, and say so.
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import time
 import urllib.error
@@ -401,7 +402,7 @@ class SecretLiveness:
             return None
         try:
             status, body = self.opener(request)
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
             return None
         return issuer.accepted(status, body)
 

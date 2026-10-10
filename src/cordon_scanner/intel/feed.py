@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -190,7 +191,7 @@ class FeedClient:
                 body = response.read(limit + 1)
         except urllib.error.HTTPError as exc:
             raise FeedError(f"HTTP {exc.code} from the feed") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise FeedError(f"the feed could not be reached ({type(exc).__name__})") from exc
         if len(body) > limit:
             raise FeedError("a feed file exceeded its size limit")

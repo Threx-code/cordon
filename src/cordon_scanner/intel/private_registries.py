@@ -20,6 +20,7 @@ What keeps the credential where it belongs:
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -157,7 +158,7 @@ class PrivateRegistries:
                     f"{registry.host} refused the credential in {registry.variable} (HTTP {exc.code})"
                 ) from exc
             raise RegistryError(f"HTTP {exc.code} from {registry.host}") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(f"{type(exc).__name__} asking {registry.host}") from exc
         if len(body) > MAX_BYTES:
             raise RegistryError(f"a response from {registry.host} exceeded {MAX_BYTES} bytes")
@@ -347,7 +348,7 @@ class PrivateRegistries:
                         f"{registry.host} refused the credential in {registry.variable} (HTTP {exc.code})"
                     ) from exc
                 return direct
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(f"{type(exc).__name__} asking {registry.host}") from exc
         fields = dict(re.findall(r'(\w+)="([^"]*)"', challenge))
         realm = urllib.parse.urlsplit(fields.get("realm", ""))

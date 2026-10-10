@@ -29,6 +29,7 @@ convenience that becomes one.
 from __future__ import annotations
 
 import functools
+import http.client
 import json
 import time
 import urllib.error
@@ -219,7 +220,7 @@ class RegistryClient:
                 if exc.code not in RETRY_STATUSES or attempt == RETRY_ATTEMPTS - 1:
                     raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
                 time.sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
-            except (urllib.error.URLError, OSError, ValueError) as exc:
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 if attempt == RETRY_ATTEMPTS - 1:
                     raise RegistryError(f"{type(exc).__name__} asking {parsed.netloc}") from exc
                 time.sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
@@ -740,7 +741,7 @@ class RegistryClient:
                 body = response.read(MAX_ARCHIVE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(f"{type(exc).__name__} fetching from {parsed.netloc}") from exc
         if len(body) > MAX_ARCHIVE_BYTES:
             raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")

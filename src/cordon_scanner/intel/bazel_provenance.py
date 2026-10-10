@@ -31,6 +31,7 @@ the scan's `--online` only, over HTTPS, to bcr.bazel.build and GitHub's release 
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -141,7 +142,7 @@ class BazelProvenance:
             )
         try:
             body = BazelProvenance._get(url)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return ModuleCheck(
                 "unverifiable", f"the bundle for {file} could not be read ({type(exc).__name__})"
             )
@@ -186,7 +187,7 @@ class BazelProvenance:
                 return ModuleCheck("absent", f"BCR publishes no attestation for {label}")
             source = BazelProvenance._module_file(name, version, "source.json")
             metadata = BazelProvenance._module_file(name, "metadata.json")
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return ModuleCheck(
                 "unverifiable", f"the registry could not be read ({type(exc).__name__})"
             )

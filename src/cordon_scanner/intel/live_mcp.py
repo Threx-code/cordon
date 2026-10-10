@@ -23,6 +23,7 @@ configuration does not name.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -106,7 +107,7 @@ class LiveMcp:
                 session = response.headers.get("Mcp-Session-Id") or session
         except urllib.error.HTTPError as exc:
             raise LiveMcpError(f"HTTP {exc.code} from {urllib.parse.urlsplit(url).netloc}") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise LiveMcpError(
                 f"{type(exc).__name__} reaching {urllib.parse.urlsplit(url).netloc}"
             ) from exc

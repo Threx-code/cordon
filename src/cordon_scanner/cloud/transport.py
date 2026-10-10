@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -48,7 +49,7 @@ class CloudTransport:
                 return int(response.status), response.read(MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             return int(exc.code), exc.read(MAX_RESPONSE_BYTES + 1)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             host = urllib.parse.urlsplit(url).hostname
             raise CloudError(f"could not reach {host} ({type(exc).__name__})") from exc
 

@@ -23,6 +23,7 @@ HTTPS only, except to a registry on this machine (localhost), as Docker itself a
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import json
 import re
@@ -125,7 +126,7 @@ class RegistryImage:
                         f"{self.host} has no {url.rsplit('/', 3)[-3:]}"
                     ) from exc
                 raise RegistryImageError(f"{self.host} answered HTTP {exc.code}") from exc
-            except (urllib.error.URLError, OSError) as exc:
+            except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
                 raise RegistryImageError(
                     f"{self.host} could not be reached ({type(exc).__name__})"
                 ) from exc
@@ -152,7 +153,7 @@ class RegistryImage:
             request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
                 body = json.loads(response.read(1 << 20))
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
             return False
         token = body.get("token") or body.get("access_token")
         self.token = str(token) if token else None

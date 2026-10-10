@@ -117,6 +117,17 @@ class TestTransport:
         with pytest.raises(RegistryError, match="non-HTTPS"):
             MoreRegistries._get("http://crates.io/api/v1/crates/serde")
 
+    def test_a_response_cut_short_is_retried_then_an_error_not_a_crash(self, opener) -> None:
+        # Hackage closing a connection mid-body raised http.client.IncompleteRead, which is no
+        # OSError: the registry detector failed whole on two real projects.
+        import http.client
+
+        opener(http.client.IncompleteRead(b"x" * 41), self._Response(b'{"ok": 1}'))
+        assert MoreRegistries._json("https://hackage.haskell.org/x") == {"ok": 1}
+        opener(*[http.client.IncompleteRead(b"") for _ in range(5)])
+        with pytest.raises(RegistryError):
+            MoreRegistries._get("https://hackage.haskell.org/x")
+
     def test_a_gzip_body_is_decompressed(self, opener) -> None:
         opener(self._Response(gzip.compress(b'{"ok": 1}'), "gzip"))
         assert MoreRegistries._json("https://api.nuget.org/x") == {"ok": 1}

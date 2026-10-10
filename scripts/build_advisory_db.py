@@ -41,6 +41,7 @@ bundled instead.
 from __future__ import annotations
 
 import argparse
+import http.client
 import sys
 import tempfile
 from pathlib import Path
@@ -111,14 +112,14 @@ class AdvisoryDatabaseBuild:
         print("exploited-vulnerability catalogues:")
         try:
             catalogue = exploited.ExploitedCatalogue.fetch()
-        except (OSError, ValueError) as exc:
+        except (OSError, http.client.HTTPException, ValueError) as exc:
             print(f"  FAILED: {exc}", file=sys.stderr)
             print("nothing was written; re-run once CISA and ENISA answer.", file=sys.stderr)
             return 1
         exploited_cves = frozenset(catalogue["entries"])
         try:
             epss = exploited.Epss.fetch()
-        except (OSError, ValueError) as exc:
+        except (OSError, http.client.HTTPException, ValueError) as exc:
             print(f"  EPSS FAILED: {exc}", file=sys.stderr)
             print("nothing was written; re-run once FIRST's EPSS answers.", file=sys.stderr)
             return 1

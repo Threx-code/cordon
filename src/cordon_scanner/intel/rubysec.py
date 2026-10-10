@@ -14,6 +14,7 @@ YAML library, which keeps the scanner free of runtime dependencies.
 
 from __future__ import annotations
 
+import http.client
 import io
 import re
 import tarfile
@@ -229,7 +230,7 @@ class Rubysec:
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
                 body = response.read(MAX_DOWNLOAD_BYTES + 1)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RubysecError(f"{HOST} could not be reached ({type(exc).__name__})") from exc
         if len(body) > MAX_DOWNLOAD_BYTES:
             raise RubysecError("the rubysec archive is larger than the reader accepts")

@@ -14,6 +14,7 @@ packages are installed -- so it runs under `--online` like the OSV path.
 from __future__ import annotations
 
 import gzip
+import http.client
 import re
 import urllib.parse
 import urllib.request
@@ -170,7 +171,7 @@ class AmazonLinuxAdvisories:
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
                 body = response.read(MAX_BYTES + 1)
-        except OSError as exc:
+        except (OSError, http.client.HTTPException) as exc:
             raise AlasError(f"{HOST} could not be reached ({type(exc).__name__})") from exc
         if len(body) > MAX_BYTES:
             raise AlasError("the Amazon Linux metadata is larger than the reader accepts")

@@ -20,6 +20,7 @@ cache, applied on top of the database the way the feed's overlays are (`advisori
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import time
@@ -150,7 +151,7 @@ class OsvDelta:
             if exc.code == 416:  # a range past the end: the list was shorter than one chunk more
                 return b""
             raise OsvDeltaError(f"HTTP {exc.code} from OSV") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise OsvDeltaError(f"OSV could not be reached ({type(exc).__name__})") from exc
         if len(body) > limit:
             raise OsvDeltaError("a response from OSV was larger than expected")

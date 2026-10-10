@@ -27,6 +27,7 @@ sign. Network use is the scan's `--online` only, over HTTPS.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import re
 import urllib.error
 import urllib.parse
@@ -207,7 +208,13 @@ class HelmProvenance:
             )
         except PackageNotFound:
             return ChartCheck("unverifiable", f"the repository does not hold {label}")
-        except (RegistryError, urllib.error.URLError, OSError, ValueError) as exc:
+        except (
+            RegistryError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+            OSError,
+            ValueError,
+        ) as exc:
             return ChartCheck(
                 "unverifiable", f"the chart repository could not be read ({type(exc).__name__})"
             )
@@ -247,7 +254,7 @@ class HelmProvenance:
         if expected is None and located:
             try:
                 archive = HelmProvenance._get(located, MAX_CHART_BYTES)
-            except (urllib.error.URLError, OSError, ValueError) as exc:
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 return ChartCheck(
                     "unverifiable", f"{located} could not be downloaded ({type(exc).__name__})"
                 )

@@ -15,6 +15,7 @@ when set, is sent to GitHub's own API alone (the unauthenticated limit is 60 req
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -50,7 +51,7 @@ class GitHubRepository:
         try:
             with urllib.request.build_opener(_ApiRedirects).open(request, timeout=TIMEOUT) as r:
                 document = json.loads(r.read(MAX_BYTES))
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
             return None
         full_name = document.get("full_name") if isinstance(document, dict) else None
         if not isinstance(full_name, str) or full_name.count("/") != 1:

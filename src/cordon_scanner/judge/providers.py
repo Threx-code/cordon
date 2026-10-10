@@ -18,6 +18,7 @@ over `urllib`. Kept from Attest because each one is a failure that would otherwi
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import urllib.error
@@ -105,7 +106,7 @@ class HttpTransport:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raise ProviderUnavailable(f"the judge at {host} answered {exc.code}") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise ProviderUnavailable(
                 f"the judge at {host} could not be reached ({type(exc).__name__})"
             ) from exc

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import time
@@ -206,7 +207,7 @@ class Notifier:
 
         try:
             status = self._transport(url, body, headers)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return Delivery(channel, False, f"{type(exc).__name__} delivering to {channel}")
         if not 200 <= status < 300:
             return Delivery(channel, False, f"HTTP {status} from {channel}")

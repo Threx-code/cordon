@@ -22,6 +22,7 @@ the scan's `--online` only, to these two hosts, over HTTPS, following no redirec
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -108,7 +109,7 @@ class HomebrewProvenance:
             return BottleCheck("absent", f"{name} is from a third-party tap, not homebrew-core")
         try:
             found = HomebrewProvenance.bottles(name)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return BottleCheck(
                 "unverifiable", f"Homebrew's API could not be read ({type(exc).__name__})"
             )
@@ -131,7 +132,7 @@ class HomebrewProvenance:
         for platform, digest in list(bottles.items())[:MAX_BOTTLES]:
             try:
                 bundles = HomebrewProvenance.bundles(digest)
-            except (urllib.error.URLError, OSError, ValueError) as exc:
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 return BottleCheck(
                     "unverifiable",
                     f"GitHub's attestation API could not be read ({type(exc).__name__})",

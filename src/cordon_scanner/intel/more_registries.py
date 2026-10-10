@@ -24,6 +24,7 @@ read with patterns, never an XML parser.
 from __future__ import annotations
 
 import gzip
+import http.client
 import io
 import json
 import re
@@ -171,7 +172,7 @@ class MoreRegistries:
                 if exc.code not in base.RETRY_STATUSES or attempt == base.RETRY_ATTEMPTS - 1:
                     raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
                 time.sleep(base.RETRY_BACKOFF_SECONDS * (2**attempt))
-            except (urllib.error.URLError, OSError, ValueError) as exc:
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 if attempt == base.RETRY_ATTEMPTS - 1:
                     raise RegistryError(f"{type(exc).__name__} asking {parsed.netloc}") from exc
                 time.sleep(base.RETRY_BACKOFF_SECONDS * (2**attempt))
@@ -758,7 +759,7 @@ class MoreRegistries:
             challenge = str(exc.headers.get("WWW-Authenticate", "")) if exc.code == 401 else ""
             if not challenge.startswith("Bearer "):
                 raise RegistryError(f"HTTP {exc.code} from an OCI registry") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(f"{type(exc).__name__} asking an OCI registry") from exc
         fields = dict(re.findall(r'(\w+)="([^"]*)"', challenge))
         realm = fields.get("realm", "")
@@ -781,7 +782,7 @@ class MoreRegistries:
             if follow and exc.code in (301, 302, 303, 307, 308):
                 return MoreRegistries._redirected(exc)
             raise RegistryError(f"HTTP {exc.code} from an OCI registry") from exc
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(f"{type(exc).__name__} asking an OCI registry") from exc
 
     # -- Terraform registry ----------------------------------------------------------------
