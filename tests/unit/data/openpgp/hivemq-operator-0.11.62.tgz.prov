@@ -1,0 +1,42 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+annotations:
+  artifacthub.io/signKey: |
+    fingerprint: 62EA05AEB2030F932532F8D96B695D55352A7E7D
+    url: https://www.hivemq.com/public.pgp
+apiVersion: v2
+appVersion: 4.47.1
+dependencies:
+- - condition: monitoring.dedicated, monitoring.enabled
+  name: kube-prometheus-stack
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 30.*
+description: HiveMQ Operator (legacy)
+icon: https://www.hivemq.com/img/svg/hivemq-bee.svg
+keywords:
+- - MQTT
+- - IoT
+- - Java
+- - distributed
+- - messaging
+name: hivemq-operator
+type: application
+version: 0.11.62
+
+...
+files:
+  hivemq-operator-0.11.62.tgz: sha256:42b047d92e78d8574cb431b20ac942d07eb2d857e90bed0606f0091e3af8e180
+-----BEGIN PGP SIGNATURE-----
+
+wsDcBAEBCgAQBQJpODxGCRBraV1VNSp+fQAA29MMALljat/H0Kx4/hLej9FX2L5Q
+Wh8IyM04BD86NUlC/NozlEBqyI2ZQgKTIgESoKgCls0bJCa1qKLCdA89TGvLmgVL
+PyvIDIhrVprecd+Au5iZuBxNOIPIuwBHMlxTtiqoqfpqyBEIeYlbGIYcFRfgRUgV
+8lr5bScnPIRao7GQRw99lOd3+vdMZt476mj9BLNtuOiZ9V9RtbSQuk4LW90RrBwT
+NekOFlh9uAUk+WeAhcj8RbocMgBSiS8NaPN7RB1P7QEkw7AVz67bCl61XUA2mQoO
+zN3+KR4RsbJ99QZknv2GZIO1FBgMrqrzE87qZMEnkessGMfKivxD4g9oVLhx6HbP
+eiw5P9FGUbaOUjY9BV7i0A4lM6/w7dvzmO3qT5LTwLC44EJ6eHHu7U42TMbWvDKC
+3x1OWocl5I3xoczbjTgrtx21PlS1LdhJPrnTYZOacrHBDNWAEfhvi1q1nzdQzIJ2
+jGFlpsqsJRAZlDi/2yJF4TJvM624yYcPr22jt8Qc9w==
+=ZDhg
+-----END PGP SIGNATURE-----

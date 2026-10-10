@@ -75,8 +75,9 @@ ast-js = [
 # that a release carries an attestation; this extra verifies it -- the Fulcio
 # certificate, the Rekor inclusion proof, the DSSE signature over the pinned
 # digest, and that the signing identity matches the declared source repository.
-# The work is delegated to `sigstore` (raw npm bundles) and `pypi-attestations`
-# (PEP 740 conversion) rather than reimplemented, because a subtly wrong verifier
+# The work is delegated to `sigstore` (raw npm bundles), `pypi-attestations`
+# (PEP 740 conversion) and `pysequoia` (OpenPGP: Helm provenance files, against the
+# operator's --keyring) rather than reimplemented, because a subtly wrong verifier
 # reports confidence it has not earned. It degrades as promised: without it,
 # provenance stays at the presence check and anything unverifiable is reported as
 # `POLICY.PROVENANCE.UNVERIFIED`, never a crash and never a false pass. The stack
@@ -84,6 +85,7 @@ ast-js = [
 attest = [
     "sigstore>=3.6,<5",
     "pypi-attestations>=0.0.19,<0.1",
+    "pysequoia>=0.1.35,<0.2",
 ]
 # Cordon Cloud's keyless result signing. `cordon login`, `--upload` and `--cloud-policy` need
 # only the standard library; with this extra, an upload from CI is also signed with the job's
@@ -110,6 +112,7 @@ dev = [
     # exercised here rather than only where the extra happens to be installed.
     "sigstore>=3.6,<5",
     "pypi-attestations>=0.0.19,<0.1",
+    "pysequoia>=0.1.35,<0.2",
 ]
 
 [project.scripts]

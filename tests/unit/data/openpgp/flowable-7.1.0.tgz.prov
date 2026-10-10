@@ -1,0 +1,59 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+annotations:
+  artifacthub.io/images: |
+    - name: Flowable REST
+      image: flowable/flowable-rest:7.1.0
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: Flowable OSS repository
+      url: https://link1.url
+    - name: Flowable OSS website
+      url: https://www.flowable.com/open-source
+  artifacthub.io/signKey: |
+    fingerprint: B3B09108406A7DFE92757807A79624786AE252EB
+    url: https://keybase.io/flowable_oss/pgp_keys.asc
+apiVersion: v2
+appVersion: 7.1.0
+dependencies:
+- - alias: postgres
+  condition: postgres.enabled
+  name: postgresql
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 16.0.1
+description: A Flowable Helm chart for Kubernetes
+home: https://www.flowable.com/open-source
+icon: https://www.flowable.com/open-source/docs/img/logo.png
+keywords:
+- - flowable
+- - BPMN
+- - CMMN
+- - DMN
+maintainers:
+- - email: yvoswillens@gmail.com
+  name: yvoswillens
+name: flowable
+sources:
+- - https://github.com/flowable/flowable-engine/
+version: 7.1.0
+
+...
+files:
+  flowable-7.1.0.tgz: sha256:df2d4749215874d954c3afc21fd7cf0877b6e839307abe92f1e478d3d19d459a
+-----BEGIN PGP SIGNATURE-----
+
+wsFcBAEBCgAQBQJnBjchCRCnliR4auJS6wAAEOkQAArnD1aFxeW06YIz/9ND9Ln0
+ean3qrKcumzvLa49qTFHaW1V9RfzT/D+Oox1+QxZCve/V4BV3RVXCIxV0+dr+zDB
+mvspb5cxyzpQWXwWGhoHTlIbERxP/B2o6TYt9Oh6SKafv3vdQKP+bKr+ejUj+vP1
+cPQNqwjNSjCBt97draH3nZzWUtfCvJsvxTH1ZxmZ9wWYQvqzJIavkIE1Nc6wXhcF
+UmDuH2UkVO4yT4snBE2tYX5G5KbVO0k5LLPoVlFdFjuoPOCAYOYlv96WAKlk2C0G
+xufJzWvdKrl6NB/ov+9smBzkJDczSGURVtW4YaJYdqMPGEkt2WJoCo2BHBlAJvY1
+kQHZqipfu1r+MbBv/NB1Rhgqd5IjcTE3NMAVoIm1cEUMYdH+BPt+moXZcNlUiwZk
+VSC0Hn0s7EYY/6xBzaKZ9Piuxyv7kg8teregYU1N2tWoAu2mWyALzFp3kk0H4DCp
+rWVoZNNvP4f2Q573yO6Tv1ylPBH6ZRS1M92YUJ9w4AsxP7iIRrW7XSKwTzh4m0C4
+esbKqWhBJHJMnc94ycMLic4ru2NhQQL80kQrbngr7hxLZe52IGYdC1IoHq5v38xb
+hP1gFwCuRuyzC/tEmk7Efger+8qymCN3kfjwZ1DNiz7F/qmgAD/DjpQfiFZXY9pn
+uxL3/d8/lRoYM0sTKew0
+=xLgJ
+-----END PGP SIGNATURE-----

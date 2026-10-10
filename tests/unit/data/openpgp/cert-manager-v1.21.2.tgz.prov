@@ -1,0 +1,49 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+annotations:
+  artifacthub.io/category: security
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/signKey: |
+    fingerprint: 1020CF3C033D4F35BAE1C19E1226061C665DF13E
+    url: https://cert-manager.io/public-keys/cert-manager-keyring-2021-09-20-1020CF3C033D4F35BAE1C19E1226061C665DF13E.gpg
+apiVersion: v2
+appVersion: v1.21.2
+description: A Helm chart for cert-manager
+home: https://cert-manager.io
+icon: https://raw.githubusercontent.com/cert-manager/community/4d35a69437d21b76322157e6284be4cd64e6d2b7/logo/logo-small.png
+keywords:
+- - cert-manager
+- - kube-lego
+- - letsencrypt
+- - tls
+kubeVersion: '>= 1.22.0-0'
+maintainers:
+- - email: cert-manager-maintainers@googlegroups.com
+  name: cert-manager-maintainers
+  url: https://cert-manager.io
+name: cert-manager
+sources:
+- - https://github.com/cert-manager/cert-manager
+version: v1.21.2
+
+...
+files:
+  cert-manager-v1.21.2.tgz: sha256:73a56e1728edd6c99f1f31082618c3259d279a76b7ebd3d4bdc5475c2442d34a
+-----BEGIN PGP SIGNATURE-----
+
+wsFcBAEBCgAQBQJqotGKCRASJgYcZl3xPgAAPOQQADOommn35kthXVXl270pfOVJ
+hGF9PqpMIDXOUCDgr7x6jcPnjqkhMO6mlkoGDwJlJ/FcayfpNifNJncYNJ4owLon
+ChBkW2zOYDzuYRyz1NNXvnGB1m0sRCRqRZXQ5KPojMW7KUJvykiBaoE+kC7ktEzB
+9QMN8+iQTNPtX0oFZhZ4eazaXlkzNgjSKBZJdIWUU3hlz2wYlfb7LKfy3IYbwHgE
+QK2p/Tuivm6nKcyewQ07u8+fZTiyMl71UGqrjzZEtR87VuFMADtcg/vBVBrcCiL9
+AlcvVI0ABeF2SdBk5l/j9lohGHWC2gKt9MsGXQYSrjnkFYkIh99a1205FB6He3CX
+euwZKPi0rdqjAQPlh8Hq82Z5/AfQEb4R/mUILpfhbKumPvfL3C3rG5LQVafoZa0X
+140elnwkudoz0spgWJRpxlkTgNigxQh7KMJSdQ+uYESE1Xvt7QIqVjP7LLLVzBym
+zrQpf4msyIj5DrL+Mtx3YG3N8ik1n8saRazzvB/GSwPcMlQQvAjKSA7DG7X/6Yeb
+X3eHdp83mN/mMAMg4phxi1EX7NIuZ/CLZlm+rd2+6QTBfOVHY6knehqgSykacyjn
+dY/cW84vXc1r3/49OgiJg4uR2ZESOUVN0qGZiMbz3cj3gYKNO1xFxna6c8585h0P
+e5c9eX4E5kCZEsdjUNgA
+=/4RL
+-----END PGP SIGNATURE-----

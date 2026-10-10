@@ -1,0 +1,50 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/signKey: |
+    fingerprint: 8E9B315F6C22E339959DA77B35CCF4BDC9F58F2A
+    url: https://openfga.github.io/helm-charts/pgp-public-key.asc
+apiVersion: v2
+appVersion: v1.22.0
+dependencies:
+- - condition: postgresql.enabled
+  name: postgresql
+  repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
+  version: 12.12.10
+- - condition: mysql.enabled
+  name: mysql
+  repository: https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
+  version: 9.6.0
+- - name: common
+  repository: oci://registry-1.docker.io/bitnamicharts
+  tags:
+  - bitnami-common
+  version: 2.13.3
+description: A Kubernetes Helm chart for the OpenFGA project.
+home: https://openfga.github.io/helm-charts
+icon: https://github.com/openfga/community/raw/main/brand-assets/icon/color/openfga-icon-color.svg
+name: openfga
+type: application
+version: 0.3.16
+
+...
+files:
+  openfga-0.3.16.tgz: sha256:8600f992fd524334c82b7ffeea98314c39896bff536326f2c08a93cc874bf12d
+-----BEGIN PGP SIGNATURE-----
+
+wsFcBAEBCgAQBQJqxVPPCRA1zPS9yfWPKgAAoNcQAFZf53HFv8FGP1WiGEbNADht
+lGh+dynfUH4d80eTMzyzftPKvbgxhTTFeUVQbEej+sTIzClDvKPYJ2Op2h4CUIb/
+LZ3NfMdOM/NoDcTjCJwzzyQAjgXQk2G2YVwQvnYgixBDk3uqn1VPSAE5xx1FDQ3T
+ghsfEA206V/9jd9yDPTm7hgHDRdDbLqgQ7ytI6h64+qYAjAbBFze+JHxdLojt5ru
+hL1VhQ+mIigUrKjR2rf9/Yxev5UKd1ODNOt/XQAM/kYy7OM1QK4nIcV0cxRmx2lM
+QEAN+HjbRrgih9sCzlVAnkPewuP+oNOtYTm4Cuyjwv9DObjtgUIlvct23LYbxtVI
+uCw+YNvIiJ1YMf0r2Xz+64nY9QMyPDf2bBzRcAm3c3ifwNB0YTVBO14zcjQo82sV
+sGDU+FaCV2nb5JKrFfpaHme884NqY5cf16Nn92SlrAObT/y2bdoY4vGC11qQgD0u
+g8APSmbSS6aId9fyP8ACiSjMoj0tnDECVn9MAxvdxx4jXE0tPVJcVMPcB1N4J21C
+sZyY0rvF67bk3jnUwOuQ4TaC2sFV/v6926TJZZ/+9QvSoXPgfiZssWWCVuzk7m6p
+UWxetiQDbkUYpUI/Idscgai16LEgrqVxS2wbTKgUGmj0cqg4afHzQ+1pR1C/K4St
+3H+m6H/UluKRL/2jqyRW
+=fKvb
+-----END PGP SIGNATURE-----
