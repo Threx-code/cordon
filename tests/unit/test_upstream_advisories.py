@@ -1673,3 +1673,25 @@ class TestGitLabHeadBuilds:
         assert asked == [
             "https://gitlab.com/api/v4/projects/qemu-project%2Fqemu/repository/commits/ae2b873"
         ]
+
+
+class TestProprietaryConda:
+    @pytest.mark.parametrize(
+        ("about", "proprietary"),
+        [
+            ({"license": "LicenseRef-NVIDIA-End-User-License-Agreement"}, True),
+            ({"license": "LicenseRef-ProprietaryIntel", "license_family": "Proprietary"}, True),
+            ({"license": "LicenseRef-MicrosoftWindowsSDK10"}, True),
+            (
+                {
+                    "license": "LicenseRef-Ubuntu-Font-Licence-Version-1.0",
+                    "license_family": "Other",
+                },
+                False,
+            ),
+            ({"license": "MIT", "license_family": "MIT"}, False),
+            (None, False),
+        ],
+    )
+    def test_a_vendors_own_licence(self, about: object, proprietary: bool) -> None:
+        assert bool(Upstreams.proprietary(about)) is proprietary

@@ -3499,7 +3499,7 @@ class Upstreams:
             ),
             "",
         )
-        return Upstreams.inferred(
+        answer = Upstreams.inferred(
             Upstreams.from_urls(urls, how),
             homes,
             dependency.version or "",
@@ -3507,6 +3507,33 @@ class Upstreams:
             how,
             Archive(tuple(urls), f"sha256:{sha256}") if urls and sha256 else None,
         )
+        licence = Upstreams.proprietary(about)
+        if isinstance(answer, Unnamed) and licence:
+            # NVIDIA's CUDA, Intel's MKL, Microsoft's runtimes: a vendor's binaries, under its
+            # own licence, with no public source to name.
+            return Unnamed(
+                f"a vendor's proprietary distribution (licensed {licence}), with no public "
+                "source to name",
+                homes=answer.homes,
+            )
+        return answer
+
+    #: A licence that is a vendor's own, not an open one (`LicenseRef-` alone is not: the Ubuntu
+    #: Font Licence is one).
+    PROPRIETARY: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)proprietary|end[-_ ]user[-_ ]licen[cs]e|\bEULA\b|LicenseRef-Microsoft"
+    )
+
+    @staticmethod
+    def proprietary(about: object) -> str:
+        """The recipe's licence where it, or its family, says proprietary; else empty."""
+        if not isinstance(about, dict):
+            return ""
+        licence = str(about.get("license") or "")
+        family = str(about.get("license_family") or "")
+        if family.lower() == "proprietary" or Upstreams.PROPRIETARY.search(licence):
+            return licence or family
+        return ""
 
     @staticmethod
     def ansible(dependency: Dependency) -> Upstream | Unnamed:
