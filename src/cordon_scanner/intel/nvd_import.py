@@ -189,6 +189,10 @@ class NvdImport:
         # Every product any CVE names, kept or not: a product whose CVEs are all below the bundled
         # cut (open-mpi:hwloc) is still a product NVD knows, to tie a package to.
         named: set[str] = set()
+        # A project's own repository, from the references NVD tags as its patch, issue or release
+        # notes in a CVE naming that product alone (open-mpi:hwloc's github.com/open-mpi/hwloc):
+        # the site of a product the CPE dictionary gives none. Only forge repositories count.
+        repositories: dict[str, set[str]] = defaultdict(set)
         for year in years:
             count = 0
             for cve in NvdImport.cves(year):
@@ -196,6 +200,9 @@ class NvdImport:
                 identifier, rating = str(cve["id"]), NvdImport.severity(cve)
                 found = list(NvdImport.ranges(cve))
                 named.update(product for product, _ in found)
+                alone = {product for product, _ in found}
+                if len(alone) == 1:
+                    repositories[next(iter(alone))] |= NvdImport.project_sites(cve)
                 if not keep(identifier, rating):
                     continue
                 if not found:
@@ -216,12 +223,28 @@ class NvdImport:
                 count += 1
             log(f"  {year}: {count:,} CVEs with application ranges")
         out.products = dict(products)
-        out.index = NvdImport.index(named)
+        out.index = NvdImport.index(named, repositories)
         log(f"  CPE dictionary: {len(out.index):,} product names with sites")
         return out
 
+    PROJECT_TAGS: Final = frozenset({"Patch", "Issue Tracking", "Release Notes"})
+
     @staticmethod
-    def index(named: set[str] | None = None) -> dict[str, list[list[Any]]]:
+    def project_sites(cve: dict[str, Any]) -> set[str]:
+        """The forge repositories a CVE's patch, issue and release-notes references name."""
+        out: set[str] = set()
+        for reference in cve.get("references") or []:
+            if not NvdImport.PROJECT_TAGS & set(reference.get("tags") or ()):
+                continue
+            site = CpeRule.site(str(reference.get("url") or ""))
+            if site and site.count("/") == 2:
+                out.add(site)
+        return out
+
+    @staticmethod
+    def index(
+        named: set[str] | None = None, repositories: dict[str, set[str]] | None = None
+    ) -> dict[str, list[list[Any]]]:
         """`normalised name -> [[vendor:product, [sites]]]` from NVD's CPE dictionary, for
         application products that are not deprecated.
 
@@ -269,9 +292,11 @@ class NvdImport:
                         everything[parts[3]].add(site)
                         if kind == "Vendor":
                             vendors[parts[3]].add(site)
+        for product, found in (repositories or {}).items():
+            sites[product] |= found
         for product in named or ():
             vendor, _, title = product.partition(":")
-            if product not in names and everything.get(vendor):
+            if product not in names and (everything.get(vendor) or sites.get(product)):
                 names[product].add(CpeRule.name(title))
         products_of: dict[str, set[str]] = defaultdict(set)
         for product in names:

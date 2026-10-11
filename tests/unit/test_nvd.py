@@ -293,7 +293,9 @@ class TestEveryNamedProduct:
         )
         seen: list[set[str]] = []
         monkeypatch.setattr(
-            NvdImport, "index", staticmethod(lambda named=None: seen.append(set(named or ())) or {})
+            NvdImport,
+            "index",
+            staticmethod(lambda named=None, repositories=None: seen.append(set(named or ())) or {}),
         )
         built = NvdImport.build(
             range(2022, 2023), lambda _, rating: rating == "high", lambda _: None
@@ -344,3 +346,63 @@ class TestReleaseNames:
                 [stranger], {stranger.purl: ("https://example.com/sqlite-3.46.0.tar.gz",)}
             ).checked
         )
+
+
+class TestRepositoriesFromReferences:
+    def test_patch_issue_and_release_references_on_forges(self) -> None:
+        cve = {
+            "references": [
+                {"url": "https://github.com/open-mpi/hwloc/issues/544", "tags": ["Issue Tracking"]},
+                {"url": "https://github.com/open-mpi/hwloc/commit/abc", "tags": ["Patch"]},
+                {"url": "https://www.open-mpi.org/projects/hwloc/", "tags": ["Product"]},
+                {"url": "https://github.com/advisories/GHSA-x", "tags": ["Third Party Advisory"]},
+                {"url": "https://lists.debian.org/x", "tags": ["Patch"]},
+            ]
+        }
+        assert NvdImport.project_sites(cve) == {"github.com/open-mpi/hwloc"}
+
+    def test_a_cve_naming_two_products_gives_neither_a_repository(self, monkeypatch) -> None:
+        two = {
+            "id": "CVE-2024-0003",
+            "metrics": {"cvssMetricV31": [{"cvssData": {"baseSeverity": "HIGH"}}]},
+            "references": [{"url": "https://github.com/a/a/commit/1", "tags": ["Patch"]}],
+            "configurations": [
+                {
+                    "nodes": [
+                        {
+                            "cpeMatch": [
+                                {"vulnerable": True, "criteria": "cpe:2.3:a:a:a:*:*:*:*:*:*:*:*"},
+                                {"vulnerable": True, "criteria": "cpe:2.3:a:b:b:*:*:*:*:*:*:*:*"},
+                            ]
+                        }
+                    ]
+                }
+            ],
+        }
+        one = {
+            **two,
+            "id": "CVE-2024-0004",
+            "configurations": [
+                {
+                    "nodes": [
+                        {
+                            "cpeMatch": [
+                                {"vulnerable": True, "criteria": "cpe:2.3:a:c:c:*:*:*:*:*:*:*:*"}
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "references": [{"url": "https://github.com/c/c/issues/2", "tags": ["Issue Tracking"]}],
+        }
+        monkeypatch.setattr(NvdImport, "cves", staticmethod(lambda year: iter([two, one])))
+        given: list[dict[str, set[str]]] = []
+        monkeypatch.setattr(
+            NvdImport,
+            "index",
+            staticmethod(
+                lambda named=None, repositories=None: given.append(dict(repositories or {})) or {}
+            ),
+        )
+        NvdImport.build(range(2024, 2025), lambda _, rating: True, lambda _: None)
+        assert given == [{"c:c": {"github.com/c/c"}}]
