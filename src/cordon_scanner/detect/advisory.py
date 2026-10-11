@@ -287,6 +287,10 @@ class AdvisoryDetector(BaseDetector):
             ]
             if candidates:
                 upstream = UpstreamAdvisories.check(candidates)
+        # Then NVD (`intel/nvd`), for what no repository route named -- offline too, since its data
+        # is bundled: tied to a CPE product by a curated mapping, or by the guarded rule from the
+        # homepage and download the route read on the way.
+        upstream = self._with_nvd(unit, upstream)
         no_feed = self._no_feed_note(
             unit, ctx.config.policy.accept_no_feed or frozenset(), upstream
         )
@@ -442,6 +446,37 @@ class AdvisoryDetector(BaseDetector):
                 ),
             )
             break
+
+    def _with_nvd(self, unit: GraphUnit, upstream: UpstreamResult | None) -> UpstreamResult | None:
+        from cordon_scanner.intel.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
+        from cordon_scanner.intel.nvd import NvdAdvisories
+
+        candidates = [
+            d
+            for d in unit.dependencies
+            if not d.local
+            and not d.bundled
+            and d.ecosystem in NVD_ECOSYSTEMS
+            and not self._database.covers(d.ecosystem)
+            and not (upstream is not None and d.purl in upstream.checked)
+        ]
+        if not candidates:
+            return upstream
+        found = NvdAdvisories.check(candidates, upstream.homes if upstream is not None else {})
+        merged = upstream if upstream is not None else UpstreamResult()
+        merged.checked |= found.checked
+        merged.advisories.update(found.advisories)
+        for dependency in candidates:
+            if dependency.purl in found.checked:
+                merged.unchecked.pop(dependency.purl, None)
+            elif dependency.purl in found.unchecked:
+                before = merged.unchecked.get(dependency.purl)
+                merged.unchecked[dependency.purl] = (
+                    f"{before}; and NVD: {found.unchecked[dependency.purl]}"
+                    if before
+                    else f"NVD: {found.unchecked[dependency.purl]}"
+                )
+        return merged
 
     def _no_feed_note(
         self, unit: GraphUnit, accepted: frozenset[str], upstream: UpstreamResult | None
@@ -735,9 +770,13 @@ class AdvisoryDetector(BaseDetector):
             # The record names the package's upstream, which its ecosystem names exactly: one
             # step from the package, and a build may carry a patch the upstream did not.
             confidence = Confidence.HIGH
-        elif advisory.matched_through == "inferred":
-            # Through a tag found in the repository, spelled as the version: still at the
-            # default gate, and set apart from what was named exactly.
+        elif advisory.matched_through == "nvd":
+            # NVD's record for the CPE product a curated mapping names, by NVD's own range.
+            confidence = Confidence.HIGH
+        elif advisory.matched_through in ("inferred", "nvd-inferred"):
+            # Through a tag found in the repository, spelled as the version, or through the CPE
+            # product the guarded rule ties it to: still at the default gate, and set apart from
+            # what was named exactly.
             confidence = Confidence.MEDIUM
         if malicious:
             severity = Severity.CRITICAL

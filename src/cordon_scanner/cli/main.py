@@ -616,7 +616,7 @@ class CommandLine:
             nargs="+",
             metavar="ECOSYSTEM",
             default=None,
-            help="sync only these ecosystems (default: all supported)",
+            help="sync only these ecosystems, or nvd for NVD's data (default: all, and NVD)",
         )
         advisories_sync.add_argument(
             "--os",
@@ -2392,7 +2392,9 @@ class CommandLine:
             if args.only is None:
                 return int(ExitCode.CLEAN)
 
-        requested = args.only or sorted(osv_import.ECOSYSTEM_OSV_NAMES)
+        # NVD (`intel/nvd`): with everything, or by name.
+        with_nvd = args.only is None or "nvd" in args.only
+        requested = [e for e in (args.only or sorted(osv_import.ECOSYSTEM_OSV_NAMES)) if e != "nvd"]
         unknown = [e for e in requested if e not in osv_import.ECOSYSTEM_OSV_NAMES]
         if unknown:
             raise ConfigError(
@@ -2400,6 +2402,8 @@ class CommandLine:
                 hint=f"choose from: {', '.join(sorted(osv_import.ECOSYSTEM_OSV_NAMES))}",
             )
         ecosystems = tuple(sorted(requested))
+        if not ecosystems:
+            return cls._sync_nvd(AdvisoryFiles.user_sync_dir())
 
         print(f"syncing {len(ecosystems)} ecosystem(s) from OSV...")
         with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
@@ -2417,6 +2421,30 @@ class CommandLine:
             f"synced {result.meta.record_count:,} advisories to {destination}\n"
             f"future scans on this machine will prefer this over the bundled snapshot "
             f"until the next release ships something newer."
+        )
+        if with_nvd:
+            return cls._sync_nvd(destination)
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def _sync_nvd(cls, destination: Path) -> int:
+        """Every NVD record, unfiltered, from NVD's own feeds, each checked against its published
+        SHA-256 (`intel/nvd_import`)."""
+        from cordon_scanner.intel import nvd_import
+        from cordon_scanner.intel.nvd import NvdData
+
+        print("syncing NVD's feeds...")
+        try:
+            built = nvd_import.NvdImport.build(
+                nvd_import.NvdImport.years(), lambda identifier, rating: True
+            )
+        except nvd_import.NvdImportError as exc:
+            raise ConfigError(f"advisories sync: NVD: {exc}") from exc
+        nvd_import.NvdImport.write(destination, built, filtered=False)
+        NvdData.reset()
+        print(
+            f"synced {len(built.text):,} NVD records across {len(built.products):,} products "
+            f"to {destination}"
         )
         return int(ExitCode.CLEAN)
 

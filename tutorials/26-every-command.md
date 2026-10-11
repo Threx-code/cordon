@@ -578,8 +578,8 @@ Manage the vulnerability/malicious-package advisory database.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ --only ECOSYSTEM          sync only these ecosystems (default: all         │
-│                           supported)                                       │
+│ --only ECOSYSTEM          sync only these ecosystems, or nvd for NVD's     │
+│                           data (default: all, and NVD)                     │
 │ --os FAMILY               also sync these distributions' advisories        │
 │                           (debian, ubuntu, alpine, wolfi, chainguard,      │
 │                           rocky, almalinux, redhat, suse, opensuse) so     │

@@ -190,6 +190,7 @@ class AdvisoryBundle:
             "agent-actions.json",
             "vscode-extensions.json",
             "atr-rules.json.gz",
+            "nvd-*.json.gz",
         )
         files = sorted({p for pattern in patterns for p in data_dir.glob(pattern) if p.is_file()})
         if not files:

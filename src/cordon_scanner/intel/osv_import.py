@@ -816,6 +816,7 @@ class OsvImport:
                     *output_dir.glob("agent-actions.json"),
                     *output_dir.glob("vscode-extensions.json"),
                     *output_dir.glob("atr-rules.json.gz"),
+                    *output_dir.glob("nvd-*.json.gz"),
                 ]
             )
             if path.name != DIGESTS_NAME

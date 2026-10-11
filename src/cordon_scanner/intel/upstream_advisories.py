@@ -79,6 +79,9 @@ class Unnamed:
     nothing: bool = False
     """Nothing to check: the package installs no code (an empty vcpkg port wrapping a system
     component). Counted as checked, with nothing to match."""
+    homes: tuple[str, ...] = ()
+    """The homepage and download URLs its ecosystem gives, read on the way to this answer: what
+    `intel/nvd` ties a package to a CPE product by when no repository route named it."""
 
 
 @dataclass
@@ -89,6 +92,8 @@ class UpstreamResult:
     """The purls asked of OSV, whether or not anything matched."""
     unchecked: dict[str, str] = field(default_factory=dict)
     """By purl: why the package could not be matched."""
+    homes: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    """By purl: the homepage and download URLs read for a package left unchecked."""
 
 
 class RepositoryArchive:
@@ -1108,6 +1113,26 @@ class HomebrewBottles:
         return Unnamed(f"Homebrew's formula for {name}, {target}, could not be read")
 
     @staticmethod
+    def cask(token: str) -> Unnamed:
+        """A cask: a macOS application, which no repository route reaches. Its homepage and
+        download, from formulae.brew.sh's cask record, go with the answer for `intel/nvd`."""
+        reason = "a cask: a macOS application, which no repository route reaches"
+        try:
+            data = json.loads(
+                Upstreams._get(
+                    f"https://formulae.brew.sh/api/cask/{urllib.parse.quote(token, safe='@+')}.json"
+                )
+            )
+        except (OSError, ValueError):
+            return Unnamed(reason)
+        if not isinstance(data, dict):
+            return Unnamed(reason)
+        return Unnamed(
+            reason,
+            homes=tuple(str(data[k]) for k in ("homepage", "url") if isinstance(data.get(k), str)),
+        )
+
+    @staticmethod
     def current_formula(data: dict[str, Any]) -> str:
         """The formula file formulae.brew.sh describes now, at the commit it names."""
         head, path = str(data.get("tap_git_head") or ""), str(data.get("ruby_source_path") or "")
@@ -2117,7 +2142,18 @@ class Upstreams:
                     tag=found.tag,
                 )
             tried.append(f"{repository}: {detail}")
-        return Unnamed("; ".join([first.reason, *tried]))
+        return Unnamed(
+            "; ".join([first.reason, *tried]),
+            homes=tuple(
+                dict.fromkeys(
+                    [
+                        *(str(h) for h in homes if isinstance(h, str) and h),
+                        *(archive.urls if archive else ()),
+                        *first.homes,
+                    ]
+                )
+            ),
+        )
 
     @staticmethod
     def bazel(dependency: Dependency) -> Upstream | Unnamed:
@@ -2295,7 +2331,7 @@ class Upstreams:
         name = dependency.name
         installed = dependency.version or ""
         if "cask" in dependency.platform:
-            return Unnamed("a cask: a macOS application, which no advisory source covers by name")
+            return HomebrewBottles.cask(name)
         if name.count("/") == 1 and re.fullmatch(r"[0-9a-f]{40}", installed):
             # A tap, locked to a commit of its repository (`<owner>/homebrew-<tap>`).
             owner, tap = name.split("/")
@@ -2654,6 +2690,8 @@ class UpstreamAdvisories:
                     result.checked.add(dependency.purl)
                     continue
                 result.unchecked[dependency.purl] = upstream.reason
+                if upstream.homes:
+                    result.homes[dependency.purl] = upstream.homes
             else:
                 named.append((dependency, upstream))
         if not named:
