@@ -958,6 +958,10 @@ class VcpkgPorts:
                         keyed.setdefault(a, [])
                     elif current:
                         keyed[current].append(a)
+                if VcpkgPorts.patch(name, keyed):
+                    # A patch it applies (g2o's upstream commits as `.patch` downloads before its
+                    # `vcpkg_from_github`), not its source.
+                    continue
                 results.append((depth, VcpkgPorts._fetched(name, keyed, how)))
                 sha512 = (keyed.get("SHA512") or [None])[0]
                 if archive is None and sha512 and re.fullmatch(r"[0-9a-f]{128}", sha512):
@@ -981,6 +985,19 @@ class VcpkgPorts:
         if named:
             return Unnamed("its portfile fetches different sources by platform or feature"), archive
         return found[0], archive
+
+    @staticmethod
+    def patch(name: str, keyed: dict[str, list[str | None]]) -> bool:
+        """A distfile that is a patch: its file name, or every URL's path, ends `.patch` or `.diff`."""
+        if name != "vcpkg_download_distfile":
+            return False
+        filename = (keyed.get("FILENAME") or [None])[0]
+        if filename and re.search(r"\.(?:patch|diff)$", filename):
+            return True
+        urls = [u for u in keyed.get("URLS") or [] if u]
+        return bool(urls) and all(
+            re.search(r"\.(?:patch|diff)$", urllib.parse.urlsplit(u).path) for u in urls
+        )
 
     @staticmethod
     def _archive_urls(name: str, keyed: dict[str, list[str | None]]) -> list[str]:

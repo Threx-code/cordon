@@ -1412,3 +1412,28 @@ class TestUmbrellaPods:
         assert not Upstreams.umbrella({"source_files": "A/*.{h,m}"})
         assert not Upstreams.umbrella({"vendored_frameworks": "A.framework", "source_files": "A.h"})
         assert not Upstreams.umbrella({})
+
+
+class TestVcpkgPatchDownloads:
+    PORTFILE = (
+        "vcpkg_download_distfile(FIX\n"
+        "    URLS https://github.com/RainerKuemmerle/g2o/commit/37d17a94594648acf9cce85e8483c0405c510f0d.patch?full_index=1\n"
+        f"    SHA512 {'d' * 128}\n"
+        "    FILENAME g2o-37d17a9.patch\n"
+        ")\n"
+        "vcpkg_from_github(\n"
+        "    OUT_SOURCE_PATH SOURCE_PATH\n"
+        "    REPO RainerKuemmerle/g2o\n"
+        "    REF eec325a1da1273e87bc97887d49e70570f28570c\n"
+        f"    SHA512 {'e' * 128}\n"
+        '    PATCHES "${FIX}"\n'
+        ")\n"
+    )
+
+    def test_a_patch_download_is_not_the_source(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        found, _ = VcpkgPorts.read(self.PORTFILE, "2023-08-06", "g2o", "x")
+        assert isinstance(found, Upstream) and found.query == {
+            "commit": "eec325a1da1273e87bc97887d49e70570f28570c"
+        }
