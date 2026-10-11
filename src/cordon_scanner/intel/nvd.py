@@ -147,6 +147,31 @@ class CpeRule:
             sorted(found)
         ), f"NVD's {', '.join(sorted(found))} has its name and lists its site, {site}"
 
+    ARCHIVE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\.(?:tar\.gz|tgz|tar\.bz2|tbz2?|tar\.xz|txz|tar\.zst|tar\.lz|tar|zip|7z)$", re.IGNORECASE
+    )
+
+    @staticmethod
+    def release_names(urls: Iterable[str], version: str) -> tuple[str, ...]:
+        """The names an upstream gives its release files, `<name>-<version>.<archive>`, for the
+        locked version: Conan's libmp3lame downloads `lame-3.100.tar.gz`, Homebrew's curl-openssl
+        `curl-7.68.0.tar.bz2`. A file named for another version names nothing."""
+        release = re.sub(r"(?:_\d+|#\d+|,.*)$", "", version)
+        if not release:
+            return ()
+        found: list[str] = []
+        for url in urls:
+            base = urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
+            stem = CpeRule.ARCHIVE.sub("", base)
+            if stem == base:
+                continue
+            named = re.fullmatch(
+                rf"(.+?)[-_]v?{re.escape(release)}(?:[-_.]?src|[-_.]source)?", stem, re.IGNORECASE
+            )
+            if named and CpeRule.name(named.group(1)):
+                found.append(named.group(1))
+        return tuple(dict.fromkeys(found))
+
     _sites: ClassVar[list[tuple[Mapping[str, Sequence[Sequence[Any]]], dict[str, set[str]]]]] = []
 
     @staticmethod
@@ -312,7 +337,9 @@ class NvdAdvisories:
             if chosen:
                 through, tied = "nvd", f"the curated CPE {', '.join(chosen)}"
             else:
-                product, why = CpeRule.match(index, (name,), (homes or {}).get(dependency.purl, ()))
+                urls = (homes or {}).get(dependency.purl, ())
+                names = (name, *CpeRule.release_names(urls, version))
+                product, why = CpeRule.match(index, names, urls)
                 if product is None:
                     result.unchecked[dependency.purl] = why
                     continue

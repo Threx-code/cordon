@@ -300,3 +300,47 @@ class TestEveryNamedProduct:
         )
         assert set(built.products) == {"sqlite:sqlite"}
         assert seen == [{"sqlite:sqlite", "open-mpi:hwloc"}]
+
+
+class TestReleaseNames:
+    @pytest.mark.parametrize(
+        ("url", "version", "names"),
+        [
+            (
+                "https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz",
+                "3.100",
+                ("lame",),
+            ),
+            ("https://curl.haxx.se/download/curl-7.68.0.tar.bz2", "7.68.0", ("curl",)),
+            (
+                "https://www.libsdl.org/projects/SDL_mixer/release/SDL2_mixer-2.6.3.tar.gz",
+                "2.6.3#1",
+                ("SDL2_mixer",),
+            ),
+            (
+                "https://download.open-mpi.org/release/hwloc/v2.9/hwloc-2.9.3.tar.bz2",
+                "2.9.3_1",
+                ("hwloc",),
+            ),
+            ("https://curl.haxx.se/download/curl-7.67.0.tar.bz2", "7.68.0", ()),
+            ("https://github.com/ogham/exa/archive/v0.9.0.tar.gz", "0.9.0", ()),
+            ("https://example.org/", "1.0", ()),
+        ],
+    )
+    def test_release_names(self, url: str, version: str, names: tuple[str, ...]) -> None:
+        assert CpeRule.release_names([url], version) == names
+
+    def test_the_release_file_names_the_product_under_the_site_guard(self, monkeypatch) -> None:
+        TestCheck.data(monkeypatch)
+        package = Make.dep("conan", "libsqlite-amalgamation", "3.46.0")
+        result = NvdAdvisories.check(
+            [package], {package.purl: ("https://www.sqlite.org/2024/sqlite-3.46.0.tar.gz",)}
+        )
+        assert package.purl in result.checked
+        stranger = Make.dep("conan", "libsqlite-amalgamation", "3.46.0")
+        assert (
+            stranger.purl
+            not in NvdAdvisories.check(
+                [stranger], {stranger.purl: ("https://example.com/sqlite-3.46.0.tar.gz",)}
+            ).checked
+        )
