@@ -149,7 +149,9 @@ rather than a document.
   issue links for a product named alone -- is on the package's homepage or
   download site, and only one product passes; or, failing a name, the package's
   own repository or SourceForge project is listed by one product alone. NVD's own
-  ranges then decide. A package tied to nothing is unchecked, and the report
+  ranges then decide -- and, for a CVE NVD has not analysed, the ranges its record in
+  the CVE List states: its CPEs and affected versions, from its CNA or CISA's
+  Vulnrichment. A package tied to nothing is unchecked, and the report
   names it and why.
 
 ---
