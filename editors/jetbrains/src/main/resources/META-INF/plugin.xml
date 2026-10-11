@@ -1,0 +1,38 @@
+<idea-plugin>
+  <id>dev.cordon.jetbrains</id>
+  <name>Cordon Supply-Chain Scanner</name>
+  <vendor url="https://github.com/Threx-code/cordon">Cordon</vendor>
+  <description><![CDATA[
+    <p>Malicious packages, install-time behaviour, AI agent files, skills and MCP servers, secrets
+    and vulnerable dependencies, marked in the editor and listed in the Cordon tool window.</p>
+    <p>Runs the <code>cordon-scanner</code> you installed (<code>pipx install cordon-scanner</code>),
+    offline, only in projects you trust, and sends nothing anywhere. Tools | Copy Cordon MCP
+    Configuration gives AI Assistant Cordon's checks over the Model Context Protocol.</p>
+  ]]></description>
+
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <notificationGroup id="Cordon" displayType="BALLOON"/>
+    <postStartupActivity implementation="dev.cordon.jetbrains.CordonStartup"/>
+    <externalAnnotator language="" implementationClass="dev.cordon.jetbrains.CordonAnnotator"/>
+    <toolWindow id="Cordon" anchor="bottom" factoryClass="dev.cordon.jetbrains.CordonToolWindow"
+                icon="/icons/cordon.svg"/>
+    <applicationConfigurable parentId="tools" instance="dev.cordon.jetbrains.CordonConfigurable"
+                             id="dev.cordon.jetbrains.settings" displayName="Cordon"/>
+  </extensions>
+
+  <actions>
+    <action id="dev.cordon.jetbrains.ScanProject" class="dev.cordon.jetbrains.ScanProjectAction"
+            icon="/icons/cordon.svg"
+            text="Scan Project with Cordon" description="Run cordon-scanner over this project">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
+    <action id="dev.cordon.jetbrains.CopyMcpConfig" class="dev.cordon.jetbrains.CopyMcpConfigAction"
+            icon="/icons/cordon.svg"
+            text="Copy Cordon MCP Configuration"
+            description="Copy the configuration that adds Cordon's MCP server to AI Assistant">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
+  </actions>
+</idea-plugin>
