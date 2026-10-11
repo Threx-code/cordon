@@ -92,7 +92,7 @@ class TestAgainstTheReferenceLibrary:
 
     def test_a_real_conda_info_member(self) -> None:
         compressed = (FIXTURES / "conda-info.tar.zst").read_bytes()
-        expected = (FIXTURES / "conda-info.sha256").read_text().split()[0]
+        expected = (FIXTURES / "conda-info.sha256").read_text(encoding="utf-8").split()[0]
         data = Zstd.decompress(compressed, 1 << 26)
         assert hashlib.sha256(data).hexdigest() == expected
         with tarfile.open(fileobj=io.BytesIO(data)) as archive:
