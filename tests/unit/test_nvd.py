@@ -415,5 +415,26 @@ class TestOneVendorsProducts:
             "json": [["nlohmann:json", ["github.com/nlohmann/json"]]],
             "jsonformoderncpp": [["nlohmann:json-for-modern-cpp", ["github.com/nlohmann/json"]]],
         }
-        product, why = CpeRule.match(index, ["nlohmann_json"], ["https://github.com/nlohmann/json"])
+        product, why = CpeRule.match(
+            index, ["modern-json-lib"], ["https://github.com/nlohmann/json"]
+        )
         assert product == "nlohmann:json nlohmann:json-for-modern-cpp" and "one vendor's" in why
+
+
+class TestVendorPrefixedNames:
+    INDEX: ClassVar[dict[str, list[list[Any]]]] = {
+        "json": [
+            ["nlohmann:json", ["github.com/nlohmann/json"]],
+            ["other:json", ["github.com/nlohmann/json"]],
+        ]
+    }
+
+    def test_vendor_underscore_product(self) -> None:
+        product, _ = CpeRule.match(
+            self.INDEX, ["nlohmann_json"], ["https://github.com/nlohmann/json"]
+        )
+        assert product == "nlohmann:json"
+
+    def test_the_prefix_must_be_the_products_vendor(self) -> None:
+        product, _ = CpeRule.match(self.INDEX, ["boost_json"], ["https://github.com/boostorg/json"])
+        assert product is None

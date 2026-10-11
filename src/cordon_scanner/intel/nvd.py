@@ -133,6 +133,15 @@ class CpeRule:
                 shared = sites & set(references)
                 if shared:
                     found[str(product)] = sorted(shared)[0]
+        # A packager's `<vendor>_<product>` (Conan's nlohmann_json is NVD's nlohmann:json): the rest
+        # of the name, only for a product of that very vendor, and still under the site guard.
+        for raw in names:
+            vendor, _, rest = re.sub(r"[-_.]", "_", raw.lower()).partition("_")
+            for product, references in index.get(CpeRule.name(rest), ()) if rest else ():
+                if CpeRule.name(str(product).split(":", 1)[0]) == CpeRule.name(vendor):
+                    shared = sites & set(references)
+                    if shared:
+                        found[str(product)] = sorted(shared)[0]
         if not found:
             return CpeRule.by_project_site(index, sites)
         if len(set(found.values())) > 1:
