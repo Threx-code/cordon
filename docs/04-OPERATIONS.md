@@ -147,6 +147,23 @@ carries `complete: bool`. A silent skip is treated as a bug: there is a test tha
 walks a corpus with limits set absurdly low and asserts that the number of
 `OPERATIONAL` findings equals the number of skipped units.
 
+### 1.5.1 What an `--online` advisory check costs
+
+For an ecosystem OSV has no feed for, `--online` reads what each package was built from
+(`docs/05-COVERAGE-MATRIX.md`), and proving a release against its tag downloads the release
+archive and the tag's tree. Bounded on every side:
+
+- **Time.** Each connection and read has a short timeout (30 s for an archive, 120 s for a git
+  server starting a large pack), and each download a deadline (300 s and 900 s): a host that
+  drops packets or trickles bytes fails that one proof, which is reported, never the scan.
+- **Size.** An archive is read to 256 MB, a pack to 512 MB, a conda package's `info` member to
+  64 MB; past that the proof is reported as not made.
+- **Memory.** A release's files are hashed as they stream and not kept; two proofs run at once.
+  A 900-package conda lock peaked at 2.6 GB.
+- **GitHub's API.** A deleted Homebrew formula is found in homebrew-core's history, and a `HEAD`
+  build's commit resolved, through `api.github.com`, which allows 60 requests an hour without a
+  token. Set `GITHUB_TOKEN` for a large estate: it is sent to `api.github.com` alone.
+
 ### 1.6 What is deliberately not done
 
 - **No incremental re-parse of dependency graphs.** Correctness over speed.
