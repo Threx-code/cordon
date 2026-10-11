@@ -1559,3 +1559,15 @@ class TestCondaZip64:
         monkeypatch.setattr(CondaPackage, "_range", staticmethod(ranged))
         recipe = CondaPackage.recipe("https://conda.anaconda.org/conda-forge/noarch/x-1.0-0.conda")
         assert recipe is not None and "source" in recipe
+
+
+class TestHttpGitHubArchives:
+    def test_an_http_github_archive_is_the_https_one(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import RepositoryArchive
+
+        assert RepositoryArchive.parse(
+            "http://github.com/google/re2/archive/2025-11-05.tar.gz"
+        ) == (
+            "https://github.com/google/re2",
+            "2025-11-05",
+        )
