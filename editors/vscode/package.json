@@ -8,6 +8,8 @@
   "repository": { "type": "git", "url": "https://github.com/Threx-code/cordon" },
   "homepage": "https://github.com/Threx-code/cordon/tree/main/editors/vscode",
   "bugs": { "url": "https://github.com/Threx-code/cordon/issues" },
+  "icon": "images/icon.png",
+  "galleryBanner": { "color": "#1f7a6f", "theme": "dark" },
   "engines": { "vscode": "^1.90.0" },
   "categories": ["Linters", "AI"],
   "keywords": ["security", "supply chain", "malware", "mcp", "sbom", "ai agents", "skills"],

@@ -3,3 +3,5 @@ test/**
 out/test/**
 tsconfig.json
 node_modules/**
+images/icon.svg
+Dockerfile
