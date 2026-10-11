@@ -244,6 +244,21 @@ _PASTE_RUN: Final = re.compile(
     r"(?im)^(?=[^\n]{0,600}\b(?:run|execute|paste|enter)\b)"
     r"(?=[^\n]{0,600}\b(?:terminal|command|shell|powershell|cmd|console)\b)[^\n]{1,600}"
 )
+#: A tool the reader must install, named in prose, with a download beside it: ClawHavoc's
+#: "OpenClawCLI must be installed before using this skill. Download from https://...". Real
+#: prerequisites are then used; this one is never invoked anywhere the skill runs a command.
+_REQUIRED_TOOL: Final = re.compile(
+    r"(?im)^[^\n]{0,200}?\b([A-Za-z][\w.-]{2,40})\b[^\n]{0,40}?\b(?:must|needs?\s+to|has\s+to|should)"
+    r"\s+be\s+(?:installed|running|downloaded|active)\b[^\n]{0,300}$"
+)
+_DOWNLOAD_URL: Final = re.compile(r"(?i)\b(?:download|install)\w*\b[^\n]{0,80}?https?://[^\s)>\]]+")
+_CODE_SPANS: Final = re.compile(r"```[^\n]{0,80}\n(.*?)```|`([^`\n]{1,400})`", re.S)
+_NOT_A_TOOL: Final = frozenset(
+    {"this", "skill", "it", "python", "node", "you", "the", "that", "which", "server", "app",
+     "tool", "cli", "prerequisite", "prerequisites", "required", "requirement", "requirements",
+     "note", "not", "important", "warning", "caution", "everything", "all", "both", "each",
+     "dependencies", "dependency", "also", "first", "must", "these", "those", "they"}
+)  # fmt: skip
 _URL_HOST: Final = re.compile(r"(?i)https?://([a-z0-9.-]{1,253})(/[^\s|\"'`)]{0,200})?")
 _SHORTENERS: Final = frozenset(
     {"bit.ly", "tinyurl.com", "t.co", "is.gd", "rb.gy", "cutt.ly", "shorturl.at", "goo.gl"}
@@ -285,6 +300,30 @@ class InstructionText:
         before = raw[match.start() - 1 : match.start()]
         after = raw[match.end() : match.end() + 1]
         return bool(_WORD_BYTE.fullmatch(before) and _WORD_BYTE.fullmatch(after))
+
+    @staticmethod
+    def phantom_prerequisite(text: str) -> re.Match[str] | None:
+        """A line saying a named tool must be installed, a download link within three lines of
+        it, and the tool run nowhere in the file's code -- a fenced block or an inline span."""
+        code = " ".join((a or b) for a, b in _CODE_SPANS.findall(text)).lower()
+        lines = text.splitlines(keepends=True)
+        offsets = [0]
+        for line in lines:
+            offsets.append(offsets[-1] + len(line))
+        for found in _REQUIRED_TOOL.finditer(text):
+            tool = found.group(1)
+            if tool.lower() in _NOT_A_TOOL:
+                continue
+            index = next(i for i, end in enumerate(offsets[1:]) if end > found.start())
+            near = "".join(lines[max(0, index - 3) : index + 4])
+            if not _DOWNLOAD_URL.search(near):
+                continue
+            if re.search(rf"(?<![\w.-]){re.escape(tool.lower())}(?!\w)", code):
+                continue
+            if InstructionText._quoted(text, found) or InstructionText._forbidden(text, found):
+                continue
+            return found
+        return None
 
     @staticmethod
     def dropper(text: str) -> re.Match[str] | None:
@@ -629,6 +668,18 @@ RULES: Final = {
             'author last saved: this is how a skill delivers malware as a "prerequisite".',
             "Remove the instruction. A real dependency is installed from its own registry or "
             "release page, with a checksum.",
+            (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.OWASP_LLM_PROMPT_INJECTION),
+        ),
+        AgentRules._rule(
+            "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001",
+            "Agent instructions that require downloading a tool they never use",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "This instruction file says a named tool must be installed and links a download for "
+            "it, yet no command anywhere in the file runs that tool. A real prerequisite is used; "
+            "a download the skill has no use for is the payload, delivered as a requirement.",
+            "Remove the requirement, or install the tool from its own registry and use it.",
             (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.OWASP_LLM_PROMPT_INJECTION),
         ),
         AgentRules._rule(
@@ -1292,6 +1343,10 @@ class AgentChainDetector(BaseDetector):
         if injection is not None:
             start, end = InstructionText._byte_span(text, injection)
             yield self._finding("SUSPECT.AGENT.INJECTION_TEXT.001", unit, ctx, start, end)
+        phantom = InstructionText.phantom_prerequisite(text)
+        if phantom is not None:
+            start, end = InstructionText._byte_span(text, phantom)
+            yield self._finding("SUSPECT.AGENT.PHANTOM_PREREQUISITE.001", unit, ctx, start, end)
         dropper = InstructionText.dropper(text)
         if dropper is not None:
             start, end = InstructionText._byte_span(text, dropper)

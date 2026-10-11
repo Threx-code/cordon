@@ -698,6 +698,7 @@ rather than a document.
 | `SUSPECT.AGENT.INTENT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |
+| `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
