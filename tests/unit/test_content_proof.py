@@ -9,6 +9,8 @@ import hashlib
 import io
 import tarfile
 
+import pytest
+
 from cordon_scanner.intel import gitfetch
 from cordon_scanner.intel.gitfetch import GitPack
 from cordon_scanner.intel.upstream_advisories import Archive, ContentProof, TagInference
@@ -91,3 +93,27 @@ class TestTheProof:
         release["src/lfile3.c"] = b"int other;\n"
         outcome, detail = self.check(monkeypatch, release, tag)
         assert outcome == "refuted" and "lfile3.c" in detail
+
+
+class TestTheDownloadDeadline:
+    def test_a_server_trickling_bytes_is_cut_off(self, monkeypatch) -> None:
+        import time
+        import urllib.request
+
+        from cordon_scanner.intel.upstream_advisories import ContentProof
+
+        class Trickle:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc) -> None:
+                return None
+
+            def read(self, size: int) -> bytes:
+                return b"x"  # never ends
+
+        clock = iter(range(0, 10_000, 100))
+        monkeypatch.setattr(time, "monotonic", lambda: float(next(clock)))
+        monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: Trickle())
+        with pytest.raises(TimeoutError):
+            ContentProof._download("https://example.org/x.tar.gz")

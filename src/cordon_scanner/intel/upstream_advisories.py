@@ -1961,6 +1961,8 @@ class ContentProof:
     EMPTY_BLOB: ClassVar[str] = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
     """Git's id for an empty file."""
     MAX_ARCHIVE_BYTES: ClassVar[int] = 256 << 20
+    SOCKET_SECONDS: ClassVar[float] = 30.0
+    DOWNLOAD_SECONDS: ClassVar[float] = 300.0
     _running: ClassVar[threading.BoundedSemaphore] = threading.BoundedSemaphore(2)
     _results: ClassVar[dict[tuple[str, str, str], tuple[str, str]]] = {}
 
@@ -1990,12 +1992,27 @@ class ContentProof:
         # change what is compared.
         if not url.startswith(("https://", "http://")):
             raise ValueError("not http(s)")
+        import time
+
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
-        with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310
-            body: bytes = response.read(ContentProof.MAX_ARCHIVE_BYTES + 1)
-        if len(body) > ContentProof.MAX_ARCHIVE_BYTES:
-            raise ValueError("archive too large")
-        return body
+        # Each connect and read has its own short timeout -- a host that drops packets fails in
+        # seconds, not after the read timeout for every address it resolves to -- and the whole
+        # download a deadline, so a server trickling bytes cannot hold a scan.
+        deadline = time.monotonic() + ContentProof.DOWNLOAD_SECONDS
+        chunks: list[bytes] = []
+        size = 0
+        with urllib.request.urlopen(request, timeout=ContentProof.SOCKET_SECONDS) as response:  # noqa: S310
+            while True:
+                chunk: bytes = response.read(1 << 20)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+                if size > ContentProof.MAX_ARCHIVE_BYTES:
+                    raise ValueError("archive too large")
+                if time.monotonic() > deadline:
+                    raise TimeoutError("the release archive took too long to download")
+        return b"".join(chunks)
 
     @staticmethod
     def files(body: bytes) -> dict[str, bytes]:

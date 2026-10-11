@@ -19,12 +19,15 @@ import hashlib
 import http.client
 import re
 import struct
+import time
 import urllib.request
 import zlib
 from typing import Any, Final
 
 MAX_PACK_BYTES: Final = 512 << 20
 MAX_DEPTH: Final = 64
+SOCKET_SECONDS: Final = 120.0
+DEADLINE_SECONDS: Final = 900.0
 AGENT: Final = "git/2.45.0 (cordon-scanner)"
 
 _TYPES: Final = {1: b"commit", 2: b"tree", 3: b"blob", 4: b"tag"}
@@ -47,10 +50,25 @@ class GitFetch:
             headers["Content-Type"] = "application/x-git-upload-pack-request"
             headers["Accept"] = "application/x-git-upload-pack-result"
         request = urllib.request.Request(url, data=body, headers=headers)  # noqa: S310 - https
+        # Each socket operation its own timeout (a server may take a while to start a large pack),
+        # and the whole answer a deadline, so a server trickling bytes cannot hold a scan.
+        deadline = time.monotonic() + DEADLINE_SECONDS
+        chunks: list[bytes] = []
+        size = 0
         try:
-            with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310
-                data: bytes = response.read(MAX_PACK_BYTES + 1)
+            with urllib.request.urlopen(request, timeout=SOCKET_SECONDS) as response:  # noqa: S310
+                while True:
+                    chunk: bytes = response.read(1 << 20)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if size > MAX_PACK_BYTES:
+                        break
+                    if time.monotonic() > deadline:
+                        raise GitFetchError("the server took too long to answer")
                 final = str(response.geturl())
+            data = b"".join(chunks)
         except http.client.HTTPException as exc:
             # A response cut short (`IncompleteRead`) is no pack: said so, not raised past.
             raise GitFetchError(
