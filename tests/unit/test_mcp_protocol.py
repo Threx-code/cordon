@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -11,9 +13,9 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner
+from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner, TimedOut
 from cordon_scanner.mcp.server import LEGACY, MODERN, Server
-from cordon_scanner.mcp.tools import TOOLS, Outcome, Settings, Tool
+from cordon_scanner.mcp.tools import TOOLS, Args, Outcome, Settings, Tool, ToolError
 from cordon_scanner.mcp.workspace import Workspace
 
 MODERN_META = {
@@ -423,3 +425,60 @@ class TestHostileClients:
                 }
             )
         wire.replies()
+
+
+class TestContentPaths:
+    @pytest.mark.parametrize(
+        "path",
+        ["C:/Windows/x", "a:b", "NUL", "con.txt", "dir/COM1.log", "trailing.", "space ", "../x",
+         "/etc/passwd", "a\\b", "~/x", "a//b", "tab\there", "x?y"],
+    )  # fmt: skip
+    def test_unusable_paths_are_refused(self, path: str) -> None:
+        with pytest.raises(ToolError):
+            Args.relative(path)
+
+    @pytest.mark.parametrize(
+        "path", ["AGENTS.md", ".github/workflows/ci.yml", ".claude/skills/x/SKILL.md", "console.js"]
+    )
+    def test_ordinary_paths_pass(self, path: str) -> None:
+        assert str(Args.relative(path)) == path
+
+
+class Tree:
+    """A child that starts a grandchild, both sleeping: what a scan's worker processes look like."""
+
+    @staticmethod
+    def ended(pid: int) -> bool:
+        """Gone, or a zombie: ended, and waiting only to be reaped by whoever adopted it (in a
+        container whose first process reaps nothing, that is forever)."""
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        status = Path(f"/proc/{pid}/status")
+        if status.exists():
+            return "State:\tZ" in status.read_text(encoding="utf-8")
+        return False
+
+    SCRIPT = (
+        "import subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])\n"
+        "open(sys.argv[1], 'w').write(str(child.pid))\n"
+        "time.sleep(600)\n"
+    )
+
+
+class TestTheRunnerEndsWhatItStarts:
+    def test_a_deadline_ends_the_child_and_its_children(self, tmp_path: Path) -> None:
+        marker = tmp_path / "grandchild.pid"
+        runner = Runner(offline=True)
+        runner.command = lambda args: [sys.executable, "-c", Tree.SCRIPT, str(marker)]  # type: ignore[method-assign]
+        with pytest.raises(TimedOut):
+            runner.run([], timeout=3, token=CancelToken())
+        grandchild = int(marker.read_text(encoding="utf-8"))
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if Tree.ended(grandchild):
+                return
+            time.sleep(0.1)
+        pytest.fail("the grandchild outlived the deadline")

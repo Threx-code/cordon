@@ -152,5 +152,20 @@ class Runner:
                     os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
         else:  # pragma: no cover - Windows
-            process.kill()
+            # The scanner starts worker processes; ending only the parent would leave them
+            # running. taskkill /T ends the tree, named by its absolute path, never searched for.
+            taskkill = (
+                Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "taskkill.exe"
+            )
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                subprocess.run(  # noqa: S603 - absolute system path, fixed argv
+                    [str(taskkill), "/T", "/F", "/PID", str(process.pid)],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15,
+                    check=False,
+                )
+            with contextlib.suppress(OSError):
+                process.kill()
             process.wait(timeout=5)

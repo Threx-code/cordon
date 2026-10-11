@@ -111,6 +111,13 @@ class Tool:
 class Args:
     """Checks a tool's arguments; each failure is a ToolError the model can act on."""
 
+    #: Windows device names: a file called `NUL` or `CON.txt` is the device, wherever it is put.
+    DEVICES: ClassVar[frozenset[str]] = frozenset(
+        {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+        | {f"COM{i}" for i in range(10)}
+        | {f"LPT{i}" for i in range(10)}
+    )
+
     @staticmethod
     def flag(args: dict[str, Any], key: str) -> bool:
         value = args.get(key, False)
@@ -177,9 +184,22 @@ class Args:
 
     @staticmethod
     def relative(value: str) -> PurePosixPath:
-        """A relative path for content a caller supplied: no root, no `..`, no backslashes."""
-        if not value or len(value) > 255 or "\\" in value or "\x00" in value:
+        """A relative path for content a caller supplied: no root, no `..`, no backslashes, and
+        nothing Windows reads differently -- a drive (`C:/x` is absolute there), a stream
+        (`a:b`), a device name (`CON`, `NUL.txt`) or a part ending in a dot or space."""
+        if (
+            not value
+            or len(value) > 255
+            or "//" in value
+            or any(c in value for c in '\\\x00:*?"<>|')
+        ):
             raise ToolError(f"not a usable relative path: {value[:80]!r}")
+        if any(ord(c) < 32 for c in value):
+            raise ToolError("a path may not contain control characters")
+        for part in value.split("/"):
+            stem = part.split(".", 1)[0].upper()
+            if stem in Args.DEVICES or (part and part[-1] in ". " and part not in (".", "..")):
+                raise ToolError(f"{part!r} is not a usable file name on every system")
         path = PurePosixPath(value)
         if (
             path.is_absolute()
@@ -1159,7 +1179,8 @@ class KnowledgeTools:
     def server_status(settings: Settings, args: dict[str, Any], token: CancelToken) -> Outcome:
         try:
             run = settings.runner.run(["whoami"], timeout=30, token=token)
-            cloud = Untrusted.text(run.stdout.strip() or run.stderr.strip(), 300)
+            # Signed in or not, never who: the identity would go to the model and its provider.
+            cloud = "signed in" if run.exit_code == 0 else "not signed in"
         except TimedOut:
             cloud = "unknown (timed out)"
         structured = {

@@ -490,6 +490,12 @@ class Server:
         except (OSError, ValueError) as exc:
             print(f"cordon-scanner mcp: {exc}", file=sys.stderr)
             return 3
+        if not args.allow_private_network:
+            from cordon_scanner.core.netguard import NetworkGuard
+
+            # This process fetches too (an extension by id, following the registry's redirects):
+            # the same rule as the scans it runs.
+            NetworkGuard.install()
         settings = Settings(
             workspace=workspace,
             runner=Runner(
