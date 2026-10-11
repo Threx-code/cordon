@@ -304,8 +304,11 @@ ecosystems, container images, the AI-agent chain, reporters, policy layer,
 baselines, git-aware scanning and the advisory layer are implemented and tested;
 `docs/03-INTERFACES.md` separates the commands that ship from those that are
 designed. Interfaces may still change before 1.0, the bundled advisory set is the
-malicious plus high/critical subset of OSV rather than all of it, eleven of the
-twenty-eight ecosystems have no advisory feed to match against at all, and
+malicious plus high/critical subset of OSV rather than all of it, nine ecosystems
+OSV publishes no feed for are matched only where a package can be tied to its
+source -- offline through NVD for Homebrew, vcpkg, Conan, conda and CocoaPods,
+and with `--online` through the upstream it was built from -- with the rest named
+as unchecked, Helm charts have no advisory source at all, and
 reachability is modelled at its import tier, with function-level checks for Go
 (from the symbols its database lists) and for PyPI and npm (from the functions an
 advisory's text names, which can only raise a finding, never lower one) — none of it hidden: `cordon-scanner rules list`

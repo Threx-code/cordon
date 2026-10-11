@@ -21,6 +21,8 @@ from cordon_scanner.detect.provenance import SUPPORTED_ECOSYSTEMS as PROVENANCE_
 from cordon_scanner.detect.registry import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.advisories import AdvisoryDatabase
+from cordon_scanner.intel.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
+from cordon_scanner.intel.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
 from cordon_scanner.intel.popular import PackageIntel
 from cordon_scanner.intel.real import RealPackages
 
@@ -42,7 +44,10 @@ python tests/ecosystems.py > docs/07-ECOSYSTEMS.md
 ```
   MANIFESTS      what a project declares: ranges, no resolved versions
   LOCKFILES      what a project resolved: exact versions, usually hashes
-  ADVISORIES     known-malicious and known-vulnerable matching, offline
+  ADVISORIES     known-malicious and known-vulnerable matching: `yes` from the bundled OSV
+                 data, offline; `NVD` from NVD's bundled records, offline, once a package
+                 is tied to a CPE product; `upstream` with --online, through the repository,
+                 module or archive the package was built from (docs/05-COVERAGE-MATRIX.md)
   TYPOSQUAT      name-similarity checks against that ecosystem's popular set
   REGISTRY       --online only: withdrawal, version distance, hash agreement
   PROVENANCE     --online only: attestation presence, and verification with [attest]
@@ -78,6 +83,18 @@ class EcosystemsPage:
         return "yes" if value else "--"
 
     @staticmethod
+    def _advisories(database: AdvisoryDatabase, ecosystem_id: str) -> str:
+        """`yes` for a bundled OSV feed; `NVD` where NVD's bundled records match it offline;
+        `upstream` where `--online` matches it through what it was built from."""
+        if database.covers(ecosystem_id):
+            return "yes"
+        sources = [
+            *(["NVD"] if ecosystem_id in NVD_ECOSYSTEMS else []),
+            *(["upstream"] if ecosystem_id in UPSTREAM_ECOSYSTEMS else []),
+        ]
+        return ", ".join(sources) or "--"
+
+    @staticmethod
     def rows() -> list[tuple[str, ...]]:
         """One row per registered ecosystem, in the order the registry holds them."""
         database = AdvisoryDatabase.bundled()
@@ -99,7 +116,7 @@ class EcosystemsPage:
                     f"`{ecosystem_id}`",
                     manifests,
                     lockfiles,
-                    EcosystemsPage._yes(database.covers(ecosystem_id)),
+                    EcosystemsPage._advisories(database, ecosystem_id),
                     EcosystemsPage._yes(bool(PackageIntel.POPULAR_PACKAGES.get(ecosystem_id))),
                     EcosystemsPage._yes(ecosystem_id in REGISTRY_ECOSYSTEMS),
                     EcosystemsPage._yes(ecosystem_id in PROVENANCE_ECOSYSTEMS),

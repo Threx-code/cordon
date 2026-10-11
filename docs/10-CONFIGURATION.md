@@ -51,11 +51,12 @@ suppressions:
 Unknown keys are refused with a suggestion — a silently-ignored `sevrity_threshold`
 would leave you believing a threshold is in force when the default is.
 
-`accept_no_feed` names ecosystems no advisory source covers -- today Homebrew, Nix, CocoaPods,
-Bazel, conda, Helm, Terraform and vcpkg -- whose gap the project accepts. Their dependencies are
-still listed as unchecked in every report (`OPERATIONAL.ADVISORY.NO_FEED.001`), but no longer make
-the scan incomplete, so `fail_on_incomplete` keeps meaning "something Cordon was given went
-unread". Unset, it accepts nothing. An organisation policy that sets it caps the repository's:
+`accept_no_feed` names ecosystems with no OSV feed -- Helm, which nothing covers, and those
+matched through NVD or their upstream instead (Homebrew, vcpkg, Conan, conda, CocoaPods, Bazel,
+Terraform, Nix, Ansible) -- whose unchecked packages the project accepts: a Homebrew cask or a
+vendor's closed binary that no source names. Their dependencies are still listed as unchecked in
+every report (`OPERATIONAL.ADVISORY.NO_FEED.001`), but no longer make the scan incomplete, so
+`fail_on_incomplete` keeps meaning "something Cordon was given went unread". Unset, it accepts nothing. An organisation policy that sets it caps the repository's:
 only an ecosystem both accept counts.
 
 An organisation policy may tighten any of the three: `expand_archives` and a shorter
