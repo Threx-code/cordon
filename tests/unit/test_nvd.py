@@ -33,7 +33,12 @@ INDEX = {
         ["kovidgoyal:kitty", ["github.com/kovidgoyal/kitty"]],
         ["other:kitty", ["kitty.example"]],
     ],
-    "tool": [["a:tool", ["shared.example"]], ["b:tool", ["shared.example"]]],
+    "tool": [["a:tool", ["shared.example", "a.example"]], ["b:tool", ["b.example"]]],
+    "poco": [
+        ["macchina:poco", ["github.com/pocoproject/poco"]],
+        ["pocoproject:poco", ["github.com/pocoproject/poco"]],
+    ],
+    "libexpat": [["libexpat_project:libexpat", ["github.com/libexpat/libexpat"]]],
 }
 
 
@@ -68,9 +73,17 @@ class TestTheGuardedRule:
         product, _ = CpeRule.match(INDEX, ["kitty"], ["https://github.com/kovidgoyal/kitty"])
         assert product == "kovidgoyal:kitty"
 
-    def test_two_products_passing_is_ambiguity(self) -> None:
-        product, why = CpeRule.match(INDEX, ["tool"], ["https://shared.example/"])
+    def test_two_products_on_different_sites_is_ambiguity(self) -> None:
+        product, why = CpeRule.match(INDEX, ["tool"], ["https://a.example/", "https://b.example/"])
         assert product is None and "more than one" in why
+
+    def test_two_cpe_names_on_one_site_are_one_product(self) -> None:
+        product, _ = CpeRule.match(INDEX, ["poco"], ["https://github.com/pocoproject/poco"])
+        assert product == "macchina:poco pocoproject:poco"
+
+    def test_a_lib_prefix_is_the_same_name(self) -> None:
+        product, _ = CpeRule.match(INDEX, ["expat"], ["https://github.com/libexpat/libexpat"])
+        assert product == "libexpat_project:libexpat"
 
     def test_no_url_no_match(self) -> None:
         assert CpeRule.match(INDEX, ["sqlite"], [])[0] is None

@@ -115,10 +115,19 @@ class NvdImport:
             if hashlib.sha256(body).hexdigest() != expected:
                 raise NvdImportError(f"{base}{suffix} does not match its published SHA-256")
             return body
-        if expected not in (
-            hashlib.sha256(body).hexdigest(),
-            hashlib.sha256(NvdImport._ungzip(body)).hexdigest(),
-        ):
+        # The CPE dictionary's `.meta` digest is over its chunk files' JSON, concatenated in
+        # name order (measured: the archive's own digest and the tar's both differ from it).
+        digest = hashlib.sha256()
+        try:
+            with tarfile.open(fileobj=io.BytesIO(body), mode="r:gz") as tar:
+                members = sorted((m for m in tar.getmembers() if m.isfile()), key=lambda m: m.name)
+                for member in members:
+                    handle = tar.extractfile(member)
+                    while handle is not None and (chunk := handle.read(1 << 20)):
+                        digest.update(chunk)
+        except (tarfile.TarError, OSError, EOFError) as exc:
+            raise NvdImportError(f"{base}{suffix}: {exc}") from exc
+        if digest.hexdigest() != expected:
             raise NvdImportError(f"{base}{suffix} does not match its published SHA-256")
         return body
 
@@ -209,10 +218,18 @@ class NvdImport:
 
     @staticmethod
     def index() -> dict[str, list[list[Any]]]:
-        """`normalised product name -> [[vendor:product, [sites]]]` from NVD's CPE dictionary:
-        application products, not deprecated, with at least one reference on a site."""
+        """`normalised name -> [[vendor:product, [sites]]]` from NVD's CPE dictionary, for
+        application products that are not deprecated.
+
+        A product's sites are its own references' -- not those NVD types `Advisory`, which are
+        third parties' write-ups (a Red Hat or Debian advisory names many products) -- with its
+        vendor's `Vendor`-typed sites added (gnu:m4 lists none of its own; GNU's are gnu.org). Its
+        names are the product's, and any acronym its title gives in parentheses (nasm:
+        netwide_assembler is titled \"Netwide Assembler (NASM)\")."""
         archive = NvdImport.verified(CPE_FEED, ".tar.gz")
         sites: dict[str, set[str]] = defaultdict(set)
+        vendors: dict[str, set[str]] = defaultdict(set)
+        names: dict[str, set[str]] = defaultdict(set)
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
             for member in tar:
                 handle = tar.extractfile(member) if member.isfile() else None
@@ -226,13 +243,29 @@ class NvdImport:
                     if len(parts) < 5 or parts[2] != "a":
                         continue
                     product = f"{parts[3]}:{parts[4]}"
+                    names[product].add(CpeRule.name(parts[4]))
+                    for title in cpe.get("titles") or []:
+                        for acronym in re.findall(
+                            r"\(([A-Za-z][\w.+-]{1,40})\)", str(title.get("title") or "")
+                        ):
+                            names[product].add(CpeRule.name(acronym))
                     for reference in cpe.get("refs") or []:
+                        kind = str(reference.get("type") or "")
+                        if kind == "Advisory":
+                            continue
                         site = CpeRule.site(str(reference.get("ref") or ""))
-                        if site:
-                            sites[product].add(site)
+                        if not site:
+                            continue
+                        sites[product].add(site)
+                        if kind == "Vendor":
+                            vendors[parts[3]].add(site)
         index: dict[str, list[list[Any]]] = defaultdict(list)
-        for product, found in sorted(sites.items()):
-            index[CpeRule.name(product.split(":", 1)[1])].append([product, sorted(found)])
+        for product in sorted(set(sites) | {p for p in names if vendors.get(p.split(":", 1)[0])}):
+            found = sites.get(product, set()) | vendors.get(product.split(":", 1)[0], set())
+            if not found:
+                continue
+            for name in sorted(n for n in names[product] if n):
+                index[name].append([product, sorted(found)])
         return dict(index)
 
     @staticmethod
@@ -276,13 +309,6 @@ class NvdImport:
             gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed,
         ):
             compressed.write(json.dumps(data, separators=(",", ":"), sort_keys=True).encode())
-
-    @staticmethod
-    def _ungzip(body: bytes) -> bytes:
-        try:
-            return gzip.decompress(body)
-        except (OSError, EOFError):
-            return b""
 
     @staticmethod
     def years(until: int | None = None) -> range:

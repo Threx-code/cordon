@@ -112,6 +112,10 @@ class CpeRule:
         # name: still under the site guard, and still only one product may pass.
         wanted_names = {CpeRule.name(n) for n in names if n}
         wanted_names |= {re.sub(r"(?<=[a-z])\d$", "", n) for n in wanted_names}
+        # A library's `lib` is the packager's or NVD's spelling, not a different name (Conan's
+        # expat is NVD's libexpat).
+        wanted_names |= {n.removeprefix("lib") for n in wanted_names if n.startswith("lib")}
+        wanted_names |= {f"lib{n}" for n in wanted_names if not n.startswith("lib")}
         for wanted in wanted_names:
             for product, references in index.get(wanted, ()):
                 shared = sites & set(references)
@@ -119,13 +123,17 @@ class CpeRule:
                     found[str(product)] = sorted(shared)[0]
         if not found:
             return None, "no CPE product in NVD has its name and its site"
-        if len(found) > 1:
+        if len(set(found.values())) > 1:
             return (
                 None,
                 f"more than one CPE product has its name and its site ({', '.join(sorted(found))})",
             )
-        product, site = next(iter(found.items()))
-        return product, f"NVD's {product} has its name and lists its site, {site}"
+        # Several CPE names on the one site are NVD's duplicates of one product (poco is both
+        # macchina:poco and pocoproject:poco, each listing github.com/pocoproject/poco).
+        site = next(iter(found.values()))
+        return " ".join(
+            sorted(found)
+        ), f"NVD's {', '.join(sorted(found))} has its name and lists its site, {site}"
 
 
 @dataclass
@@ -249,7 +257,7 @@ class NvdAdvisories:
                 if product is None:
                     result.unchecked[dependency.purl] = why
                     continue
-                chosen, through, tied = [product], "nvd-inferred", why
+                chosen, through, tied = product.split(), "nvd-inferred", why
             found: list[Advisory] = []
             for product in chosen:
                 for identifier, severity, bounds in products.get(product, ()):
