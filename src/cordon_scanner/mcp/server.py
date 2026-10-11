@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Final, TextIO
 
+from cordon_scanner.mcp.brand import ICONS
 from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner
 from cordon_scanner.mcp.tools import Outcome, Registry, Settings, ToolError
 from cordon_scanner.mcp.untrusted import Untrusted
@@ -116,6 +117,7 @@ class Server:
                 "Checks packages, install commands, skills, MCP servers, agent files and code before an agent acts."
             )
             info["websiteUrl"] = "https://github.com/Threx-code/cordon"
+            info["icons"] = ICONS
         return info
 
     def capabilities(self) -> dict[str, Any]:

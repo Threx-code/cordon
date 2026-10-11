@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -482,3 +483,28 @@ class TestTheRunnerEndsWhatItStarts:
                 return
             time.sleep(0.1)
         pytest.fail("the grandchild outlived the deadline")
+
+
+class TestTheMark:
+    def test_the_server_shows_cordons_mark_from_2025_11_25(self, tmp_path: Path) -> None:
+        info = Wire(tmp_path).initialize("2025-11-25")["result"]["serverInfo"]
+        (icon,) = info["icons"]
+        assert icon["mimeType"] == "image/svg+xml" and icon["src"].startswith(
+            "data:image/svg+xml;base64,"
+        )
+        svg = base64.b64decode(icon["src"].split(",", 1)[1]).decode()
+        assert svg.startswith("<svg") and "#1f7a6f" in svg and "#d9822b" in svg
+
+    def test_older_versions_carry_no_field_they_lack(self, tmp_path: Path) -> None:
+        assert "icons" not in Wire(tmp_path).initialize("2025-06-18")["result"]["serverInfo"]
+
+    def test_modern_results_carry_it_in_server_info(self, tmp_path: Path) -> None:
+        reply = Wire(tmp_path).ask(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "server/discover",
+                "params": {"_meta": MODERN_META},
+            }
+        )
+        assert reply["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["icons"]
