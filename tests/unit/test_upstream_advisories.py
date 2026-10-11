@@ -1372,3 +1372,43 @@ class TestPrebuiltPods:
     )
     def test_a_binary_distribution(self, spec: dict, prebuilt: bool) -> None:
         assert Upstreams.prebuilt(spec) is prebuilt
+
+
+class TestHeadersAreNotSource:
+    @pytest.mark.parametrize(
+        ("spec", "prebuilt"),
+        [
+            (
+                {
+                    "vendored_frameworks": "Crashlytics.framework",
+                    "source_files": "Crashlytics.framework/Headers/*.h",
+                },
+                True,
+            ),
+            (
+                {
+                    "vendored_frameworks": "A.framework",
+                    "source_files": ["A/*.{h,hpp}", "A/module.modulemap"],
+                },
+                True,
+            ),
+            ({"vendored_frameworks": "A.framework", "source_files": "A/**/*.{h,m}"}, False),
+            ({"vendored_frameworks": "A.framework", "source_files": "A/**/*"}, False),
+        ],
+    )
+    def test_header_shims(self, spec: dict, prebuilt: bool) -> None:
+        assert Upstreams.prebuilt(spec) is prebuilt
+
+
+class TestUmbrellaPods:
+    def test_a_header_over_its_subspecs(self) -> None:
+        firebase = {
+            "subspecs": [
+                {"name": "CoreOnly", "source_files": ["CoreOnly/Sources/Firebase.h"]},
+                {"name": "Analytics"},
+            ]
+        }
+        assert Upstreams.umbrella(firebase) and not Upstreams.prebuilt(firebase)
+        assert not Upstreams.umbrella({"source_files": "A/*.{h,m}"})
+        assert not Upstreams.umbrella({"vendored_frameworks": "A.framework", "source_files": "A.h"})
+        assert not Upstreams.umbrella({})

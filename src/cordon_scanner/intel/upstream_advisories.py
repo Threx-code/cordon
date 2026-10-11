@@ -1097,7 +1097,9 @@ class PodSiblings:
                 and dependency.resolved_from is None
                 and dependency.version
                 and isinstance(answer, Unnamed)
-                and answer.reason.startswith(("its source is downloaded from", "a prebuilt binary"))
+                and answer.reason.startswith(
+                    ("its source is downloaded from", "a prebuilt binary", "an umbrella of headers")
+                )
             ):
                 try:
                     found = PodSiblings.find(dependency, tags)
@@ -2971,12 +2973,62 @@ class Upstreams:
                 "frameworks or libraries and builds no source), with no repository to name",
                 homes=answer.homes,
             )
+        if (
+            isinstance(answer, Unnamed)
+            and isinstance(source, dict)
+            and isinstance(source.get("http"), str)
+            and Upstreams.umbrella(spec)
+        ):
+            # Firebase 3 to 6: the pod is a header and a module map over its subspecs' pods, from
+            # the vendor's binary distribution.
+            return Unnamed(
+                f"an umbrella of headers from {source['http']} (its podspec builds only headers "
+                "and vends nothing; the code is in the pods it depends on), with no repository to "
+                "name",
+                homes=answer.homes,
+            )
         return answer
+
+    @staticmethod
+    def patterns(value: object) -> list[str]:
+        if isinstance(value, str):
+            return [value]
+        return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+    @staticmethod
+    def header(pattern: str) -> bool:
+        """A file pattern that matches headers only: `*.h`, `X.hpp`, `**/*.{h,hh}`."""
+        found = re.search(r"\.(\w+|\{[\w,]+\})$", pattern.strip())
+        if not found:
+            return False
+        extensions = found.group(1).strip("{}").split(",")
+        return all(e in ("h", "hh", "hpp", "hxx", "inl", "modulemap") for e in extensions)
+
+    @staticmethod
+    def umbrella(spec: object) -> bool:
+        """Whether a podspec, with its subspecs, vends nothing and builds headers alone."""
+        vends, headers, builds = False, False, False
+        stack: list[object] = [spec]
+        while stack:
+            node = stack.pop()
+            if not isinstance(node, dict):
+                continue
+            for platform in (node, *(node.get(p) for p in ("ios", "osx", "tvos", "watchos"))):
+                if isinstance(platform, dict):
+                    vends |= bool(
+                        platform.get("vendored_frameworks") or platform.get("vendored_libraries")
+                    )
+                    for pattern in Upstreams.patterns(platform.get("source_files")):
+                        headers |= Upstreams.header(pattern)
+                        builds |= not Upstreams.header(pattern)
+            stack += [s for s in node.get("subspecs") or [] if isinstance(s, dict)]
+        return headers and not vends and not builds
 
     @staticmethod
     def prebuilt(spec: object) -> bool:
         """Whether a podspec, with its subspecs, vends frameworks or libraries and builds no
-        source files: a binary distribution."""
+        source files: a binary distribution. Headers alone are not source built (Crashlytics
+        3.x ships `Crashlytics.framework/Headers/*.h` beside its framework)."""
         vends, builds = False, False
         stack: list[object] = [spec]
         while stack:
@@ -2988,7 +3040,10 @@ class Upstreams:
                     vends |= bool(
                         platform.get("vendored_frameworks") or platform.get("vendored_libraries")
                     )
-                    builds |= bool(platform.get("source_files"))
+                    builds |= any(
+                        not Upstreams.header(pattern)
+                        for pattern in Upstreams.patterns(platform.get("source_files"))
+                    )
             stack += [s for s in node.get("subspecs") or [] if isinstance(s, dict)]
         return vends and not builds
 
