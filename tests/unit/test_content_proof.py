@@ -117,3 +117,25 @@ class TestTheDownloadDeadline:
         monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: Trickle())
         with pytest.raises(TimeoutError):
             ContentProof._download("https://example.org/x.tar.gz")
+
+
+class TestGnusMirror:
+    def test_ftp_gnu_org_is_also_tried_through_gnus_mirror(self, monkeypatch) -> None:
+        tried: list[str] = []
+
+        def download(url: str) -> bytes:
+            tried.append(url)
+            raise OSError("timed out")
+
+        monkeypatch.setattr(ContentProof, "_download", staticmethod(download))
+        archive = Archive(
+            ("https://ftp.gnu.org/gnu/autoconf/autoconf-2.71.tar.gz",), "sha256:" + "0" * 64
+        )
+        outcome, _ = ContentProof._check(
+            archive, "https://git.savannah.gnu.org/git/autoconf.git", "a" * 40, "v2.71"
+        )
+        assert outcome == "unprovable"
+        assert tried == [
+            "https://ftp.gnu.org/gnu/autoconf/autoconf-2.71.tar.gz",
+            "https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.71.tar.gz",
+        ]

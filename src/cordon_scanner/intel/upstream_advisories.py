@@ -2119,6 +2119,12 @@ class ContentProof:
                 f"{repository}/releases/download/{tag}/{url.rsplit('/', 1)[-1]}"
                 for url in archive.urls
             ]
+        # GNU's own mirror redirector for a file on ftp.gnu.org, which is often too loaded to answer.
+        candidates += [
+            re.sub(r"^https?://ftp\.gnu\.org/(?:pub/)?gnu/", "https://ftpmirror.gnu.org/gnu/", url)
+            for url in archive.urls
+            if re.match(r"^https?://ftp\.gnu\.org/(?:pub/)?gnu/", url)
+        ]
         for url in dict.fromkeys(candidates):
             try:
                 body = ContentProof._download(url)
