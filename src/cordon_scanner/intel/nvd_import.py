@@ -186,14 +186,18 @@ class NvdImport:
         """Every year's records, those `keep(id, severity)` accepts, grouped by product."""
         out = NvdBuild()
         products: dict[str, list[list[Any]]] = defaultdict(list)
+        # Every product any CVE names, kept or not: a product whose CVEs are all below the bundled
+        # cut (open-mpi:hwloc) is still a product NVD knows, to tie a package to.
+        named: set[str] = set()
         for year in years:
             count = 0
             for cve in NvdImport.cves(year):
                 out.cves += 1
                 identifier, rating = str(cve["id"]), NvdImport.severity(cve)
+                found = list(NvdImport.ranges(cve))
+                named.update(product for product, _ in found)
                 if not keep(identifier, rating):
                     continue
-                found = list(NvdImport.ranges(cve))
                 if not found:
                     continue
                 for product, bounds in found:
@@ -212,7 +216,7 @@ class NvdImport:
                 count += 1
             log(f"  {year}: {count:,} CVEs with application ranges")
         out.products = dict(products)
-        out.index = NvdImport.index(set(out.products))
+        out.index = NvdImport.index(named)
         log(f"  CPE dictionary: {len(out.index):,} product names with sites")
         return out
 
