@@ -1235,6 +1235,63 @@ class PodSiblings:
         )
 
 
+class CondaSiblings:
+    """A conda package naming no source of its own -- one output of a multi-output recipe
+    (glib-tools of glib) -- built in the same feedstock commit as another package of the same
+    lock that does name one: the same recipe, built once, from the same source.
+
+    conda-smithy writes the feedstock and commit a package was built from into its rendered
+    recipe (`extra: remote_url, sha`); two packages with the same pair came from one build."""
+
+    _built: ClassVar[dict[str, tuple[str, str]]] = {}
+
+    @staticmethod
+    def record(url: str, data: object) -> None:
+        extra = data.get("extra") if isinstance(data, dict) else None
+        if not isinstance(extra, dict):
+            return
+        remote, sha = str(extra.get("remote_url") or ""), str(extra.get("sha") or "")
+        repository = RepositoryArchive.repository(remote)
+        if repository and re.fullmatch(r"[0-9a-f]{40}", sha):
+            CondaSiblings._built[url] = (repository, sha)
+
+    @staticmethod
+    def resolve(
+        dependencies: Sequence[Dependency], answers: Sequence[Upstream | Unnamed]
+    ) -> list[Upstream | Unnamed]:
+        named: dict[tuple[str, str], Upstream] = {}
+        for dependency, answer in zip(dependencies, answers, strict=True):
+            build = CondaSiblings._built.get(dependency.resolved_from or "")
+            if dependency.ecosystem == "conda" and build and isinstance(answer, Upstream):
+                named.setdefault(build, answer)
+        out = list(answers)
+        for i, (dependency, answer) in enumerate(zip(dependencies, answers, strict=True)):
+            build = CondaSiblings._built.get(dependency.resolved_from or "")
+            if (
+                dependency.ecosystem == "conda"
+                and build in named
+                and isinstance(answer, Unnamed)
+                and answer.reason.startswith("its source names no URL")
+            ):
+                found = named[build]
+                out[i] = Upstream(
+                    found.query,
+                    f"{found.how}; {dependency.name} is another output of the same build "
+                    f"({build[0]} at {build[1][:12]})",
+                    found.inferred,
+                    found.tag,
+                )
+                UpstreamAdvisories._cache[
+                    (
+                        dependency.ecosystem,
+                        dependency.name,
+                        dependency.version,
+                        dependency.integrity,
+                    )
+                ] = out[i]
+        return out
+
+
 class HomebrewBottles:
     """A homebrew-core formula as it was when a version was bottled: the bottle's OCI manifest on
     ghcr.io names the commit and file (`org.opencontainers.image.source`)."""
@@ -3458,10 +3515,21 @@ class Upstreams:
         from cordon_scanner.core.datayaml import DataYaml
 
         data = DataYaml.load(recipe)
+        finalized: list[object] = []
         if isinstance(data, dict) and isinstance(data.get("recipe"), dict):
-            data = data["recipe"]  # rattler-build's rendered_recipe.yaml wraps it
+            # rattler-build's rendered_recipe.yaml wraps the recipe, and records the sources the
+            # build used, rendered: its own, and a multi-output recipe's shared stage's (glib-tools
+            # names none of its own; the stage it was built from fetched glib's release).
+            for key in ("finalized_sources", "finalized_cache_sources"):
+                listed = data.get(key)
+                finalized += listed if isinstance(listed, list) else []
+            data = data["recipe"]
+        CondaSiblings.record(url, data)
         source = data.get("source") if isinstance(data, dict) else None
-        sources = source if isinstance(source, list) else [source] if source else []
+        sources = [
+            *(source if isinstance(source, list) else [source] if source else []),
+            *finalized,
+        ]
         urls: list[str] = []
         how = f"the recipe inside {url.rsplit('/', 1)[-1]}"
         for one in sources:
@@ -3665,6 +3733,8 @@ class UpstreamAdvisories:
             answers = list(pool.map(UpstreamAdvisories.name, within))
         # A binary pod published from the repository a sibling pod resolved to (Firebase's).
         answers = PodSiblings.resolve(within, answers)
+        # A conda output naming no source, built in the same feedstock commit as one that does.
+        answers = CondaSiblings.resolve(within, answers)
         for dependency, upstream in zip(within, answers, strict=True):
             if isinstance(upstream, Unnamed):
                 if upstream.nothing:

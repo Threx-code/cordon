@@ -1695,3 +1695,62 @@ class TestProprietaryConda:
     )
     def test_a_vendors_own_licence(self, about: object, proprietary: bool) -> None:
         assert bool(Upstreams.proprietary(about)) is proprietary
+
+
+class TestRattlerFinalizedSources:
+    RENDERED = (
+        "recipe:\n"
+        "  package:\n    name: glib-tools\n    version: 2.88.3\n"
+        "  source: []\n"
+        "  extra:\n"
+        "    remote_url: https://github.com/conda-forge/glib-feedstock\n"
+        f"    sha: {'f' * 40}\n"
+        "finalized_sources: []\n"
+        "finalized_cache_sources:\n"
+        "  - url: https://github.com/GNOME/glib/archive/refs/tags/2.88.3.tar.gz\n"
+        f"    sha256: {'a' * 64}\n"
+    )
+
+    def test_a_shared_stages_source(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import CondaPackage, CondaSiblings
+
+        monkeypatch.setattr(
+            CondaPackage, "recipe", staticmethod(lambda url, seen=None: self.RENDERED)
+        )
+        url = "https://conda.anaconda.org/conda-forge/linux-64/glib-tools-2.88.3-h0_0.conda"
+        tools = Dependency(
+            purl="pkg:conda/glib-tools@2.88.3", ecosystem="conda", name="glib-tools",
+            version="2.88.3", direct=True, resolved_from=url,
+        )  # fmt: skip
+        found = Upstreams.conda(tools)
+        assert isinstance(found, Upstream) and found.query["version"] == "2.88.3"
+        assert CondaSiblings._built[url] == (
+            "https://github.com/conda-forge/glib-feedstock",
+            "f" * 40,
+        )
+
+    def test_an_output_naming_no_source_takes_its_builds(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import CondaSiblings
+
+        build = ("https://github.com/conda-forge/x-feedstock", "e" * 40)
+        main_url, other_url = (
+            "https://conda.anaconda.org/c/x-1.conda",
+            "https://conda.anaconda.org/c/x-tools-1.conda",
+        )
+        CondaSiblings._built[main_url] = build
+        CondaSiblings._built[other_url] = build
+        main, other = (
+            Dependency(
+                purl=f"pkg:conda/{n}@1",
+                ecosystem="conda",
+                name=n,
+                version="1",
+                direct=True,
+                resolved_from=u,
+            )
+            for n, u in (("x", main_url), ("x-tools", other_url))
+        )
+        named = Upstream({"commit": "c" * 40}, "the recipe inside x-1.conda")
+        out = CondaSiblings.resolve([main, other], [named, Unnamed("its source names no URL")])
+        assert isinstance(out[1], Upstream) and out[1].query == {"commit": "c" * 40}
+        assert "another output of the same build" in out[1].how
