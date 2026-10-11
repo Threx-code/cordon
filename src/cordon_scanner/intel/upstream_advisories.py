@@ -2021,6 +2021,13 @@ class Conventions:
             ),
             "https://gitlab.gnome.org/GNOME/{0}",
         ),
+        # XCB's libpthread-stubs is released under that name from `xorg/lib/pthread-stubs`.
+        (
+            re.compile(
+                r"^https?://(?:www\.x\.org|xorg\.freedesktop\.org|xcb\.freedesktop\.org)/(?:releases/individual/xcb/|archive/individual/xcb/|dist/)libpthread-stubs-\d"
+            ),
+            "https://gitlab.freedesktop.org/xorg/lib/pthread-stubs",
+        ),
         # X.org's util-macros is released under that name from its repository `xorg/util/macros`.
         (
             re.compile(
@@ -2044,7 +2051,7 @@ class Conventions:
         ),
         (
             re.compile(
-                r"^https?://xorg\.freedesktop\.org/releases/individual/([\w-]+)/([\w.+-]+?)-\d"
+                r"^https?://xorg\.freedesktop\.org/(?:releases|archive)/individual/([\w-]+)/([\w.+-]+?)-\d"
             ),
             "https://gitlab.freedesktop.org/xorg/{0}/{1}",
         ),
