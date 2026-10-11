@@ -449,3 +449,13 @@ class TestOneVendorsTwoProjects:
         }
         product, why = CpeRule.match(index, ["tk-other"], ["https://sourceforge.net/projects/tcl/"])
         assert product is None and "more than one" in why
+
+
+class TestDotJs:
+    def test_node_is_node_js_on_its_site(self) -> None:
+        index = {"nodejs": [["nodejs:node.js", ["nodejs.org", "github.com/nodejs/node"]]]}
+        product, _ = CpeRule.match(
+            index, ["node"], ["https://nodejs.org/dist/v20.17.0/node-v20.17.0.tar.xz"]
+        )
+        assert product == "nodejs:node.js"
+        assert CpeRule.match(index, ["node"], ["https://example.org/"])[0] is None

@@ -128,6 +128,8 @@ class CpeRule:
         wanted_names |= {f"lib{n}" for n in wanted_names if not n.startswith("lib")}
         # And a packager's `utils` or `tools` (Conan's xz_utils is NVD's xz).
         wanted_names |= {re.sub(r"(?:utils|tools)$", "", n) for n in wanted_names} - {""}
+        # And JavaScript's `.js` (Homebrew's node is NVD's nodejs:node.js).
+        wanted_names |= {f"{n}js" for n in wanted_names if n and not n.endswith("js")}
         for wanted in wanted_names:
             for product, references in index.get(wanted, ()):
                 shared = sites & set(references)
