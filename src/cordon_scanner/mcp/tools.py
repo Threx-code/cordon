@@ -878,6 +878,36 @@ class AgentTools:
                     notes.append(
                         "the launched package is not pinned to a version: every start can run a different release"
                     )
+        image = AgentTools.container_image(config)
+        if image is not None:
+            notes.append(f"launches the container image {image}")
+            if not re.search(r"@sha256:[0-9a-f]{64}$", image) and not re.search(
+                r":(?!latest$)[^/:@]+$", image
+            ):
+                notes.append(
+                    "the image is not pinned to a tag or digest: every start can run a different image"
+                )
+            if online:
+                try:
+                    parts.append(
+                        Scans.scan(
+                            settings,
+                            MachineTools.image_purl(image),
+                            token,
+                            online=True,
+                            severity=Args.severity(args),
+                            max_findings=Args.max_findings(settings, args),
+                            subject={"image": image},
+                            cache=False,
+                        )
+                    )
+                except ToolError as exc:
+                    notes.append(f"the image was not scanned: {exc}")
+                    parts.append(ScanSummary("incomplete", "image not scanned", {}, [], 0, False))
+            else:
+                notes.append(
+                    "the image itself is only pulled and scanned online (--allow-online and online)"
+                )
         if remote and not online:
             notes.append(
                 "a remote server: what it serves now is only read online (--allow-online and online)"
@@ -889,6 +919,35 @@ class AgentTools:
         )
         merged.notes = list(dict.fromkeys(notes + merged.notes))
         return Scans.outcome(merged)
+
+    #: `docker`/`podman`/`nerdctl` options that take a value, so the value is not the image.
+    CONTAINER_VALUED: ClassVar[frozenset[str]] = frozenset(
+        {"-e", "--env", "--env-file", "-v", "--volume", "--mount", "-p", "--publish", "--name",
+         "--network", "--net", "-u", "--user", "-w", "--workdir", "--entrypoint", "--platform",
+         "-l", "--label", "--pull", "--add-host", "--cap-add", "--cap-drop", "--memory", "-m",
+         "--cpus", "--restart", "--hostname", "-h", "--device", "--security-opt", "--tmpfs"}
+    )  # fmt: skip
+
+    @staticmethod
+    def container_image(config: dict[str, Any]) -> str | None:
+        """The image a `docker run` (or podman, nerdctl) launch starts, or None."""
+        command = PurePosixPath(str(config.get("command") or "")).name.removesuffix(".exe")
+        if command not in {"docker", "podman", "nerdctl"}:
+            return None
+        words = [str(a) for a in config.get("args") or [] if isinstance(a, str | int | float)]
+        if "run" not in words:
+            return None
+        rest = words[words.index("run") + 1 :]
+        skip = False
+        for word in rest:
+            if skip:
+                skip = False
+                continue
+            if word.startswith("-"):
+                skip = word in AgentTools.CONTAINER_VALUED and "=" not in word
+                continue
+            return word if MachineTools.IMAGE.match(word) else None
+        return None
 
     @staticmethod
     def check_mcp_tools(settings: Settings, args: dict[str, Any], token: CancelToken) -> Outcome:

@@ -557,3 +557,32 @@ class TestHardening:
             }
         )
         assert reply["result"]["isError"] is False
+
+
+class TestContainerLaunches:
+    @pytest.mark.parametrize(
+        ("config", "image"),
+        [
+            (
+                {"command": "docker", "args": ["run", "-i", "--rm", "-e", "TOKEN", "mcp/github"]},
+                "mcp/github",
+            ),
+            (
+                {"command": "/usr/bin/podman", "args": ["run", "--env=A=1", "ghcr.io/org/srv:1.2"]},
+                "ghcr.io/org/srv:1.2",
+            ),
+            (
+                {
+                    "command": "docker",
+                    "args": ["run", "-v", "/x:/y", "--network", "none", "img@sha256:" + "a" * 64],
+                },
+                "img@sha256:" + "a" * 64,
+            ),
+            ({"command": "docker", "args": ["ps"]}, None),
+            ({"command": "npx", "args": ["-y", "pkg"]}, None),
+        ],
+    )
+    def test_the_image_a_launch_runs(self, config: dict[str, Any], image: str | None) -> None:
+        from cordon_scanner.mcp.tools import AgentTools
+
+        assert AgentTools.container_image(config) == image
