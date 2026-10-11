@@ -32,6 +32,7 @@ import gzip
 import json
 import re
 import urllib.parse
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,6 +62,10 @@ class CpeRule:
     SECOND_LEVEL: ClassVar[frozenset[str]] = frozenset(
         {"co", "com", "org", "net", "ac", "gov", "edu"}
     )
+    #: SourceForge's download hosts, where the project is in the path.
+    SF_DOWNLOADS: ClassVar[frozenset[str]] = frozenset(
+        {"downloads.sourceforge.net", "prdownloads.sourceforge.net", "download.sourceforge.net"}
+    )
 
     @staticmethod
     def name(text: str) -> str:
@@ -85,9 +90,14 @@ class CpeRule:
             return f"{host}/{path[0].lower()}/{path[1].lower().removesuffix('.git')}"
         if host.endswith(".github.io"):
             return host
-        if host == "sourceforge.net" and len(path) >= 2 and path[0] in ("projects", "p"):
+        if host in CpeRule.SF_DOWNLOADS or host.endswith(".dl.sourceforge.net"):
+            # `downloads.sourceforge.net/project/<name>/...` or the short `/<name>/...`.
+            if len(path) >= 2 and path[0] in ("project", "projects"):
+                return f"sourceforge.net/{path[1].lower()}"
+            return f"sourceforge.net/{path[0].lower()}" if path else None
+        if host == "sourceforge.net" and len(path) >= 2 and path[0] in ("projects", "project", "p"):
             return f"sourceforge.net/{path[1].lower()}"
-        project = re.fullmatch(r"([\w-]+)\.(?:sourceforge|sf)\.net", host)
+        project = re.fullmatch(r"([\w-]+)\.(?:sourceforge\.net|sf\.net|sourceforge\.io)", host)
         if project:
             return f"sourceforge.net/{project.group(1)}"
         labels = host.split(".")
@@ -124,7 +134,7 @@ class CpeRule:
                 if shared:
                     found[str(product)] = sorted(shared)[0]
         if not found:
-            return None, "no CPE product in NVD has its name and its site"
+            return CpeRule.by_project_site(index, sites)
         if len(set(found.values())) > 1:
             return (
                 None,
@@ -136,6 +146,48 @@ class CpeRule:
         return " ".join(
             sorted(found)
         ), f"NVD's {', '.join(sorted(found))} has its name and lists its site, {site}"
+
+    _sites: ClassVar[list[tuple[Mapping[str, Sequence[Sequence[Any]]], dict[str, set[str]]]]] = []
+
+    @staticmethod
+    def project(site: str) -> bool:
+        """A site that is one project's alone: a forge repository, a SourceForge project, a
+        `*.github.io` page -- never a domain, which hosts a vendor's many products."""
+        return "/" in site or site.endswith(".github.io")
+
+    @staticmethod
+    def by_project_site(
+        index: Mapping[str, Sequence[Sequence[Any]]], sites: set[str]
+    ) -> tuple[str | None, str]:
+        """When no product has the package's name: the one CPE product that lists the package's
+        own project site (Conan's libmp3lame downloads from sourceforge.net/projects/lame, which
+        NVD's lame_project:lame alone lists). Two products listing it (curl and libcurl, one
+        repository) are not told apart, and are no tie."""
+        if not CpeRule._sites or CpeRule._sites[0][0] is not index:
+            reverse: dict[str, set[str]] = defaultdict(set)
+            for entries in index.values():
+                for product, references in entries:
+                    for site in references:
+                        if CpeRule.project(site):
+                            reverse[site].add(str(product))
+            CpeRule._sites[:] = [(index, dict(reverse))]
+        reverse = CpeRule._sites[0][1]
+        found = {
+            (site, product)
+            for site in sites
+            if CpeRule.project(site)
+            for product in reverse.get(site, ())
+        }
+        products = {product for _, product in found}
+        if len(products) == 1:
+            site, product = min(found)
+            return product, f"NVD's {product} alone lists its project's site, {site}"
+        if len(products) > 1:
+            return (
+                None,
+                f"its project's site is listed by more than one CPE product ({', '.join(sorted(products))})",
+            )
+        return None, "no CPE product in NVD has its name and its site"
 
 
 @dataclass

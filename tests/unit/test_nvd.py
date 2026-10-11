@@ -51,6 +51,14 @@ class TestTheSite:
             ("https://github.com/kovidgoyal", None),
             ("https://sourceforge.net/projects/lame/files/", "sourceforge.net/lame"),
             ("https://lame.sourceforge.net/", "sourceforge.net/lame"),
+            (
+                "https://downloads.sourceforge.net/project/lame/lame/3.100/x.tar.gz",
+                "sourceforge.net/lame",
+            ),
+            ("https://downloads.sourceforge.net/lame/x.tar.gz", "sourceforge.net/lame"),
+            ("https://prdownloads.sourceforge.net/lame/x.tar.gz", "sourceforge.net/lame"),
+            ("https://master.dl.sourceforge.net/project/lame/x.tar.gz", "sourceforge.net/lame"),
+            ("https://lame.sourceforge.io/", "sourceforge.net/lame"),
             ("https://downloads.example.co.uk/x", "example.co.uk"),
             ("https://user.github.io/thing", "user.github.io"),
             ("not a url", None),
@@ -229,3 +237,66 @@ class TestAResolvedVersion:
             port.purl in result.checked
             and result.advisories[port.purl][0].identifier == "CVE-2025-0001"
         )
+
+
+class TestTheProjectSite:
+    INDEX: ClassVar[dict[str, list[list[Any]]]] = {
+        "lame": [["lame_project:lame", ["sf.net", "sourceforge.net/lame"]]],
+        "curl": [["haxx:curl", ["github.com/curl/curl", "haxx.se"]]],
+        "libcurl": [["haxx:libcurl", ["github.com/curl/curl", "haxx.se"]]],
+        "aom": [["aomedia:libaom", ["aomedia.org"]]],
+    }
+
+    def test_a_project_site_one_product_lists_ties_whatever_the_name(self) -> None:
+        product, why = CpeRule.match(
+            self.INDEX,
+            ["libmp3lame"],
+            ["https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz"],
+        )
+        assert product == "lame_project:lame" and "alone lists" in why
+
+    def test_a_repository_two_products_list_is_no_tie(self) -> None:
+        product, why = CpeRule.match(
+            self.INDEX, ["curl-impersonate"], ["https://github.com/curl/curl"]
+        )
+        assert product is None and "more than one" in why
+
+    def test_a_domain_is_never_enough_alone(self) -> None:
+        product, _ = CpeRule.match(self.INDEX, ["libaom-av1"], ["https://aomedia.org/"])
+        assert product is None
+
+
+class TestEveryNamedProduct:
+    def test_a_product_whose_cves_are_all_below_the_cut_is_still_indexed(self, monkeypatch) -> None:
+        medium = {
+            **TestTheImport.CVE,
+            "id": "CVE-2022-0002",
+            "metrics": {"cvssMetricV31": [{"cvssData": {"baseSeverity": "MEDIUM"}}]},
+            "configurations": [
+                {
+                    "nodes": [
+                        {
+                            "cpeMatch": [
+                                {
+                                    "vulnerable": True,
+                                    "criteria": "cpe:2.3:a:open-mpi:hwloc:*:*:*:*:*:*:*:*",
+                                    "versionEndExcluding": "2.1.0",
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+        }
+        monkeypatch.setattr(
+            NvdImport, "cves", staticmethod(lambda year: iter([TestTheImport.CVE, medium]))
+        )
+        seen: list[set[str]] = []
+        monkeypatch.setattr(
+            NvdImport, "index", staticmethod(lambda named=None: seen.append(set(named or ())) or {})
+        )
+        built = NvdImport.build(
+            range(2022, 2023), lambda _, rating: rating == "high", lambda _: None
+        )
+        assert set(built.products) == {"sqlite:sqlite"}
+        assert seen == [{"sqlite:sqlite", "open-mpi:hwloc"}]
