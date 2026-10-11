@@ -126,9 +126,21 @@ rather than a document.
   from BCR's source.json, a Conan Center recipe export, a podspec, a Homebrew
   formula (from its bottle, for an older version), a vcpkg portfile at the
   baseline, the Terraform registry, a flake's locked commit, or the recipe inside a
-  conda package. Nothing is guessed: a source downloaded from a project's own site,
-  a branch, or a version its ecosystem no longer describes leaves the package
-  unchecked, and the report names it and why.
+  conda package. Where the ecosystem names a release archive but no tag, a tag
+  spelled as the version in the repository it names is used only if the archive,
+  checked against its pinned digest, holds the tag's files byte for byte
+  (**proved**, as good as named); a host's known repository is used only when
+  proved; otherwise the tag is used and labelled **inferred** (MEDIUM). A branch
+  is never a fixed point.
+- **Advisories from NVD.** What no repository route reaches -- a tarball from a
+  project's own site, a closed binary, a macOS application -- is matched against
+  NVD's own records (bundled, offline; complete after `advisories sync`), once
+  the package is tied to one CPE product: by a curated mapping (HIGH), or by the
+  guarded rule, reported as inferred (MEDIUM): the product's name is the
+  package's AND one of the product's references in NVD's dictionary is on the
+  package's homepage or download site, and only one product passes. NVD's own
+  ranges then decide. A package tied to nothing is unchecked, and the report
+  names it and why.
 
 ---
 """
