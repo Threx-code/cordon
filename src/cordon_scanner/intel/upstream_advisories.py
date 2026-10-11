@@ -2137,6 +2137,57 @@ class Conventions:
             re.compile(r"^https?://zsync\.moria\.org\.uk/download/(zsync)-"),
             "https://github.com/cph6/zsync",
         ),
+        # XCB's utility libraries, released as xcb-util-*, from xorg/lib/libxcb-*.
+        (
+            re.compile(
+                r"^https?://xcb\.freedesktop\.org/dist/xcb-util-(image|cursor|keysyms|wm)-\d"
+            ),
+            "https://gitlab.freedesktop.org/xorg/lib/libxcb-{0}",
+        ),
+        (
+            re.compile(r"^https?://xcb\.freedesktop\.org/dist/xcb-util-renderutil-\d"),
+            "https://gitlab.freedesktop.org/xorg/lib/libxcb-render-util",
+        ),
+        (
+            re.compile(r"^https?://xcb\.freedesktop\.org/dist/xcb-util-\d"),
+            "https://gitlab.freedesktop.org/xorg/lib/libxcb-util",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?gaia-gis\.it/gaia-sins/(librttopo)-"),
+            "https://git.osgeo.org/gitea/rttopo/librttopo",
+        ),
+        (
+            re.compile(r"^https?://download\.libsodium\.org/libsodium/releases/"),
+            "https://github.com/jedisct1/libsodium",
+        ),
+        (
+            re.compile(
+                r"^https?://downloads\.xiph\.org/releases/(ogg|vorbis|flac|opus|theora|speex)/"
+            ),
+            "https://gitlab.xiph.org/xiph/{0}",
+        ),
+        (
+            re.compile(r"^https?://icon-theme\.freedesktop\.org/releases/hicolor-icon-theme-"),
+            "https://gitlab.freedesktop.org/xdg/default-icon-theme",
+        ),
+        (
+            re.compile(r"^https?://download\.osgeo\.org/geotiff/libgeotiff/"),
+            "https://github.com/OSGeo/libgeotiff",
+        ),
+        (
+            re.compile(
+                r"^https?://(?:www\.)?freedesktop\.org/software/pulseaudio/releases/pulseaudio-"
+            ),
+            "https://gitlab.freedesktop.org/pulseaudio/pulseaudio",
+        ),
+        (
+            re.compile(r"^https?://confluence\.ecmwf\.int/download/attachments/\d+/eccodes-"),
+            "https://github.com/ecmwf/eccodes",
+        ),
+        (
+            re.compile(r"^https?://(?:downloads\.)?sourceforge\.net/projects?/freeglut/"),
+            "https://github.com/freeglut/freeglut",
+        ),
         # XCB's libpthread-stubs is released under that name from `xorg/lib/pthread-stubs`.
         (
             re.compile(
