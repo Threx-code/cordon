@@ -658,6 +658,50 @@ Build and verify an offline bundle for an air-gapped install.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## AI agents
+
+- `mcp`: serve Cordon to AI agents (MCP)
+
+## mcp
+
+Serve Cordon to AI agents over the Model Context Protocol (stdio).
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ mcp config                    print the configuration that adds this       │
+│                               server to an agent                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### mcp config
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --client CLIENT           the agent: claude-code, claude-desktop, cline,   │
+│                           codex, continue, cursor, gemini, jetbrains,      │
+│                           vscode, windsurf, zed                            │
+│ --allow-online            configure the server with --allow-online         │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --root DIR                a directory tools may read (repeatable; default: │
+│                           the current directory)                           │
+│ --allow-online            let tools ask registries, fetch packages, images │
+│                           and extensions, and read remote MCP servers      │
+│ --allow-machine           let tools read this machine's installed packages │
+│                           and AI agent configuration                       │
+│ --timeout SECONDS         deadline for one scan (default 600)              │
+│ --max-concurrent N        scans run at once (default 4)                    │
+│ --rate N                  tool calls allowed per minute (default 120)      │
+│ --max-findings N          findings returned per call unless the call asks  │
+│                           (default 50)                                     │
+│ --audit-log PATH          append one JSON line per tool call: tool,        │
+│                           verdict, duration (never arguments)              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Cordon cloud
 
 - `login`: sign in to Cordon Cloud (SSO)

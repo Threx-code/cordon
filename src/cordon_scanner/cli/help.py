@@ -495,6 +495,7 @@ class HelpScreen:
         ),
         ("POLICY", ("rules", "config", "baseline", "suppress", "guard")),
         ("THREAT INTEL", ("advisories", "intel", "bundle")),
+        ("AI AGENTS", ("mcp",)),
         ("CORDON CLOUD", ("login", "logout", "whoami", "runner", "agent")),
         ("GENERAL", ("help", "completion")),
     )
@@ -523,6 +524,7 @@ class HelpScreen:
         "whoami": "the Cordon Cloud sign-in in use",
         "runner": "run Cloud jobs in your network",
         "agent": "AI agents and MCP servers, for MDM",
+        "mcp": "serve Cordon to AI agents (MCP)",
         "help": "this screen, or one command's help",
         "completion": "shell completion script",
     }

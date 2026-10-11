@@ -791,6 +791,16 @@ class CommandLine:
         ReviewCommand.add_parser(sub)
         SuppressCommand.add_parser(sub)
         CompletionCommand.add_parser(sub)
+        # `run` hands `mcp` the rest of the command line before this parser sees it; the same
+        # options are configured here so help, completion and the command reference show them.
+        from cordon_scanner.mcp.server import Server as McpServer
+
+        McpServer.configure(
+            sub.add_parser(
+                "mcp",
+                help="serve Cordon to AI agents over the Model Context Protocol (stdio)",
+            )
+        )
         help_cmd = sub.add_parser("help", help="this screen, or the help for one command")
         help_cmd.add_argument(
             "topic", nargs="*", metavar="COMMAND", help="a command, or a command and its action"
@@ -2812,6 +2822,12 @@ class CommandLine:
         from cordon_scanner.cli.incoming import IncomingCommand
         from cordon_scanner.cli.review import ReviewCommand
         from cordon_scanner.cli.suppressions import SuppressCommand
+
+        arguments = list(sys.argv[1:] if argv is None else argv)
+        if arguments[:1] == ["mcp"]:
+            from cordon_scanner.mcp import main as mcp_main
+
+            return mcp_main(arguments[1:])
 
         parser = cls.build_parser()
         args = parser.parse_args(argv)

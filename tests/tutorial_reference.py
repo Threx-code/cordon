@@ -276,6 +276,14 @@ exactly what a scan reads. The same facts as one table:
 
 
 class CommandTutorial:
+    ACRONYMS: ClassVar[frozenset[str]] = frozenset({"AI", "CI", "MCP"})
+
+    @staticmethod
+    def heading(group: str) -> str:
+        """`SCAN AND INSPECT` -> `Scan and inspect`, keeping acronyms: `AI AGENTS` -> `AI agents`."""
+        words = [w if w in CommandTutorial.ACRONYMS else w.lower() for w in group.split()]
+        return " ".join([words[0][:1].upper() + words[0][1:], *words[1:]])
+
     @staticmethod
     def subparsers(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
         for action in parser._actions:
@@ -382,7 +390,7 @@ one command at a terminal.
             if not listed:
                 continue
             sections.append(
-                f"## {group[:1]}{group[1:].lower()}\n\n"
+                f"## {CommandTutorial.heading(group)}\n\n"
                 + "\n".join(f"- `{n}`: {HelpScreen.SHORT.get(n, helps.get(n, ''))}" for n in listed)
                 + "\n"
             )
