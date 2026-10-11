@@ -56,8 +56,9 @@ matched through NVD or their upstream instead (Homebrew, vcpkg, Conan, conda, Co
 Terraform, Nix, Ansible) -- whose unchecked packages the project accepts: a Homebrew cask or a
 vendor's closed binary that no source names. Their dependencies are still listed as unchecked in
 every report (`OPERATIONAL.ADVISORY.NO_FEED.001`), but no longer make the scan incomplete, so
-`fail_on_incomplete` keeps meaning "something Cordon was given went unread". Unset, it accepts nothing. An organisation policy that sets it caps the repository's:
-only an ecosystem both accept counts.
+`fail_on_incomplete` keeps meaning "something Cordon was given went unread". Unset, it accepts
+nothing. An organisation policy that sets it caps the repository's: only an ecosystem both accept
+counts.
 
 An organisation policy may tighten any of the three: `expand_archives` and a shorter
 `max_intel_age` win over the repository, and `intel_feed: false` (an air-gapped estate) cannot
