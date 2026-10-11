@@ -139,3 +139,20 @@ class TestGnusMirror:
             "https://ftp.gnu.org/gnu/autoconf/autoconf-2.71.tar.gz",
             "https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.71.tar.gz",
         ]
+
+
+class TestEnough:
+    @pytest.mark.parametrize(
+        ("shared", "tagged", "enough"),
+        [
+            (100, 5000, True),
+            (8, 9, True),
+            (5, 6, True),
+            (9, 10, True),
+            (8, 10, False),
+            (4, 5, False),
+            (50, 60, False),
+        ],
+    )
+    def test_enough(self, shared: int, tagged: int, enough: bool) -> None:
+        assert ContentProof._enough(shared, tagged) is enough

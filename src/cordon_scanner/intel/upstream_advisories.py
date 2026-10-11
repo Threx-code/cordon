@@ -2383,9 +2383,11 @@ class ContentProof:
     @staticmethod
     def _enough(shared: int, tagged: int) -> bool:
         """Enough identical files to mean something: MIN_SHARED, or for a small project MIN_SMALL
-        that are MIN_SHARE of the tag's."""
+        that are MIN_SHARE of the tag's -- or all of the tag's but one (X.org's renderproto: 8 of
+        its 9, the release leaving out a build file of the tag's)."""
         return shared >= ContentProof.MIN_SHARED or (
-            shared >= ContentProof.MIN_SMALL and shared >= ContentProof.MIN_SHARE * tagged
+            shared >= ContentProof.MIN_SMALL
+            and (shared >= ContentProof.MIN_SHARE * tagged or tagged - shared <= 1)
         )
 
 
