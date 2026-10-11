@@ -287,8 +287,10 @@ class CondaPackage:
         "info/recipe/meta.yaml",
         "info/recipe/rendered_recipe.yaml",
     )
-    MAX_INFO_BYTES: ClassVar[int] = 16 << 20
-    MAX_STREAM_BYTES: ClassVar[int] = 64 << 20
+    #: An info member holds a package's test suite too (pillow's, with its images, is 45 MB).
+    MAX_INFO_BYTES: ClassVar[int] = 64 << 20
+    #: Bytes read on the way to the recipe, never kept: a test suite's data may come first.
+    MAX_STREAM_BYTES: ClassVar[int] = 512 << 20
 
     @staticmethod
     def _range(url: str, header: str, limit: int) -> tuple[bytes, int]:
