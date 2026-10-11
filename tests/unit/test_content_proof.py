@@ -75,6 +75,20 @@ class TestTheProof:
         assert outcome == "proven", detail
         assert "end-of-line" in detail and "filled by the release" in detail
 
+    def test_a_release_dating_its_news_is_still_the_tag(self, monkeypatch) -> None:
+        tag = self.TAG_FILES | {"NEWS": b"Changes in 1.0:\n", "Makefile.am": b"SUBDIRS = src\n"}
+        release = {p: d for p, d in tag.items() if not p.startswith(".")}
+        release["NEWS"] = b"Changes in 1.0 (released 2024-11-10):\n"
+        outcome, detail = self.check(monkeypatch, release, tag)
+        assert outcome == "proven" and "documentation differs: NEWS" in detail
+
+    def test_a_build_file_that_differs_still_refutes(self, monkeypatch) -> None:
+        tag = self.TAG_FILES | {"NEWS": b"Changes in 1.0:\n", "Makefile.am": b"SUBDIRS = src\n"}
+        release = {p: d for p, d in tag.items() if not p.startswith(".")}
+        release["Makefile.am"] = b"SUBDIRS = src doc\n"
+        outcome, detail = self.check(monkeypatch, release, tag)
+        assert outcome == "refuted" and "Makefile.am" in detail
+
     def test_too_little_in_common_proves_nothing(self, monkeypatch) -> None:
         release = {"src/file1.c": self.TAG_FILES["src/file1.c"]}
         outcome, _ = self.check(monkeypatch, release)

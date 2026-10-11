@@ -2280,6 +2280,11 @@ class ContentProof:
     shipped code, so the same vulnerabilities."""
 
     MIN_SHARED: ClassVar[int] = 100
+    #: Documentation a release may edit: its news, changelog, readme and credits, by name.
+    PROSE: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)(?:README|NEWS|CHANGES|CHANGELOG|HISTORY|AUTHORS|THANKS|TODO|RELEASE[-_]?NOTES)"
+        r"(?:\.(?:md|txt|rst|adoc))?"
+    )
     MIN_SMALL: ClassVar[int] = 5
     MIN_SHARE: ClassVar[float] = 0.9
     EMPTY_BLOB: ClassVar[str] = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
@@ -2498,6 +2503,10 @@ class ContentProof:
         # git log by `make dist`): a placeholder for something generated, not different source.
         filled = [(a, b) for a, b in differing if source[b] == ContentProof.EMPTY_BLOB]
         differing = [pair for pair in differing if pair not in filled]
+        # Prose the release edits on its way out (mpc's NEWS dated for the release): not code, and
+        # never a build file -- a Makefile.am or a version file that differs still refutes.
+        prose = [(a, b) for a, b in differing if ContentProof.PROSE.fullmatch(b.rsplit("/", 1)[-1])]
+        differing = [pair for pair in differing if pair not in prose]
         if differing:
             return "refuted", f"{len(differing)} of the files both hold differ ({differing[0][1]})"
         if not ContentProof._enough(len(pairs), len(source)):
@@ -2510,7 +2519,12 @@ class ContentProof:
             f"the release archive holds {len(pairs)} of its {len(source)} files, each with the same git blob id"
             + (" (paired by file name: the release lays them out elsewhere)" if relocated else "")
             + (f" ({len(converted)} after git's end-of-line conversion)" if converted else "")
-            + (f" ({len(filled)} empty in the tag, filled by the release)" if filled else ""),
+            + (f" ({len(filled)} empty in the tag, filled by the release)" if filled else "")
+            + (
+                f" (its documentation differs: {', '.join(sorted(b for _, b in prose))})"
+                if prose
+                else ""
+            ),
         )
 
     @staticmethod
