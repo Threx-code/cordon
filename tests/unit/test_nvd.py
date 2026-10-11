@@ -214,3 +214,18 @@ class TestNameVariants:
         index = {"xz": [["tukaani:xz", ["tukaani.org"]]]}
         product, _ = CpeRule.match(index, ["xz_utils"], ["https://tukaani.org/xz/xz-5.4.5.tar.xz"])
         assert product == "tukaani:xz"
+
+
+class TestAResolvedVersion:
+    def test_the_routes_resolved_version_stands_in_for_a_missing_one(self, monkeypatch) -> None:
+        TestCheck.data(monkeypatch)
+        port = Dependency(
+            purl="pkg:vcpkg/sqlite3", ecosystem="vcpkg", name="sqlite3", version=None, direct=True
+        )
+        homes = {port.purl: ("https://sqlite.org/2025/sqlite-autoconf-3490100.tar.gz",)}
+        assert port.purl in NvdAdvisories.check([port], homes).unchecked
+        result = NvdAdvisories.check([port], homes, {port.purl: "3.46.0"})
+        assert (
+            port.purl in result.checked
+            and result.advisories[port.purl][0].identifier == "CVE-2025-0001"
+        )

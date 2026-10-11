@@ -462,7 +462,11 @@ class AdvisoryDetector(BaseDetector):
         ]
         if not candidates:
             return upstream
-        found = NvdAdvisories.check(candidates, upstream.homes if upstream is not None else {})
+        found = NvdAdvisories.check(
+            candidates,
+            upstream.homes if upstream is not None else {},
+            upstream.versions if upstream is not None else {},
+        )
         merged = upstream if upstream is not None else UpstreamResult()
         merged.checked |= found.checked
         merged.advisories.update(found.advisories)

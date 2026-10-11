@@ -84,6 +84,9 @@ class Unnamed:
     homes: tuple[str, ...] = ()
     """The homepage and download URLs its ecosystem gives, read on the way to this answer: what
     `intel/nvd` ties a package to a CPE product by when no repository route named it."""
+    version: str = ""
+    """The release the route resolved where the lockfile names none (a vcpkg port at its
+    baseline): what `intel/nvd` compares NVD's ranges with."""
 
 
 @dataclass
@@ -96,6 +99,8 @@ class UpstreamResult:
     """By purl: why the package could not be matched."""
     homes: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """By purl: the homepage and download URLs read for a package left unchecked."""
+    versions: dict[str, str] = field(default_factory=dict)
+    """By purl: the release resolved for a package left unchecked whose lockfile names none."""
 
 
 class RepositoryArchive:
@@ -2398,6 +2403,7 @@ class Upstreams:
                     ]
                 )
             ),
+            version=version,
         )
 
     @staticmethod
@@ -2958,6 +2964,8 @@ class UpstreamAdvisories:
                 result.unchecked[dependency.purl] = upstream.reason
                 if upstream.homes:
                     result.homes[dependency.purl] = upstream.homes
+                if upstream.version and not dependency.version:
+                    result.versions[dependency.purl] = upstream.version
             else:
                 named.append((dependency, upstream))
         if not named:

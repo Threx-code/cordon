@@ -231,7 +231,9 @@ class NvdAdvisories:
 
     @staticmethod
     def check(
-        dependencies: Iterable[Dependency], homes: Mapping[str, Sequence[str]] | None = None
+        dependencies: Iterable[Dependency],
+        homes: Mapping[str, Sequence[str]] | None = None,
+        versions: Mapping[str, str] | None = None,
     ) -> NvdResult:
         result = NvdResult()
         cves = NvdData.load(CVES_NAME)
@@ -247,7 +249,10 @@ class NvdAdvisories:
         curated: Mapping[str, Mapping[str, list[str]]] = mapping.get("curated") or {}
         index: Mapping[str, list[list[Any]]] = mapping.get("index") or {}
         for dependency in dependencies:
-            if not dependency.version:
+            # The lockfile's version, or the release the upstream route resolved (a vcpkg port
+            # at its baseline).
+            version = dependency.version or (versions or {}).get(dependency.purl, "")
+            if not version:
                 result.unchecked[dependency.purl] = "no version is locked"
                 continue
             table, name = NvdAdvisories.names(dependency)
@@ -263,13 +268,13 @@ class NvdAdvisories:
             found: list[Advisory] = []
             for product in chosen:
                 for identifier, severity, bounds in products.get(product, ()):
-                    if not NvdRange.affects(bounds, dependency.version):
+                    if not NvdRange.affects(bounds, version):
                         continue
                     found.append(
                         Advisory(
                             ecosystem=str(dependency.ecosystem),
                             name=dependency.name,
-                            versions=(dependency.version,) if "v" in bounds else (),
+                            versions=(version,) if "v" in bounds else (),
                             summary=(
                                 text.get(identifier, "")
                                 + (
