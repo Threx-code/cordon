@@ -207,6 +207,14 @@ class CpeRule:
         if len(products) == 1:
             site, product = min(found)
             return product, f"NVD's {product} alone lists its project's site, {site}"
+        if len(products) > 1 and len({product.split(":", 1)[0] for product in products}) == 1:
+            # One vendor's names for its one project (nlohmann:json and
+            # nlohmann:json-for-modern-cpp, haxx:curl and haxx:libcurl): its products together.
+            site = min(site for site, _ in found)
+            joined = ", ".join(sorted(products))
+            return " ".join(
+                sorted(products)
+            ), f"NVD's {joined}, one vendor's, alone list its project's site, {site}"
         if len(products) > 1:
             return (
                 None,

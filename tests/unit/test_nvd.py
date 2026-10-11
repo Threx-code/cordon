@@ -244,6 +244,7 @@ class TestTheProjectSite:
         "lame": [["lame_project:lame", ["sf.net", "sourceforge.net/lame"]]],
         "curl": [["haxx:curl", ["github.com/curl/curl", "haxx.se"]]],
         "libcurl": [["haxx:libcurl", ["github.com/curl/curl", "haxx.se"]]],
+        "fork": [["other:fork", ["github.com/curl/curl"]]],
         "aom": [["aomedia:libaom", ["aomedia.org"]]],
     }
 
@@ -406,3 +407,13 @@ class TestRepositoriesFromReferences:
         )
         NvdImport.build(range(2024, 2025), lambda _, rating: True, lambda _: None)
         assert given == [{"c:c": {"github.com/c/c"}}]
+
+
+class TestOneVendorsProducts:
+    def test_one_vendors_names_for_one_project_together(self) -> None:
+        index = {
+            "json": [["nlohmann:json", ["github.com/nlohmann/json"]]],
+            "jsonformoderncpp": [["nlohmann:json-for-modern-cpp", ["github.com/nlohmann/json"]]],
+        }
+        product, why = CpeRule.match(index, ["nlohmann_json"], ["https://github.com/nlohmann/json"])
+        assert product == "nlohmann:json nlohmann:json-for-modern-cpp" and "one vendor's" in why
