@@ -690,6 +690,7 @@ rather than a document.
 | `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | `agents` | malicious_code |
 | `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | `agents` | exfiltration |
+| `SUSPECT.AGENT.DROPPER_PROSE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |

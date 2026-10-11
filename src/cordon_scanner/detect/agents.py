@@ -231,6 +231,19 @@ _FETCH_EXEC: Final = re.compile(
     r"|\b(?:curl|wget)\b[^\n]{0,300}(?:\|\s*python3?\b(?![ \t]{1,8}-[cm]\b)|>\s*/tmp/[^\s]+\s*&&\s*(?:ba)?sh\b)"
     r"|\bbase64\s+(?:-d|--decode)\b[^\n]{0,80}\|\s*(?:ba|z)?sh\b"
 )
+#: A dropper written as prose for the reader to carry out: a password-protected archive to
+#: extract and run (a password keeps the archive opaque to every scanner on the way), or a command
+#: to copy from a paste site into a terminal. ClawHavoc's skills ship both as "prerequisites".
+_ARCHIVE_PASSWORD_RUN: Final = re.compile(
+    r"(?im)^(?=[^\n]{0,600}\b[\w.-]{1,80}\.(?:zip|7z|rar|dmg|pkg|exe|msi|scr)\b)"
+    r"(?=[^\n]{0,600}\b(?:pass(?:word)?|pwd)\b\s{0,4}[:=`'\"(]?)"
+    r"(?=[^\n]{0,600}\b(?:extract|unzip|unpack|decompress|unarchive|download)\w*\b)"
+    r"(?=[^\n]{0,600}\b(?:run|execute|launch|start|double[- ]?click)\b)[^\n]{1,600}"
+)
+_PASTE_RUN: Final = re.compile(
+    r"(?im)^(?=[^\n]{0,600}\b(?:run|execute|paste|enter)\b)"
+    r"(?=[^\n]{0,600}\b(?:terminal|command|shell|powershell|cmd|console)\b)[^\n]{1,600}"
+)
 _URL_HOST: Final = re.compile(r"(?i)https?://([a-z0-9.-]{1,253})(/[^\s|\"'`)]{0,200})?")
 _SHORTENERS: Final = frozenset(
     {"bit.ly", "tinyurl.com", "t.co", "is.gd", "rb.gy", "cutt.ly", "shorturl.at", "goo.gl"}
@@ -272,6 +285,25 @@ class InstructionText:
         before = raw[match.start() - 1 : match.start()]
         after = raw[match.end() : match.end() + 1]
         return bool(_WORD_BYTE.fullmatch(before) and _WORD_BYTE.fullmatch(after))
+
+    @staticmethod
+    def dropper(text: str) -> re.Match[str] | None:
+        """A line that has the reader run a password-protected archive's content, or a command
+        from a paste site; prose about such attacks (quoted, forbidden) is not one."""
+        from cordon_scanner.intel.hosts import PASTE_HOSTS
+
+        for found in _ARCHIVE_PASSWORD_RUN.finditer(text):
+            if not InstructionText._quoted(text, found) and not InstructionText._forbidden(
+                text, found
+            ):
+                return found
+        for found in _PASTE_RUN.finditer(text):
+            hosts = {h.group(1).lower() for h in _URL_HOST.finditer(found.group(0))}
+            if any(h == p or h.endswith(f".{p}") for h in hosts for p in PASTE_HOSTS) and not (
+                InstructionText._quoted(text, found) or InstructionText._forbidden(text, found)
+            ):
+                return found
+        return None
 
     @staticmethod
     def _alarming_fetch(command: str) -> bool:
@@ -583,6 +615,20 @@ RULES: Final = {
             "agent that follows it executes whatever the remote host serves, with the "
             "developer's rights.",
             "Pin what is installed and verify it, or remove the instruction.",
+            (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.OWASP_LLM_PROMPT_INJECTION),
+        ),
+        AgentRules._rule(
+            "SUSPECT.AGENT.DROPPER_PROSE.001",
+            "Agent instructions that have the reader run a hidden or pasted payload",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "This instruction file tells its reader to extract a password-protected archive and run "
+            "what is in it, or to copy a command from a paste site into a terminal. A password keeps "
+            "an archive opaque to every scanner it passes, and a paste site serves whatever its "
+            'author last saved: this is how a skill delivers malware as a "prerequisite".',
+            "Remove the instruction. A real dependency is installed from its own registry or "
+            "release page, with a checksum.",
             (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.OWASP_LLM_PROMPT_INJECTION),
         ),
         AgentRules._rule(
@@ -1246,6 +1292,10 @@ class AgentChainDetector(BaseDetector):
         if injection is not None:
             start, end = InstructionText._byte_span(text, injection)
             yield self._finding("SUSPECT.AGENT.INJECTION_TEXT.001", unit, ctx, start, end)
+        dropper = InstructionText.dropper(text)
+        if dropper is not None:
+            start, end = InstructionText._byte_span(text, dropper)
+            yield self._finding("SUSPECT.AGENT.DROPPER_PROSE.001", unit, ctx, start, end)
         imported = _SENSITIVE_IMPORT.search(text)
         if imported is not None:
             start, end = InstructionText._byte_span(text, imported)
