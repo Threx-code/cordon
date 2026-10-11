@@ -393,6 +393,10 @@ class LockEntry:
     signed: bytes | None = None
     """The exact bytes those signatures cover (the collection's MANIFEST.json)."""
 
+    note: str | None = None
+    """What the reader knows about where this entry resolves that no other field holds -- a
+    CocoaPods podspec read from inside an npm package, and the versions that package is at."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
         object.__setattr__(self, "version", Coordinate.token(self.version, Coordinate.MAX_VERSION))
@@ -657,6 +661,7 @@ class BaseEcosystem:
                 deprecated=entry.deprecated,
                 signatures=entry.signatures,
                 signed=entry.signed,
+                resolution_note=entry.note,
             )
             for index, entry in sorted(
                 enumerate(entries), key=lambda pair: (pair[1].name, pair[1].version)

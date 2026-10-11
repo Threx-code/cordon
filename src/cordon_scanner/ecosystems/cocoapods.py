@@ -15,7 +15,7 @@ The Podfile and podspecs are Ruby, read statically like a Gemfile (`ecosystems/r
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
@@ -308,6 +308,36 @@ class PodfileLock:
     POD: ClassVar[re.Pattern[str]] = re.compile(r'^  - "?([^\s"(]+)"? \(([^)]+)\)(:?)$')
     EDGE: ClassVar[re.Pattern[str]] = re.compile(r'^    - "?([^\s"(]+)"?')
 
+    #: A podspec inside an npm package: `.../node_modules/<package or @scope/package>/<path>`.
+    NPM_PODSPEC: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|/)node_modules/((?:@[\w.-]+/)?[\w.-]+)/((?:[\w.+-]+/)*[\w.+-]+\.podspec(?:\.json)?)$"
+    )
+
+    @staticmethod
+    def npm_note(
+        podspec: str, external: dict[str, dict[str, str]], pods: dict[str, Any]
+    ) -> str | None:
+        """For a podspec inside an npm package (React Native's third-party podspecs): the
+        package, the podspec's path in it, and the versions of the pods installed from that
+        package's own directory -- React Native's `React-Core` is `:path`ed there and versioned
+        as the package. What `intel/upstream_advisories` reads the podspec from the registry by,
+        and checks the version it declares against the one locked."""
+        found = PodfileLock.NPM_PODSPEC.search(podspec)
+        if not found:
+            return None
+        package, inside = found.group(1), found.group(2)
+        root = podspec[: found.start(2)].rstrip("/")
+        versions = sorted(
+            {
+                str(pods[pod]["version"])
+                for pod, options in external.items()
+                if pod in pods and options.get("path", "").rstrip("/") == root
+            }
+        )
+        if not versions:
+            return None
+        return f"the podspec {inside} of the npm package {package}, at {' or '.join(versions)}"
+
     @staticmethod
     def is_trunk(repository: str | None) -> bool:
         """CocoaPods' public spec repository, however a lockfile names it: `trunk` (its CDN,
@@ -407,6 +437,7 @@ class PodfileLock:
             options = external.get(name, {})
             local = "path" in options
             resolved_from = None
+            note: str | None = None
             if "git" in options:
                 reference = (
                     options.get("commit") or options.get("tag") or options.get("branch") or ""
@@ -414,6 +445,7 @@ class PodfileLock:
                 resolved_from = f"git+{options['git']}#{reference}"
             elif "podspec" in options:
                 resolved_from = options["podspec"]
+                note = PodfileLock.npm_note(options["podspec"], external, pods)
             elif not PodfileLock.is_trunk(repositories.get(name)):
                 resolved_from = f"registry:{repositories[name]}"
             subspecs = sorted(slot["subspecs"])  # type: ignore[call-overload]
@@ -429,6 +461,7 @@ class PodfileLock:
                     local=local,
                     dependencies=tuple(sorted(slot["edges"])),  # type: ignore[call-overload]
                     platform=tuple(f"subspec {s}" for s in subspecs),
+                    note=note,
                 )
             )
         version = (sections.get("COCOAPODS") or [""])[0].strip()
