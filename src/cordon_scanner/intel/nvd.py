@@ -146,18 +146,18 @@ class CpeRule:
                         found[str(product)] = shared
         if not found:
             return CpeRule.by_project_site(index, sites)
-        first = {min(shared) for shared in found.values()}
         common = set.intersection(*found.values())
-        vendors = {product.split(":", 1)[0] for product in found}
-        # Several CPE names on the one site are NVD's duplicates of one product (poco is both
-        # macchina:poco and pocoproject:poco, each listing github.com/pocoproject/poco); so are one
-        # vendor's names sharing a site (nodejs:node.js and nodejs:nodejs, both on nodejs.org).
-        if len(first) > 1 and not (common and len(vendors) == 1):
+        # Several CPE names with the package's name on one of its sites are NVD's duplicates of one
+        # product, whatever vendor each was filed under: poco is both macchina:poco and
+        # pocoproject:poco on github.com/pocoproject/poco; curl is curl:curl, haxx:curl and
+        # daniel_stenberg:curl on haxx.se. Products with no site of the package's in common are
+        # different products, and no tie.
+        if not common:
             return (
                 None,
                 f"more than one CPE product has its name and its site ({', '.join(sorted(found))})",
             )
-        site = min(common) if common else next(iter(first))
+        site = min(common)
         return " ".join(
             sorted(found)
         ), f"NVD's {', '.join(sorted(found))} has its name and lists its site, {site}"

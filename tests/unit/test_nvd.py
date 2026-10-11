@@ -484,14 +484,22 @@ class TestOneVendorsNamesOnASite:
         )
         assert product == "nodejs:node.js nodejs:nodejs" and "nodejs.org" in why
 
-    def test_two_vendors_on_different_first_sites_stay_ambiguous(self) -> None:
+    def test_names_on_a_common_site_are_one_product_whatever_the_vendor(self) -> None:
         index = {
-            "tool": [
-                ["a:tool", ["shared.example", "a.example"]],
-                ["b:tool", ["b.example", "shared.example"]],
+            "curl": [
+                ["curl:curl", ["haxx.se", "github.com/curl/curl"]],
+                ["haxx:curl", ["haxx.se"]],
+                ["daniel_stenberg:curl", ["haxx.se", "secunia.com"]],
             ]
         }
         product, _ = CpeRule.match(
-            index, ["tool"], ["https://a.example/", "https://b.example/", "https://shared.example/"]
+            index,
+            ["curl"],
+            ["https://curl.haxx.se/download/curl-8.4.0.tar.bz2", "https://github.com/curl/curl"],
         )
+        assert product == "curl:curl daniel_stenberg:curl haxx:curl"
+
+    def test_products_with_no_common_site_stay_ambiguous(self) -> None:
+        index = {"tool": [["a:tool", ["a.example"]], ["b:tool", ["b.example"]]]}
+        product, _ = CpeRule.match(index, ["tool"], ["https://a.example/", "https://b.example/"])
         assert product is None
