@@ -1282,7 +1282,7 @@ class TestPodSiblings:
                 },
                 "the FirebaseCore 10.6.0 podspec",
             ),
-            Unnamed(f"its source is downloaded from {self.URL}, which names no repository and tag"),
+            Unnamed(f"a prebuilt binary its vendor ships from {self.URL} (its podspec vends ...)"),
         ]
         return [core, analytics], answers
 
@@ -1352,3 +1352,23 @@ class TestVcpkgFromAnyGit:
             "vcpkg_from_git", {"URL": ["file:///tmp/x"], "REF": ["c" * 40]}, "x"
         )
         assert isinstance(refused, Unnamed)
+
+
+class TestPrebuiltPods:
+    @pytest.mark.parametrize(
+        ("spec", "prebuilt"),
+        [
+            ({"vendored_frameworks": "Frameworks/FirebaseAnalytics.xcframework"}, True),
+            ({"ios": {"vendored_libraries": "libBugly.a"}}, True),
+            ({"subspecs": [{"name": "Core", "vendored_frameworks": "A.framework"}]}, True),
+            ({"vendored_frameworks": "A.framework", "source_files": "Sources/**/*.m"}, False),
+            (
+                {"subspecs": [{"vendored_frameworks": "A.framework"}, {"source_files": "x.m"}]},
+                False,
+            ),
+            ({"source_files": "Sources/**/*.swift"}, False),
+            ({}, False),
+        ],
+    )
+    def test_a_binary_distribution(self, spec: dict, prebuilt: bool) -> None:
+        assert Upstreams.prebuilt(spec) is prebuilt

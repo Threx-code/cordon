@@ -1097,7 +1097,7 @@ class PodSiblings:
                 and dependency.resolved_from is None
                 and dependency.version
                 and isinstance(answer, Unnamed)
-                and answer.reason.startswith("its source is downloaded from")
+                and answer.reason.startswith(("its source is downloaded from", "a prebuilt binary"))
             ):
                 try:
                     found = PodSiblings.find(dependency, tags)
@@ -2957,7 +2957,40 @@ class Upstreams:
             and isinstance(source.get("sha256"), str)
             else None
         )
-        return Upstreams.inferred(first, homes, version, (name,), how, pinned)
+        answer = Upstreams.inferred(first, homes, version, (name,), how, pinned)
+        if (
+            isinstance(answer, Unnamed)
+            and isinstance(source, dict)
+            and isinstance(source.get("http"), str)
+            and Upstreams.prebuilt(spec)
+        ):
+            # A vendor's closed binary (Google's FirebaseAnalytics before firebase-ios-sdk held
+            # its podspec, Agora's SDKs): no source exists to name, so said as what it is.
+            return Unnamed(
+                f"a prebuilt binary its vendor ships from {source['http']} (its podspec vends "
+                "frameworks or libraries and builds no source), with no repository to name",
+                homes=answer.homes,
+            )
+        return answer
+
+    @staticmethod
+    def prebuilt(spec: object) -> bool:
+        """Whether a podspec, with its subspecs, vends frameworks or libraries and builds no
+        source files: a binary distribution."""
+        vends, builds = False, False
+        stack: list[object] = [spec]
+        while stack:
+            node = stack.pop()
+            if not isinstance(node, dict):
+                continue
+            for platform in (node, *(node.get(p) for p in ("ios", "osx", "tvos", "watchos"))):
+                if isinstance(platform, dict):
+                    vends |= bool(
+                        platform.get("vendored_frameworks") or platform.get("vendored_libraries")
+                    )
+                    builds |= bool(platform.get("source_files"))
+            stack += [s for s in node.get("subspecs") or [] if isinstance(s, dict)]
+        return vends and not builds
 
     @staticmethod
     def homebrew(dependency: Dependency) -> Upstream | Unnamed:
