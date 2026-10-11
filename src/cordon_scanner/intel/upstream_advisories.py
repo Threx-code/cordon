@@ -1846,6 +1846,32 @@ class Conventions:
             "https://git.ffmpeg.org/ffmpeg.git",
         ),
         (
+            re.compile(r"^https?://storage\.googleapis\.com/aom-releases/(libaom)-"),
+            "https://aomedia.googlesource.com/aom",
+        ),
+        (
+            re.compile(r"^https?://download\.open-mpi\.org/release/(hwloc)/"),
+            "https://github.com/open-mpi/hwloc",
+        ),
+        (
+            re.compile(r"^https?://download\.open-mpi\.org/release/(open-mpi)/"),
+            "https://github.com/open-mpi/ompi",
+        ),
+        (
+            re.compile(
+                r"^https?://(?:download|downloads)\.videolan\.org/(?:pub/)?videolan/(x265)/"
+            ),
+            "https://bitbucket.org/multicoreware/x265_git",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?libsdl\.org/projects/(SDL_\w+)/release/"),
+            "https://github.com/libsdl-org/{0}",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?fftw\.org/(fftw)-"),
+            "https://github.com/FFTW/fftw3",
+        ),
+        (
             re.compile(r"^https?://dri\.freedesktop\.org/(libdrm)/"),
             "https://gitlab.freedesktop.org/mesa/drm",
         ),
