@@ -1923,6 +1923,21 @@ class Conventions:
             ),
             "https://gitlab.gnome.org/GNOME/{0}",
         ),
+        # X.org's util-macros is released under that name from its repository `xorg/util/macros`.
+        (
+            re.compile(
+                r"^https?://(?:www\.)?x\.org/(?:releases|archive)/+individual/util/util-macros-\d"
+            ),
+            "https://gitlab.freedesktop.org/xorg/util/macros",
+        ),
+        (
+            re.compile(r"^https?://ziglang\.org/download/[\d.]+/(zig)-"),
+            "https://github.com/ziglang/zig",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?spice-space\.org/download/gtk/(spice-gtk)-"),
+            "https://gitlab.freedesktop.org/spice/spice-gtk",
+        ),
         (
             re.compile(
                 r"^https?://(?:www\.)?x\.org/(?:releases|archive)/+individual/([\w-]+)/([\w.+-]+?)-\d"
