@@ -1492,3 +1492,70 @@ class TestVcpkgOverrides:
         answer = Upstreams.vcpkg(angle)
         assert asked == ["chromium_7258#0"]
         assert isinstance(answer, Unnamed) and "not ordered" not in answer.reason
+
+
+class TestCondaZip64:
+    @staticmethod
+    def package(member: bytes, name: str = "info-x-1.0-0.tar.zst") -> bytes:
+        """A stored zip whose directory and end record use ZIP64 for every size and offset."""
+        import struct
+        import zlib
+
+        crc = zlib.crc32(member)
+        encoded = name.encode()
+        local = (
+            struct.pack(
+                "<IHHHHHIIIHH",
+                0x04034B50,
+                45,
+                0,
+                0,
+                0,
+                0,
+                crc,
+                len(member),
+                len(member),
+                len(encoded),
+                0,
+            )
+            + encoded
+            + member
+        )
+        extra = struct.pack("<HHQQQ", 1, 24, len(member), len(member), 0)
+        central = (
+            struct.pack(
+                "<IHHHHHHIIIHHHHHII",
+                0x02014B50, 45, 45, 0, 0, 0, 0, crc,
+                0xFFFFFFFF, 0xFFFFFFFF, len(encoded), len(extra), 0, 0, 0, 0, 0xFFFFFFFF,
+            )
+            + encoded
+            + extra
+        )  # fmt: skip
+        record_at = len(local) + len(central)
+        record = struct.pack(
+            "<IQHHIIQQQQ", 0x06064B50, 44, 45, 45, 0, 0, 1, 1, len(central), len(local)
+        )
+        locator = struct.pack("<IIQI", 0x07064B50, 0, record_at, 1)
+        end = struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+        return local + central + record + locator + end
+
+    def test_a_zip64_package_is_read(self, monkeypatch) -> None:
+        from pathlib import Path
+
+        from cordon_scanner.intel.upstream_advisories import CondaPackage
+
+        member = (
+            Path(__file__).resolve().parent / "data" / "zstd" / "conda-info.tar.zst"
+        ).read_bytes()
+        body = self.package(member)
+
+        def ranged(url: str, header: str, limit: int) -> tuple[bytes, int]:
+            spec = header.removeprefix("bytes=")
+            if spec.startswith("-"):
+                return body[-int(spec[1:]) :], len(body)
+            start, _, stop = spec.partition("-")
+            return body[int(start) : int(stop) + 1], len(body)
+
+        monkeypatch.setattr(CondaPackage, "_range", staticmethod(ranged))
+        recipe = CondaPackage.recipe("https://conda.anaconda.org/conda-forge/noarch/x-1.0-0.conda")
+        assert recipe is not None and "source" in recipe

@@ -382,6 +382,17 @@ class CondaPackage:
         if end < 0:
             raise ValueError("no zip directory at the end of the package")
         size, offset = struct.unpack("<II", tail[end + 12 : end + 20])
+        if 0xFFFFFFFF in (size, offset):
+            # ZIP64 (APPNOTE 4.3.14-15): the locator just before the end record names the ZIP64
+            # end record, which holds the directory's 8-byte size and offset.
+            locator = tail.rfind(b"PK\x06\x07", 0, end)
+            record_at = (
+                struct.unpack("<Q", tail[locator + 8 : locator + 16])[0] if locator >= 0 else -1
+            )
+            start = record_at - (total - len(tail))
+            if locator < 0 or start < 0 or not tail.startswith(b"PK\x06\x06", start):
+                raise ValueError("a ZIP64 package whose directory could not be found")
+            size, offset = struct.unpack("<QQ", tail[start + 40 : start + 56])
         start_of_tail = total - len(tail)
         if offset >= start_of_tail:
             directory = tail[offset - start_of_tail : offset - start_of_tail + size]
@@ -398,6 +409,24 @@ class CondaPackage:
             )
             local = struct.unpack("<I", directory[position + 42 : position + 46])[0]
             name = directory[position + 46 : position + 46 + name_len].decode("utf-8", "replace")
+            # ZIP64 (APPNOTE 4.5.3): a field written 0xFFFFFFFF is in the extra field's 0x0001
+            # block, 8 bytes each, in the order uncompressed size, compressed size, offset.
+            uncompressed = struct.unpack("<I", directory[position + 24 : position + 28])[0]
+            extra = directory[position + 46 + name_len : position + 46 + name_len + extra_len]
+            at = 0
+            while at + 4 <= len(extra):
+                kind, length = struct.unpack("<HH", extra[at : at + 4])
+                if kind == 1:
+                    wide = iter(
+                        struct.unpack(
+                            f"<{min(length, 24) // 8}Q",
+                            extra[at + 4 : at + 4 + length // 8 * 8][:24],
+                        )
+                    )
+                    fields = [uncompressed, compressed, local]
+                    fields = [next(wide, f) if f == 0xFFFFFFFF else f for f in fields]
+                    uncompressed, compressed, local = fields
+                at += 4 + length
             position += 46 + name_len + extra_len + comment_len
             if not (name.startswith("info-") and name.endswith(".tar.zst")) or method != 0:
                 continue
