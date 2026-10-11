@@ -6,7 +6,7 @@ author: "Cordon Contributors"
 
 branding:
   icon: shield
-  color: blue
+  color: green
 
 inputs:
   allow-unverified-install:

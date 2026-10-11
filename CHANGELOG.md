@@ -5,6 +5,125 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - unreleased
+
+Cordon offered to AI agents, and in both editor families. The work prepared as 0.6.1 ships here.
+
+Probed against real repositories and each ecosystem's own tool rather than against fixtures: 82
+public repositories in 24 languages scanned with every detector, Julia projects, two container
+images against their own package databases, and new provenance checks against `helm verify` and
+`ansible-galaxy collection verify` on real signatures. Each defect found is fixed below, with a
+test or conformance case that fails on the old code.
+
+### Added
+
+- **Cordon for AI agents: `cordon-scanner mcp`** (tutorial 30). A Model Context Protocol server,
+  inside the package, so coding agents ask before they act: 26 read-only tools for packages,
+  install commands, advisories, skills, agent files, MCP servers and their tool descriptions, IDE
+  extensions, file contents, workspace scans, secrets, dependency graphs, SBOMs and AI-BOMs,
+  release and baseline comparisons, images, this machine, and rules. Both protocol eras
+  (2026-07-28, and the `initialize` handshake from 2025-11-25 back to 2024-11-05). A package check
+  is the verdict a project depending on that release would get, from the same detectors -- checked
+  against a real affected release in each of npm, PyPI, Cargo, Go, Maven, NuGet, Composer,
+  RubyGems, Pub, Hex, CRAN and Swift. `cordon-scanner mcp config --client <agent>` prints the
+  configuration for eleven agents.
+- **Security for an agent-driven scanner** (threat T13): paths confined to `--root`; the network
+  only with `--allow-online`, and then public addresses only; a deadline and cancellation that end
+  a scan's whole process tree; a bound on calls in flight and per minute; text quoted from scanned
+  files stripped of hidden characters and marked as data; an audit log that never records
+  arguments.
+- **`CORDON_PUBLIC_NETWORK_ONLY`**: online, no name a scan resolves may lead inside the network --
+  private, loopback, link-local and cloud-metadata addresses refused at name resolution, DNS
+  rebinding included (threat T12). On for every scan the MCP server runs; for CI that scans
+  untrusted code online.
+- **VS Code extension 0.7.0** registers Cordon's MCP server with the editor's own agents (VS Code
+  1.101 and later), carries Cordon's mark, and builds reproducibly in Docker. **A JetBrains
+  plugin** (new): findings on their lines and in a tool window for IntelliJ-based IDEs 2025.1 and
+  later, and AI Assistant's MCP configuration one action away.
+- **Agent rules for the ClawHavoc shapes**: a dropper written as prose (download a
+  password-protected archive, extract, run) and a phantom prerequisite (a tool the skill says must
+  be installed, with a download link, that the skill never runs). Held-out malicious skills
+  blocked: 7.9% to 35.6%, with no new false alarm on 3,000 real skills.
+- **The CVE List** fills affected ranges NVD gives none for (2,960 CVEs).
+
+- **Provenance for Bazel modules, Helm charts and Ansible collections (UNI-17).** Bazel Central
+  Registry modules are checked against BCR's attestations (the lock pins `source.json`, which pins
+  the archive). Helm charts' `.prov` files and Ansible collections' signatures over MANIFEST.json
+  are verified with OpenPGP against the keys the operator gives with `--keyring` (or
+  `CORDON_KEYRINGS`; never from a repository's own configuration), as `helm verify` and
+  `ansible-galaxy collection verify` check them, expired and revoked keys included. Compared with
+  each tool on real signatures: every verdict agrees. Needs the `[attest]` extra (pysequoia).
+- **`scan pkg:docker/<image>`**: an image pulled from its registry, every blob checked against
+  its digest, every platform of a multi-platform image inventoried.
+- **Terraform's implied providers** (a `provider "aws"` block or an `aws_*` resource with no
+  `required_providers` entry) are listed, as Terraform installs them.
+- **Specification items that had no proof**: Gradle substitutions and capabilities, Bazel
+  apparent names and WORKSPACE migration, Ansible execution environments and `requires_ansible`,
+  CocoaPods test and app specs, Nix overlays, Terraform's `data "external"` program.
+- **`make prepush`**: what CI will say about HEAD, run in Docker before the push; and
+  `scripts/portability.py`, which finds from source what passes on one platform and fails on
+  another.
+- **Tutorial 29**, troubleshooting from what you see back to its cause.
+
+### Fixed
+
+- **Scans that refused a whole file** now read it, each found in a real repository:
+  - YAML block scalars (`|`, `>`) lost relative indentation, empty lines, comment-looking lines
+    and chomping, and a `[` inside one refused the file; multi-line quoted strings, flow
+    collections below their key and nested `- -` sequences were misread or refused. Measured
+    against PyYAML on 1,055 real files: no string value differs, and 21 refused files are read --
+    Kubernetes manifests among them, whose container images were missing from the inventory.
+  - Dockerfile `FROM ubuntu:"${version}"` (Homebrew), an `ARG` default built from earlier
+    arguments, as BuildKit expands it (`hexpm/elixir:${ELIXIR_VERSION}-...`), and a template
+    such as Phoenix's `Dockerfile.eex`, which is not a Dockerfile until rendered.
+  - Compose: a scalar alias (`image: *node-image`), a leading `---`, a block scalar whose text
+    looks like keys, and a service whose image comes from a file merged over it (`-f base.yml
+    -f prod.yml`) -- noted, not refused. A service whose value is not a mapping, which is what
+    a file cut short leaves, is still refused.
+  - GitHub Actions: a composite action kept in a folder under `.github/workflows/`, and a step
+    reused by YAML anchor and alias.
+  - `mix.exs` sigils, anonymous functions and function captures (Elixir's and Phoenix's own);
+    a Brewfile call with parentheses; a Shiny app's `DESCRIPTION`.
+  - Across the 2,852 such files in the 82 repositories, 76 more are read, none that was read is
+    refused, and no dependency already read changes; the 4 still refused are refused by Docker,
+    Terraform and Homebrew themselves.
+  - A Starlark string continued with `\` (Kong's BUILD.bazel).
+  - Terraform `for` expressions and computed keys; Podfile and Gemfile keyword blocks; `mix.exs`
+    module attributes; Hackage freeze files that pin only the index; Brewfiles by every name.
+  - Terraform and GitHub Actions files checked out with CRLF line endings.
+- **False positives**, each from a real repository:
+  - `"rm -rf /"` in a list of commands to refuse was reported as a wiper (claw-code, ECC).
+  - An example secret on an Elixir `iex>` or Ruby `irb>` transcript line (Phoenix.Token).
+  - Yarn 4's `patch:` entry reported as a second hash for the same version (TypeScript).
+  - An egress security-group rule reported as ingress from the internet (terraform-aws-eks).
+  - `*_FILE`, `*_PATH` and `*_DIR` environment variables reported as Kubernetes secrets (caveman).
+  - R's base packages and the platform asked of a registry; the project's own code asked too.
+- **A missed finding**: Azure's `destination_port_range = "*"` (every port) open to the internet
+  was never reported -- the pattern's `\b` never holds after `*`.
+- **A slow scan**: one repository took 608 seconds; choosing the version to upgrade to compared
+  every fixed version with every advisory, re-parsing versions each time. 58 seconds now, with an
+  identical report (14,492 findings, each equal), and the test suite runs in half the time.
+- **An incomplete scan that gave no reason**: a file past `max_file_bytes` made the scan
+  incomplete -- which fails the GitHub Action's default gate -- but a binary file's truncation was
+  never reported. Every truncated file is now named.
+- **Scanned Python's `SyntaxWarning`s** (an invalid escape in a scanned file) are no longer
+  printed to the scanner's stderr.
+- **Registry answers**: CocoaPods follows trunk's redirect to its Specs mirror; CRAN compares
+  versions as R does; a bare version is a range in Cargo and Julia; a withdrawal is reported as
+  the registry states it; a response cut short is an unreachable registry, not a crash.
+- **Provenance** checks the attestation of the file the project pinned, not another file of the
+  same release.
+- **Exit codes**: `deps` exits 4 (incomplete), not 2 (a Cordon failure), for an incomplete graph.
+- **`sbom generate`** reports the packages an SPDX document holds; `intel update` counts an OSV
+  refresh as an update.
+
+### Changed
+
+- Images list a distribution's own Python and npm packages under their language too, as Syft
+  does; Apache's PHP module, the Composer PHAR and jar groups are named as Syft names them.
+- The home screen and tutorial 11 say what a default scan does on the network (it asks OSV what
+  changed since the intel was built) and how to turn that off.
+
 ## [0.6.0] - 2026-10-08
 
 Measured at scale before it was written down: every one of the 249,646 known-malicious records

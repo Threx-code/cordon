@@ -236,6 +236,40 @@ repository's text to a model; only the organisation can agree to it.
    timeout per call ..... local 300 s · remote 90 s · CORDON_JUDGE_TIMEOUT
 ```
 
+### AI agents: the MCP server
+
+`cordon-scanner mcp` serves Cordon's checks to coding agents over the Model Context Protocol
+(stdio), so an agent asks before it installs a package, runs an install command, loads a skill,
+follows an instruction file or adds an MCP server (tutorial 30). It ships inside the package; there
+is nothing else to install.
+
+```
+   cordon-scanner mcp config --client claude-code    the exact configuration for one agent
+                                                     (claude-code, claude-desktop, cursor, vscode,
+                                                      windsurf, gemini, codex, zed, cline,
+                                                      continue, jetbrains)
+   cordon-scanner mcp --root DIR                     a directory tools may read (repeatable)
+                      --allow-online                 registries, packages' code, images, live MCP
+                      --allow-private-network        online names may lead inside the network
+                      --allow-machine                this machine's packages and agent configs
+                      --timeout · --max-concurrent · --rate · --max-findings · --audit-log
+```
+
+It speaks the current protocol (2026-07-28, per-request metadata) and the `initialize`
+handshake of 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05, each response shaped to the
+version in use. Every tool is read-only; the security controls are threat T13 in
+`02-THREAT-MODEL.md`.
+
+### Editors
+
+The VS Code extension (Visual Studio Marketplace, and Open VSX for Cursor, Windsurf, VSCodium
+and Gitpod) and the JetBrains plugin (IntelliJ-based IDEs, 2025.1 and later) show findings on
+their lines and run only in trusted folders, with the scanner's path a machine-level setting no
+project can change. On VS Code 1.101 and later the extension registers the MCP server with the
+editor's own agents. Both are built from `editors/` in Docker (`editors/*/Dockerfile`), the
+JetBrains plugin checked by JetBrains' Plugin Verifier against the oldest and newest IDEs it
+claims. Tutorial 20.
+
 ### Container images
 
 `cordon-scanner scan image.tar` on a `docker save` or OCI-layout tarball inventories the operating

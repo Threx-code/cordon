@@ -299,4 +299,4 @@ cordon-scanner scan . -v --format json:result.json --audit-log audit.jsonl
 records what the scan did. Both name paths in the repository and nothing else. For a crash
 (exit 2), the smallest file that reproduces it is worth more than any description.
 
-Next: back to **[the tutorial map](README.md)**.
+Next: **[30 · Cordon for AI agents: the MCP server](30-mcp-server.md)**.

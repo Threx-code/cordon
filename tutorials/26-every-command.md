@@ -692,6 +692,10 @@ Serve Cordon to AI agents over the Model Context Protocol (stdio).
 │                           and extensions, and read remote MCP servers      │
 │ --allow-machine           let tools read this machine's installed packages │
 │                           and AI agent configuration                       │
+│ --allow-private-network   let online tools connect to private and local    │
+│                           addresses (an intranet MCP server or registry);  │
+│                           by default a name an agent passes in may lead    │
+│                           only to the public network                       │
 │ --timeout SECONDS         deadline for one scan (default 600)              │
 │ --max-concurrent N        scans run at once (default 4)                    │
 │ --rate N                  tool calls allowed per minute (default 120)      │

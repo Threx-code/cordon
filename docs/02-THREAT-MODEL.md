@@ -284,6 +284,57 @@ disables, responses parsed under the same limits as scanned files, and lookups
 by package coordinates only. Written here as a requirement rather than as a
 description of code, so the distinction is visible.
 
+**Hosts named by what is scanned (server-side request forgery).** Online, some
+of what a scan connects to is named by the scan target: a remote MCP server's
+URL in a configuration, an image's registry, a chart repository. Scanning
+untrusted content online could then be steered at a cloud metadata endpoint or
+an internal service. With `CORDON_PUBLIC_NETWORK_ONLY=1` every name the process
+resolves is filtered to globally routable addresses at `socket.getaddrinfo`
+(`core/netguard.py`): a name that resolves only to private, loopback,
+link-local, carrier-grade NAT, reserved or multicast addresses is refused, and
+because the connection uses an address the filter returned, a name that
+resolves publicly for one lookup and privately for the next (DNS rebinding) has
+no second lookup to win. Hosts the operator lists in
+`CORDON_ALLOWED_PRIVATE_HOSTS` are exempt; nothing in a repository can add one.
+Off by default for the CLI, where an intranet registry is a normal thing to
+reach; on in every scan the MCP server runs (T13). Set it in CI that scans
+untrusted repositories with `--online`.
+
+### T13 — The MCP server, driven by an agent that may be steered
+
+**Threat.** `cordon-scanner mcp` takes its inputs from a coding agent, and the
+agent may be reading a malicious file at the time: a skill, an instruction file
+or a web page can tell it to call Cordon with a path, a URL or a package of the
+attacker's choosing, or to read Cordon's answer as an instruction.
+
+**Controls.**
+
+- *Read-only.* No tool installs, runs what it reads, writes into a workspace
+  root or changes configuration. Content tools write into a private temporary
+  directory (0700) removed when the call ends.
+- *Paths.* Only the directories the server was started with (`--root`); every
+  path is resolved, symlinks followed, and must land inside one. A server
+  started from `/` or the home directory reads no paths at all. Content paths
+  refuse `..`, absolute paths, drives, streams, device names and control
+  characters, so nothing lands outside the temporary directory on any system.
+- *Network.* Off unless the operator passes `--allow-online`; then every scan
+  the server runs, and the server process itself (extension downloads follow
+  registry redirects), may reach the public internet only (T12) unless the
+  operator passes `--allow-private-network`. Tools the server's flags do not
+  allow are not listed.
+- *Argument injection.* The scanner is run as a child process with an argument
+  list, never a shell; values that could start with `-` are passed as
+  `--flag=value` or checked to be paths and revisions.
+- *Answers as instructions.* Text quoted from scanned files is stripped of
+  invisible and direction-changing characters, capped, and every answer says it
+  is data. The server never relays the Cordon Cloud identity it is signed in as.
+- *Exhaustion.* A deadline per scan that ends the scan's whole process tree, a
+  cancelled call ends its scan, a cap on calls in flight (answered "busy", not
+  queued), a calls-per-minute limit, 32 MB per message, JSON nesting that the
+  parser refuses is answered rather than fatal.
+- *Audit.* `--audit-log` records each call's tool, verdict and duration, never
+  its arguments.
+
 ---
 
 ## 3. Optional dynamic analysis

@@ -49,7 +49,8 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 17  Source, build & binaries .... build systems, binaries, licences, scan scope
     ├─ 18  AI agents, MCP & skills ..... every agent's instruction, MCP and hook files
     ├─ 19  Release comparison .......... what changed since the version you trust
-    ├─ 20  In the editor ............... findings on the line, in VS Code
+    ├─ 20  In the editor ............... findings on the line, in VS Code and JetBrains IDEs
+    ├─ 30  The MCP server .............. AI agents check packages, skills and servers first
     │
   ACROSS A TEAM
     ├─ 21  Dependency review ........... what an update adds, on every pull request
@@ -86,6 +87,14 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 
 Every extra is opt-in and degrades to a *stated* limit when absent — never a
 silent gap, never a crash. See tutorials 09 and 05.
+
+## New in 0.7.0
+
+- **30 · The MCP server** -- `cordon-scanner mcp`: coding agents ask Cordon before they install a
+  package, run an install command, load a skill or add an MCP server, over the Model Context
+  Protocol, with every tool read-only and every online name kept to the public internet.
+- **20** now covers the JetBrains plugin, and the VS Code extension registering the MCP server
+  with the editor's own agents.
 
 ## New in 0.6.0
 
