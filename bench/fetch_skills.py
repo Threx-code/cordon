@@ -110,11 +110,19 @@ class SkillCorpus:
                             files[member.name.split("/", 1)[-1]] = handle.read()
         except (tarfile.TarError, EOFError, OSError):
             return 0
-        skills = {path.rsplit("/", 1)[0] if "/" in path else "" for path in files if path.rsplit("/", 1)[-1] == "SKILL.md"}
+        skills = {
+            path.rsplit("/", 1)[0] if "/" in path else ""
+            for path in files
+            if path.rsplit("/", 1)[-1] == "SKILL.md"
+        }
         kept = 0
         for skill in sorted(skills):
             prefix = f"{skill}/" if skill else ""
-            target = out / "skills" / f"{repository.replace('/', '__')}__{skill.replace('/', '__') or 'root'}"
+            target = (
+                out
+                / "skills"
+                / f"{repository.replace('/', '__')}__{skill.replace('/', '__') or 'root'}"
+            )
             for path, data in files.items():
                 if path.startswith(prefix) and path.lower().endswith(TEXT):
                     destination = target / path[len(prefix) :]

@@ -22,9 +22,9 @@ from cordon_scanner.detect.registry import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.advisories import AdvisoryDatabase
 from cordon_scanner.intel.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
-from cordon_scanner.intel.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
 from cordon_scanner.intel.popular import PackageIntel
 from cordon_scanner.intel.real import RealPackages
+from cordon_scanner.intel.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
 
 HEADER = """# Ecosystems
 

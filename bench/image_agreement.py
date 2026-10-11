@@ -21,7 +21,7 @@ import time
 import urllib.parse
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 #: Official and widely pulled images across every package manager and base family Cordon reads:
 #: Debian/Ubuntu (dpkg), Alpine (apk), Red Hat family (rpm), distroless, Wolfi, and language
@@ -84,7 +84,13 @@ class Purls:
     """A purl reduced to what both tools state: type, namespace, name and version."""
 
     #: Purl types Syft gives a name Cordon gives another for (the same package).
-    TYPE_ALIASES = {"golang": "golang", "gem": "gem", "apk": "apk", "deb": "deb", "rpm": "rpm"}
+    TYPE_ALIASES: ClassVar[dict[str, str]] = {
+        "golang": "golang",
+        "gem": "gem",
+        "apk": "apk",
+        "deb": "deb",
+        "rpm": "rpm",
+    }
 
     @staticmethod
     def key(purl: str) -> tuple[str, str] | None:

@@ -200,7 +200,7 @@ class Siblings:
                     body = Fetch.get(
                         RAW.format(repo=entry["repo"], path=urllib.parse.quote(sibling))
                     )
-                except Exception:
+                except Exception:  # noqa: S112 - a sibling file that will not fetch is optional
                     continue
                 (folder / name).write_bytes(body)
                 added += 1
