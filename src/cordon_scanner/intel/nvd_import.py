@@ -29,13 +29,14 @@ import re
 import tarfile
 import urllib.request
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 from cordon_scanner.intel.advisories import DIGESTS_NAME, AdvisoryFiles
+from cordon_scanner.intel.cve_list import CveList
 from cordon_scanner.intel.nvd import CPE_NAME, CVES_NAME, CpeRule
 
 CVE_FEED: Final = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}"
@@ -181,9 +182,13 @@ class NvdImport:
 
     @staticmethod
     def build(
-        years: range, keep: Callable[[str, str], bool], log: Callable[[str], None] = print
+        years: range,
+        keep: Callable[[str, str], bool],
+        log: Callable[[str], None] = print,
+        cve_list: Iterable[dict[str, Any]] = (),
     ) -> NvdBuild:
-        """Every year's records, those `keep(id, severity)` accepts, grouped by product."""
+        """Every year's records, those `keep(id, severity)` accepts, grouped by product; then, for
+        a CVE NVD gives no range, the ranges its CVE List record states (`intel/cve_list`)."""
         out = NvdBuild()
         products: dict[str, list[list[Any]]] = defaultdict(list)
         # Every product any CVE names, kept or not: a product whose CVEs are all below the bundled
@@ -193,12 +198,15 @@ class NvdImport:
         # notes in a CVE naming that product alone (open-mpi:hwloc's github.com/open-mpi/hwloc):
         # the site of a product the CPE dictionary gives none. Only forge repositories count.
         repositories: dict[str, set[str]] = defaultdict(set)
+        ranged: set[str] = set()
         for year in years:
             count = 0
             for cve in NvdImport.cves(year):
                 out.cves += 1
                 identifier, rating = str(cve["id"]), NvdImport.severity(cve)
                 found = list(NvdImport.ranges(cve))
+                if found:
+                    ranged.add(identifier)
                 named.update(product for product, _ in found)
                 alone = {product for product, _ in found}
                 if len(alone) == 1:
@@ -222,6 +230,29 @@ class NvdImport:
                 )
                 count += 1
             log(f"  {year}: {count:,} CVEs with application ranges")
+        added = 0
+        for record in cve_list:
+            identifier = str((record.get("cveMetadata") or {}).get("cveId") or "")
+            if not identifier or identifier in ranged:
+                continue  # NVD's own analysis stands where it has one
+            found = list(CveList.ranges(record))
+            if not found:
+                continue
+            named.update(product for product, _ in found)
+            alone = {product for product, _ in found}
+            if len(alone) == 1:
+                repositories[next(iter(alone))] |= NvdImport.project_sites(
+                    {"references": NvdImport.cve_list_references(record)}
+                )
+            rating = CveList.severity(record)
+            if not keep(identifier, rating):
+                continue
+            for product, bounds in found:
+                products[product].append([identifier, rating, bounds])
+            out.text[identifier] = CveList.description(record)
+            added += 1
+        if added:
+            log(f"  CVE List: {added:,} CVEs NVD gives no range, with ranges their records state")
         out.products = dict(products)
         out.index = NvdImport.index(named, repositories)
         log(f"  CPE dictionary: {len(out.index):,} product names with sites")
@@ -229,6 +260,43 @@ class NvdImport:
 
     PROJECT_TAGS: Final = frozenset({"Patch", "Issue Tracking", "Release Notes"})
     VENDOR_TAGS: Final = frozenset({"Vendor Advisory", "Product"})
+    #: The CVE schema's reference tags, as NVD names the same ones.
+    CVE_LIST_TAGS: Final = {
+        "patch": "Patch",
+        "issue-tracking": "Issue Tracking",
+        "release-notes": "Release Notes",
+        "vendor-advisory": "Vendor Advisory",
+        "product": "Product",
+    }
+
+    @staticmethod
+    def cve_list_records() -> Iterator[dict[str, Any]]:
+        """The CVE List's latest baseline, fetched into a scratch directory and checked against its
+        published SHA-256; a failure is this import's, so nothing is written."""
+        import tempfile
+
+        from cordon_scanner.intel.cve_list import CveListError
+
+        with tempfile.TemporaryDirectory(prefix="cordon-cve-list-") as scratch:
+            try:
+                baseline = CveList.fetch(Path(scratch))
+                yield from CveList.records(baseline)
+            except (CveListError, OSError, ValueError) as exc:
+                raise NvdImportError(f"the CVE List: {exc}") from exc
+
+    @staticmethod
+    def cve_list_references(record: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            {
+                "url": r.get("url"),
+                "tags": [
+                    NvdImport.CVE_LIST_TAGS[t]
+                    for t in r.get("tags") or []
+                    if t in NvdImport.CVE_LIST_TAGS
+                ],
+            }
+            for r in CveList.references(record)
+        ]
 
     @staticmethod
     def project_sites(cve: dict[str, Any]) -> set[str]:

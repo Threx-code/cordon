@@ -9,6 +9,10 @@ release.
     python3 scripts/build_nvd_db.py --full     # every severity
     python3 scripts/build_nvd_db.py --check    # fetch and verify, write nothing
 
+For a CVE NVD has not analysed -- no CPE configuration, so no range -- the ranges its own record in
+the CVE List states are added (`intel/cve_list`): its CPEs and affected versions, from its CNA or
+an ADP such as CISA's Vulnrichment. `--no-cve-list` builds from NVD alone.
+
 What ships is filtered the way the OSV data is, and for the same reason (`build_advisory_db.py`'s
 docstring): a record the default policy would not fail a build on stays one
 `cordon-scanner advisories sync` away. A CVE in CISA's KEV or ENISA's EUVD catalogue is always
@@ -38,6 +42,11 @@ class NvdDatabaseBuild:
         parser.add_argument("--full", action="store_true", help="bundle every severity")
         parser.add_argument("--check", action="store_true", help="fetch and verify; write nothing")
         parser.add_argument(
+            "--no-cve-list",
+            action="store_true",
+            help="NVD alone, without the CVE List's ranges for CVEs NVD has not analysed",
+        )
+        parser.add_argument(
             "--output",
             default=str(ROOT / "src" / "cordon_scanner" / "intel" / "data"),
             metavar="DIR",
@@ -56,7 +65,11 @@ class NvdDatabaseBuild:
 
         print("NVD:")
         try:
-            built = nvd_import.NvdImport.build(nvd_import.NvdImport.years(), keep)
+            built = nvd_import.NvdImport.build(
+                nvd_import.NvdImport.years(),
+                keep,
+                cve_list=() if args.no_cve_list else nvd_import.NvdImport.cve_list_records(),
+            )
         except nvd_import.NvdImportError as exc:
             print(f"  FAILED: {exc}", file=sys.stderr)
             print("nothing was written; re-run once every feed answers.", file=sys.stderr)

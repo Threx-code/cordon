@@ -2429,14 +2429,17 @@ class CommandLine:
     @classmethod
     def _sync_nvd(cls, destination: Path) -> int:
         """Every NVD record, unfiltered, from NVD's own feeds, each checked against its published
-        SHA-256 (`intel/nvd_import`)."""
+        SHA-256 (`intel/nvd_import`); and, for a CVE NVD gives no range, the ranges its CVE List
+        record states (`intel/cve_list`)."""
         from cordon_scanner.intel import nvd_import
         from cordon_scanner.intel.nvd import NvdData
 
         print("syncing NVD's feeds...")
         try:
             built = nvd_import.NvdImport.build(
-                nvd_import.NvdImport.years(), lambda identifier, rating: True
+                nvd_import.NvdImport.years(),
+                lambda identifier, rating: True,
+                cve_list=nvd_import.NvdImport.cve_list_records(),
             )
         except nvd_import.NvdImportError as exc:
             raise ConfigError(f"advisories sync: NVD: {exc}") from exc
