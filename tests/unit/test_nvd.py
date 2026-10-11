@@ -356,11 +356,16 @@ class TestRepositoriesFromReferences:
                 {"url": "https://github.com/open-mpi/hwloc/issues/544", "tags": ["Issue Tracking"]},
                 {"url": "https://github.com/open-mpi/hwloc/commit/abc", "tags": ["Patch"]},
                 {"url": "https://www.open-mpi.org/projects/hwloc/", "tags": ["Product"]},
+                {"url": "https://c-ares.haxx.se/adv_20210810.html", "tags": ["Vendor Advisory"]},
                 {"url": "https://github.com/advisories/GHSA-x", "tags": ["Third Party Advisory"]},
                 {"url": "https://lists.debian.org/x", "tags": ["Patch"]},
             ]
         }
-        assert NvdImport.project_sites(cve) == {"github.com/open-mpi/hwloc"}
+        assert NvdImport.project_sites(cve) == {
+            "github.com/open-mpi/hwloc",
+            "open-mpi.org",
+            "haxx.se",
+        }
 
     def test_a_cve_naming_two_products_gives_neither_a_repository(self, monkeypatch) -> None:
         two = {

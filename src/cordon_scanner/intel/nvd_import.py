@@ -228,16 +228,23 @@ class NvdImport:
         return out
 
     PROJECT_TAGS: Final = frozenset({"Patch", "Issue Tracking", "Release Notes"})
+    VENDOR_TAGS: Final = frozenset({"Vendor Advisory", "Product"})
 
     @staticmethod
     def project_sites(cve: dict[str, Any]) -> set[str]:
-        """The forge repositories a CVE's patch, issue and release-notes references name."""
+        """The forge repositories a CVE's patch, issue and release-notes references name (a patch
+        may sit in a distribution's repository or a mailing list, so only a forge repository
+        counts), and the sites of its vendor's own advisory and product pages, whatever they are
+        (c-ares's c-ares.haxx.se, which NVD's dictionary no longer lists)."""
         out: set[str] = set()
         for reference in cve.get("references") or []:
-            if not NvdImport.PROJECT_TAGS & set(reference.get("tags") or ()):
-                continue
+            tags = set(reference.get("tags") or ())
             site = CpeRule.site(str(reference.get("url") or ""))
-            if site and site.count("/") == 2:
+            if not site:
+                continue
+            if NvdImport.VENDOR_TAGS & tags or (
+                NvdImport.PROJECT_TAGS & tags and site.count("/") == 2
+            ):
                 out.add(site)
         return out
 
