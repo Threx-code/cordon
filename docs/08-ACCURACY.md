@@ -204,6 +204,38 @@ What still differs, every case read:
 
 Results, repository by repository: `bench/results/tool-agreement-2026-10-10/`.
 
+### Advisory coverage where OSV has no feed
+
+OSV publishes nothing for Homebrew, vcpkg, Conan, conda or CocoaPods. Measured on the same real
+lockfiles, in Docker, with `--online`: how many locked packages Cordon could match against an
+advisory source at all -- through the upstream they were built from (named, or proved against
+the release archive's own files), or through NVD once a package is tied to one CPE product. A
+package counts only if one of those reached it; the rest are named in every report as unchecked.
+
+| Ecosystem | Packages from the public registry | Checked |
+|---|---|---|
+| CocoaPods | 4,260 | 4,243 (99.6%) |
+| vcpkg | 1,454 | 1,429 (98.3%) |
+| Conan | 832 | 817 (98.2%) |
+| conda | 13,152 | 12,797 (97.3%) |
+| Homebrew formulae | 531 | 505 (95.1%) |
+
+Counted apart, because no source exists to check them against: Homebrew casks (macOS
+applications; 85 of 286 tied to NVD products), vendors' prebuilt binaries (174 CocoaPods pods
+whose podspecs vend frameworks and build no source; 120 conda packages under their
+vendors' own licences -- NVIDIA's CUDA, Intel's MKL, Microsoft's runtimes), and packages from
+private repositories or channels.
+
+What stays unchecked, by kind:
+
+| Kind | Examples |
+|---|---|
+| A project with no public repository and no NVD product | libev, libmpdec, libspatialite, gts (conda); markdown, sleepwatcher, proctools, ipcalc (Homebrew); termcap, mpdecimal (Conan) |
+| A release that differs from its tag in code or a build file, so is not proved | x265 (a version file), librttopo (`Makefile.am`), hwloc, curl's release files (NVD ties curl instead) |
+| A release archive that no longer exists to prove | tree, colordiff (Homebrew) |
+| A formula from a tap, locked without its tap's name | cf-cli, enarx, godu (Homebrew) |
+| A bundle of several projects under one name | React Native's ReactNativeDependencies; Qt's qt-everywhere |
+
 ### What container images contain, against Syft
 
 `bench/image_agreement.py` saves each of 182 public images (175 read by both tools; 7 could not
