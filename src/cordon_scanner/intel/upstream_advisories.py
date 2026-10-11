@@ -135,6 +135,10 @@ class RepositoryArchive:
     GITLAB_RELEASE: ClassVar[re.Pattern[str]] = re.compile(
         r"^(https://[\w.-]+(?::\d+)?/[\w.~-]+(?:/[\w.~-]+){1,8}?)/-/releases/([^/]+)/downloads/[^/]+$"
     )
+    #: One file at a ref that is not a commit: a tag, or a branch, which `from_urls` tells apart.
+    RAW_AT_REF: ClassVar[re.Pattern[str]] = re.compile(
+        r"^https://raw\.githubusercontent\.com/([\w.-]+)/([\w.-]+)/(?!refs/)([^/]+)/"
+    )
     GITLAB: ClassVar[re.Pattern[str]] = re.compile(
         # On any GitLab (gitlab.com, gitlab.freedesktop.org, gitlab.gnome.org): the form is GitLab's.
         r"^(https://[\w.-]+(?::\d+)?/[\w.-][\w./-]{0,200}?)/-/archive/([^/]+)/[^/]+$"
@@ -1031,7 +1035,12 @@ class VcpkgPorts:
             given = (keyed.get("URL") or [None])[0]
             named = RepositoryArchive.repository(given or "")
             if not named:
-                return Unnamed("its portfile's git URL is not on GitHub or GitLab")
+                # Any other git server (chromium.googlesource.com's libyuv): a commit names the same
+                # code wherever it is fetched from, and a tag is that server's own.
+                if given and re.fullmatch(r"https://[\w.-]+(?::\d+)?/[\w.~+/-]{1,200}", given):
+                    named = given.removesuffix("/").removesuffix(".git")
+                else:
+                    return Unnamed("its portfile's git URL is not an https git URL")
             repository = named
         return RepositoryArchive.upstream(repository, ref, f"{how} ({repository})")
 
@@ -2593,6 +2602,29 @@ class Upstreams:
             parsed = RepositoryArchive.parse(url)
             if parsed:
                 return RepositoryArchive.upstream(parsed[0], parsed[1], how)
+        for url in listed:
+            # A file read at a ref (`raw.githubusercontent.com/<owner>/<repo>/v1.8.2505/LICENSE.TXT`):
+            # the ref only once the repository shows it is a tag -- a branch moves.
+            # A helper borrowed from another project (a patch, a file of another repository the
+            # same recipe also names) is not the package: only the one repository its URLs name.
+            raw = RepositoryArchive.RAW_AT_REF.match(url)
+            named = {
+                m.group(1).lower() + "/" + m.group(2).lower()
+                for m in (
+                    re.match(
+                        r"^https://(?:raw\.githubusercontent\.com|github\.com|codeload\.github\.com)"
+                        r"/([\w.-]+)/([\w.-]+)/",
+                        u,
+                    )
+                    for u in listed
+                )
+                if m
+            }
+            if raw and len(named) == 1 and not re.search(r"\.(?:patch|diff)$", url):
+                repository = f"https://github.com/{raw.group(1)}/{raw.group(2)}"
+                ref = urllib.parse.unquote(raw.group(3))
+                if ref in (TagInference.refs(repository) or {}):
+                    return RepositoryArchive.upstream(repository, ref, how)
         for url in listed:
             package = RegistryArchive.parse(url)
             if package:

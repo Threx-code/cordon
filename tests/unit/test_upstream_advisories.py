@@ -1308,3 +1308,47 @@ class TestPodSiblings:
 
         deps, answers = self.pods(monkeypatch, self.PODSPEC.replace("'10.6.0'", "'10.5.0'"))
         assert isinstance(PodSiblings.resolve(deps, answers)[1], Unnamed)
+
+
+class TestRawFileAtATag:
+    def test_a_raw_file_at_a_tag_names_the_release(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"v1.8.2505": "a" * 40})
+        )
+        url = "https://raw.githubusercontent.com/microsoft/DirectXShaderCompiler/v1.8.2505/LICENSE.TXT"
+        found = Upstreams.from_urls([url], "x")
+        assert isinstance(found, Upstream) and found.query["version"] == "v1.8.2505"
+        # A branch moves: not a release.
+        branch = url.replace("v1.8.2505", "main")
+        assert isinstance(Upstreams.from_urls([branch], "x"), Unnamed)
+
+    def test_a_file_of_another_repository_is_not_the_package(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"v1.0": "a" * 40})
+        )
+        urls = [
+            "https://example.org/pkg-2.0.tar.gz",
+            "https://raw.githubusercontent.com/other/helper/v1.0/cmake/Find.cmake",
+            "https://github.com/pkg/pkg/commit/" + "b" * 40 + ".patch",
+        ]
+        assert isinstance(Upstreams.from_urls(urls, "x"), Unnamed)
+
+
+class TestVcpkgFromAnyGit:
+    def test_a_commit_on_any_https_git_server(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        found = VcpkgPorts._fetched(
+            "vcpkg_from_git",
+            {"URL": ["https://chromium.googlesource.com/libyuv/libyuv"], "REF": ["c" * 40]},
+            "x",
+        )
+        assert isinstance(found, Upstream) and found.query == {"commit": "c" * 40}
+        refused = VcpkgPorts._fetched(
+            "vcpkg_from_git", {"URL": ["file:///tmp/x"], "REF": ["c" * 40]}, "x"
+        )
+        assert isinstance(refused, Unnamed)
