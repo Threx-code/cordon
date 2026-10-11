@@ -2822,7 +2822,11 @@ class CommandLine:
         from cordon_scanner.cli.incoming import IncomingCommand
         from cordon_scanner.cli.review import ReviewCommand
         from cordon_scanner.cli.suppressions import SuppressCommand
+        from cordon_scanner.core.netguard import NetworkGuard
 
+        # Before anything can connect: with CORDON_PUBLIC_NETWORK_ONLY set, no name this process
+        # resolves may lead inside the network (`core.netguard`).
+        NetworkGuard.install_if_enabled()
         arguments = list(sys.argv[1:] if argv is None else argv)
         if arguments[:1] == ["mcp"]:
             from cordon_scanner.mcp import main as mcp_main
