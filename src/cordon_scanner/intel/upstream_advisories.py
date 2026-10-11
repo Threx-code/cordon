@@ -1309,6 +1309,109 @@ class HomebrewBottles:
         return Upstreams.from_urls([url, *mirrors], how)
 
 
+class HomebrewHistory:
+    """A homebrew-core formula as it was when a bottle was built, found in the repository's history
+    by the bottle's SHA-256. Homebrew writes each bottle's digest into the formula (`bottle do`,
+    `sha256 "<digest>" => :catalina`), and a Brewfile.lock.json records the digest of the bottle it
+    installed, so the revision holding that digest is the formula the bottle was built from. This
+    reaches a formula Homebrew has since deleted (curl-openssl) and a version bottled before bottles
+    moved to ghcr.io (cmake 3.18.1), where no bottle remains to carry its formula.
+
+        GET https://api.github.com/repos/Homebrew/homebrew-core/commits?path=Formula/<name>.rb
+        GET https://raw.githubusercontent.com/Homebrew/homebrew-core/<commit>/Formula/<name>.rb
+
+    Only commits whose message names the version are read (`cmake: update 3.18.1 bottle.`); the
+    file is used only if it holds the digest. GitHub's API allows 60 requests an hour without a
+    token; `GITHUB_TOKEN`, when set, is sent to it alone."""
+
+    COMMITS: ClassVar[str] = "https://api.github.com/repos/Homebrew/homebrew-core/commits"
+    RAW: ClassVar[str] = "https://raw.githubusercontent.com/Homebrew/homebrew-core"
+    MAX_PAGES: ClassVar[int] = 10
+
+    @staticmethod
+    def paths(name: str) -> tuple[str, ...]:
+        """Where homebrew-core has kept the formula: `Formula/<name>.rb`, and since 2023
+        `Formula/<first letter>/<name>.rb` (`lib` formulae under `Formula/lib/`)."""
+        shard = "lib" if name.startswith("lib") else name[:1]
+        return (f"Formula/{name}.rb", f"Formula/{shard}/{name}.rb")
+
+    @staticmethod
+    def formula(name: str, installed: str, digest: str) -> tuple[str, str, str] | None:
+        """`(formula text, commit, path)` of the revision holding the bottle digest, or None."""
+        from cordon_scanner.intel.homebrew_provenance import HomebrewProvenance
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        if not re.fullmatch(r"[0-9a-f]{64}", digest) or not re.fullmatch(r"[\w@+.-]+", name):
+            return None
+        # The installed version as written, revision and all: `update 3.18.1_1 bottle.`
+        names = re.compile(rf"(?<![\w.]){re.escape(installed)}(?![\w.]*\d)")
+        for path in HomebrewHistory.paths(name):
+            for page in range(1, HomebrewHistory.MAX_PAGES + 1):
+                commits = HomebrewProvenance._get(
+                    f"{HomebrewHistory.COMMITS}?path={urllib.parse.quote(path, safe='/@+')}"
+                    f"&per_page=100&page={page}"
+                )
+                if not isinstance(commits, list) or not commits:
+                    break
+                for commit in commits:
+                    sha = str((commit or {}).get("sha") or "")
+                    message = str(((commit or {}).get("commit") or {}).get("message") or "")
+                    if not re.fullmatch(r"[0-9a-f]{40}", sha) or not names.search(message):
+                        continue
+                    try:
+                        text = Upstreams._get(f"{HomebrewHistory.RAW}/{sha}/{path}").decode(
+                            "utf-8", "replace"
+                        )
+                    except PackageNotFound:
+                        continue  # the commit that deleted it
+                    if f'"{digest}"' in text:
+                        return text, sha, path
+                if len(commits) < 100:
+                    break
+        return None
+
+    @staticmethod
+    def homepage(text: str) -> str | None:
+        found = re.search(r'^\s*homepage\s+"([^"]+)"', text, re.MULTILINE)
+        return found.group(1) if found else None
+
+    @staticmethod
+    def upstream(dependency: Dependency, otherwise: Unnamed) -> Upstream | Unnamed:
+        """The upstream the formula in the history names, read as any formula is; `otherwise`,
+        with why, when the history holds no revision with the bottle's digest."""
+        installed = dependency.version or ""
+        digest = (dependency.integrity or "").removeprefix("sha256:")
+        if not installed or not digest:
+            return otherwise
+        try:
+            found = HomebrewHistory.formula(dependency.name, installed, digest)
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            return Unnamed(
+                f"{otherwise.reason}; homebrew-core's history could not be read ({type(exc).__name__})",
+                homes=otherwise.homes,
+            )
+        if found is None:
+            return Unnamed(
+                f"{otherwise.reason}; no revision of its formula in homebrew-core's history holds "
+                "its bottle's digest",
+                homes=otherwise.homes,
+            )
+        text, commit, _ = found
+        how = (
+            f"the {dependency.name} {installed} formula at homebrew-core {commit[:12]}, which holds "
+            "its bottle's digest"
+        )
+        heads = re.findall(r'^\s*(?:head\s+|url\s+)"([^"]+\.git)"', text, re.MULTILINE)
+        return Upstreams.inferred(
+            HomebrewBottles.source(text, how),
+            [*heads, HomebrewHistory.homepage(text)],
+            re.sub(r"_\d+$", "", installed),
+            (dependency.name.split("@", 1)[0],),
+            how,
+            HomebrewBottles.archive(text),
+        )
+
+
 class TagInference:
     """A version's tag in the repository a package's own ecosystem names, where nothing names the
     tag itself (a source downloaded from the project's own site, a Galaxy collection).
@@ -2615,6 +2718,8 @@ class Upstreams:
             return Unnamed("it is from a tap, which formulae.brew.sh does not describe")
         found = HomebrewBottles.formula_data(name, installed)
         if isinstance(found, Unnamed):
+            if found.reason.startswith("Homebrew no longer has this formula"):
+                return HomebrewHistory.upstream(dependency, found)
             return found
         name, data = found
         stable = str((data.get("versions") or {}).get("stable") or "")
@@ -2651,12 +2756,18 @@ class Upstreams:
                 # No bottle (one from before ghcr.io): the current formula still names the
                 # repository, in which the installed version's tag is looked for. Nothing pins
                 # the old release archive, so it cannot be proved: an inference, said as one.
+                historical = HomebrewHistory.upstream(
+                    dependency,
+                    Unnamed(f"no bottle of {installed} remains to read its formula from"),
+                )
+                if isinstance(historical, Upstream):
+                    return historical
                 current = HomebrewBottles.current_formula(data)
                 heads = re.findall(
                     r'^\s*(?:head\s+|url\s+)"([^"]+?)(?:\.git)?"', current, re.MULTILINE
                 )
                 return Upstreams.inferred(
-                    Unnamed(f"no bottle of {installed} remains to read its formula from"),
+                    historical,
                     [*heads, data.get("homepage")],
                     version,
                     (name.split("@", 1)[0],),

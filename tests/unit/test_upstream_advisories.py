@@ -848,6 +848,142 @@ class TestHomebrewAliases:
         assert isinstance(found, Unnamed) and "no longer has this formula" in found.reason
 
 
+class TestHomebrewHistory:
+    COMMITS = "https://api.github.com/repos/Homebrew/homebrew-core/commits"
+    RAW = "https://raw.githubusercontent.com/Homebrew/homebrew-core"
+    DIGEST = "c4dd2e8a36d2e4487d9d8c483d42be8b2aa3c5a0a326c10b35aeca82fccd8c0f"
+    FORMULA = (
+        "class Exa < Formula\n"
+        '  homepage "https://the.exa.website"\n'
+        '  url "https://github.com/ogham/exa/archive/v0.9.0.tar.gz"\n'
+        f'  sha256 "{"1" * 64}"\n'
+        "  bottle do\n"
+        f'    sha256 "{DIGEST}" => :catalina\n'
+        "  end\n"
+        "end\n"
+    )
+
+    def serve(
+        self, monkeypatch, commits: dict[str, list[dict]], files: dict[str, bytes]
+    ) -> list[str]:
+        from cordon_scanner.intel.homebrew_provenance import HomebrewProvenance
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        asked: list[str] = []
+
+        def api(url: str) -> object:
+            asked.append(url)
+            return commits.get(url, [])
+
+        def get(url: str, limit: int = 0) -> bytes:
+            asked.append(url)
+            if url not in files:
+                raise PackageNotFound(url)
+            return files[url]
+
+        monkeypatch.setattr(HomebrewProvenance, "_get", staticmethod(api))
+        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        return asked
+
+    @staticmethod
+    def commit(sha: str, message: str) -> dict:
+        return {"sha": sha * 40, "commit": {"message": message}}
+
+    def test_the_revision_holding_the_bottle_digest_is_the_formula(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewHistory
+
+        path = f"{self.COMMITS}?path=Formula/exa.rb&per_page=100&page=1"
+        asked = self.serve(
+            monkeypatch,
+            {
+                path: [
+                    self.commit("a", "exa: delete"),
+                    self.commit("b", "exa: update 0.9.0 bottle."),
+                    self.commit("c", "exa 0.9.0"),
+                    self.commit("d", "exa: update 0.9.0_1 bottle."),
+                ]
+            },
+            {
+                f"{self.RAW}/{'b' * 40}/Formula/exa.rb": self.FORMULA.encode(),
+                f"{self.RAW}/{'c' * 40}/Formula/exa.rb": self.FORMULA.replace(
+                    self.DIGEST, "0" * 64
+                ).encode(),
+            },
+        )
+        found = HomebrewHistory.formula("exa", "0.9.0", self.DIGEST)
+        assert found is not None and found[1] == "b" * 40 and found[2] == "Formula/exa.rb"
+        # The deleting commit names no version, and another revision's bottle is not read.
+        assert not any("a" * 40 in url or "d" * 40 in url for url in asked)
+
+    def test_a_deleted_formula_is_read_from_the_history(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewBottles
+
+        self.serve(
+            monkeypatch,
+            {
+                f"{self.COMMITS}?path=Formula/exa.rb&per_page=100&page=1": [
+                    self.commit("b", "exa: update 0.9.0 bottle.")
+                ]
+            },
+            {f"{self.RAW}/{'b' * 40}/Formula/exa.rb": self.FORMULA.encode()},
+        )
+        monkeypatch.setattr(
+            HomebrewBottles,
+            "formula_data",
+            staticmethod(
+                lambda name, installed: Unnamed(
+                    "Homebrew no longer has this formula, under this name or another"
+                )
+            ),
+        )
+        exa = Dependency(
+            purl="pkg:brew/exa@0.9.0",
+            ecosystem="homebrew",
+            name="exa",
+            version="0.9.0",
+            direct=True,
+            integrity=f"sha256:{self.DIGEST}",
+        )
+        answer = Upstreams.homebrew(exa)
+        assert isinstance(answer, Upstream), answer
+        assert "homebrew-core bbbbbbbbbbbb, which holds its bottle's digest" in answer.how
+
+    def test_no_revision_with_the_digest_is_said_so(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewHistory
+
+        self.serve(monkeypatch, {}, {})
+        exa = Dependency(
+            purl="pkg:brew/exa@0.9.0",
+            ecosystem="homebrew",
+            name="exa",
+            version="0.9.0",
+            direct=True,
+            integrity=f"sha256:{self.DIGEST}",
+        )
+        answer = HomebrewHistory.upstream(exa, Unnamed("Homebrew no longer has this formula"))
+        assert isinstance(answer, Unnamed) and "no revision of its formula" in answer.reason
+
+    def test_without_a_digest_nothing_is_asked(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewHistory
+
+        asked = self.serve(monkeypatch, {}, {})
+        exa = Dependency(
+            purl="pkg:brew/exa@0.9.0",
+            ecosystem="homebrew",
+            name="exa",
+            version="0.9.0",
+            direct=True,
+        )
+        otherwise = Unnamed("Homebrew no longer has this formula")
+        assert HomebrewHistory.upstream(exa, otherwise) is otherwise and not asked
+
+    def test_the_sharded_path(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewHistory
+
+        assert HomebrewHistory.paths("cmake") == ("Formula/cmake.rb", "Formula/c/cmake.rb")
+        assert HomebrewHistory.paths("libpng") == ("Formula/libpng.rb", "Formula/lib/libpng.rb")
+
+
 class TestProtocolTwoRefs:
     def test_ls_refs_lists_tags_peeled(self, monkeypatch) -> None:
         import io as _io
