@@ -1437,3 +1437,33 @@ class TestVcpkgPatchDownloads:
         assert isinstance(found, Upstream) and found.query == {
             "commit": "eec325a1da1273e87bc97887d49e70570f28570c"
         }
+
+
+class TestVcpkgOverrides:
+    def test_an_override_is_the_version_not_a_minimum(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import VcpkgPorts
+
+        asked: list[str] = []
+        monkeypatch.setattr(
+            VcpkgPorts,
+            "manifest",
+            staticmethod(lambda baseline, port: {"version-string": "chromium_7258"}),
+        )
+
+        def at_version(baseline: str, name: str, wanted: str):
+            asked.append(wanted)
+            return Unnamed("stop here")
+
+        monkeypatch.setattr(VcpkgPorts, "at_version", staticmethod(at_version))
+        angle = Dependency(
+            purl="pkg:vcpkg/angle",
+            ecosystem="vcpkg",
+            name="angle",
+            version=None,
+            direct=True,
+            declared_spec="chromium_7258#0",
+            resolution_note=f"pinned by an override; vcpkg reads the port at baseline {'a' * 40}",
+        )
+        answer = Upstreams.vcpkg(angle)
+        assert asked == ["chromium_7258#0"]
+        assert isinstance(answer, Unnamed) and "not ordered" not in answer.reason

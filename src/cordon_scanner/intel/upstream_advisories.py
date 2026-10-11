@@ -3172,9 +3172,13 @@ class Upstreams:
             ("version", ""),
         )
         wanted = dependency.version
+        spec = dependency.declared_spec or ""
+        if not wanted and spec and spec != "*" and not spec.startswith(">="):
+            # An override names the version exactly, whatever the baseline and constraints say.
+            wanted = spec
         if not wanted:
             # vcpkg installs the greater of the baseline's version and every `version>=`.
-            minimum = (dependency.declared_spec or "").removeprefix(">=")
+            minimum = spec.removeprefix(">=")
             if minimum and minimum != "*":
                 ordered = VcpkgVersions.compare(scheme, at_baseline, minimum)
                 if ordered is None:
