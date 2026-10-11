@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
+from typing import ClassVar
 
 import pytest
 
@@ -1618,3 +1619,37 @@ class TestVersionInAnUnderscoredName:
         )
         assert HomebrewHistory.builds(formula, "6.48.0")
         assert not HomebrewHistory.builds(formula, "6.48")
+
+
+class TestDumbHttpRefs:
+    def test_a_plain_info_refs_list(self, monkeypatch) -> None:
+        import urllib.request
+
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        body = (
+            b"e9a53e8922fbebe825f74ffbe309d4e57d6b09d5\trefs/heads/master\n"
+            b"1111111111111111111111111111111111111111\trefs/tags/0.69\n"
+            b"0675c6ea5368f0843a91c28a472247b8f26015cf\trefs/tags/0.69^{}\n"
+            b"ee8e013cd5398c5fb34fb19a24db0f3b6185bac3\trefs/tags/0.67\n"
+        )
+
+        class Answer(io.BytesIO):
+            headers: ClassVar[dict[str, str]] = {"Content-Type": "text/plain"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc) -> None:
+                return None
+
+            def geturl(self) -> str:
+                return "https://git.example/moreutils.git/info/refs?service=git-upload-pack"
+
+        monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: Answer(body))
+        TagInference._refs.pop("https://git.example/moreutils.git", None)
+        refs = TagInference.refs("https://git.example/moreutils.git")
+        assert refs == {
+            "0.69": "0675c6ea5368f0843a91c28a472247b8f26015cf",
+            "0.67": "ee8e013cd5398c5fb34fb19a24db0f3b6185bac3",
+        }

@@ -1769,6 +1769,23 @@ class TagInference:
                 found.update(peeled)
                 TagInference._tips[repository] = dict(found)
                 found.update(peeled)
+            elif (
+                final.startswith("https://")
+                and len(body) <= TagInference.MAX_REFS_BYTES
+                and re.match(rb"[0-9a-f]{40}\trefs/", body)
+            ):
+                # Git's "dumb" HTTP (git.joeyh.name): `info/refs` is the plain list `<id>\t<ref>`,
+                # an annotated tag followed by its `^{}` peeled line. Tags only: no tree is fetched
+                # this way, so what it names is never proved, only inferred.
+                found = {}
+                peeled = {}
+                for raw_id, raw_ref in re.findall(rb"(?m)^([0-9a-f]{40})\trefs/tags/(\S+)$", body):
+                    name = raw_ref.decode("utf-8", "replace")
+                    if name.endswith("^{}"):
+                        peeled[name[:-3]] = raw_id.decode()
+                    else:
+                        found[name] = raw_id.decode()
+                found.update(peeled)
         except (OSError, ValueError, http.client.HTTPException):
             found = None
         TagInference._refs[repository] = found
