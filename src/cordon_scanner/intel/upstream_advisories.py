@@ -283,6 +283,10 @@ class CondaPackage:
     A legacy `.tar.bz2` is read as a stream, to a bound.
     """
 
+    #: A font, or what ships beside one (its licence, fontconfig's configuration): data, not code.
+    FONT: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)\.(?:ttf|otf|ttc|pfb|pfa|afm|pcf(?:\.gz)?|bdf|woff2?)$|(?:^|/)(?:LICEN[CS]E|COPYING|NOTICE|README)[\w.-]*$|^etc/fonts/.*\.conf$"
+    )
     RECIPES: ClassVar[tuple[str, ...]] = (
         "info/recipe/meta.yaml",
         "info/recipe/rendered_recipe.yaml",
@@ -362,6 +366,12 @@ class CondaPackage:
                         listed = json.loads(handle.read(CondaPackage.MAX_INFO_BYTES))
                         if isinstance(listed, dict) and isinstance(listed.get("paths"), list):
                             seen["paths"] = len(listed["paths"])
+                            installed = [
+                                str(p.get("_path") or "") if isinstance(p, dict) else ""
+                                for p in listed["paths"]
+                            ]
+                            if installed and all(CondaPackage.FONT.search(p) for p in installed):
+                                seen["fonts_only"] = 1
                 continue
             if member.name in CondaPackage.RECIPES and member.isfile() and recipe is None:
                 handle = archive.extractfile(member)
@@ -3642,6 +3652,13 @@ class Upstreams:
             Archive(tuple(urls), f"sha256:{sha256}") if urls and sha256 else None,
         )
         licence = Upstreams.proprietary(about)
+        if isinstance(answer, Unnamed) and not licence:
+            if "paths" not in seen:
+                seen["want_paths"] = 1
+                CondaPackage.recipe(url, seen)
+            if seen.get("fonts_only"):
+                # DejaVu, Ubuntu: the package installs font files and nothing else.
+                return Unnamed("it installs font files only: no code", nothing=True)
         if isinstance(answer, Unnamed) and licence:
             # NVIDIA's CUDA, Intel's MKL, Microsoft's runtimes: a vendor's binaries, under its
             # own licence, with no public source to name.

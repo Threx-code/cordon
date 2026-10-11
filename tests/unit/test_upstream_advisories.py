@@ -1767,3 +1767,36 @@ class TestGnomeTags:
             "https://gitlab.gnome.org/GNOME/at-spi2-core", "2.40.3", ("at-spi2-core",), "x"
         )
         assert isinstance(found, Upstream) and found.tag == "AT_SPI2_CORE_2_40_3"
+
+
+class TestCondaFonts:
+    @staticmethod
+    def info(paths: list[str]) -> bytes:
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode="w") as archive:
+            listed = {"paths": [{"_path": p} for p in paths], "paths_version": 1}
+            for name, data in (
+                ("info/recipe/meta.yaml", b"package:\n  name: font-ttf-ubuntu\n"),
+                ("info/paths.json", json.dumps(listed).encode()),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        return raw.getvalue()
+
+    @pytest.mark.parametrize(
+        ("paths", "fonts_only"),
+        [
+            (["fonts/Ubuntu-B.ttf", "fonts/UbuntuMono-R.ttf"], True),
+            (["fonts/DejaVuSans.ttf", "info/licenses/LICENSE"], True),
+            (["fonts/x.otf", "lib/libfreetype.so.6"], False),
+            (["share/fonts/x.ttf", "bin/fc-cache"], False),
+        ],
+    )
+    def test_fonts_only(self, paths: list[str], fonts_only: bool) -> None:
+        from cordon_scanner.intel.upstream_advisories import CondaPackage
+
+        seen: dict[str, int] = {"want_paths": 1}
+        with tarfile.open(fileobj=io.BytesIO(self.info(paths)), mode="r|") as archive:
+            CondaPackage._from_tar(archive, seen)
+        assert bool(seen.get("fonts_only")) is fonts_only
