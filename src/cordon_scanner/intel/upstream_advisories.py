@@ -147,6 +147,12 @@ class RepositoryArchive:
     @staticmethod
     def parse(url: str) -> tuple[str, str] | None:
         """`(https repository URL, ref)`, or None for any other URL."""
+        # GitHub serves the same archive over http as https (re2's conda recipe writes http).
+        url = re.sub(
+            r"^http://(github\.com|codeload\.github\.com|raw\.githubusercontent\.com)/",
+            r"https://\1/",
+            url,
+        )
         for form in RepositoryArchive.FORMS:
             found = form.match(url)
             if found:
