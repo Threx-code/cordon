@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -105,6 +106,8 @@ class Server:
         self.max_pending = workers * 8
         self.audit = audit
         self.audit_lock = threading.Lock()
+        #: Set once the client has gone (a write failed): nothing more is written or run.
+        self.closed = False
 
     # -- identity --------------------------------------------------------------------------------
 
@@ -128,12 +131,21 @@ class Server:
     def send(self, message: dict[str, Any]) -> None:
         line = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
         with self.write_lock:
-            self.out.write(line + "\n")
-            self.out.flush()
+            if self.closed:
+                return
+            try:
+                self.out.write(line + "\n")
+                self.out.flush()
+            except (OSError, ValueError):
+                # The client closed its end: stop, and end every scan still running for it.
+                self.closed = True
+                with self.inflight_lock:
+                    for token in self.inflight.values():
+                        token.cancel()
 
     def serve(self, stream: TextIO) -> int:
         try:
-            while True:
+            while not self.closed:
                 line = stream.readline(MAX_LINE + 1)
                 if not line:
                     break
@@ -201,6 +213,7 @@ class Server:
             return
         if method == "tools/call":
             token = CancelToken()
+            token.deadline = time.monotonic() + self.settings.timeout
             with self.inflight_lock:
                 if ident in self.inflight:
                     # Ids must not repeat while in flight; a second call would take over the
@@ -375,8 +388,15 @@ class Server:
             else None,
             "seconds": round(seconds, 3),
         }
-        with self.audit_lock, self.audit.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry) + "\n")
+        try:
+            with self.audit_lock:
+                # Created owner-only: what was checked, and when, is nobody else's to read.
+                descriptor = os.open(self.audit, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+                with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(entry) + "\n")
+        except OSError as exc:
+            # A log that cannot be written is said, and the call's answer still goes back.
+            print(f"cordon-scanner mcp: could not write the audit log: {exc}", file=sys.stderr)
 
     # -- entry point -----------------------------------------------------------------------------
 
@@ -509,23 +529,31 @@ class Server:
             timeout=args.timeout,
             max_findings=args.max_findings,
             version=__version__,
+            # The scans running at once share the machine: each gets its share of the cores, so
+            # an agent calling in parallel cannot take every core from the developer.
+            jobs=max(1, (os.cpu_count() or 2) // args.max_concurrent),
         )
         print(
             f"cordon-scanner mcp {__version__}: serving on stdio; roots {', '.join(workspace.describe())}; "
             f"online {'on' if args.allow_online else 'off'}; machine reads {'on' if args.allow_machine else 'off'}",
             file=sys.stderr,
         )
+        # stdout is the protocol channel and nothing else: the server keeps it, and anything else
+        # in this process that prints goes to stderr. "\n" exactly, on Windows too: the framing is
+        # one message per line, and a text-mode stream would write "\r\n".
+        protocol = sys.stdout
+        if hasattr(protocol, "reconfigure"):
+            protocol.reconfigure(encoding="utf-8", newline="\n")
+        sys.stdout = sys.stderr
+        stdin = sys.stdin
+        if hasattr(stdin, "reconfigure"):
+            stdin.reconfigure(encoding="utf-8", errors="replace")
         server = cls(
             settings,
             workers=args.max_concurrent,
             rate=args.rate,
             burst=max(10, args.rate // 6),
             audit=args.audit_log,
-            out=sys.stdout,
+            out=protocol,
         )
-        stdin = sys.stdin
-        if hasattr(stdin, "reconfigure"):
-            stdin.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8")
         return server.serve(stdin)

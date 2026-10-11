@@ -52,6 +52,9 @@ class CancelToken:
         self._event = threading.Event()
         #: Set when the server is past its queue bound: the call is answered "busy", not run.
         self.busy = False
+        #: When the whole call must end (monotonic seconds): every scan it runs shares this budget,
+        #: so a call that scans many packages cannot run for hours.
+        self.deadline: float | None = None
 
     def cancel(self) -> None:
         self._event.set()
@@ -97,6 +100,10 @@ class Runner:
         self, args: list[str], *, timeout: float, token: CancelToken, cwd: Path | None = None
     ) -> Run:
         start = time.monotonic()
+        if token.deadline is not None:
+            timeout = min(timeout, token.deadline - start)
+            if timeout <= 0:
+                raise TimedOut("the call passed its deadline before this scan could start")
         with (
             tempfile.TemporaryFile() as out,
             tempfile.TemporaryFile() as err,

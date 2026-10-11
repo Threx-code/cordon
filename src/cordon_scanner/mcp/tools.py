@@ -62,6 +62,8 @@ class Settings:
     timeout: float = 600.0
     max_findings: int = 50
     version: str = ""
+    jobs: int = 0
+    """Worker processes per scan; 0 lets the scanner choose."""
 
 
 @dataclass(slots=True)
@@ -273,6 +275,8 @@ class Scans:
             severity,
         ]
         args += ["--online"] if online else ["--offline"]
+        if settings.jobs:
+            args += ["--jobs", str(settings.jobs)]
         if not cache:
             args.append("--no-cache")
         args += extra or []
@@ -1097,7 +1101,9 @@ class KnowledgeTools:
         from cordon_scanner.rules.loader import RuleLoader
 
         pack_rules = [compiled.rule for pack in RuleLoader.load_builtin() for compiled in pack]
-        return pack_rules, list(RuleCatalogue.from_detectors(Registry().detectors()))
+        return pack_rules, list(
+            RuleCatalogue.from_detectors(Registry(allow_third_party=False).detectors())
+        )
 
     @staticmethod
     def entry(rule: Any, origin: str) -> dict[str, Any]:

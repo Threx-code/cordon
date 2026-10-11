@@ -81,7 +81,7 @@ class ScanSummary:
             "findings": self.findings,
             "truncated": self.truncated,
             "complete": self.complete,
-            "notes": self.notes,
+            "notes": [Untrusted.text(n, 800) for n in self.notes],
             "subject": self.subject,
             "scanner": self.scanner,
         }
@@ -96,7 +96,7 @@ class ScanSummary:
             )
         if self.total > 15:
             lines.append(f"- ... {self.total - 15} more in the structured result")
-        lines.extend(f"note: {n}" for n in self.notes)
+        lines.extend(f"note: {Untrusted.text(n, 800)}" for n in self.notes)
         lines.append(NOTICE)
         return "\n".join(lines) + "\n\n" + json.dumps(self.structured(), ensure_ascii=False)
 

@@ -508,3 +508,52 @@ class TestTheMark:
             }
         )
         assert reply["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["icons"]
+
+
+class TestHardening:
+    def test_a_spent_call_deadline_starts_no_scan(self) -> None:
+        token = CancelToken()
+        token.deadline = time.monotonic() - 1
+        with pytest.raises(TimedOut):
+            Runner(offline=True).run(["--version"], timeout=60, token=token)
+
+    def test_a_client_that_goes_away_ends_the_running_scans(self, tmp_path: Path) -> None:
+        class Gone(io.StringIO):
+            def write(self, text: str) -> int:
+                raise BrokenPipeError
+
+        wire = Wire(tmp_path)
+        wire.server.out = Gone()
+        token = CancelToken()
+        wire.server.inflight["running"] = token
+        wire.server.send({"jsonrpc": "2.0", "id": 1, "result": {}})
+        assert wire.server.closed and token.cancelled
+        wire.server.send({"jsonrpc": "2.0", "id": 2, "result": {}})  # nothing raised
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+    def test_the_audit_log_is_owner_only(self, tmp_path: Path) -> None:
+        log = tmp_path / "audit.jsonl"
+        wire = Wire(tmp_path, audit=log)
+        wire.initialize()
+        wire.ask(
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "search_rules", "arguments": {"limit": 1}},
+            }
+        )
+        assert log.stat().st_mode & 0o777 == 0o600
+
+    def test_an_unwritable_audit_log_still_answers(self, tmp_path: Path) -> None:
+        wire = Wire(tmp_path, audit=tmp_path / "missing-dir" / "audit.jsonl")
+        wire.initialize()
+        reply = wire.ask(
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "search_rules", "arguments": {"limit": 1}},
+            }
+        )
+        assert reply["result"]["isError"] is False
