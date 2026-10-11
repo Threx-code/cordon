@@ -1916,8 +1916,14 @@ class TagInference:
                 spellings |= {
                     s
                     for v in forms
-                    # GCC's `releases/gcc-15.2.0`.
-                    for s in (f"{name}-{v}", f"{name}-v{v}", f"{name}_{v}", f"releases/{name}-{v}")
+                    # GCC's `releases/gcc-15.2.0`; GNOME's `AT_SPI2_CORE_2_40_3` for at-spi2-core.
+                    for s in (
+                        f"{name}-{v}",
+                        f"{name}-v{v}",
+                        f"{name}_{v}",
+                        f"releases/{name}-{v}",
+                        f"{name.replace('-', '_')}_{v}",
+                    )
                 }
         # Spelled in any case (OpenSSL's `OpenSSL_1_1_1n` for openssl 1.1.1n): every tag that
         # matches still has to name the one commit.

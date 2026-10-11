@@ -1754,3 +1754,16 @@ class TestRattlerFinalizedSources:
         out = CondaSiblings.resolve([main, other], [named, Unnamed("its source names no URL")])
         assert isinstance(out[1], Upstream) and out[1].query == {"commit": "c" * 40}
         assert "another output of the same build" in out[1].how
+
+
+class TestGnomeTags:
+    def test_upper_case_underscored_name_and_version(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import TagInference
+
+        monkeypatch.setattr(
+            TagInference, "refs", staticmethod(lambda repository: {"AT_SPI2_CORE_2_40_3": "b" * 40})
+        )
+        found = TagInference.infer(
+            "https://gitlab.gnome.org/GNOME/at-spi2-core", "2.40.3", ("at-spi2-core",), "x"
+        )
+        assert isinstance(found, Upstream) and found.tag == "AT_SPI2_CORE_2_40_3"
