@@ -2078,8 +2078,10 @@ class NpmPodspec:
         page = re.search(r"""\.homepage\s*=\s*['"]([^'"]+)['"]""", text)
         homes = tuple(u for u in (fields.get("http"), page.group(1) if page else None) if u)
         if fields.get("http"):
-            found = Upstreams.from_urls([fields["http"]], how)
-            return found if isinstance(found, Upstream) else Unnamed(found.reason, homes=homes)
+            downloaded = Upstreams.from_urls([fields["http"]], how)
+            if isinstance(downloaded, Upstream):
+                return downloaded
+            return Unnamed(downloaded.reason, homes=homes)
         return Unnamed("its podspec names no git tag or commit, or download", homes=homes)
 
     @staticmethod
