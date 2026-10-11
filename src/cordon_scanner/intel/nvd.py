@@ -117,7 +117,7 @@ class CpeRule:
         sites = {s for s in (CpeRule.site(u) for u in urls if u) if s}
         if not sites:
             return None, "no homepage or download to tie it to a CPE product by"
-        found: dict[str, str] = {}
+        found: dict[str, set[str]] = {}
         # A packager's trailing major version (vcpkg's and Conan's `sqlite3`, `gtk3`) is the same
         # name: still under the site guard, and still only one product may pass.
         wanted_names = {CpeRule.name(n) for n in names if n}
@@ -134,7 +134,7 @@ class CpeRule:
             for product, references in index.get(wanted, ()):
                 shared = sites & set(references)
                 if shared:
-                    found[str(product)] = sorted(shared)[0]
+                    found[str(product)] = shared
         # A packager's `<vendor>_<product>` (Conan's nlohmann_json is NVD's nlohmann:json): the rest
         # of the name, only for a product of that very vendor, and still under the site guard.
         for raw in names:
@@ -143,17 +143,21 @@ class CpeRule:
                 if CpeRule.name(str(product).split(":", 1)[0]) == CpeRule.name(vendor):
                     shared = sites & set(references)
                     if shared:
-                        found[str(product)] = sorted(shared)[0]
+                        found[str(product)] = shared
         if not found:
             return CpeRule.by_project_site(index, sites)
-        if len(set(found.values())) > 1:
+        first = {min(shared) for shared in found.values()}
+        common = set.intersection(*found.values())
+        vendors = {product.split(":", 1)[0] for product in found}
+        # Several CPE names on the one site are NVD's duplicates of one product (poco is both
+        # macchina:poco and pocoproject:poco, each listing github.com/pocoproject/poco); so are one
+        # vendor's names sharing a site (nodejs:node.js and nodejs:nodejs, both on nodejs.org).
+        if len(first) > 1 and not (common and len(vendors) == 1):
             return (
                 None,
                 f"more than one CPE product has its name and its site ({', '.join(sorted(found))})",
             )
-        # Several CPE names on the one site are NVD's duplicates of one product (poco is both
-        # macchina:poco and pocoproject:poco, each listing github.com/pocoproject/poco).
-        site = next(iter(found.values()))
+        site = min(common) if common else next(iter(first))
         return " ".join(
             sorted(found)
         ), f"NVD's {', '.join(sorted(found))} has its name and lists its site, {site}"

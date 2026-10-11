@@ -459,3 +459,34 @@ class TestDotJs:
         )
         assert product == "nodejs:node.js"
         assert CpeRule.match(index, ["node"], ["https://example.org/"])[0] is None
+
+
+class TestOneVendorsNamesOnASite:
+    def test_node_js_and_nodejs(self) -> None:
+        index = {
+            "nodejs": [
+                ["nodejs:node.js", ["github.com/nodejs/node", "nodejs.org"]],
+                ["nodejs:nodejs", ["nodejs.org"]],
+            ]
+        }
+        product, why = CpeRule.match(
+            index,
+            ["node"],
+            [
+                "https://nodejs.org/dist/v23.2.0/node-v23.2.0.tar.xz",
+                "https://github.com/nodejs/node",
+            ],
+        )
+        assert product == "nodejs:node.js nodejs:nodejs" and "nodejs.org" in why
+
+    def test_two_vendors_on_different_first_sites_stay_ambiguous(self) -> None:
+        index = {
+            "tool": [
+                ["a:tool", ["shared.example", "a.example"]],
+                ["b:tool", ["b.example", "shared.example"]],
+            ]
+        }
+        product, _ = CpeRule.match(
+            index, ["tool"], ["https://a.example/", "https://b.example/", "https://shared.example/"]
+        )
+        assert product is None
