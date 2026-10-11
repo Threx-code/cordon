@@ -77,6 +77,14 @@ PASTE_HOSTS: Final = frozenset(
         "bashupload.com",
         "temp.sh",
         "oshi.at",
+        "glot.io",
+        "paste.rs",
+        "ix.io",
+        "sprunge.us",
+        "privatebin.net",
+        "justpaste.it",
+        "paste.gg",
+        "dpaste.org",
     }
 )
 """Anonymous paste and file-drop services.
