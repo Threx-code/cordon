@@ -124,9 +124,16 @@ rather than a document.
   -- a repository and tag or commit (OSV's GIT ecosystem), a Go module (Terraform
   providers) or a registry archive (a PyPI sdist a conda recipe builds) -- read
   from BCR's source.json, a Conan Center recipe export, a podspec, a Homebrew
-  formula (from its bottle, for an older version), a vcpkg portfile at the
-  baseline, the Terraform registry, a flake's locked commit, or the recipe inside a
-  conda package. Where the ecosystem names a release archive but no tag, a tag
+  formula (from its bottle, for an older version; from homebrew-core's history,
+  found by the bottle digest the lock records, for a deleted one), a vcpkg portfile
+  at the baseline, the Terraform registry, a flake's locked commit, or the recipe
+  inside a conda package (its .conda zstd member read by the core's own decoder
+  where Python is older than 3.14). A binary pod is the release of the repository
+  a sibling pod of the same lock resolved to only when that repository's podspec at
+  the tag names the very download trunk gives (Firebase). A package that installs
+  no code -- an empty vcpkg port, a conda metapackage -- has nothing to check; a
+  vendor's prebuilt binary is reported as one. Where the ecosystem names a release
+  archive but no tag, a tag
   spelled as the version in the repository it names is used only if the archive,
   checked against its pinned digest, holds the tag's files byte for byte
   (**proved**, as good as named); a host's known repository is used only when
@@ -137,8 +144,11 @@ rather than a document.
   NVD's own records (bundled, offline; complete after `advisories sync`), once
   the package is tied to one CPE product: by a curated mapping (HIGH), or by the
   guarded rule, reported as inferred (MEDIUM): the product's name is the
-  package's AND one of the product's references in NVD's dictionary is on the
-  package's homepage or download site, and only one product passes. NVD's own
+  package's (or the name its release file gives, or its `<vendor>_<product>`)
+  AND one of the product's references -- in NVD's dictionary, or a CVE's patch and
+  issue links for a product named alone -- is on the package's homepage or
+  download site, and only one product passes; or, failing a name, the package's
+  own repository or SourceForge project is listed by one product alone. NVD's own
   ranges then decide. A package tied to nothing is unchecked, and the report
   names it and why.
 
