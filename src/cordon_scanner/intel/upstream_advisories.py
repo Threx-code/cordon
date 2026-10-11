@@ -26,6 +26,7 @@ Network use is the scan's `--online` only, over HTTPS, to the hosts above and ap
 from __future__ import annotations
 
 import collections
+import contextlib
 import http.client
 import io
 import json
@@ -2074,9 +2075,12 @@ class NpmPodspec:
         ref = fields.get("commit") or fields.get("tag")
         if repository and ref:
             return RepositoryArchive.upstream(repository, ref, f"{how} ({repository})")
+        page = re.search(r"""\.homepage\s*=\s*['"]([^'"]+)['"]""", text)
+        homes = tuple(u for u in (fields.get("http"), page.group(1) if page else None) if u)
         if fields.get("http"):
-            return Upstreams.from_urls([fields["http"]], how)
-        return Unnamed("its podspec names no git tag or commit, or download")
+            found = Upstreams.from_urls([fields["http"]], how)
+            return found if isinstance(found, Upstream) else Unnamed(found.reason, homes=homes)
+        return Unnamed("its podspec names no git tag or commit, or download", homes=homes)
 
     @staticmethod
     def read(
@@ -2085,9 +2089,9 @@ class NpmPodspec:
         answers: list[Upstream | Unnamed] = []
         for version in versions:
             files = NpmPodspec.package(package, version)
-            text = (files or {}).get(inside)
-            if files is None or text is None:
+            if files is None:
                 continue
+            text = files.get(inside)
             pinned = re.fullmatch(r"\s*(\S*-([0-9a-f]{40}))\s*", files.get(HERMES_PIN, ""))
             if inside.endswith("hermes-engine.podspec") and locked == version and pinned:
                 # hermes-engine at React Native's own version is the release build, which React
@@ -2099,6 +2103,8 @@ class NpmPodspec:
                         f"{how}@{version}: its sdks/.hermesversion pins the tag {pinned.group(1)}",
                     )
                 )
+                continue
+            if text is None:
                 continue
             variables = NpmPodspec.variables(text, NpmPodspec.constants(files))
             if NpmPodspec.declared(text, version, variables) != locked:
@@ -2196,6 +2202,16 @@ class ConanCenter:
             }
             sources: dict[str, object] = {}
             for folder in sorted(folders):
+                if name not in ConanCenter._homepages:
+                    # The recipe's homepage, for NVD (`intel/nvd`) when no repository is named.
+                    with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
+                        recipe = Upstreams._get(
+                            f"{ConanCenter.INDEX}/{package}/{folder}/conanfile.py"
+                        ).decode("utf-8", "replace")
+                        page = re.search(
+                            r"""^\s*homepage\s*=\s*["']([^"']+)["']""", recipe, re.MULTILINE
+                        )
+                        ConanCenter._homepages[name] = page.group(1) if page else ""
                 data = DataYaml.load(
                     Upstreams._get(f"{ConanCenter.INDEX}/{package}/{folder}/conandata.yml").decode()
                 )
@@ -2217,8 +2233,18 @@ class ConanCenter:
         urls, _ = ConanCenter.leaves(list(sources.values()))
         return {parsed[0] for url in urls if (parsed := RepositoryArchive.parse(url))}
 
+    _homepages: ClassVar[dict[str, str]] = {}
+
     @staticmethod
     def removed(name: str, version: str) -> Upstream | Unnamed:
+        found = ConanCenter._removed(name, version)
+        page = ConanCenter._homepages.get(name)
+        if isinstance(found, Unnamed) and page and page not in found.homes:
+            return Unnamed(found.reason, found.nothing, (*found.homes, page))
+        return found
+
+    @staticmethod
+    def _removed(name: str, version: str) -> Upstream | Unnamed:
         """A version Conan Center no longer serves. conan-center-index's current recipe may
         still list it -- its sources and their digest, read as for any recipe; otherwise, when
         its other versions all name one repository, the version's tag is looked for in it -- an
@@ -2849,6 +2875,7 @@ class UpstreamAdvisories:
         if dependency.ecosystem != "vcpkg" and not dependency.version:
             result: Upstream | Unnamed = Unnamed("no version is locked")
         else:
+            from cordon_scanner.intel.gitfetch import GitFetchError
             from cordon_scanner.intel.registry_client import RegistryError
 
             try:
@@ -2868,6 +2895,8 @@ class UpstreamAdvisories:
                 tarfile.TarError,
                 # A response cut short mid-body (`IncompleteRead`): not an OSError.
                 http.client.HTTPException,
+                # The git client's own refusals (a tree it could not fetch).
+                GitFetchError,
             ) as exc:
                 result = Unnamed(f"its ecosystem's source could not be read ({type(exc).__name__})")
         UpstreamAdvisories._cache[key] = result

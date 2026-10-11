@@ -1079,3 +1079,14 @@ class TestACutShortAnswer:
         monkeypatch.setattr(UpstreamAdvisories, "_cache", {})
         found = UpstreamAdvisories.name(Stand.dep("conan", "zlib", "1.3.1"))
         assert isinstance(found, Unnamed) and "IncompleteRead" in found.reason
+
+    def test_a_git_fetch_refusal_leaves_the_package_unchecked(self, monkeypatch) -> None:
+        from cordon_scanner.intel.gitfetch import GitFetchError
+
+        def refuse(dependency):
+            raise GitFetchError("not an https repository and object id")
+
+        monkeypatch.setattr(Upstreams, "vcpkg", staticmethod(refuse))
+        monkeypatch.setattr(UpstreamAdvisories, "_cache", {})
+        found = UpstreamAdvisories.name(Stand.dep("vcpkg", "qtbase", None, resolution_note="x"))
+        assert isinstance(found, Unnamed) and "GitFetchError" in found.reason
