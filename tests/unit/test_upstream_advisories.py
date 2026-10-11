@@ -963,19 +963,44 @@ class TestHomebrewHistory:
         answer = HomebrewHistory.upstream(exa, Unnamed("Homebrew no longer has this formula"))
         assert isinstance(answer, Unnamed) and "no revision of its formula" in answer.reason
 
-    def test_without_a_digest_nothing_is_asked(self, monkeypatch) -> None:
+    def test_without_a_digest_the_newest_revision_building_the_version(self, monkeypatch) -> None:
         from cordon_scanner.intel.upstream_advisories import HomebrewHistory
 
-        asked = self.serve(monkeypatch, {}, {})
-        exa = Dependency(
-            purl="pkg:brew/exa@0.9.0",
-            ecosystem="homebrew",
-            name="exa",
-            version="0.9.0",
-            direct=True,
+        path = f"{self.COMMITS}?path=Formula/exa.rb&per_page=100&page=1"
+        revised = self.FORMULA.replace("  bottle do", "  revision 1\n  bottle do")
+        self.serve(
+            monkeypatch,
+            {
+                path: [
+                    self.commit("a", "exa: revision bump (0.9.0_1)"),
+                    self.commit("b", "exa: update 0.9.0 bottle."),
+                ]
+            },
+            {
+                f"{self.RAW}/{'a' * 40}/Formula/exa.rb": revised.encode(),
+                f"{self.RAW}/{'b' * 40}/Formula/exa.rb": self.FORMULA.encode(),
+            },
         )
-        otherwise = Unnamed("Homebrew no longer has this formula")
-        assert HomebrewHistory.upstream(exa, otherwise) is otherwise and not asked
+        found = HomebrewHistory.formula("exa", "0.9.0", "")
+        assert found is not None and found[1] == "b" * 40
+        assert HomebrewHistory.builds(revised, "0.9.0_1")
+        assert not HomebrewHistory.builds(revised, "0.9.0")
+        assert not HomebrewHistory.builds(self.FORMULA, "0.9.1")
+
+    def test_a_head_build_is_its_commit(self, monkeypatch) -> None:
+        from cordon_scanner.intel.homebrew_provenance import HomebrewProvenance
+        from cordon_scanner.intel.upstream_advisories import HomebrewBottles
+
+        full = "6598940" + "c" * 33
+        monkeypatch.setattr(
+            HomebrewProvenance,
+            "_get",
+            staticmethod(lambda url: {"sha": full} if url.endswith("/commits/6598940") else {}),
+        )
+        data = {"urls": {"head": {"url": "https://github.com/nodenv/node-build.git"}}}
+        found = HomebrewBottles.head(data, "HEAD-6598940", "node-build")
+        assert isinstance(found, Upstream) and found.query == {"commit": full}
+        assert isinstance(HomebrewBottles.head({}, "HEAD-6598940", "node-build"), Unnamed)
 
     def test_the_sharded_path(self) -> None:
         from cordon_scanner.intel.upstream_advisories import HomebrewHistory

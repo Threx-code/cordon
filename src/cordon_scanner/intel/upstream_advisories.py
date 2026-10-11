@@ -1272,6 +1272,38 @@ class HomebrewBottles:
         return Unnamed(f"Homebrew's formula for {name}, {target}, could not be read")
 
     @staticmethod
+    def head(data: dict[str, Any], installed: str, name: str) -> Upstream | Unnamed:
+        """A `--HEAD` install: brew names it `HEAD-<the first seven of the commit>`, built from the
+        formula's head repository. GitHub resolves the abbreviation to its commit (and refuses an
+        ambiguous one); elsewhere it is not resolved."""
+        from cordon_scanner.intel.homebrew_provenance import HomebrewProvenance
+
+        short = installed.removeprefix("HEAD-").split("_", 1)[0]
+        head = str(((data.get("urls") or {}).get("head") or {}).get("url") or "")
+        repository = RepositoryArchive.repository(head)
+        if not re.fullmatch(r"[0-9a-f]{7,40}", short) or not repository:
+            return Unnamed(f"a HEAD build ({installed}) of a head repository off GitHub, or none")
+        if not repository.startswith("https://github.com/"):
+            return Unnamed(f"a HEAD build ({installed}) of a repository off GitHub")
+        owner_repo = repository.removeprefix("https://github.com/")
+        try:
+            record = HomebrewProvenance._get(
+                f"https://api.github.com/repos/{owner_repo}/commits/{short}"
+            )
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            return Unnamed(
+                f"a HEAD build ({installed}): GitHub could not resolve {short} ({type(exc).__name__})"
+            )
+        commit = str((record or {}).get("sha") or "") if isinstance(record, dict) else ""
+        if not re.fullmatch(r"[0-9a-f]{40}", commit) or not commit.startswith(short):
+            return Unnamed(
+                f"a HEAD build ({installed}): {short} names no one commit of {repository}"
+            )
+        return RepositoryArchive.upstream(
+            repository, commit, f"the {name} HEAD build {short} ({repository})"
+        )
+
+    @staticmethod
     def cask(token: str) -> Unnamed:
         """A cask: a macOS application, which no repository route reaches. Its homepage and
         download, from formulae.brew.sh's cask record, go with the answer for `intel/nvd`."""
@@ -1487,11 +1519,16 @@ class HomebrewHistory:
 
     @staticmethod
     def formula(name: str, installed: str, digest: str) -> tuple[str, str, str] | None:
-        """`(formula text, commit, path)` of the revision holding the bottle digest, or None."""
+        """`(formula text, commit, path)` of the revision holding the bottle digest, or None.
+        With no digest (a lock written without bottles), the newest revision that builds the
+        installed version: its stable source names the version, and its `revision` is the
+        installed one's (`1.6.0_1` is revision 1)."""
         from cordon_scanner.intel.homebrew_provenance import HomebrewProvenance
         from cordon_scanner.intel.registry_client import PackageNotFound
 
-        if not re.fullmatch(r"[0-9a-f]{64}", digest) or not re.fullmatch(r"[\w@+.-]+", name):
+        if digest and not re.fullmatch(r"[0-9a-f]{64}", digest):
+            return None
+        if not re.fullmatch(r"[\w@+.-]+", name):
             return None
         # The installed version as written, revision and all: `update 3.18.1_1 bottle.`
         names = re.compile(rf"(?<![\w.]){re.escape(installed)}(?![\w.]*\d)")
@@ -1514,11 +1551,36 @@ class HomebrewHistory:
                         )
                     except PackageNotFound:
                         continue  # the commit that deleted it
-                    if f'"{digest}"' in text:
+                    if (
+                        (f'"{digest}"' in text)
+                        if digest
+                        else HomebrewHistory.builds(text, installed)
+                    ):
                         return text, sha, path
                 if len(commits) < 100:
                     break
         return None
+
+    @staticmethod
+    def builds(text: str, installed: str) -> bool:
+        """Whether a formula builds `installed`: its stable source, or `version`, names the version,
+        and its `revision` is the installed one's."""
+        found = re.fullmatch(r"(.+?)(?:_(\d+))?", installed)
+        if not found:
+            return False
+        version, revision = found.group(1), int(found.group(2) or 0)
+        archive = HomebrewBottles.archive(text)
+        declared = re.search(r'^\s*version\s+"([^"]+)"', text, re.MULTILINE)
+        named = (
+            (declared.group(1) == version)
+            if declared
+            else bool(
+                archive
+                and re.search(rf"(?<![\d.]){re.escape(version)}(?![\w]|\.\d)", archive.urls[0])
+            )
+        )
+        stated = re.search(r"^\s*revision\s+(\d+)\s*$", text, re.MULTILINE)
+        return named and int(stated.group(1) if stated else 0) == revision
 
     @staticmethod
     def homepage(text: str) -> str | None:
@@ -1531,7 +1593,7 @@ class HomebrewHistory:
         with why, when the history holds no revision with the bottle's digest."""
         installed = dependency.version or ""
         digest = (dependency.integrity or "").removeprefix("sha256:")
-        if not installed or not digest:
+        if not installed or installed.startswith("HEAD"):
             return otherwise
         try:
             found = HomebrewHistory.formula(dependency.name, installed, digest)
@@ -1542,14 +1604,15 @@ class HomebrewHistory:
             )
         if found is None:
             return Unnamed(
-                f"{otherwise.reason}; no revision of its formula in homebrew-core's history holds "
-                "its bottle's digest",
+                f"{otherwise.reason}; no revision of its formula in homebrew-core's history "
+                + ("holds its bottle's digest" if digest else f"builds {installed}"),
                 homes=otherwise.homes,
             )
         text, commit, _ = found
-        how = (
-            f"the {dependency.name} {installed} formula at homebrew-core {commit[:12]}, which holds "
-            "its bottle's digest"
+        how = f"the {dependency.name} {installed} formula at homebrew-core {commit[:12]}, " + (
+            "which holds its bottle's digest"
+            if digest
+            else f"the newest revision building {installed} (the lock records no bottle)"
         )
         heads = re.findall(r'^\s*(?:head\s+|url\s+)"([^"]+\.git)"', text, re.MULTILINE)
         return Upstreams.inferred(
@@ -3109,6 +3172,8 @@ class Upstreams:
                 return HomebrewHistory.upstream(dependency, found)
             return found
         name, data = found
+        if installed.startswith("HEAD-"):
+            return HomebrewBottles.head(data, installed, name)
         stable = str((data.get("versions") or {}).get("stable") or "")
         if not installed or re.sub(r"_\d+$", "", installed) == stable:
             # The formula the API describes, at the commit it names, checked against the SHA-256
