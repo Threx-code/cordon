@@ -269,7 +269,8 @@ class CondaPackage:
     A `.conda` file is a zip whose `info-*.tar.zst` member holds `info/`; its central directory is
     at the end, so two range requests reach it: the tail, then the member. That member is zstd,
     which the standard library reads from Python 3.14 (`compression.zstd`); before it, the
-    `zstandard` package if installed. A legacy `.tar.bz2` is read as a stream, to a bound.
+    `zstandard` package if installed, else the core's own decoder (`intel/zstd`).
+    A legacy `.tar.bz2` is read as a stream, to a bound.
     """
 
     RECIPES: ClassVar[tuple[str, ...]] = (
@@ -309,9 +310,13 @@ class CondaPackage:
         except ImportError:
             try:
                 import zstandard  # type: ignore[import-not-found]
-            except ImportError as exc:
-                raise CondaPackage.NeedsZstd from exc
-            stream = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(blob))
+
+                stream = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(blob))
+            except ImportError:
+                from cordon_scanner.intel.zstd import Zstd
+
+                # The core's own decoder: no third-party dependency (CONSTRAINT C1).
+                stream = Zstd.Reader(blob, CondaPackage.MAX_STREAM_BYTES)
         return CondaPackage._Bounded(stream, CondaPackage.MAX_STREAM_BYTES)
 
     class _Bounded(io.RawIOBase):
@@ -330,9 +335,6 @@ class CondaPackage:
                 raise ValueError("info too large")
             buffer[: len(data)] = data
             return len(data)
-
-    class NeedsZstd(Exception):
-        """Neither Python 3.14's zstd nor the `zstandard` package is available."""
 
     @staticmethod
     def _from_tar(archive: tarfile.TarFile) -> str | None:
@@ -2895,10 +2897,6 @@ class UpstreamAdvisories:
 
             try:
                 result = resolver(dependency)
-            except CondaPackage.NeedsZstd:
-                result = Unnamed(
-                    "reading a .conda package's recipe needs Python 3.14 or the zstandard package"
-                )
             except RegistryError as exc:
                 result = Unnamed(f"its ecosystem's source could not be read ({exc})")
             except (
