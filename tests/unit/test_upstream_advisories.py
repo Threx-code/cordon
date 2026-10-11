@@ -1226,3 +1226,85 @@ class TestACutShortAnswer:
         monkeypatch.setattr(UpstreamAdvisories, "_cache", {})
         found = UpstreamAdvisories.name(Stand.dep("vcpkg", "qtbase", None, resolution_note="x"))
         assert isinstance(found, Unnamed) and "GitFetchError" in found.reason
+
+
+class TestPodSiblings:
+    TRUNK = "https://cdn.cocoapods.org/Specs"
+    RAW = "https://raw.githubusercontent.com/firebase/firebase-ios-sdk"
+    URL = "https://dl.google.com/firebase/ios/analytics/c549faaa5cd321b5/FirebaseAnalytics-10.6.0.tar.gz"
+    PODSPEC = (
+        "Pod::Spec.new do |s|\n"
+        "    s.name             = 'FirebaseAnalytics'\n"
+        "    s.version          = '10.6.0'\n"
+        "    s.source           = {\n"
+        "        :http => 'https://dl.google.com/firebase/ios/analytics/c549faaa5cd321b5/"
+        "FirebaseAnalytics-#{s.version}.tar.gz'\n"
+        "    }\n"
+        "end\n"
+    )
+
+    def pods(self, monkeypatch, podspec: str) -> tuple[list[Dependency], list]:
+        from cordon_scanner.intel.more_registries import MoreRegistries
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        trunk = json.dumps(
+            {"name": "FirebaseAnalytics", "version": "10.6.0", "source": {"http": self.URL}}
+        )
+        monkeypatch.setattr(
+            MoreRegistries, "_cocoapods_spec", staticmethod(lambda url: trunk.encode())
+        )
+        files = {f"{self.RAW}/CocoaPods-10.6.0/FirebaseAnalytics.podspec": podspec.encode()}
+
+        def get(url: str, limit: int = 0) -> bytes:
+            if url not in files:
+                raise PackageNotFound(url)
+            return files[url]
+
+        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        core, analytics = (
+            Dependency(
+                purl=f"pkg:cocoapods/{n}@10.6.0",
+                ecosystem="cocoapods",
+                name=n,
+                version="10.6.0",
+                direct=True,
+            )
+            for n in ("FirebaseCore", "FirebaseAnalytics")
+        )
+        answers = [
+            Upstream(
+                {
+                    "package": {
+                        "name": "https://github.com/firebase/firebase-ios-sdk",
+                        "ecosystem": "GIT",
+                    },
+                    "version": "CocoaPods-10.6.0",
+                },
+                "the FirebaseCore 10.6.0 podspec",
+            ),
+            Unnamed(f"its source is downloaded from {self.URL}, which names no repository and tag"),
+        ]
+        return [core, analytics], answers
+
+    def test_a_binary_pod_published_from_a_siblings_repository(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import PodSiblings
+
+        deps, answers = self.pods(monkeypatch, self.PODSPEC)
+        resolved = PodSiblings.resolve(deps, answers)
+        assert isinstance(resolved[1], Upstream)
+        assert resolved[1].query["version"] == "CocoaPods-10.6.0"
+        assert "with the same download" in resolved[1].how
+
+    def test_another_download_is_not_the_pod(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import PodSiblings
+
+        deps, answers = self.pods(
+            monkeypatch, self.PODSPEC.replace("c549faaa5cd321b5", "0000000000000000")
+        )
+        assert isinstance(PodSiblings.resolve(deps, answers)[1], Unnamed)
+
+    def test_another_declared_version_is_not_the_pod(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import PodSiblings
+
+        deps, answers = self.pods(monkeypatch, self.PODSPEC.replace("'10.6.0'", "'10.5.0'"))
+        assert isinstance(PodSiblings.resolve(deps, answers)[1], Unnamed)

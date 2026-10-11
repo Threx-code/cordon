@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.intel.advisories import Advisory
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
 
     from cordon_scanner.core.models import Dependency
 
@@ -1034,6 +1034,128 @@ class VcpkgPorts:
                 return Unnamed("its portfile's git URL is not on GitHub or GitLab")
             repository = named
         return RepositoryArchive.upstream(repository, ref, f"{how} ({repository})")
+
+
+class PodSiblings:
+    """A binary pod published from the repository another pod of the same lockfile comes from.
+
+    Firebase's FirebaseAnalytics and GoogleAppMeasurement are closed binaries on dl.google.com,
+    but their podspecs live in github.com/firebase/firebase-ios-sdk beside FirebaseCore's, and are
+    published from it at each release tag. So a pod whose trunk source is only a download is looked
+    for in the repositories its lockfile's other pods resolved to, at tags that name its version
+    (FirebaseCore 10.6.0 is at `CocoaPods-10.6.0`): `<repository>/<tag>/<Name>.podspec`. It is that
+    release only if that podspec declares the locked version and names the very download trunk
+    gives (`https://dl.google.com/firebase/ios/analytics/c549faaa5cd321b5/FirebaseAnalytics-10.6.0
+    .tar.gz`) -- the same file, published from that commit."""
+
+    MAX_CANDIDATES: ClassVar[int] = 6
+
+    @staticmethod
+    def http(text: str, version: str) -> str | None:
+        """A podspec's `source = { :http => '...' }`, `#{s.version}` read as the version."""
+        found = re.search(r"\.source\s*=\s*\{((?:[^{}]|#\{[^{}]*\})*)\}", text)
+        if not found:
+            return None
+        for entry in NpmPodspec.FIELD.finditer(found.group(1)):
+            if (entry.group(1) or entry.group(2)) == "http":
+                value = entry.group(3) if entry.group(3) is not None else entry.group(4)
+                if value is not None:
+                    return re.sub(r"#\{\w+\.version(?:\.to_s)?\}", version, value)
+        return None
+
+    @staticmethod
+    def resolve(
+        dependencies: Sequence[Dependency], answers: Sequence[Upstream | Unnamed]
+    ) -> list[Upstream | Unnamed]:
+        tags: dict[str, set[str]] = collections.defaultdict(set)
+        for dependency, answer in zip(dependencies, answers, strict=True):
+            if not isinstance(answer, Upstream):
+                continue
+            package = answer.query.get("package")
+            if (
+                dependency.ecosystem == "cocoapods"
+                and isinstance(package, dict)
+                and package.get("ecosystem") == "GIT"
+                and str(package.get("name") or "").startswith("https://github.com/")
+            ):
+                tags[str(package["name"])].add(str(answer.query.get("version") or ""))
+        out = list(answers)
+        if not tags:
+            return out
+        for i, (dependency, answer) in enumerate(zip(dependencies, answers, strict=True)):
+            if (
+                dependency.ecosystem == "cocoapods"
+                and dependency.resolved_from is None
+                and dependency.version
+                and isinstance(answer, Unnamed)
+                and answer.reason.startswith("its source is downloaded from")
+            ):
+                try:
+                    found = PodSiblings.find(dependency, tags)
+                except (OSError, ValueError, http.client.HTTPException):
+                    found = None
+                if found is not None:
+                    out[i] = found
+                    # A fact of the pod at its version, whichever lockfile asks next.
+                    UpstreamAdvisories._cache[
+                        (
+                            dependency.ecosystem,
+                            dependency.name,
+                            dependency.version,
+                            dependency.integrity,
+                        )
+                    ] = found
+        return out
+
+    @staticmethod
+    def find(dependency: Dependency, tags: Mapping[str, set[str]]) -> Upstream | None:
+        from cordon_scanner.intel.more_registries import HOSTS, MoreRegistries
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
+        name, version = dependency.name.split("/", 1)[0], dependency.version or ""
+        if not re.fullmatch(r"[\w.+-]+", name):
+            return None
+        naming = re.compile(rf"(?<![\w.]){re.escape(version)}$")
+        candidates = sorted(
+            (repository, tag)
+            for repository, refs in tags.items()
+            for tag in refs
+            if naming.search(tag)
+        )[: PodSiblings.MAX_CANDIDATES]
+        if not candidates:
+            return None
+        a, b, c = MoreRegistries.cocoapods_shard(name)
+        spec = json.loads(
+            MoreRegistries._cocoapods_spec(
+                f"{HOSTS['cocoapods']}/Specs/{a}/{b}/{c}/{name}/{version}/{name}.podspec.json"
+            )
+        )
+        source = spec.get("source") if isinstance(spec, dict) else None
+        given = source.get("http") if isinstance(source, dict) else None
+        if not isinstance(given, str) or not given:
+            return None
+        matched: list[tuple[str, str]] = []
+        for repository, tag in candidates:
+            raw = repository.replace("https://github.com/", "https://raw.githubusercontent.com/")
+            try:
+                text = Upstreams._get(
+                    f"{raw}/{urllib.parse.quote(tag, safe='')}/{name}.podspec"
+                ).decode("utf-8", "replace")
+            except PackageNotFound:
+                continue
+            if NpmPodspec.declared(text, version, {}) == version and (
+                PodSiblings.http(text, version) == given
+            ):
+                matched.append((repository, tag))
+        if not matched or len({repository for repository, _ in matched}) > 1:
+            return None
+        repository, tag = matched[0]
+        return RepositoryArchive.upstream(
+            repository,
+            tag,
+            f"the {name} {version} podspec, published from {repository} at {tag} with the same "
+            "download",
+        )
 
 
 class HomebrewBottles:
@@ -3065,6 +3187,8 @@ class UpstreamAdvisories:
         within = listed[:MAX_PACKAGES]
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             answers = list(pool.map(UpstreamAdvisories.name, within))
+        # A binary pod published from the repository a sibling pod resolved to (Firebase's).
+        answers = PodSiblings.resolve(within, answers)
         for dependency, upstream in zip(within, answers, strict=True):
             if isinstance(upstream, Unnamed):
                 if upstream.nothing:
