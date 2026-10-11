@@ -1332,18 +1332,27 @@ class HomebrewBottles:
         repository = RepositoryArchive.repository(head)
         if not re.fullmatch(r"[0-9a-f]{7,40}", short) or not repository:
             return Unnamed(f"a HEAD build ({installed}) of a head repository off GitHub, or none")
-        if not repository.startswith("https://github.com/"):
-            return Unnamed(f"a HEAD build ({installed}) of a repository off GitHub")
-        owner_repo = repository.removeprefix("https://github.com/")
+        host, _, owner_repo = repository.removeprefix("https://").partition("/")
         try:
-            record = HomebrewProvenance._get(
-                f"https://api.github.com/repos/{owner_repo}/commits/{short}"
-            )
+            if host == "github.com":
+                record = HomebrewProvenance._get(
+                    f"https://api.github.com/repos/{owner_repo}/commits/{short}"
+                )
+                key = "sha"
+            else:
+                # GitLab (qemu's head is gitlab.com/qemu-project/qemu): its API resolves it too.
+                record = json.loads(
+                    Upstreams._get(
+                        f"https://{host}/api/v4/projects/{urllib.parse.quote(owner_repo, safe='')}"
+                        f"/repository/commits/{short}"
+                    )
+                )
+                key = "id"
         except (OSError, ValueError, http.client.HTTPException) as exc:
             return Unnamed(
-                f"a HEAD build ({installed}): GitHub could not resolve {short} ({type(exc).__name__})"
+                f"a HEAD build ({installed}): {host} could not resolve {short} ({type(exc).__name__})"
             )
-        commit = str((record or {}).get("sha") or "") if isinstance(record, dict) else ""
+        commit = str((record or {}).get(key) or "") if isinstance(record, dict) else ""
         if not re.fullmatch(r"[0-9a-f]{40}", commit) or not commit.startswith(short):
             return Unnamed(
                 f"a HEAD build ({installed}): {short} names no one commit of {repository}"

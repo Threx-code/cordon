@@ -1653,3 +1653,23 @@ class TestDumbHttpRefs:
             "0.69": "0675c6ea5368f0843a91c28a472247b8f26015cf",
             "0.67": "ee8e013cd5398c5fb34fb19a24db0f3b6185bac3",
         }
+
+
+class TestGitLabHeadBuilds:
+    def test_gitlab_resolves_the_abbreviation(self, monkeypatch) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewBottles
+
+        full = "ae2b873" + "d" * 33
+        asked: list[str] = []
+
+        def get(url: str, limit: int = 0) -> bytes:
+            asked.append(url)
+            return json.dumps({"id": full}).encode()
+
+        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        data = {"urls": {"head": {"url": "https://gitlab.com/qemu-project/qemu.git"}}}
+        found = HomebrewBottles.head(data, "HEAD-ae2b873", "qemu")
+        assert isinstance(found, Upstream) and found.query == {"commit": full}
+        assert asked == [
+            "https://gitlab.com/api/v4/projects/qemu-project%2Fqemu/repository/commits/ae2b873"
+        ]
