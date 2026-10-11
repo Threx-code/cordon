@@ -1,14 +1,16 @@
 {
   "name": "cordon",
   "displayName": "Cordon supply-chain scanner",
-  "description": "Malicious packages, install-time behaviour, agent and MCP configuration, secrets and vulnerable dependencies, shown in the editor. Runs the cordon-scanner you installed; sends nothing anywhere.",
-  "version": "0.6.0",
+  "description": "Malicious packages, install-time behaviour, AI agent files, skills and MCP servers, secrets and vulnerable dependencies, shown in the editor -- and Cordon's checks offered to the editor's AI agents over MCP. Runs the cordon-scanner you installed; sends nothing anywhere.",
+  "version": "0.7.0",
   "publisher": "threx-code",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "https://github.com/Threx-code/cordon" },
+  "homepage": "https://github.com/Threx-code/cordon/tree/main/editors/vscode",
+  "bugs": { "url": "https://github.com/Threx-code/cordon/issues" },
   "engines": { "vscode": "^1.90.0" },
-  "categories": ["Linters"],
-  "keywords": ["security", "supply chain", "malware", "mcp", "sbom"],
+  "categories": ["Linters", "AI"],
+  "keywords": ["security", "supply chain", "malware", "mcp", "sbom", "ai agents", "skills"],
   "main": "./out/src/extension.js",
   "activationEvents": ["workspaceContains:**/*", "onCommand:cordon.scanWorkspace"],
   "capabilities": {
@@ -21,7 +23,11 @@
   "contributes": {
     "commands": [
       { "command": "cordon.scanWorkspace", "title": "Cordon: Scan workspace" },
-      { "command": "cordon.clear", "title": "Cordon: Clear findings" }
+      { "command": "cordon.clear", "title": "Cordon: Clear findings" },
+      { "command": "cordon.showMcpConfig", "title": "Cordon: Show MCP configuration" }
+    ],
+    "mcpServerDefinitionProviders": [
+      { "id": "cordon.mcpServers", "label": "Cordon" }
     ],
     "configuration": {
       "title": "Cordon",
@@ -44,6 +50,18 @@
           "default": "low",
           "scope": "window",
           "description": "Findings below this severity are not shown."
+        },
+        "cordon.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Offer Cordon's MCP server to this editor's AI agents (VS Code 1.101 and later): they can check packages, install commands, skills, MCP servers and agent files before acting."
+        },
+        "cordon.mcp.allowOnline": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "description": "Let the MCP server's tools ask registries and fetch packages, images and extensions to scan them. Machine-scoped: a workspace cannot turn the network on."
         }
       }
     }
