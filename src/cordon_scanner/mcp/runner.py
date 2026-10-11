@@ -50,6 +50,8 @@ class Run:
 class CancelToken:
     def __init__(self) -> None:
         self._event = threading.Event()
+        #: Set when the server is past its queue bound: the call is answered "busy", not run.
+        self.busy = False
 
     def cancel(self) -> None:
         self._event.set()
@@ -62,12 +64,24 @@ class CancelToken:
 class Runner:
     """Runs `cordon-scanner` -- this installation's, by module -- with the server's settings."""
 
-    def __init__(self, *, offline: bool, environment: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        offline: bool,
+        private_network: bool = False,
+        environment: dict[str, str] | None = None,
+    ) -> None:
         self.offline = offline
         base = dict(os.environ if environment is None else environment)
         if offline:
             # The scanner's own air-gapped switch: no feed, no registry, nothing.
             base["CORDON_OFFLINE"] = "1"
+        if not private_network:
+            # What a scan connects to can be named by what an agent passed in: an MCP server's URL,
+            # an image's registry. Such a name may lead only to the public network (`core.netguard`).
+            base["CORDON_PUBLIC_NETWORK_ONLY"] = "1"
+        else:
+            base.pop("CORDON_PUBLIC_NETWORK_ONLY", None)
         base["NO_COLOR"] = "1"
         base["PYTHONIOENCODING"] = "utf-8"
         base.pop("PYTHONSTARTUP", None)

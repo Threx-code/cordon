@@ -100,6 +100,8 @@ class Server:
         self.inflight_lock = threading.Lock()
         self.legacy_version: str | None = None
         self.limiter = RateLimiter(rate, burst)
+        #: Tool calls running or queued before another is answered "busy" rather than queued.
+        self.max_pending = workers * 8
         self.audit = audit
         self.audit_lock = threading.Lock()
 
@@ -140,7 +142,14 @@ class Server:
                         line = stream.readline(MAX_LINE)
                     continue
                 if line.strip():
-                    self.receive(line)
+                    try:
+                        self.receive(line)
+                    except Exception as exc:  # one message must never end the server
+                        print(
+                            f"cordon-scanner mcp: could not handle a message: {type(exc).__name__}",
+                            file=sys.stderr,
+                        )
+                        self.send(self.error(None, INTERNAL_ERROR, "internal error"))
         finally:
             with self.inflight_lock:
                 for token in self.inflight.values():
@@ -151,8 +160,9 @@ class Server:
     def receive(self, line: str) -> None:
         try:
             message = json.loads(line)
-        except ValueError:
-            self.send(self.error(None, PARSE_ERROR, "not valid JSON"))
+        except (ValueError, RecursionError):
+            # RecursionError: JSON nested deeper than the parser goes. Answered, never fatal.
+            self.send(self.error(None, PARSE_ERROR, "not valid JSON, or nested too deeply"))
             return
         if isinstance(message, list):
             # JSON-RPC batches: allowed by 2025-03-26, removed later. Answered element by element.
@@ -190,7 +200,23 @@ class Server:
         if method == "tools/call":
             token = CancelToken()
             with self.inflight_lock:
+                if ident in self.inflight:
+                    # Ids must not repeat while in flight; a second call would take over the
+                    # first one's cancellation.
+                    self.send(
+                        self.error(
+                            ident, INVALID_REQUEST, "a request with this id is still running"
+                        )
+                    )
+                    return
+                busy = len(self.inflight) >= self.max_pending
                 self.inflight[ident] = token
+            if busy:
+                # Past the queue bound: answered at once, never queued, so a flood of calls
+                # cannot grow the server's memory without limit.
+                token.busy = True
+                self.respond(ident, method, message.get("params"), token)
+                return
             self.pool.submit(self.respond, ident, method, message.get("params"), token)
         else:
             self.respond(ident, method, message.get("params"), CancelToken())
@@ -308,8 +334,14 @@ class Server:
         if not isinstance(arguments, dict):
             raise RpcError(INVALID_PARAMS, "arguments must be an object")
         start = time.monotonic()
-        wait = self.limiter.take()
-        if wait:
+        wait = 0.0 if token.busy else self.limiter.take()
+        if token.busy:
+            outcome = Outcome(
+                {"error": "busy"},
+                f"The server is running {self.max_pending} calls already: retry when one finishes.",
+                is_error=True,
+            )
+        elif wait:
             outcome = Outcome(
                 {"error": "rate limited"},
                 f"Too many calls: retry in {wait:.0f} seconds.",
@@ -391,6 +423,12 @@ class Server:
             help="let tools read this machine's installed packages and AI agent configuration",
         )
         parser.add_argument(
+            "--allow-private-network",
+            action="store_true",
+            help="let online tools connect to private and local addresses (an intranet MCP server or "
+            "registry); by default a name an agent passes in may lead only to the public network",
+        )
+        parser.add_argument(
             "--timeout",
             type=float,
             default=600.0,
@@ -454,9 +492,12 @@ class Server:
             return 3
         settings = Settings(
             workspace=workspace,
-            runner=Runner(offline=not args.allow_online),
+            runner=Runner(
+                offline=not args.allow_online, private_network=args.allow_private_network
+            ),
             allow_online=args.allow_online,
             allow_machine=args.allow_machine,
+            allow_private_network=args.allow_private_network,
             timeout=args.timeout,
             max_findings=args.max_findings,
             version=__version__,

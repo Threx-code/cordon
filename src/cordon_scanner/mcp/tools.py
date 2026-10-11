@@ -58,6 +58,7 @@ class Settings:
     runner: Runner
     allow_online: bool = False
     allow_machine: bool = False
+    allow_private_network: bool = False
     timeout: float = 600.0
     max_findings: int = 50
     version: str = ""
@@ -571,9 +572,9 @@ class WorkspaceTools:
         target = Args.path(settings, args)
         extra: list[str] = []
         for glob in Args.strings(args, "include"):
-            extra += ["--include", glob]
+            extra.append(f"--include={glob}")
         for glob in Args.strings(args, "exclude"):
-            extra += ["--exclude", glob]
+            extra.append(f"--exclude={glob}")
         since = Args.text(args, "changed_since", limit=200)
         if since:
             extra += ["--git-diff", Args.revision(since, "changed_since")]
@@ -1167,6 +1168,7 @@ class KnowledgeTools:
             "workspace_roots": settings.workspace.describe(),
             "online_allowed": settings.allow_online,
             "machine_reads_allowed": settings.allow_machine,
+            "private_network_allowed": settings.allow_private_network,
             "scan_timeout_seconds": settings.timeout,
             "cordon_cloud": cloud,
             "ecosystems": list(ECOSYSTEMS),

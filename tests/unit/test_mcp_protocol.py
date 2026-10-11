@@ -358,3 +358,68 @@ class TestToolCatalogue:
             "seconds",
         }
         assert "secret-marker-7731" not in log.read_text(encoding="utf-8")
+
+
+class TestHostileClients:
+    def test_json_nested_past_the_parser_is_answered_not_fatal(self, tmp_path: Path) -> None:
+        wire = Wire(tmp_path)
+        wire.server.receive("[" * 100_000 + "]" * 100_000)
+        assert wire.replies()[0]["error"]["code"] == -32700
+
+    def test_a_running_id_cannot_be_reused(self, tmp_path: Path) -> None:
+        wire = Wire(tmp_path)
+        wire.initialize()
+        wire.server.registry.tools["slow"] = Tool(
+            "slow", "Slow", "waits", {"type": "object"}, Slow.handler
+        )
+        Slow.started.clear()
+        call = {
+            "jsonrpc": "2.0",
+            "id": "same",
+            "method": "tools/call",
+            "params": {"name": "slow", "arguments": {}},
+        }
+        wire.send(call)
+        assert Slow.started.wait(10)
+        reply = wire.ask(call)
+        assert reply["error"]["code"] == -32600
+        wire.send(
+            {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": "same"}}
+        )
+        wire.replies()
+
+    def test_calls_past_the_queue_bound_are_answered_busy(self, tmp_path: Path) -> None:
+        wire = Wire(tmp_path, workers=1)
+        wire.initialize()
+        wire.server.registry.tools["slow"] = Tool(
+            "slow", "Slow", "waits", {"type": "object"}, Slow.handler
+        )
+        for index in range(wire.server.max_pending):
+            wire.send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": index,
+                    "method": "tools/call",
+                    "params": {"name": "slow", "arguments": {}},
+                }
+            )
+        reply = wire.ask(
+            {
+                "jsonrpc": "2.0",
+                "id": "extra",
+                "method": "tools/call",
+                "params": {"name": "slow", "arguments": {}},
+            }
+        )
+        assert (
+            reply["result"]["isError"] is True and "retry" in reply["result"]["content"][0]["text"]
+        )
+        for index in range(wire.server.max_pending):
+            wire.send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/cancelled",
+                    "params": {"requestId": index},
+                }
+            )
+        wire.replies()
