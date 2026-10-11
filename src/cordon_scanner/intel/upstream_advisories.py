@@ -26,6 +26,7 @@ Network use is the scan's `--online` only, over HTTPS, to the hosts above and ap
 from __future__ import annotations
 
 import collections
+import http.client
 import io
 import json
 import re
@@ -457,13 +458,13 @@ class VcpkgPorts:
         path = ScanCache.default_cache_dir() / "upstream" / f"vcpkg-{kind}-{key}"
         try:
             return path.read_bytes()
-        except OSError:
+        except (OSError, http.client.HTTPException):
             pass
         body: bytes = fetch()
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(body)
-        except OSError:
+        except (OSError, http.client.HTTPException):
             pass
         return body
 
@@ -1123,7 +1124,7 @@ class HomebrewBottles:
                     f"https://formulae.brew.sh/api/cask/{urllib.parse.quote(token, safe='@+')}.json"
                 )
             )
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             return Unnamed(reason)
         if not isinstance(data, dict):
             return Unnamed(reason)
@@ -1165,7 +1166,7 @@ class HomebrewBottles:
             try:
                 text = Upstreams._get(f"{base}/{path}").decode("utf-8", "replace")
                 break
-            except (OSError, ValueError):
+            except (OSError, ValueError, http.client.HTTPException):
                 continue
         if not text:
             return Unnamed(f"the tap {tap} holds no formula {formula}")
@@ -1366,7 +1367,7 @@ class TagInference:
                         body: bytes = response.read(TagInference.MAX_REFS_BYTES + 1)
                         final = str(response.geturl())
                     break
-                except OSError:
+                except (OSError, http.client.HTTPException):
                     if attempt == 2:
                         raise
             if (
@@ -1393,7 +1394,7 @@ class TagInference:
                 found.update(peeled)
                 TagInference._tips[repository] = dict(found)
                 found.update(peeled)
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             found = None
         TagInference._refs[repository] = found
         return found
@@ -1817,7 +1818,7 @@ class ContentProof:
         for url in dict.fromkeys(candidates):
             try:
                 body = ContentProof._download(url)
-            except (OSError, ValueError):
+            except (OSError, ValueError, http.client.HTTPException):
                 continue
             if ContentProof._digest_matches(body, archive.digest):
                 release = body
@@ -1827,13 +1828,13 @@ class ContentProof:
         try:
             raw = ContentProof.files(release)
             ours = {path: GitPack.blob_id(data) for path, data in raw.items()}
-        except (OSError, ValueError, tarfile.TarError, EOFError) as exc:
+        except (OSError, ValueError, tarfile.TarError, EOFError, http.client.HTTPException) as exc:
             return "unprovable", f"the release archive could not be read ({type(exc).__name__})"
         try:
             # The tag's tree by git's own protocol: blob ids, compared with the release's files
             # hashed the way git hashes them.
             theirs = GitFetch.tree(repository, tip)
-        except (GitFetchError, OSError, ValueError) as exc:
+        except (GitFetchError, OSError, ValueError, http.client.HTTPException) as exc:
             return (
                 "unprovable",
                 f"the tag's tree could not be fetched ({type(exc).__name__}: {exc})"[:200],
@@ -2202,7 +2203,7 @@ class ConanCenter:
                 if isinstance(given, dict):
                     sources.update({str(k): v for k, v in given.items()})
             found = sources
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             found = None
         ConanCenter._index[name] = found
         return found
@@ -2411,7 +2412,7 @@ class Upstreams:
                     f"{registry}/modules/{urllib.parse.quote(name, safe='')}/metadata.json"
                 )
             )
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             return first
         homes = [*(meta.get("repository") or []), meta.get("homepage")]
         integrity = str(data.get("integrity") or "")
@@ -2603,7 +2604,7 @@ class Upstreams:
             try:
                 text = HomebrewBottles.formula(name, installed)
                 how = f"the {name} {installed} formula its bottle carries"
-            except (OSError, ValueError, tarfile.TarError, EOFError):
+            except (OSError, ValueError, tarfile.TarError, EOFError, http.client.HTTPException):
                 # No bottle (one from before ghcr.io): the current formula still names the
                 # repository, in which the installed version's tag is looked for. Nothing pins
                 # the old release archive, so it cannot be proved: an inference, said as one.
@@ -2865,6 +2866,8 @@ class UpstreamAdvisories:
                 TypeError,
                 AttributeError,
                 tarfile.TarError,
+                # A response cut short mid-body (`IncompleteRead`): not an OSError.
+                http.client.HTTPException,
             ) as exc:
                 result = Unnamed(f"its ecosystem's source could not be read ({type(exc).__name__})")
         UpstreamAdvisories._cache[key] = result
@@ -2940,7 +2943,7 @@ class UpstreamAdvisories:
                                 "page_token": entry["next_page_token"],
                             }
                     pending = following
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, http.client.HTTPException) as exc:
             for dependency, _ in named:
                 result.unchecked[dependency.purl] = f"OSV could not be asked ({type(exc).__name__})"
             return result
@@ -2950,7 +2953,7 @@ class UpstreamAdvisories:
             for identifier in dict.fromkeys(identifiers):
                 try:
                     record = UpstreamAdvisories._record(identifier)
-                except (OSError, ValueError) as exc:
+                except (OSError, ValueError, http.client.HTTPException) as exc:
                     result.checked.discard(dependency.purl)
                     result.unchecked[dependency.purl] = (
                         f"OSV's record {identifier} could not be read ({type(exc).__name__})"

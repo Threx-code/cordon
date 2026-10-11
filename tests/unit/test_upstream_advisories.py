@@ -1064,3 +1064,18 @@ class TestVcpkgRegistryEras:
             "https://github.com/openssl/openssl", "1.1.1n", ("openssl",), "x"
         )
         assert isinstance(found, Upstream) and found.query == {"commit": "c" * 40}
+
+
+class TestACutShortAnswer:
+    def test_a_resolver_cut_short_leaves_the_package_unchecked_and_says_why(
+        self, monkeypatch
+    ) -> None:
+        import http.client
+
+        def cut(url: str, limit: int = 0) -> bytes:
+            raise http.client.IncompleteRead(b"partial")
+
+        monkeypatch.setattr(Upstreams, "_get", staticmethod(cut))
+        monkeypatch.setattr(UpstreamAdvisories, "_cache", {})
+        found = UpstreamAdvisories.name(Stand.dep("conan", "zlib", "1.3.1"))
+        assert isinstance(found, Unnamed) and "IncompleteRead" in found.reason

@@ -16,6 +16,7 @@ trees are walked; blobs, when sent, are not read beyond their ids. Bounded in si
 from __future__ import annotations
 
 import hashlib
+import http.client
 import re
 import struct
 import urllib.request
@@ -46,9 +47,15 @@ class GitFetch:
             headers["Content-Type"] = "application/x-git-upload-pack-request"
             headers["Accept"] = "application/x-git-upload-pack-result"
         request = urllib.request.Request(url, data=body, headers=headers)  # noqa: S310 - https
-        with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310
-            data: bytes = response.read(MAX_PACK_BYTES + 1)
-            final = str(response.geturl())
+        try:
+            with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310
+                data: bytes = response.read(MAX_PACK_BYTES + 1)
+                final = str(response.geturl())
+        except http.client.HTTPException as exc:
+            # A response cut short (`IncompleteRead`) is no pack: said so, not raised past.
+            raise GitFetchError(
+                f"the server's answer was cut short ({type(exc).__name__})"
+            ) from exc
         if len(data) > MAX_PACK_BYTES:
             raise GitFetchError("response too large")
         if not final.startswith("https://"):

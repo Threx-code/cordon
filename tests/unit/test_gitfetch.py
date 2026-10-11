@@ -124,3 +124,18 @@ class TestThePack:
     def test_not_a_pack_is_an_error(self) -> None:
         with pytest.raises(GitFetchError):
             GitPack.read(b"<html>")
+
+
+class TestACutShortAnswer:
+    def test_an_incomplete_read_is_a_fetch_error(self, monkeypatch) -> None:
+        import http.client
+        import urllib.request
+
+        from cordon_scanner.intel.gitfetch import GitFetch
+
+        def urlopen(request, timeout=0):
+            raise http.client.IncompleteRead(b"partial")
+
+        monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+        with pytest.raises(GitFetchError, match="cut short"):
+            GitFetch._request("https://example.invalid/x.git/info/refs", None)
