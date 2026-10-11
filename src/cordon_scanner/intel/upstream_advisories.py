@@ -2136,6 +2136,9 @@ class ContentProof:
 #: Where a React Native release pins the Hermes it was built from: a tag of facebook/hermes whose
 #: name ends in its commit (`hermes-2024-11-12-RNv0.76.2-5b4aa20c...`).
 HERMES_PIN: Final = "sdks/.hermesversion"
+#: The Hermes versions React Native 0.83 and later build or download (`HERMES_VERSION_NAME`, and
+#: `HERMES_V1_VERSION_NAME` for Hermes V1), which hermes-engine.podspec reads as its version.
+HERMES_PROPERTIES: Final = "sdks/hermes-engine/version.properties"
 
 
 class NpmPodspec:
@@ -2159,6 +2162,17 @@ class NpmPodspec:
     MAX_TEXT: ClassVar[int] = 1 << 20
     #: `@@<name>_config = { :key => 'value', key: "value", ... }`, simple string values only.
     CONSTANT: ClassVar[re.Pattern[str]] = re.compile(r"@@(\w+_config)\s*=\s*\{([^{}]*)\}")
+    #: The same hash returned by a method (React Native 0.74's `def self.folly_config` in
+    #: `Helpers::Constants`, which `get_folly_config()` returns).
+    METHOD: ClassVar[re.Pattern[str]] = re.compile(
+        r"def self\.(\w+_config)\s*(?:\(\s*\))?\s*return\s*\{([^{}]*)\}\s*end"
+    )
+    #: Podspecs that are the package's own code, whatever source they compute: React Native's
+    #: React-Core-prebuilt is its core, built from source or downloaded as the Maven artefact
+    #: `com.facebook.react:react-native-artifacts` of the same version (`scripts/cocoapods/rncore.rb`).
+    OWN_CODE: ClassVar[frozenset[tuple[str, str]]] = frozenset(
+        {("react-native", "React-Core-prebuilt.podspec")}
+    )
     FIELD: ClassVar[re.Pattern[str]] = re.compile(
         r"""(?::(\w+)\s*=>|\b(\w+):)\s*(?:'([^']*)'|"([^"]*)"|(\w+)\b)"""
     )
@@ -2208,7 +2222,8 @@ class NpmPodspec:
                     for member in archive:
                         path = member.name.split("/", 1)[-1]
                         if member.isfile() and (
-                            path.endswith((".podspec", ".rb")) or path == HERMES_PIN
+                            path.endswith((".podspec", ".rb"))
+                            or path in (HERMES_PIN, HERMES_PROPERTIES)
                         ):
                             handle = archive.extractfile(member)
                             if handle is not None:
@@ -2225,7 +2240,7 @@ class NpmPodspec:
         for path, text in files.items():
             if not path.endswith(".rb"):
                 continue
-            for found in NpmPodspec.CONSTANT.finditer(text):
+            for found in [*NpmPodspec.CONSTANT.finditer(text), *NpmPodspec.METHOD.finditer(text)]:
                 out[found.group(1)] = {
                     m.group(1) or m.group(2): m.group(3) if m.group(3) is not None else m.group(4)
                     for m in NpmPodspec.FIELD.finditer(found.group(2))
@@ -2234,8 +2249,11 @@ class NpmPodspec:
         return out
 
     @staticmethod
-    def variables(text: str, constants: Mapping[str, Mapping[str, str]]) -> dict[str, str]:
-        """`name = get_<x>_config()` and `name = <config>[:key]` lines, resolved."""
+    def variables(
+        text: str, constants: Mapping[str, Mapping[str, str]], version: str = ""
+    ) -> dict[str, str]:
+        """`name = get_<x>_config()` and `name = <config>[:key]` lines, resolved; and
+        `name = package['version']`, the package's own version."""
         configs = {
             m.group(1): m.group(2) + "_config"
             for m in re.finditer(r"^\s*(\w+)\s*=\s*get_(\w+)_config\(\)\s*$", text, re.MULTILINE)
@@ -2251,6 +2269,11 @@ class NpmPodspec:
             value = constants.get(configs.get(m.group(2), ""), {}).get(m.group(3))
             if value is not None:
                 out[m.group(1)] = value
+        if version:
+            for m in re.finditer(
+                r"""^\s*(\w+)\s*=\s*package\[['"]version['"]\]\s*$""", text, re.MULTILINE
+            ):
+                out[m.group(1)] = version
         return out
 
     @staticmethod
@@ -2317,12 +2340,17 @@ class NpmPodspec:
         return Unnamed("its podspec names no git tag or commit, or download", homes=homes)
 
     @staticmethod
-    def read(
+    def _answers(
         package: str, inside: str, versions: list[str], locked: str, how: str
-    ) -> Upstream | Unnamed:
+    ) -> list[Upstream | Unnamed]:
+        from cordon_scanner.intel.registry_client import PackageNotFound
+
         answers: list[Upstream | Unnamed] = []
         for version in versions:
-            files = NpmPodspec.package(package, version)
+            try:
+                files = NpmPodspec.package(package, version)
+            except PackageNotFound:
+                continue
             if files is None:
                 continue
             text = files.get(inside)
@@ -2338,12 +2366,48 @@ class NpmPodspec:
                     )
                 )
                 continue
+            properties = dict(
+                re.findall(
+                    r"^\s*(HERMES_\w*VERSION_NAME)\s*=\s*(\S+)\s*$",
+                    files.get(HERMES_PROPERTIES, ""),
+                    re.MULTILINE,
+                )
+            )
+            if inside.endswith("hermes-engine.podspec") and locked in properties.values():
+                # React Native 0.83 and later: the Hermes release its version.properties names,
+                # downloaded from Maven (`com.facebook.hermes:hermes-ios`) or built from that tag.
+                answers.append(
+                    TagInference.infer(
+                        "https://github.com/facebook/hermes",
+                        locked,
+                        ("hermes",),
+                        f"{how}@{version}: its version.properties names Hermes {locked}",
+                    )
+                )
+                continue
             if text is None:
                 continue
-            variables = NpmPodspec.variables(text, NpmPodspec.constants(files))
+            variables = NpmPodspec.variables(text, NpmPodspec.constants(files), version)
             if NpmPodspec.declared(text, version, variables) != locked:
                 continue
-            answers.append(NpmPodspec.source(text, locked, variables, f"{how}@{version}"))
+            answer = NpmPodspec.source(text, locked, variables, f"{how}@{version}")
+            if isinstance(answer, Unnamed) and (package, inside) in NpmPodspec.OWN_CODE:
+                answer = Upstream(
+                    {"package": {"name": package, "ecosystem": "npm"}, "version": version},
+                    f"{how}@{version}: {package}'s own code, versioned as it",
+                )
+            answers.append(answer)
+        return answers
+
+    @staticmethod
+    def read(
+        package: str, inside: str, versions: list[str], locked: str, how: str
+    ) -> Upstream | Unnamed:
+        answers = NpmPodspec._answers(package, inside, versions, locked, how)
+        if not answers and locked not in versions and re.fullmatch(r"\d+\.\d+\.\d+[\w.-]*", locked):
+            # The pod at a release of its own: hermes-engine 0.72.5 in a lock whose React pods
+            # are at 0.72.6 is React Native 0.72.5's, pinned by that release.
+            answers = NpmPodspec._answers(package, inside, [locked], locked, how)
         if not answers:
             return Unnamed(
                 f"no {package} release among {', '.join(versions)} holds {inside} at {locked}"
