@@ -34,7 +34,7 @@ from __future__ import annotations
 import functools
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
 MAX_VERSION_LENGTH = 256
 """A version string longer than this is compared as opaque text.
@@ -46,6 +46,12 @@ string is capped at a length check.
 """
 
 _SEMVER_ECOSYSTEMS = frozenset({"npm", "cargo", "gomod", "nuget", "pub", "composer", "cocoapods"})
+#: Ecosystems whose own versions are upstream releases with no scheme of their own, compared the way
+#: Repology compares versions across every distribution (libversion): what NVD's ranges, written in
+#: upstream releases, are matched with. A packaging revision is not part of the release: Homebrew's
+#: `_1`, vcpkg's `#2`.
+_LIBVERSION_ECOSYSTEMS = frozenset({"homebrew", "vcpkg", "conan", "conda", "cpe"})
+_PACKAGING_REVISION: Final = re.compile(r"(?:_\d+|#\d+)$")
 _MAVEN_ECOSYSTEMS = frozenset({"maven", "gradle"})
 
 _TokenKey = tuple[int, int, str]
@@ -93,6 +99,11 @@ class Versions:
             )
         if ecosystem in _SEMVER_ECOSYSTEMS:
             return Versions._compare_keys(Versions._semver_key(a), Versions._semver_key(b), a, b)
+        if ecosystem in _LIBVERSION_ECOSYSTEMS:
+            return LibVersion.compare(
+                _PACKAGING_REVISION.sub("", a) if ecosystem != "cpe" else a,
+                _PACKAGING_REVISION.sub("", b) if ecosystem != "cpe" else b,
+            )
         return Versions._compare_raw(a, b)
 
     @staticmethod
@@ -462,3 +473,63 @@ rank. `1.0` and `1.0-final` compare equal because both reduce to this."""
 
 
 __all__ = ["MAX_VERSION_LENGTH", "Versions"]
+
+
+class LibVersion:
+    """Repology's libversion algorithm (github.com/repology/libversion, doc/ALGORITHM.md), which
+    compares the versions of one project as every distribution spells them.
+
+    A version splits into components at every character that is not a letter or digit, and again
+    where letters meet digits (`1.0alpha2`: 1, 0, alpha, 2). Each component has a rank:
+
+        pre-release  <  zero  <  post-release  <  non-zero  <  letter suffix
+
+    `alpha`, `beta`, `rc`, `pre` are pre-releases; `post`, `patch`, `pl`, `errata` are
+    post-releases; any other word straight after a number and not followed by one is a letter
+    suffix (`1.0a` after `1.0`), and elsewhere a pre-release. The shorter version is padded with zeros
+    (`1.0` is `1.0.0`). Within a rank, numbers compare as numbers and words by their first letter,
+    ignoring case (`alpha` is `a`)."""
+
+    PRE_RELEASE: Final = 1
+    ZERO: Final = 2
+    POST_RELEASE: Final = 3
+    NONZERO: Final = 4
+    LETTER_SUFFIX: Final = 5
+    POST_WORDS: Final = frozenset({"post", "patch", "pl", "errata"})
+    PRE_WORDS: Final = frozenset({"alpha", "beta", "rc", "pre"})
+
+    @staticmethod
+    def components(version: str) -> list[tuple[int, int, str]]:
+        """`(rank, number, first letter)` per component."""
+        out: list[tuple[int, int, str]] = []
+        for segment in re.split(r"[^A-Za-z0-9]+", version):
+            parts = re.findall(r"[0-9]+|[A-Za-z]+", segment)
+            for index, part in enumerate(parts):
+                if part.isdigit():
+                    number = int(part)
+                    out.append((LibVersion.NONZERO if number else LibVersion.ZERO, number, ""))
+                    continue
+                word = part.lower()
+                follows_number = index > 0 and parts[index - 1].isdigit()
+                followed_by_number = index + 1 < len(parts) and parts[index + 1].isdigit()
+                if word in LibVersion.POST_WORDS:
+                    rank = LibVersion.POST_RELEASE
+                elif word in LibVersion.PRE_WORDS:
+                    rank = LibVersion.PRE_RELEASE
+                elif follows_number and not followed_by_number and len(parts) == index + 1:
+                    rank = LibVersion.LETTER_SUFFIX
+                else:
+                    rank = LibVersion.PRE_RELEASE
+                out.append((rank, 0, word[0]))
+        return out
+
+    @staticmethod
+    def compare(a: str, b: str) -> int:
+        left, right = LibVersion.components(a), LibVersion.components(b)
+        padding = (LibVersion.ZERO, 0, "")
+        for index in range(max(len(left), len(right))):
+            x = left[index] if index < len(left) else padding
+            y = right[index] if index < len(right) else padding
+            if x != y:
+                return -1 if x < y else 1
+        return 0
