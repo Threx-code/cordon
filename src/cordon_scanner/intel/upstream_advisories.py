@@ -208,7 +208,7 @@ class RegistryArchive:
         (
             "PyPI",
             re.compile(
-                r"^https://(?:pypi\.io|pypi\.org|files\.pythonhosted\.org)/packages/"
+                r"^https?://(?:pypi\.io|pypi\.org|pypi\.python\.org|files\.pythonhosted\.org)/packages/"
                 r"(?:source/[^/]/[^/]+|[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{60})/"
                 r"([A-Za-z0-9][\w.-]*?)-(\d[\w.!+]*)\.(?:tar\.gz|zip|tar\.bz2)$"
             ),
