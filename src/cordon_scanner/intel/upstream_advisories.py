@@ -2321,26 +2321,34 @@ class ContentProof:
         return b"".join(chunks)
 
     @staticmethod
-    def files(body: bytes) -> dict[str, bytes]:
-        """`path -> bytes` of each regular file, the archive's one top-level folder removed."""
+    def blobs(body: bytes) -> dict[str, tuple[str, str | None]]:
+        """`path -> (git blob id, blob id with CRLF made LF, where it has a CRLF)` of each regular
+        file, the archive's one top-level folder removed. Each file is hashed as it is read and
+        not kept: a toolchain's release (gcc, llvm) is gigabytes once inflated."""
         import zipfile
 
-        out: dict[str, bytes] = {}
+        from cordon_scanner.intel.gitfetch import GitPack
+
+        def ids(data: bytes) -> tuple[str, str | None]:
+            converted = GitPack.blob_id(data.replace(b"\r\n", b"\n")) if b"\r\n" in data else None
+            return GitPack.blob_id(data), converted
+
+        out: dict[str, tuple[str, str | None]] = {}
         if body[:2] == b"PK":
-            with zipfile.ZipFile(io.BytesIO(body)) as archive:
-                for info in archive.infolist():
+            with zipfile.ZipFile(io.BytesIO(body)) as zipped:
+                for info in zipped.infolist():
                     if not info.is_dir():
-                        out[info.filename] = archive.read(info)
+                        out[info.filename] = ids(zipped.read(info))
         else:
-            with tarfile.open(fileobj=io.BytesIO(body), mode="r:*") as archive:
+            with tarfile.open(fileobj=io.BytesIO(body), mode="r|*") as archive:
                 for member in archive:
                     if member.isfile():
                         handle = archive.extractfile(member)
                         if handle is not None:
-                            out[member.name] = handle.read()
+                            out[member.name] = ids(handle.read())
         tops = {path.split("/", 1)[0] for path in out}
         if len(tops) == 1 and all("/" in path for path in out):
-            out = {path.split("/", 1)[1]: data for path, data in out.items()}
+            out = {path.split("/", 1)[1]: found for path, found in out.items()}
         return out
 
     @staticmethod
@@ -2386,7 +2394,7 @@ class ContentProof:
 
     @staticmethod
     def _check(archive: Archive, repository: str, commit: str, tag: str) -> tuple[str, str]:
-        from cordon_scanner.intel.gitfetch import GitFetch, GitFetchError, GitPack
+        from cordon_scanner.intel.gitfetch import GitFetch, GitFetchError
 
         tip = next(
             (
@@ -2423,8 +2431,9 @@ class ContentProof:
         if release is None:
             return "unprovable", "no release archive matching the recipe's digest could be read"
         try:
-            raw = ContentProof.files(release)
-            ours = {path: GitPack.blob_id(data) for path, data in raw.items()}
+            hashed = ContentProof.blobs(release)
+            release = body = b""  # the archive is not needed past its files' ids
+            ours = {path: found[0] for path, found in hashed.items()}
         except (OSError, ValueError, tarfile.TarError, EOFError, http.client.HTTPException) as exc:
             return "unprovable", f"the release archive could not be read ({type(exc).__name__})"
         try:
@@ -2464,9 +2473,7 @@ class ContentProof:
         # Git writes a file marked `text eol=crlf` out with CRLF and stores it with LF (git's .bat
         # files): the same content by git's own conversion, which nothing else is excused by.
         converted = [
-            (a, b)
-            for a, b in differing
-            if b"\r\n" in raw[a] and GitPack.blob_id(raw[a].replace(b"\r\n", b"\n")) == source[b]
+            (a, b) for a, b in differing if hashed[a][1] is not None and hashed[a][1] == source[b]
         ]
         differing = [pair for pair in differing if pair not in converted]
         # A file the tag holds empty that the release fills in (GNU's ChangeLog, written from the
