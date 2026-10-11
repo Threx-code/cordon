@@ -116,6 +116,8 @@ class CpeRule:
         # expat is NVD's libexpat).
         wanted_names |= {n.removeprefix("lib") for n in wanted_names if n.startswith("lib")}
         wanted_names |= {f"lib{n}" for n in wanted_names if not n.startswith("lib")}
+        # And a packager's `utils` or `tools` (Conan's xz_utils is NVD's xz).
+        wanted_names |= {re.sub(r"(?:utils|tools)$", "", n) for n in wanted_names} - {""}
         for wanted in wanted_names:
             for product, references in index.get(wanted, ()):
                 shared = sites & set(references)

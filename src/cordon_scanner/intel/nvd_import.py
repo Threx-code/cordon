@@ -212,12 +212,12 @@ class NvdImport:
                 count += 1
             log(f"  {year}: {count:,} CVEs with application ranges")
         out.products = dict(products)
-        out.index = NvdImport.index()
+        out.index = NvdImport.index(set(out.products))
         log(f"  CPE dictionary: {len(out.index):,} product names with sites")
         return out
 
     @staticmethod
-    def index() -> dict[str, list[list[Any]]]:
+    def index(named: set[str] | None = None) -> dict[str, list[list[Any]]]:
         """`normalised name -> [[vendor:product, [sites]]]` from NVD's CPE dictionary, for
         application products that are not deprecated.
 
@@ -225,11 +225,16 @@ class NvdImport:
         third parties' write-ups (a Red Hat or Debian advisory names many products) -- with its
         vendor's `Vendor`-typed sites added (gnu:m4 lists none of its own; GNU's are gnu.org). Its
         names are the product's, and any acronym its title gives in parentheses (nasm:
-        netwide_assembler is titled \"Netwide Assembler (NASM)\")."""
+        netwide_assembler is titled \"Netwide Assembler (NASM)\").
+
+        A product CVEs name but the dictionary lacks (`named`; gnu:m4, open-mpi:hwloc) takes the
+        sites of its vendor's other products. A vendor with a single product is that product's
+        name too (nasm, whose one product is netwide_assembler)."""
         archive = NvdImport.verified(CPE_FEED, ".tar.gz")
         sites: dict[str, set[str]] = defaultdict(set)
         vendors: dict[str, set[str]] = defaultdict(set)
         names: dict[str, set[str]] = defaultdict(set)
+        everything: dict[str, set[str]] = defaultdict(set)
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
             for member in tar:
                 handle = tar.extractfile(member) if member.isfile() else None
@@ -257,11 +262,25 @@ class NvdImport:
                         if not site:
                             continue
                         sites[product].add(site)
+                        everything[parts[3]].add(site)
                         if kind == "Vendor":
                             vendors[parts[3]].add(site)
+        for product in named or ():
+            vendor, _, title = product.partition(":")
+            if product not in names and everything.get(vendor):
+                names[product].add(CpeRule.name(title))
+        products_of: dict[str, set[str]] = defaultdict(set)
+        for product in names:
+            products_of[product.split(":", 1)[0]].add(product)
+        for vendor, owned in products_of.items():
+            if len(owned) == 1:
+                names[next(iter(owned))].add(CpeRule.name(vendor))
         index: dict[str, list[list[Any]]] = defaultdict(list)
-        for product in sorted(set(sites) | {p for p in names if vendors.get(p.split(":", 1)[0])}):
-            found = sites.get(product, set()) | vendors.get(product.split(":", 1)[0], set())
+        for product in sorted(names):
+            vendor = product.split(":", 1)[0]
+            found = sites.get(product, set()) | vendors.get(vendor, set())
+            if not found and product not in sites:
+                found = everything.get(vendor, set())
             if not found:
                 continue
             for name in sorted(n for n in names[product] if n):

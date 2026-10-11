@@ -207,3 +207,10 @@ class TestTheImport:
             ("sqlite:sqlite", {"versionEndExcluding": "3.47.0"}),
             ("sqlite:sqlite", {"v": "3.46.0", "u": "rc1"}),
         ]
+
+
+class TestNameVariants:
+    def test_a_packagers_utils_suffix(self) -> None:
+        index = {"xz": [["tukaani:xz", ["tukaani.org"]]]}
+        product, _ = CpeRule.match(index, ["xz_utils"], ["https://tukaani.org/xz/xz-5.4.5.tar.xz"])
+        assert product == "tukaani:xz"
