@@ -1606,3 +1606,15 @@ class TestCondaMetapackages:
         with tarfile.open(fileobj=io.BytesIO(self.info(["lib/x.so"])), mode="r|") as archive:
             CondaPackage._from_tar(archive, seen)
         assert seen["paths"] == 1
+
+
+class TestVersionInAnUnderscoredName:
+    def test_cf_cli_6_48_0_osx(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import HomebrewHistory
+
+        formula = (
+            'class CfCli < Formula\n  url "https://packages.cloudfoundry.org/homebrew/cf-cli_6.48.0_osx.tgz"\n'
+            f'  sha256 "{"1" * 64}"\nend\n'
+        )
+        assert HomebrewHistory.builds(formula, "6.48.0")
+        assert not HomebrewHistory.builds(formula, "6.48")

@@ -1625,7 +1625,9 @@ class HomebrewHistory:
             if declared
             else bool(
                 archive
-                and re.search(rf"(?<![\d.]){re.escape(version)}(?![\w]|\.\d)", archive.urls[0])
+                and re.search(
+                    rf"(?<![\d.]){re.escape(version)}(?![A-Za-z0-9]|\.\d)", archive.urls[0]
+                )
             )
         )
         stated = re.search(r"^\s*revision\s+(\d+)\s*$", text, re.MULTILINE)
