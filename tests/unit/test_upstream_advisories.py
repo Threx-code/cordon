@@ -1571,3 +1571,38 @@ class TestHttpGitHubArchives:
             "https://github.com/google/re2",
             "2025-11-05",
         )
+
+
+class TestCondaMetapackages:
+    @staticmethod
+    def info(paths: list[str]) -> bytes:
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode="w") as archive:
+            for name, data in (
+                ("info/recipe/meta.yaml", b"package:\n  name: python_abi\n"),
+                ("info/paths.json", json.dumps({"paths": paths, "paths_version": 1}).encode()),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        return raw.getvalue()
+
+    def test_paths_after_the_recipe_are_read_only_when_wanted(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import CondaPackage
+
+        seen: dict[str, int] = {}
+        with tarfile.open(fileobj=io.BytesIO(self.info([])), mode="r|") as archive:
+            assert CondaPackage._from_tar(archive, seen) is not None
+        assert "paths" not in seen
+        seen["want_paths"] = 1
+        with tarfile.open(fileobj=io.BytesIO(self.info([])), mode="r|") as archive:
+            CondaPackage._from_tar(archive, seen)
+        assert seen["paths"] == 0
+
+    def test_a_package_installing_files_counts_them(self) -> None:
+        from cordon_scanner.intel.upstream_advisories import CondaPackage
+
+        seen: dict[str, int] = {"want_paths": 1}
+        with tarfile.open(fileobj=io.BytesIO(self.info(["lib/x.so"])), mode="r|") as archive:
+            CondaPackage._from_tar(archive, seen)
+        assert seen["paths"] == 1

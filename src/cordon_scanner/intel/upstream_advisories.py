@@ -347,16 +347,30 @@ class CondaPackage:
             return len(data)
 
     @staticmethod
-    def _from_tar(archive: tarfile.TarFile) -> str | None:
+    def _from_tar(archive: tarfile.TarFile, seen: dict[str, int] | None = None) -> str | None:
+        """The recipe; and, into `seen`, how many files `info/paths.json` lists where it comes before
+        the recipe. With `seen["want_paths"]` set, read on past the recipe to paths.json (for a
+        package whose recipe names no source; a metapackage's info/ is small)."""
+        recipe: str | None = None
         for member in archive:
-            if member.name in CondaPackage.RECIPES and member.isfile():
+            if member.name == "info/paths.json" and member.isfile() and seen is not None:
                 handle = archive.extractfile(member)
                 if handle is not None:
-                    return handle.read(CondaPackage.MAX_INFO_BYTES).decode("utf-8", "replace")
-        return None
+                    with contextlib.suppress(ValueError):
+                        listed = json.loads(handle.read(CondaPackage.MAX_INFO_BYTES))
+                        if isinstance(listed, dict) and isinstance(listed.get("paths"), list):
+                            seen["paths"] = len(listed["paths"])
+                continue
+            if member.name in CondaPackage.RECIPES and member.isfile() and recipe is None:
+                handle = archive.extractfile(member)
+                if handle is not None:
+                    recipe = handle.read(CondaPackage.MAX_INFO_BYTES).decode("utf-8", "replace")
+            if recipe is not None and not (seen and seen.get("want_paths") and "paths" not in seen):
+                return recipe
+        return recipe
 
     @staticmethod
-    def recipe(url: str) -> str | None:
+    def recipe(url: str, seen: dict[str, int] | None = None) -> str | None:
         import struct
 
         if url.endswith(".tar.bz2"):
@@ -380,7 +394,7 @@ class CondaPackage:
                         return len(chunk)
 
                 with tarfile.open(fileobj=io.BufferedReader(Bounded()), mode="r|bz2") as archive:
-                    return CondaPackage._from_tar(archive)
+                    return CondaPackage._from_tar(archive, seen)
         if not url.endswith(".conda"):
             return None
         tail, total = CondaPackage._range(url, "bytes=-65536", 65536)
@@ -446,7 +460,7 @@ class CondaPackage:
             # Read as a stream, to the recipe: info/ may hold far more than the recipe (a test
             # suite, every path), so it is never decompressed whole.
             with tarfile.open(fileobj=CondaPackage._zstd_stream(body), mode="r|") as archive:
-                return CondaPackage._from_tar(archive)
+                return CondaPackage._from_tar(archive, seen)
         return None
 
 
@@ -3390,7 +3404,8 @@ class Upstreams:
         url = dependency.resolved_from or ""
         if not re.match(r"^https://(?:conda\.anaconda\.org|repo\.anaconda\.com)/", url):
             return Unnamed("it is not from a public conda channel")
-        recipe = CondaPackage.recipe(url)
+        seen: dict[str, int] = {}
+        recipe = CondaPackage.recipe(url, seen)
         if recipe is None:
             return Unnamed("its package carries no rendered recipe")
         from cordon_scanner.core.datayaml import DataYaml
@@ -3416,6 +3431,17 @@ class Upstreams:
                 if isinstance(given, str)
                 else [u for u in given or [] if isinstance(u, str)]
             )
+        sourceless = not urls and not any(
+            isinstance(s, dict) and (s.get("git_url") or s.get("git")) for s in sources
+        )
+        if sourceless and "paths" not in seen:
+            # Its recipe came before paths.json: read on to it, which a small info/ allows.
+            seen["want_paths"] = 1
+            CondaPackage.recipe(url, seen)
+        if sourceless and seen.get("paths") == 0:
+            # A metapackage (python_abi, fonts-conda-ecosystem): no source, and its paths.json
+            # lists no file it installs.
+            return Unnamed("a metapackage: it names no source and installs no files", nothing=True)
         about = data.get("about") if isinstance(data, dict) else None
         homes = [about.get("dev_url"), about.get("home")] if isinstance(about, dict) else []
         sha256 = next(
