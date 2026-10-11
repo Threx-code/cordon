@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.intel.advisories import Advisory
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
     from cordon_scanner.core.models import Dependency
 
@@ -1899,6 +1899,222 @@ class ContentProof:
         )
 
 
+#: Where a React Native release pins the Hermes it was built from: a tag of facebook/hermes whose
+#: name ends in its commit (`hermes-2024-11-12-RNv0.76.2-5b4aa20c...`).
+HERMES_PIN: Final = "sdks/.hermesversion"
+
+
+class NpmPodspec:
+    """A podspec installed from inside an npm package (React Native's `third-party-podspecs/
+    DoubleConversion.podspec`), read from that package as the npm registry serves it.
+
+    The CocoaPods reader names the package, the podspec's path in it, and the versions the pods at
+    the package's own root are at (React Native's `React-Core` is versioned as the package). For
+    each, the registry's tarball is checked against the SHA-512 the registry gives, and the podspec
+    in it is used only if it declares the very version the lockfile locks; its `source` is then read
+    as any podspec's. Values a podspec takes from the package's own Ruby helpers -- React Native's
+    `glog_git_url = get_glog_config()[:git]`, defined as `@@glog_config = { :git => ... }` in its
+    `scripts/cocoapods/helpers.rb` -- are read from that same release. Every version tried must
+    agree."""
+
+    NOTE: ClassVar[re.Pattern[str]] = re.compile(
+        r"the podspec (\S+) of the npm package (\S+), at ([^\s]+(?: or [^\s]+){0,16})$"
+    )
+    REGISTRY: ClassVar[str] = "https://registry.npmjs.org"
+    MAX_TARBALL: ClassVar[int] = 96 << 20
+    MAX_TEXT: ClassVar[int] = 1 << 20
+    #: `@@<name>_config = { :key => 'value', key: "value", ... }`, simple string values only.
+    CONSTANT: ClassVar[re.Pattern[str]] = re.compile(r"@@(\w+_config)\s*=\s*\{([^{}]*)\}")
+    FIELD: ClassVar[re.Pattern[str]] = re.compile(
+        r"""(?::(\w+)\s*=>|\b(\w+):)\s*(?:'([^']*)'|"([^"]*)"|(\w+)\b)"""
+    )
+    _packages: ClassVar[dict[tuple[str, str], dict[str, str] | None]] = {}
+
+    @staticmethod
+    def download(url: str) -> bytes:
+        """The tarball's bytes as served -- not inflated, which the shared fetch does to a gzip
+        answer: the registry's SHA-512 is over the file itself."""
+        import urllib.request
+
+        if not url.startswith("https://"):
+            raise ValueError("not an https tarball")
+        request = urllib.request.Request(  # noqa: S310 - https, from the registry's own record
+            url, headers={"User-Agent": "cordon-scanner", "Accept-Encoding": "identity"}
+        )
+        with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
+            body: bytes = response.read(NpmPodspec.MAX_TARBALL + 1)
+        if len(body) > NpmPodspec.MAX_TARBALL:
+            raise ValueError("tarball too large")
+        return body
+
+    @staticmethod
+    def package(package: str, version: str) -> dict[str, str] | None:
+        """`path -> text` of the package's podspecs and Ruby scripts, from the registry's tarball
+        once its SHA-512 matches the registry's record; None when it does not or cannot be read."""
+        key = (package, version)
+        if key in NpmPodspec._packages:
+            return NpmPodspec._packages[key]
+        import base64
+        import hashlib
+
+        meta = json.loads(
+            Upstreams._get(
+                f"{NpmPodspec.REGISTRY}/{urllib.parse.quote(package, safe='@')}/"
+                f"{urllib.parse.quote(version, safe='')}"
+            )
+        )
+        dist = (meta or {}).get("dist") or {}
+        tarball, integrity = str(dist.get("tarball") or ""), str(dist.get("integrity") or "")
+        files: dict[str, str] | None = None
+        if tarball.startswith("https://") and integrity.startswith("sha512-"):
+            body = NpmPodspec.download(tarball)
+            if hashlib.sha512(body).digest() == base64.b64decode(integrity.removeprefix("sha512-")):
+                files = {}
+                with tarfile.open(fileobj=io.BytesIO(body), mode="r:*") as archive:
+                    for member in archive:
+                        path = member.name.split("/", 1)[-1]
+                        if member.isfile() and (
+                            path.endswith((".podspec", ".rb")) or path == HERMES_PIN
+                        ):
+                            handle = archive.extractfile(member)
+                            if handle is not None:
+                                files[path] = handle.read(NpmPodspec.MAX_TEXT).decode(
+                                    "utf-8", "replace"
+                                )
+        NpmPodspec._packages[key] = files
+        return files
+
+    @staticmethod
+    def constants(files: Mapping[str, str]) -> dict[str, dict[str, str]]:
+        """The `@@<name>_config` hashes the package's Ruby defines, by name."""
+        out: dict[str, dict[str, str]] = {}
+        for path, text in files.items():
+            if not path.endswith(".rb"):
+                continue
+            for found in NpmPodspec.CONSTANT.finditer(text):
+                out[found.group(1)] = {
+                    m.group(1) or m.group(2): m.group(3) if m.group(3) is not None else m.group(4)
+                    for m in NpmPodspec.FIELD.finditer(found.group(2))
+                    if m.group(3) is not None or m.group(4) is not None
+                }
+        return out
+
+    @staticmethod
+    def variables(text: str, constants: Mapping[str, Mapping[str, str]]) -> dict[str, str]:
+        """`name = get_<x>_config()` and `name = <config>[:key]` lines, resolved."""
+        configs = {
+            m.group(1): m.group(2) + "_config"
+            for m in re.finditer(r"^\s*(\w+)\s*=\s*get_(\w+)_config\(\)\s*$", text, re.MULTILINE)
+        }
+        # Literals first (`folly_release_version = '2021.06.28.00'`), then config lookups.
+        out: dict[str, str] = {
+            m.group(1): m.group(2) if m.group(2) is not None else m.group(3)
+            for m in re.finditer(
+                r"""^(\w+)\s*=\s*(?:'([^'#]*)'|"([^"#]*)")\s*$""", text, re.MULTILINE
+            )
+        }
+        for m in re.finditer(r"^\s*(\w+)\s*=\s*(\w+)\[:(\w+)\]\s*$", text, re.MULTILINE):
+            value = constants.get(configs.get(m.group(2), ""), {}).get(m.group(3))
+            if value is not None:
+                out[m.group(1)] = value
+        return out
+
+    @staticmethod
+    def declared(text: str, version: str, variables: Mapping[str, str]) -> str | None:
+        """The version the podspec declares: a literal, `package['version']`, or a variable."""
+        found = re.search(
+            r"""^\s*\w+\.version\s*=\s*(?:'([^']*)'|"([^"]*)"|package\[['"]version['"]\]|(\w+))\s*$""",
+            text,
+            re.MULTILINE,
+        )
+        joined = re.search(
+            r"""^\s*\w+\.version\s*=\s*(\w+)\s*\+\s*(?:'([^']*)'|"([^"]*)")\s*$""",
+            text,
+            re.MULTILINE,
+        )
+        if joined and joined.group(1) in variables:
+            # `folly_release_version + '-v2'`
+            return variables[joined.group(1)] + (joined.group(2) or joined.group(3) or "")
+        if not found:
+            return None
+        if found.group(1) is not None or found.group(2) is not None:
+            return found.group(1) if found.group(1) is not None else found.group(2)
+        if found.group(3):
+            return variables.get(found.group(3))
+        return version
+
+    @staticmethod
+    def source(
+        text: str, locked: str, variables: Mapping[str, str], how: str
+    ) -> Upstream | Unnamed:
+        """The podspec's `source = { :git => ..., :tag|:commit => ... }` or `{ :http => ... }`:
+        `#{<spec>.version}` is the locked version and a bare name a resolved variable; anything
+        else computed is unknown, never guessed."""
+        # The hash may hold interpolations (`"v#{spec.version}"`), whose braces are not its own.
+        found = re.search(r"\.source\s*=\s*\{((?:[^{}]|#\{[^{}]*\})*)\}", text)
+        if not found:
+            return Unnamed("its podspec's source is computed")
+        fields: dict[str, str] = {}
+        for m in NpmPodspec.FIELD.finditer(found.group(1)):
+            key = m.group(1) or m.group(2)
+            if m.group(5) is not None:
+                if m.group(5) not in variables:
+                    return Unnamed(f"its podspec's source names {m.group(5)}, computed elsewhere")
+                value = variables[m.group(5)]
+            else:
+                value = m.group(3) if m.group(3) is not None else m.group(4)
+            value = re.sub(r"#\{\w+\.version\}", locked, value)
+            fields[key] = re.sub(
+                r"#\{(\w+)\}", lambda m: variables.get(m.group(1), m.group(0)), value
+            )
+        if any("#{" in v for v in fields.values()):
+            return Unnamed("its podspec's source names a value computed elsewhere")
+        repository = RepositoryArchive.repository(fields.get("git", ""))
+        ref = fields.get("commit") or fields.get("tag")
+        if repository and ref:
+            return RepositoryArchive.upstream(repository, ref, f"{how} ({repository})")
+        if fields.get("http"):
+            return Upstreams.from_urls([fields["http"]], how)
+        return Unnamed("its podspec names no git tag or commit, or download")
+
+    @staticmethod
+    def read(
+        package: str, inside: str, versions: list[str], locked: str, how: str
+    ) -> Upstream | Unnamed:
+        answers: list[Upstream | Unnamed] = []
+        for version in versions:
+            files = NpmPodspec.package(package, version)
+            text = (files or {}).get(inside)
+            if files is None or text is None:
+                continue
+            pinned = re.fullmatch(r"\s*(\S*-([0-9a-f]{40}))\s*", files.get(HERMES_PIN, ""))
+            if inside.endswith("hermes-engine.podspec") and locked == version and pinned:
+                # hermes-engine at React Native's own version is the release build, which React
+                # Native's release scripts make from the tag `sdks/.hermesversion` names.
+                answers.append(
+                    RepositoryArchive.upstream(
+                        "https://github.com/facebook/hermes",
+                        pinned.group(2),
+                        f"{how}@{version}: its sdks/.hermesversion pins the tag {pinned.group(1)}",
+                    )
+                )
+                continue
+            variables = NpmPodspec.variables(text, NpmPodspec.constants(files))
+            if NpmPodspec.declared(text, version, variables) != locked:
+                continue
+            answers.append(NpmPodspec.source(text, locked, variables, f"{how}@{version}"))
+        if not answers:
+            return Unnamed(
+                f"no {package} release among {', '.join(versions)} holds {inside} at {locked}"
+            )
+        named = {json.dumps(a.query, sort_keys=True) for a in answers if isinstance(a, Upstream)}
+        if len(named) == 1 and all(isinstance(a, Upstream) for a in answers):
+            return next(a for a in answers if isinstance(a, Upstream))
+        if len(named) > 1:
+            return Unnamed(f"{package}'s releases name different sources for {inside}")
+        return next(a for a in answers if isinstance(a, Unnamed))
+
+
 class ConanCenter:
     """A Conan Center recipe's sources, in the shapes its conandata.yml writes them."""
 
@@ -2291,6 +2507,15 @@ class Upstreams:
                 ):
                     return RepositoryArchive.upstream(repository, ref, how)
                 return Unnamed(f"its checkout names {ref}, which is not a tag of {repository}")
+            within = NpmPodspec.NOTE.search(dependency.resolution_note or "")
+            if within:
+                return NpmPodspec.read(
+                    within.group(2),
+                    within.group(1),
+                    within.group(3).split(" or "),
+                    dependency.version or "",
+                    f"the {dependency.name} podspec in npm's {within.group(2)}",
+                )
             return Unnamed("it is not from CocoaPods trunk")
         name, version = dependency.name.split("/", 1)[0], dependency.version or ""
         a, b, c = MoreRegistries.cocoapods_shard(name)
