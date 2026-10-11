@@ -2482,6 +2482,13 @@ class Upstreams:
             except KeyError:
                 recipe = None
             conanfile = recipe.read(MAX_EXPORT_BYTES).decode("utf-8", "replace") if recipe else ""
+        if not conanfile:
+            # Conan 2 serves the recipe beside the export, not in it (conan_export.tgz holds
+            # conandata.yml alone): its homepage is what NVD ties the package by.
+            with contextlib.suppress(RegistryError, OSError, ValueError, http.client.HTTPException):
+                conanfile = Upstreams._get(
+                    f"{base}/{locked}/files/conanfile.py", MAX_EXPORT_BYTES
+                ).decode("utf-8", "replace")
         from cordon_scanner.core.datayaml import DataYaml
 
         data = DataYaml.load(text) if text else {}
