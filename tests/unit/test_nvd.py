@@ -438,3 +438,14 @@ class TestVendorPrefixedNames:
     def test_the_prefix_must_be_the_products_vendor(self) -> None:
         product, _ = CpeRule.match(self.INDEX, ["boost_json"], ["https://github.com/boostorg/json"])
         assert product is None
+
+
+class TestOneVendorsTwoProjects:
+    def test_two_projects_on_one_site_are_no_tie(self) -> None:
+        index = {
+            "tcl": [["tcl:tcl", ["sourceforge.net/tcl"]]],
+            "tk": [["tcl:tk", ["tcl.tk"]]],
+            "tclx": [["tcl:tk_toolkit", ["sourceforge.net/tcl"]]],
+        }
+        product, why = CpeRule.match(index, ["tk-other"], ["https://sourceforge.net/projects/tcl/"])
+        assert product is None and "more than one" in why

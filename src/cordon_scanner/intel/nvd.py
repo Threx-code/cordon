@@ -216,7 +216,14 @@ class CpeRule:
         if len(products) == 1:
             site, product = min(found)
             return product, f"NVD's {product} alone lists its project's site, {site}"
-        if len(products) > 1 and len({product.split(":", 1)[0] for product in products}) == 1:
+        names = sorted((CpeRule.name(p.split(":", 1)[1]) for p in products), key=len)
+        if (
+            len(products) > 1
+            and len({product.split(":", 1)[0] for product in products}) == 1
+            # One project's names: the shortest within every other (curl in libcurl), not two
+            # products the vendor keeps on one site (Tcl and Tk share sourceforge.net/tcl).
+            and all(names[0] in other for other in names[1:])
+        ):
             # One vendor's names for its one project (nlohmann:json and
             # nlohmann:json-for-modern-cpp, haxx:curl and haxx:libcurl): its products together.
             site = min(site for site, _ in found)
