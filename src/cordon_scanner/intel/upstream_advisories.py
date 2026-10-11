@@ -2035,6 +2035,23 @@ class Conventions:
             ),
             "https://gitlab.gnome.org/GNOME/{0}",
         ),
+        # Small tools whose own sites serve the releases their public repositories tag.
+        (
+            re.compile(r"^https?://mama\.indstate\.edu/users/ice/(tree)/"),
+            "https://gitlab.com/OldManProgrammer/unix-tree",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?ivarch\.com/programs/sources/(pv)-"),
+            "https://github.com/a-j-wood/pv",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?colordiff\.org/(colordiff)-"),
+            "https://github.com/daveewart/colordiff",
+        ),
+        (
+            re.compile(r"^https?://zsync\.moria\.org\.uk/download/(zsync)-"),
+            "https://github.com/cph6/zsync",
+        ),
         # XCB's libpthread-stubs is released under that name from `xorg/lib/pthread-stubs`.
         (
             re.compile(
