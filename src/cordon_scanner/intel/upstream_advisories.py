@@ -2155,6 +2155,20 @@ class Conventions:
             re.compile(r"^https?://zsync\.moria\.org\.uk/download/(zsync)-"),
             "https://github.com/cph6/zsync",
         ),
+        (
+            re.compile(
+                r"^https?://(?:www\.)?x\.org/(?:releases|archive)/+individual/data/xkeyboard-config/"
+            ),
+            "https://gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config",
+        ),
+        (
+            re.compile(r"^https?://pkg-config\.freedesktop\.org/releases/pkg-config-"),
+            "https://gitlab.freedesktop.org/pkg-config/pkg-config",
+        ),
+        (
+            re.compile(r"^https?://(?:www\.)?open-mpi\.org/software/(hwloc)/"),
+            "https://github.com/open-mpi/hwloc",
+        ),
         # XCB's utility libraries, released as xcb-util-*, from xorg/lib/libxcb-*.
         (
             re.compile(
