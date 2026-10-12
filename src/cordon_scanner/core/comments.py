@@ -56,6 +56,10 @@ SLASHES = ("//",)
 DASHES = ("--",)
 ANGLE = ("<!--",)
 
+#: A URL scheme ending exactly where a `//` starts: `https:`, `file:`, `ws:`. Searched only in the few
+#: characters before the `//`, so a megabyte line of links stays linear.
+URL_SCHEME_BEFORE = re.compile(r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{1,31}:$")
+
 LINE_COMMENT_OPENERS: dict[str, tuple[str, ...]] = {
     "cmake": HASH,
     "dockerfile": HASH,
@@ -290,6 +294,16 @@ class SourceComments:
             if char in QUOTES:
                 quote = char
                 index += 1
+                continue
+            if line.startswith("//", index) and URL_SCHEME_BEFORE.search(
+                line, max(0, index - 33), index
+            ):
+                # `https://`: a URL, not a comment. A line that begins inside a string opened on
+                # an earlier line -- a template literal in a bundle -- has no quote to show for it,
+                # and the first link in the text was read as the start of a comment: Amazon Q
+                # 1.84.0's bundle hid its `q --trust-all-tools` command that way, behind
+                # `https://docs.aws.amazon.com/...` earlier on the same line.
+                index += 2
                 continue
             if language in BLOCK_COMMENT_LANGUAGES and line.startswith("/*", index):
                 return index
