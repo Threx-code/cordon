@@ -1198,7 +1198,9 @@ class PythonAnalyzer:
             return "".join(parts)
         if isinstance(node, ast.JoinedStr):
             pieces = [cls.constant(value) for value in node.values]
-            return None if any(part is None for part in pieces) else "".join(p or "" for p in pieces)
+            return (
+                None if any(part is None for part in pieces) else "".join(p or "" for p in pieces)
+            )
         if isinstance(node, ast.FormattedValue):
             return cls.constant(node.value)
         if (
