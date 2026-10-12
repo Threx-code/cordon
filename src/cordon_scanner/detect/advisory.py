@@ -411,6 +411,13 @@ class AdvisoryDetector(BaseDetector):
             # are the evidence of a real codebase where the popularity list runs out; a lockfile
             # that pins the bad release is still reported, exactly.
             return
+        if dependency.declared_in and "node_modules/" in dependency.declared_in.replace("\\", "/"):
+            # The manifest of a copy already installed: nothing resolves its ranges again, and its
+            # devDependencies are installed by nobody. `keyv`'s own package.json declares
+            # `"@keyv/test-suite": "*"` as a dev dependency, and 86 legitimate editor extensions
+            # that bundle keyv were blocked for it. What is installed is read from the installed
+            # copy's own version, which is still matched exactly.
+            return
         if dependency.declared_in and SourcePaths.is_test_material(dependency.declared_in):
             # A fixture's manifest is test data nobody installs; react-native's
             # `__fixtures__/.../package.json` names `third-party-dep-a`, a name squatted since.
