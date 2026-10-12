@@ -248,16 +248,65 @@ _PASTE_RUN: Final = re.compile(
 #: "OpenClawCLI must be installed before using this skill. Download from https://...". Real
 #: prerequisites are then used; this one is never invoked anywhere the skill runs a command.
 _REQUIRED_TOOL: Final = re.compile(
-    r"(?im)^[^\n]{0,200}?\b([A-Za-z][\w.-]{2,40})\b[^\n]{0,40}?\b(?:must|needs?\s+to|has\s+to|should)"
-    r"\s+be\s+(?:installed|running|downloaded|active)\b[^\n]{0,300}$"
+    r"(?im)^[^\n]{0,200}?\b([A-Za-z][\w.-]{2,40})\b(?:"
+    r"[^\n]{0,40}?\b(?:must|needs?\s+to|has\s+to|should)\s+be\s+(?:installed|running|downloaded|active)\b"
+    # "openclawcli is required": the name directly before, or with one kind of thing between, so
+    # "An OpenAI API key is required" names no tool.
+    r"|(?:\s+(?:cli|tool|utility|binary|app|helper|client|agent|runtime|extension|driver))?"
+    r"\s+(?:is|are)\s+required\b"
+    r")[^\n]{0,300}$"
 )
-_DOWNLOAD_URL: Final = re.compile(r"(?i)\b(?:download|install)\w*\b[^\n]{0,80}?https?://[^\s)>\]]+")
+_DOWNLOAD_URL: Final = re.compile(
+    r"(?i)\b(?:download|install|setup|set\s+up|get\s+it|here)\w*\b[^\n]{0,80}?https?://[^\s)>\]]+"
+)
+#: The dropper written over several lines, as ClawHavoc's are: an archive or executable named,
+#: its password given, and the reader told to extract it and open or run what is inside.
+_ARCHIVE_PASSWORD: Final = re.compile(
+    r"(?i)\b(?:archive\s+|zip\s+|file\s+)?pass(?:word|code)?\b[*_`\s]{0,6}(?:[:=]|is\b)"
+)
+_PAYLOAD_NAME: Final = re.compile(r"(?i)\b[\w.-]{1,80}\.(?:zip|7z|rar|dmg|pkg|exe|msi|scr|app)\b")
+_EXTRACT_VERB: Final = re.compile(r"(?i)\b(?:extract|unzip|unpack|decompress|unarchive)\w*\b")
+_OPEN_EXECUTABLE: Final = re.compile(
+    r"(?i)\b(?:open|run|execute|launch|start|double[- ]?click)\b[^\n]{0,80}?"
+    r"\b[\w.-]{1,80}\.(?:exe|app|dmg|pkg|msi|scr|command|bat)\b"
+)
+#: Scripts that ship with a skill, which the agent runs when the skill is used.
+_SKILL_SCRIPT_SUFFIXES: Final = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".ps1", ".rb")
+#: A payload written into the script, encoded: a quoted run of base64, hex or the like. What makes
+#: decoding suspicious is that the code run is fixed and unreadable; a command the script builds
+#: and encodes for transport (`echo $cmd_b64 | base64 -d | bash` over a remote shell) is neither.
+_ENCODED_LITERAL: Final = r"b?['\"][A-Za-z0-9+/=_\-\\x]{16,}['\"]"
+_DECODER: Final = (
+    r"(?:(?:[\w.]+\.)?(?:b64decode|b32decode|b85decode|a85decode|decodebytes|decompress|unhexlify|"
+    r"fromhex|atob)|(?:marshal|pickle)\.loads)"
+)
+#: A decoder's call, its argument a literal or a name, captured as `arg`.
+_DECODE_CALL: Final = re.compile(
+    rf"\b{_DECODER}\s*\(\s*(?P<arg>{_ENCODED_LITERAL}|[A-Za-z_]\w{{0,40}})"
+    r"|\bBuffer\.from\s*\(\s*(?P<jsarg>[^,)]{1,200}),\s*['\"]base64['\"]"
+)
+#: A shell or PowerShell running an encoded literal.
+_SHELL_DECODE_RUN: Final = re.compile(
+    r"\becho\s+['\"]?[A-Za-z0-9+/=]{16,}['\"]?\s*\|\s*base64\s+(?:-d|--decode|-D)\b[^\n|]{0,40}\|\s*(?:ba|z|da)?sh\b"
+    r"|(?i:\bpowershell(?:\.exe)?\b[^\n]{0,80}\s-(?:e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{20,})"
+)
+#: Instructions addressed to the agent as secret: no legitimate skill needs to hide what it asks
+#: for, so this corroborates whatever else the text asks the agent to do.
+_SECRET_FOR_AGENT: Final = re.compile(
+    r"(?i)\b(?:secret|hidden|covert|confidential|private)\s+(?:instructions?|directives?|tasks?|orders?|"
+    r"prompt|notes?)\s+(?:for|to)\s+(?:the\s+)?(?:agent|assistant|ai|llm|model|bot|claude|copilot|"
+    r"cursor|gemini|codex)\b"
+)
 _CODE_SPANS: Final = re.compile(r"```[^\n]{0,80}\n(.*?)```|`([^`\n]{1,400})`", re.S)
 _NOT_A_TOOL: Final = frozenset(
     {"this", "skill", "it", "python", "node", "you", "the", "that", "which", "server", "app",
      "tool", "cli", "prerequisite", "prerequisites", "required", "requirement", "requirements",
      "note", "not", "important", "warning", "caution", "everything", "all", "both", "each",
-     "dependencies", "dependency", "also", "first", "must", "these", "those", "they"}
+     "dependencies", "dependency", "also", "first", "must", "these", "those", "they",
+     # What a skill needs that is not a program: "An API key is required".
+     "key", "keys", "token", "tokens", "account", "accounts", "login", "access", "api", "subscription",
+     "license", "licence", "password", "credentials", "credential", "environment", "variable", "plan",
+     "internet", "connection", "signup", "registration", "version", "model", "permission", "permissions"}
 )  # fmt: skip
 _URL_HOST: Final = re.compile(r"(?i)https?://([a-z0-9.-]{1,253})(/[^\s|\"'`)]{0,200})?")
 _SHORTENERS: Final = frozenset(
@@ -342,7 +391,45 @@ class InstructionText:
                 InstructionText._quoted(text, found) or InstructionText._forbidden(text, found)
             ):
                 return found
+        return InstructionText._dropper_over_lines(text)
+
+    @staticmethod
+    def _dropper_over_lines(text: str) -> re.Match[str] | None:
+        """The same dropper spread over a few lines: a password given, and within six lines of it
+        an archive or executable named, an extract step and an executable opened or run."""
+        lines = text.splitlines(keepends=True)
+        offsets = [0]
+        for line in lines:
+            offsets.append(offsets[-1] + len(line))
+        for index, line in enumerate(lines):
+            password = _ARCHIVE_PASSWORD.search(line)
+            if password is None:
+                continue
+            window = "".join(lines[max(0, index - 6) : index + 7])
+            if not (
+                _PAYLOAD_NAME.search(window)
+                and _EXTRACT_VERB.search(window)
+                and _OPEN_EXECUTABLE.search(window)
+            ):
+                continue
+            found = re.compile(r"[^\n]+").match(text, offsets[index])
+            if found is not None and not (
+                InstructionText._quoted(text, found) or InstructionText._forbidden(text, found)
+            ):
+                return found
         return None
+
+    @staticmethod
+    def concealed(text: str) -> bool:
+        """Whether the text tells the agent to keep something from the user, or addresses it with
+        secret instructions -- outside a quotation or a prohibition."""
+        for pattern in (_SECRET_FOR_AGENT, _SECRECY):
+            for found in pattern.finditer(text):
+                if not (
+                    InstructionText._quoted(text, found) or InstructionText._forbidden(text, found)
+                ):
+                    return True
+        return False
 
     @staticmethod
     def _alarming_fetch(command: str) -> bool:
@@ -669,6 +756,20 @@ RULES: Final = {
             "Remove the instruction. A real dependency is installed from its own registry or "
             "release page, with a checksum.",
             (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.OWASP_LLM_PROMPT_INJECTION),
+        ),
+        AgentRules._rule(
+            "SUSPECT.AGENT.SKILL_DECODE_RUN.001",
+            "A skill's script decodes code and runs it",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "A script shipped with this agent skill decodes text -- base64, hex, compressed or "
+            "pickled data -- and executes the result. The agent runs the skill's scripts on the "
+            "user's machine; code that is decoded before it runs is code nobody reviewing the skill "
+            "could read.",
+            "Remove the encoded payload. A skill's script should be the code it runs, readable as "
+            "it is.",
+            (ref.OWASP_LLM_PROMPT_INJECTION,),
         ),
         AgentRules._rule(
             "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001",
@@ -1161,6 +1262,65 @@ INTENT_WORDS: Final = {
 _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
 
 
+class SkillScripts:
+    """Scripts that ship with an agent skill: files beside or below a SKILL.md."""
+
+    @staticmethod
+    def in_skill(path: str, ctx: ScanContext) -> bool:
+        """Whether a SKILL.md sits in the script's directory or one of its three parents."""
+        parts = path.replace("\\", "/").split("/")[:-1]
+        for depth in range(len(parts), max(-1, len(parts) - 4), -1):
+            candidate = "/".join([*parts[:depth], "SKILL.md"])
+            if candidate in ctx.tree_paths:
+                return True
+        return False
+
+    @staticmethod
+    def decode_run(text: str) -> re.Match[str] | None:
+        """An encoded payload written into the script, decoded and executed: inline
+        (`exec(b64decode("..."))`), or decoded into a name that is then executed. The payload must
+        be a literal, or a name assigned one, so a command the script builds and encodes for
+        transport is not it."""
+        line = re.compile(r"[^\n]+")
+        shell = _SHELL_DECODE_RUN.search(text)
+        if shell is not None:
+            return shell
+        for call in _DECODE_CALL.finditer(text):
+            argument = (call.group("arg") or call.group("jsarg") or "").strip()
+            if not SkillScripts._encoded(argument, text):
+                continue
+            start = text.rfind("\n", 0, call.start()) + 1
+            before = text[start : call.start()]
+            if re.search(r"\b(?:exec|eval|Function)\s*\(\s*$", before):
+                return line.search(text, start)
+            assigned = re.fullmatch(
+                r"\s*(?:const\s+|let\s+|var\s+)?([A-Za-z_]\w{0,40})\s*=\s*", before
+            )
+            if assigned is None:
+                continue
+            name = re.escape(assigned.group(1))
+            run = re.search(rf"\b(?:exec|eval|Function)\s*\(\s*{name}\s*[,)]", text[call.end() :])
+            if run is not None:
+                return line.search(text, call.end() + run.start())
+        return None
+
+    @staticmethod
+    def _encoded(argument: str, text: str) -> bool:
+        """Whether a decoder's argument is a fixed encoded payload: a literal, or a name the file
+        assigns one."""
+        if re.fullmatch(_ENCODED_LITERAL, argument):
+            return True
+        if re.fullmatch(r"[A-Za-z_]\w{0,40}", argument):
+            return (
+                re.search(
+                    rf"(?m)^\s*(?:const\s+|let\s+|var\s+)?{re.escape(argument)}\s*=\s*{_ENCODED_LITERAL}",
+                    text,
+                )
+                is not None
+            )
+        return False
+
+
 class AgentPaths:
     """Whether a path is one of the places an agent reads configuration from."""
 
@@ -1220,7 +1380,20 @@ class AgentChainDetector(BaseDetector):
             findings.extend(self._vsix_manifest(unit, ctx))
         if path.endswith(_SERVER_SOURCE_SUFFIXES) and _MCP_SDK.search(unit.content.text):
             findings.extend(self._server_source(unit, ctx))
+        if path.lower().endswith(_SKILL_SCRIPT_SUFFIXES) and SkillScripts.in_skill(
+            unit.content.path, ctx
+        ):
+            findings.extend(self._skill_script(unit, ctx))
         return findings
+
+    def _skill_script(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """A script that ships with a skill and decodes code to run it. In a library the same
+        line is sometimes a packer; in a skill, the agent runs it on the user's machine when the
+        skill is used, and hiding what it runs has no use but hiding it."""
+        found = SkillScripts.decode_run(unit.content.text)
+        if found is not None:
+            start, end = InstructionText._byte_span(unit.content.text, found)
+            yield self._finding("SUSPECT.AGENT.SKILL_DECODE_RUN.001", unit, ctx, start, end)
 
     def _server_source(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """An MCP server's own source: the tool names and descriptions it hands the agent.
@@ -1316,7 +1489,10 @@ class AgentChainDetector(BaseDetector):
         unknown = next(
             (m for m in fetches if not OfficialInstallers.is_official_installer(m.group(0))), None
         )
-        if alarming is not None or (unknown is not None and (hidden or injection or exfil)):
+        concealed = InstructionText.concealed(text)
+        if alarming is not None or (
+            unknown is not None and (hidden or injection or exfil or concealed)
+        ):
             chosen = alarming or unknown or fetches[0]
             start, end = InstructionText._byte_span(text, chosen)
             yield self._finding("SUSPECT.AGENT.FETCH_EXEC.001", unit, ctx, start, end)
@@ -1383,7 +1559,7 @@ class AgentChainDetector(BaseDetector):
             text,
             atr.TEXT_KINDS,
             instruction_file=True,
-            corroborated=bool(hidden or injection or exfil or alarming is not None),
+            corroborated=bool(hidden or injection or exfil or concealed or alarming is not None),
         )
 
     def _intents(
@@ -2636,6 +2812,11 @@ _OTHER_TOOL: Final = re.compile(
 _SECRECY: Final = re.compile(
     r"(?i)\b(?:never|do\s+not|don'?t|without)\s+(?:mention(?:ing)?|tell(?:ing)?|inform(?:ing)?|reveal(?:ing)?|"
     r"disclos(?:e|ing)|show(?:ing)?|notify(?:ing)?|alert(?:ing)?)\b"
+    # The same asked in other words: "keep it secret from the user", "without the user's knowledge",
+    # "hide this from the user".
+    r"|\bkeep\s+(?:it|this|that|them|these)\s+(?:a\s+)?(?:secret|hidden|private|confidential)\s+from\b"
+    r"|\bwithout\s+(?:the\s+)?user(?:'s)?\s+(?:knowledge|knowing|noticing|awareness|consent)\b"
+    r"|\b(?:hide|conceal)\s+(?:it|this|that|them|these|everything)?\s*from\s+(?:the\s+)?user\b"
 )
 _MOVES_CONTENT: Final = re.compile(
     r"(?i)\b(?:read|cat|include|pass|send|attach|upload|copy|forward|append|paste|post|transmit|"
