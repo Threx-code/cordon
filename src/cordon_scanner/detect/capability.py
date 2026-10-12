@@ -618,6 +618,16 @@ class CapabilityDetector(BaseDetector):
             PythonSource.loop_delay_lines(content.text) if language == "python" else frozenset()
         )
 
+        # Lower-cased once per file, and only if some candidate's prefilter is case-folded.
+        folded = (
+            raw.lower()
+            if any(
+                (c.match.prefilter_folded and not c.match.prefilter) or c.match.residual_literals
+                for c in candidates
+            )
+            else None
+        )
+
         for compiled in candidates:
             capability = compiled.rule.capability
             if capability is None or compiled.match.regex is None:
@@ -627,14 +637,14 @@ class CapabilityDetector(BaseDetector):
             # rejects the large majority of files before any regex runs, turning
             # cost proportional to files times rules into something a commit-time
             # hook can pay.
-            prefilter = compiled.match.prefilter
-            if prefilter and not any(literal in raw for literal in prefilter):
+            regex = compiled.match.regex_for(raw, folded)
+            if regex is None:
                 continue
 
             first = None
             distinct: set[bytes] = set()
 
-            for index, match in enumerate(compiled.match.regex.finditer(raw)):
+            for index, match in enumerate(regex.finditer(raw)):
                 if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
                     continue
                 if (
@@ -763,14 +773,28 @@ class CapabilityDetector(BaseDetector):
             )
             if c.rule.id in self.STREAMED_RULES
         )
-        anchors = sorted(
-            {
+        anchored = {
+            found
+            for c in candidates
+            for literal in (c.match.prefilter or ())
+            for found in CapabilityDetector._positions(whole, literal)
+        }
+        # A rule whose prefilter is case-folded (`CompiledMatch.prefilter_folded`) is anchored on
+        # the file lower-cased; lower-casing bytes keeps every offset where it was.
+        folded_literals = {
+            literal
+            for c in candidates
+            if not c.match.prefilter
+            for literal in c.match.prefilter_folded
+        }
+        if folded_literals:
+            lowered = whole.lower()
+            anchored |= {
                 found
-                for c in candidates
-                for literal in (c.match.prefilter or ())
-                for found in CapabilityDetector._positions(whole, literal)
+                for literal in folded_literals
+                for found in CapabilityDetector._positions(lowered, literal)
             }
-        )
+        anchors = sorted(anchored)
         if not anchors:
             return []
         windows: list[tuple[int, int]] = []
@@ -2370,10 +2394,8 @@ class CapabilityDetector(BaseDetector):
             for compiled, capability in shell_rules:
                 if compiled.id in seen or compiled.match.regex is None:
                     continue
-                prefilter = compiled.match.prefilter
-                if prefilter and not any(literal in payload for literal in prefilter):
-                    continue
-                if compiled.match.regex.search(payload) is None:
+                regex = compiled.match.regex_for(payload)
+                if regex is None or regex.search(payload) is None:
                     continue
                 seen.add(compiled.id)
                 start, end = self._span_of_line(content, command.line)

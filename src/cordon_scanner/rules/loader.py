@@ -549,6 +549,81 @@ class PatternCompiler:
         return bytes(best)
 
     @staticmethod
+    def required_literals(pattern: str, shortest: int = 3) -> tuple[bytes, ...]:
+        """Lower-cased literals at least one of which every match of `pattern` contains, or ().
+
+        Read from Python's own parse of the pattern (`re._parser`), so alternation groups and
+        `(?i:...)` -- which `_extract_prefilter`'s scanner cannot see into -- yield their literals:
+        `\\b(?:xmrig|minerd|cgminer)\\b` requires one of the three names. The derivation is sound
+        construct by construct:
+
+            literal run          that string
+            concatenation        the strongest requirement of any one element (a match has all)
+            alternation          the union of every branch's requirement; one branch without -> none
+            group, (?i:...)      the inner requirement
+            repeat, min >= 1     the item's requirement; min 0 -> none (it can match without it)
+            anything else        none
+
+        Literals are lower-cased because a `(?i:...)` literal may appear in any case; callers test
+        them against the file lower-cased, which over-admits a case-sensitive literal and never
+        under-admits. Any literal under three bytes, or any failure to parse, gives (): the rule
+        is then run on every file, as before.
+        `shortest` lowers that floor for a pattern that has no three-byte literal: a weaker filter,
+        but still a sound one.
+        """
+        try:
+            import importlib
+
+            sre = importlib.import_module("re._constants")
+            parser = importlib.import_module("re._parser")
+            tree = parser.parse(pattern.encode("utf-8"))
+        except Exception:  # any doubt means no prefilter, never a wrong one
+            return ()
+
+        def sequence(items: Any) -> set[bytes] | None:
+            candidates: list[set[bytes]] = []
+            run = bytearray()
+            for op, av in items:
+                if op is sre.LITERAL:
+                    run.append(av)
+                    continue
+                if run:
+                    candidates.append({bytes(run)})
+                    run = bytearray()
+                found = node(op, av)
+                if found is not None:
+                    candidates.append(found)
+            if run:
+                candidates.append({bytes(run)})
+            usable = [c for c in candidates if c and min(len(x) for x in c) >= shortest]
+            if not usable:
+                return None
+            return max(usable, key=lambda c: (min(len(x) for x in c), -len(c)))
+
+        def node(op: Any, av: Any) -> set[bytes] | None:
+            if op is sre.SUBPATTERN:
+                return sequence(av[3])
+            if op is sre.ATOMIC_GROUP:
+                return sequence(av)
+            if op is sre.BRANCH:
+                union: set[bytes] = set()
+                for branch in av[1]:
+                    found = sequence(branch)
+                    if found is None:
+                        return None
+                    union |= found
+                return union
+            if op in (sre.MAX_REPEAT, sre.MIN_REPEAT, getattr(sre, "POSSESSIVE_REPEAT", None)):
+                low, _, item = av
+                return sequence(item) if low >= 1 else None
+            return None
+
+        found = sequence(tree)
+        if not found or min(len(x) for x in found) < shortest:
+            return ()
+        return tuple(sorted({x.lower() for x in found}))
+
+    @staticmethod
     def _extract_prefilter(pattern: bytes) -> tuple[bytes, ...]:
         """Literals for which at least one must be present for the rule to match.
 
@@ -617,6 +692,55 @@ class CompiledMatch:
     Computed once at load time (see :func:`_extract_prefilter`). Empty means no
     prefilter is possible and the rule is evaluated against every candidate
     file."""
+    prefilter_folded: tuple[bytes, ...] = ()
+    """Lower-cased literals from `PatternCompiler.required_literals`, used only when `prefilter`
+    is empty: one must appear in the file lower-cased. See `admits`."""
+
+    residual: re.Pattern[bytes] | None = None
+    """For a rule with no whole-rule prefilter: only its patterns that have no required literal,
+    in their original order. See `regex_for`."""
+    residual_literals: tuple[bytes, ...] = ()
+    """Lower-cased literals of the rule's other patterns: one of them present means any pattern
+    may match, and the full regex runs."""
+    residual_gate: tuple[bytes, ...] = ()
+    """Lower-cased literals, two bytes or more, at least one of which every match of `residual`
+    contains: none present means the residual cannot match either. Empty means it always runs."""
+
+    def regex_for(self, data: bytes, folded: bytes | None = None) -> re.Pattern[bytes] | None:
+        """The regex that finds exactly this rule's matches in `data`, cheapest first; None when
+        nothing can match.
+
+        A rule whose patterns all require a literal is skipped without one (`admits`). A rule with
+        some patterns that require none used to run every pattern on every file. Now, when none of
+        the other patterns' literals is in the file, only the literal-free ones run: an
+        alternation tries its branches in order at each position, and a branch that cannot match
+        anywhere in the file changes neither which branch matches there nor where scanning
+        resumes, so the residual finds the same matches, in the same order.
+        """
+        if self.prefilter or self.prefilter_folded:
+            return self.regex if self.admits(data, folded) else None
+        if self.residual_literals:
+            lowered = data.lower() if folded is None else folded
+            if not any(literal in lowered for literal in self.residual_literals):
+                if self.residual_gate and not any(
+                    literal in lowered for literal in self.residual_gate
+                ):
+                    return None
+                return self.residual
+        return self.regex
+
+    def admits(self, data: bytes, folded: bytes | None = None) -> bool:
+        """Whether this rule could match `data` at all; False means its regex need not run.
+
+        `folded` is `data.lower()`, passed by a caller that tests many rules against one file so
+        it is computed once; computed here otherwise.
+        """
+        if self.prefilter:
+            return any(literal in data for literal in self.prefilter)
+        if self.prefilter_folded:
+            lowered = data.lower() if folded is None else folded
+            return any(literal in lowered for literal in self.prefilter_folded)
+        return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -995,7 +1119,37 @@ class RuleLoader:
             per_pattern = [PatternCompiler._extract_prefilter(p.encode("utf-8")) for p in patterns]
             if all(per_pattern):
                 prefilter = tuple(sorted({lit for group in per_pattern for lit in group}))
-            return CompiledMatch(kind=kind, regex=regex, prefilter=prefilter, raw=dict(raw))
+            # Where the scanner above found none, the parsed derivation may: every pattern must
+            # yield a requirement, or the rule keeps no prefilter at all.
+            folded: tuple[bytes, ...] = ()
+            residual: re.Pattern[bytes] | None = None
+            residual_literals: tuple[bytes, ...] = ()
+            residual_gate: tuple[bytes, ...] = ()
+            if not prefilter:
+                required = [PatternCompiler.required_literals(p) for p in patterns]
+                if all(required):
+                    folded = tuple(sorted({lit for group in required for lit in group}))
+                elif any(required):
+                    # Some patterns require a literal and some do not: the literal-free ones, in
+                    # their order, are what can still match a file without the others' literals.
+                    bare = [p for p, r in zip(patterns, required, strict=True) if not r]
+                    residual = PatternCompiler.validate_pattern(
+                        "|".join(f"(?:{p})" for p in bare), rule_id=rule_id
+                    )
+                    residual_literals = tuple(sorted({lit for r in required for lit in r}))
+                    gates = [PatternCompiler.required_literals(p, shortest=2) for p in bare]
+                    if all(gates):
+                        residual_gate = tuple(sorted({lit for g in gates for lit in g}))
+            return CompiledMatch(
+                kind=kind,
+                regex=regex,
+                prefilter=prefilter,
+                prefilter_folded=folded,
+                residual=residual,
+                residual_literals=residual_literals,
+                residual_gate=residual_gate,
+                raw=dict(raw),
+            )
 
         if kind is MatchKind.LITERAL:
             literals = RuleLoader._str_tuple(raw.get("literals")) or (
@@ -1360,12 +1514,12 @@ class RuleTester:
 
         data = sample.encode("utf-8")
 
-        prefilter = compiled.match.prefilter
-        if prefilter and not any(literal in data for literal in prefilter):
+        if not compiled.match.admits(data):
             return False
 
         if compiled.match.regex is not None:
-            return compiled.match.regex.search(data) is not None
+            regex = compiled.match.regex_for(data)
+            return regex is not None and regex.search(data) is not None
         if compiled.match.literals:
             return any(lit in data for lit in compiled.match.literals)
         return False
