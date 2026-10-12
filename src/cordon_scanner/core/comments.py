@@ -349,7 +349,7 @@ class SourceComments:
         import ast
 
         try:
-            tree = PythonSyntax.parse(raw)
+            tree = PythonSyntax.shared(raw)
         except (SyntaxError, ValueError, RecursionError):
             return ()
 
@@ -364,7 +364,7 @@ class SourceComments:
             return starts[line - 1] + column
 
         spans: list[tuple[int, int]] = []
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(
                 node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
             ):

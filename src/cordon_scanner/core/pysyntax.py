@@ -43,5 +43,18 @@ class PythonSyntax:
             tree.__dict__["_cordon_nodes"] = cached
         return cached
 
+    @staticmethod
+    def of(tree: ast.AST, *types: type) -> list[Any]:
+        """The nodes of `tree` that are instances of `types`, in `nodes` order, computed once per tree
+        and set of types. Most analysis passes want only calls, or only assignments: filtering the
+        whole tree inside each of them was most of the Python analyser's time on a large tree --
+        76 million `isinstance` calls scanning this package's 239 Python files."""
+        cache: dict[tuple[type, ...], list[Any]] = tree.__dict__.setdefault("_cordon_by_type", {})
+        found = cache.get(types)
+        if found is None:
+            found = [node for node in PythonSyntax.nodes(tree) if isinstance(node, types)]
+            cache[types] = found
+        return found
+
 
 __all__ = ["PythonSyntax"]

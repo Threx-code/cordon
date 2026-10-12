@@ -268,12 +268,8 @@ class PythonSource:
         analyzer = PythonAnalyzer()
         analyzer._collect_names(tree)
         lines: set[int] = set()
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.While | ast.For | ast.AsyncFor):
-                continue
-            for inner in ast.walk(node):
-                if not isinstance(inner, ast.Call):
-                    continue
+        for node in PythonSyntax.of(tree, ast.While, ast.For, ast.AsyncFor):
+            for inner in PythonSyntax.of(node, ast.Call):
                 dotted = analyzer._dotted(inner.func)
                 if dotted in SLEEP_CALLS or (dotted or "").endswith(".sleep"):
                     lines.add(getattr(inner, "lineno", 0))
@@ -730,9 +726,7 @@ class PythonAnalyzer:
         for node in PythonSyntax.nodes(tree):
             for child in ast.iter_child_nodes(node):
                 parents[id(child)] = node
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             dotted = self._dotted(node.func)
             if dotted is None or PRIMITIVES.get(dotted) is not Capability.DECODE:
                 continue
@@ -794,9 +788,7 @@ class PythonAnalyzer:
             )
 
         found: list[AstCall] = []
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             resolved = analyzer._resolve_callee(node)
             if resolved is None:
                 continue
@@ -824,7 +816,7 @@ class PythonAnalyzer:
             isinstance(part, ast.Constant)
             and isinstance(part.value, str)
             and "." in part.value.strip(".")
-            for part in ast.walk(node)
+            for part in PythonSyntax.nodes(node)
         )
 
     @staticmethod
@@ -998,7 +990,7 @@ class PythonAnalyzer:
         rather than quietly treating an unreadable file as an uninteresting
         one."""
         try:
-            PythonSyntax.parse(source)
+            PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return False
         return True
@@ -1030,7 +1022,8 @@ class PythonAnalyzer:
         }
         for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign) and any(
-                isinstance(n, ast.Name) and n.id == "__file__" for n in ast.walk(node.value)
+                isinstance(n, ast.Name) and n.id == "__file__"
+                for n in PythonSyntax.nodes(node.value)
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
         for node in PythonSyntax.nodes(tree):
@@ -1509,9 +1502,7 @@ class PythonAnalyzer:
         # A download run as a command: `curl -o X`, `wget -O X`, `Invoke-WebRequest -OutFile X`.
         # And a command's captured output kept for later: `r = run(["curl", URL])`.
         fetched_output: set[str] = set()
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
                 continue
@@ -1530,9 +1521,7 @@ class PythonAnalyzer:
                     if FETCH_TOOL.match(command) and not DOWNLOAD_TO.search(command):
                         fetched_output.update(t.id for t in node.targets if isinstance(t, ast.Name))
         writers: dict[str, str] = {}
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             callee = self._dotted(node.func)
             if (
                 callee in ("urllib.request.urlretrieve", "urllib.urlretrieve")
@@ -1558,7 +1547,7 @@ class PythonAnalyzer:
                 continue
             from_network = any(
                 (isinstance(part, ast.Name) and part.id in fetched) or self._egress_call(part)
-                for part in ast.walk(node.args[0])
+                for part in PythonSyntax.nodes(node.args[0])
             )
             if not from_network:
                 continue
@@ -1579,9 +1568,7 @@ class PythonAnalyzer:
         if not downloaded and not fetched_output:
             return
         executable_download = any(EXECUTABLE_NAME.search(key) for key in downloaded)
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
                 continue
@@ -1617,10 +1604,10 @@ class PythonAnalyzer:
                 isinstance(part, ast.JoinedStr)
                 or (isinstance(part, ast.BinOp) and isinstance(part.op, ast.Add | ast.Mod))
                 or (isinstance(part, ast.Attribute) and part.attr == "format")
-                for part in ast.walk(node)
+                for part in PythonSyntax.nodes(node)
             ):
                 return False
-            for part in ast.walk(node):
+            for part in PythonSyntax.nodes(node):
                 if isinstance(part, ast.Name) and part.id in tainted:
                     return True
                 if self._egress_call(part):
@@ -1652,8 +1639,8 @@ class PythonAnalyzer:
                     tainted.update(t.id for t in targets if isinstance(t, ast.Name))
             if len(tainted) == before:
                 break
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call) or not node.args:
+        for node in PythonSyntax.of(tree, ast.Call):
+            if not node.args:
                 continue
             resolved = self._resolve_callee(node)
             if resolved is None:
@@ -1712,12 +1699,10 @@ class PythonAnalyzer:
                 if isinstance(node, ast.Assign) and any(
                     self._is_recon_call(part)
                     or (isinstance(part, ast.Name) and part.id in carrying)
-                    for part in ast.walk(node.value)
+                    for part in PythonSyntax.nodes(node.value)
                 ):
                     carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
                 continue
@@ -1732,7 +1717,7 @@ class PythonAnalyzer:
             if any(
                 self._is_recon_call(part) or (isinstance(part, ast.Name) and part.id in carrying)
                 for argument in arguments
-                for part in ast.walk(argument)
+                for part in PythonSyntax.nodes(argument)
             ):
                 self._record(Capability.RECONNAISSANCE, node, f"identity sent: {resolved[0]}")
 
@@ -1771,12 +1756,10 @@ class PythonAnalyzer:
             for node in PythonSyntax.nodes(tree):
                 if isinstance(node, ast.Assign) and any(
                     is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
-                    for part in ast.walk(node.value)
+                    for part in PythonSyntax.nodes(node.value)
                 ):
                     carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
                 continue
@@ -1784,7 +1767,7 @@ class PythonAnalyzer:
             if any(
                 is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
                 for argument in arguments
-                for part in ast.walk(argument)
+                for part in PythonSyntax.nodes(argument)
             ):
                 self._record(Capability.CREDENTIAL, node, f"environment sent: {resolved[0]}")
 
@@ -1844,32 +1827,28 @@ class PythonAnalyzer:
         carrying: dict[str, str] = {}
         urls: dict[str, str] = {}
         for _ in range(3):
-            for node in PythonSyntax.nodes(tree):
-                if not isinstance(node, ast.Assign):
-                    continue
+            for node in PythonSyntax.of(tree, ast.Assign):
                 targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
                 literal = url_literal(node.value)
                 if literal is not None:
                     assigned = SecretFlow.host_of(literal)
                     if assigned:
                         urls.update(dict.fromkeys(targets, assigned))
-                for part in ast.walk(node.value):
+                for part in PythonSyntax.nodes(node.value):
                     key = credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
                     if key is not None:
                         carrying.update(dict.fromkeys(targets, key))
                         break
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(node, ast.Call):
-                continue
+        for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
                 continue
             arguments = [*node.args, *(k.value for k in node.keywords)]
             keys: set[str] = set()
             for argument in arguments:
-                for part in ast.walk(argument):
+                for part in PythonSyntax.nodes(argument):
                     key = credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
@@ -1921,7 +1900,7 @@ class PythonAnalyzer:
             return False
         literals = [
             n.value
-            for n in ast.walk(current)
+            for n in PythonSyntax.nodes(current)
             if isinstance(n, ast.Constant) and isinstance(n.value, str)
         ]
         return not any("://" in value for value in literals)
@@ -1929,7 +1908,7 @@ class PythonAnalyzer:
     def _read_from_local_file(self, node: ast.AST) -> bool:
         """Whether every name in this expression holds text read from a local file, rather than
         from anywhere that could be remote."""
-        names = [n.id for n in ast.walk(node) if isinstance(n, ast.Name)]
+        names = [n.id for n in PythonSyntax.nodes(node) if isinstance(n, ast.Name)]
         return bool(names) and all(name in self._local_reads for name in names)
 
     def _loads_a_bundled_file(self, node: ast.Call, dotted: str) -> bool:
@@ -1954,7 +1933,7 @@ class PythonAnalyzer:
             return False
         if isinstance(argument, ast.Call) and self._dotted(argument.func) == "open":
             argument = argument.args[0] if argument.args else argument
-        names = {n.id for n in ast.walk(argument) if isinstance(n, ast.Name)}
+        names = {n.id for n in PythonSyntax.nodes(argument) if isinstance(n, ast.Name)}
         if isinstance(argument, ast.Name) and argument.id in self._bundled_paths:
             return True
         return "__file__" in names

@@ -959,7 +959,7 @@ class CapabilityDetector(BaseDetector):
         if not content.path.endswith(".py"):
             return False
         try:
-            tree = PythonSyntax.parse(content.text)
+            tree = PythonSyntax.shared(content.text)
         except (SyntaxError, ValueError, RecursionError):
             return False
 
@@ -972,7 +972,7 @@ class CapabilityDetector(BaseDetector):
             )
 
         parents: dict[int, ast.AST] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             for child in ast.iter_child_nodes(node):
                 parents[id(child)] = node
 
@@ -987,7 +987,7 @@ class CapabilityDetector(BaseDetector):
         # Bindings per function: `url` is assigned in many functions of a build script, and
         # the one that matters is the one in the function making the call.
         bound: dict[tuple[int, str], list[ast.AST]] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
@@ -1001,7 +1001,7 @@ class CapabilityDetector(BaseDetector):
                 if key is not None and len(bound.get(key, [])) == 1:
                     values = bound[key]
                 for value in values:
-                    for inner in ast.walk(value):
+                    for inner in PythonSyntax.nodes(value):
                         if isinstance(inner, ast.Constant) and isinstance(inner.value, str):
                             found.extend(
                                 m.group(1).lower() for m in cls._URL_HOST.finditer(inner.value)
@@ -1012,7 +1012,7 @@ class CapabilityDetector(BaseDetector):
 
         handed = PythonAnalyzer.excused_lines(content.text).get(Capability.CREDENTIAL, frozenset())
         reads = 0
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             key: str | None = None
             if (
                 environ(node)
@@ -1373,12 +1373,12 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _python_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
         try:
-            tree = PythonSyntax.parse(content.text)
+            tree = PythonSyntax.shared(content.text)
         except (SyntaxError, ValueError, RecursionError):
             return []
         functions = [
             node
-            for node in ast.walk(tree)
+            for node in PythonSyntax.nodes(tree)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
         ]
         if not functions or len(functions) > 5_000:
@@ -1410,7 +1410,7 @@ class CapabilityDetector(BaseDetector):
         def names_in(nodes: Sequence[ast.AST]) -> set[str]:
             found: set[str] = set()
             for root in nodes:
-                for node in ast.walk(root):
+                for node in PythonSyntax.nodes(root):
                     if isinstance(node, ast.Name):
                         found.add(node.id)
                     elif isinstance(node, ast.Attribute):
@@ -1429,9 +1429,7 @@ class CapabilityDetector(BaseDetector):
             """
             found: set[str] = set()
             for root in nodes:
-                for node in ast.walk(root):
-                    if not isinstance(node, ast.Call):
-                        continue
+                for node in PythonSyntax.of(root, ast.Call):
                     func = node.func
                     callee = (
                         func.id
@@ -1458,12 +1456,15 @@ class CapabilityDetector(BaseDetector):
             return found
 
         nested = {
-            id(inner) for outer in functions for inner in ast.walk(outer) if inner is not outer
+            id(inner)
+            for outer in functions
+            for inner in PythonSyntax.nodes(outer)
+            if inner is not outer
         }
         from cordon_scanner.core.reachability import CallReachability
 
         on_load: list[ast.AST] = []
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Module | ast.ClassDef):
                 on_load.extend(
                     child
@@ -1481,7 +1482,7 @@ class CapabilityDetector(BaseDetector):
         # subclass may be what is built.
         owner_of: dict[int, str] = {}
         bases_used: set[str] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.ClassDef):
                 bases_used |= names_in(list(node.bases))
                 for child in node.body:

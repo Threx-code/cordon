@@ -2635,7 +2635,7 @@ class SourceSpans:
         import ast
 
         try:
-            tree = PythonSyntax.parse(text)
+            tree = PythonSyntax.shared(text)
         except (SyntaxError, ValueError, RecursionError):
             return ()
 
@@ -2661,7 +2661,7 @@ class SourceSpans:
             return start, min(end, len(encoded))
 
         found: list[tuple[int, int]] = []
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if (
                 isinstance(node, ast.Expr)
                 and isinstance(node.value, ast.Constant)
