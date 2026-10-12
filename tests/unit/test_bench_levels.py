@@ -24,11 +24,12 @@ class TestLevels:
             == "known"
         )
 
-    def test_a_content_block_beside_it_is_blocked(self) -> None:
-        findings = [
-            [KNOWN_RELEASE_RULE, "critical", "confirmed", "malicious", "x"],
-            ["SUSPECT.DROPPER.001", "high", "medium", "suspicious", "a.js"],
-        ]
+    def test_a_known_dependency_is_known_too(self) -> None:
+        findings = [["MALWARE.DEPENDENCY.KNOWN.001", "critical", "confirmed", "malicious", "x"]]
+        assert Levels.of(1, findings) == "known"
+
+    def test_a_content_block_is_blocked(self) -> None:
+        findings = [["SUSPECT.DROPPER.001", "high", "medium", "suspicious", "a.js"]]
         assert Levels.of(1, findings) == "blocked"
 
     def test_a_medium_finding_that_passes_is_a_warning(self) -> None:
@@ -58,7 +59,7 @@ class TestLevels:
 class TestRates:
     def test_both_benign_rates_with_intervals(self) -> None:
         suite = SuiteResult("benign")
-        levels = ["clean"] * 96 + ["warned"] * 3 + ["blocked"]
+        levels = ["clean"] * 96 + ["warned"] * 3 + ["blocked"] + ["known"] * 5
         suite.verdicts = [
             Verdict("cordon", f"s{i}", level == "blocked", level=level)
             for i, level in enumerate(levels)

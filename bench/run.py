@@ -61,14 +61,10 @@ class Levels:
         if code not in (0, 1, 4):
             return "error"
         if code == 1:
-            known = any(f[0] == KNOWN_RELEASE_RULE for f in findings)
-            content = any(
-                f[0] != KNOWN_RELEASE_RULE
-                and (f[1] in ("high", "critical") or f[3] == "malicious")
-                and f[2] in ("medium", "high", "confirmed")
-                for f in findings
-            )
-            return "known" if known and not content else "blocked"
+            # Any known-malicious intel match (the release, a dependency, an extension) makes it
+            # known: in a benign draw that is a true positive and the long tail's base rate.
+            known = any(f[0].startswith("MALWARE.") and ".KNOWN" in f[0] for f in findings)
+            return "known" if known else "blocked"
         top = max(
             (
                 Levels.ORDER.index(f[1])
@@ -137,17 +133,18 @@ class SuiteResult:
         ]
         if levelled:
             seen = Counter(v.level for v in levelled)
-            total = len(levelled)
-            not_blocked = total - seen["blocked"] - seen["known"]
+            # Known malware is left out of the benign rates: it is a correct block, not noise.
+            total = len(levelled) - seen["known"]
+            not_blocked = total - seen["blocked"]
             no_warning = not_blocked - seen["warned"]
             rates["cordon, levels"] = {
                 **{
                     level: seen[level] for level in ("known", "blocked", "warned", "noted", "clean")
                 },
                 "total": total,
-                "not_blocked": round(not_blocked / total, 4),
+                "not_blocked": round(not_blocked / max(total, 1), 4),
                 "not_blocked_95": list(Wilson.interval(not_blocked, total)),
-                "no_warning": round(no_warning / total, 4),
+                "no_warning": round(no_warning / max(total, 1), 4),
                 "no_warning_95": list(Wilson.interval(no_warning, total)),
             }
         # When another tool ran on a subset, Cordon's rate on exactly that subset as well: the
