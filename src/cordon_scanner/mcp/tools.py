@@ -63,6 +63,8 @@ class Settings:
     max_findings: int = 50
     version: str = ""
     jobs: int = 0
+    model: str | None = None
+    """`--model`: cordon-cloud or a model server's address, passed to every scan."""
     """Worker processes per scan; 0 lets the scanner choose."""
 
 
@@ -274,7 +276,13 @@ class Scans:
             "--severity",
             severity,
         ]
-        args += ["--online"] if online else ["--offline"]
+        if online:
+            args.append("--online")
+        elif not settings.model:
+            args.append("--offline")
+        if settings.model:
+            # Cordon's own model scores the packages the scan holds; only features are sent.
+            args += ["--model", settings.model]
         if settings.jobs:
             args += ["--jobs", str(settings.jobs)]
         if not cache:

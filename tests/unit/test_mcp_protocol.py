@@ -586,3 +586,31 @@ class TestContainerLaunches:
         from cordon_scanner.mcp.tools import AgentTools
 
         assert AgentTools.container_image(config) == image
+
+
+class TestModelPassThrough:
+    def test_the_model_host_alone_is_allowed_past_the_network_guard(self) -> None:
+        environment = Runner(offline=False, model_host="10.0.0.5", environment={}).environment
+        assert environment["CORDON_PUBLIC_NETWORK_ONLY"] == "1"
+        assert environment["CORDON_ALLOWED_PRIVATE_HOSTS"] == "10.0.0.5"
+        assert "CORDON_OFFLINE" not in environment
+
+    def test_scans_carry_the_model_and_no_offline_switch(self, tmp_path: Path) -> None:
+        from cordon_scanner.mcp.runner import Run
+        from cordon_scanner.mcp.tools import Scans
+
+        seen: list[list[str]] = []
+
+        class Recording(Runner):
+            def run(self, args: list[str], **kwargs: Any) -> Run:
+                seen.append(args)
+                return Run(0, '{"findings": [], "complete": true}', "", 0.1, False)
+
+        settings = Settings(
+            workspace=Workspace((tmp_path.resolve(),)),
+            runner=Recording(offline=False),
+            model="cordon-cloud",
+        )
+        Scans.scan(settings, str(tmp_path), CancelToken(), online=False, max_findings=5)
+        assert "--model" in seen[0] and seen[0][seen[0].index("--model") + 1] == "cordon-cloud"
+        assert "--offline" not in seen[0] and "--online" not in seen[0]

@@ -65,6 +65,7 @@ BUILTIN_DETECTORS = (
     "manifest",
     "mcp-live",
     "mcp-packages",
+    "model",
     "obfuscation",
     "os-packages",
     "provenance",
@@ -109,6 +110,8 @@ DETECTOR_RUN_ORDER = (
     "mcp-packages",
     "mcp-live",
     "os-packages",
+    # Cordon's model: declares its rule; the scoring runs after the scan, with --model.
+    "model",
 )
 """Run order, cheapest first. Load order was alphabetical, for reproducibility,
 and reproducible is not the same as sensible.

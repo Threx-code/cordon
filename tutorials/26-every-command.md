@@ -119,6 +119,14 @@ Scan a directory, file or archive.
 │                           CORDON_NOTIFY_TEAMS; the webhook is signed with  │
 │                           CORDON_NOTIFY_WEBHOOK_SECRET. A failed delivery  │
 │                           never changes the exit code                      │
+│ --model SERVER            also have Cordon's own detection model score the │
+│                           packages this scan holds (a scanned package      │
+│                           archive, archives in the tree, installed         │
+│                           node_modules and site-packages): cordon-cloud    │
+│                           (`cordon-scanner login`), or the https://        │
+│                           address of a cordon-model-server with its token  │
+│                           in CORDON_MODEL_TOKEN. Sends features -- counts  │
+│                           and hashed identifiers -- never source           │
 │ --judge MODEL             also have a language model judge agent-facing    │
 │                           text (instruction files, skills, MCP tool        │
 │                           descriptions, hook commands): cordon-cloud       │
@@ -692,6 +700,10 @@ Serve Cordon to AI agents over the Model Context Protocol (stdio).
 │                           and extensions, and read remote MCP servers      │
 │ --allow-machine           let tools read this machine's installed packages │
 │                           and AI agent configuration                       │
+│ --model SERVER            have Cordon's own model score the packages each  │
+│                           scan holds: cordon-cloud, or the https://        │
+│                           address of a cordon-model-server (token in       │
+│                           CORDON_MODEL_TOKEN). Only features are sent      │
 │ --allow-private-network   let online tools connect to private and local    │
 │                           addresses (an intranet MCP server or registry);  │
 │                           by default a name an agent passes in may lead    │

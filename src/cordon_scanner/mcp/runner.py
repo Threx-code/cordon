@@ -73,16 +73,28 @@ class Runner:
         offline: bool,
         private_network: bool = False,
         environment: dict[str, str] | None = None,
+        model_host: str | None = None,
     ) -> None:
         self.offline = offline
         base = dict(os.environ if environment is None else environment)
         if offline:
             # The scanner's own air-gapped switch: no feed, no registry, nothing.
             base["CORDON_OFFLINE"] = "1"
+        else:
+            base.pop("CORDON_OFFLINE", None)
         if not private_network:
             # What a scan connects to can be named by what an agent passed in: an MCP server's URL,
             # an image's registry. Such a name may lead only to the public network (`core.netguard`).
             base["CORDON_PUBLIC_NETWORK_ONLY"] = "1"
+            if model_host:
+                # The model server the operator named (often on a private address, inside the
+                # organisation) is the one exception, and only it: no agent input reaches this.
+                allowed = {
+                    h.strip()
+                    for h in base.get("CORDON_ALLOWED_PRIVATE_HOSTS", "").split(",")
+                    if h.strip()
+                }
+                base["CORDON_ALLOWED_PRIVATE_HOSTS"] = ",".join(sorted(allowed | {model_host}))
         else:
             base.pop("CORDON_PUBLIC_NETWORK_ONLY", None)
         base["NO_COLOR"] = "1"

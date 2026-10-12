@@ -21,6 +21,7 @@ import os
 import sys
 import threading
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Final, TextIO
@@ -445,6 +446,12 @@ class Server:
             help="let tools read this machine's installed packages and AI agent configuration",
         )
         parser.add_argument(
+            "--model",
+            metavar="SERVER",
+            help="have Cordon's own model score the packages each scan holds: cordon-cloud, or the "
+            "https:// address of a cordon-model-server (token in CORDON_MODEL_TOKEN). Only features are sent",
+        )
+        parser.add_argument(
             "--allow-private-network",
             action="store_true",
             help="let online tools connect to private and local addresses (an intranet MCP server or "
@@ -518,11 +525,25 @@ class Server:
             # This process fetches too (an extension by id, following the registry's redirects):
             # the same rule as the scans it runs.
             NetworkGuard.install()
+        model_host = None
+        if args.model:
+            from cordon_scanner.model.client import ModelClient, ModelError
+
+            try:
+                ModelClient.for_target(args.model)
+            except ModelError as exc:
+                print(f"cordon-scanner mcp: --model: {exc}", file=sys.stderr)
+                return 3
+            if args.model != "cordon-cloud":
+                model_host = urllib.parse.urlsplit(args.model).hostname
         settings = Settings(
             workspace=workspace,
             runner=Runner(
-                offline=not args.allow_online, private_network=args.allow_private_network
+                offline=not args.allow_online and not args.model,
+                private_network=args.allow_private_network,
+                model_host=model_host,
             ),
+            model=args.model,
             allow_online=args.allow_online,
             allow_machine=args.allow_machine,
             allow_private_network=args.allow_private_network,
