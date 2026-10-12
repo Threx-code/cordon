@@ -721,6 +721,16 @@ class CapabilityDetector(BaseDetector):
     #: install hints like `"curl ... | sh"` -- does not apply to them.
     QUOTED_BY_DESIGN = frozenset({"CAP.JS.COMMAND_FETCH_RUN.001"})
 
+    #: A download written to an executable and started, as one construct: a command line in
+    #: JavaScript, or a batch file's download-then-`start`. Not `DOWNLOAD_THEN_RUN`, the data-flow
+    #: reading of an HTTP download later spawned -- which is how a legitimate extension fetches its
+    #: own language server or CLI.
+    DOWNLOAD_RUN_CONSTRUCTS = frozenset({"CAP.JS.COMMAND_FETCH_RUN.001", "CAP.BAT.FETCH_EXEC.001"})
+
+    @staticmethod
+    def _runs_a_downloaded_file(hits: list[CapabilityHit]) -> bool:
+        return any(hit.rule_id in CapabilityDetector.DOWNLOAD_RUN_CONSTRUCTS for hit in hits)
+
     #: A line this long means the file was generated, whatever it is called.
     #:
     #: The path globs catch `*.min.js`, `dist/` and `.yarn/releases/`, and they cannot
@@ -1057,10 +1067,15 @@ class CapabilityDetector(BaseDetector):
             # A skill's bundled script is run by the agent whenever the skill is invoked -- as a
             # program, so its module-level calls run too. Nobody is asked first.
             return ""
-        if SourcePaths.is_editor_extension(content.path):
-            # An extension's activation function and the scripts it starts -- a bundled `.bat`
-            # included -- run when the editor does: at start-up, on a language, on `*`. Neither a
-            # person's choice nor a function some caller may never reach.
+        if SourcePaths.is_editor_extension(content.path) and (
+            language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND
+            or CapabilityDetector._runs_a_downloaded_file(hits)
+        ):
+            # A script inside an extension -- a bundled `.bat` -- is run by the extension, not by a
+            # person; and a download that is run, in one construct, is not lowered for sitting in a
+            # function. The weaker combinations in an extension's code keep the ordinary lowering:
+            # spawning, decoding and a request are what remote-development tools do all day
+            # (Remote WSL, Codespaces, APKLab were blocked for it).
             return ""
         if language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND:
             return CapabilityDetector.ON_REQUEST_REASONS[0]
@@ -1938,7 +1953,10 @@ class CapabilityDetector(BaseDetector):
     _JS_SPAWN = re.compile(r"\b(?:execSync|exec|execFileSync|execFile|spawnSync|spawn)\s{0,4}\(")
     _RUNS_A_FILE = re.compile(
         r"(?i)(?:^|[\s'\"`(,\[])(?:sh|bash|zsh|dash|powershell(?:\.exe)?|pwsh|cmd(?:\.exe)?\s{1,4}/c|"
-        r"python[0-9.]{0,4}|perl|ruby|wscript|cscript|mshta|start)(?:[\s'\"`,\]]|$)"
+        r"python[0-9.]{0,4}|perl|ruby|wscript|cscript|mshta)(?:[\s'\"`,\]]|$)"
+        # `start` runs a file -- or opens a link in the browser: `start "" "${extUrl}"` is how an
+        # extension opens a URL on Windows. Not when what it starts is a URL or names one.
+        r"|(?:^|[\s'\"`(,\[])start(?:[\s'\"`,\]]|$)(?![^;\n]{0,60}(?:https?:|(?<!c)url\b|link|href))"
         r"|chmod\s{1,4}(?:\+x|[0-7]{3,4})|\.(?:exe|sh|bat|cmd|ps1|vbs|scr)\b"
     )
     _JS_ARGUMENT_WINDOW = 400
@@ -3013,10 +3031,9 @@ class CapabilityDetector(BaseDetector):
                 # `make-fetch-exec` corpus sample, whose entire content is that line,
                 # came out at MEDIUM.
                 ceilinged = "the project's own build and release tooling"
-            elif (
-                SourcePaths.is_generated_artefact(content.path)
-                and Capability.FETCH_EXEC not in present
-            ):
+            elif SourcePaths.is_generated_artefact(
+                content.path
+            ) and not CapabilityDetector._runs_a_downloaded_file(hits):
                 # Not when the output downloads and runs in one construct. A bundle holds a
                 # module loader's decoder and evaluator by construction, which is what this
                 # ceiling is for; it holds `curl ... -o x.bat && x.bat` only if somebody put it
@@ -3034,7 +3051,9 @@ class CapabilityDetector(BaseDetector):
                 # says is that a capability in vendored code belongs to whoever wrote
                 # the library, which is a different review from the one this report is.
                 ceilinged = "vendored third-party code"
-            elif CapabilityDetector._is_minified(content) and Capability.FETCH_EXEC not in present:
+            elif CapabilityDetector._is_minified(
+                content
+            ) and not CapabilityDetector._runs_a_downloaded_file(hits):
                 # The same exception as generated output, for the same reason.
                 ceilinged = "minified output"
             elif (

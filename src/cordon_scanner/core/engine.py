@@ -1040,6 +1040,9 @@ class Engine:
         entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
+        hook_paths, entries, consumer_hooks = Engine._outside_extensions(
+            hook_paths, entries, consumer_hooks
+        )
         # And which of those files' bodies the hooks actually reach. A file is
         # in the closure because something imports it, which runs its top level
         # and defines its functions -- it does not call them.
@@ -1410,6 +1413,9 @@ class Engine:
         entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
+        hook_paths, entries, consumer_hooks = Engine._outside_extensions(
+            hook_paths, entries, consumer_hooks
+        )
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
@@ -2240,6 +2246,29 @@ class Engine:
             # the library puts the whole library in install-time context.
             return not Engine._under_fixture_directory(hook.path)
         return not name.endswith(".sample")
+
+    @staticmethod
+    def _outside_extensions(
+        hook_paths: set[str], entries: frozenset[str], consumer_hooks: set[str]
+    ) -> tuple[set[str], frozenset[str], set[str]]:
+        """The install-time picture without anything inside an editor extension.
+
+        The editor unpacks an extension and starts its `main`; no package manager runs in it, so
+        no lifecycle script a bundled manifest names runs on this machine. Kept, they made
+        `node_modules/d3/dist/d3.min.js` inside a data-preview extension "runs during install" and
+        its `new Function` beside a `fetch` a critical dropper. What the extension's own code does
+        is still read, with the severity its own context gives it.
+        """
+        from cordon_scanner.detect.secrets import SourcePaths
+
+        def keep(path: str) -> bool:
+            return not SourcePaths.is_editor_extension(path)
+
+        return (
+            {p for p in hook_paths if keep(p)},
+            frozenset(p for p in entries if keep(p)),
+            {p for p in consumer_hooks if keep(p)},
+        )
 
     @staticmethod
     def _under_fixture_directory(path: str) -> bool:

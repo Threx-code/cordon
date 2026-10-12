@@ -124,6 +124,19 @@ QUOTES = ("'", '"', "`")
 BLOCK_OPEN = "/*"
 BLOCK_CLOSE = "*/"
 
+BLOCK_DELIMITERS: dict[str, tuple[str, str]] = {
+    **dict.fromkeys(BLOCK_COMMENT_LANGUAGES, (BLOCK_OPEN, BLOCK_CLOSE)),
+    # PowerShell's block comment, where a script's help and usage live: `irm <url> | iex` written
+    # there as the instructions for running it is prose, not code.
+    "powershell": ("<#", "#>"),
+}
+"""Each language's block comment, opener and closer."""
+
+LANGUAGE_QUOTES: dict[str, tuple[str, ...]] = {
+    # A backtick is PowerShell's escape character, not a quote.
+    "powershell": ("'", '"'),
+}
+
 
 class SourceComments:
     """Where comments and docstrings are in source text."""
@@ -142,7 +155,9 @@ class SourceComments:
         # Longest first, so `//` is not matched as a prefix of a longer opener by an
         # alternation that happens to list the shorter one earlier.
         openers.sort(key=len, reverse=True)
-        alternatives = [re.escape(BLOCK_OPEN), *openers, "[" + re.escape("".join(QUOTES)) + "]"]
+        opener, _ = BLOCK_DELIMITERS.get(language, (BLOCK_OPEN, BLOCK_CLOSE))
+        quotes = LANGUAGE_QUOTES.get(language, QUOTES)
+        alternatives = [re.escape(opener), *openers, "[" + re.escape("".join(quotes)) + "]"]
         return re.compile("|".join(alternatives))
 
     @staticmethod
@@ -173,8 +188,11 @@ class SourceComments:
         unterminated block runs to the end of the file, which is what a compiler
         would do with it.
         """
-        if language not in BLOCK_COMMENT_LANGUAGES:
+        delimiters = BLOCK_DELIMITERS.get(language or "")
+        if delimiters is None:
             return ()
+        opener, closer = delimiters
+        quotes = LANGUAGE_QUOTES.get(language or "", QUOTES)
 
         spans: list[tuple[int, int]] = []
         length = len(text)
@@ -187,13 +205,13 @@ class SourceComments:
             index = match.start()
             token = match.group()
 
-            if token in QUOTES:
+            if token in quotes:
                 index = SourceComments._skip_literal(text, index + 1, token, length)
                 continue
 
-            if token == BLOCK_OPEN:
-                close = text.find(BLOCK_CLOSE, index + len(BLOCK_OPEN))
-                end = length if close == -1 else close + len(BLOCK_CLOSE)
+            if token == opener:
+                close = text.find(closer, index + len(opener))
+                end = length if close == -1 else close + len(closer)
                 spans.append((index, end))
                 index = end
                 continue
