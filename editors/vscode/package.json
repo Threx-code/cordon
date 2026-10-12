@@ -2,7 +2,7 @@
   "name": "cordon",
   "displayName": "Cordon supply-chain scanner",
   "description": "Malicious packages, install-time behaviour, AI agent files, skills and MCP servers, secrets and vulnerable dependencies, shown in the editor -- and Cordon's checks offered to the editor's AI agents over MCP. Runs the cordon-scanner you installed; sends nothing anywhere.",
-  "version": "0.7.0",
+  "version": "0.6.0",
   "publisher": "threx-code",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "https://github.com/Threx-code/cordon" },

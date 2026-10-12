@@ -30,6 +30,8 @@ class ModelDetector(BaseDetector):
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS})
     requires = DetectorRequirements(content=False)
+    #: Off until `--model` names a model server, like the agent judge and ClamAV.
+    operator_enabled = True
 
     def applicable(self, ctx: ScanContext) -> bool:
         return False

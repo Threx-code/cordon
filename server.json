@@ -3,7 +3,7 @@
   "name": "io.github.threx-code/cordon",
   "title": "Cordon",
   "description": "Checks packages, install commands, skills and MCP servers for supply-chain attacks. Read-only.",
-  "version": "0.7.0",
+  "version": "0.6.0",
   "websiteUrl": "https://github.com/Threx-code/cordon/blob/main/tutorials/30-mcp-server.md",
   "repository": {
     "url": "https://github.com/Threx-code/cordon",
@@ -21,7 +21,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "cordon-scanner",
-      "version": "0.7.0",
+      "version": "0.6.0",
       "runtimeHint": "uvx",
       "transport": { "type": "stdio" },
       "packageArguments": [
