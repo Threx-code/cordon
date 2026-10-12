@@ -2306,7 +2306,7 @@ class CapabilityDetector(BaseDetector):
         """
         from cordon_scanner.core.comments import SourceComments
 
-        ignore = SourceComments.docstring_spans(content.raw, language)
+        ignore: tuple[tuple[int, int], ...] | None = None
         matches = [*cls._IP_URL.finditer(content.raw), *cls._IP_HOST.finditer(content.raw)]
         for match in sorted(matches, key=lambda m: m.start()):
             octets = [int(part) for part in match.groups()]
@@ -2314,6 +2314,10 @@ class CapabilityDetector(BaseDetector):
                 continue
             if tuple(octets) in cls._RESOLVERS:
                 continue
+            # Docstrings are worked out only once a public address is found: almost no file has
+            # one, and the spans mean parsing the file.
+            if ignore is None:
+                ignore = SourceComments.docstring_spans(content.raw, language)
             if SourceComments.inside_spans(ignore, match.start()) or cls._is_comment(
                 content, match.start(), language
             ):

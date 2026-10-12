@@ -320,6 +320,7 @@ class SourceComments:
         return start is not None and column >= start
 
     @staticmethod
+    @functools.lru_cache(maxsize=8)
     def docstring_spans(raw: bytes, language: str | None) -> tuple[tuple[int, int], ...]:
         """Byte ranges of Python docstrings.
 
@@ -353,10 +354,14 @@ class SourceComments:
         except (SyntaxError, ValueError, RecursionError):
             return ()
 
+        # Line starts found with `bytes.find`, not a Python loop over every byte of the file: the
+        # same offsets, without a million interpreter steps for a one-megabyte module. Three
+        # detectors ask about the same file, so the answer is also kept per (bytes, language).
         starts = [0]
-        for index, byte in enumerate(raw):
-            if byte == 0x0A:
-                starts.append(index + 1)
+        newline = raw.find(b"\n")
+        while newline != -1:
+            starts.append(newline + 1)
+            newline = raw.find(b"\n", newline + 1)
 
         def offset(line: int, column: int) -> int:
             if line < 1 or line > len(starts):
@@ -364,11 +369,9 @@ class SourceComments:
             return starts[line - 1] + column
 
         spans: list[tuple[int, int]] = []
-        for node in PythonSyntax.nodes(tree):
-            if not isinstance(
-                node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
-            ):
-                continue
+        for node in PythonSyntax.of(
+            tree, ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef
+        ):
             first = node.body[0] if node.body else None
             if not isinstance(first, ast.Expr) or not isinstance(first.value, ast.Constant):
                 continue
