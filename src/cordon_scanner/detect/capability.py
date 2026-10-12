@@ -1158,6 +1158,23 @@ class CapabilityDetector(BaseDetector):
     )
     """A file inside an agent skill's folder (`.claude/skills/<name>/scripts/x.py` and kin)."""
 
+    @staticmethod
+    def _skill_script(path: str, ctx: ScanContext | None) -> bool:
+        """A script an agent skill ships: under a `skills/<name>/` folder, or beside or below a
+        `SKILL.md` -- a skill unpacked on its own, from a marketplace or an archive, has no
+        `skills/` parent and is still run by the agent whenever the skill is invoked."""
+        if CapabilityDetector._SKILL_SCRIPT.search(path.rpartition("!")[2]):
+            return True
+        if ctx is None or not path.lower().endswith(CapabilityDetector.SKILL_SCRIPT_SUFFIXES):
+            return False
+        parts = path.split("/")[:-1]
+        return any(
+            "/".join([*parts[:depth], "SKILL.md"]) in ctx.tree_paths
+            for depth in range(len(parts), max(-1, len(parts) - 4), -1)
+        )
+
+    SKILL_SCRIPT_SUFFIXES = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".ps1", ".rb")
+
     ON_REQUEST_REASONS = (
         "a script a person runs, not code that runs on its own",
         "function bodies that run only when called",
@@ -1192,6 +1209,7 @@ class CapabilityDetector(BaseDetector):
         language: str | None,
         hits: list[CapabilityHit],
         matched: tuple[Capability, ...],
+        ctx: ScanContext | None = None,
     ) -> str:
         """Why this fetch-and-run happens only when someone asks for it, or "" if it does not.
 
@@ -1199,7 +1217,7 @@ class CapabilityDetector(BaseDetector):
         Python and JavaScript, the question is whether every hit is inside a function body: a
         module's top level runs on import, a function's body when it is called.
         """
-        if CapabilityDetector._SKILL_SCRIPT.search(content.path.rpartition("!")[2]):
+        if CapabilityDetector._skill_script(content.path, ctx):
             # A skill's bundled script is run by the agent whenever the skill is invoked -- as a
             # program, so its module-level calls run too. Nobody is asked first.
             return ""
@@ -3203,7 +3221,7 @@ class CapabilityDetector(BaseDetector):
                 and compiled.rule.id not in CapabilityDetector.DESTRUCTION_RULES
                 # A skill's `scripts/` folder is not the project's tooling: the agent runs
                 # what is in it whenever the skill is invoked.
-                and not CapabilityDetector._SKILL_SCRIPT.search(content.path.rpartition("!")[2])
+                and not CapabilityDetector._skill_script(content.path, ctx)
             ):
                 # Unless the file PIPES the network into an interpreter. The ceilings
                 # here all rest on one claim -- that a pattern in these paths is
@@ -3284,7 +3302,9 @@ class CapabilityDetector(BaseDetector):
                 # every one an installer doing what installers do. The build-file rules
                 # (Makefile, Dockerfile, MSBuild, Ansible) keep their own verdict for builds
                 # that run unattended; a decoded payload is never excused.
-                deferred = CapabilityDetector._run_on_request(content, unit.language, hits, matched)
+                deferred = CapabilityDetector._run_on_request(
+                    content, unit.language, hits, matched, ctx
+                )
                 if (
                     deferred
                     and compiled.rule.id != self.DROPPER_RULE
