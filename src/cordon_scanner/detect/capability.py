@@ -630,8 +630,10 @@ class CapabilityDetector(BaseDetector):
             for index, match in enumerate(compiled.match.regex.finditer(raw)):
                 if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
                     continue
-                if capability is Capability.FETCH_EXEC and CapabilityDetector._is_quoted_pipeline(
-                    content, match.start(), match.end()
+                if (
+                    capability is Capability.FETCH_EXEC
+                    and compiled.rule.id not in CapabilityDetector.QUOTED_BY_DESIGN
+                    and CapabilityDetector._is_quoted_pipeline(content, match.start(), match.end())
                 ):
                     # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
                     continue
@@ -703,6 +705,11 @@ class CapabilityDetector(BaseDetector):
             )
 
         return hits
+
+    #: Fetch-and-run rules whose construct is a command line held in a string: in JavaScript
+    #: that is how a command reaches `exec()`, so the quoted-pipeline exception -- written for
+    #: install hints like `"curl ... | sh"` -- does not apply to them.
+    QUOTED_BY_DESIGN = frozenset({"CAP.JS.COMMAND_FETCH_RUN.001"})
 
     #: A line this long means the file was generated, whatever it is called.
     #:
@@ -3002,7 +3009,14 @@ class CapabilityDetector(BaseDetector):
                 # `make-fetch-exec` corpus sample, whose entire content is that line,
                 # came out at MEDIUM.
                 ceilinged = "the project's own build and release tooling"
-            elif SourcePaths.is_generated_artefact(content.path):
+            elif (
+                SourcePaths.is_generated_artefact(content.path)
+                and Capability.FETCH_EXEC not in present
+            ):
+                # Not when the output downloads and runs in one construct. A bundle holds a
+                # module loader's decoder and evaluator by construction, which is what this
+                # ceiling is for; it holds `curl ... -o x.bat && x.bat` only if somebody put it
+                # there, and an editor extension ships nothing but its bundle.
                 ceilinged = "generated build output"
             elif SourcePaths.is_vendored(content.path):
                 # Somebody else's code, committed. `jart/cosmopolitan` vendors CPython's
@@ -3016,7 +3030,8 @@ class CapabilityDetector(BaseDetector):
                 # says is that a capability in vendored code belongs to whoever wrote
                 # the library, which is a different review from the one this report is.
                 ceilinged = "vendored third-party code"
-            elif CapabilityDetector._is_minified(content):
+            elif CapabilityDetector._is_minified(content) and Capability.FETCH_EXEC not in present:
+                # The same exception as generated output, for the same reason.
                 ceilinged = "minified output"
             elif (
                 compiled.rule.id in self.ON_REQUEST_RULES
