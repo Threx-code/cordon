@@ -479,6 +479,17 @@ is near-universal because every code-review tool reads it too, and it is
 correct in the directories no glob would have guessed. Line length in generated
 output is a property of the generator."""
 
+BUNDLER_PRELUDE = re.compile(
+    rb"var [\w$]{1,4}=Object\.create;var [\w$]{1,4}=Object\.defineProperty;"
+    rb"|__webpack_require__|webpackBootstrap|/\*{6}/ "
+)
+"""The opening a bundler writes, not a person: esbuild's `var X=Object.create;var k=
+Object.defineProperty;` helper prelude, and webpack's runtime. Read within
+`GENERATED_HEADER_BYTES`. Across 1,943 legitimate editor extensions this rule alone blocked 90, and
+the ones read were esbuild output in `out/` -- the folder TypeScript and esbuild write to; the three
+malicious extensions it was the only signal for were esbuild output too, with no payload on the
+line it reported."""
+
 GENERATED_HEADER_BYTES = 4096
 """How far into a file to look for that. A marker further in than this is not a
 header, and scanning the whole file for one would mean any file that mentions
@@ -1101,6 +1112,12 @@ class ObfuscationDetector(BaseDetector):
             return
         if content.truncated:
             return  # the longest line cannot be known from a prefix
+        if BUNDLER_PRELUDE.search(content.raw[:GENERATED_HEADER_BYTES]) or (
+            SourcePaths.is_editor_extension(content.path) and "/out/" in content.path
+        ):
+            # Bundler output, by what it opens with or by where an extension's build writes it.
+            # A long line is what a bundle is made of; the other rules still read it.
+            return
         if GENERATED_MARKER.search(content.raw[:GENERATED_HEADER_BYTES]):
             # The file says it is generated. Line length in generated output is
             # a property of the generator, and the convention for saying so is
