@@ -261,14 +261,14 @@ class PythonSource:
         standing -- the safe direction.
         """
         try:
-            tree = PythonSyntax.parse(source)
+            tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return frozenset()
 
         analyzer = PythonAnalyzer()
         analyzer._collect_names(tree)
         lines: set[int] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.While | ast.For | ast.AsyncFor):
                 continue
             for inner in ast.walk(node):
@@ -505,7 +505,7 @@ class PythonAnalyzer:
         fixture would do is not something the suite does.
         """
         try:
-            tree = PythonSyntax.parse(source)
+            tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
         analyzer = cls()
@@ -534,7 +534,7 @@ class PythonAnalyzer:
         environ_nodes: dict[tuple[int, str], list[int]] = {}
         direct: set[int] = set()
         parents: dict[int, ast.AST] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             for child in ast.iter_child_nodes(node):
                 parents[id(child)] = node
 
@@ -549,7 +549,7 @@ class PythonAnalyzer:
         def is_environ(node: ast.AST) -> bool:
             return self._dotted(node) in ENVIRONMENT
 
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not is_environ(node):
                 continue
             parent = parents.get(id(node))
@@ -615,7 +615,7 @@ class PythonAnalyzer:
         for (scope, name), nodes in environ_nodes.items():
             uses = [
                 n
-                for n in ast.walk(tree)
+                for n in PythonSyntax.nodes(tree)
                 if isinstance(n, ast.Name)
                 and n.id == name
                 and isinstance(n.ctx, ast.Load)
@@ -633,7 +633,7 @@ class PythonAnalyzer:
         left out rather than guessed at."""
         sequences: dict[str, list[str]] = {}
         assigned: dict[str, int] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
@@ -650,7 +650,7 @@ class PythonAnalyzer:
 
         found: dict[str, list[str]] = {}
         refused: set[str] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.For | ast.comprehension) and isinstance(node.target, ast.Name):
                 name = node.target.id
                 values = resolved(node.iter)
@@ -678,7 +678,7 @@ class PythonAnalyzer:
         `exec(` and `os.environ` and cannot tell what follows; the caller drops its hits on these
         lines and keeps every other."""
         try:
-            tree = PythonSyntax.parse(source)
+            tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return {}
         analyzer = cls()
@@ -686,19 +686,21 @@ class PythonAnalyzer:
         analyzer._walk(tree)
         handed = analyzer._environment_handed_to_children(tree)
         environment = {
-            node.lineno for node in ast.walk(tree) if id(node) in handed and hasattr(node, "lineno")
+            node.lineno
+            for node in PythonSyntax.nodes(tree)
+            if id(node) in handed and hasattr(node, "lineno")
         }
         # A line that also reads the environment some other way keeps its pattern hit.
         environment -= {
             node.lineno
-            for node in ast.walk(tree)
+            for node in PythonSyntax.nodes(tree)
             if analyzer._dotted(node) in ENVIRONMENT
             and id(node) not in handed
             and hasattr(node, "lineno")
         }
         own_name = frozenset(
             node.lineno
-            for node in ast.walk(tree)
+            for node in PythonSyntax.nodes(tree)
             if isinstance(node, ast.Call)
             and (analyzer._dotted(node.func) or "") in DNS_LOOKUPS
             and node.args
@@ -724,10 +726,10 @@ class PythonAnalyzer:
         parsed: set[int] = set()
         other: set[int] = set()
         parents: dict[int, ast.AST] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             for child in ast.iter_child_nodes(node):
                 parents[id(child)] = node
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             dotted = self._dotted(node.func)
@@ -761,7 +763,7 @@ class PythonAnalyzer:
         replacement.
         """
         try:
-            tree = PythonSyntax.parse(source)
+            tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
         analyzer = cls()
@@ -769,14 +771,14 @@ class PythonAnalyzer:
         # `_invoked` maps an inner call to the call that invokes its result, so
         # `getattr(os, "system")("...")` can find the argument list that belongs
         # to the outer parentheses.
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Call | ast.Subscript):
                 analyzer._invoked[id(node.func)] = node
 
         # What each plain name is assigned, so a hostname assembled into a variable on one line
         # and resolved on the next reads as the built value it is.
         assigned: dict[str, list[ast.AST]] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
@@ -791,7 +793,7 @@ class PythonAnalyzer:
             )
 
         found: list[AstCall] = []
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             resolved = analyzer._resolve_callee(node)
@@ -945,13 +947,13 @@ class PythonAnalyzer:
         rather than its spelling.
         """
         try:
-            tree = PythonSyntax.parse(source)
+            tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
 
         found: list[Assembled] = []
 
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             targets: list[str] = []
             if isinstance(node, ast.Assign):
                 value: ast.AST | None = node.value
@@ -1012,7 +1014,7 @@ class PythonAnalyzer:
         """
         bindings: dict[str, int] = {}
         literal_bindings: dict[str, int] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign):
                 names = [t.id for t in node.targets if isinstance(t, ast.Name)]
                 plain = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
@@ -1025,12 +1027,12 @@ class PythonAnalyzer:
         self._plain_literals = {
             bound for bound, count in literal_bindings.items() if bindings.get(bound) == count
         }
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign) and any(
                 isinstance(n, ast.Name) and n.id == "__file__" for n in ast.walk(node.value)
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             # Names holding the text of a local file: `l` in `for l in open(...)`, `t = open(...)
             # .read()`, `t = Path(...).read_text()`.
             source = (
@@ -1048,7 +1050,7 @@ class PythonAnalyzer:
                     else [t.id for t in getattr(node, "targets", []) if isinstance(t, ast.Name)]
                 )
                 self._local_reads.update(names)
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     self._aliases[alias.asname or alias.name] = alias.name
@@ -1373,7 +1375,7 @@ class PythonAnalyzer:
     # -- The walk --------------------------------------------------------
 
     def _walk(self, tree: ast.AST) -> None:
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Call | ast.Subscript):
                 # A subscript as well as a call. `globals()["exec"]()` invokes what the
                 # subscript returned, and the map existed only for `getattr(...)()`.
@@ -1381,7 +1383,7 @@ class PythonAnalyzer:
 
         keyed = self._keyed_environment_reads(tree)
 
-        called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+        called = {id(node.func) for node in PythonSyntax.nodes(tree) if isinstance(node, ast.Call)}
         """The function of every call, which `_call` has already judged.
 
         `os.getenv` is both a primitive and an `Attribute`, so a single
@@ -1392,7 +1394,7 @@ class PythonAnalyzer:
         identical credential hits at one span. Reading a function without calling
         it is not the act the primitive describes."""
 
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Call):
                 self._call(node)
                 self._written_code(node)
@@ -1478,7 +1480,7 @@ class PythonAnalyzer:
         """
         fetched: set[str] = set()
         downloaded: set[str] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign) and self._egress_call(node.value):
                 fetched.update(t.id for t in node.targets if isinstance(t, ast.Name))
             elif isinstance(node, ast.With | ast.AsyncWith):
@@ -1490,7 +1492,7 @@ class PythonAnalyzer:
         # A download run as a command: `curl -o X`, `wget -O X`, `Invoke-WebRequest -OutFile X`.
         # And a command's captured output kept for later: `r = run(["curl", URL])`.
         fetched_output: set[str] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             resolved = self._resolve_callee(node)
@@ -1503,7 +1505,7 @@ class PythonAnalyzer:
                 # The download is the request: `curl.exe -L URL -o X` reaches the network
                 # whatever the shell patterns make of the binary's name.
                 self._record(Capability.EGRESS, node, f"{resolved[0]} downloads to a file")
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
                 spawned = self._resolve_callee(node.value)
                 if spawned and PRIMITIVES.get(spawned[0]) is Capability.SPAWN:
@@ -1511,7 +1513,7 @@ class PythonAnalyzer:
                     if FETCH_TOOL.match(command) and not DOWNLOAD_TO.search(command):
                         fetched_output.update(t.id for t in node.targets if isinstance(t, ast.Name))
         writers: dict[str, str] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             callee = self._dotted(node.func)
@@ -1527,7 +1529,7 @@ class PythonAnalyzer:
                 key = self._file_key(node.args[0])
                 if key and mode and ("w" in mode or "a" in mode):
                     writers[f"{getattr(node, 'lineno', 0)}:{getattr(node, 'col_offset', 0)}"] = key
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             # `with open(P, "wb") as out: out.write(response.read())` and
             # `open(P, "wb").write(r.content)`, where `response` or `r` came from a request.
             if not (
@@ -1555,7 +1557,7 @@ class PythonAnalyzer:
         if not downloaded and not fetched_output:
             return
         executable_download = any(EXECUTABLE_NAME.search(key) for key in downloaded)
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             resolved = self._resolve_callee(node)
@@ -1604,14 +1606,14 @@ class PythonAnalyzer:
         """
         carrying: set[str] = set()
         for _ in range(3):
-            for node in ast.walk(tree):
+            for node in PythonSyntax.nodes(tree):
                 if isinstance(node, ast.Assign) and any(
                     self._is_recon_call(part)
                     or (isinstance(part, ast.Name) and part.id in carrying)
                     for part in ast.walk(node.value)
                 ):
                     carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             resolved = self._resolve_callee(node)
@@ -1643,7 +1645,7 @@ class PythonAnalyzer:
         process, which inherits it anyway.
         """
         parents: dict[int, ast.AST] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             for child in ast.iter_child_nodes(node):
                 parents[id(child)] = node
         handed_on = self._environment_handed_to_children(tree)
@@ -1664,13 +1666,13 @@ class PythonAnalyzer:
 
         carrying: set[str] = set()
         for _ in range(3):
-            for node in ast.walk(tree):
+            for node in PythonSyntax.nodes(tree):
                 if isinstance(node, ast.Assign) and any(
                     is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
                     for part in ast.walk(node.value)
                 ):
                     carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             resolved = self._resolve_callee(node)
@@ -1740,7 +1742,7 @@ class PythonAnalyzer:
         carrying: dict[str, str] = {}
         urls: dict[str, str] = {}
         for _ in range(3):
-            for node in ast.walk(tree):
+            for node in PythonSyntax.nodes(tree):
                 if not isinstance(node, ast.Assign):
                     continue
                 targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
@@ -1756,7 +1758,7 @@ class PythonAnalyzer:
                     if key is not None:
                         carrying.update(dict.fromkeys(targets, key))
                         break
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
             resolved = self._resolve_callee(node)
@@ -1974,7 +1976,7 @@ class PythonAnalyzer:
     def _handles_opened_on(self, tree: ast.AST, handle: str, writers: dict[str, str]) -> set[str]:
         """The files a `with open(...) as <handle>` in this tree opened for writing."""
         keys: set[str] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.With | ast.AsyncWith):
                 for item in node.items:
                     expression = item.context_expr
@@ -2047,7 +2049,7 @@ class PythonAnalyzer:
         """
         keyed: dict[int, str] = {}
         written: set[int] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if (
@@ -2075,7 +2077,7 @@ class PythonAnalyzer:
                 return " ".join(candidates[node.id])
             return key
 
-        for node in ast.walk(tree):
+        for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Subscript):
                 # `os.environ["NAME"]`
                 key = key_of(node.slice)

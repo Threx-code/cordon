@@ -10,6 +10,7 @@ print, so every parse of untrusted source goes through here.
 from __future__ import annotations
 
 import ast
+import functools
 import warnings
 from typing import Any
 
@@ -23,6 +24,24 @@ class PythonSyntax:
             warnings.simplefilter("ignore", SyntaxWarning)
             warnings.simplefilter("ignore", DeprecationWarning)
             return ast.parse(source, filename=filename, mode=mode)
+
+    @staticmethod
+    @functools.lru_cache(maxsize=4)
+    def shared(source: str | bytes) -> Any:
+        """One parse of `source` shared by every reader that does not change the tree: the Python
+        analyser asks four questions of each file, and parsing it four times was most of a large
+        package's scan. A reader that annotates or rewrites nodes must call `parse`."""
+        return PythonSyntax.parse(source)
+
+    @staticmethod
+    def nodes(tree: ast.AST) -> list[ast.AST]:
+        """`list(ast.walk(tree))`, computed once per tree: the same nodes in the same order, for a
+        reader that walks the same tree many times."""
+        cached = tree.__dict__.get("_cordon_nodes")
+        if cached is None:
+            cached = list(ast.walk(tree))
+            tree.__dict__["_cordon_nodes"] = cached
+        return cached
 
 
 __all__ = ["PythonSyntax"]
