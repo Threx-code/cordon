@@ -24,16 +24,18 @@ from __future__ import annotations
 import base64
 import binascii
 import contextlib
+import functools
 import gzip
 import json
 import re
 import unicodedata
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
-from typing import Final
+from typing import ClassVar, Final
 
 from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
+from cordon_scanner.intel.atr_prefilter import RequiredLiterals
 from cordon_scanner.version import __version__
 
 FILE_NAME: Final = "atr-rules.json.gz"
@@ -84,6 +86,13 @@ false-positive rate of 0.5% or less, and demoted out of the blocking tier above 
 class Condition:
     kind: str
     pattern: re.Pattern[str]
+    needles: tuple[str, ...] | None = field(default=None, init=False, compare=False)
+    """Literal text every match contains (`RequiredLiterals`), or None: the regex always runs."""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "needles", RequiredLiterals.of(self.pattern.pattern, self.pattern.flags)
+        )
 
 
 @dataclass(frozen=True)
@@ -348,17 +357,21 @@ class AtrEngine:
                 )
         return Catalogue(tuple(rules), str(document.get("commit") or ""), refused=False)
 
+    #: The literal prefilter in front of every pattern. Off only to show it changes no result.
+    PREFILTER: ClassVar[bool] = True
+
     @staticmethod
-    def _search(
-        pattern: re.Pattern[str], view: _View, outside_code: bool
-    ) -> tuple[int, int] | None:
+    def _search(condition: Condition, view: _View, outside_code: bool) -> tuple[int, int] | None:
         """Where `pattern` matches the chunk, normalised first and raw second, as offsets into the raw
         text; a match on the normalised form, whose offsets do not map back, spans the whole chunk."""
-        for text, code, mapped in (
-            (view.normal, view.normal_code, False),
-            (view.raw, view.raw_code, True),
+        pattern = condition.pattern
+        for text, code, mapped, folded in (
+            (view.normal, view.normal_code, False, view.normal_folded),
+            (view.raw, view.raw_code, True, view.raw_folded),
         ):
             if not mapped and view.normal == view.raw:
+                continue
+            if AtrEngine.PREFILTER and not RequiredLiterals.may_match(condition.needles, folded):
                 continue
             for match in pattern.finditer(text):
                 if outside_code and any(a <= match.start() < b for a, b in code):
@@ -374,12 +387,12 @@ class AtrEngine:
     ) -> tuple[int, int] | None:
         for view in views:
             if rule.every:
-                spans = [AtrEngine._search(c.pattern, view, rule.outside_code) for c in usable]
+                spans = [AtrEngine._search(c, view, rule.outside_code) for c in usable]
                 if all(span is not None for span in spans):
                     return min((s for s in spans if s is not None), key=lambda s: s[0])
                 continue
             for condition in usable:
-                span = AtrEngine._search(condition.pattern, view, rule.outside_code)
+                span = AtrEngine._search(condition, view, rule.outside_code)
                 if span is not None:
                     return span
         return None
@@ -439,6 +452,15 @@ class _View:
     normal: str
     raw_code: tuple[tuple[int, int], ...]
     normal_code: tuple[tuple[int, int], ...]
+
+    @functools.cached_property
+    def raw_folded(self) -> str | None:
+        """The raw chunk lower-cased, when it is ASCII: what `RequiredLiterals` checks."""
+        return self.raw.lower() if self.raw.isascii() else None
+
+    @functools.cached_property
+    def normal_folded(self) -> str | None:
+        return self.normal.lower() if self.normal.isascii() else None
 
 
 @dataclass(frozen=True)
