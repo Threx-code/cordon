@@ -256,6 +256,11 @@ class FileContent:
     file reasoning (entropy over the file, longest-line) must check this rather
     than silently computing over a fragment."""
 
+    streamed: bytes | None = field(default=None, repr=False, compare=False)
+    """The whole file, when it is over `max_file_bytes` but within `max_stream_bytes`: `raw` is
+    its prefix, examined by every rule, and this is what the high-signal sweep reads in chunks
+    (`CapabilityDetector.sweep`). None for every file that fits, and for one too large to hold."""
+
     _comment_columns: dict[tuple[int, str | None], int | None] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -334,6 +339,11 @@ class FileContent:
                     # appended to a large generated file is still worth finding,
                     # and the truncation is recorded so nothing claims full
                     # coverage.
+                    if size <= limits.max_stream_bytes:
+                        # Held whole for the sweep; every rule still reads only the prefix.
+                        return cls.from_bytes(
+                            rel_path, handle.read(limits.max_stream_bytes), limits
+                        )
                     raw = handle.read(limits.max_file_bytes)
                     return cls(
                         path=rel_path,
@@ -375,7 +385,21 @@ class FileContent:
         Used for archive members, staged git blobs and tests, all of which have
         content but no readable path on disk.
         """
-        return cls(path=path, raw=TextEncoding.as_utf8(raw), size=len(raw), limits=limits)
+        text = TextEncoding.as_utf8(raw)
+        if len(text) > limits.max_file_bytes:
+            # Every rule reads the prefix, as a file on disk is read; the whole of it is kept for
+            # the high-signal sweep when it is within `max_stream_bytes`. An archive member used
+            # to be refused outright here, unread.
+            whole = text if len(text) <= limits.max_stream_bytes else None
+            return cls(
+                path=path,
+                raw=text[: limits.max_file_bytes],
+                size=len(raw),
+                limits=limits,
+                truncated=True,
+                streamed=whole,
+            )
+        return cls(path=path, raw=text, size=len(raw), limits=limits)
 
     # -- Derived forms ---------------------------------------------------
 
@@ -530,8 +554,12 @@ class FileContent:
 
     @cached_property
     def sha256(self) -> str:
-        """Content hash. The incremental cache key and the artefact identity."""
-        return hashlib.sha256(self.raw).hexdigest()
+        """Content hash. The incremental cache key and the artefact identity.
+
+        Of the whole file when it is held whole (`streamed`): the sweep reads all of it, and two
+        files that share their first `max_file_bytes` and differ after must not share a cached
+        result."""
+        return hashlib.sha256(self.streamed if self.streamed is not None else self.raw).hexdigest()
 
     @cached_property
     def text(self) -> str:

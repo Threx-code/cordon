@@ -284,11 +284,12 @@ class ArchiveReader:
                 payload: bytes | None = None
                 try:
                     if method == 0:
-                        payload = body[: limits.max_file_bytes]
+                        payload = body[: ArchiveReader.member_limit(limits)]
                     elif method == 8:
                         inflater = zlib.decompressobj(-15)
                         payload = inflater.decompress(
-                            body, min(limits.max_file_bytes, limits.max_uncompressed_bytes)
+                            body,
+                            min(ArchiveReader.member_limit(limits), limits.max_uncompressed_bytes),
                         )
                 except zlib.error:
                     payload = None
@@ -522,6 +523,14 @@ class ArchiveReader:
         ArchiveReader._check_ratio(result, limits, path)
 
     @staticmethod
+    def member_limit(limits: Limits) -> int:
+        """The largest member extracted. Up to `max_stream_bytes`, not `max_file_bytes`: a member
+        over the latter is read whole so the high-signal sweep can cover it, and every other rule
+        reads its first `max_file_bytes` (`FileContent.from_bytes`). The ratio and total budgets
+        still bound what an archive can make this reader allocate."""
+        return max(limits.max_file_bytes, limits.max_stream_bytes)
+
+    @staticmethod
     def _would_exceed(
         result: ExtractionResult,
         compressed: int,
@@ -530,12 +539,12 @@ class ArchiveReader:
         name: str,
     ) -> bool:
         """Reject a member before reading it, where the declared size allows."""
-        if declared > limits.max_file_bytes:
+        if declared > ArchiveReader.member_limit(limits):
             result.rejected.append(
                 RejectedMember(
                     name,
                     Rejection.SIZE,
-                    f"declared {declared} bytes, over the {limits.max_file_bytes} limit",
+                    f"declared {declared} bytes, over the {ArchiveReader.member_limit(limits)} limit",
                 )
             )
             return True
@@ -576,12 +585,12 @@ class ArchiveReader:
                 break
             read_total += len(chunk)
 
-            if read_total > limits.max_file_bytes:
+            if read_total > ArchiveReader.member_limit(limits):
                 result.rejected.append(
                     RejectedMember(
                         name,
                         Rejection.SIZE,
-                        f"expanded past the {limits.max_file_bytes}-byte member limit",
+                        f"expanded past the {ArchiveReader.member_limit(limits)}-byte member limit",
                     )
                 )
                 return None

@@ -323,6 +323,8 @@ Enough to recognise the shape of the duplication -- two backup directories, a
 per-lesson copy -- without turning one message into a file listing."""
 
 UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
+SWEPT_NOTE = "Swept in full by the high-signal rules."
+"""How the note for an oversized file the sweep read whole begins (`Engine._truncated_note`)."""
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
@@ -430,6 +432,8 @@ class Engine:
         written out as a bytes literal -- past the size limit and the per-file budget, so the
         payload and the call that runs it were never read. Install scripts are kilobytes.
         """
+        from cordon_scanner.detect.secrets import SourcePaths
+
         out: list[Finding] = []
         seen: set[str] = set()
         for finding in findings:
@@ -439,6 +443,11 @@ class Engine:
                 or path in seen
                 or path not in ctx.install_hook_paths
             ):
+                continue
+            if SourcePaths.is_editor_extension(path) and finding.message.startswith(SWEPT_NOTE):
+                # An extension ships its code as one bundle, and ten or twenty megabytes is what a
+                # language extension's bundle weighs; this one was read whole by the high-signal
+                # sweep. An install script is kilobytes, so for one the size is still the finding.
                 continue
             seen.add(path)
             out.append(
@@ -654,6 +663,27 @@ class Engine:
                     )
                     break
         return out
+
+    @staticmethod
+    def _truncated_note(path: str, content: FileContent) -> Finding:
+        """What a file over `max_file_bytes` had examined, said exactly."""
+        if content.streamed is not None:
+            message = (
+                f"{SWEPT_NOTE} The first {len(content.raw)} bytes of this {content.size}-byte file "
+                f"were examined by every rule, and all of it by the high-signal rules: an AI agent "
+                f"turned on the user, a download that is run, a wipe of the home directory, mining."
+            )
+        else:
+            message = f"Only the first {len(content.raw)} bytes of this {content.size}-byte file were examined."
+        return Engine._operational(
+            path=path,
+            rule_id="OPERATIONAL.FILE.TRUNCATED",
+            message=message,
+            remediation=(
+                "Raise limits.max_file_bytes (every rule) or limits.max_stream_bytes (the sweep), or "
+                "exclude the file deliberately if it is a known artefact (a font, a model, a vendored binary)."
+            ),
+        )
 
     @staticmethod
     def _rejected_member(path: str, reason: str, detail: str, *, image: bool = False) -> Finding:
@@ -1363,6 +1393,9 @@ class Engine:
                 member_content = FileContent.from_bytes(
                     member_path, member_data, self.config.limits
                 )
+                if member_content.truncated:
+                    acc.complete = False
+                    acc.append(Engine._truncated_note(member_path, member_content))
                 units.append(
                     FileUnit(
                         content=member_content,
@@ -2645,22 +2678,9 @@ class Engine:
                 # repository with a 12 MB font was incomplete, failed the Action's default gate,
                 # and gave no reason.
                 if entry.rel_path not in acc.rejected_archives:
-                    acc.append(
-                        Engine._operational(
-                            path=entry.rel_path,
-                            rule_id="OPERATIONAL.FILE.TRUNCATED",
-                            message=(
-                                f"Only the first {len(loaded.raw)} bytes of this "
-                                f"{loaded.size}-byte file were examined."
-                            ),
-                            remediation=(
-                                "Raise limits.max_file_bytes, or exclude the file deliberately if it "
-                                "is a known artefact (a font, a model, a vendored binary)."
-                            ),
-                        )
-                    )
+                    acc.append(Engine._truncated_note(entry.rel_path, loaded))
 
-            retained += len(loaded.raw)
+            retained += len(loaded.streamed or loaded.raw)
             if 0 < self.config.limits.max_memory_bytes <= retained:
                 acc.complete = False
                 acc.append(
@@ -3081,8 +3101,11 @@ class Engine:
                         unit.path,
                         len(unit.content.raw),
                         unit.content.sha256,
-                        # An archive member has no path on disk to re-read.
-                        unit.content.raw if carry_content or "!" in unit.path else None,
+                        # An archive member has no path on disk to re-read. The whole of an
+                        # oversized one travels, so the worker can sweep it as well.
+                        (unit.content.streamed or unit.content.raw)
+                        if carry_content or "!" in unit.path
+                        else None,
                     )
                 )
 
@@ -4992,6 +5015,9 @@ class Engine:
         for suffix, data in members:
             member_path = rel_path + suffix
             content = FileContent.from_bytes(member_path, data, self.config.limits)
+            if content.truncated:
+                acc.complete = False
+                acc.append(Engine._truncated_note(member_path, content))
             units.append(
                 FileUnit(content=content, language=LanguageRegistry.of_file(member_path, content))
             )

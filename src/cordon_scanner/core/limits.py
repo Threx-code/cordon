@@ -29,6 +29,7 @@ from typing import Any
 _LIMIT_RANGES: dict[str, tuple[float, float | None, type]] = {
     # name: (minimum, maximum or None, accepted type)
     "max_file_bytes": (1, None, int),
+    "max_stream_bytes": (0, None, int),
     "max_line_bytes": (1, None, int),
     "max_total_bytes": (1, None, int),
     "max_files": (1, None, int),
@@ -72,6 +73,14 @@ class Limits:
     full regex pass, and the reduction is reported. Ten megabytes is far above
     any hand-written source file, so the ceiling is reached by generated
     artefacts and by deliberate padding, not by real code."""
+
+    max_stream_bytes: int = 64 * 1024 * 1024
+    """Up to this size, a file over `max_file_bytes` is still read whole: its first
+    `max_file_bytes` get every rule, and the whole file is swept in chunks by the
+    high-signal rules (`CapabilityDetector.STREAMED_RULES`). An editor extension ships its
+    code as one bundle, and Amazon Q 1.84.0's 21 MB bundle carried the prompt that told the
+    agent to wipe the machine near its end -- past any prefix. Zero turns the sweep off, and a
+    larger file is read in part as before."""
 
     max_line_bytes: int = 1 * 1024 * 1024
     """A single line this long is minified output or an attack on the
@@ -228,6 +237,8 @@ DEFAULT_LIMITS = Limits()
 
 HOOK_LIMITS = Limits(
     max_file_bytes=2 * 1024 * 1024,
+    # A commit is source somebody wrote; the sweep is for shipped bundles, at pre-push and in CI.
+    max_stream_bytes=0,
     per_file_timeout=1.0,
     total_timeout=20.0,
     max_files=10_000,

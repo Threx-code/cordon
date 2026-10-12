@@ -373,7 +373,14 @@ class CapabilityDetector(BaseDetector):
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
-        return list(self._composite_findings(unit, ctx, hits, candidates))
+        found = list(self._composite_findings(unit, ctx, hits, candidates))
+        if content.streamed is not None:
+            # Every rule read the first `max_file_bytes`; the high-signal ones now read the whole
+            # file. Here rather than in the engine, so the serial path and the worker pool -- which
+            # calls `inspect` directly -- both do it. What the first pass found is not repeated.
+            seen = {(f.rule_id, f.location.line) for f in found}
+            found += [f for f in self.sweep(unit, ctx) if (f.rule_id, f.location.line) not in seen]
+        return found
 
     # -- Labelling -------------------------------------------------------
 
@@ -706,6 +713,120 @@ class CapabilityDetector(BaseDetector):
 
         return hits
 
+    #: The rules that read the whole of a file over `max_file_bytes` (`sweep`). High-signal and
+    #: cheap: each is anchored on a distinctive literal, so twenty megabytes cost a substring scan,
+    #: and a hit is a finding on its own rather than a primitive waiting for context the sweep does
+    #: not compute (no parse, no data flow).
+    STREAMED_RULES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "CAP.AGENT.UNATTENDED.001",
+            "CAP.AGENT.HARMFUL_INSTRUCTION.001",
+            "MALWARE.AGENT.HIJACK.001",
+            "SUSPECT.AGENT.UNATTENDED.001",
+            "CAP.JS.COMMAND_FETCH_RUN.001",
+            "CAP.DESTROY.HOME.001",
+            "SUSPECT.DESTROY.HOME_OR_ROOT.001",
+            "CAP.MINE.PROTOCOL.001",
+            "SUSPECT.CRYPTOMINER.001",
+        }
+    )
+    #: Composites whose severity does not depend on where the code runs. An orchestrator starts
+    #: its agent with the checks off on purpose, from its activation code as anywhere; what makes
+    #: that an attack is the instruction it carries, which is `MALWARE.AGENT.HIJACK.001`.
+    CONTEXT_FREE: ClassVar[frozenset[str]] = frozenset({"SUSPECT.AGENT.UNATTENDED.001"})
+
+    #: How much of the file around each place a streamed rule can match the sweep reads. A rule
+    #: can only match where one of its literals is (`CompiledMatch.prefilter`), so the sweep reads
+    #: those places with this much context either side, on line boundaries, and merges windows that
+    #: overlap -- which keeps the two halves of a composite, a command and its prompt, together.
+    SWEEP_CONTEXT: ClassVar[int] = 64 * 1024
+
+    def sweep(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
+        """The high-signal rules over the WHOLE of a file every other rule read only the start of.
+
+        Read in windows around the literals those rules need, not end to end: twenty megabytes of
+        bundle are a substring search, and each window is read as a small file -- what the rules are
+        measured on. A file read as one eight-megabyte piece was not: a comment or a string opened
+        far above confused the comment tests, and the agent flag in Amazon Q's bundle went unread.
+        Findings carry line numbers in the whole file. The ceilings apply as anywhere, with the
+        exceptions a construct earns (`_composite_findings`).
+        """
+        from cordon_scanner.core.content import FileContent
+
+        whole = unit.content.streamed
+        if whole is None:
+            return []
+        candidates = tuple(
+            c
+            for c in RuleSelector.select_rules(
+                ctx.rules, language=unit.language, path=unit.content.path
+            )
+            if c.rule.id in self.STREAMED_RULES
+        )
+        anchors = sorted(
+            {
+                found
+                for c in candidates
+                for literal in (c.match.prefilter or ())
+                for found in CapabilityDetector._positions(whole, literal)
+            }
+        )
+        if not anchors:
+            return []
+        windows: list[tuple[int, int]] = []
+        for at in anchors:
+            start = whole.rfind(b"\n", 0, max(0, at - self.SWEEP_CONTEXT)) + 1
+            newline = whole.find(b"\n", min(len(whole), at + self.SWEEP_CONTEXT))
+            end = len(whole) if newline == -1 else newline + 1
+            if windows and start <= windows[-1][1]:
+                windows[-1] = (windows[-1][0], max(windows[-1][1], end))
+            else:
+                windows.append((start, end))
+        findings: dict[tuple[str, int | None], Finding] = {}
+        for start, end in windows:
+            chunk = FileContent(
+                path=unit.content.path,
+                raw=whole[start:end],
+                size=end - start,
+                limits=unit.content.limits,
+            )
+            lines_before = whole.count(b"\n", 0, start)
+            part = FileUnit(content=chunk, language=unit.language, project=unit.project)
+            hits = self._match_capabilities(chunk, candidates, unit.language)
+            for finding in self._composite_findings(part, ctx, hits, candidates):
+                moved = CapabilityDetector._shifted(finding, lines_before, start)
+                findings.setdefault((moved.rule_id, moved.location.line), moved)
+        return list(findings.values())
+
+    @staticmethod
+    def _positions(data: bytes, literal: bytes, limit: int = 2000) -> list[int]:
+        """Where `literal` occurs, at most `limit` times: a literal that common is no anchor."""
+        out: list[int] = []
+        at = data.find(literal)
+        while at != -1 and len(out) < limit:
+            out.append(at)
+            at = data.find(literal, at + 1)
+        return out
+
+    @staticmethod
+    def _shifted(finding: Finding, lines: int, offset: int) -> Finding:
+        """A finding from a chunk, placed in the whole file."""
+        at = finding.location
+
+        def plus(value: int | None, by: int) -> int | None:
+            return None if value is None else value + by
+
+        return replace(
+            finding,
+            location=replace(
+                at,
+                line=plus(at.line, lines),
+                end_line=plus(at.end_line, lines),
+                byte_start=plus(at.byte_start, offset),
+                byte_end=plus(at.byte_end, offset),
+            ),
+        )
+
     #: Fetch-and-run rules whose construct is a command line held in a string: in JavaScript
     #: that is how a command reaches `exec()`, so the quoted-pipeline exception -- written for
     #: install hints like `"curl ... | sh"` -- does not apply to them.
@@ -729,6 +850,18 @@ class CapabilityDetector(BaseDetector):
         rb"(?:atob|Buffer\s{0,4}\.\s{0,4}from|decodeURIComponent\s{0,4}\(\s{0,4}escape\s{0,4}\(\s{0,4}atob"
         rb"|base64\s{0,4}\.\s{0,4}b64decode|codecs\s{0,4}\.\s{0,4}decode)\s{0,4}\(\s{0,4}b?['\"`][A-Za-z0-9+/=_-]{60}"
     )
+
+    #: An agent started with its checks off AND told to destroy or to hunt for secrets.
+    AGENT_HIJACK_PARTS: ClassVar[frozenset[str]] = frozenset(
+        {"CAP.AGENT.UNATTENDED.001", "CAP.AGENT.HARMFUL_INSTRUCTION.001"}
+    )
+
+    @staticmethod
+    def _turns_an_agent_on_the_user(hits: list[CapabilityHit]) -> bool:
+        """Not lowered for sitting in a bundle: the compromised Amazon Q 1.84.0 shipped the
+        command and its wiping prompt in its minified main bundle, which is the only place an
+        extension's code is."""
+        return {hit.rule_id for hit in hits} >= CapabilityDetector.AGENT_HIJACK_PARTS
 
     @staticmethod
     def _evaluates_a_literal_payload(content: FileContent) -> bool:
@@ -2285,9 +2418,14 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            window = self._satisfying_window(
-                compiled, hits, unit.path, in_hook, in_ci, in_consumer, deferred
-            )
+            if compiled.rule.id in self.CONTEXT_FREE:
+                window = self._satisfying_window(
+                    compiled, hits, unit.path, False, False, False, frozenset()
+                )
+            else:
+                window = self._satisfying_window(
+                    compiled, hits, unit.path, in_hook, in_ci, in_consumer, deferred
+                )
             if window is None:
                 continue
 
@@ -2925,6 +3063,8 @@ class CapabilityDetector(BaseDetector):
             # reported as one; a download it then starts is how extensions fetch their own tools,
             # and is not escalated as an install-time dropper. See `MALWARE.DROPPER.001` above.
             in_hook = False
+        if rule.id in self.CONTEXT_FREE:
+            in_hook = False
 
         severity = RiskScorer.apply_category_floor(rule.category, rule.severity)
         category = rule.category
@@ -3085,10 +3225,16 @@ class CapabilityDetector(BaseDetector):
                 # shape the malicious extensions use, `.bat` droppers included.
                 ceilinged = "an editor extension fetching and starting its own tools"
                 ceiling = Severity.MEDIUM
+            elif content.path.rpartition("!")[2].endswith(".map"):
+                # A source map carries the original sources as JSON strings for a debugger to
+                # show. Nothing loads it as code, so even a download-and-run construct in it is
+                # text -- the bundle it maps is scanned on its own.
+                ceilinged = "a source map, which is never run"
             elif (
                 SourcePaths.is_generated_artefact(content.path)
                 and not CapabilityDetector._runs_a_downloaded_file(hits)
                 and not CapabilityDetector._evaluates_a_literal_payload(content)
+                and not CapabilityDetector._turns_an_agent_on_the_user(hits)
             ):
                 # Not when the output downloads and runs in one construct. A bundle holds a
                 # module loader's decoder and evaluator by construction, which is what this
@@ -3111,6 +3257,7 @@ class CapabilityDetector(BaseDetector):
                 CapabilityDetector._is_minified(content)
                 and not CapabilityDetector._runs_a_downloaded_file(hits)
                 and not CapabilityDetector._evaluates_a_literal_payload(content)
+                and not CapabilityDetector._turns_an_agent_on_the_user(hits)
             ):
                 # The same exceptions as generated output, for the same reasons. The second
                 # matters most here: a long encoded payload is itself what makes a hand-written
