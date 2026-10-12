@@ -801,6 +801,10 @@ class AdvisoryDatabase:
             found.update(dict.fromkeys(self._by_key.get(key, ())))
         return AdvisoryDatabase._as_named(ecosystem, name, tuple(found))
 
+    WHOLE_ITEM_RECORDS: Final = frozenset({"vscode"})
+    """Marketplaces whose malicious records condemn the item, not some of its uploads: an editor
+    extension found malicious is removed whole, and a recommendation names no version at all."""
+
     CASE_SENSITIVE_NAMES: Final = frozenset({"npm"})
     """Registries where two names differing only in case are two packages. npm stopped accepting
     capitals in 2017 and kept the packages published before then: `Orchestrator` is not
@@ -826,6 +830,8 @@ class AdvisoryDatabase:
         if ecosystem in AdvisoryDatabase.CASE_SENSITIVE_NAMES:
             exact = name.strip()
             records = tuple(a for a in records if a.name == exact)
+        if ecosystem in AdvisoryDatabase.WHOLE_ITEM_RECORDS:
+            return records
         listed = {a.identifier for a in records if a.malicious and a.versions and a.identifier}
         if not listed:
             return records
