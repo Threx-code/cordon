@@ -71,7 +71,7 @@ if TYPE_CHECKING:
     from cordon_scanner.core.content import FileContent
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.detect.embedded import Command
-    from cordon_scanner.rules.loader import CompiledRule
+    from cordon_scanner.rules.loader import CompiledRule, RuleSet
 
 
 MAX_VARIANTS = 8
@@ -563,6 +563,16 @@ class CapabilityDetector(BaseDetector):
         # address, and stripping both ends turned it into `1`, which the suite caught.
         trimmed = [host.rstrip(b":.'\"") for host in hosts]
         return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
+
+    def labels(
+        self, content: FileContent, language: str | None, rules: RuleSet
+    ) -> list[CapabilityHit]:
+        """The capability labels one file carries, as a scan computes them before any reasoning:
+        what Cordon's model reads as behaviour (`cordon_scanner.model.behaviour`)."""
+        if content.is_binary:
+            return []
+        candidates = RuleSelector.select_rules(rules, language=language, path=content.path)
+        return self._match_capabilities(content, candidates, language) if candidates else []
 
     def _match_capabilities(
         self,
