@@ -141,6 +141,27 @@ class PackageArchive:
             out.append((path.relative_to(root).as_posix(), body))
         return out
 
+    @staticmethod
+    def rooted(files: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
+        """Paths from the package's own root: the leading directories every file shares are
+        dropped. An npm tarball's `package/`, an sdist's `name-version/`, a dataset's wrapper
+        around either and a directory scanned in place then name the same file the same way --
+        so depth, and where the manifest is, describe the package and never how it was packed."""
+        if not files:
+            return files
+        common = [p.split("/")[:-1] for p, _ in files]
+        prefix = common[0]
+        for parts in common[1:]:
+            limit = min(len(prefix), len(parts))
+            index = 0
+            while index < limit and prefix[index] == parts[index]:
+                index += 1
+            prefix = prefix[:index]
+            if not prefix:
+                return files
+        cut = len("/".join(prefix)) + 1
+        return [(p[cut:], b) for p, b in files]
+
 
 class PackageFeatures:
     @staticmethod
@@ -154,6 +175,7 @@ class PackageFeatures:
     @staticmethod
     def extract(files: list[tuple[str, bytes]]) -> tuple[list[float], list[int]]:
         """(dense, token buckets) for a package's files."""
+        files = PackageArchive.rooted(files)
         dense = dict.fromkeys(PACKAGE_DENSE, 0.0)
         tokens: set[int] = set()
         entropies: list[float] = []
@@ -257,6 +279,7 @@ class FileFeatures:
     def rows(files: list[tuple[str, bytes]]) -> list[list[float]]:
         """One row per code file, at most `PER_PACKAGE_FILES`: every file a hook or entry point
         names, then those whose patterns count the most."""
+        files = PackageArchive.rooted(files)
         files = [(n, b) for n, b in files if not n.lower().endswith(BINARY)]
         hooks, entries, has_hook = FileFeatures.hook_targets(files)
         code = [(n, b) for n, b in files if n.lower().endswith((*CODE, "setup.py"))]

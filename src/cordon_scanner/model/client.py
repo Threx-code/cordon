@@ -37,6 +37,8 @@ MAX_PACKAGES: Final = 2000
 MAX_REPLY: Final = 8 << 20
 TIMEOUT: Final = 60
 _ARCHIVES: Final = (".tgz", ".tar.gz", ".whl", ".zip", ".gem", ".crate", ".nupkg")
+#: What makes a directory one package: npm's manifest, or a Python distribution's.
+_PACKAGE_MANIFESTS: Final = ("package.json", "PKG-INFO", "setup.py", "pyproject.toml", "setup.cfg")
 
 
 class ModelError(Exception):
@@ -74,6 +76,14 @@ class ModelTargets:
         if target.is_file():
             return [PackageUnit(target.name, PackageArchive.members(target.read_bytes()))], False
         units: list[PackageUnit] = []
+        unpacked = ModelTargets.unpacked_root(target)
+        if unpacked is not None:
+            units.append(
+                PackageUnit(
+                    unpacked.relative_to(target).as_posix() or ".",
+                    PackageArchive.directory(unpacked),
+                )
+            )
         for path in sorted(target.rglob("*")):
             if len(units) >= MAX_PACKAGES:
                 return units, True
@@ -91,6 +101,28 @@ class ModelTargets:
             elif path.is_dir() and ModelTargets.installed_package(path):
                 units.append(PackageUnit(relative, PackageArchive.directory(path)))
         return units, False
+
+    @staticmethod
+    def unpacked_root(target: Path) -> Path | None:
+        """The scan target itself, when it is one unpacked package: a manifest at its top, or down
+        a chain of at most four lone subdirectories (an npm tarball unpacks to `package/`, an sdist
+        to `name-version/`, and an archive of either may wrap them further). Not a git checkout: that is a repository, and the model was trained
+        and measured on published packages."""
+        if (target / ".git").exists():
+            return None
+        candidate = target
+        for _ in range(5):
+            if any((candidate / name).is_file() for name in _PACKAGE_MANIFESTS):
+                return candidate
+            try:
+                children = [p for p in candidate.iterdir() if not p.name.startswith(".")]
+            except OSError:
+                return None
+            dirs = [p for p in children if p.is_dir() and not p.is_symlink()]
+            if len(dirs) != 1 or len(children) - len(dirs) > 1:
+                return None
+            candidate = dirs[0]
+        return None
 
     @staticmethod
     def installed_package(path: Path) -> bool:

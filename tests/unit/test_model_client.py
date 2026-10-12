@@ -232,3 +232,40 @@ class TestTargets:
             "venv/lib/python3.12/site-packages/requests",
         ]
         assert capped is False
+
+
+class TestUnpackedPackage:
+    """A directory that is one unpacked package is scored as one; a repository is not."""
+
+    def test_an_npm_tarball_unpacked_to_package_is_found(self, tmp_path: Path) -> None:
+        root = tmp_path / "pkg" / "package"
+        root.mkdir(parents=True)
+        (root / "package.json").write_text('{"name": "x"}', encoding="utf-8")
+        (root / "index.js").write_text("module.exports = 1;", encoding="utf-8")
+        (tmp_path / "pkg" / "package_info.json").write_text("{}", encoding="utf-8")
+        units, _ = ModelTargets.collect(tmp_path / "pkg")
+        assert [u.location for u in units] == ["package"]
+
+    def test_a_package_at_the_top_is_found(self, tmp_path: Path) -> None:
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\nsetup()", encoding="utf-8"
+        )
+        units, _ = ModelTargets.collect(tmp_path)
+        assert [u.location for u in units] == ["."]
+
+    def test_a_git_checkout_is_a_repository_not_a_package(self, tmp_path: Path) -> None:
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "package.json").write_text('{"name": "app"}', encoding="utf-8")
+        assert ModelTargets.collect(tmp_path)[0] == []
+
+    def test_an_archive_wrapping_the_package_further_is_followed(self, tmp_path: Path) -> None:
+        root = tmp_path / "tmp" / "tmpab12" / "name" / "package"
+        root.mkdir(parents=True)
+        (root / "package.json").write_text("{}", encoding="utf-8")
+        assert [u.location for u in ModelTargets.collect(tmp_path)[0]] == ["tmp/tmpab12/name/package"]
+
+    def test_a_directory_of_several_projects_is_not_one_package(self, tmp_path: Path) -> None:
+        for name in ("a", "b"):
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "package.json").write_text("{}", encoding="utf-8")
+        assert ModelTargets.collect(tmp_path)[0] == []

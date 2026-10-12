@@ -8,6 +8,7 @@ import json
 import tarfile
 import zipfile
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -112,3 +113,39 @@ class TestFeatures:
     @pytest.mark.parametrize("name", ["x.exe", "x.dll", "x.so"])
     def test_binaries_have_no_file_row(self, name: str) -> None:
         assert FileFeatures.rows([(name, b"MZ" + b"\x00" * 100)]) == []
+
+
+class TestHowAPackageWasPackedDoesNotShow:
+    """The same files under `package/`, under a dataset's wrapper, or from the package's own
+    directory: identical features. A model must learn what a package does, never how it was packed."""
+
+    FILES: ClassVar[list[tuple[str, bytes]]] = [
+        (
+            "package.json",
+            b'{"name": "x", "scripts": {"postinstall": "node setup.js"}, "main": "index.js"}',
+        ),
+        ("setup.js", b"require('child_process').exec('id');\n"),
+        ("index.js", b"module.exports = 1;\n"),
+        ("lib/util.js", b"exports.f = () => 2;\n"),
+    ]
+
+    @staticmethod
+    def under(prefix: str) -> list[tuple[str, bytes]]:
+        return [(prefix + name, body) for name, body in TestHowAPackageWasPackedDoesNotShow.FILES]
+
+    def test_the_wrapper_is_invisible_to_package_features(self) -> None:
+        plain = PackageFeatures.extract(self.under(""))
+        assert PackageFeatures.extract(self.under("package/")) == plain
+        assert PackageFeatures.extract(self.under("tmp/tmpab12/x/package/")) == plain
+
+    def test_the_wrapper_is_invisible_to_file_features(self) -> None:
+        plain = FileFeatures.rows(self.under(""))
+        assert FileFeatures.rows(self.under("tmp/tmpab12/x/package/")) == plain
+
+    def test_the_manifest_is_read_however_deep_the_wrapper(self) -> None:
+        dense, _ = PackageFeatures.extract(self.under("tmp/tmpab12/x/package/"))
+        assert dense[PACKAGE_DENSE.index("has_install_hook")] == 1
+
+    def test_a_wheel_with_no_shared_root_is_left_alone(self) -> None:
+        files = [("x/__init__.py", b""), ("x-1.0.dist-info/METADATA", b"Name: x")]
+        assert PackageArchive.rooted(files) == files
