@@ -238,6 +238,7 @@ rather than a document.
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
 | `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
+| `MALWARE.REVERSE_SHELL.002` | critical | `composites` | malicious_code |
 | `MALWARE.YARA.MATCH.001` | critical | `yara` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
