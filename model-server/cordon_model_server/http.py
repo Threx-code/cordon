@@ -25,7 +25,9 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, ClassVar, Final
 
+from cordon_model_server.judge import Judge
 from cordon_model_server.scoring import RequestError, Scorer
+from cordon_model_server.text import TextModel
 
 MAX_BODY: Final = 16 << 20
 SOCKET_TIMEOUT: Final = 30
@@ -38,6 +40,16 @@ class Service:
         self.scorer = scorer
         self.token_hashes = token_hashes
         self.slots = threading.BoundedSemaphore(concurrency)
+        text = scorer.bundle.text
+        self.judge = (
+            Judge(
+                TextModel.load(scorer.bundle.root, text["categories"]),
+                text["malicious"],
+                text["suspicious"],
+            )
+            if text
+            else None
+        )
 
     def authorised(self, header: str | None) -> bool:
         if not header or not header.startswith("Bearer "):
@@ -103,7 +115,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self) -> None:
-        if self.path.split("?", 1)[0] != "/v1/model/score":
+        route = self.path.split("?", 1)[0]
+        if route not in ("/v1/model/score", "/v1/judge") or (
+            route == "/v1/judge" and self.service.judge is None
+        ):
             self._send(404, {"error": "not found"})
             return
         if not self.service.authorised(self.headers.get("Authorization")):
@@ -127,6 +142,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             body = json.loads(self.rfile.read(length))
+            if route == "/v1/judge":
+                assert self.service.judge is not None  # noqa: S101 - checked with the route
+                _, text = Judge.parse(body)
+                with self.service.scorer.lock:
+                    verdict = self.service.judge.verdict(text)
+                self._send(200, {"verdict": verdict})
+                return
             packages = Scorer.parse(body)
             results = self.service.scorer.score(packages)
         except (ValueError, RecursionError) as exc:

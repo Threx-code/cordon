@@ -24,6 +24,13 @@ from cordon_scanner.intel._ed25519 import Ed25519
 from cordon_scanner.model.features import FILE_DENSE, PACKAGE_DENSE, TOKEN_DIM
 
 SCHEMA: Final = "cordon.model-bundle/v1"
+TEXT_FILES: Final = (
+    "text_idf.npy",
+    "text_weights.npy",
+    "text_bias.npy",
+    "text_category_weights.npy",
+    "text_category_bias.npy",
+)
 MAX_MANIFEST: Final = 4 << 20
 
 
@@ -41,6 +48,9 @@ class Bundle:
     """Indices into [dense features..., token buckets...] the package model reads, in order."""
     package_threshold: float
     file_threshold: float | None
+    text: dict[str, Any] | None = None
+    """The judge model: its categories and its malicious and suspicious thresholds, when the
+    bundle carries one (every `TEXT_FILES` file, each in the signed manifest)."""
 
     @staticmethod
     def load(root: Path, public_key: bytes) -> Bundle:
@@ -76,7 +86,7 @@ class Bundle:
         if "package.txt" not in files:
             raise BundleError("the bundle has no package model")
         for name, digest in files.items():
-            if name not in ("package.txt", "file.txt") or not isinstance(digest, str):
+            if name not in ("package.txt", "file.txt", *TEXT_FILES) or not isinstance(digest, str):
                 raise BundleError(f"unexpected file entry {name!r}")
             try:
                 actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
@@ -107,7 +117,38 @@ class Bundle:
             columns=tuple(columns),
             package_threshold=float(package_threshold),
             file_threshold=None if file_threshold is None else float(file_threshold),
+            text=Bundle._text(manifest, files),
         )
+
+    @staticmethod
+    def _text(manifest: dict[str, Any], files: dict[str, Any]) -> dict[str, Any] | None:
+        present = [n for n in TEXT_FILES if n in files]
+        if not present:
+            return None
+        if len(present) != len(TEXT_FILES):
+            raise BundleError(
+                "the judge model is incomplete: every text_*.npy file must be in the manifest"
+            )
+        text = manifest.get("text") or {}
+        categories = text.get("categories")
+        thresholds = text.get("thresholds") or {}
+        if (
+            not isinstance(categories, list)
+            or not categories
+            or not all(isinstance(c, str) for c in categories)
+            or not all(
+                isinstance(thresholds.get(k), int | float) for k in ("malicious", "suspicious")
+            )
+            or not thresholds["suspicious"] <= thresholds["malicious"]
+        ):
+            raise BundleError(
+                "the judge model needs categories and suspicious <= malicious thresholds"
+            )
+        return {
+            "categories": tuple(categories),
+            "malicious": float(thresholds["malicious"]),
+            "suspicious": float(thresholds["suspicious"]),
+        }
 
     def describe(self) -> dict[str, Any]:
         """What a client may know about the model: identity and its published measurements."""
