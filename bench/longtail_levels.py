@@ -128,7 +128,7 @@ class LongtailLevels:
         out = {
             "ecosystems": {},
             "block_rules": block_rules.most_common(),
-            "warn_rules": warn_rules.most_common(60),
+            "warn_rules": warn_rules.most_common(),
             "contexts": {k: dict(v) for k, v in ctx_counts.items()},
             "blocked": blocked_list,
             "incomplete": dict(incomplete),
