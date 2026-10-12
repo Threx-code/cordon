@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.mcp.warm import WarmScanner
+
 MAX_OUTPUT: Final = 64 << 20
 MAX_ERROR: Final = 64 << 10
 POLL: Final = 0.05
@@ -101,6 +103,29 @@ class Runner:
         base["PYTHONIOENCODING"] = "utf-8"
         base.pop("PYTHONSTARTUP", None)
         self.environment = base
+        #: The warm scanner (`mcp.warm`), started by `start_warm`; until it is ready, or if it
+        #: dies, a call runs cold.
+        self.warm: WarmScanner | None = None
+        self._warm_home: tempfile.TemporaryDirectory[str] | None = None
+
+    def start_warm(self) -> None:
+        """Start the warm scanner in the background. Calls made before it is ready run cold."""
+        if self.warm is not None or not WarmScanner.wanted(self.environment):
+            return
+        self._warm_home = tempfile.TemporaryDirectory(prefix="cordon-mcp-warm-")
+        self.warm = WarmScanner(self.environment)
+        try:
+            self.warm.start(self._warm_home.name)
+        except OSError:
+            self.warm = None
+
+    def close(self) -> None:
+        if self.warm is not None:
+            self.warm.close()
+            self.warm = None
+        if self._warm_home is not None:
+            self._warm_home.cleanup()
+            self._warm_home = None
 
     def command(self, args: list[str]) -> list[str]:
         # -P: the working directory is not put on the import path, so a file in it named like a
@@ -116,6 +141,12 @@ class Runner:
             timeout = min(timeout, token.deadline - start)
             if timeout <= 0:
                 raise TimedOut("the call passed its deadline before this scan could start")
+        warm = self.warm
+        if warm is not None and warm.ready:
+            with contextlib.suppress(OSError):
+                return self._run_warm(
+                    warm, args, timeout=timeout, token=token, cwd=cwd, start=start
+                )
         with (
             tempfile.TemporaryFile() as out,
             tempfile.TemporaryFile() as err,
@@ -152,6 +183,53 @@ class Runner:
             error = err.read(MAX_ERROR)
         return Run(
             exit_code=process.returncode,
+            stdout=body[:MAX_OUTPUT].decode("utf-8", "replace"),
+            stderr=error.decode("utf-8", "replace"),
+            seconds=time.monotonic() - start,
+            truncated=len(body) > MAX_OUTPUT,
+        )
+
+    @staticmethod
+    def _run_warm(
+        warm: WarmScanner,
+        args: list[str],
+        *,
+        timeout: float,
+        token: CancelToken,
+        cwd: Path | None,
+        start: float,
+    ) -> Run:
+        """One call as a fork of the warm scanner; same deadline, cancellation and caps as cold.
+        Raises `OSError` when the helper cannot take the call, and the caller runs it cold."""
+        with tempfile.TemporaryDirectory(prefix="cordon-mcp-cwd-") as neutral:
+            out_path = Path(neutral) / ".out"
+            err_path = Path(neutral) / ".err"
+            out_path.touch(mode=0o600)
+            err_path.touch(mode=0o600)
+            work = cwd or Path(neutral)
+            ident = warm.submit(args, cwd=str(work), out=str(out_path), err=str(err_path))
+            try:
+                while not warm.finished(ident):
+                    if token.cancelled:
+                        raise Cancelled
+                    if time.monotonic() - start > timeout:
+                        raise TimedOut(f"the scan passed its {timeout:.0f}s deadline and was ended")
+                    time.sleep(POLL)
+            except BaseException:
+                warm.end(ident)
+                warm.exit_code(ident)
+                raise
+            code = warm.exit_code(ident)
+            if not warm.ready:
+                # The helper died with this call in it: the status is unknown, so it is run again
+                # cold rather than reported as a scan result.
+                raise OSError("the warm scanner ended during the call")
+            with out_path.open("rb") as out:
+                body = out.read(MAX_OUTPUT + 1)
+            with err_path.open("rb") as err:
+                error = err.read(MAX_ERROR)
+        return Run(
+            exit_code=code,
             stdout=body[:MAX_OUTPUT].decode("utf-8", "replace"),
             stderr=error.decode("utf-8", "replace"),
             seconds=time.monotonic() - start,

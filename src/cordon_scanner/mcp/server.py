@@ -145,6 +145,8 @@ class Server:
                         token.cancel()
 
     def serve(self, stream: TextIO) -> int:
+        # Loaded once in the background; calls that arrive first run cold (`mcp.warm`).
+        self.settings.runner.start_warm()
         try:
             while not self.closed:
                 line = stream.readline(MAX_LINE + 1)
@@ -170,6 +172,7 @@ class Server:
                 for token in self.inflight.values():
                     token.cancel()
             self.pool.shutdown(wait=True, cancel_futures=True)
+            self.settings.runner.close()
         return 0
 
     def receive(self, line: str) -> None:

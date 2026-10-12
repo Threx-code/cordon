@@ -1,0 +1,144 @@
+"""The MCP server's warm scanner: faster calls, the same results and the same limits as cold."""
+
+from __future__ import annotations
+
+import json
+import os
+import time
+from pathlib import Path
+
+import pytest
+
+from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner, TimedOut
+
+pytestmark = pytest.mark.skipif(
+    os.name != "posix", reason="the warm scanner forks; Windows runs cold"
+)
+
+
+class WarmKit:
+    @staticmethod
+    def project(tmp_path: Path) -> Path:
+        root = tmp_path / "project"
+        root.mkdir()
+        (root / "package.json").write_text(
+            json.dumps({"name": "x", "version": "1.0.0", "dependencies": {"left-pad": "1.3.0"}})
+        )
+        return root
+
+    @staticmethod
+    def runner(**environment: str) -> Runner:
+        env = dict(os.environ)
+        env.update(environment)
+        return Runner(offline=True, environment=env)
+
+    @staticmethod
+    def ready(runner: Runner, seconds: float = 120) -> None:
+        runner.start_warm()
+        deadline = time.monotonic() + seconds
+        while not (runner.warm and runner.warm.ready):
+            assert time.monotonic() < deadline, "the warm scanner never became ready"
+            time.sleep(0.1)
+
+    @staticmethod
+    def findings(stdout: str) -> list[tuple[str, str]]:
+        return sorted(
+            (f["rule_id"], f["location"].get("path", "")) for f in json.loads(stdout)["findings"]
+        )
+
+    @staticmethod
+    def alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+
+class TestWarmScanner:
+    ARGS = ("scan", "{root}", "--offline", "--format", "json")
+
+    def args(self, root: Path) -> list[str]:
+        return [a.format(root=root) for a in self.ARGS]
+
+    def test_a_warm_call_reports_exactly_what_a_cold_one_does(self, tmp_path):
+        root = WarmKit.project(tmp_path)
+        cold = WarmKit.runner(CORDON_MCP_WARM="off")
+        warm = WarmKit.runner()
+        try:
+            cold.start_warm()
+            assert cold.warm is None
+            WarmKit.ready(warm)
+            a = cold.run(self.args(root), timeout=120, token=CancelToken())
+            b = warm.run(self.args(root), timeout=120, token=CancelToken())
+        finally:
+            warm.close()
+        assert a.exit_code == b.exit_code
+        assert WarmKit.findings(a.stdout) == WarmKit.findings(b.stdout)
+
+    def test_a_warm_call_is_faster(self, tmp_path):
+        root = WarmKit.project(tmp_path)
+        runner = WarmKit.runner()
+        try:
+            WarmKit.ready(runner)
+            runner.run(self.args(root), timeout=120, token=CancelToken())
+            started = time.monotonic()
+            runner.run(self.args(root), timeout=120, token=CancelToken())
+            warm_seconds = time.monotonic() - started
+        finally:
+            runner.close()
+        cold = WarmKit.runner(CORDON_MCP_WARM="off")
+        started = time.monotonic()
+        cold.run(self.args(root), timeout=120, token=CancelToken())
+        assert warm_seconds < time.monotonic() - started
+
+    def test_the_deadline_ends_the_child(self, tmp_path):
+        root = WarmKit.project(tmp_path)
+        runner = WarmKit.runner()
+        try:
+            WarmKit.ready(runner)
+            token = CancelToken()
+            with pytest.raises(TimedOut):
+                runner.run(self.args(root), timeout=0.001, token=token)
+            assert runner.warm is not None and runner.warm._calls == {}
+        finally:
+            runner.close()
+
+    def test_a_cancelled_call_ends_its_child(self, tmp_path):
+        root = WarmKit.project(tmp_path)
+        runner = WarmKit.runner()
+        try:
+            WarmKit.ready(runner)
+            token = CancelToken()
+            token.cancel()
+            with pytest.raises(Cancelled):
+                runner.run(self.args(root), timeout=120, token=token)
+            assert runner.warm is not None and runner.warm._calls == {}
+        finally:
+            runner.close()
+
+    def test_a_dead_helper_means_cold_calls_not_failures(self, tmp_path):
+        root = WarmKit.project(tmp_path)
+        runner = WarmKit.runner()
+        try:
+            WarmKit.ready(runner)
+            assert runner.warm is not None and runner.warm._process is not None
+            runner.warm._process.kill()
+            deadline = time.monotonic() + 10
+            while runner.warm.ready:
+                assert time.monotonic() < deadline
+                time.sleep(0.05)
+            result = runner.run(self.args(root), timeout=120, token=CancelToken())
+        finally:
+            runner.close()
+        assert result.exit_code in (0, 1)
+        assert "findings" in json.loads(result.stdout)
+
+    def test_closing_the_server_ends_the_helper(self):
+        runner = WarmKit.runner()
+        WarmKit.ready(runner)
+        assert runner.warm is not None and runner.warm._process is not None
+        process = runner.warm._process
+        runner.close()
+        pid = process.pid
+        assert not WarmKit.alive(pid)
