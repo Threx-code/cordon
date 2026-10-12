@@ -20,7 +20,16 @@ Demonstrably malicious means the skill's own files show one of:
   D2 theft        code that reads a secret AND sends it to a host that is not local
   D3 concealment  hides what it does from the user, AND D1, D2 or D4
   D4 destruction  wipes the home directory, a disk or the filesystem
+  D1 counts a download run by code, by a hook, or by an instruction that runs it unasked; a
+     documented installer a person chooses to run is risky and warns (`syncause`, below).
   D5 campaign     a member of ClawHavoc, the publicly documented skill-malware campaign
+  D6 control      runs commands sent from elsewhere, or plants an access bypass for an outsider
+  D7 on load      code that runs because the skill is parsed (`---js` front matter)
+  D8 override     tells the agent to drop its safety rules AND to hide that from the user
+The regexes below find D1-D5 in most samples. Every sample they did not mark was then read in full,
+and those meeting a criterion are in READ_BY_HAND with the evidence; that reading added samples
+Cordon missed as well as ones it caught, and it is why the cisco "exfiltrator" fixture stays out
+(a generic API_KEY sent to one host is the shape of every API client; only its comments say more).
 A labelled sample with none of these is counted in the dataset-wide rate, not the demonstrable
 one; the DataDog set also labels risky-but-legitimate skills (an SMTP sender, a scheduler) and other
 scanners' test fixtures. Overrides, each read by hand and each giving its reason, are below.
@@ -104,8 +113,67 @@ OVERRIDES: dict[str, str] = {
     "plugins-world-pw-skills-pw-image-generation": "uploads the user's generated image to an image host: its function",
     "plurigrid-asi-skills-vercel-deploy": "uploads the project to Vercel to deploy it, .env excluded: its function",
     "alfredang-skills-start-app": "'do NOT silently retry' and a cache rm -rf: the patterns misread, nothing harmful",
-    "arjenschwarz-agentic-coding-claude-skills-project-init": "curl | bash of the author's own installer: risky, warns",
     "syncause-debug-skill-skills-syncause-debugger": "curl | bash of the vendor's pinned installer in a reference doc: risky, warns",
+}
+
+#: Samples the regexes did not mark, read in full and found to meet a criterion, with the evidence.
+READ_BY_HAND: dict[str, tuple[str, str]] = {
+    "3bkader-gpt-malicious-skill-poc": (
+        "D7",
+        "SKILL.md front matter is `---js`: a parser that honours it runs the code",
+    ),
+    "3bkader-gpt-malicious-skill-poc-malicious-skill-poc": ("D7", "the same `---js` front matter"),
+    "Charpup-skill-security-auditor-backdoor-skill": (
+        "D6",
+        "a listener and a connection that run the commands they receive",
+    ),
+    "Charpup-skill-security-auditor-data-exfiltration-skill": (
+        "D2",
+        "reads .env, shell profiles and secrets.yaml and sends them to an outside host",
+    ),
+    "Charpup-skill-security-auditor-network-egress-skill": ("D1", "executes what a server returns"),
+    "Charpup-skill-security-auditor-privilege-escalation-skill": (
+        "D4",
+        "appends to /etc/shadow, flushes the firewall, disables SELinux, opens / to everyone",
+    ),
+    "cisco-ai-defense-skill-scanner-environment-secrets": (
+        "D2",
+        "collects every secret-named environment variable and posts them out",
+    ),
+    "cisco-ai-defense-skill-scanner-magic-string-trigger": (
+        "D6",
+        "on a trigger string, executes a fetched payload and opens a shell to an outside host",
+    ),
+    "cybertechajju-version-demo-helper": (
+        "D2",
+        "instructs sending ~/.ssh/id_rsa, encoded, to an outside host",
+    ),
+    "cybertechajju-version-demo-skills-helper": ("D2", "the same instruction"),
+    "ronyparra-fake-dep-check-skill": (
+        "D2",
+        "instructs posting secret-named environment variables and .env values to workers.dev",
+    ),
+    "natemcgrady-slack-gif-creator-slack-gif-creator": (
+        "D1",
+        "downloads a script from tmpfiles.org and runs it each time a GIF is saved",
+    ),
+    "clawsights-clawsights-skills-clawsights": (
+        "D2",
+        "sends the user's GitHub token to a host that is not GitHub, hidden from the user",
+    ),
+    "clawsights-clawsights-dot-agents-skills-clawsights": ("D2", "the same instruction"),
+    "ZackKorman-skills-openclaw-admin-security-breakglass": (
+        "D6",
+        "instructs inserting an access-control bypass for a hard-coded number",
+    ),
+    "arjenschwarz-agentic-coding-claude-skills-project-init": (
+        "D1",
+        "installs a session hook that pipes a remote script into bash on every start",
+    ),
+    "cisco-ai-defense-skill-scanner-jailbreak-override": (
+        "D8",
+        "drop safety and content policy, and do not tell the user",
+    ),
 }
 
 
@@ -170,6 +238,8 @@ class SkillsMeasure:
         d5 = bool(CAMPAIGN.search(name))
         reasons = [k for k, v in (("D1", d1), ("D2", d2), ("D3", d3), ("D4", d4), ("D5", d5)) if v]
         short = name.split("/")[-1].removesuffix(".zip")
+        if short in READ_BY_HAND:
+            reasons = sorted({*reasons, READ_BY_HAND[short][0]})
         return {"reasons": [] if short in OVERRIDES else reasons, "override": OVERRIDES.get(short)}
 
     @staticmethod

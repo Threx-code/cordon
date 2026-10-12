@@ -139,12 +139,14 @@ class GuardDogTags:
         done: set[str] = set()
         if args.out.exists():
             done = {
-                json.loads(line)["sample"] for line in args.out.read_text().splitlines() if line
+                json.loads(line)["sample"]
+                for line in args.out.read_text(encoding="utf-8").splitlines()
+                if line
             }
         samples = [s for s in Harness.malware_samples(args.data) if s[0] not in done]
         print(f"{len(done)} tagged, {len(samples)} to go", flush=True)
         lock = Lock()
-        with args.out.open("a") as sink, ThreadPoolExecutor(args.workers) as pool:
+        with args.out.open("a", encoding="utf-8") as sink, ThreadPoolExecutor(args.workers) as pool:
             for count, row in enumerate(pool.map(lambda s: cls.tag(*s), samples), start=1):
                 with lock:
                     sink.write(json.dumps(row) + "\n")
