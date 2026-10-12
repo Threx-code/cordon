@@ -45,6 +45,7 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
@@ -271,6 +272,16 @@ _OPEN_EXECUTABLE: Final = re.compile(
     r"\b[\w.-]{1,80}\.(?:exe|app|dmg|pkg|msi|scr|command|bat)\b"
 )
 #: Scripts that ship with a skill, which the agent runs when the skill is used.
+#: The events an agent runs a hook on (Claude Code, Codex, Gemini CLI, Cursor).
+_HOOK_EVENT: Final = re.compile(
+    r"\b(?:SessionStart|UserPromptSubmit|PreToolUse|PostToolUse|SessionEnd|beforeSubmitPrompt|"
+    r"beforeShellExecution|afterFileEdit)\b"
+)
+#: A download piped straight into a shell or PowerShell.
+_PIPED_DOWNLOAD: Final = re.compile(
+    r"(?i)\b(?:curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b"
+    r"|\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^\n|]{0,300}\|\s*(?:iex|Invoke-Expression)\b"
+)
 _SKILL_SCRIPT_SUFFIXES: Final = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".ps1", ".rb")
 #: A payload written into the script, encoded: a quoted run of base64, hex or the like. What makes
 #: decoding suspicious is that the code run is fixed and unreadable; a command the script builds
@@ -314,6 +325,14 @@ _SHORTENERS: Final = frozenset(
 )
 _RAW_IP_URL: Final = re.compile(r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
 _DECODED: Final = re.compile(r"(?i)\bbase64\s+(?:-d|--decode)\b")
+#: A front-matter delimiter naming a code engine: `---js`, `---javascript`, `---coffee`. gray-matter,
+#: the parser most JavaScript tooling uses, evaluates such a block as code when it reads the file. At
+#: any line start, not only the first: a loader that takes the first delimited block after a fence or
+#: a preamble reads it there, and no agent instruction file has a use for the marker.
+_CODE_FRONT_MATTER: Final = re.compile(
+    r"^[ \t]{0,3}---[ \t]*(?:js|javascript|coffee|coffeescript)[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 _SENSITIVE_IMPORT: Final = re.compile(
     r"(?im)(?:^|\s)@(?:~|\$HOME|/root|/home/[\w.-]+|/Users/[\w.-]+)/\.(?:ssh|aws|azure|kube|docker|gnupg|npmrc|pypirc|netrc|git-credentials|config/gcloud)\b[^\s]*"
     r"|(?:^|\s)@(?:[\w./~-]*/)?(?:id_(?:rsa|ed25519|ecdsa|dsa)|\.env)(?![\w.-])"
@@ -1223,6 +1242,35 @@ RULES.update(
 
 RULES.update(
     {
+        "SUSPECT.AGENT.FRONT_MATTER_CODE.001": AgentRules._rule(
+            "SUSPECT.AGENT.FRONT_MATTER_CODE.001",
+            "Agent instructions whose front matter is code",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.HIGH,
+            "This file opens with `---js` (or another code engine) instead of YAML front matter. "
+            "Front-matter parsers that honour the marker evaluate the block as code when they read "
+            "the file, so loading the skill or instruction file runs it -- before anyone reads it.",
+            "Replace the block with YAML front matter. No agent file needs executable metadata.",
+            (ref.OWASP_LLM_PROMPT_INJECTION,),
+        ),
+        "SUSPECT.AGENT.SKILL_HOOK_FETCH.001": AgentRules._rule(
+            "SUSPECT.AGENT.SKILL_HOOK_FETCH.001",
+            "A skill script installs an agent hook that runs a download",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.HIGH,
+            "This script, shipped with a skill, writes an agent hook whose command pipes a download "
+            "into a shell. Once installed, every session the agent starts runs whatever that address "
+            "serves at the time, with no review and no pinned version.",
+            "Do not run the script. A hook should run code that is in the repository, pinned.",
+            (ref.OWASP_LLM_PROMPT_INJECTION,),
+        ),
+    }
+)
+
+RULES.update(
+    {
         "SUSPECT.AGENT.INTENT.001": AgentRules._rule(
             "SUSPECT.AGENT.INTENT.001",
             "Text that tells the agent to act against its user",
@@ -1258,6 +1306,9 @@ INTENT_WORDS: Final = {
     "persist": "write itself into the agent's own instruction files so it loads every session",
     "markdown-exfil": "carry data out in a markdown image URL the client fetches without asking",
     "credential-pipe": "read key or credential files and pipe them to a network tool",
+    "secret-harvest": "collect every secret-named variable or a whole .env and send it to an outside host",
+    "credential-elsewhere": "send a credential it printed with its own tool to a host that did not issue it",
+    "concealed-override": "drop its safety rules and keep that hidden from the user",
 }
 _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
 
@@ -1274,6 +1325,17 @@ class SkillScripts:
             if candidate in ctx.tree_paths:
                 return True
         return False
+
+    @staticmethod
+    def hooks_a_download(text: str) -> re.Match[str] | None:
+        """A script that writes an agent hook whose command pipes a download into a shell: from then
+        on, every session the agent starts runs whatever that URL serves that day."""
+        for event in _HOOK_EVENT.finditer(text):
+            window = text[max(0, event.start() - 600) : event.end() + 600]
+            piped = _PIPED_DOWNLOAD.search(window)
+            if piped is not None:
+                return _PIPED_DOWNLOAD.search(text, max(0, event.start() - 600))
+        return None
 
     @staticmethod
     def decode_run(text: str) -> re.Match[str] | None:
@@ -1394,6 +1456,10 @@ class AgentChainDetector(BaseDetector):
         if found is not None:
             start, end = InstructionText._byte_span(unit.content.text, found)
             yield self._finding("SUSPECT.AGENT.SKILL_DECODE_RUN.001", unit, ctx, start, end)
+        hooked = SkillScripts.hooks_a_download(unit.content.text)
+        if hooked is not None:
+            start, end = InstructionText._byte_span(unit.content.text, hooked)
+            yield self._finding("SUSPECT.AGENT.SKILL_HOOK_FETCH.001", unit, ctx, start, end)
 
     def _server_source(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """An MCP server's own source: the tool names and descriptions it hands the agent.
@@ -1527,6 +1593,10 @@ class AgentChainDetector(BaseDetector):
         if dropper is not None:
             start, end = InstructionText._byte_span(text, dropper)
             yield self._finding("SUSPECT.AGENT.DROPPER_PROSE.001", unit, ctx, start, end)
+        executable = _CODE_FRONT_MATTER.search(text)
+        if executable is not None:
+            start, end = InstructionText._byte_span(text, executable)
+            yield self._finding("SUSPECT.AGENT.FRONT_MATTER_CODE.001", unit, ctx, start, end)
         imported = _SENSITIVE_IMPORT.search(text)
         if imported is not None:
             start, end = InstructionText._byte_span(text, imported)
@@ -2435,9 +2505,11 @@ class AgentChainDetector(BaseDetector):
         text = message or rule.message
         # Only the directory says test here. An agent reads its configuration by exact name,
         # so `settings.local.json` -- `local` marks a key file as non-production -- is the file
-        # Claude Code loads, not a fixture.
+        # Claude Code loads, not a fixture. And only a directory whose WHOLE name says so: a
+        # word inside a name (`version-demo-helper`, `api-test-kit`) is chosen by whoever named
+        # the skill, and the agent loads that skill all the same.
         if rule.category not in (Category.MALICIOUS, Category.OPERATIONAL) and (
-            SourcePaths.names_test_directory(content.path)
+            ContainerPaths.under_fixture_directory(content.path)
             or SourcePaths.test_material_glob(content.path)
         ):
             chosen = min(chosen, Severity.LOW)

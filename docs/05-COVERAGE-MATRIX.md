@@ -695,6 +695,7 @@ rather than a document.
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | `agents` | exfiltration |
 | `SUSPECT.AGENT.DROPPER_PROSE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
+| `SUSPECT.AGENT.FRONT_MATTER_CODE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
@@ -706,6 +707,7 @@ rather than a document.
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
 | `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.UNATTENDED.001` | medium | `composites` | prompt_injection |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
