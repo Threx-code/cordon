@@ -265,8 +265,7 @@ class PythonSource:
         except (SyntaxError, ValueError, RecursionError):
             return frozenset()
 
-        analyzer = PythonAnalyzer()
-        analyzer._collect_names(tree)
+        analyzer = PythonAnalyzer._prepared(tree)
         lines: set[int] = set()
         for node in PythonSyntax.of(tree, ast.While, ast.For, ast.AsyncFor):
             for inner in PythonSyntax.of(node, ast.Call):
@@ -504,9 +503,8 @@ class PythonAnalyzer:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
-        analyzer = cls()
+        analyzer = cls._prepared(tree)
         analyzer._follow_literals = follow_literals
-        analyzer._collect_names(tree)
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._received_and_run(tree)
@@ -678,8 +676,7 @@ class PythonAnalyzer:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return {}
-        analyzer = cls()
-        analyzer._collect_names(tree)
+        analyzer = cls._prepared(tree)
         analyzer._walk(tree)
         handed = analyzer._environment_handed_to_children(tree)
         environment = {
@@ -761,8 +758,7 @@ class PythonAnalyzer:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
-        analyzer = cls()
-        analyzer._collect_names(tree)
+        analyzer = cls._prepared(tree)
         # `_invoked` maps an inner call to the call that invokes its result, so
         # `getattr(os, "system")("...")` can find the argument list that belongs
         # to the outer parentheses.
@@ -996,6 +992,26 @@ class PythonAnalyzer:
         return True
 
     # -- Name resolution -------------------------------------------------
+
+    @classmethod
+    def _prepared(cls, tree: ast.AST) -> PythonAnalyzer:
+        """An analyser with this tree's name tables already built, each table its own copy.
+
+        Four entry points (`analyse`, `calls`, `excused_lines` and `PythonSource.loop_delay_lines`)
+        each built the same tables from scratch: 3.2 builds per file. They are built once per tree now, kept on it, and copied per caller, so what one
+        caller adds -- `_walk` fills `_invoked` and records hits -- reaches no other.
+        """
+        base = tree.__dict__.get("_cordon_names")
+        if base is None:
+            base = cls()
+            base._collect_names(tree)
+            tree.__dict__["_cordon_names"] = base
+        fresh = cls()
+        for name, value in vars(base).items():
+            if name == "_hits":
+                continue
+            setattr(fresh, name, value.copy() if isinstance(value, dict | set | list) else value)
+        return fresh
 
     def _collect_names(self, tree: ast.AST) -> None:
         """Build the alias and binding maps before evaluating any call.
