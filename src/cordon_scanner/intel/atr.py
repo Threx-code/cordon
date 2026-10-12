@@ -35,7 +35,7 @@ from functools import cache
 from typing import ClassVar, Final
 
 from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
-from cordon_scanner.intel.atr_prefilter import RequiredLiterals
+from cordon_scanner.intel.atr_prefilter import CaseFold, RequiredLiterals
 from cordon_scanner.version import __version__
 
 FILE_NAME: Final = "atr-rules.json.gz"
@@ -455,12 +455,12 @@ class _View:
 
     @functools.cached_property
     def raw_folded(self) -> str | None:
-        """The raw chunk lower-cased, when it is ASCII: what `RequiredLiterals` checks."""
-        return self.raw.lower() if self.raw.isascii() else None
+        """The raw chunk as `CaseFold` folds it: what `RequiredLiterals` checks."""
+        return CaseFold.fold(self.raw)
 
     @functools.cached_property
     def normal_folded(self) -> str | None:
-        return self.normal.lower() if self.normal.isascii() else None
+        return CaseFold.fold(self.normal)
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.intel.atr import TEXT_KINDS, AtrEngine
-from cordon_scanner.intel.atr_prefilter import RequiredLiterals
+from cordon_scanner.intel.atr_prefilter import CaseFold, RequiredLiterals
 
 CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 SUFFIXES = (".md", ".mdc", ".json", ".yaml", ".yml", ".txt", ".toml")
@@ -51,11 +51,21 @@ class TestWhatAPatternRequires:
         assert PrefilterKit.needles(r"[A-Za-z0-9+/]{40,}={0,2}") is None
         assert RequiredLiterals.may_match(None, "anything") is True
 
-    def test_non_ascii_text_always_runs(self) -> None:
+    def test_non_ascii_text_is_folded_as_the_engine_compares_it(self) -> None:
         """Case-insensitive `i` matches U+0131 and `s` matches U+017F; no lower-casing reproduces that."""
         assert RequiredLiterals.may_match(("ignore",), None) is True
         pattern = re.compile(r"ignore previous", re.IGNORECASE)
         assert pattern.search(f"{DOTLESS_I}gnore previous")  # what the prefilter must not hide
+        assert RequiredLiterals.may_match(("ignore",), CaseFold.fold(f"{DOTLESS_I}GNORE")) is True
+        assert RequiredLiterals.may_match(("system",), CaseFold.fold(f"{LONG_S}ystem")) is True
+
+    def test_the_fold_matches_the_regex_engine_on_every_character(self) -> None:
+        """Every character the engine matches to an ASCII letter folds to that letter."""
+        letters = re.compile(r"[a-z]", re.IGNORECASE)
+        for code in range(0x80, 0x3000):
+            char = chr(code)
+            if letters.fullmatch(char):
+                assert CaseFold.fold(char)[:1] in "abcdefghijklmnopqrstuvwxyz", hex(code)
 
 
 class TestItChangesNoResult:

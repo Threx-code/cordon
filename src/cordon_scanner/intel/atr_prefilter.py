@@ -8,13 +8,17 @@ pattern needs some plain word to match at all -- `ignore`, `previous instruction
 It must never skip a match. So it says only what it can show from the parsed pattern and gives up
 otherwise: literals are taken from runs the pattern requires (not optional, not one side of an
 alternation unless every side has one); a branch counts only when every alternative yields a literal;
-and only ASCII literals are used, checked only against ASCII text. That last rule is about case:
-every ATR pattern is case-insensitive, and Python's case-insensitive matching pairs `i` with U+0131 and
-`s` with U+017F, which no lower-casing reproduces. ASCII text against ASCII literals has no such pairs.
+and only ASCII literals are used. Every ATR pattern is case-insensitive, and Python's case-insensitive
+matching pairs `i` with U+0131 and `s` with U+017F, which no lower-casing reproduces; so the text is
+folded by `CaseFold`, built by asking the regex engine itself which characters it matches to each
+ASCII letter, and a literal is looked for in that.
 """
 
 from __future__ import annotations
 
+import functools
+import re
+import string
 from typing import Any, Final
 
 MIN_LITERAL: Final = 3
@@ -94,7 +98,34 @@ class RequiredLiterals:
 
     @staticmethod
     def may_match(needles: tuple[str, ...] | None, folded: str | None) -> bool:
-        """False only when the text, ASCII and lower-cased in `folded`, holds none of the needles."""
+        """False only when the text, folded by `CaseFold`, holds none of the needles."""
         if needles is None or folded is None:
             return True
         return any(needle in folded for needle in needles)
+
+
+class CaseFold:
+    """Text folded so that a case-insensitive ASCII letter is found wherever the regex would match it."""
+
+    @staticmethod
+    @functools.cache
+    def _table() -> dict[int, str]:
+        """Every non-ASCII character the regex engine matches to an ASCII letter under IGNORECASE,
+        mapped to that letter. Asked of the engine over every code point, not listed from memory."""
+        letters = re.compile(r"[a-z]", re.IGNORECASE)
+        everything = "".join(chr(c) for c in range(0x80, 0x110000) if not 0xD800 <= c < 0xE000)
+        table: dict[int, str] = {}
+        for found in letters.finditer(everything):
+            char = found.group()
+            for letter in string.ascii_lowercase:
+                if re.fullmatch(letter, char, re.IGNORECASE):
+                    table[ord(char)] = letter
+                    break
+        return table
+
+    @staticmethod
+    def fold(text: str) -> str:
+        """`text` with those characters replaced by their letter, then lower-cased. Lower-casing can
+        add characters (U+0130 becomes two) but never removes an ASCII letter, so a literal the regex
+        could match is always still there."""
+        return text.translate(CaseFold._table()).lower()
