@@ -53,7 +53,10 @@ class Combine:
         )
         out: dict[str, tuple[bool | None, bool | None]] = {}
         for r in rows:
-            if r["source"] in ("datadog", "malregistry"):
+            if r["source"] == "datadog":
+                # The baseline names a DataDog sample from below `samples/`: `datadog/npm/...`.
+                found = by_sample.get(r["path"].replace("datadog/samples/", "datadog/", 1))
+            elif r["source"] == "malregistry":
                 found = by_sample.get(r["path"])
             elif r["source"] == "top":
                 found = by_sample.get(f"{r['ecosystem']}/{r['name']}")

@@ -53,7 +53,7 @@ ROUNDS = 600
 
 class Training:
     @staticmethod
-    def load(work: Path) -> tuple[list[dict[str, str]], sparse.csr_matrix]:
+    def load(work: Path, extra: str = "") -> tuple[list[dict[str, str]], sparse.csr_matrix]:
         rows = [
             json.loads(line)
             for line in (work / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
@@ -62,6 +62,10 @@ class Training:
         dense = np.load(work / "features" / "dense.npy")
         tokens = sparse.load_npz(work / "features" / "tokens.npz")
         read = json.loads((work / "features" / "read.json").read_text(encoding="utf-8"))
+        if extra:
+            # Extra dense columns (`embeddings.py`), placed with the dense block so token
+            # selection by chi-squared leaves them alone.
+            dense = np.hstack([dense, np.load(work / "features" / f"{extra}.npy")])
         matrix = sparse.hstack([sparse.csr_matrix(dense), tokens]).tocsr()
         keep = [i for i, ok in enumerate(read) if ok]
         return [rows[i] for i in keep], matrix[keep]
@@ -98,14 +102,19 @@ class Training:
         parser.add_argument("--work", type=Path, default=Path("/work"))
         parser.add_argument("--split", choices=("hash", "time", "campaign"), default="hash")
         parser.add_argument("--fpr", type=float, default=0.005)
+        parser.add_argument("--extra", default="", help="extra dense columns: features/<name>.npy")
         args = parser.parse_args()
-        rows, matrix = Training.load(args.work)
+        rows, matrix = Training.load(args.work, args.extra)
         labels = np.array([int(r["label"]) for r in rows])
         side = np.array([r[f"{args.split}_split"] for r in rows])
         train, held = np.where(side == "train")[0], np.where(side == "held")[0]
         campaigns = np.array([r.get("campaign", i) for i, r in enumerate(rows)])
         dense_n = len(
             json.loads((args.work / "features" / "dense_names.json").read_text(encoding="utf-8"))
+        ) + (
+            np.load(args.work / "features" / f"{args.extra}.npy", mmap_mode="r").shape[1]
+            if args.extra
+            else 0
         )
         scores_chi, _ = chi2(matrix[train][:, dense_n:], labels[train])
         best = np.argsort(np.nan_to_num(scores_chi, nan=0.0))[::-1][:TOKENS_KEPT]
@@ -138,7 +147,9 @@ class Training:
         print(
             f"  ALL malicious detected {sum(mal)}/{len(mal)} ({100 * sum(mal) / max(len(mal), 1):.2f}%); legitimate flagged {sum(leg)}/{len(leg)} ({100 * sum(leg) / max(len(leg), 1):.2f}%)"
         )
-        out = args.work / f"model-{args.split}"
+        out = args.work / (
+            f"model-{args.split}-{args.extra}" if args.extra else f"model-{args.split}"
+        )
         out.mkdir(exist_ok=True)
         model.save_model(str(out / "model.txt"))
         joblib.dump(

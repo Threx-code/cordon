@@ -30,11 +30,12 @@ class RulesOnRandom:
 
     @staticmethod
     def main() -> int:
+        out_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/work/rules_random.json")
         entries = json.loads(Path("/random/manifest.json").read_text(encoding="utf-8"))
         with Pool(8) as pool:
             results = pool.map(RulesOnRandom.one, entries, chunksize=16)
         out = {path: {"blocked": blocked, "detail": detail} for path, blocked, detail in results}
-        Path("/work/rules_random.json").write_text(json.dumps(out), encoding="utf-8")
+        out_path.write_text(json.dumps(out), encoding="utf-8")
         blocked = sum(1 for v in out.values() if v["blocked"])
         errors = sum(1 for v in out.values() if v["blocked"] is None)
         print(f"{len(out)} packages; blocked {blocked}; no answer {errors}")
