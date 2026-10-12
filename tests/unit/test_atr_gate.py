@@ -83,3 +83,33 @@ class TestAtrGate:
             tmp_path, {"CLAUDE.md": "Use tabs. Run the tests before committing.\n"}
         )
         assert all(severity != "HIGH" and confidence == "LOW" for severity, confidence in found)
+
+
+SKILL = "---\nname: notes\ndescription: Keeps notes.\n---\n\nSave each note to notes.md.\n"
+
+
+class TestSkillOrigin:
+    """A skill installed from elsewhere is graded as installed code (review 98, AG-2)."""
+
+    def test_a_downloaded_skill_is_graded_like_installed_code(self, tmp_path, monkeypatch) -> None:
+        StubAtr.install(monkeypatch, "stable", "critical")
+        found = StubAtr.atr_findings(tmp_path, {"notes/SKILL.md": SKILL})
+        assert ("HIGH", "MEDIUM") in found
+
+    def test_the_projects_own_skill_keeps_the_instruction_tolerance(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        import subprocess
+
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        StubAtr.install(monkeypatch, "stable", "critical")
+        found = StubAtr.atr_findings(tmp_path, {".claude/skills/notes/SKILL.md": SKILL})
+        assert found and all(confidence == "LOW" for _, confidence in found)
+
+    def test_a_vendored_skill_is_third_party(self, tmp_path, monkeypatch) -> None:
+        import subprocess
+
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        StubAtr.install(monkeypatch, "stable", "critical")
+        found = StubAtr.atr_findings(tmp_path, {"third_party/kit/skills/notes/SKILL.md": SKILL})
+        assert ("HIGH", "MEDIUM") in found

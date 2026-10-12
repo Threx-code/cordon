@@ -31,7 +31,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.core import references as ref
 from cordon_scanner.core.models import (
@@ -1313,6 +1313,34 @@ INTENT_WORDS: Final = {
 _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
 
 
+class SkillOrigin:
+    """Whether a skill is the project's own or installed from elsewhere (review 98, AG-2).
+
+    A `SKILL.md` committed in the repository being scanned is the project's own instructions, and
+    gets the tolerance written for its own CLAUDE.md. Any other skill -- inside an archive, under
+    an installed or vendored folder, or scanned as a download rather than as a repository root --
+    is third-party code being installed, and is graded like a tool description.
+    """
+
+    _INSTALLED: ClassVar[tuple[str, ...]] = (
+        "node_modules/",
+        "site-packages/",
+        "/.cursor/extensions/",
+        "/.vscode/extensions/",
+        "vendor/",
+        "third_party/",
+    )
+
+    @staticmethod
+    def third_party(path: str, ctx: ScanContext) -> bool:
+        if not path.lower().endswith("skill.md"):
+            return False
+        if "!" in path or any(part in path.lower() for part in SkillOrigin._INSTALLED):
+            return True
+        repository = ctx.repository
+        return repository is None or not repository.scanned_repository_root
+
+
 class SkillScripts:
     """Scripts that ship with an agent skill: files beside or below a SKILL.md."""
 
@@ -1628,7 +1656,9 @@ class AgentChainDetector(BaseDetector):
             ctx,
             text,
             atr.TEXT_KINDS,
-            instruction_file=True,
+            # The project's own instruction files get the instruction-file tolerance; a skill
+            # installed from elsewhere is code being installed and keeps ATR's grades (AG-2).
+            instruction_file=not SkillOrigin.third_party(unit.content.path, ctx),
             corroborated=bool(hidden or injection or exfil or concealed or alarming is not None),
         )
 
