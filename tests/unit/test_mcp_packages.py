@@ -3,6 +3,7 @@ stand-in lockfile giving the scanner's real verdict for a real affected release.
 
 from __future__ import annotations
 
+import itertools
 import json
 import subprocess
 import sys
@@ -138,7 +139,8 @@ class Records:
         """A real record from the bundled database whose affected version can be named exactly."""
         database = AdvisoryDatabase.bundled()
         database._load(ecosystem)
-        keys = [k for k in database._raw if k[0] == ecosystem] + [
+        names = itertools.islice(database._sources.get(ecosystem, {}), 20000)
+        keys = [(ecosystem, name) for name in names] + [
             k for k in database._by_key if k[0] == ecosystem
         ]
         for key in keys[:20000]:

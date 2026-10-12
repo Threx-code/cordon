@@ -55,9 +55,10 @@ import gzip
 import hashlib
 import json
 import threading
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, Final
+from typing import Any, ClassVar, Final
 
 from cordon_scanner.core.local_seal import SEAL_KEY, LocalSeal
 
@@ -489,24 +490,35 @@ class ShippedAdvisories:
         sdist did not ship the directory, and `BUNDLED` carries coverage on its own
         either way.
         """
+        verified = ShippedAdvisories._verified_file(ecosystem)
+        return [] if verified is None else ShippedAdvisories._parse(verified[0])
+
+    @staticmethod
+    def _verified_file(ecosystem: str) -> tuple[Path, str] | None:
+        """The freshest copy of one ecosystem's file and its SHA-256, only if it may be read.
+
+        Checked against the manifest that shipped beside it. A file whose digest does not match is
+        not read at all: half-trusted advisory data is worse than none, because the count still
+        looks healthy. `tampered_files` records it so the detector can report the loss rather than
+        let the scan come back quietly smaller.
+        """
         found = AdvisoryFiles._newer_root(ecosystem)
         if found is None:
-            return []
+            return None
         path, name = found
-        # Checked against the manifest that shipped beside it. A file whose digest
-        # does not match is not read at all: half-trusted advisory data is worse
-        # than none, because the count still looks healthy. `tampered_files`
-        # records it so the detector can report the loss rather than let the scan
-        # come back quietly smaller.
+        try:
+            digest = AdvisoryFiles.digest_of(path)
+        except OSError:
+            _TAMPERED.add(name)
+            return None
         recorded = AdvisoryFiles._digest_manifest(path.parent)
-        if recorded and name in recorded:
-            try:
-                if AdvisoryFiles.digest_of(path) != recorded[name]:
-                    _TAMPERED.add(name)
-                    return []
-            except OSError:
-                _TAMPERED.add(name)
-                return []
+        if recorded and name in recorded and digest != recorded[name]:
+            _TAMPERED.add(name)
+            return None
+        return path, digest
+
+    @staticmethod
+    def _parse(path: Path) -> list[dict[str, object]]:
         try:
             data = AdvisoryFiles._read_records(path)
         except (OSError, ValueError, EOFError, gzip.BadGzipFile):
@@ -517,7 +529,7 @@ class ShippedAdvisories:
 
     @staticmethod
     @functools.cache
-    def _shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
+    def _shipped_raw(ecosystem: str) -> Mapping[str, tuple[dict[str, object], ...]]:
         """One ecosystem's generated records, grouped by normalised package name.
 
         Read once per ecosystem per process, lazily, the same as `intel/real.py`'s
@@ -543,8 +555,18 @@ class ShippedAdvisories:
         upserts = [r for r in upserts if str(r.get("id")) not in newer] + changed
         withdrawn = withdrawn | delta_withdrawn
         replaced = {str(r.get("id")) for r in upserts} | withdrawn
+        # On disk when it can be: a sealed SQLite index of the verified file, read by name
+        # (`intel/advisory_index`). In memory otherwise -- no SQLite, or no writable cache.
+        verified = ShippedAdvisories._verified_file(ecosystem)
+        if verified is not None:
+            from cordon_scanner.intel.advisory_index import AdvisoryIndex
+
+            path, digest = verified
+            index = AdvisoryIndex.for_file(digest, lambda: ShippedAdvisories._parse(path))
+            if index is not None:
+                return IndexedRecords(index, upserts, frozenset(replaced))
         grouped: dict[str, list[dict[str, object]]] = {}
-        for raw in ShippedAdvisories._read_shipped(ecosystem):
+        for raw in [] if verified is None else ShippedAdvisories._parse(verified[0]):
             if replaced and str(raw.get("id", "")) in replaced:
                 continue
             grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
@@ -580,6 +602,55 @@ class ShippedAdvisories:
                 except (KeyError, TypeError, ValueError):
                     continue
         return tuple(records)
+
+
+class IndexedRecords(Mapping[str, tuple[dict[str, object], ...]]):
+    """One ecosystem's records by lowercased name, read from its sealed index on demand.
+
+    The same mapping `_shipped_raw` returns from memory, with the same overlay: a record whose id
+    the feed or the OSV delta replaced or withdrew is left out, and their records are added. A name
+    with no record left is absent, exactly as it would be from the in-memory grouping.
+    """
+
+    def __init__(
+        self,
+        index: Any,
+        upserts: list[dict[str, object]],
+        replaced: frozenset[str],
+    ) -> None:
+        self._index = index
+        self._replaced = replaced
+        self._upserts: dict[str, list[dict[str, object]]] = {}
+        for raw in upserts:
+            if raw.get("name"):
+                self._upserts.setdefault(str(raw["name"]).lower(), []).append(raw)
+        self.record_count = index.count_except(replaced) + sum(
+            len(v) for v in self._upserts.values()
+        )
+
+    def __getitem__(self, name: str) -> tuple[dict[str, object], ...]:
+        records = [r for r in self._index.get(name) if str(r.get("id", "")) not in self._replaced]
+        records += self._upserts.get(name, [])
+        if not records:
+            raise KeyError(name)
+        return tuple(records)
+
+    def __iter__(self) -> Iterator[str]:
+        for name in dict.fromkeys([*self._index.names(), *self._upserts]):
+            if name in self:
+                yield name
+
+    def __contains__(self, name: object) -> bool:
+        if not isinstance(name, str):
+            return False
+        try:
+            self[name]
+        except KeyError:
+            return False
+        return True
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
 
 
 _TAMPERED: set[str] = set()
@@ -620,10 +691,11 @@ class AdvisoryDatabase:
         for advisory in advisories:
             self._add(advisory)
             self._counts[advisory.ecosystem] = self._counts.get(advisory.ecosystem, 0) + 1
-        #: Generated records for a loaded ecosystem, still as parsed JSON and
-        #: keyed the same way, built into `Advisory` objects by the first
-        #: question about that package name.
-        self._raw: dict[tuple[str, str], tuple[dict[str, object], ...]] = {}
+        #: Each loaded ecosystem's generated records by lowercased name -- an on-disk index or
+        #: an in-memory grouping (`ShippedAdvisories._shipped_raw`) -- read for a name, and built
+        #: into `Advisory` objects, by the first question about that name.
+        self._sources: dict[str, Mapping[str, tuple[dict[str, object], ...]]] = {}
+        self._built: set[tuple[str, str]] = set()
         self.meta = meta or DatabaseMeta()
         self._deferred = set(deferred)
         #: The curated records, by the identity a generated record would collide
@@ -659,11 +731,14 @@ class AdvisoryDatabase:
         with self._lock:
             if ecosystem not in self._deferred:
                 return
-            for name, raws in ShippedAdvisories._shipped_raw(ecosystem).items():
-                key = (ecosystem, name)
-                existing = self._raw.get(key)
-                self._raw[key] = raws if existing is None else existing + raws
-                self._counts[ecosystem] = self._counts.get(ecosystem, 0) + len(raws)
+            source = ShippedAdvisories._shipped_raw(ecosystem)
+            self._sources[ecosystem] = source
+            count = (
+                source.record_count
+                if isinstance(source, IndexedRecords)
+                else sum(len(raws) for raws in source.values())
+            )
+            self._counts[ecosystem] = self._counts.get(ecosystem, 0) + count
             self._deferred.discard(ecosystem)
 
     def _materialise(self, key: tuple[str, str]) -> None:
@@ -671,10 +746,14 @@ class AdvisoryDatabase:
         thread that returned while another was still adding this name's records would read
         none of them."""
         with self._lock:
-            raws = self._raw.pop(key, None)
-            if raws is None:
+            if key in self._built:
                 return
+            self._built.add(key)
             ecosystem, name = key
+            source = self._sources.get(ecosystem)
+            raws = source.get(name) if source is not None else None
+            if not raws:
+                return
             for raw in raws:
                 try:
                     advisory = ShippedAdvisories._advisory_from_dict(ecosystem, raw)
@@ -687,8 +766,9 @@ class AdvisoryDatabase:
     def _load_all(self) -> None:
         for ecosystem in tuple(self._deferred):
             self._load(ecosystem)
-        for key in tuple(self._raw):
-            self._materialise(key)
+        for ecosystem, source in tuple(self._sources.items()):
+            for name in source:
+                self._materialise((ecosystem, name))
 
     def __len__(self) -> int:
         """Every record, which means loading every ecosystem.
@@ -711,7 +791,7 @@ class AdvisoryDatabase:
         `tampered_files` and the parse itself answer, each with their own
         report.
         """
-        if self._by_key or self._raw:
+        if self._by_key or any(self._counts.get(e, 0) for e in self._sources):
             return False
         return all(AdvisoryFiles._newer_root(ecosystem) is None for ecosystem in self._deferred)
 
