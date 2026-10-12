@@ -2525,6 +2525,17 @@ class SourcePaths:
         """Whether a path is the project's own build, test or release tooling."""
         return SourcePaths._names(path, BUILD_TOOLING_PATHS)
 
+    _EDITOR_EXTENSION = re.compile(
+        r"\.vsix!|(?:^|/)\.(?:vscode|vscode-insiders|vscode-oss|vscode-server|cursor|windsurf)"
+        r"/extensions/[^/\n]{1,200}/"
+    )
+
+    @staticmethod
+    def is_editor_extension(path: str) -> bool:
+        """Whether a path is inside an editor extension: a `.vsix` member, or an installed
+        extension's folder. The editor starts its code on its own and never runs npm in it."""
+        return SourcePaths._EDITOR_EXTENSION.search(path) is not None
+
     @staticmethod
     def is_generated_artefact(path: str) -> bool:
         """Whether a path is build output rather than source somebody wrote.

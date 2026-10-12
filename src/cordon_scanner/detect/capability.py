@@ -1001,13 +1001,6 @@ class CapabilityDetector(BaseDetector):
         r"(?:^|/)skills/[^/\n]{1,200}/[^\n]{0,400}\.(?:py|js|mjs|cjs|ts|sh|bash|ps1|rb)$"
     )
     """A file inside an agent skill's folder (`.claude/skills/<name>/scripts/x.py` and kin)."""
-    _EXTENSION_CODE = re.compile(
-        r"\.vsix!|(?:^|/)\.(?:vscode|vscode-insiders|vscode-oss|vscode-server|cursor|windsurf)"
-        r"/extensions/[^/\n]{1,200}/"
-    )
-    """A file inside an editor extension: a `.vsix` member, or an installed extension's folder. The
-    editor starts an extension's code on its own -- at start-up, on a language, on `*` -- and what
-    that code runs, a bundled `.bat` included, nobody is asked about."""
 
     ON_REQUEST_REASONS = (
         "a script a person runs, not code that runs on its own",
@@ -1054,9 +1047,10 @@ class CapabilityDetector(BaseDetector):
             # A skill's bundled script is run by the agent whenever the skill is invoked -- as a
             # program, so its module-level calls run too. Nobody is asked first.
             return ""
-        if CapabilityDetector._EXTENSION_CODE.search(content.path):
-            # An extension's activation function and the scripts it starts run when the editor
-            # does: neither a person's choice nor a function some caller may never reach.
+        if SourcePaths.is_editor_extension(content.path):
+            # An extension's activation function and the scripts it starts -- a bundled `.bat`
+            # included -- run when the editor does: at start-up, on a language, on `*`. Neither a
+            # person's choice nor a function some caller may never reach.
             return ""
         if language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND:
             return CapabilityDetector.ON_REQUEST_REASONS[0]

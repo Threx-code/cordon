@@ -135,6 +135,7 @@ PIPE_TO_SHELL = ("| sh", "|sh", "| bash", "|bash", "| python", "|python")
 
 SAFE_LIFECYCLE_PREFIXES = (
     "node-gyp",
+    "node-gyp-build",
     "prebuild-install",
     "node-pre-gyp",
     "prebuildify",
@@ -322,7 +323,16 @@ class ManifestScripts:
             return False
         return all(
             any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES)
+            or ManifestScripts._only_prints(part)
             for part in parts
+        )
+
+    @staticmethod
+    def _only_prints(part: str) -> bool:
+        """`echo` with nothing that writes or runs: no redirection, no substitution. `echo done` is
+        a message; `echo x >> ~/.bashrc` is persistence and `echo $(curl x)` is a fetch."""
+        return (part == "echo" or part.startswith("echo ")) and not any(
+            marker in part for marker in (">", "<", "`", "$(", "${")
         )
 
 
@@ -889,6 +899,13 @@ class ManifestDetector(BaseDetector):
             # A Dockerfile's RUN steps are the project's own build, judged by the Dockerfile rules
             # that read them in context (a fetched script piped to a shell, sudo, a remote ADD).
             # Listed as build hooks; graded as a dependency's install script, each was reported twice.
+            return
+        if manifest.ecosystem == "npm" and SourcePaths.is_editor_extension(unit.path):
+            # A packaged or installed editor extension: the editor unpacks it and runs its `main`,
+            # never npm, so no lifecycle script in it -- its own `postinstall`, or one in a bundled
+            # node_modules manifest, which ran when the extension was built -- runs on this
+            # machine. 471 of 1,943 popular extensions were blocked for scripts that cannot run.
+            # What the extension's code does is read by the code detectors, with its severity.
             return
         for hook in manifest.hooks:
             command = hook.command
