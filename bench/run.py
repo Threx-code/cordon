@@ -159,6 +159,9 @@ class Harness:
                 }
                 if blocking and blocking <= {KNOWN_RELEASE_RULE}:
                     detail = "identity-only"
+                else:
+                    # Which rules blocked, so a block can be attributed and read: ids only.
+                    detail = f"exit 1; blocked={'|'.join(sorted(blocking))}"
             except (ValueError, KeyError, TypeError):
                 pass
         return Verdict("cordon", sample, code == 1, detail, seconds)
