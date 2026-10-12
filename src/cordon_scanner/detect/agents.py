@@ -1758,6 +1758,10 @@ class AgentChainDetector(BaseDetector):
                 and (corroborated or not instruction_file)
                 and not local
             ]
+            # A stable production-grade match blocks, as the grading above says -- and for that it
+            # needs the gate's confidence, not the rule's declared LOW: at LOW the default gate
+            # (`Policy.min_confidence_to_fail`, MEDIUM) never let one block (review 98, AG-1).
+            confidence = Confidence.MEDIUM if stable else None
             if stable:
                 severity = Severity.HIGH
             elif counted:
@@ -1778,7 +1782,14 @@ class AgentChainDetector(BaseDetector):
                 start = len(text[: first.start].encode("utf-8"))
                 end = start + len(text[first.start : first.end].encode("utf-8"))
                 yield self._finding(
-                    rule_id, unit, ctx, start, end, message=message, severity=severity
+                    rule_id,
+                    unit,
+                    ctx,
+                    start,
+                    end,
+                    message=message,
+                    severity=severity,
+                    confidence=confidence,
                 )
             else:
                 # The matched words are found inside the file's text; the whole piece is the
@@ -1787,7 +1798,14 @@ class AgentChainDetector(BaseDetector):
                 if within.find(needle) < 0 and within.find(json.dumps(needle)[1:-1]) < 0:
                     needle = text
                 yield self._at_text(
-                    rule_id, unit, ctx, within, needle, message=message, severity=severity
+                    rule_id,
+                    unit,
+                    ctx,
+                    within,
+                    needle,
+                    message=message,
+                    severity=severity,
+                    confidence=confidence,
                 )
 
     # -- A2 ------------------------------------------------------------------------------
@@ -2474,6 +2492,7 @@ class AgentChainDetector(BaseDetector):
         message: str | None = None,
         severity: Severity | None = None,
         secret: bool = False,
+        confidence: Confidence | None = None,
     ) -> Finding:
         index = text.find(needle)
         if index < 0:
@@ -2483,7 +2502,15 @@ class AgentChainDetector(BaseDetector):
         start = len(text[:index].encode("utf-8"))
         end = start + len(needle.encode("utf-8"))
         return self._finding(
-            rule_id, unit, ctx, start, end, message=message, severity=severity, secret=secret
+            rule_id,
+            unit,
+            ctx,
+            start,
+            end,
+            message=message,
+            severity=severity,
+            secret=secret,
+            confidence=confidence,
         )
 
     def _finding(
@@ -2497,6 +2524,7 @@ class AgentChainDetector(BaseDetector):
         message: str | None = None,
         severity: Severity | None = None,
         secret: bool = False,
+        confidence: Confidence | None = None,
     ) -> Finding:
         rule = RULES[rule_id]
         content = unit.content
@@ -2519,7 +2547,7 @@ class AgentChainDetector(BaseDetector):
             rule_id=rule.rule_id,
             category=rule.category,
             severity=chosen,
-            confidence=rule.confidence,
+            confidence=confidence or rule.confidence,
             message=text,
             location=Location(
                 path=content.path,

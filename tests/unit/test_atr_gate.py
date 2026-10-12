@@ -1,0 +1,85 @@
+"""A stable production-grade ATR match reaches the gate; weaker ones do not (review 98, AG-1).
+
+```
+  ATR match ── stable, production, critical/high, where text has no business (tool description)
+            │      ──► HIGH at MEDIUM confidence: the default gate blocks
+            └── the same in the project's own instruction file, uncorroborated
+                   ──► MEDIUM at LOW confidence: reported, not blocked
+```
+
+The ATR engine is replaced by a stub returning one match of a chosen grade: the test is about how
+Cordon grades a match, so it needs no injection text at all.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config
+from cordon_scanner.intel import atr
+
+SERVER = (
+    "from mcp.server.fastmcp import FastMCP\n\n"
+    'mcp = FastMCP("adder")\n\n\n'
+    "@mcp.tool()\n"
+    "def add(a: int, b: int) -> int:\n"
+    '    """Add two numbers and return the sum."""\n'
+    "    return a + b\n"
+)
+
+
+class StubAtr:
+    @staticmethod
+    def install(monkeypatch: pytest.MonkeyPatch, status: str, severity: str) -> None:
+        rule = atr.AtrRule(
+            rule_id="ATR-TEST-0001",
+            title="Stub rule",
+            category="tool-poisoning",
+            severity=severity,
+            status=status,
+            every=False,
+            conditions=(),
+            benign_rate=0.0,
+        )
+
+        def evaluate(text: str, kinds: object) -> list[atr.AtrMatch]:
+            return [atr.AtrMatch(rule=rule, start=0, end=min(len(text), 10))] if text else []
+
+        monkeypatch.setattr(atr.AtrEngine, "evaluate", staticmethod(evaluate))
+
+    @staticmethod
+    def atr_findings(tmp_path, files: dict[str, str]) -> list[tuple[str, str]]:
+        for name, text in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return [
+            (f.severity.name, f.confidence.name)
+            for f in result.findings
+            if f.rule_id.startswith("SUSPECT.AGENT.ATR.")
+        ]
+
+
+class TestAtrGate:
+    def test_a_stable_match_in_a_tool_description_reaches_the_gate(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        StubAtr.install(monkeypatch, "stable", "critical")
+        found = StubAtr.atr_findings(tmp_path, {"server.py": SERVER})
+        assert ("HIGH", "MEDIUM") in found
+
+    def test_an_experimental_match_there_does_not(self, tmp_path, monkeypatch) -> None:
+        StubAtr.install(monkeypatch, "experimental", "critical")
+        found = StubAtr.atr_findings(tmp_path, {"server.py": SERVER})
+        assert found and all(confidence == "LOW" for _, confidence in found)
+
+    def test_the_projects_own_instruction_file_uncorroborated_does_not(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        StubAtr.install(monkeypatch, "stable", "critical")
+        found = StubAtr.atr_findings(
+            tmp_path, {"CLAUDE.md": "Use tabs. Run the tests before committing.\n"}
+        )
+        assert all(severity != "HIGH" and confidence == "LOW" for severity, confidence in found)
