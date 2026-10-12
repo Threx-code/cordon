@@ -54,9 +54,10 @@ import functools
 import gzip
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import ClassVar, Final
 
 from cordon_scanner.core.local_seal import SEAL_KEY, LocalSeal
 
@@ -558,6 +559,8 @@ class ShippedAdvisories:
         ShippedAdvisories._shipped_raw.cache_clear()
         ShippedAdvisories._shipped.cache_clear()
         _REFUSED_SYNCED.clear()
+        with AdvisoryDatabase.SHARED_LOCK:
+            AdvisoryDatabase.shared = None
 
     @staticmethod
     @functools.cache
@@ -597,6 +600,11 @@ class AdvisoryDatabase:
     `AdvisoryDetector.inspect` only runs for a `GraphUnit`.
     """
 
+    shared: ClassVar[AdvisoryDatabase | None] = None
+    """The one bundled instance in this process (`bundled`); `None` until first asked, and again
+    after a feed update (`ShippedAdvisories.reset_caches`)."""
+    SHARED_LOCK: ClassVar[threading.Lock] = threading.Lock()
+
     def __init__(
         self,
         advisories: tuple[Advisory, ...] = (),
@@ -608,6 +616,7 @@ class AdvisoryDatabase:
         #: How many records exist per ecosystem, counted as they are read rather
         #: than as they are built, so `covers` can answer without materialising.
         self._counts: dict[str, int] = {}
+        self._lock = threading.RLock()
         for advisory in advisories:
             self._add(advisory)
             self._counts[advisory.ecosystem] = self._counts.get(advisory.ecosystem, 0) + 1
@@ -644,27 +653,36 @@ class AdvisoryDatabase:
         """
         if ecosystem not in self._deferred:
             return
-        self._deferred.discard(ecosystem)
-        for name, raws in ShippedAdvisories._shipped_raw(ecosystem).items():
-            key = (ecosystem, name)
-            existing = self._raw.get(key)
-            self._raw[key] = raws if existing is None else existing + raws
-            self._counts[ecosystem] = self._counts.get(ecosystem, 0) + len(raws)
+        # Under the lock, and marked loaded only once merged: the instance is shared by every
+        # caller in the process (`bundled`), and a thread that saw the mark before the merge ended
+        # would answer from half a database.
+        with self._lock:
+            if ecosystem not in self._deferred:
+                return
+            for name, raws in ShippedAdvisories._shipped_raw(ecosystem).items():
+                key = (ecosystem, name)
+                existing = self._raw.get(key)
+                self._raw[key] = raws if existing is None else existing + raws
+                self._counts[ecosystem] = self._counts.get(ecosystem, 0) + len(raws)
+            self._deferred.discard(ecosystem)
 
     def _materialise(self, key: tuple[str, str]) -> None:
-        """Build the `Advisory` objects for one package name, once."""
-        raws = self._raw.pop(key, None)
-        if raws is None:
-            return
-        ecosystem, name = key
-        for raw in raws:
-            try:
-                advisory = ShippedAdvisories._advisory_from_dict(ecosystem, raw)
-            except (KeyError, TypeError, ValueError):
-                continue
-            if (ecosystem, name, advisory.identifier) in self._curated:
-                continue
-            self._add(advisory)
+        """Build the `Advisory` objects for one package name, once. Wholly under the lock: a
+        thread that returned while another was still adding this name's records would read
+        none of them."""
+        with self._lock:
+            raws = self._raw.pop(key, None)
+            if raws is None:
+                return
+            ecosystem, name = key
+            for raw in raws:
+                try:
+                    advisory = ShippedAdvisories._advisory_from_dict(ecosystem, raw)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if (ecosystem, name, advisory.identifier) in self._curated:
+                    continue
+                self._add(advisory)
 
     def _load_all(self) -> None:
         for ecosystem in tuple(self._deferred):
@@ -717,8 +735,16 @@ class AdvisoryDatabase:
         The generated sets are deferred, not loaded: constructing this object is
         a stat per ecosystem, and the first `matching()` for an ecosystem is
         what reads that ecosystem's file.
+
+        One per process, shared: each instance merges an ecosystem's records the first time it is
+        asked about it, and a new instance per caller re-merged npm's quarter of a million names
+        on every scan -- 38 merges and 0.7 s of a 0.9 s warm scan of a 4 KB package. A feed
+        update clears it with the other caches (`ShippedAdvisories.reset_caches`).
         """
-        return cls(BUNDLED, meta=AdvisoryFiles._meta(), deferred=ADVISORY_ECOSYSTEMS)
+        with cls.SHARED_LOCK:
+            if cls.shared is None:
+                cls.shared = cls(BUNDLED, meta=AdvisoryFiles._meta(), deferred=ADVISORY_ECOSYSTEMS)
+            return cls.shared
 
     @classmethod
     def from_file(cls, path: str | Path) -> AdvisoryDatabase:

@@ -47,6 +47,15 @@ class SharedFixtures:
         monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path_factory.mktemp("cordon-cache")))
 
     @pytest.fixture(autouse=True)
+    def _fresh_advisory_database(self) -> None:
+        """Each test starts with no shared advisory database, as a new process does: one test
+        patching or clearing the shipped records must not leave a database built from them for
+        the next (`AdvisoryDatabase.bundled` keeps one per process)."""
+        from cordon_scanner.intel.advisories import AdvisoryDatabase
+
+        AdvisoryDatabase.shared = None
+
+    @pytest.fixture(autouse=True)
     def _no_osv_refresh(self, monkeypatch) -> None:
         """A scan refreshes from OSV unless offline; a test must never reach the network. The
         variable reaches a scanner a test starts as a subprocess, which the attribute cannot."""
