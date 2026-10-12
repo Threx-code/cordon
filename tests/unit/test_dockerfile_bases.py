@@ -34,6 +34,9 @@ class TestDockerfileBases:
             f"{path.relative_to(ROOT).as_posix()}: {line.strip()}"
             for path in self.shipped()
             for line in path.read_text(encoding="utf-8").splitlines()
-            if re.match(r"^\s*FROM\s", line, re.I) and "@sha256:" not in line
+            if re.match(r"^\s*FROM\s", line, re.I)
+            and "@sha256:" not in line
+            # `scratch` is the empty base, not an image: there is nothing to pin.
+            and not re.match(r"^\s*FROM\s+scratch\s*$", line, re.I)
         ]
         assert not unpinned, unpinned
