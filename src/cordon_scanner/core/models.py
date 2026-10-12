@@ -439,6 +439,20 @@ class Capability(enum.StrEnum):
     what it is aimed at, or what decided to run it.
     """
 
+    AGENT = "agent"
+    """Starts the machine's AI coding agent with its permission checks switched off.
+
+    `claude --dangerously-skip-permissions`, `q --trust-all-tools`, `gemini --yolo`: the agent then
+    reads, runs and deletes whatever its prompt says, with nobody asked. Two incidents made this a
+    primitive. The Nx "s1ngularity" release (August 2025) ran every agent it found that way to
+    inventory secrets and wallets; the compromised Amazon Q extension 1.84.0 (July 2025) ran `q`
+    that way with a prompt to wipe the home directory and the AWS account. Neither needs code of
+    its own to do harm: the agent is the payload, and the prompt is the program.
+
+    An orchestrator that drives agents on purpose does the same thing, which is why this is a
+    primitive: what makes it a finding is the instruction it carries, or what decided to run it.
+    """
+
     MINE = "mine"
     """Consumes compute for a cryptocurrency.
 

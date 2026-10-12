@@ -671,6 +671,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.AGENT.AUTORUN.001` | critical | `agents` | dropper |
+| `MALWARE.AGENT.HIJACK.001` | critical | `composites` | malicious_code |
 | `MALWARE.AGENT.HOOK_EXFIL.001` | critical | `agents` | exfiltration |
 | `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | `agents` | dropper |
 | `MALWARE.EXTENSION.KNOWN.001` | critical | `agents` | malicious_code |
@@ -705,6 +706,7 @@ rather than a document.
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
 | `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.UNATTENDED.001` | medium | `composites` | prompt_injection |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |

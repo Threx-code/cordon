@@ -179,6 +179,10 @@ class TestCategoryAndCapability:
             # localised software and a clean script do.
             "targeting",
             "destroy",
+            # The machine's AI agent, started with its permission checks off: the
+            # agent becomes the payload and the prompt the program (s1ngularity,
+            # Amazon Q 1.84.0). An orchestrator does it too, so it is a primitive.
+            "agent",
             # Emitted by the AST tier rather than by a pattern, because the
             # thing it describes is the *absence* of a resolvable name: a
             # regex cannot match a target that was computed. Going dynamic to

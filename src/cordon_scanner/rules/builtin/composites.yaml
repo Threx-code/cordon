@@ -1626,3 +1626,77 @@ rules:
         - context: install_hook
         - rule: CAP.CREDENTIAL.STORE.001
         - capability: egress
+
+  # ---------------------------------------------------------------------
+  # AI agents as the payload
+  # ---------------------------------------------------------------------
+  - id: MALWARE.AGENT.HIJACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Turns the machine's AI agent against it
+    message: >
+      This file starts an AI coding agent with its permission checks switched
+      off and hands it an instruction to destroy data or to hunt for secrets.
+      The agent then does it as the user, with nobody asked: the agent is the
+      payload and the prompt is the program.
+    remediation: >
+      Do not install or run it. If it ran, treat the machine's and the cloud
+      account's data as at risk: check the agent's history, rotate the
+      credentials it could reach and restore what it deleted.
+    references:
+      - https://attack.mitre.org/techniques/T1485/
+    provenance:
+      kind: research
+      reference: >
+        The Nx "s1ngularity" release (August 2025), which ran claude, gemini and q with
+        their checks off to inventory secrets and wallets, and the compromised Amazon Q
+        extension 1.84.0 (July 2025), which ran q --trust-all-tools with a prompt to wipe
+        the home directory and the AWS account.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      # The prompt is a constant and the call a few lines below it in both incidents; in a
+      # minified bundle both are on one line.
+      proximity: 80
+      all:
+        - rule: CAP.AGENT.UNATTENDED.001
+        - rule: CAP.AGENT.HARMFUL_INSTRUCTION.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.AGENT.UNATTENDED.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Runs your AI agent with every permission and no confirmation
+    message: >
+      This code starts an AI coding agent with its permission checks switched
+      off, so the agent reads, runs and deletes whatever its prompt says
+      without asking. Tools built to orchestrate agents do this on purpose;
+      a library or an extension that does it unannounced is using your agent
+      as its own.
+    remediation: >
+      Check that driving an agent is what this package is for, and read the
+      prompt it passes. If it is not, do not install it.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.AGENT.UNATTENDED.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        # A repository's own CI choosing to run its agent this way is its decision, and the
+        # agent-in-CI rules read those files.
+        - path_glob: ".github/**"
+        - path_glob: "**/*.yml"
+        - path_glob: "**/*.yaml"
