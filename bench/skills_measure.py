@@ -244,7 +244,7 @@ class SkillsMeasure:
 
     @staticmethod
     def scan(path: Path) -> dict[str, Any]:
-        out = subprocess.run(
+        run = subprocess.run(
             [
                 "cordon-scanner",
                 "scan",
@@ -259,16 +259,16 @@ class SkillsMeasure:
             text=True,
             timeout=600,
             check=False,
-        ).stdout
+        )
+        out = run.stdout
         try:
             report = json.loads(out[out.index("{") :])
         except ValueError:
             return {"verdict": "error", "rules": []}
         findings = report.get("findings", [])
-        blocking = any(
-            f.get("severity") in ("high", "critical") or f.get("category") == "malicious"
-            for f in findings
-        )
+        # Blocked means what a user sees: the default gate's exit status, 1. A HIGH finding at LOW
+        # confidence is below that gate and does not block, so severity alone is not the verdict.
+        blocking = run.returncode == 1
         warning = any(f.get("severity") == "medium" for f in findings)
         return {
             "verdict": "block" if blocking else "warn" if warning else "pass",

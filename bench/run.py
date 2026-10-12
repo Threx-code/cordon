@@ -44,6 +44,58 @@ class Verdict:
     """None when the tool could not give an answer for this input."""
     detail: str = ""
     seconds: float = 0.0
+    level: str = ""
+    """Cordon only: known, blocked, warned, noted, clean or error (`Levels.of`)."""
+    findings: list[list[str]] = field(default_factory=list)
+    """Cordon only: `[rule_id, severity, confidence, category, path]` per finding, blocked or not.
+    Severity is decided in context, so the rule id alone cannot say whether a user saw a warning."""
+
+
+class Levels:
+    """What a user saw, in five levels, from the exit status and the findings as emitted."""
+
+    ORDER = ("info", "low", "medium", "high", "critical")
+
+    @staticmethod
+    def of(code: int, findings: list[list[str]]) -> str:
+        if code not in (0, 1, 4):
+            return "error"
+        if code == 1:
+            known = any(f[0] == KNOWN_RELEASE_RULE for f in findings)
+            content = any(
+                f[0] != KNOWN_RELEASE_RULE
+                and (f[1] in ("high", "critical") or f[3] == "malicious")
+                and f[2] in ("medium", "high", "confirmed")
+                for f in findings
+            )
+            return "known" if known and not content else "blocked"
+        top = max(
+            (
+                Levels.ORDER.index(f[1])
+                for f in findings
+                if f[1] in Levels.ORDER and not f[0].startswith("OPERATIONAL.")
+            ),
+            default=-1,
+        )
+        if top >= Levels.ORDER.index("medium"):
+            return "warned"
+        return "noted" if top >= 0 else "clean"
+
+
+class Wilson:
+    @staticmethod
+    def interval(successes: int, total: int, z: float = 1.959964) -> tuple[float, float]:
+        """The 95% Wilson score interval for a rate: a claim of 98% stands on its lower bound."""
+        if total == 0:
+            return (0.0, 0.0)
+        p = successes / total
+        centre = p + z * z / (2 * total)
+        spread = z * ((p * (1 - p) + z * z / (4 * total)) / total) ** 0.5
+        denominator = 1 + z * z / total
+        return (
+            round((centre - spread) / denominator, 4),
+            round((centre + spread) / denominator, 4),
+        )
 
 
 @dataclass
@@ -77,6 +129,26 @@ class SuiteResult:
                 "blocked": content,
                 "error": counts["error"],
                 "rate": round(content / max(counts["total"] - counts["error"], 1), 4),
+            }
+        # What a user saw, for a benign suite: not blocked, and not even warned, each with its
+        # interval. A malicious suite reads the same table the other way round.
+        levelled = [
+            v for v in self.verdicts if v.tool == "cordon" and v.level and v.level != "error"
+        ]
+        if levelled:
+            seen = Counter(v.level for v in levelled)
+            total = len(levelled)
+            not_blocked = total - seen["blocked"] - seen["known"]
+            no_warning = not_blocked - seen["warned"]
+            rates["cordon, levels"] = {
+                **{
+                    level: seen[level] for level in ("known", "blocked", "warned", "noted", "clean")
+                },
+                "total": total,
+                "not_blocked": round(not_blocked / total, 4),
+                "not_blocked_95": list(Wilson.interval(not_blocked, total)),
+                "no_warning": round(no_warning / total, 4),
+                "no_warning_95": list(Wilson.interval(no_warning, total)),
             }
         # When another tool ran on a subset, Cordon's rate on exactly that subset as well: the
         # comparison is only fair on the same samples.
@@ -130,8 +202,24 @@ class Harness:
             ]
         )
         if code in (-1, -2) or code == 2:
-            return Verdict("cordon", sample, None, out[:200], seconds)
+            return Verdict("cordon", sample, None, out[:200], seconds, level="error")
         detail = f"exit {code}"
+        findings: list[list[str]] = []
+        try:
+            report = json.loads(out[out.index("{") :])
+            findings = [
+                [
+                    str(f.get("rule_id", "")),
+                    str(f.get("severity", "")),
+                    str(f.get("confidence", "")),
+                    str(f.get("category", "")),
+                    str((f.get("location") or {}).get("path") or "").split("!", 1)[-1][-160:],
+                ]
+                for f in report.get("findings", [])
+            ]
+        except (ValueError, KeyError, TypeError, AttributeError):
+            pass
+        level = Levels.of(code, findings)
         if code in (0, 4):
             # A pass (or an incomplete scan): record WHAT fired below the gate, and the shape of
             # the sample (file types), so the misses can be grouped by technique. Rule ids and
@@ -164,7 +252,7 @@ class Harness:
                     detail = f"exit 1; blocked={'|'.join(sorted(blocking))}"
             except (ValueError, KeyError, TypeError):
                 pass
-        return Verdict("cordon", sample, code == 1, detail, seconds)
+        return Verdict("cordon", sample, code == 1, detail, seconds, level=level, findings=findings)
 
     @staticmethod
     def guarddog(path: Path, sample: str, ecosystem: str) -> Verdict:
@@ -607,10 +695,27 @@ class Harness:
                 "|---|---|---|---|---|---|",
             ]
             for tool, row in results[suite]["rates"].items():
+                if "rate" not in row:
+                    continue
                 lines.append(
                     f"| {tool} | {row.get('total', 0)} | {row.get('blocked', 0)} | {row.get('passed', 0)} | {row.get('error', 0)} | {row['rate']:.1%} |"
                 )
             lines.append("")
+            levels = results[suite]["rates"].get("cordon, levels")
+            if levels:
+                low, high = levels["no_warning_95"]
+                nb_low, nb_high = levels["not_blocked_95"]
+                lines += [
+                    "What a user saw: known (intel match), blocked (content), warned (medium or",
+                    "above, not blocked), noted (low or info only), clean. 95% Wilson intervals.",
+                    "",
+                    "| known | blocked | warned | noted | clean | not blocked | no warning |",
+                    "|---|---|---|---|---|---|---|",
+                    f"| {levels['known']} | {levels['blocked']} | {levels['warned']} | {levels['noted']} | "
+                    f"{levels['clean']} | {levels['not_blocked']:.1%} ({nb_low:.1%}-{nb_high:.1%}) | "
+                    f"{levels['no_warning']:.1%} ({low:.1%}-{high:.1%}) |",
+                    "",
+                ]
         if "agents" in results:
             suite = results["agents"]
             lines += [
