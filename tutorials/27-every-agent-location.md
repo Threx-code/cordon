@@ -167,7 +167,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 
 ## Every agent rule
 
-48 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
+49 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -207,6 +207,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
+| `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | A recommended or vendored editor extension was removed from the Marketplace |

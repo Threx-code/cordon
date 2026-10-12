@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,387 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,389 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -19,7 +19,7 @@ rule's own samples.
 
 ## AI agents
 
-34 rules.
+35 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -56,6 +56,7 @@ rule's own samples.
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
+| `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
 | `VULNERABLE.AGENT.ACTION_VERSION.001` | high | An AI agent action below its security fix |
 
 ## Anti Analysis
@@ -1524,12 +1525,13 @@ rule's own samples.
 
 ## Model
 
-5 rules.
+6 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | A pickle that runs a command, reaches the network or evaluates code when loaded |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | The package deserialises a model file it ships, unsafely, when it is imported |
+| `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | Cordon's model judges a package malicious |
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | A pickle imports something ordinary model files do not |
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | Loads a model with trust_remote_code, running its repository's Python |
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | medium | Loads a model with the loader's safety switch turned off |

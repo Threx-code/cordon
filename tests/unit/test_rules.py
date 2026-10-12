@@ -579,6 +579,9 @@ class TestBuiltinPacks:
             "dart": {Capability.DESERIALIZE},
             "zig": {Capability.DESERIALIZE},
             "nim": {Capability.DESERIALIZE},
+            # Windows batch turns no bytes back into objects; what it hands to PowerShell is
+            # PowerShell's, matched by the PowerShell rules when written in a .ps1.
+            "batch": {Capability.DESERIALIZE},
         }
         for language, covered in by_language.items():
             missing = pattern_expressible - covered - agnostic - inexpressible.get(language, set())

@@ -1052,6 +1052,41 @@ rules:
   # ---------------------------------------------------------------------
   # Protestware and region-targeted payloads
   # ---------------------------------------------------------------------
+  - id: MALWARE.REVERSE_SHELL.002
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A shell's input and output joined to a stream
+    message: >
+      This file starts a command shell and pipes a stream into its input and its
+      output back out. That is a reverse shell: whoever is at the other end of the
+      stream gets an interactive prompt on this machine, with the permissions of
+      whoever ran the code. Unlike `MALWARE.REVERSE_SHELL.001`, the address need
+      not be written into the code: a variable or a setting serves as well.
+    remediation: >
+      Treat the machine as compromised, not just the package or extension. Do not
+      install it, and report it to the registry or marketplace.
+    references:
+      - https://attack.mitre.org/techniques/T1059/
+    provenance:
+      kind: incident
+      reference: "CSF-RED.CSF-RED 0.0.1, VS Code Marketplace (DataDog malicious-software-packages-dataset)"
+      note: >
+        A VS Code extension activated on `*` that runs `cmd.exe` or `sh` and pipes
+        it to a `net.Socket` connected to a hostname held in a variable. The
+        socket-literal form of the rule saw no literal address and reported
+        nothing.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      # The label is the whole construct: a shell named, a stream into a process's stdin,
+      # its output piped back out. Not `capability: spawn` as well -- in JavaScript that
+      # label comes from the optional ast-js tier, and the base install would go silent.
+      all:
+        - rule: CAP.JS.SHELL_STDIO_JOINED.001
+
   - id: MALWARE.PROTESTWARE.001
     version: 1.0.0
     category: malicious

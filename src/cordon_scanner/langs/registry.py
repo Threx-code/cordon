@@ -71,6 +71,10 @@ class LanguageRegistry:
         (".zsh", "shell"),
         (".ps1", "powershell"),
         (".psm1", "powershell"),
+        # Windows batch: what an extension or a package ships to run on Windows, and where a
+        # download-then-start dropper is written when the target is a Windows machine.
+        (".bat", "batch"),
+        (".cmd", "batch"),
         (".lua", "lua"),
         (".scala", "scala"),
         (".ex", "elixir"),

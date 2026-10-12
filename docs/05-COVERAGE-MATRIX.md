@@ -256,6 +256,7 @@ rather than a document.
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
+| `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | `model` | malicious_code |
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | `formats` | malicious_code |
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | `composites` | malicious_code |
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | medium | `composites` | malicious_code |
@@ -702,6 +703,7 @@ rather than a document.
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
+| `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | `agents` | prompt_injection |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |

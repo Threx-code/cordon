@@ -787,10 +787,11 @@ cordon-scanner deps .                      # every package found, with its findi
 ```
 ## Every language
 
-The source Cordon reads inside any of those projects: 38 languages, each identified by its file name or extension, by a script's interpreter line, or by its content. The last column counts the rule-pack rules written for that language. Every file also gets the checks that are not tied to one language (secrets, hidden characters, obfuscation, known-malware signatures), and Dockerfiles, YAML pipelines, manifests and infrastructure are read by their own detectors (tutorials 07 and 08), so a 0 there is not a file left unread. Every rule is in tutorial 28.
+The source Cordon reads inside any of those projects: 39 languages, each identified by its file name or extension, by a script's interpreter line, or by its content. The last column counts the rule-pack rules written for that language. Every file also gets the checks that are not tied to one language (secrets, hidden characters, obfuscation, known-malware signatures), and Dockerfiles, YAML pipelines, manifests and infrastructure are read by their own detectors (tutorials 07 and 08), so a 0 there is not a file left unread. Every rule is in tutorial 28.
 
 | Language | Files | Rule-pack rules |
 |---|---|---|
+| Batch | `*.bat`, `*.cmd` | 6 |
 | C | `*.c`, `*.h` | 0 |
 | C# | `*.cs` | 10 |
 | C++ | `*.cc`, `*.cpp`, `*.cxx`, `*.hpp` | 0 |
