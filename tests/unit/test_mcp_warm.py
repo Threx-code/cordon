@@ -22,7 +22,8 @@ class WarmKit:
         root = tmp_path / "project"
         root.mkdir()
         (root / "package.json").write_text(
-            json.dumps({"name": "x", "version": "1.0.0", "dependencies": {"left-pad": "1.3.0"}})
+            json.dumps({"name": "x", "version": "1.0.0", "dependencies": {"left-pad": "1.3.0"}}),
+            encoding="utf-8",
         )
         return root
 
