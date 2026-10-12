@@ -361,7 +361,7 @@ class TestSelfScan(CorpusFixtures):
             and f.location.path != "bench/agent_matrix.py"
             # The detection model's feature patterns name what they count -- a miner's binary and
             # pool protocol among them -- as the rule packs do; data, never run.
-            and f.location.path != "bench/model/patterns.json"
+            and f.location.path != "src/cordon_scanner/model/data/patterns.json"
             # Conformance cases are other projects' dependency files, written by their package
             # managers, and each holds the shape its case proves the scanner reports: a git
             # source, an install script. `tests/conformance/test_cases.py` asserts those
