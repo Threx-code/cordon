@@ -287,9 +287,15 @@ class AtrBench:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(body, encoding="utf-8", errors="surrogatepass")
             report = _SCANNER.scan(root)
+        from cordon_scanner.core.policy import PolicyGate
+
+        policy = _SCANNER.config.policy
+        # `/BLOCK` marks what the default gate fails on -- severity AND confidence, as the CLI decides.
+        # Detected and blocked are reported apart: a HIGH finding at LOW confidence is a warning.
         return sorted(
             {
                 f"{f.rule_id}/{f.severity.name}"
+                + ("/BLOCK" if PolicyGate._fails(f, policy) else "")
                 for f in report.findings
                 if f.severity.name in ("MEDIUM", "HIGH", "CRITICAL")
                 and not f.rule_id.startswith(("OPERATIONAL.", "POLICY.COVERAGE"))
@@ -343,6 +349,7 @@ class AtrBench:
             correct = (
                 not any(reported.values()) if case.kind == "benign" else any(reported.values())
             )
+            blocked = any(r.endswith("/BLOCK") for found in reported.values() for r in found)
             rows.append(
                 {
                     "rule": case.rule,
@@ -350,6 +357,7 @@ class AtrBench:
                     "kind": case.kind,
                     "channel": case.channel,
                     "correct": correct,
+                    "blocked": blocked,
                     "reported": reported,
                     "text": case.text[:300],
                 }
@@ -368,6 +376,15 @@ class AtrBench:
             ("benign", "benign left clean"),
         ):
             print(f"  {label:20} {rate([r for r in rows if r['kind'] == kind])}")
+        for kind, label in (("attack", "attacks blocked"), ("evasion", "evasions blocked")):
+            mine = [r for r in rows if r["kind"] == kind]
+            hit = sum(1 for r in mine if r["blocked"])
+            print(f"  {label:20} {hit}/{len(mine)} ({hit / max(len(mine), 1):.1%})")
+        benign = [r for r in rows if r["kind"] == "benign"]
+        quiet = sum(1 for r in benign if not r["blocked"])
+        print(
+            f"  {'benign not blocked':20} {quiet}/{len(benign)} ({quiet / max(len(benign), 1):.1%})"
+        )
         print("\nBy ATR category (attacks detected | benign clean)")
         for category in sorted({r["category"] for r in rows}):
             mine = [r for r in rows if r["category"] == category]

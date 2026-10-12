@@ -2,7 +2,7 @@
 """False alarms on real agent configuration: the held-out half of the real-world corpus.
 
 Scans each repository's committed agent files (collected by `bench/fetch_agent_configs.py`) and
-reports how many repositories Cordon warns on (MEDIUM or above) and blocks (HIGH or above) with an
+reports how many repositories Cordon warns on (MEDIUM or above) and blocks (the default gate) with an
 agent or MCP rule, and which rules. Only the `evaluate` half is scanned: the `calibrate` half graded
 the Agent Threat Rules for instruction files, so measuring on it would grade the tool by its own
 answer key.
@@ -37,8 +37,10 @@ class RealWorldAgents:
     def scan(repository: str) -> tuple[str, list[list[str]]]:
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import Config
+        from cordon_scanner.core.policy import PolicyGate
 
-        report = Scanner(Config.default().with_overrides(use_cache=False)).scan(Path(repository))
+        config = Config.default().with_overrides(use_cache=False)
+        report = Scanner(config).scan(Path(repository))
         return repository, [
             [
                 f.rule_id,
@@ -46,6 +48,8 @@ class RealWorldAgents:
                 f.location.path,
                 (f.evidence.snippet or "")[:200] if f.evidence else "",
                 f.message,
+                # What the default gate decides -- severity and confidence -- not severity alone.
+                "BLOCK" if PolicyGate._fails(f, config.policy) else "",
             ]
             for f in report.findings
             if f.rule_id.startswith(AGENT_RULES)
@@ -67,13 +71,15 @@ class RealWorldAgents:
         with ProcessPoolExecutor(args.workers) as pool:
             results = dict(pool.map(RealWorldAgents.scan, repositories, chunksize=8))
         warned = [r for r, found in results.items() if found]
-        blocked = [
+        high = [
             r for r, found in results.items() if any(f[1] in ("HIGH", "CRITICAL") for f in found)
         ]
+        blocked = [r for r, found in results.items() if any(f[5] == "BLOCK" for f in found)]
         total = len(results)
         print(f"held-out repositories: {total}")
         print(f"  warned (MEDIUM+): {len(warned)} ({len(warned) / total:.1%})")
-        print(f"  blocked (HIGH+):  {len(blocked)} ({len(blocked) / total:.1%})")
+        print(f"  HIGH+ findings:   {len(high)} ({len(high) / total:.1%})")
+        print(f"  blocked (gate):   {len(blocked)} ({len(blocked) / total:.1%})")
         counts = Counter(
             f"{f[0]}/{f[1]}"
             for found in results.values()
