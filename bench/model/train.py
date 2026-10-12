@@ -25,6 +25,7 @@ import joblib
 import lightgbm as lgb
 import numpy as np
 from scipy import sparse
+from sklearn.feature_selection import chi2
 from sklearn.model_selection import StratifiedGroupKFold
 
 PARAMS = {
@@ -39,7 +40,14 @@ PARAMS = {
     "verbose": -1,
     "num_threads": 8,
     "seed": 20261011,
+    # Token columns are 0/1 and the dense ones counts: few bins each, which is most of the memory.
+    "max_bin": 63,
+    "force_col_wise": True,
 }
+#: The hashed-token columns kept: those most associated with the label in the training rows alone
+#: (chi-squared), which never sees the held-out side. All 262,144 did not fit in memory, and hash
+#: collisions put nearly every column in many packages, so frequency alone could not choose.
+TOKENS_KEPT = 20_000
 ROUNDS = 600
 
 
@@ -67,18 +75,22 @@ class Training:
     @staticmethod
     def threshold(
         matrix: sparse.csr_matrix, labels: np.ndarray, groups: np.ndarray, fpr: float
-    ) -> float:
+    ) -> tuple[float, np.ndarray]:
         """The score above which at most `fpr` of the training split's legitimate packages fall,
-        from 5-fold out-of-fold scores -- never from a model scoring its own training rows."""
+        from 5-fold out-of-fold scores -- never from a model scoring its own training rows -- and
+        those scores, which `combine.py` sets joint thresholds with."""
         scores = np.zeros(len(labels))
         for fit, check in StratifiedGroupKFold(5, shuffle=True, random_state=1).split(
             matrix, labels, groups
         ):
-            model = lgb.train(PARAMS, lgb.Dataset(matrix[fit], labels[fit]), ROUNDS)
+            model = lgb.train(
+                PARAMS, lgb.Dataset(matrix[fit], labels[fit], free_raw_data=True), ROUNDS
+            )
             scores[check] = model.predict(matrix[check])
+            del model
         legitimate = np.sort(scores[labels == 0])
         index = int(np.ceil(len(legitimate) * (1 - fpr))) - 1
-        return float(legitimate[min(max(index, 0), len(legitimate) - 1)])
+        return float(legitimate[min(max(index, 0), len(legitimate) - 1)]), scores
 
     @staticmethod
     def main() -> int:
@@ -92,7 +104,20 @@ class Training:
         side = np.array([r[f"{args.split}_split"] for r in rows])
         train, held = np.where(side == "train")[0], np.where(side == "held")[0]
         campaigns = np.array([r.get("campaign", i) for i, r in enumerate(rows)])
-        threshold = Training.threshold(matrix[train], labels[train], campaigns[train], args.fpr)
+        dense_n = len(
+            json.loads((args.work / "features" / "dense_names.json").read_text(encoding="utf-8"))
+        )
+        scores_chi, _ = chi2(matrix[train][:, dense_n:], labels[train])
+        best = np.argsort(np.nan_to_num(scores_chi, nan=0.0))[::-1][:TOKENS_KEPT]
+        columns = np.concatenate([np.arange(dense_n), dense_n + np.sort(best)])
+        matrix = matrix[:, columns].tocsr()
+        print(
+            f"columns kept: {len(columns)} ({dense_n} dense, {len(columns) - dense_n} tokens by chi-squared on training rows)",
+            flush=True,
+        )
+        threshold, oof = Training.threshold(
+            matrix[train], labels[train], campaigns[train], args.fpr
+        )
         model = lgb.train(PARAMS, lgb.Dataset(matrix[train], labels[train]), ROUNDS)
         scores = model.predict(matrix[held])
         flagged = scores > threshold
@@ -117,7 +142,13 @@ class Training:
         out.mkdir(exist_ok=True)
         model.save_model(str(out / "model.txt"))
         joblib.dump(
-            {"threshold": threshold, "split": args.split, "fpr": args.fpr}, out / "meta.joblib"
+            {
+                "threshold": threshold,
+                "split": args.split,
+                "fpr": args.fpr,
+                "columns": columns.tolist(),
+            },
+            out / "meta.joblib",
         )
         (out / "held_scores.json").write_text(
             json.dumps(
@@ -126,6 +157,10 @@ class Training:
                     for i, s in zip(held, scores, strict=True)
                 ]
             ),
+            encoding="utf-8",
+        )
+        (out / "train_oof.json").write_text(
+            json.dumps({rows[i]["id"]: float(s) for i, s in zip(train, oof, strict=True)}),
             encoding="utf-8",
         )
         return 0
