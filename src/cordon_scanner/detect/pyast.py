@@ -528,10 +528,7 @@ class PythonAnalyzer:
         # hand-off says nothing about what another function does with its own `env`.
         environ_nodes: dict[tuple[int, str], list[int]] = {}
         direct: set[int] = set()
-        parents: dict[int, ast.AST] = {}
-        for node in PythonSyntax.nodes(tree):
-            for child in ast.iter_child_nodes(node):
-                parents[id(child)] = node
+        parents = PythonSyntax.parents(tree)
 
         def scope_of(node: ast.AST) -> ast.AST:
             current = parents.get(id(node))
@@ -628,14 +625,13 @@ class PythonAnalyzer:
         left out rather than guessed at."""
         sequences: dict[str, list[str]] = {}
         assigned: dict[str, int] = {}
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        assigned[target.id] = assigned.get(target.id, 0) + 1
-                        values = self._literal_strings(node.value)
-                        if values is not None:
-                            sequences[target.id] = values
+        for node in PythonSyntax.of(tree, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assigned[target.id] = assigned.get(target.id, 0) + 1
+                    values = self._literal_strings(node.value)
+                    if values is not None:
+                        sequences[target.id] = values
 
         def resolved(iterable: ast.AST) -> list[str] | None:
             values = self._literal_strings(iterable)
@@ -645,8 +641,8 @@ class PythonAnalyzer:
 
         found: dict[str, list[str]] = {}
         refused: set[str] = set()
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.For | ast.comprehension) and isinstance(node.target, ast.Name):
+        for node in PythonSyntax.of(tree, ast.For, ast.comprehension):
+            if isinstance(node.target, ast.Name):
                 name = node.target.id
                 values = resolved(node.iter)
                 if values is None or (name in found and found[name] != values):
@@ -719,10 +715,7 @@ class PythonAnalyzer:
         its hit."""
         parsed: set[int] = set()
         other: set[int] = set()
-        parents: dict[int, ast.AST] = {}
-        for node in PythonSyntax.nodes(tree):
-            for child in ast.iter_child_nodes(node):
-                parents[id(child)] = node
+        parents = PythonSyntax.parents(tree)
         for node in PythonSyntax.of(tree, ast.Call):
             dotted = self._dotted(node.func)
             if dotted is None or PRIMITIVES.get(dotted) is not Capability.DECODE:
@@ -762,18 +755,17 @@ class PythonAnalyzer:
         # `_invoked` maps an inner call to the call that invokes its result, so
         # `getattr(os, "system")("...")` can find the argument list that belongs
         # to the outer parentheses.
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Call | ast.Subscript):
+        for node in PythonSyntax.of(tree, ast.Call):
+            if isinstance(node.func, ast.Call | ast.Subscript):
                 analyzer._invoked[id(node.func)] = node
 
         # What each plain name is assigned, so a hostname assembled into a variable on one line
         # and resolved on the next reads as the built value it is.
         assigned: dict[str, list[ast.AST]] = {}
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        assigned.setdefault(target.id, []).append(node.value)
+        for node in PythonSyntax.of(tree, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assigned.setdefault(target.id, []).append(node.value)
 
         def constructed(argument: ast.AST) -> bool:
             if cls._is_constructed(argument):
@@ -809,10 +801,8 @@ class PythonAnalyzer:
     def _has_dotted_literal(node: ast.AST) -> bool:
         """Whether a built value carries a literal domain suffix: `x + ".lib.example.com"`."""
         return any(
-            isinstance(part, ast.Constant)
-            and isinstance(part.value, str)
-            and "." in part.value.strip(".")
-            for part in PythonSyntax.nodes(node)
+            isinstance(part.value, str) and "." in part.value.strip(".")
+            for part in PythonSyntax.within(node, ast.Constant)
         )
 
     @staticmethod
@@ -1023,14 +1013,13 @@ class PythonAnalyzer:
         """
         bindings: dict[str, int] = {}
         literal_bindings: dict[str, int] = {}
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Assign):
-                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
-                plain = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
-                for bound in names:
-                    bindings[bound] = bindings.get(bound, 0) + 1
-                    if plain:
-                        literal_bindings[bound] = literal_bindings.get(bound, 0) + 1
+        for node in PythonSyntax.of(tree, ast.Assign):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            plain = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+            for bound in names:
+                bindings[bound] = bindings.get(bound, 0) + 1
+                if plain:
+                    literal_bindings[bound] = literal_bindings.get(bound, 0) + 1
         # Every binding of the name is a plain literal; a name reassigned from anything else
         # could hold that instead.
         self._plain_literals = {
@@ -1038,8 +1027,7 @@ class PythonAnalyzer:
         }
         for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign) and any(
-                isinstance(n, ast.Name) and n.id == "__file__"
-                for n in PythonSyntax.nodes(node.value)
+                n.id == "__file__" for n in PythonSyntax.within(node.value, ast.Name)
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
         for node in PythonSyntax.nodes(tree):
@@ -1111,6 +1099,8 @@ class PythonAnalyzer:
                 # was reported at CRITICAL as install-time code reaching a function by a
                 # computed name. Six names, all of them legible.
                 self._enumerated.add(node.target.id)
+        # The tables are complete: from here a name resolves the same way every time it is asked.
+        self._dotted_cache: dict[int, str | None] = {}
 
     @classmethod
     def _is_literal_strings(cls, node: ast.AST) -> bool:
@@ -1134,6 +1124,19 @@ class PythonAnalyzer:
         `b.b64decode` where `b` is `base64` becomes `base64.b64decode`; `go`
         where `go` is `subprocess.run` becomes `subprocess.run`.
         """
+        # Kept per node once the alias tables are complete (`_collect_names` creates the cache as
+        # its last step): 3.5 million resolutions scanning this package, most of them repeats.
+        cache: dict[int, str | None] | None = self.__dict__.get("_dotted_cache")
+        if cache is not None:
+            key = id(node)
+            if key in cache:
+                return cache[key]
+            found = self._dotted_uncached(node)
+            cache[key] = found
+            return found
+        return self._dotted_uncached(node)
+
+    def _dotted_uncached(self, node: ast.AST) -> str | None:
         if isinstance(node, ast.Name):
             return self._aliases.get(node.id) or self._bindings.get(node.id) or node.id
         if isinstance(node, ast.Attribute):
@@ -1401,8 +1404,8 @@ class PythonAnalyzer:
     # -- The walk --------------------------------------------------------
 
     def _walk(self, tree: ast.AST) -> None:
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Call | ast.Subscript):
+        for node in PythonSyntax.of(tree, ast.Call):
+            if isinstance(node.func, ast.Call | ast.Subscript):
                 # A subscript as well as a call. `globals()["exec"]()` invokes what the
                 # subscript returned, and the map existed only for `getattr(...)()`.
                 self._invoked[id(node.func)] = node
@@ -1529,8 +1532,8 @@ class PythonAnalyzer:
                 # The download is the request: `curl.exe -L URL -o X` reaches the network
                 # whatever the shell patterns make of the binary's name.
                 self._record(Capability.EGRESS, node, f"{resolved[0]} downloads to a file")
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+        for node in PythonSyntax.of(tree, ast.Assign):
+            if isinstance(node.value, ast.Call):
                 spawned = self._resolve_callee(node.value)
                 if spawned and PRIMITIVES.get(spawned[0]) is Capability.SPAWN:
                     command = self._command(spawned[1]) or ""
@@ -1563,7 +1566,7 @@ class PythonAnalyzer:
                 continue
             from_network = any(
                 (isinstance(part, ast.Name) and part.id in fetched) or self._egress_call(part)
-                for part in PythonSyntax.nodes(node.args[0])
+                for part in PythonSyntax.within(node.args[0], ast.Name, ast.Call)
             )
             if not from_network:
                 continue
@@ -1620,10 +1623,10 @@ class PythonAnalyzer:
                 isinstance(part, ast.JoinedStr)
                 or (isinstance(part, ast.BinOp) and isinstance(part.op, ast.Add | ast.Mod))
                 or (isinstance(part, ast.Attribute) and part.attr == "format")
-                for part in PythonSyntax.nodes(node)
+                for part in PythonSyntax.within(node, ast.JoinedStr, ast.BinOp, ast.Attribute)
             ):
                 return False
-            for part in PythonSyntax.nodes(node):
+            for part in PythonSyntax.within(node, ast.Name, ast.Call):
                 if isinstance(part, ast.Name) and part.id in tainted:
                     return True
                 if self._egress_call(part):
@@ -1715,7 +1718,7 @@ class PythonAnalyzer:
                 if isinstance(node, ast.Assign) and any(
                     self._is_recon_call(part)
                     or (isinstance(part, ast.Name) and part.id in carrying)
-                    for part in PythonSyntax.nodes(node.value)
+                    for part in PythonSyntax.within(node.value, ast.Call, ast.Name)
                 ):
                     carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
         for node in PythonSyntax.of(tree, ast.Call):
@@ -1733,7 +1736,7 @@ class PythonAnalyzer:
             if any(
                 self._is_recon_call(part) or (isinstance(part, ast.Name) and part.id in carrying)
                 for argument in arguments
-                for part in PythonSyntax.nodes(argument)
+                for part in PythonSyntax.within(argument, ast.Call, ast.Name)
             ):
                 self._record(Capability.RECONNAISSANCE, node, f"identity sent: {resolved[0]}")
 
@@ -1747,10 +1750,7 @@ class PythonAnalyzer:
         `os.getenv("KEY")`) is not the whole environment, nor is a copy handed to a child
         process, which inherits it anyway.
         """
-        parents: dict[int, ast.AST] = {}
-        for node in PythonSyntax.nodes(tree):
-            for child in ast.iter_child_nodes(node):
-                parents[id(child)] = node
+        parents = PythonSyntax.parents(tree)
         handed_on = self._environment_handed_to_children(tree)
 
         def is_whole(node: ast.AST) -> bool:
@@ -1772,7 +1772,7 @@ class PythonAnalyzer:
             for node in PythonSyntax.nodes(tree):
                 if isinstance(node, ast.Assign) and any(
                     is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
-                    for part in PythonSyntax.nodes(node.value)
+                    for part in PythonSyntax.within(node.value, ast.Attribute, ast.Name)
                 ):
                     carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
         for node in PythonSyntax.of(tree, ast.Call):
@@ -1783,7 +1783,7 @@ class PythonAnalyzer:
             if any(
                 is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
                 for argument in arguments
-                for part in PythonSyntax.nodes(argument)
+                for part in PythonSyntax.within(argument, ast.Attribute, ast.Name)
             ):
                 self._record(Capability.CREDENTIAL, node, f"environment sent: {resolved[0]}")
 
@@ -1864,7 +1864,7 @@ class PythonAnalyzer:
             arguments = [*node.args, *(k.value for k in node.keywords)]
             keys: set[str] = set()
             for argument in arguments:
-                for part in PythonSyntax.nodes(argument):
+                for part in PythonSyntax.within(argument, ast.Subscript, ast.Call, ast.Name):
                     key = credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
@@ -1915,16 +1915,14 @@ class PythonAnalyzer:
         ):
             return False
         literals = [
-            n.value
-            for n in PythonSyntax.nodes(current)
-            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            n.value for n in PythonSyntax.within(current, ast.Constant) if isinstance(n.value, str)
         ]
         return not any("://" in value for value in literals)
 
     def _read_from_local_file(self, node: ast.AST) -> bool:
         """Whether every name in this expression holds text read from a local file, rather than
         from anywhere that could be remote."""
-        names = [n.id for n in PythonSyntax.nodes(node) if isinstance(n, ast.Name)]
+        names = [n.id for n in PythonSyntax.within(node, ast.Name)]
         return bool(names) and all(name in self._local_reads for name in names)
 
     def _loads_a_bundled_file(self, node: ast.Call, dotted: str) -> bool:
@@ -1949,7 +1947,7 @@ class PythonAnalyzer:
             return False
         if isinstance(argument, ast.Call) and self._dotted(argument.func) == "open":
             argument = argument.args[0] if argument.args else argument
-        names = {n.id for n in PythonSyntax.nodes(argument) if isinstance(n, ast.Name)}
+        names = {n.id for n in PythonSyntax.within(argument, ast.Name)}
         if isinstance(argument, ast.Name) and argument.id in self._bundled_paths:
             return True
         return "__file__" in names
@@ -2082,20 +2080,19 @@ class PythonAnalyzer:
     def _handles_opened_on(self, tree: ast.AST, handle: str, writers: dict[str, str]) -> set[str]:
         """The files a `with open(...) as <handle>` in this tree opened for writing."""
         keys: set[str] = set()
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.With | ast.AsyncWith):
-                for item in node.items:
-                    expression = item.context_expr
-                    if (
-                        isinstance(item.optional_vars, ast.Name)
-                        and item.optional_vars.id == handle
-                        and isinstance(expression, ast.Call)
-                    ):
-                        key = writers.get(
-                            f"{getattr(expression, 'lineno', 0)}:{getattr(expression, 'col_offset', 0)}"
-                        )
-                        if key:
-                            keys.add(key)
+        for node in PythonSyntax.of(tree, ast.With, ast.AsyncWith):
+            for item in node.items:
+                expression = item.context_expr
+                if (
+                    isinstance(item.optional_vars, ast.Name)
+                    and item.optional_vars.id == handle
+                    and isinstance(expression, ast.Call)
+                ):
+                    key = writers.get(
+                        f"{getattr(expression, 'lineno', 0)}:{getattr(expression, 'col_offset', 0)}"
+                    )
+                    if key:
+                        keys.add(key)
         return keys
 
     def _written_text(self, node: ast.AST) -> str | None:
@@ -2155,19 +2152,15 @@ class PythonAnalyzer:
         """
         keyed: dict[int, str] = {}
         written: set[int] = set()
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if (
-                        isinstance(target, ast.Subscript)
-                        and self._dotted(target.value) in ENVIRONMENT
-                    ):
-                        # `os.environ["X"] = "1"` SETS a variable. Reading the
-                        # environment is what this primitive is about, and a Google
-                        # Workspace setup script in `NousResearch/hermes-agent` was
-                        # reported for exfiltration on the strength of
-                        # `os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"`.
-                        written.add(id(target.value))
+        for node in PythonSyntax.of(tree, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Subscript) and self._dotted(target.value) in ENVIRONMENT:
+                    # `os.environ["X"] = "1"` SETS a variable. Reading the
+                    # environment is what this primitive is about, and a Google
+                    # Workspace setup script in `NousResearch/hermes-agent` was
+                    # reported for exfiltration on the strength of
+                    # `os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"`.
+                    written.add(id(target.value))
 
         candidates = self._iterated_literals(tree)
         for node_id in self._environment_handed_to_children(tree):
