@@ -68,7 +68,13 @@ class BehaviourFeatures:
             body[:200].split(b"\n", 1)[0].decode("utf-8", "replace") if body[:2] == b"#!" else None
         )
         language = LanguageRegistry.identify(name, shebang=shebang)
-        return frozenset(hit.capability.value for hit in detector.labels(content, language, rules))  # type: ignore[attr-defined]
+        try:
+            hits = detector.labels(content, language, rules)  # type: ignore[attr-defined]
+        except RecursionError:
+            # A file nested past what can be read is a file with no labels, the same on every
+            # machine: training and scanning take this path alike.
+            return frozenset()
+        return frozenset(hit.capability.value for hit in hits)
 
     @staticmethod
     def of(code: list[tuple[str, bytes]], runs: set[str]) -> list[float]:

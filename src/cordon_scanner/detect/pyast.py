@@ -1180,8 +1180,22 @@ class PythonAnalyzer:
         if isinstance(node, ast.Constant):
             return node.value if isinstance(node.value, str) else None
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left, right = cls.constant(node.left), cls.constant(node.right)
-            return None if left is None or right is None else left + right
+            # A `+` chain nests to the left, and an obfuscated file writes thousands of terms:
+            # `"a" + "b" + ...`. Walked with a stack rather than by recursion, so its length cannot
+            # exhaust Python's -- a RecursionError here once lost the whole file's analysis.
+            parts: list[str] = []
+            stack: list[ast.AST] = [node]
+            while stack:
+                current = stack.pop()
+                if isinstance(current, ast.BinOp) and isinstance(current.op, ast.Add):
+                    stack.append(current.right)
+                    stack.append(current.left)
+                    continue
+                value = cls.constant(current)
+                if value is None:
+                    return None
+                parts.append(value)
+            return "".join(parts)
         if isinstance(node, ast.JoinedStr):
             parts = [cls.constant(value) for value in node.values]
             return None if any(part is None for part in parts) else "".join(p or "" for p in parts)
