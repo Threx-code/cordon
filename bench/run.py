@@ -168,6 +168,9 @@ class SuiteResult:
 class Harness:
     """The benchmark suites: malware, benign, CVE agreement and agent cases."""
 
+    MODEL: str | None = None
+    """A model server for every Cordon scan in this run, or None for rules only (MEAS-8)."""
+
     @staticmethod
     def run(command: list[str], *, cwd: Path | None = None) -> tuple[int, str, float]:
         """Exit code, stdout (where every tool here writes its JSON), seconds."""
@@ -196,6 +199,7 @@ class Harness:
                 "--quiet",
                 "--format",
                 "json",
+                *(["--model", Harness.MODEL] if Harness.MODEL else []),
             ]
         )
         if code in (-1, -2) or code == 2:
@@ -778,9 +782,16 @@ class Harness:
             help="malware: run GuardDog on a fixed-seed random N only (Cordon runs on every sample)",
         )
         parser.add_argument(
+            "--model",
+            default=None,
+            help="score with Cordon's model as well (a cordon-model-server address): the product as "
+            "shipped with the model. Publish this run beside the rules-only one, never instead of it",
+        )
+        parser.add_argument(
             "--full-database", action="store_true", help="cve: sync the full advisory set first"
         )
         args = parser.parse_args()
+        Harness.MODEL = args.model
         args.results.mkdir(parents=True, exist_ok=True)
         collected: dict[str, Any] = {}
         previous = args.results / "results.json"
@@ -802,6 +813,7 @@ class Harness:
                     else Harness.benign(args.data, args.limit, args.workers)
                 )
                 collected[suite] = {
+                    "model": Harness.MODEL or "none: rules only",
                     "rates": outcome.rates(),
                     "verdicts": [asdict(v) for v in outcome.verdicts],
                 }
