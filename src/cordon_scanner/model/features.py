@@ -29,8 +29,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Final
 
-from cordon_scanner.model.behaviour import BEHAVIOUR_DENSE, BehaviourFeatures
-
 MAX_FILES: Final = 3000
 MAX_FILE: Final = 2 << 20
 MAX_TOTAL: Final = 40 << 20
@@ -47,13 +45,11 @@ PATTERNS: Final[dict[str, re.Pattern[bytes]]] = {
         (Path(__file__).parent / "data" / "patterns.json").read_text(encoding="utf-8")
     ).items()
 }
-PACKAGE_BASE: Final[tuple[str, ...]] = (
+PACKAGE_DENSE: Final[tuple[str, ...]] = (
     "n_files", "n_code", "n_binary", "log_code_bytes", "log_max_line", "frac_long_lines", "mean_entropy",
     "max_entropy", "n_dirs_depth", "has_install_hook", "log_hook_len", "hook_runs_node", "hook_runs_shell",
     "has_setup_py", "pkg_no_repo", "pkg_no_description", "version_weird", "n_scripts", *PATTERNS,
 )  # fmt: skip
-PACKAGE_DENSE: Final[tuple[str, ...]] = (*PACKAGE_BASE, *BEHAVIOUR_DENSE)
-"""The package layout: what the files are, then what their code does (`model/behaviour.py`)."""
 FILE_DENSE: Final[tuple[str, ...]] = (
     "log_bytes", "log_lines", "log_max_line", "frac_long_lines", "entropy", "depth", "is_hook_target",
     "is_entry", "is_setup", "is_init", "is_test", "is_minified_name", "is_js", "is_py", "is_shell",
@@ -180,7 +176,7 @@ class PackageFeatures:
     def extract(files: list[tuple[str, bytes]]) -> tuple[list[float], list[int]]:
         """(dense, token buckets) for a package's files."""
         files = PackageArchive.rooted(files)
-        dense = dict.fromkeys(PACKAGE_BASE, 0.0)
+        dense = dict.fromkeys(PACKAGE_DENSE, 0.0)
         tokens: set[int] = set()
         entropies: list[float] = []
         long_lines = lines = code_bytes = max_line = 0
@@ -217,12 +213,7 @@ class PackageFeatures:
         dense["max_entropy"] = max(entropies, default=0.0)
         for key in PATTERNS:
             dense[key] = math.log1p(dense[key])
-        hooks, entries, _ = FileFeatures.hook_targets(files)
-        runs = hooks | entries | {"setup.py"}
-        runs |= {n for n, _ in files if n.count("/") == 1 and n.endswith("/__init__.py")}
-        code = [(n, b) for n, b in files if n.lower().endswith((*CODE, "setup.py"))]
-        behaviour = BehaviourFeatures.of(code, runs)
-        return [dense[k] for k in PACKAGE_BASE] + behaviour, sorted(tokens)
+        return [dense[k] for k in PACKAGE_DENSE], sorted(tokens)
 
     @staticmethod
     def package_json(body: bytes, dense: dict[str, float]) -> None:
