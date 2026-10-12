@@ -1197,8 +1197,8 @@ class PythonAnalyzer:
                 parts.append(value)
             return "".join(parts)
         if isinstance(node, ast.JoinedStr):
-            parts = [cls.constant(value) for value in node.values]
-            return None if any(part is None for part in parts) else "".join(p or "" for p in parts)
+            pieces = [cls.constant(value) for value in node.values]
+            return None if any(part is None for part in pieces) else "".join(p or "" for p in pieces)
         if isinstance(node, ast.FormattedValue):
             return cls.constant(node.value)
         if (
@@ -1210,9 +1210,9 @@ class PythonAnalyzer:
             separator = cls.constant(node.func.value)
             elements = node.args[0]
             if separator is not None and isinstance(elements, ast.List | ast.Tuple):
-                parts = [cls.constant(element) for element in elements.elts]
-                if all(part is not None for part in parts):
-                    return separator.join(part or "" for part in parts)
+                pieces = [cls.constant(element) for element in elements.elts]
+                if all(part is not None for part in pieces):
+                    return separator.join(part or "" for part in pieces)
             # `"".join([chr(x) for x in [47, 101, ...]])`: the same, as a comprehension.
             if (
                 separator is not None
