@@ -30,12 +30,12 @@ class TestAttackCoverage:
         assert len(set(ids)) == len(ids)
 
     def test_every_technique_has_a_verdict(self) -> None:
-        missing = [t for t in AttackCatalogue.ids() if verdicts.verdict_of(t) is None]
+        missing = [t for t in AttackCatalogue.ids() if verdicts.Verdicts.of(t) is None]
         assert missing == []
 
     def test_every_outside_row_gives_a_recorded_reason(self) -> None:
         for technique in AttackCatalogue.ids():
-            verdict, why = verdicts.verdict_of(technique) or ("", ())
+            verdict, why = verdicts.Verdicts.of(technique) or ("", ())
             if verdict == verdicts.OUTSIDE:
                 assert why and all(reason in verdicts.REASONS for reason in why), technique
             else:

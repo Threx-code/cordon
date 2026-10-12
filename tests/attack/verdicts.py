@@ -434,11 +434,13 @@ VERDICTS.update(
 )
 
 
-def verdict_of(technique: str) -> tuple[str, tuple[str, ...]] | None:
-    """The row for a technique: its own, else its nearest listed parent's."""
-    key = technique
-    while key:
-        if key in VERDICTS:
-            return VERDICTS[key]
-        key = key.rpartition(".")[0] if "." in key else ""
-    return None
+class Verdicts:
+    @staticmethod
+    def of(technique: str) -> tuple[str, tuple[str, ...]] | None:
+        """The row for a technique: its own, else its nearest listed parent's."""
+        key = technique
+        while key:
+            if key in VERDICTS:
+                return VERDICTS[key]
+            key = key.rpartition(".")[0] if "." in key else ""
+        return None
