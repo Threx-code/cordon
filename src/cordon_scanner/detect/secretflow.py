@@ -289,7 +289,7 @@ class JavaScriptLeak:
     """The machine's identity, or the whole environment, reaching a request.
 
     The JavaScript side of `AST.PY.IDENTITY_SENT` and `AST.PY.ENVIRONMENT_SENT`. Sources:
-    `os.hostname()`, `os.userInfo()`, `os.homedir()`, `os.networkInterfaces()` -- who and where
+    `os.hostname()`, `os.userInfo()`, `os.networkInterfaces()` -- who and where
     this machine is -- and `process.env` as a whole object, not one named key. A source taints the
     name a statement binds it to, object literals over several lines included. Sinks: the arguments
     of a request call (`JavaScriptFlow._CALL`), or `.write`, `.end` or `.send` on an object the file
@@ -297,8 +297,15 @@ class JavaScriptLeak:
     narrow as `JavaScriptFlow`: one hop through a binding, nothing through a function's return.
     """
 
-    _IDENTITY = re.compile(r"""\bos\s*\.\s*(?:hostname|userInfo|homedir|networkInterfaces)\s*\(""")
-    _WHOLE_ENV = re.compile(r"""\bprocess\s*\.\s*env\b(?!\s*(?:\.|\[|\?\.))""")
+    _IDENTITY = re.compile(r"""\bos\s*\.\s*(?:hostname|userInfo|networkInterfaces)\s*\(""")
+    #: The whole environment as a VALUE: not one key (`process.env.PATH`, `process.env[k]`), not a
+    #: truthiness check (`process.env && ...`), not a comparison, and not its names alone
+    #: (`Object.keys(process.env)`).
+    _WHOLE_ENV = re.compile(
+        r"""(?<!Object\.keys\()\bprocess\s*\.\s*env\b"""
+        r"""(?!\s*(?:\.|\[|\?\.|&&|\|\||\?(?!\?)|[=!]==?|instanceof\b))"""
+    )
+    #: A string literal, blanked before names are read: `"debug"` is text, not the variable `debug`.
     _BIND = re.compile(r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*""")
     _MODULES = r"https?|http2|net|tls"
     #: `const mod = url.protocol === "https:" ? https : http`: a name for one of those modules.
@@ -327,15 +334,120 @@ class JavaScriptLeak:
             index += 1
         return text[start:index]
 
+    #: Where a function's body starts: after `=>`, or after `function name(...)`.
+    _BODY = re.compile(r"""=>\s*\{|\bfunction\b\s*\*?\s*[\w$]*\s*\([^()]*\)\s*\{""")
+    #: A binding whose value is a function or a class binds code, not data.
+    _BINDS_CODE = re.compile(
+        r"""\s*(?:async\s+)?(?:function\b|class\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)"""
+    )
+
+    #: A variable's name as a value: not a property (`process.env.PATH` names no variable `env`),
+    #: not an object key (`{ env: x }`). A shorthand `{ env }` is the variable and still counts.
+    _NAME = re.compile(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\b(?!\s*:(?!:))""")
+    #: A binding to what these return holds a process, a file's contents or a path, not the value
+    #: passed in: `spawnSync("bash", args, { env })` binds a result, and the environment it was given
+    #: went to a child process, not into a request. Named, not guessed: an encoder or a serialiser
+    #: (`JSON.stringify`, `Buffer.from`, `encrypt(...)`) keeps the data and keeps the taint.
+    _LOSES_TAINT = re.compile(
+        r"""\s{0,8}(?:await\s{1,8})?(?:(?:[\w$]{1,80}\s{0,4}\.\s{0,4}){0,6}(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork"""
+        r"""|readFile|readFileSync|readdir|readdirSync|existsSync|statSync|lstatSync|createReadStream|require)"""
+        r"""|path\s{0,4}\.\s{0,4}(?:join|resolve|relative|dirname|basename|normalize))\s{0,4}\("""
+    )
+
     @staticmethod
-    def _kinds(fragment: str, tainted: dict[str, set[str]]) -> set[str]:
+    def _without_functions(fragment: str) -> str:
+        """`fragment` with every function body removed. A callback is code the request will run
+        later, not data it sends: `https.get(url, (res) => { ... })` sends the URL, and whatever
+        the callback reads is not in the request. In a 15,000-package random sample of npm and
+        PyPI, `https.get(url, (res) => { ... })` was read as sending what its callback used."""
+        out: list[str] = []
+        index = 0
+        while True:
+            body = JavaScriptLeak._BODY.search(fragment, index)
+            if body is None:
+                out.append(fragment[index:])
+                return "".join(out)
+            out.append(fragment[index : body.end() - 1])
+            depth, cursor = 0, body.end() - 1
+            while cursor < len(fragment):
+                if fragment[cursor] == "{":
+                    depth += 1
+                elif fragment[cursor] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                cursor += 1
+            out.append("{}")
+            index = cursor + 1
+
+    #: How far after a binding its name still means that binding. Names are matched by text, and a
+    #: bundle reuses `options`, `headers` and `env` thousands of times for unrelated values; a
+    #: beacon binds what it sends and sends it a few lines later. Nearness stands in for scope.
+    LOCALITY: Final = 4000
+
+    @staticmethod
+    def _blank_strings(fragment: str) -> str:
+        """`fragment` with the text of its string literals removed, a template's `${...}` kept.
+
+        A scan, not a pattern: a regex that spans an arbitrarily long string with escapes in it is
+        the shape the pattern guard refuses, and one character at a time is linear by construction.
+        `"debug"` is text, not the variable `debug`; `${os.hostname()}` in a template is code.
+        """
+        out: list[str] = []
+        quote = ""
+        depth = 0  # `${` nesting inside a template
+        index = 0
+        length = len(fragment)
+        while index < length:
+            char = fragment[index]
+            if quote:
+                if char == "\\":
+                    index += 2
+                    continue
+                if quote == "`" and fragment.startswith("${", index):
+                    quote, depth = "", 1
+                    out.append(" ")
+                    index += 2
+                    continue
+                if char == quote or (char == "\n" and quote != "`"):
+                    out.append('""')
+                    quote = ""
+                index += 1
+                continue
+            if depth:
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        quote = "`"
+                        index += 1
+                        continue
+            elif char in "'\"`":
+                quote = char
+                index += 1
+                continue
+            out.append(char)
+            index += 1
+        return "".join(out)
+
+    @staticmethod
+    def _kinds(fragment: str, tainted: dict[str, list[tuple[int, set[str]]]], at: int) -> set[str]:
+        """What `fragment`, found at offset `at`, carries: a source in it, or a name bound to one
+        within `LOCALITY` before it."""
+        fragment = JavaScriptLeak._without_functions(fragment)
+        # Names and sources are read with string literals blanked; a template's `${...}` is code
+        # and stays.
+        fragment = JavaScriptLeak._blank_strings(fragment)
         kinds: set[str] = set()
         if JavaScriptLeak._IDENTITY.search(fragment):
             kinds.add("identity")
         if JavaScriptLeak._WHOLE_ENV.search(fragment):
             kinds.add("environment")
-        for word in set(re.findall(r"[A-Za-z_$][\w$]*", fragment)) & set(tainted):
-            kinds |= tainted[word]
+        for word in set(JavaScriptLeak._NAME.findall(fragment)) & set(tainted):
+            for offset, bound in tainted[word]:
+                if at - JavaScriptLeak.LOCALITY <= offset < at:
+                    kinds |= bound
         return kinds
 
     @staticmethod
@@ -343,12 +455,17 @@ class JavaScriptLeak:
         """`(offset of the sending call, "identity" or "environment")` for each leak."""
         if not (JavaScriptLeak._IDENTITY.search(text) or JavaScriptLeak._WHOLE_ENV.search(text)):
             return []
-        tainted: dict[str, set[str]] = {}
+        tainted: dict[str, list[tuple[int, set[str]]]] = {}
         for _ in range(2):  # a second pass lets a binding taint through one earlier binding
             for match in JavaScriptLeak._BIND.finditer(text):
-                kinds = JavaScriptLeak._kinds(JavaScriptLeak._statement(text, match.end()), tainted)
-                if kinds:
-                    tainted.setdefault(match.group(1), set()).update(kinds)
+                if JavaScriptLeak._BINDS_CODE.match(text, match.end()):
+                    continue
+                if JavaScriptLeak._LOSES_TAINT.match(text, match.end()):
+                    continue
+                statement = JavaScriptLeak._statement(text, match.end())
+                kinds = JavaScriptLeak._kinds(statement, tainted, match.start())
+                if kinds and (match.start(), kinds) not in tainted.get(match.group(1), []):
+                    tainted.setdefault(match.group(1), []).append((match.start(), kinds))
         modules = JavaScriptLeak._MODULES
         aliases = [
             m.group(1)
@@ -365,13 +482,15 @@ class JavaScriptLeak:
         for call in JavaScriptFlow._CALL.finditer(text):
             arguments = JavaScriptFlow._arguments(text, call.end() - 1)
             found += [
-                (call.start(), kind) for kind in sorted(JavaScriptLeak._kinds(arguments, tainted))
+                (call.start(), kind)
+                for kind in sorted(JavaScriptLeak._kinds(arguments, tainted, call.start()))
             ]
         for send in JavaScriptLeak._SEND.finditer(text):
             if send.group(1) not in connections:
                 continue
             arguments = JavaScriptFlow._arguments(text, send.end() - 1)
             found += [
-                (send.start(), kind) for kind in sorted(JavaScriptLeak._kinds(arguments, tainted))
+                (send.start(), kind)
+                for kind in sorted(JavaScriptLeak._kinds(arguments, tainted, send.start()))
             ]
         return found
