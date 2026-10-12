@@ -186,6 +186,31 @@ class TestClient:
                 [PackageUnit("a", [("a.js", b"x")])]
             )
 
+    def test_requests_are_cut_by_size_as_well_as_count(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A package heavy with identifiers must not push one request past what a server accepts."""
+        import cordon_scanner.model.client as client
+
+        monkeypatch.setattr(client, "MAX_REQUEST", 4000)
+        units = [PackageUnit(str(i), [("a.js", b"x")]) for i in range(30)]
+        groups = ModelClient.batches(units)
+        assert len(groups) > 1
+        assert [i for group in groups for i, _ in group] == list(range(30))
+        assert all(len(group) <= client.BATCH for group in groups)
+        assert all(
+            len(group) == 1 or sum(len(json.dumps(e)) for _, e in group) <= 4000 for group in groups
+        )
+
+    def test_one_package_larger_than_the_cap_is_still_sent_alone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import cordon_scanner.model.client as client
+
+        monkeypatch.setattr(client, "MAX_REQUEST", 10)
+        groups = ModelClient.batches([PackageUnit(str(i), [("a.js", b"x")]) for i in range(3)])
+        assert [len(g) for g in groups] == [1, 1, 1]
+
 
 class TestTargets:
     def test_installed_packages_and_archives_not_first_party_source(self, tmp_path: Path) -> None:

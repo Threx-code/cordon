@@ -31,6 +31,8 @@ from cordon_scanner.model.features import FileFeatures, PackageArchive, PackageF
 
 TOKEN_ENV: Final = "CORDON_MODEL_TOKEN"  # noqa: S105 - the variable's name, never a value
 BATCH: Final = 100
+#: About this many bytes per request: under the 16 MB a model server (and Cordon Cloud) accepts.
+MAX_REQUEST: Final = 12 << 20
 MAX_PACKAGES: Final = 2000
 MAX_REPLY: Final = 8 << 20
 TIMEOUT: Final = 60
@@ -145,25 +147,41 @@ class ModelClient:
         except ValueError:
             return False
 
+    @staticmethod
+    def batches(units: list[PackageUnit]) -> list[list[tuple[int, dict[str, Any]]]]:
+        """Packages grouped into requests of at most `BATCH` and about `MAX_REQUEST` bytes: a
+        package heavy with identifiers must not push a request past what the server accepts."""
+        out: list[list[tuple[int, dict[str, Any]]]] = []
+        current: list[tuple[int, dict[str, Any]]] = []
+        size = 0
+        for index, unit in enumerate(units):
+            dense, tokens = PackageFeatures.extract(unit.files)
+            entry = {
+                "ref": str(index),
+                "dense": dense,
+                "tokens": tokens,
+                "files": FileFeatures.rows(unit.files),
+            }
+            weight = len(json.dumps(entry))
+            if current and (len(current) >= BATCH or size + weight > MAX_REQUEST):
+                out.append(current)
+                current, size = [], 0
+            current.append((index, entry))
+            size += weight
+        if current:
+            out.append(current)
+        return out
+
     def score(self, units: list[PackageUnit]) -> list[Verdict]:
         verdicts: list[Verdict] = []
-        for start in range(0, len(units), BATCH):
-            batch = units[start : start + BATCH]
-            packages = []
-            for index, unit in enumerate(batch):
-                dense, tokens = PackageFeatures.extract(unit.files)
-                packages.append(
-                    {
-                        "ref": str(start + index),
-                        "dense": dense,
-                        "tokens": tokens,
-                        "files": FileFeatures.rows(unit.files),
-                    }
-                )
-            reply = self._post({"schema": "cordon.model/v1", "packages": packages})
+        for group in ModelClient.batches(units):
+            reply = self._post(
+                {"schema": "cordon.model/v1", "packages": [entry for _, entry in group]}
+            )
             by_ref = {r.get("ref"): r for r in reply.get("results") or [] if isinstance(r, dict)}
-            for index, unit in enumerate(batch):
-                result = by_ref.get(str(start + index))
+            for index, _ in group:
+                unit = units[index]
+                result = by_ref.get(str(index))
                 if not isinstance(result, dict) or result.get("verdict") not in (
                     "malicious",
                     "benign",
