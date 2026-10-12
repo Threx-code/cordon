@@ -519,11 +519,16 @@ rules:
         - '\b(?:fetch|axios(?:\s{0,4}\.\s{0,4}\w{1,10})?|https?\s{0,4}\.\s{0,4}get)\s{0,4}\([^;]{0,200}\)\s{0,4}\.\s{0,4}then\s{0,4}\([^)\n]{0,60}=>[\s\S]{0,200}?(?:eval|new\s{1,4}Function)\s{0,4}\('
         - '\bnew\s{1,4}Function\s{0,4}\(\s{0,4}(?:await\s{1,4})?(?:[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}){0,4}(?:fetch|get|request)\b'
         - '\bchild_process\s{0,4}\.\s{0,4}exec\w{0,8}\s{0,4}\(\s{0,4}(?:await\s{1,4})?[^)\n]{0,80}\b(?:fetch|axios|request)\b'
+        # A response kept in a variable and handed to an evaluator a few statements on -- the
+        # patterns above stop at the first `;`. `axios_1.default.get(src)` is how TypeScript
+        # compiles `axios.get(src)`: `const s = response.data.Cookie; new Function("require", s)`.
+        - '\b(?:axios(?:_\d{1,3})?(?:\s{0,4}\.\s{0,4}default)?\s{0,4}\.\s{0,4}(?:get|post|request)|fetch|https?\s{0,4}\.\s{0,4}get)\s{0,4}\([\s\S]{0,600}?\b(?:new\s{1,4}Function|eval)\s{0,4}\('
     tests:
       positive:
         - "eval(await fetch(url).then(r => r.text()))"
         - "new Function(await fetch(u))()"
         - "fetch(u).then(r => eval(r))"
+        - "const response = await axios_1.default.get(src, { headers });\nconst s = response.data.Cookie;\nconst handler = new Function('require', s);\nhandler(require);"
       negative:
         - "const data = await fetch(url); render(data)"
         - "eval(localConfig)"

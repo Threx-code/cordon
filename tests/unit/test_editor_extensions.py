@@ -156,3 +156,45 @@ class TestWhatCountsAsRunningAFile:
         assert runs.search('`start "" "${tmp}"`') is not None
         assert runs.search("'start curl -o a && a'") is not None
         assert runs.search('"sh ./payload.sh"') is not None
+
+
+class TestActivationRunsUnasked:
+    """An extension's `main` runs on every start, as an install hook does; its libraries do not."""
+
+    @staticmethod
+    def package(path: Path, files: dict[str, str]) -> Path:
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, body in files.items():
+                archive.writestr(name, body)
+        return path
+
+    def test_the_manifests_main_is_the_activation_entry(self, tmp_path: Path) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.detect.base import FileUnit
+
+        manifest = json.dumps(
+            {"name": "t", "engines": {"vscode": "^1.90.0"}, "main": "./out/extension"}
+        )
+        units = [
+            FileUnit(FileContent(path=p, raw=b, size=len(b)))
+            for p, b in (
+                ("t.vsix!extension/package.json", manifest.encode()),
+                ("t.vsix!extension/out/extension.js", b"exports.activate = () => {};"),
+                (
+                    "t.vsix!extension/node_modules/lib/package.json",
+                    b'{"name": "lib", "main": "index.js"}',
+                ),
+                ("t.vsix!extension/node_modules/lib/index.js", b"module.exports = 1;"),
+            )
+        ]
+        assert Engine._extension_entries(units) == {"t.vsix!extension/out/extension.js"}
+
+    def test_a_project_has_no_activation_entry(self) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.detect.base import FileUnit
+
+        raw = json.dumps({"name": "app", "main": "index.js"}).encode()
+        units = [FileUnit(FileContent(path="package.json", raw=raw, size=len(raw)))]
+        assert Engine._extension_entries(units) == set()

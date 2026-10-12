@@ -431,7 +431,10 @@ rules:
       # installer all do, and across the first 228 repositories measured that was eleven
       # blocking findings, every one of them that.
       all:
-        - rule: AST.PY.IDENTITY_SENT
+        - any:
+            - rule: AST.PY.IDENTITY_SENT
+            # The same, in JavaScript: `os.hostname()` in what a request sends.
+            - rule: FLOW.JS.IDENTITY_SENT
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
@@ -466,7 +469,10 @@ rules:
       scope: file
       proximity: 30
       all:
-        - rule: AST.PY.ENVIRONMENT_SENT
+        - any:
+            - rule: AST.PY.ENVIRONMENT_SENT
+            # The same, in JavaScript: `process.env` whole in what a request sends.
+            - rule: FLOW.JS.ENVIRONMENT_SENT
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

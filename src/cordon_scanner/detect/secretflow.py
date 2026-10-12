@@ -283,3 +283,95 @@ class JavaScriptFlow:
 
 
 __all__ = ["CREDENTIAL_CUSTODIANS", "CREDENTIAL_HOMES", "Home", "JavaScriptFlow", "SecretFlow"]
+
+
+class JavaScriptLeak:
+    """The machine's identity, or the whole environment, reaching a request.
+
+    The JavaScript side of `AST.PY.IDENTITY_SENT` and `AST.PY.ENVIRONMENT_SENT`. Sources:
+    `os.hostname()`, `os.userInfo()`, `os.homedir()`, `os.networkInterfaces()` -- who and where
+    this machine is -- and `process.env` as a whole object, not one named key. A source taints the
+    name a statement binds it to, object literals over several lines included. Sinks: the arguments
+    of a request call (`JavaScriptFlow._CALL`), or `.write`, `.end` or `.send` on an object the file
+    made with `http(s).request` or `net`/`tls` `connect` -- never a file stream's `.write`. As
+    narrow as `JavaScriptFlow`: one hop through a binding, nothing through a function's return.
+    """
+
+    _IDENTITY = re.compile(r"""\bos\s*\.\s*(?:hostname|userInfo|homedir|networkInterfaces)\s*\(""")
+    _WHOLE_ENV = re.compile(r"""\bprocess\s*\.\s*env\b(?!\s*(?:\.|\[|\?\.))""")
+    _BIND = re.compile(r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*""")
+    _MODULES = r"https?|http2|net|tls"
+    #: `const mod = url.protocol === "https:" ? https : http`: a name for one of those modules.
+    _ALIAS = re.compile(
+        r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n()]{0,160})(?=;|\n)"""
+    )
+    _CONNECTION_CALL = r"""\s*\.\s*(?:request|get|connect|createConnection)\s*\("""
+    _SEND = re.compile(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\s*\.\s*(?:write|end|send)\s*\(""")
+    MAX_STATEMENT: Final = 4000
+
+    @staticmethod
+    def _statement(text: str, start: int) -> str:
+        """From `start` to the `;` or line end that closes the statement at bracket depth 0."""
+        depth, index = 0, start
+        end = min(len(text), start + JavaScriptLeak.MAX_STATEMENT)
+        while index < end:
+            character = text[index]
+            if character in "([{":
+                depth += 1
+            elif character in ")]}":
+                depth -= 1
+                if depth < 0:
+                    break
+            elif character in ";\n" and depth == 0:
+                break
+            index += 1
+        return text[start:index]
+
+    @staticmethod
+    def _kinds(fragment: str, tainted: dict[str, set[str]]) -> set[str]:
+        kinds: set[str] = set()
+        if JavaScriptLeak._IDENTITY.search(fragment):
+            kinds.add("identity")
+        if JavaScriptLeak._WHOLE_ENV.search(fragment):
+            kinds.add("environment")
+        for word in set(re.findall(r"[A-Za-z_$][\w$]*", fragment)) & set(tainted):
+            kinds |= tainted[word]
+        return kinds
+
+    @staticmethod
+    def findings(text: str) -> list[tuple[int, str]]:
+        """`(offset of the sending call, "identity" or "environment")` for each leak."""
+        if not (JavaScriptLeak._IDENTITY.search(text) or JavaScriptLeak._WHOLE_ENV.search(text)):
+            return []
+        tainted: dict[str, set[str]] = {}
+        for _ in range(2):  # a second pass lets a binding taint through one earlier binding
+            for match in JavaScriptLeak._BIND.finditer(text):
+                kinds = JavaScriptLeak._kinds(JavaScriptLeak._statement(text, match.end()), tainted)
+                if kinds:
+                    tainted.setdefault(match.group(1), set()).update(kinds)
+        modules = JavaScriptLeak._MODULES
+        aliases = [
+            m.group(1)
+            for m in JavaScriptLeak._ALIAS.finditer(text)
+            if re.search(rf"\b(?:{modules})\b", m.group(2))
+            and not re.search(r"['\"`]", m.group(2).split("?", 1)[-1])
+        ]
+        names = "|".join([modules, *(re.escape(a) for a in aliases)])
+        connection = re.compile(
+            rf"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:{names}){JavaScriptLeak._CONNECTION_CALL}"""
+        )
+        connections = {m.group(1) for m in connection.finditer(text)}
+        found: list[tuple[int, str]] = []
+        for call in JavaScriptFlow._CALL.finditer(text):
+            arguments = JavaScriptFlow._arguments(text, call.end() - 1)
+            found += [
+                (call.start(), kind) for kind in sorted(JavaScriptLeak._kinds(arguments, tainted))
+            ]
+        for send in JavaScriptLeak._SEND.finditer(text):
+            if send.group(1) not in connections:
+                continue
+            arguments = JavaScriptFlow._arguments(text, send.end() - 1)
+            found += [
+                (send.start(), kind) for kind in sorted(JavaScriptLeak._kinds(arguments, tainted))
+            ]
+        return found

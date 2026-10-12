@@ -71,7 +71,7 @@ if TYPE_CHECKING:
     from cordon_scanner.core.content import FileContent
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.detect.embedded import Command
-    from cordon_scanner.rules.loader import CompiledRule, RuleSet
+    from cordon_scanner.rules.loader import CompiledRule
 
 
 MAX_VARIANTS = 8
@@ -564,16 +564,6 @@ class CapabilityDetector(BaseDetector):
         trimmed = [host.rstrip(b":.'\"") for host in hosts]
         return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
 
-    def labels(
-        self, content: FileContent, language: str | None, rules: RuleSet
-    ) -> list[CapabilityHit]:
-        """The capability labels one file carries, as a scan computes them before any reasoning:
-        what Cordon's model reads as behaviour (`cordon_scanner.model.behaviour`)."""
-        if content.is_binary:
-            return []
-        candidates = RuleSelector.select_rules(rules, language=language, path=content.path)
-        return self._match_capabilities(content, candidates, language) if candidates else []
-
     def _match_capabilities(
         self,
         content: FileContent,
@@ -730,6 +720,19 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _runs_a_downloaded_file(hits: list[CapabilityHit]) -> bool:
         return any(hit.rule_id in CapabilityDetector.DOWNLOAD_RUN_CONSTRUCTS for hit in hits)
+
+    #: A payload written into the code, decoded and run in one expression: `eval(atob('...'))`,
+    #: `new Function(Buffer.from('...', "base64").toString())`, `exec(base64.b64decode(b'...'))`.
+    #: Sixty characters of encoding or more: what a module loader decodes is computed, not written.
+    _LITERAL_PAYLOAD_RUN = re.compile(
+        rb"(?:\beval|\bnew\s{1,4}Function|\bFunction|\bexec)\s{0,4}\(\s{0,4}"
+        rb"(?:atob|Buffer\s{0,4}\.\s{0,4}from|decodeURIComponent\s{0,4}\(\s{0,4}escape\s{0,4}\(\s{0,4}atob"
+        rb"|base64\s{0,4}\.\s{0,4}b64decode|codecs\s{0,4}\.\s{0,4}decode)\s{0,4}\(\s{0,4}b?['\"`][A-Za-z0-9+/=_-]{60}"
+    )
+
+    @staticmethod
+    def _evaluates_a_literal_payload(content: FileContent) -> bool:
+        return CapabilityDetector._LITERAL_PAYLOAD_RUN.search(content.raw) is not None
 
     #: A line this long means the file was generated, whatever it is called.
     #:
@@ -1096,6 +1099,8 @@ class CapabilityDetector(BaseDetector):
                 "AST.PY.ENVIRONMENT_SENT",
                 "AST.PY.SECRET_SENT",
                 "FLOW.JS.SECRET_SENT",
+                "FLOW.JS.IDENTITY_SENT",
+                "FLOW.JS.ENVIRONMENT_SENT",
             )
         ]
         if not offsets:
@@ -1810,17 +1815,32 @@ class CapabilityDetector(BaseDetector):
     def _javascript_secret_flow(self, content: FileContent) -> list[CapabilityHit]:
         """`FLOW.JS.SECRET_SENT`: a named credential in a request to a host outside its home.
         See `detect/secretflow.py`."""
-        from cordon_scanner.detect.secretflow import JavaScriptFlow
+        from cordon_scanner.detect.secretflow import JavaScriptFlow, JavaScriptLeak
 
         text = content.text
+        sends: list[tuple[int, Capability, str]] = [
+            (offset, Capability.CREDENTIAL, "FLOW.JS.SECRET_SENT")
+            for offset, _key, _host in JavaScriptFlow.findings(text)
+        ]
+        # The machine's identity and the whole environment, as `AST.PY.IDENTITY_SENT` and
+        # `AST.PY.ENVIRONMENT_SENT` read them in Python: `os.hostname()` and `process.env` in what
+        # a request sends.
+        sends += [
+            (
+                offset,
+                Capability.RECONNAISSANCE if kind == "identity" else Capability.CREDENTIAL,
+                "FLOW.JS.IDENTITY_SENT" if kind == "identity" else "FLOW.JS.ENVIRONMENT_SENT",
+            )
+            for offset, kind in JavaScriptLeak.findings(text)
+        ]
         hits: list[CapabilityHit] = []
-        for offset, _key, _host in JavaScriptFlow.findings(text):
+        for offset, capability, rule_id in sends:
             line = text.count("\n", 0, offset) + 1
             start, end = self._span_of_line(content, line)
             hits.append(
                 CapabilityHit(
-                    capability=Capability.CREDENTIAL,
-                    rule_id="FLOW.JS.SECRET_SENT",
+                    capability=capability,
+                    rule_id=rule_id,
                     byte_start=start,
                     byte_end=end,
                     line=line,
@@ -2895,6 +2915,16 @@ class CapabilityDetector(BaseDetector):
 
         present = {h.capability for h in hits}
         in_hook = ctx.in_install_hook(content.path)
+        if (
+            in_hook
+            and rule.id == self.DROPPER_RULE
+            and SourcePaths.is_editor_extension(content.path)
+            and not CapabilityDetector._runs_a_downloaded_file(hits)
+        ):
+            # An extension's activation entry is in the install-hook set so that a beacon there is
+            # reported as one; a download it then starts is how extensions fetch their own tools,
+            # and is not escalated as an install-time dropper. See `MALWARE.DROPPER.001` above.
+            in_hook = False
 
         severity = RiskScorer.apply_category_floor(rule.category, rule.severity)
         category = rule.category
@@ -2943,6 +2973,18 @@ class CapabilityDetector(BaseDetector):
         # registry", which is advice about a package somebody installed and means
         # nothing to the owner of a `.buildkite` script.
         if compiled.rule.id in self.EXFIL_RULES and self._credential_for_its_own_service(content):
+            return None
+
+        if (
+            compiled.rule.id == "MALWARE.DROPPER.001"
+            and SourcePaths.is_editor_extension(content.path)
+            and not CapabilityDetector._runs_a_downloaded_file(hits)
+        ):
+            # Withdrawn for the reason above. An extension's activation entry runs unasked, as an
+            # install hook does -- which is what catches a beacon there -- but an extension that
+            # fetches and starts its own tools (Codespaces, APKLab, DOSBox) is not a compromised
+            # host. `SUSPECT.DROPPER.001` reports the same span, below the gate. A download
+            # written to an executable and started keeps this rule: that is the malicious shape.
             return None
 
         if (
@@ -3031,9 +3073,23 @@ class CapabilityDetector(BaseDetector):
                 # `make-fetch-exec` corpus sample, whose entire content is that line,
                 # came out at MEDIUM.
                 ceilinged = "the project's own build and release tooling"
-            elif SourcePaths.is_generated_artefact(
-                content.path
-            ) and not CapabilityDetector._runs_a_downloaded_file(hits):
+            elif (
+                compiled.rule.id == self.DROPPER_RULE
+                and SourcePaths.is_editor_extension(content.path)
+                and not CapabilityDetector._runs_a_downloaded_file(hits)
+            ):
+                # An extension fetching and starting its own tools -- a language server, a CLI,
+                # a WSL or container agent -- from code the editor runs: Codespaces, APKLab and
+                # DOSBox do it in their main bundle. Reported, below the gate. A download written
+                # to an executable and started, as one construct, is not lowered: that is the
+                # shape the malicious extensions use, `.bat` droppers included.
+                ceilinged = "an editor extension fetching and starting its own tools"
+                ceiling = Severity.MEDIUM
+            elif (
+                SourcePaths.is_generated_artefact(content.path)
+                and not CapabilityDetector._runs_a_downloaded_file(hits)
+                and not CapabilityDetector._evaluates_a_literal_payload(content)
+            ):
                 # Not when the output downloads and runs in one construct. A bundle holds a
                 # module loader's decoder and evaluator by construction, which is what this
                 # ceiling is for; it holds `curl ... -o x.bat && x.bat` only if somebody put it
@@ -3051,10 +3107,14 @@ class CapabilityDetector(BaseDetector):
                 # says is that a capability in vendored code belongs to whoever wrote
                 # the library, which is a different review from the one this report is.
                 ceilinged = "vendored third-party code"
-            elif CapabilityDetector._is_minified(
-                content
-            ) and not CapabilityDetector._runs_a_downloaded_file(hits):
-                # The same exception as generated output, for the same reason.
+            elif (
+                CapabilityDetector._is_minified(content)
+                and not CapabilityDetector._runs_a_downloaded_file(hits)
+                and not CapabilityDetector._evaluates_a_literal_payload(content)
+            ):
+                # The same exceptions as generated output, for the same reasons. The second
+                # matters most here: a long encoded payload is itself what makes a hand-written
+                # file look minified (`eval(atob('...'))` in `tailwind-animation-effect`).
                 ceilinged = "minified output"
             elif (
                 compiled.rule.id in self.ON_REQUEST_RULES
@@ -3078,6 +3138,16 @@ class CapabilityDetector(BaseDetector):
                 # (Makefile, Dockerfile, MSBuild, Ansible) keep their own verdict for builds
                 # that run unattended; a decoded payload is never excused.
                 deferred = CapabilityDetector._run_on_request(content, unit.language, hits, matched)
+                if (
+                    deferred
+                    and compiled.rule.id != self.DROPPER_RULE
+                    and SourcePaths.is_editor_extension(content.path)
+                ):
+                    # An extension's `activate` is called by the editor, so "runs only when called"
+                    # does not hold: a beacon there reports the machine on every start. Only the weak
+                    # dropper combination -- spawn, decode and a request, which remote-development
+                    # tools do all day -- keeps the lowering (`_run_on_request`).
+                    deferred = ""
                 if (
                     deferred == CapabilityDetector.ON_REQUEST_REASONS[0]
                     and compiled.rule.id == "SUSPECT.PERSIST.001"

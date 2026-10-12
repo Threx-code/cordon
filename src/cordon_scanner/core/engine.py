@@ -1041,7 +1041,7 @@ class Engine:
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
         hook_paths, entries, consumer_hooks = Engine._outside_extensions(
-            hook_paths, entries, consumer_hooks
+            units, hook_paths, entries, consumer_hooks
         )
         # And which of those files' bodies the hooks actually reach. A file is
         # in the closure because something imports it, which runs its top level
@@ -1414,7 +1414,7 @@ class Engine:
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
         hook_paths, entries, consumer_hooks = Engine._outside_extensions(
-            hook_paths, entries, consumer_hooks
+            units, hook_paths, entries, consumer_hooks
         )
         ctx = replace(
             ctx,
@@ -2249,26 +2249,65 @@ class Engine:
 
     @staticmethod
     def _outside_extensions(
-        hook_paths: set[str], entries: frozenset[str], consumer_hooks: set[str]
+        units: Sequence[FileUnit],
+        hook_paths: set[str],
+        entries: frozenset[str],
+        consumer_hooks: set[str],
     ) -> tuple[set[str], frozenset[str], set[str]]:
-        """The install-time picture without anything inside an editor extension.
+        """The install-time picture of an editor extension: its activation entry, nothing else.
 
-        The editor unpacks an extension and starts its `main`; no package manager runs in it, so
-        no lifecycle script a bundled manifest names runs on this machine. Kept, they made
+        The editor unpacks an extension and starts the `main` (or `browser`) its manifest names --
+        on every start, unasked -- so that file runs as an install hook's does. No package manager
+        runs in it, so no lifecycle script a bundled manifest names runs at all: kept, they made
         `node_modules/d3/dist/d3.min.js` inside a data-preview extension "runs during install" and
-        its `new Function` beside a `fetch` a critical dropper. What the extension's own code does
-        is still read, with the severity its own context gives it.
+        its `new Function` beside a `fetch` a critical dropper. The entry alone, not what it
+        imports: a bundled library is loaded, and what it does is read with its own context.
         """
         from cordon_scanner.detect.secrets import SourcePaths
 
         def keep(path: str) -> bool:
             return not SourcePaths.is_editor_extension(path)
 
+        activation = Engine._extension_entries(units)
         return (
-            {p for p in hook_paths if keep(p)},
-            frozenset(p for p in entries if keep(p)),
+            {p for p in hook_paths if keep(p)} | activation,
+            frozenset(p for p in entries if keep(p)) | activation,
             {p for p in consumer_hooks if keep(p)},
         )
+
+    @staticmethod
+    def _extension_entries(units: Sequence[FileUnit]) -> set[str]:
+        """The files an editor starts in each extension present: its manifest's `main` and
+        `browser`, with `.js` added when the manifest leaves it off, as Node resolves them."""
+        from cordon_scanner.detect.secrets import SourcePaths
+
+        paths = {unit.path for unit in units}
+        found: set[str] = set()
+        for unit in units:
+            path = unit.path
+            if not path.endswith("package.json") or not SourcePaths.is_editor_extension(path):
+                continue
+            root = path[: -len("package.json")]
+            if not (root.endswith(".vsix!extension/") or re.search(r"/extensions/[^/]+/$", root)):
+                continue
+            try:
+                manifest = json.loads(unit.content.raw)
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if not isinstance(manifest, dict) or not isinstance(manifest.get("engines"), dict):
+                continue
+            if "vscode" not in manifest["engines"]:
+                continue
+            for key in ("main", "browser"):
+                value = manifest.get(key)
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                target = posixpath.normpath(root + value.strip().removeprefix("./"))
+                for candidate in (target, f"{target}.js", f"{target}/index.js"):
+                    if candidate in paths:
+                        found.add(candidate)
+                        break
+        return found
 
     @staticmethod
     def _under_fixture_directory(path: str) -> bool:
