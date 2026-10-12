@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Unknown-attack recall: content only, on malware published after the rules were written (MEAS-3).
+
+```
+  DataDog dataset @ FROZEN (the snapshot every rule was developed against)
+        │
+        │   samples added after it: never read by anyone working on the rules
+        ▼
+  partial clone (history, no contents) ──► only the added sample blobs fetched
+        │
+        ▼
+  cordon scan --offline --advisories empty.json    (no intel: content alone)
+        │
+        ▼
+  content recall = blocked / payload-bearing, with a 95% Wilson interval
+```
+
+The held-out set is MEASURED, NEVER STUDIED. A miss in it is not read to write a rule: once one is,
+that sample is development data and leaves the set (record it in `STUDIED` with the date). Cordon's
+first commit is from September 2026 and the snapshot's newest sample from June 2026, so no earlier
+cut is held out -- the split starts at the snapshot.
+
+    docker volume create cordon-bench-fresh
+    docker run --rm -v cordon-bench-fresh:/f -v "$PWD:/s:ro" --entrypoint python \\
+      cordon-prepush:<tag> /s/bench/timesplit.py fetch --into /f
+    docker run --rm --network none -v cordon-bench-fresh:/f:ro -v "$PWD:/s:ro" -v OUT:/out \\
+      --entrypoint sh cordon-prepush:<tag> -c 'cp -r /s /tmp/w && PYTHONPATH=/tmp/w/src \\
+      python /tmp/w/bench/timesplit.py scan --from /f --out /out'
+
+(`scan` calls `cordon-scanner`; put it on PATH as `run.py`'s docstring does.)
+
+`fetch` needs the network and git; `scan` runs with none. Nothing in a sample is executed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from run import Harness, Levels, Wilson
+
+DATASET = "https://github.com/DataDog/malicious-software-packages-dataset.git"
+FROZEN = "805fcd72db525244cae8dd32056efbd50b8b0e19"
+"""The DataDog commit the rules were developed against (2026-10-09). Everything added after it is
+held out."""
+STUDIED: dict[str, str] = {}
+"""Held-out samples later read to develop a rule, with the date: they leave the set."""
+
+
+class TimeSplit:
+    @staticmethod
+    def git(*args: str, cwd: Path) -> str:
+        return subprocess.run(
+            ["git", "-c", "safe.directory=*", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+    @classmethod
+    def fetch(cls, into: Path) -> list[str]:
+        """Clone history without contents, then fetch only the samples added after FROZEN."""
+        clone = into / "dd"
+        if not clone.exists():
+            subprocess.run(
+                ["git", "clone", "-q", "--filter=blob:none", "--no-checkout", DATASET, str(clone)],
+                check=True,
+            )
+        cls.git("fetch", "-q", "origin", cwd=clone)
+        head = cls.git("rev-parse", "origin/main", cwd=clone).strip()
+        added = [
+            line
+            for line in cls.git(
+                "diff", "--name-only", "--diff-filter=A", FROZEN, head, "--", "samples", cwd=clone
+            ).splitlines()
+            if line.endswith((".zip", ".vsix"))
+        ]
+        if added:
+            cls.git("checkout", head, "--", *added, cwd=clone)
+        (into / "added.json").write_text(
+            json.dumps({"frozen": FROZEN, "head": head, "added": added}, indent=1), encoding="utf-8"
+        )
+        return added
+
+    @staticmethod
+    def scan_one(root: Path, relative: str, empty: Path) -> dict[str, object]:
+        archive = root / "dd" / relative
+        with tempfile.TemporaryDirectory(prefix="ts-") as work:
+            target: Path | None = archive
+            if archive.suffix != ".vsix":
+                try:
+                    target = Harness._unzip_datadog(archive, Path(work))
+                except Exception as exc:
+                    return {"sample": relative, "level": "error", "error": type(exc).__name__}
+            if target is None:
+                return {"sample": relative, "level": "error", "error": "empty"}
+            code, out, _ = Harness.run(
+                [
+                    "cordon-scanner",
+                    "scan",
+                    str(target),
+                    "--offline",
+                    "--advisories",
+                    str(empty),
+                    "--no-color",
+                    "--quiet",
+                    "--format",
+                    "json",
+                ]
+            )
+        findings: list[list[str]] = []
+        try:
+            report = json.loads(out[out.index("{") :])
+            findings = [
+                [
+                    str(f.get("rule_id")),
+                    str(f.get("severity")),
+                    str(f.get("confidence")),
+                    str(f.get("category")),
+                    "",
+                ]
+                for f in report.get("findings", [])
+            ]
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return {"sample": relative, "level": Levels.of(code, findings), "findings": findings}
+
+    @classmethod
+    def scan(cls, root: Path, out: Path, workers: int) -> dict[str, object]:
+        listing = json.loads((root / "added.json").read_text(encoding="utf-8"))
+        samples = [s for s in listing["added"] if s not in STUDIED]
+        empty = Path(tempfile.mkdtemp()) / "no-advisories.json"
+        empty.write_text("[]", encoding="utf-8")
+        with ThreadPoolExecutor(workers) as pool:
+            rows = list(pool.map(lambda s: cls.scan_one(root, s, empty), samples))
+        seen = Counter(str(r["level"]) for r in rows)
+        answered = len(rows) - seen["error"]
+        caught = seen["blocked"] + seen["known"]
+        summary = {
+            "frozen": listing["frozen"],
+            "head": listing["head"],
+            "samples": len(rows),
+            "levels": dict(seen),
+            "content_recall": round(caught / max(answered, 1), 4),
+            "content_recall_95": list(Wilson.interval(caught, answered)),
+            "enough_for_a_98_claim": answered >= 650,
+        }
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "timesplit.json").write_text(
+            json.dumps({"summary": summary, "rows": rows}, indent=1), encoding="utf-8"
+        )
+        return summary
+
+    @classmethod
+    def main(cls) -> int:
+        parser = argparse.ArgumentParser(
+            description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        )
+        sub = parser.add_subparsers(dest="command", required=True)
+        fetch = sub.add_parser("fetch")
+        fetch.add_argument("--into", type=Path, default=Path("/f"))
+        scan = sub.add_parser("scan")
+        scan.add_argument("--from", dest="root", type=Path, default=Path("/f"))
+        scan.add_argument("--out", type=Path, default=Path("/out"))
+        scan.add_argument("--workers", type=int, default=4)
+        args = parser.parse_args()
+        if args.command == "fetch":
+            print(f"{len(cls.fetch(args.into))} samples added after {FROZEN[:12]}")
+            return 0
+        print(json.dumps(cls.scan(args.root, args.out, args.workers), indent=1))
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(TimeSplit.main())
