@@ -22,6 +22,7 @@ because a pattern that can hang the scanner must never reach a worker.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import re
 from dataclasses import dataclass, field
@@ -1229,8 +1230,20 @@ class RuleLoader:
         claims. An empty rule set is not a scan with fewer rules; it is a scan
         whose output no longer means what its reader thinks.
         """
-        ldr = loader or cls()
-        directory = cls.builtin_pack_dir()
+        if loader is None:
+            # The default load, once per process: compiling 1,390 rules' patterns is most of a
+            # scan's fixed cost, and the packs are immutable once loaded. Keyed by directory, so
+            # anything pointing the tool at another copy loads that one.
+            return cls._builtin_once(str(cls.builtin_pack_dir()))
+        return cls._load_builtin(loader, cls.builtin_pack_dir())
+
+    @classmethod
+    @functools.cache
+    def _builtin_once(cls, directory: str) -> tuple[RulePack, ...]:
+        return cls._load_builtin(cls(), Path(directory))
+
+    @classmethod
+    def _load_builtin(cls, ldr: RuleLoader, directory: Path) -> tuple[RulePack, ...]:
         if not directory.is_dir():
             raise RulePackError(
                 f"the bundled rule packs are missing from {directory}",
