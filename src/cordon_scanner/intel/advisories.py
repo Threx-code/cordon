@@ -799,7 +799,48 @@ class AdvisoryDatabase:
             key = (ecosystem, spelling)
             self._materialise(key)
             found.update(dict.fromkeys(self._by_key.get(key, ())))
-        return tuple(found)
+        return AdvisoryDatabase._as_named(ecosystem, name, tuple(found))
+
+    CASE_SENSITIVE_NAMES: Final = frozenset({"npm"})
+    """Registries where two names differing only in case are two packages. npm stopped accepting
+    capitals in 2017 and kept the packages published before then: `Orchestrator` is not
+    `orchestrator` (gulp 3's task runner), and MAL-2025-28475 is about the first one only."""
+
+    @staticmethod
+    def _as_named(ecosystem: str, name: str, records: tuple[Advisory, ...]) -> tuple[Advisory, ...]:
+        """The records about this package as the registry names it, and as each record claims it.
+
+        Two corrections to the lowercased index, both about what a record says rather than how it
+        was stored:
+
+        * a case-sensitive registry's records match only their exact spelling;
+        * a malicious record that lists its exact versions claims those versions. OSV's import of
+          the OpenSSF malicious-packages data also gives such a record an open range from "0",
+          which for a name published only to attack says the same thing, and for an established
+          package with years of honest releases says every one of them is malware: MAL-2024-10244
+          names `roboter` 2.0.2, and its open range blocked `roboter` 12.7.0. The explicit list
+          stands and the open range does not: a compromise happens to specific uploads (see the
+          module docstring), and an upload the list does not name gets its own record.
+        """
+        records = tuple(a for a in records if not (a.malicious and a.identifier in NOT_MALWARE))
+        if ecosystem in AdvisoryDatabase.CASE_SENSITIVE_NAMES:
+            exact = name.strip()
+            records = tuple(a for a in records if a.name == exact)
+        listed = {a.identifier for a in records if a.malicious and a.versions and a.identifier}
+        if not listed:
+            return records
+        return tuple(
+            a
+            for a in records
+            if not (
+                a.malicious
+                and a.identifier in listed
+                and not a.versions
+                and a.introduced in (None, "0")
+                and a.fixed is None
+                and a.last_affected is None
+            )
+        )
 
     @staticmethod
     def spellings(ecosystem: str, name: str) -> tuple[str, ...]:
@@ -820,6 +861,20 @@ class AdvisoryDatabase:
         elif ecosystem == "cargo":
             forms.extend((lowered.replace("_", "-"), lowered.replace("-", "_")))
         return tuple(dict.fromkeys(forms))
+
+
+NOT_MALWARE: Final = {
+    "MAL-2023-462": (
+        "fsevents 1.0.0 to 1.2.10 carry no malicious code: their install script fetched a prebuilt "
+        "binary from a storage bucket that was later abandoned and could be claimed (GitHub's "
+        "GHSA-xv2f-5jw4-v95m). That is a vulnerability, and it is recorded as one -- "
+        "GHSA-8r6j-v8pm-fqw3 / CVE-2023-45311, critical, fixed in 1.2.11 -- which still reports. "
+        "As malware it blocked 45 of 1,943 published VS Code extensions, every one shipping the "
+        "module already built, where no install script runs."
+    ),
+}
+"""Malicious-package records reviewed and found to describe something that is not malware, by id,
+with the reason. Each one must name the record that reports the real risk in its place."""
 
 
 BUNDLED: tuple[Advisory, ...] = (

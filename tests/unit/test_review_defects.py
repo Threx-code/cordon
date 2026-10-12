@@ -14657,12 +14657,12 @@ class TestAMaliciousPinInATestFixture:
         target = tmp_path / directory
         target.mkdir(parents=True)
         (target / "package.json").write_text(
-            '{"name": "fixture", "version": "1.0.0", "dependencies": {"fsevents": "1.2.9"}}',
+            '{"name": "fixture", "version": "1.0.0", "dependencies": {"event-stream": "3.3.6"}}',
             encoding="utf-8",
         )
         (target / "package-lock.json").write_text(
             '{"name": "fixture", "lockfileVersion": 3, "packages": {"": {"name": "fixture"}, '
-            '"node_modules/fsevents": {"version": "1.2.9", "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-1.2.9.tgz"}}}',
+            '"node_modules/event-stream": {"version": "3.3.6", "resolved": "https://registry.npmjs.org/event-stream/-/event-stream-3.3.6.tgz"}}}',
             encoding="utf-8",
         )
         found = [
