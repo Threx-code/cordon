@@ -216,11 +216,16 @@ class HttpServer:
         tls_cert: str | None,
         tls_key: str | None,
         behind_tls_proxy: bool,
+        plaintext_internal: bool = False,
     ) -> BoundedServer:
-        if not (tls_cert and tls_key) and not behind_tls_proxy and not HttpServer.loopback(host):
+        if (
+            not (tls_cert and tls_key)
+            and not (behind_tls_proxy or plaintext_internal)
+            and not HttpServer.loopback(host)
+        ):
             raise ValueError(
-                f"refusing plain HTTP on {host}: give --tls-cert and --tls-key, or --behind-tls-proxy "
-                "when a TLS-terminating proxy is in front"
+                f"refusing plain HTTP on {host}: give --tls-cert and --tls-key, --behind-tls-proxy when a "
+                "TLS-terminating proxy is in front, or --plaintext-internal on a private container network"
             )
         if not service.token_hashes:
             raise ValueError("no token hashes: every request would be refused (--tokens-file)")

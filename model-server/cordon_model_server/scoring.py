@@ -21,7 +21,7 @@ from cordon_model_server.bundle import Bundle
 from cordon_scanner.model.features import FILE_DENSE, PACKAGE_DENSE, PER_PACKAGE_FILES, TOKEN_DIM
 
 MAX_PACKAGES: Final = 100
-MAX_TOKENS: Final = 60_000
+MAX_TOKENS: Final = TOKEN_DIM  # every bucket at most once: the client sends what extraction found
 MAX_REF: Final = 200
 
 

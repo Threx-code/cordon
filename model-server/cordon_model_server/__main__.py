@@ -56,6 +56,12 @@ class Main:
         serve.add_argument("--tls-cert")
         serve.add_argument("--tls-key")
         serve.add_argument("--behind-tls-proxy", action="store_true")
+        serve.add_argument(
+            "--plaintext-internal",
+            action="store_true",
+            help="accept plain HTTP: only on a private container network no client outside the deployment "
+            "reaches (Cordon Cloud's API calling its own model service). Tokens are still required",
+        )
         serve.add_argument("--concurrency", type=int, default=4)
         sub.add_parser("hash-token")
         args = parser.parse_args(argv)
@@ -78,6 +84,7 @@ class Main:
                 tls_cert=args.tls_cert,
                 tls_key=args.tls_key,
                 behind_tls_proxy=args.behind_tls_proxy,
+                plaintext_internal=args.plaintext_internal,
             )
         except (BundleError, OSError, ValueError) as exc:
             print(f"cordon-model-server: {exc}", file=sys.stderr)

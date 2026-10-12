@@ -239,6 +239,22 @@ class TestHttp:
                 service, "0.0.0.0", 0, tls_cert=None, tls_key=None, behind_tls_proxy=False
             )
 
+    def test_plain_http_beyond_loopback_needs_the_internal_network_flag(
+        self, tmp_path: Path
+    ) -> None:
+        root, public, _ = Fixture.bundle(tmp_path)
+        service = Service(Scorer(Bundle.load(root, public)), frozenset({"0" * 64}), 1)
+        server = HttpServer.build(
+            service,
+            "0.0.0.0",
+            0,
+            tls_cert=None,
+            tls_key=None,
+            behind_tls_proxy=False,
+            plaintext_internal=True,
+        )
+        server.server_close()
+
     def test_a_server_with_no_tokens_will_not_start(self, tmp_path: Path) -> None:
         root, public, _ = Fixture.bundle(tmp_path)
         service = Service(Scorer(Bundle.load(root, public)), frozenset(), 1)
