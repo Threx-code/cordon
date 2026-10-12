@@ -804,6 +804,17 @@ class AdvisoryDetector(BaseDetector):
         )
         if maintainers_only:
             severity = min(severity, Severity.LOW)
+        # Bundled inside an editor extension: only the extension's author can upgrade it, and
+        # blocking would leave whoever installs it a choice between the extension and the gate --
+        # 451 of 1,943 popular extensions. Reported at MEDIUM, in every report and in the editor.
+        # Not lowered when exploited in the wild, and a malicious release is never lowered.
+        bundled_in_extension = (
+            not malicious
+            and exploitation is None
+            and SourcePaths.is_editor_extension(dependency.declared_in or "")
+        )
+        if bundled_in_extension:
+            severity = min(severity, Severity.MEDIUM)
         # A malicious release pinned by a test's own fixture lockfile -- pnpm's audit tests ship a
         # `has-vulnerabilities` fixture, Yarn's a `package-not-in-registry` one -- describes the
         # test, and nothing installs it. Reported, below the gate. Only test directories by their
@@ -861,6 +872,12 @@ class AdvisoryDetector(BaseDetector):
                     f" It is pinned in {dependency.declared_in or 'a lockfile'} inside this package, which "
                     f"describes the maintainers' development environment; installing the package does "
                     f"not install it, so it is reported at LOW."
+                )
+            if bundled_in_extension:
+                message += (
+                    " It is bundled inside an editor extension, where only the extension's author "
+                    "can upgrade it: reported at MEDIUM rather than blocking. Raise it with "
+                    "--fail-on medium or the organisation's policy to block such extensions."
                 )
 
         if advisory.is_range:
