@@ -621,6 +621,7 @@ rather than a document.
 |---|---|---|---|
 | `POLICY.BINARY.COMMITTED.001` | low | `binary` | policy |
 | `SUSPECT.ARCHIVE.NESTING.001` | high | `manifest` | obfuscation |
+| `SUSPECT.ARCHIVE.PADDED.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.POLYGLOT.001` | high | `manifest` | obfuscation |
 | `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | `binary` | integrity |

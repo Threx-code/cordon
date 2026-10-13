@@ -83,6 +83,10 @@ rules:
       kind: regex
       patterns:
         - '\bnew\s+URL\s*\('
+        # Kotlin has no `new`: `java.net.URL("https://...").readText()` reached the network
+        # unseen in a `build.gradle.kts` (review 98).
+        - '\bjava\s*\.\s*net\s*\.\s*(?:URL|URI)\s*\('
+        - '\b(?:URL|URI)\s*\(\s*"(?:https?|ftp)://[^"\n]{0,300}"\s*\)\s*\.\s*(?:readText|readBytes|openStream|openConnection|toURL)\s*\('
         - '\bURI\s*\.\s*create\s*\('
         - '\bHttpClient\s*\.\s*newHttpClient\s*\('
         - '\.\s*openConnection\s*\(\s*\)'
@@ -92,9 +96,13 @@ rules:
       positive:
         - "new URL('https://example.invalid/x').text"
         - "def conn = url.openConnection()"
+        - 'val body = java.net.URL("https://example.invalid/x").readText()'
+        - 'val feed = URL("https://example.invalid/updates.xml").readText()'
       negative:
         - "repositories { mavenCentral() }"
         - "url = 'https://repo.maven.apache.org/maven2'"
+        - 'maven { url = uri("https://repo.example.invalid/maven2") }'
+        - 'homepage = URL("https://example.invalid")' 
 
   - id: CAP.JVMBUILD.CREDENTIAL.001
     version: 1.0.0
@@ -138,9 +146,14 @@ rules:
         - '\benvironment\s*\[\s*["''][A-Za-z0-9_]{0,40}(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|AUTH)'
         - '\bgradle\.properties\b'
         - '~/\.(?:aws|ssh|docker|m2|gradle)\b'
+        # The home directory spelled out: `System.getProperty("user.home") + "/.ssh/id_rsa"`,
+        # `file("$home/.aws/credentials")`.
+        - '["''/$](?:\.ssh/(?:id_\w{1,20}|authorized_keys|config)|\.aws/credentials|\.docker/config\.json|\.gnupg/|\.npmrc|\.pypirc)\b'
     tests:
       positive:
         - "def token = System.getenv('NPM_TOKEN')"
+        - 'val key = file(System.getProperty("user.home") + "/.ssh/id_rsa").readText()'
+        - 'val creds = file("$home/.aws/credentials").readText()' 
         - "environment['AWS_SECRET_ACCESS_KEY']"
         - "Map<String,String> all = System.getenv()"
         - "def pw = System.getenv('SIGNING_PASSWORD')"

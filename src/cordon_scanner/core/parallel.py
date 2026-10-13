@@ -347,6 +347,7 @@ class ParallelScanner:
         from pathlib import Path
 
         from cordon_scanner.core.content import FileContent, Skipped
+        from cordon_scanner.core.windows import WindowPass
         from cordon_scanner.detect.base import FileUnit
 
         engine = ParallelScanner._worker.engine
@@ -388,29 +389,48 @@ class ParallelScanner:
                 continue
 
             unit = FileUnit(content=loaded, language=ParallelScanner._language(relative, loaded))
-            findings: list[dict[str, Any]] = []
-            for detector in detectors:
+            produced: list[Any] = []
+            failures: list[dict[str, Any]] = []
+
+            def inspect(
+                detector: Any,
+                part: Any,
+                failures: list[dict[str, Any]] = failures,
+                relative: str = relative,
+            ) -> list[Any]:
                 try:
-                    findings.extend(
-                        # The same per-file hash the serial path records, and recorded
-                        # here too because `test_parallel_matches_serial_exactly` is
-                        # what this codebase has instead of hoping the two agree.
-                        f.with_file_hash(loaded.sha256).to_dict()
-                        if f.location.path == relative
-                        else f.to_dict()
-                        for f in detector.inspect(unit, ctx)
-                    )
+                    return list(detector.inspect(part, ctx))
                 except Exception as exc:
                     # A detector that fails in a worker must not silently reduce
                     # coverage. It is reported the same way the serial path reports
                     # it, so a broken detector looks identical either way.
-                    findings.append(
+                    failures.append(
                         ParallelScanner._operational_dict(
                             path=relative,
                             detector=getattr(detector, "id", "unknown"),
                             error=f"{type(exc).__name__}: {exc}",
                         )
                     )
+                    return []
+
+            for detector in detectors:
+                produced.extend(inspect(detector, unit))
+            # The rest of an oversized file, a window at a time: the call the serial path makes.
+            windowed, intact = WindowPass.run(unit, detectors, inspect, produced)
+            if not intact:
+                out.append((index, [], False))
+                continue
+            produced.extend(windowed)
+            findings: list[dict[str, Any]] = [
+                # The same per-file hash the serial path records, and recorded
+                # here too because `test_parallel_matches_serial_exactly` is
+                # what this codebase has instead of hoping the two agree.
+                f.with_file_hash(loaded.sha256).to_dict()
+                if f.location.path == relative
+                else f.to_dict()
+                for f in produced
+            ]
+            findings.extend(failures)
             out.append((index, findings, True))
 
         return out

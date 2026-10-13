@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -269,6 +270,23 @@ class ImportCapabilities:
         # keeps its intentions out of the very table this reads.
         resolves = "dynload" in found and len(imported) <= 12
         return ImportProfile(found, resolves)
+
+    BINDING_LIBRARIES: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:python\d{1,3}(?:_d)?\.dll|libpython\d[\d.]*\w*\.so[\d.]*|node\.exe|libnode\.so[\d.]*)$",
+        re.IGNORECASE,
+    )
+    BINDING_SYMBOLS: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:PyModule_Create2|PyArg_Parse\w*|napi_\w+)$"
+    )
+
+    @classmethod
+    def is_binding(cls, table: ImportTable) -> bool:
+        """A Python extension or Node addon: it imports its host's API, and the system calls it
+        imports are the ones it exposes to that language -- `pywin32`'s `win32process.pyd` IS the
+        process API (review 98, FP-10)."""
+        return any(
+            cls.BINDING_LIBRARIES.match(lib.rsplit("/", 1)[-1]) for lib in table.libraries
+        ) or any(cls.BINDING_SYMBOLS.match(sym) for sym in table.symbols)
 
     @staticmethod
     def verdicts(profile: ImportProfile) -> list[tuple[str, str]]:

@@ -182,8 +182,14 @@ class ScanContext:
     """
 
     package_distribution: bool = False
-    """The target is a published package (an sdist, a wheel, an npm tarball). Its lockfiles then
-    describe its maintainers' development environment, not what installing it brings in."""
+    """The target is a published package (an sdist, a wheel, an npm tarball, a crate, a gem, ...).
+    Its lockfiles then describe its maintainers' development environment, not what installing it
+    brings in."""
+
+    distribution: str = ""
+    """Which published format `package_distribution` recognised: `pypi`, `npm`, `cargo`,
+    `rubygems`, `nuget`, `hex`, `gomod`, `maven`, `conda`, `hackage`, `cran` or `galaxy`; empty
+    otherwise. What else is lowered or raised depends on what that format's installer runs."""
 
     image: Any = None
     """The operating-system inventory (`images.oci.ImageInventory`) when the target is a
@@ -330,8 +336,13 @@ class BaseDetector:
             )
             # An install hook is where a capability stops being a capability and
             # becomes a mechanism. Escalating severity here rather than writing a
-            # second rule keeps the rule set small enough to audit.
-            if rule.category in {Category.SUSPICIOUS, Category.MALICIOUS}:
+            # second rule keeps the rule set small enough to audit. Only where the hook
+            # REACHES: a function in `setup.py` that `setup()` never calls runs at no install
+            # (review 98, FP-5; `ScanContext.install_hook_reaches`).
+            reached = location.line is None or ctx.install_hook_reaches(
+                location.path, location.line
+            )
+            if rule.category in {Category.SUSPICIOUS, Category.MALICIOUS} and reached:
                 severity = max(severity, Severity.HIGH)
 
         risk = ctx.scorer.score(

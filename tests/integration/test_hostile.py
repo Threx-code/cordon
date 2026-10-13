@@ -104,41 +104,44 @@ class HostileHelpers:
 
 
 class TestDecompressionBombs:
-    def test_high_ratio_member_is_refused(self) -> None:
-        """A hugely compressible member is the classic bomb. The ratio ceiling
-        must stop it while it streams, not after it has been materialised."""
+    def test_high_ratio_member_is_stopped_while_it_streams(self) -> None:
+        """A hugely compressible member is the classic bomb. The expansion cap must stop it while
+        it streams, not after it has been materialised, and say it is padding."""
         bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
-        limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024)
+        limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024)
 
         result = ArchiveReader.extract(bomb, path="bomb.zip", limits=limits)
 
         assert not result.members, "the bomb member must not be returned"
-        assert any(r.reason == Rejection.RATIO for r in result.rejected)
+        assert result.truncated
+        assert any(r.reason == Rejection.PADDED for r in result.rejected)
 
     def test_rejection_is_reported_not_silent(self) -> None:
         """An archive that was refused and one that was clean must never look
         alike in the output."""
         bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (4 * 1024 * 1024)})
         result = ArchiveReader.extract(
-            bomb, path="bomb.zip", limits=DEFAULT_LIMITS.merged(max_archive_ratio=10)
+            bomb,
+            path="bomb.zip",
+            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
         )
         assert result.rejected
         assert result.rejected[0].detail, "a rejection must explain itself"
 
     def test_oversized_member_is_refused(self) -> None:
-        """Past both the per-file limit and the stream ceiling, a member is refused unread."""
+        """Past both the per-file limit and the member limit, a member is refused unread."""
         data = HostileHelpers.zip_of({"big.bin": b"A" * 200_000}, compress=False)
         result = ArchiveReader.extract(
             data,
             path="a.zip",
-            limits=DEFAULT_LIMITS.merged(max_file_bytes=1000, max_stream_bytes=100_000),
+            limits=DEFAULT_LIMITS.merged(max_file_bytes=1000, max_member_bytes=100_000),
         )
         assert not result.members
         assert any(r.reason == Rejection.SIZE for r in result.rejected)
 
     def test_a_member_within_the_stream_ceiling_is_read_for_the_sweep(self) -> None:
-        """Over the per-file limit but within `max_stream_bytes`: read whole, so the high-signal
-        sweep can cover it, and still bounded by the ratio and total budgets."""
+        """Over the per-file limit but within `max_member_bytes`: held whole, so its windows can be
+        read, and still bounded by the expansion cap and the total budget."""
         data = HostileHelpers.zip_of({"big.bin": b"A" * 200_000}, compress=False)
         result = ArchiveReader.extract(
             data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000)
@@ -164,16 +167,18 @@ class TestDecompressionBombs:
                 limits=DEFAULT_LIMITS.merged(max_archive_entries=100),
             )
 
-    def test_compressed_tar_bomb_is_caught_by_aggregate_ratio(self) -> None:
-        """A compressed tar reports no per-member compressed size, so the
-        per-member ceiling cannot apply. The aggregate ratio catches it."""
+    def test_compressed_tar_bomb_is_stopped_by_the_expansion_cap(self) -> None:
+        """A compressed tar reports no per-member compressed size; the decompressed stream is
+        metered against the whole archive's size instead, and stopped as padding."""
         bomb = HostileHelpers.tar_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
-        with pytest.raises(ArchiveError, match="expands"):
-            ArchiveReader.extract(
-                bomb,
-                path="bomb.tar.gz",
-                limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024),
-            )
+        result = ArchiveReader.extract(
+            bomb,
+            path="bomb.tar.gz",
+            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
+        )
+        assert not result.members
+        assert result.truncated
+        assert any(r.reason == Rejection.PADDED for r in result.rejected)
 
 
 # ---------------------------------------------------------------------------

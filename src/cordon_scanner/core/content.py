@@ -32,6 +32,7 @@ from cordon_scanner.core.comments import SourceComments
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.samples import SampleKinds
+from cordon_scanner.core.windows import BytesWindows, DiskWindows, WindowSource
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -199,6 +200,10 @@ class SkipReason:
     TIMEOUT = "timeout"
 
 
+STREAM_HASH_CHUNK = 1 << 20
+"""How much of an oversized file is read at a time to hash it."""
+
+
 @dataclass(frozen=True, slots=True)
 class Skipped:
     """A file that was not scanned, and the reason."""
@@ -257,9 +262,17 @@ class FileContent:
     than silently computing over a fragment."""
 
     streamed: bytes | None = field(default=None, repr=False, compare=False)
-    """The whole file, when it is over `max_file_bytes` but within `max_stream_bytes`: `raw` is
-    its prefix, examined by every rule, and this is what the high-signal sweep reads in chunks
-    (`CapabilityDetector.sweep`). None for every file that fits, and for one too large to hold."""
+    """The whole of an oversized archive member, which is in memory already as the archive's: what
+    its windows are read from, and what travels to a worker. None for a file on disk, whose
+    windows are read from disk (`window_source`), and for every file that fits."""
+
+    window_source: WindowSource | None = field(default=None, repr=False, compare=False)
+    """Where the rest of an oversized file is read from, a window at a time (`core/windows.py`).
+    None for a file that fits, and when `max_stream_bytes` is 0."""
+
+    whole_sha256: str | None = field(default=None, repr=False, compare=False)
+    """The hash of the whole file as far as its windows read, for a file on disk past
+    `max_file_bytes`: computed while streaming it, so it is never held."""
 
     _comment_columns: dict[tuple[int, str | None], int | None] = field(
         default_factory=dict, repr=False, compare=False
@@ -335,22 +348,36 @@ class FileContent:
             with os.fdopen(descriptor, "rb", closefd=True) as handle:
                 descriptor = -1  # ownership passed to the file object
                 if size > limits.max_file_bytes:
-                    # Read a bounded prefix rather than nothing. A payload
-                    # appended to a large generated file is still worth finding,
-                    # and the truncation is recorded so nothing claims full
-                    # coverage.
-                    if size <= limits.max_stream_bytes:
-                        # Held whole for the sweep; every rule still reads only the prefix.
-                        return cls.from_bytes(
-                            rel_path, handle.read(limits.max_stream_bytes), limits
-                        )
+                    # Every rule reads the prefix; the rest is read from disk a window at a time
+                    # by the rules that judge text (`core/windows.py`), never held. The whole is
+                    # hashed while it streams past, so two files that differ only after the
+                    # prefix never share a cached result.
                     raw = handle.read(limits.max_file_bytes)
+                    text = TextEncoding.as_utf8(raw)
+                    source: WindowSource | None = None
+                    whole: str | None = None
+                    # Windows are cut on bytes. A file the prefix had to re-encode (UTF-16) would
+                    # be cut mid-character, so it keeps the prefix alone, as before.
+                    if limits.max_stream_bytes > 0 and text == raw:
+                        digest = hashlib.sha256(raw)
+                        remaining = min(size, limits.max_stream_bytes) - len(raw)
+                        while remaining > 0:
+                            chunk = handle.read(min(STREAM_HASH_CHUNK, remaining))
+                            if not chunk:
+                                break
+                            digest.update(chunk)
+                            remaining -= len(chunk)
+                        digest.update(f"\0{size}".encode())
+                        whole = digest.hexdigest()
+                        source = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
                     return cls(
                         path=rel_path,
-                        raw=TextEncoding.as_utf8(raw),
+                        raw=text,
                         size=size,
                         limits=limits,
                         truncated=True,
+                        window_source=source,
+                        whole_sha256=whole,
                     )
 
                 # mmap is not used. `bytes(mapped)` copied the whole mapping
@@ -390,7 +417,11 @@ class FileContent:
             # Every rule reads the prefix, as a file on disk is read; the whole of it is kept for
             # the high-signal sweep when it is within `max_stream_bytes`. An archive member used
             # to be refused outright here, unread.
-            whole = text if len(text) <= limits.max_stream_bytes else None
+            whole = (
+                text
+                if limits.max_stream_bytes > 0 and len(text) <= limits.max_stream_bytes
+                else None
+            )
             return cls(
                 path=path,
                 raw=text[: limits.max_file_bytes],
@@ -398,6 +429,7 @@ class FileContent:
                 limits=limits,
                 truncated=True,
                 streamed=whole,
+                window_source=None if whole is None else BytesWindows(whole),
             )
         return cls(path=path, raw=text, size=len(raw), limits=limits)
 
@@ -556,9 +588,11 @@ class FileContent:
     def sha256(self) -> str:
         """Content hash. The incremental cache key and the artefact identity.
 
-        Of the whole file when it is held whole (`streamed`): the sweep reads all of it, and two
+        Of the whole file when its windows read past the prefix (`streamed`, `whole_sha256`): two
         files that share their first `max_file_bytes` and differ after must not share a cached
         result."""
+        if self.whole_sha256 is not None:
+            return self.whole_sha256
         return hashlib.sha256(self.streamed if self.streamed is not None else self.raw).hexdigest()
 
     @cached_property

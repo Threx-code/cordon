@@ -68,6 +68,7 @@ from cordon_scanner.core.walker import (
     Walker,
     WalkStats,
 )
+from cordon_scanner.core.windows import WindowPass
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -323,8 +324,8 @@ Enough to recognise the shape of the duplication -- two backup directories, a
 per-lesson copy -- without turning one message into a file listing."""
 
 UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
-SWEPT_NOTE = "Swept in full by the high-signal rules."
-"""How the note for an oversized file the sweep read whole begins (`Engine._truncated_note`)."""
+SWEPT_NOTE = "Read to its end in windows."
+"""How the note for an oversized file whose windows reached its end begins (`Engine._truncated_note`)."""
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
@@ -333,6 +334,7 @@ ARCHIVE_SLICE = 4000
 ARCHIVE_ESCAPE_RULE = "SUSPECT.ARCHIVE.PATH_ESCAPE.001"
 ARCHIVE_NESTING_RULE = "SUSPECT.ARCHIVE.NESTING.001"
 ARCHIVE_POLYGLOT_RULE = "SUSPECT.ARCHIVE.POLYGLOT.001"
+ARCHIVE_PADDED_RULE = "SUSPECT.ARCHIVE.PADDED.001"
 PURE_WHEEL = re.compile(r"(?mi)^Root-Is-Purelib:\s*true\s*$|^Tag:\s*\S+-none-any\s*$")
 NATIVE_MAGIC = frozenset({b"\x7fELF", b"MZ\x90\x00", b"MZP\x00"})
 MACHO_MAGIC = frozenset(
@@ -357,6 +359,43 @@ AUTHOR_TIME_FILENAMES = frozenset(
     }
 )
 """Files a published package may carry that only its maintainers' tooling runs."""
+
+MAKEFILES = frozenset({"Makefile", "GNUmakefile", "makefile"})
+MAKE_AT_INSTALL = frozenset({"cran", "hex", "rubygems", "hackage"})
+"""Formats whose install can run make: R builds `src/Makefile`, Hex packages compile through
+`elixir_make`, a gem's `ext/` is built by the Makefile its `extconf.rb` writes, and a cabal
+package may declare `build-type: Make`. A Makefile there is install-time code, not the
+maintainers'."""
+
+HONOURED_PINS: dict[str, re.Pattern[str]] = {
+    # npm installs a published package's own `npm-shrinkwrap.json` exactly as written.
+    "npm": re.compile(r"(?:^|!)package/npm-shrinkwrap\.json$"),
+    # Maven resolves the jar's pom, and its `<version>` is the version it fetches.
+    "maven": re.compile(r"(?:^|!)META-INF/maven/[^!]+/pom\.xml$"),
+    # NuGet picks the LOWEST version a dependency range allows: the `.nuspec` pin is the install.
+    "nuget": re.compile(r"(?:^|!)[^/!]+\.nuspec$"),
+    # Go's minimal version selection starts from the module's own `go.mod` requirements.
+    "gomod": re.compile(r"(?:^|!)[^!]*@v[^/!]+/go\.mod$"),
+}
+"""Files inside a published package that its consumer's installer reads and obeys: what they pin
+is what installing the package brings in, so they keep their rating."""
+
+DROP_POINT_SECRETS = frozenset(
+    {
+        "SECRET.TELEGRAM.BOT_TOKEN.001",
+        "SECRET.DISCORD.WEBHOOK.001",
+        "SECRET.SLACK.WEBHOOK.001",
+        "SECRET.SLACK.TOKEN.001",
+        "SECRET.MICROSOFT.TEAMS_WEBHOOK.001",
+    }
+)
+"""Tokens that are somewhere to SEND to: a bot or webhook a package posts through. In a published
+package that is how stolen data leaves (`@0xme5war/apicli` 2.0.0 is blocked by its Telegram bot
+token alone), not a key its publisher leaked, so it keeps its grade. 13 of 139,000 real npm and
+PyPI packages are blocked by one of these alone (review 98)."""
+
+GO_MODULE_ROOT = re.compile(r"[^@!]{1,1024}@v\d[^/@!]{0,128}/")
+"""A module proxy zip's first level: every file sits under `<module path>@<version>/`."""
 
 SHIPPED_DOCUMENTS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".odt")
 """Documents in a published package: pypdf ships sample forms for its own tests. Installing the
@@ -665,13 +704,33 @@ class Engine:
         return out
 
     @staticmethod
+    def _changed_while_read(path: str) -> Finding:
+        """A file whose windows could not be read from the file that was first read."""
+        return Engine._operational(
+            path=path,
+            rule_id="OPERATIONAL.FILE.UNREADABLE",
+            message=(
+                "This file changed, or was replaced, between being read and having the rest of it "
+                "read in windows, so only what was read before the change was examined."
+            ),
+            remediation="Re-run the scan on a tree nothing else is writing to.",
+        )
+
+    @staticmethod
     def _truncated_note(path: str, content: FileContent) -> Finding:
         """What a file over `max_file_bytes` had examined, said exactly."""
-        if content.streamed is not None:
+        if content.window_source is not None:
+            reach = min(content.size, content.limits.max_stream_bytes)
+            rest = (
+                "the rest"
+                if reach >= content.size
+                else f"the next {reach - len(content.raw)} bytes (to limits.max_stream_bytes)"
+            )
             message = (
-                f"{SWEPT_NOTE} The first {len(content.raw)} bytes of this {content.size}-byte file "
-                f"were examined by every rule, and all of it by the high-signal rules: an AI agent "
-                f"turned on the user, a download that is run, a wipe of the home directory, mining."
+                (f"{SWEPT_NOTE} " if reach >= content.size else "")
+                + f"The first {len(content.raw)} bytes of this {content.size}-byte file were "
+                f"examined by every rule, and {rest} in windows by every rule that reads text: "
+                "secrets, obfuscation, code capabilities, agent instructions and YARA."
             )
         else:
             message = f"Only the first {len(content.raw)} bytes of this {content.size}-byte file were examined."
@@ -680,7 +739,7 @@ class Engine:
             rule_id="OPERATIONAL.FILE.TRUNCATED",
             message=message,
             remediation=(
-                "Raise limits.max_file_bytes (every rule) or limits.max_stream_bytes (the sweep), or "
+                "Raise limits.max_file_bytes (every rule) or limits.max_stream_bytes (the windows), or "
                 "exclude the file deliberately if it is a known artefact (a font, a model, a vendored binary)."
             ),
         )
@@ -718,6 +777,29 @@ class Engine:
                     severity=Severity.HIGH,
                 ),
                 confidence=Confidence.HIGH,
+            )
+        if reason == Rejection.PADDED and not fixture:
+            # Read up to the budget, and everything read was scanned; what lies past it is behind
+            # an expansion no packaging tool produces. Twelve megabytes of filler compress to
+            # twenty-five kilobytes, so this is the cheapest way to put a payload out of reach.
+            return replace(
+                Engine._operational(
+                    path=path,
+                    rule_id=ARCHIVE_PADDED_RULE,
+                    message=(
+                        f"This archive expands far past what its size suggests ({detail}), and the "
+                        "scan's byte budget ran out inside it. Everything read up to that point was "
+                        "examined; what follows the padding was not. Padding is how a payload is "
+                        "put beyond a scanner's reach."
+                    ),
+                    remediation=(
+                        "Do not install it until it is unpacked and examined whole, or raise "
+                        "limits.max_uncompressed_bytes and rescan."
+                    ),
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                ),
+                confidence=Confidence.MEDIUM,
             )
         if reason == Rejection.HIDDEN and not fixture:
             return replace(
@@ -1459,6 +1541,10 @@ class Engine:
             # Known before any file is examined, so a detector can tell an image's files from a
             # source tree's: an image's executables are what it ships.
             image=image if image is not None else ctx.image,
+            # And so can a published package's: its `build/` and `bin/` are what runs, and the
+            # typosquat grading asks which format it is.
+            package_distribution=bool(early_format := self._distribution_format(units)),
+            distribution=early_format,
         )
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
@@ -1524,10 +1610,26 @@ class Engine:
                     )
                 )
                 break
-            for detector in detectors:
-                if detector.requires.dependencies and detector.requires.content is False:
-                    continue
-                acc.add(self._run(detector, unit, ctx, acc))
+            member_detectors = [
+                d
+                for d in detectors
+                if not (d.requires.dependencies and d.requires.content is False)
+            ]
+            produced: list[Finding] = []
+            for detector in member_detectors:
+                produced.extend(self._run(detector, unit, ctx, acc))
+            # The rest of an oversized member, a window at a time, as `_inspect_file` reads one.
+            windowed, intact = WindowPass.run(
+                unit,
+                member_detectors,
+                lambda detector, part: self._run(detector, part, ctx, acc),
+                produced,
+            )
+            produced.extend(windowed)
+            if not intact:
+                acc.complete = False
+                produced.append(Engine._changed_while_read(unit.path))
+            acc.add(produced)
             self.progress.advance(unit.path)
         acc.add(self._unexamined_install_code(acc.findings, ctx))
         acc.add(self._native_code_in_a_pure_wheel(units, ctx))
@@ -1543,15 +1645,24 @@ class Engine:
         dependencies = self._build_graph(units, acc)
         if image is not None:
             self._report_image_contents(image, acc)
-        package = self._is_package_distribution(units)
+        package = self._distribution_format(units)
         target_kind = "image" if image is not None else "package" if package else "archive"
         if package:
             # A consumer's installer resolves from the package's declared metadata, never from a
-            # lockfile shipped inside it: those pins are the maintainers' own environment.
-            ctx = replace(ctx, package_distribution=True)
-            acc.findings[:] = self._author_time_ceiling(acc.findings, units)
+            # lockfile shipped inside it: those pins are the maintainers' own environment. The
+            # exception is a file that installer reads and obeys (`HONOURED_PINS`): what it pins
+            # is what installing the package brings in.
+            ctx = replace(ctx, package_distribution=True, distribution=package)
+            acc.findings[:] = self._publisher_hygiene(
+                self._publisher_secrets(self._author_time_ceiling(acc.findings, units, package)),
+                self.config.policy.advisory_domains,
+            )
+            honoured = HONOURED_PINS.get(package)
             dependencies = tuple(
-                replace(d, scope=Scope.DEV) if d.scope in (Scope.RUNTIME, Scope.UNKNOWN) else d
+                replace(d, scope=Scope.DEV)
+                if d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
+                and not (honoured and honoured.search(d.declared_in or ""))
+                else d
                 for d in dependencies
             )
         if image is not None:
@@ -3022,6 +3133,19 @@ class Engine:
 
             produced.extend(self._run(detector, unit, ctx, acc))
 
+        # The rest of an oversized file, a window at a time (`core/windows.py`). The workers make
+        # the same call (`ParallelScanner._inspect_batch`), so a parallel scan reads as far.
+        windowed, intact = WindowPass.run(
+            unit,
+            [d for d in detectors if d.id not in skipped],
+            lambda detector, part: self._run(detector, part, ctx, acc),
+            produced,
+        )
+        produced.extend(windowed)
+        if not intact:
+            acc.complete = False
+            produced.append(Engine._changed_while_read(unit.path))
+
         if skipped:
             acc.complete = False
             produced.append(
@@ -3208,7 +3332,68 @@ class Engine:
     # -- Dependency graph ------------------------------------------------
 
     @staticmethod
-    def _author_time_ceiling(findings: list[Finding], units: list[FileUnit]) -> list[Finding]:
+    def _publisher_hygiene(findings: list[Finding], advisory: frozenset[Any]) -> list[Finding]:
+        """How a published package's own repository was kept, as against what it installs.
+
+        A `.github/workflows/*.yml`, a `Dockerfile` or a release setting that ended up inside a
+        tarball describes its publisher's repository and runs for nobody who installs it. These
+        domains never fail a build (`Policy.advisory_domains`), and in a package scan they were
+        most of what a clean package still warned about: unpinned actions, lockfile integrity,
+        an unpinned base image (review 98, FP-8). Reported at INFO -- in JSON and SARIF for anyone
+        auditing the publisher, out of the default report. A MALICIOUS finding is untouched.
+        """
+        from cordon_scanner.core.taxonomy import Taxonomy
+
+        out: list[Finding] = []
+        for finding in findings:
+            if (
+                finding.category is not Category.MALICIOUS
+                and finding.severity > Severity.INFO
+                and (
+                    Taxonomy.domain_of(finding.rule_id) in advisory
+                    or finding.rule_id.startswith(("POLICY.RELEASE.", "POLICY.LOCKFILE."))
+                )
+            ):
+                finding = replace(finding, severity=Severity.INFO)
+            out.append(finding)
+        return out
+
+    @staticmethod
+    def _publisher_secrets(findings: list[Finding]) -> list[Finding]:
+        """A credential committed inside a published package, graded for whoever installs it.
+
+        The key is its publisher's: they leaked it and they are the ones who can rotate it.
+        Nothing about it acts on the machine that installs the package, so for that consumer it
+        is reported, in full, at MEDIUM, and does not stop the build. In 40 such blocks read
+        from 441 real npm and PyPI packages (review 98) every one was the publisher's own token
+        -- a `.coveralls.yml` repo token, a `.env`, a demo's API key. A repository's own
+        secrets are untouched: this runs only for a recognised published package. Code that
+        USES a credential (harvesting, exfiltration) is a different rule and keeps its grade, and
+        so does a token that is a place to post to (`DROP_POINT_SECRETS`).
+        """
+        out: list[Finding] = []
+        for finding in findings:
+            if (
+                finding.rule_id.startswith("SECRET.")
+                and finding.rule_id not in DROP_POINT_SECRETS
+                and finding.category is not Category.MALICIOUS
+                and finding.severity > Severity.MEDIUM
+            ):
+                finding = replace(
+                    finding,
+                    severity=Severity.MEDIUM,
+                    message=finding.message
+                    + " It ships inside a published package, so the exposure is its publisher's"
+                    " to rotate; it does not act on whoever installs the package, and is reported"
+                    " below the gate.",
+                )
+            out.append(finding)
+        return out
+
+    @staticmethod
+    def _author_time_ceiling(
+        findings: list[Finding], units: list[FileUnit], distribution: str
+    ) -> list[Finding]:
         """Findings in files a published package carries but nothing installing it runs.
 
         An sdist ships its maintainers' CI workflows, Makefile and Dockerfile, and a Python
@@ -3218,26 +3403,36 @@ class Engine:
         hands an issue to an agent -- each true of the repository, and none of it reaching a
         machine that runs `pip install`. Reported, below the gate. A MALICIOUS finding is never
         lowered.
+
+        What counts depends on the format's installer. Compiled source is lowered only in
+        Python and npm packages, whose install compiles an extension but does not run it: in a
+        crate, a Go module or a jar that source IS the program the consumer runs. A Makefile
+        stays a finding where installing runs make (`MAKE_AT_INSTALL`).
         """
-        npm_distribution = any(
-            unit.path.rpartition("!")[2] == "package/package.json" for unit in units
-        )
+        compiled_is_inert = distribution in ("pypi", "npm")
+        make_is_inert = distribution not in MAKE_AT_INSTALL
         out: list[Finding] = []
         for finding in findings:
             member = finding.location.path.rpartition("!")[2]
             name = ContainerPaths.basename(member)
-            other_ecosystem = (name == "package.json" and not npm_distribution) or (
-                name in ("setup.py", "pyproject.toml") and npm_distribution
+            other_ecosystem = (name == "package.json" and distribution != "npm") or (
+                name in ("setup.py", "pyproject.toml") and distribution != "pypi"
             )
+            makefile = name in MAKEFILES or name.endswith(".mk")
             author_time = (
                 other_ecosystem
                 or name.lower().endswith(SHIPPED_DOCUMENTS)
-                or (name.lower().endswith(COMPILED_SOURCE) and name != "build.rs")
+                or (
+                    compiled_is_inert
+                    and name.lower().endswith(COMPILED_SOURCE)
+                    and name != "build.rs"
+                )
                 or member.startswith(AUTHOR_TIME_PREFIXES)
                 or f"/{member}".find("/.github/") >= 0
-                or name in AUTHOR_TIME_FILENAMES
+                or (name in AUTHOR_TIME_FILENAMES and not makefile)
+                or (makefile and make_is_inert)
                 or name.startswith(("Dockerfile", "Containerfile"))
-                or name.endswith((".mk", ".dockerfile"))
+                or name.endswith(".dockerfile")
             )
             if (
                 author_time
@@ -3255,18 +3450,57 @@ class Engine:
         return out
 
     @staticmethod
-    def _is_package_distribution(units: list[FileUnit]) -> bool:
-        """An sdist (`<name>-<version>/PKG-INFO`), a wheel (`*.dist-info/METADATA`) or an npm
-        tarball (`package/package.json`), recognised by the metadata file its format requires."""
+    def _distribution_format(units: list[FileUnit]) -> str:
+        """Which published-package format the archive is, or "" when it is not one.
+
+        Recognised by the metadata file each format's own packaging tool writes, at the
+        archive's first level only. That level matters: a repository snapshot that vendors a
+        package tarball is still a repository, and its own lockfiles are still the project's.
+        Formats whose archives have the same shape as a repository snapshot (pub, Packagist,
+        Helm, Terraform modules) are not recognised, because nothing tells them apart.
+        """
+        top: set[str] = set()
         for unit in units:
-            parts = unit.path.rpartition("!")[2].split("/")
-            if len(parts) == 2 and parts[1] == "PKG-INFO":
-                return True
-            if len(parts) == 2 and parts[0].endswith(".dist-info") and parts[1] == "METADATA":
-                return True
-            if parts == ["package", "package.json"]:
-                return True
-        return False
+            _, sep, member = unit.path.partition("!")
+            if sep and "!" not in member:
+                top.add(member)
+        roots: dict[str, set[str]] = {}
+        for member in top:
+            directory, sep, leaf = member.partition("/")
+            if sep and "/" not in leaf:
+                roots.setdefault(directory, set()).add(leaf)
+        for directory, leaves in roots.items():
+            if "PKG-INFO" in leaves or (directory.endswith(".dist-info") and "METADATA" in leaves):
+                return "pypi"
+            if directory == "package" and "package.json" in leaves:
+                return "npm"
+            if "Cargo.toml.orig" in leaves:
+                return "cargo"
+            if "DESCRIPTION" in leaves and "MD5" in leaves:
+                return "cran"
+            if any(
+                leaf.endswith(".cabal")
+                and re.fullmatch(rf"{re.escape(leaf[:-6])}-\d[\d.]*", directory)
+                for leaf in leaves
+            ):
+                return "hackage"
+        if "metadata.gz" in top:
+            return "rubygems"
+        if "[Content_Types].xml" in top and any(
+            m.endswith(".nuspec") and "/" not in m for m in top
+        ):
+            return "nuget"
+        if "metadata.config" in top and "CHECKSUM" in top:
+            return "hex"
+        if "META-INF/MANIFEST.MF" in top:
+            return "maven"
+        if "info/index.json" in top:
+            return "conda"
+        if "MANIFEST.json" in top and "FILES.json" in top:
+            return "galaxy"
+        if any(GO_MODULE_ROOT.match(m) for m in top):
+            return "gomod"
+        return ""
 
     def _image_inventory(self, data: bytes, acc: _Accumulator) -> Any:
         """The OS packages of a container image tarball, or None when the archive is not one.
@@ -4923,15 +5157,27 @@ class Engine:
         reachable, and why every approximation there keeps the finding.
         """
         from cordon_scanner.core.reachability import CallReachability
+        from cordon_scanner.ecosystems.homebrew import NotRunAtInstall
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
+        # A formula or cask is a hook as a whole; its `service`, `test` and `caveats` blocks are
+        # not run by `brew install` (`NotRunAtInstall`).
+        brew = frozenset(
+            (unit.path, first, last)
+            for unit in units
+            if unit.path in hooks
+            and unit.path.endswith(".rb")
+            and EcosystemRegistry.manifest_ecosystem(unit.path) == "homebrew"
+            for first, last in NotRunAtInstall.spans(unit.content.text)
+        )
         sources = {
             unit.path: unit.content.text
             for unit in units
             if unit.path.endswith(".py") and not unit.content.is_binary
         }
         if not sources:
-            return frozenset()
-        return CallReachability.deferred_lines(hooks, sources, entries)
+            return brew
+        return brew | CallReachability.deferred_lines(hooks, sources, entries)
 
     def _expand_member_units(
         self, rel_path: str, loaded: FileContent, acc: _Accumulator, deadline: float

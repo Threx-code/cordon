@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core import references
 from cordon_scanner.core.comments import SourceComments
@@ -378,6 +378,19 @@ PACKERS: tuple[tuple[str, re.Pattern[bytes], frozenset[str], int], ...] = (
         1,
     ),
     ("obfuscator.io", re.compile(rb"_0x[0-9a-f]{4,6}\s*[,;=\[]"), JAVASCRIPT_LANGUAGES, 8),
+    # The same tool with identifiers renamed (`--identifier-names-generator mangled` or a
+    # dictionary): no `_0x` names left, but the string array still rotates itself into place with
+    # `arr['push'](arr['shift']())`, in brackets because the method names are strings it hides.
+    # Minifiers write `.push`; `1imit` and its siblings (review 98) are this, around an `eval` of a
+    # server's reply.
+    (
+        "obfuscator.io, identifiers renamed",
+        re.compile(
+            rb"\[\s*[\"']push[\"']\s*\]\s*\(\s*[\w$]+\s*\[\s*[\"']shift[\"']\s*\]\s*\(\s*\)\s*\)"
+        ),
+        JAVASCRIPT_LANGUAGES,
+        1,
+    ),
     (
         "hex identifier obfuscation",
         re.compile(rb"\b_\$_[0-9a-fA-F]{3,}"),
@@ -551,6 +564,10 @@ class _Hit:
     confidence: Confidence
     start: int
     end: int
+
+
+MINIFIED_LINE_FOR_BIDI = 5_000
+"""A line this long is generated output, as the long-line rule reads it."""
 
 
 class ObfuscationDetector(BaseDetector):
@@ -848,11 +865,48 @@ class ObfuscationDetector(BaseDetector):
                 "genuinely required in a string, use explicit escapes so the "
                 "characters are visible in review."
             ),
-            severity=Severity.LOW if documented or ordering_text else Severity.HIGH,
+            severity=(
+                Severity.INFO
+                if ObfuscationDetector._bundled_string(content, match.start())
+                else Severity.LOW
+                if documented or ordering_text
+                else Severity.HIGH
+            ),
             confidence=Confidence.HIGH,
             start=match.start(),
             end=match.end(),
         )
+
+    BUNDLE_DIRECTORIES: ClassVar[tuple[str, ...]] = ("/static/", "/dist/", "/vendor/", "/build/")
+
+    @staticmethod
+    def _bundled_string(content: FileContent, offset: int) -> bool:
+        """A bidi control inside a string literal of a bundled or minified file: display data a
+        library carries -- KaTeX's right-to-left handling in `streamlit/static/js/katex.*.js` --
+        not Trojan Source, which needs the control in a comment or between tokens of source
+        somebody reads (review 98, FP-7)."""
+        path = f"/{content.path.rpartition('!')[2]}"
+        bundled = content.longest_line > MINIFIED_LINE_FOR_BIDI or any(
+            directory in path for directory in ObfuscationDetector.BUNDLE_DIRECTORIES
+        )
+        if not bundled:
+            return False
+        raw = content.raw
+        line_start = raw.rfind(b"\n", 0, offset) + 1
+        before = raw[line_start:offset]
+        open_quote = None
+        index = 0
+        while index < len(before):
+            char = before[index : index + 1]
+            if char == b"\\":
+                index += 2
+                continue
+            if open_quote is None and char in (b'"', b"'", b"`"):
+                open_quote = char
+            elif char == open_quote:
+                open_quote = None
+            index += 1
+        return open_quote is not None
 
     @staticmethod
     def _encoded_units(raw: bytes, unit_pattern: re.Pattern[bytes]) -> tuple[int, int, int]:
@@ -1194,6 +1248,34 @@ class ObfuscationDetector(BaseDetector):
 
     # -- Construction ----------------------------------------------------
 
+    #: What turns a long line in an install hook into a payload: it is run, or decoded to be run.
+    RUNS_LONG_LINE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:exec|eval|compile|b64decode|a85decode|b32decode|decompress|loads|unhexlify|fromhex|"
+        r"Function)\s*\("
+    )
+
+    @staticmethod
+    def _long_line_runs(content: FileContent, offset: int) -> bool:
+        """Whether a long line in an install hook is executed or decoded, as against a README
+        inlined as `long_description` -- what a poetry-generated `setup.py` holds (review 98, FP-5):
+        the call is on the line, or the name the line assigns is passed to one."""
+        text = content.text
+        start = text.rfind("\n", 0, offset) + 1
+        end = text.find("\n", offset)
+        line = text[start : len(text) if end == -1 else end]
+        if ObfuscationDetector.RUNS_LONG_LINE.search(line):
+            return True
+        assigned = re.match(r"\s*([A-Za-z_]\w{0,60})\s*=(?!=)", line)
+        if assigned is None:
+            return False
+        name = re.escape(assigned.group(1))
+        return bool(
+            re.search(
+                rf"\b(?:exec|eval|compile|b64decode|decompress|loads|Function)\s*\([^)\n]{{0,200}}\b{name}\b",
+                text,
+            )
+        )
+
     def _finding(self, hit: _Hit, unit: FileUnit, ctx: ScanContext) -> Finding:
         content = unit.content
         # The same ceiling the secrets detector and the composites apply, and these
@@ -1274,6 +1356,10 @@ class ObfuscationDetector(BaseDetector):
             )
             and ctx.in_install_hook(content.path)
             and severity < Severity.HIGH
+            and (
+                hit.rule_id != "SUSPECT.OBFUSCATION.LONGLINE.001"
+                or ObfuscationDetector._long_line_runs(content, hit.start)
+            )
         ):
             severity = Severity.HIGH
         return Finding(

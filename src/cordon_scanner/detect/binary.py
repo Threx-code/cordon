@@ -35,7 +35,7 @@ understood.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
@@ -878,10 +878,20 @@ class BinaryDetector(BaseDetector):
         table = ImportReader.read(content.raw)
         if table is None:
             return
+        binding = ImportCapabilities.is_binding(table)
         for rule_id, detail in ImportCapabilities.verdicts(ImportCapabilities.profile(table)):
-            yield self._finding(
+            finding = self._finding(
                 rule_id, unit, ctx, f"{Prose.article(found.name)} {found.name} that {detail}"
             )
+            if binding and rule_id == "SUSPECT.BINARY.PROCESS_INJECTION.001":
+                # A language binding imports the API it wraps (FP-10): reported, not blocking.
+                finding = replace(
+                    finding,
+                    severity=min(finding.severity, Severity.MEDIUM),
+                    message=finding.message
+                    + " It is a Python or Node binding, which imports the calls it exposes.",
+                )
+            yield finding
 
     def _content_findings(
         self, unit: FileUnit, ctx: ScanContext, content: FileContent

@@ -1,4 +1,4 @@
-"""Bombs are refused while the bytes are produced, not after (`package.md` PK-02, PK-03)."""
+"""Bombs are stopped while the bytes are produced, not after (`package.md` PK-02, PK-03)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,7 @@ import time
 
 import pytest
 
-from cordon_scanner.archive.safe import ArchiveReader
-from cordon_scanner.core.errors import ArchiveError
+from cordon_scanner.archive.safe import ArchiveReader, Rejection
 from cordon_scanner.core.limits import DEFAULT_LIMITS
 
 
@@ -25,10 +24,11 @@ class TestBombsAreRefusedWhileStreaming:
                 info.size = len(zeros)
                 archive.addfile(info, io.BytesIO(zeros))
         before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        with pytest.raises(ArchiveError, match="ceiling"):
-            ArchiveReader.extract(buf.getvalue(), path="bomb.tgz")
+        result = ArchiveReader.extract(buf.getvalue(), path="bomb.tgz")
         grown_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before
-        assert grown_kb < 300 * 1024, "the archive was refused before it was held in memory"
+        assert grown_kb < 300 * 1024, "the expansion stopped before it was held in memory"
+        assert result.truncated
+        assert any(r.reason == Rejection.PADDED for r in result.rejected)
 
     def test_a_member_refused_by_its_declared_size_is_not_decompressed_through(self) -> None:
         info = tarfile.TarInfo("huge.bin")
@@ -40,9 +40,10 @@ class TestBombsAreRefusedWhileStreaming:
             parts.append(compressor.compress(chunk))
         parts.append(compressor.flush())
         started = time.monotonic()
-        with pytest.raises(ArchiveError):
-            ArchiveReader.extract(b"".join(parts), path="skip.tar.bz2")
+        result = ArchiveReader.extract(b"".join(parts), path="skip.tar.bz2")
         assert time.monotonic() - started < 2.0
+        assert not result.members
+        assert any(r.reason == Rejection.PADDED for r in result.rejected)
 
     def test_the_uncompressed_budget_is_below_the_memory_limit(self) -> None:
         assert DEFAULT_LIMITS.max_uncompressed_bytes < DEFAULT_LIMITS.max_memory_bytes

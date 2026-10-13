@@ -359,6 +359,9 @@ class TestSelfScan(CorpusFixtures):
             # an agent reads them from; its fixtures are attack text by construction, like
             # `corpus/`. Splitting the strings would not help: constant folding joins them.
             and f.location.path != "bench/agent_matrix.py"
+            # The skills measurement classifies samples by what their payloads do, with the
+            # indicators it counts and annotations naming the hosts they fetch from.
+            and f.location.path != "bench/skills_measure.py"
             # The detection model's feature patterns name what they count -- a miner's binary and
             # pool protocol among them -- as the rule packs do; data, never run.
             and f.location.path != "src/cordon_scanner/model/data/patterns.json"

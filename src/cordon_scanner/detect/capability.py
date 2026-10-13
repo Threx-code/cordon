@@ -57,6 +57,8 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     ScanContext,
 )
+from cordon_scanner.detect.gradle_auth import GradleBuildAuth
+from cordon_scanner.detect.nix_code import NixCode
 from cordon_scanner.detect.pyast import CREDENTIAL_VARIABLE, PythonSource
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
@@ -354,6 +356,12 @@ class CapabilityDetector(BaseDetector):
         # see what `powershell -EncodedCommand` was given rather than only that it
         # was given something. See `embedded.decode_encoded_commands`: this is the
         # seam that made 109 of 171 missed malicious packages invisible.
+        if NixCode.is_nix(content.path):
+            # A Nix file's shell is in its strings: a service's `script`, a build phase, an
+            # activation. Read as shell, as a spawned command line is (`detect/nix_code.py`).
+            commands.extend(
+                embedded.Command(text, line) for text, line in NixCode.shell(content.text)
+            )
         commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
         # And the plaintext of an encoded command the script runs at its own top
         # level, which is handed to no call and so reaches neither branch above.
@@ -367,20 +375,23 @@ class CapabilityDetector(BaseDetector):
             for h in hits
         ):
             hits = self._drop_excused_pattern_hits(content, hits)
+        if GradleBuildAuth.is_build_script(content.path) and any(
+            h.capability is Capability.CREDENTIAL for h in hits
+        ):
+            # A build's own signing passwords and publishing tokens (`detect/gradle_auth.py`).
+            hits = GradleBuildAuth.drop_build_auth(content.text, hits, Capability.CREDENTIAL)
         hits.extend(self._embedded_capabilities(ctx, content, commands))
         hits.extend(self._destination_capabilities(content, unit.language))
         hits.extend(self._js_downloaded_and_run(content, unit.language))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
-        found = list(self._composite_findings(unit, ctx, hits, candidates))
-        if content.streamed is not None:
-            # Every rule read the first `max_file_bytes`; the high-signal ones now read the whole
-            # file. Here rather than in the engine, so the serial path and the worker pool -- which
-            # calls `inspect` directly -- both do it. What the first pass found is not repeated.
-            seen = {(f.rule_id, f.location.line) for f in found}
-            found += [f for f in self.sweep(unit, ctx) if (f.rule_id, f.location.line) not in seen]
-        return found
+        # The rest of an oversized file is read by the engine, in windows, with every rule here
+        # and the other text detectors (`core/windows.py`), on the serial path and in the pool.
+        if NixCode.is_nix(content.path):
+            # What a Nix file declares does not run (`detect/nix_code.py`).
+            hits = NixCode.keep_running(content.text, hits)
+        return list(self._composite_findings(unit, ctx, hits, candidates))
 
     # -- Labelling -------------------------------------------------------
 
@@ -680,6 +691,12 @@ class CapabilityDetector(BaseDetector):
                 ):
                     # A sleep inside a loop. See `delays` above.
                     continue
+                if compiled.rule.id == "CAP.ANTI.ENVIRONMENT.001" and (
+                    CapabilityDetector._courtesy_gate(content, match.start())
+                ):
+                    # A CI read beside a user's opt-out or a terminal test. See
+                    # `_courtesy_gate`.
+                    continue
                 if SourceComments.inside_spans(
                     blocks, match.start()
                 ) or CapabilityDetector._is_comment(content, match.start(), language):
@@ -723,132 +740,97 @@ class CapabilityDetector(BaseDetector):
 
         return hits
 
-    #: The rules that read the whole of a file over `max_file_bytes` (`sweep`). High-signal and
-    #: cheap: each is anchored on a distinctive literal, so twenty megabytes cost a substring scan,
-    #: and a hit is a finding on its own rather than a primitive waiting for context the sweep does
-    #: not compute (no parse, no data flow).
-    STREAMED_RULES: ClassVar[frozenset[str]] = frozenset(
-        {
-            "CAP.AGENT.UNATTENDED.001",
-            "CAP.AGENT.HARMFUL_INSTRUCTION.001",
-            "MALWARE.AGENT.HIJACK.001",
-            "SUSPECT.AGENT.UNATTENDED.001",
-            "CAP.JS.COMMAND_FETCH_RUN.001",
-            "CAP.DESTROY.HOME.001",
-            "SUSPECT.DESTROY.HOME_OR_ROOT.001",
-            "CAP.MINE.PROTOCOL.001",
-            "SUSPECT.CRYPTOMINER.001",
-        }
-    )
     #: Composites whose severity does not depend on where the code runs. An orchestrator starts
     #: its agent with the checks off on purpose, from its activation code as anywhere; what makes
     #: that an attack is the instruction it carries, which is `MALWARE.AGENT.HIJACK.001`.
     CONTEXT_FREE: ClassVar[frozenset[str]] = frozenset({"SUSPECT.AGENT.UNATTENDED.001"})
 
-    #: How much of the file around each place a streamed rule can match the sweep reads. A rule
-    #: can only match where one of its literals is (`CompiledMatch.prefilter`), so the sweep reads
-    #: those places with this much context either side, on line boundaries, and merges windows that
-    #: overlap -- which keeps the two halves of a composite, a command and its prompt, together.
-    SWEEP_CONTEXT: ClassVar[int] = 64 * 1024
+    LOOPBACK: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"\b(?:127\.0\.0\.1|localhost|0\.0\.0\.0)\b|\[::1\]|['\"]::1['\"]"
+    )
+    ELSEWHERE: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"\b[a-z][a-z0-9+.-]{1,20}://|\b(?:\d{1,3}\.){3}\d{1,3}\b|"
+        rb"\b[a-z0-9-]{1,63}\.(?:com|net|org|io|dev|app|xyz|ru|cn|top|me|co|sh|site|online)\b",
+        re.IGNORECASE,
+    )
 
-    def sweep(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
-        """The high-signal rules over the WHOLE of a file every other rule read only the start of.
+    COURTESY_GATE: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"\b(?:DO_NOT_TRACK|NO_UPDATE_NOTIFIER|NO_COLOR|FORCE_COLOR|[A-Z0-9_]*TELEMETRY[A-Z0-9_]*"
+        rb"|[A-Z0-9_]*_NO_ANALYTICS|[A-Z0-9_]*_DISABLE_(?:ANALYTICS|UPDATE_CHECK|NOTIFIER))\b"
+        rb"|\.\s*isTTY\b|\bisatty\s*\("
+    )
+    """What a CI check asks beside, when it is a courtesy and not an evasion.
 
-        Read in windows around the literals those rules need, not end to end: twenty megabytes of
-        bundle are a substring search, and each window is read as a small file -- what the rules are
-        measured on. A file read as one eight-megabyte piece was not: a comment or a string opened
-        far above confused the comment tests, and the agent flag in Amazon Q's bundle went unread.
-        Findings carry line numbers in the whole file. The ceilings apply as anywhere, with the
-        exceptions a construct earns (`_composite_findings`).
-        """
-        from cordon_scanner.core.content import FileContent
+    `if (process.env.DO_NOT_TRACK === '1' || process.env.CI) return;` before a licence ping, and
+    `if (!process.stderr.isTTY || process.env.CI) return;` before a progress line: 29 of
+    `@readystack`'s MCP linters, 37 MCP servers and 139 units of the 200K corpus were blocked as
+    code hiding from analysis for these. A payload gated on not being watched has no reason to
+    honour the user's opt-out or to care whether a terminal is attached; both are how a program
+    is polite, and an evasion that adds one still needs another environment check, a debugger or
+    a hostname test, each of which matches on its own.
+    """
 
-        whole = unit.content.streamed
-        if whole is None:
-            return []
-        candidates = tuple(
-            c
-            for c in RuleSelector.select_rules(
-                ctx.rules, language=unit.language, path=unit.content.path
-            )
-            if c.rule.id in self.STREAMED_RULES
+    SHIPPED_OUTPUT: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|/)(?:build|bin|dist)/[^!]{1,400}\.(?:c?js|mjs)$"
+    )
+    """JavaScript under `build/`, `bin/` or `dist/` in a published npm package.
+
+    In a repository those directories hold the project's own tooling, and a decode beside a
+    spawn there is usually a release helper. In the tarball npm installs they are the compiled
+    library and the command npm links onto PATH: `@0xengine/meow` shipped `build/validate.js`,
+    which writes a base64 script to disk and runs it with bash, and the tooling ceiling held it
+    at MEDIUM (review 98).
+    """
+
+    @staticmethod
+    def _shipped_output(path: str, ctx: ScanContext) -> bool:
+        return (
+            ctx.package_distribution
+            and ctx.distribution == "npm"
+            and CapabilityDetector.SHIPPED_OUTPUT.search(path) is not None
         )
-        anchored = {
-            found
-            for c in candidates
-            for literal in (c.match.prefilter or ())
-            for found in CapabilityDetector._positions(whole, literal)
-        }
-        # A rule whose prefilter is case-folded (`CompiledMatch.prefilter_folded`) is anchored on
-        # the file lower-cased; lower-casing bytes keeps every offset where it was.
-        folded_literals = {
-            literal
-            for c in candidates
-            if not c.match.prefilter
-            for literal in c.match.prefilter_folded
-        }
-        if folded_literals:
-            lowered = whole.lower()
-            anchored |= {
-                found
-                for literal in folded_literals
-                for found in CapabilityDetector._positions(lowered, literal)
-            }
-        anchors = sorted(anchored)
-        if not anchors:
-            return []
-        windows: list[tuple[int, int]] = []
-        for at in anchors:
-            start = whole.rfind(b"\n", 0, max(0, at - self.SWEEP_CONTEXT)) + 1
-            newline = whole.find(b"\n", min(len(whole), at + self.SWEEP_CONTEXT))
-            end = len(whole) if newline == -1 else newline + 1
-            if windows and start <= windows[-1][1]:
-                windows[-1] = (windows[-1][0], max(windows[-1][1], end))
-            else:
-                windows.append((start, end))
-        findings: dict[tuple[str, int | None], Finding] = {}
-        for start, end in windows:
-            chunk = FileContent(
-                path=unit.content.path,
-                raw=whole[start:end],
-                size=end - start,
-                limits=unit.content.limits,
+
+    @staticmethod
+    def _courtesy_gate(content: FileContent, offset: int) -> bool:
+        raw = content.raw
+        start = raw.rfind(b"\n", 0, offset) + 1
+        end = raw.find(b"\n", offset)
+        line = raw[start : end if end >= 0 else len(raw)]
+        return CapabilityDetector.COURTESY_GATE.search(line) is not None
+
+    @staticmethod
+    def _loopback_only(region: bytes) -> bool:
+        """Whether every destination named in `region` is this machine."""
+        if not CapabilityDetector.LOOPBACK.search(region):
+            return False
+        for found in CapabilityDetector.ELSEWHERE.finditer(region):
+            text = found.group(0).lower()
+            if text.endswith(b"://"):
+                tail = region[found.end() : found.end() + 40].lower()
+                if not CapabilityDetector.LOOPBACK.match(tail):
+                    return False
+            elif text not in (b"127.0.0.1", b"0.0.0.0"):
+                return False
+        return True
+
+    PERSIST_RULE = "MALWARE.INSTALL.PERSIST.001"
+    CALLBACK_RULE = "MALWARE.EXFIL.INSTALL_CALLBACK.001"
+    WRITE_NEAR: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"appendFile|writeFile|createWriteStream|\bfs\s*\.\s*write|\.write\s*\(|>>|"
+        rb"\btee\s+-a\b|\bechos?\s[^\n]{0,80}>|\bcrontab\s+-|\bsystemctl\s"
+    )
+    """A write, or the command that installs a unit, close to where persistence is named."""
+
+    @staticmethod
+    def _writes_near(content: FileContent, hits: list[CapabilityHit], reach: int = 160) -> bool:
+        """Whether a persistence location in `hits` is written, not only named."""
+        raw = content.raw
+        return any(
+            CapabilityDetector.WRITE_NEAR.search(
+                raw, max(0, h.byte_start - reach), min(len(raw), h.byte_end + reach)
             )
-            lines_before = whole.count(b"\n", 0, start)
-            part = FileUnit(content=chunk, language=unit.language, project=unit.project)
-            hits = self._match_capabilities(chunk, candidates, unit.language)
-            for finding in self._composite_findings(part, ctx, hits, candidates):
-                moved = CapabilityDetector._shifted(finding, lines_before, start)
-                findings.setdefault((moved.rule_id, moved.location.line), moved)
-        return list(findings.values())
-
-    @staticmethod
-    def _positions(data: bytes, literal: bytes, limit: int = 2000) -> list[int]:
-        """Where `literal` occurs, at most `limit` times: a literal that common is no anchor."""
-        out: list[int] = []
-        at = data.find(literal)
-        while at != -1 and len(out) < limit:
-            out.append(at)
-            at = data.find(literal, at + 1)
-        return out
-
-    @staticmethod
-    def _shifted(finding: Finding, lines: int, offset: int) -> Finding:
-        """A finding from a chunk, placed in the whole file."""
-        at = finding.location
-
-        def plus(value: int | None, by: int) -> int | None:
-            return None if value is None else value + by
-
-        return replace(
-            finding,
-            location=replace(
-                at,
-                line=plus(at.line, lines),
-                end_line=plus(at.end_line, lines),
-                byte_start=plus(at.byte_start, offset),
-                byte_end=plus(at.byte_end, offset),
-            ),
+            for h in hits
+            if h.capability is Capability.PERSIST
         )
 
     #: Fetch-and-run rules whose construct is a command line held in a string: in JavaScript
@@ -860,7 +842,9 @@ class CapabilityDetector(BaseDetector):
     #: JavaScript, or a batch file's download-then-`start`. Not `DOWNLOAD_THEN_RUN`, the data-flow
     #: reading of an HTTP download later spawned -- which is how a legitimate extension fetches its
     #: own language server or CLI.
-    DOWNLOAD_RUN_CONSTRUCTS = frozenset({"CAP.JS.COMMAND_FETCH_RUN.001", "CAP.BAT.FETCH_EXEC.001"})
+    DOWNLOAD_RUN_CONSTRUCTS = frozenset(
+        {"CAP.JS.COMMAND_FETCH_RUN.001", "CAP.BAT.FETCH_EXEC.001", "CAP.SH.FETCH_EXEC.001"}
+    )
 
     @staticmethod
     def _runs_a_downloaded_file(hits: list[CapabilityHit]) -> bool:
@@ -2521,12 +2505,11 @@ class CapabilityDetector(BaseDetector):
     What it does is stop a window from spanning a bundle."""
 
     MAX_PROXIMITY_HITS = 400
-    """Above this many capability hits, proximity is not evaluated.
+    """Above this many capability hits, the pairwise search gives way to `_dense_window`.
 
-    The search is quadratic in the number of hits, and a file with four hundred
-    of them is generated or enormous. Falling back to file scope there reports
-    more rather than less, which is the safe direction: the alternative is a
-    scan that quietly skips a rule on the largest files."""
+    The search is quadratic in the number of hits, and a file with four hundred of them is
+    generated or enormous. It used to fall back to file scope there -- reporting more, on the
+    theory that more is safe -- which made every large bundle a single window."""
 
     def _satisfying_window(
         self,
@@ -2547,12 +2530,16 @@ class CapabilityDetector(BaseDetector):
         which is what the message has always said.
         """
         proximity = compiled.match.proximity
-        if proximity <= 0 or len(hits) > self.MAX_PROXIMITY_HITS:
+        if proximity <= 0:
             if self._evaluate_over(
                 compiled, hits, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
             ):
                 return hits
             return None
+        if len(hits) > self.MAX_PROXIMITY_HITS:
+            return self._dense_window(
+                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, proximity
+            )
 
         # Sorted by line ALONE, and stably. Adding `byte_start` to the key looks
         # harmless and is not: a window is `ordered[index:]`, so it drops every
@@ -2571,6 +2558,46 @@ class CapabilityDetector(BaseDetector):
                 for h in ordered[index:]
                 if h.line <= limit and abs(h.byte_start - first.byte_start) <= byte_limit
             ]
+            if self._evaluate_over(
+                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+            ):
+                return window
+        return None
+
+    def _dense_window(
+        self,
+        compiled: CompiledRule,
+        hits: list[CapabilityHit],
+        path: str,
+        in_hook: bool,
+        in_ci: bool,
+        in_consumer: bool,
+        deferred: frozenset[tuple[int, int]],
+        proximity: int,
+    ) -> list[CapabilityHit] | None:
+        """Proximity over a file with more hits than the pairwise search affords.
+
+        The file used to be one window past `MAX_PROXIMITY_HITS`, which in a bundle means any
+        credential read and any request anywhere in ten megabytes are "together": a 27 MB agent
+        extension's secret-redaction table (`hooks.slack.com/<redacted>`) and its help text
+        (`"Read(~/.zshrc)"`) were blocked as malware (review 98). Here each hit is the centre of
+        the bytes within `proximity * BYTES_PER_LINE` either side, found by bisection over the
+        hits sorted by offset -- symmetric, so a marker that sorts just before its pattern hit is
+        still in the window -- and a window identical to the last is not evaluated twice.
+        """
+        import bisect
+
+        byte_limit = proximity * self.BYTES_PER_LINE
+        by_byte = sorted(hits, key=lambda h: h.byte_start)
+        starts = [h.byte_start for h in by_byte]
+        last: tuple[int, int] | None = None
+        for centre in by_byte:
+            lo = bisect.bisect_left(starts, centre.byte_start - byte_limit)
+            hi = bisect.bisect_right(starts, centre.byte_start + byte_limit)
+            if (lo, hi) == last:
+                continue
+            last = (lo, hi)
+            window = [h for h in by_byte[lo:hi] if abs(h.line - centre.line) <= proximity]
             if self._evaluate_over(
                 compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
             ):
@@ -3182,6 +3209,28 @@ class CapabilityDetector(BaseDetector):
             # written to an executable and started keeps this rule: that is the malicious shape.
             return None
 
+        if rule.id == "MALWARE.EXFIL.BEACON.001" and CapabilityDetector._loopback_only(
+            CapabilityDetector._satisfying_region(content, hits)
+        ):
+            # A daemon's health check on its own port: what reaches 127.0.0.1 never leaves the
+            # machine, so it carries nothing anywhere (review 98, FP-3: aigentry-telepty). Any
+            # other host or URL in the region keeps the rule.
+            return None
+
+        if in_hook and SourcePaths.is_editor_extension(content.path):
+            # The same reasoning, for the two rules a coding extension trips by talking: its help
+            # text names `~/.zshrc` and its secret redactor names `hooks.slack.com`, megabytes of
+            # bundle away from any write or request (review 98). In an extension the persistence
+            # has to be written and the drop point reached; `SUSPECT.*` still reports the span.
+            if rule.id == self.PERSIST_RULE and not CapabilityDetector._writes_near(content, hits):
+                return None
+            if rule.id == self.CALLBACK_RULE and not any(
+                # A request, not the destination's name: the drop point is itself an egress hit.
+                h.capability is Capability.EGRESS and not h.rule_id.startswith("INTEL.")
+                for h in hits
+            ):
+                return None
+
         if (
             category is Category.MALICIOUS
             and not in_hook
@@ -3253,6 +3302,8 @@ class CapabilityDetector(BaseDetector):
             elif (
                 SourcePaths.is_build_tooling(content.path)
                 and Capability.FETCH_EXEC not in present
+                # A published npm package's `build/` and `bin/` are what runs, not what builds.
+                and not CapabilityDetector._shipped_output(content.path, ctx)
                 # Nor when it wipes the machine: a build script that deletes `$HOME` or `/`
                 # runs on every machine that builds, exactly as a piped download does.
                 and compiled.rule.id not in CapabilityDetector.DESTRUCTION_RULES

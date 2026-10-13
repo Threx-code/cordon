@@ -8934,7 +8934,9 @@ class TestAPrepareScriptCannotReachAConsumer:
     @pytest.mark.parametrize(
         "script",
         [
-            '    "prepare": "svelte-kit sync"',
+            # `svelte-kit sync` alone is standard tooling and reports nothing (review 98, FP-1):
+            # `TestStandardToolingInAnAuthorTimeHook` below. An unrecognised build step still does.
+            '    "prepare": "./scripts/build-native"',
             '    "prepack": "svelte-kit sync && svelte-package && publint"',
             '    "prepare": "git config blame.ignoreRevsFile .git-blame-ignore-revs"',
             '    "prepublishOnly": "npm run build && node ./scripts/check.mjs"',
@@ -8944,6 +8946,9 @@ class TestAPrepareScriptCannotReachAConsumer:
         found = self._findings(tmp_path, script)
         assert found
         assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_standard_tooling_in_an_author_time_hook_reports_nothing(self, tmp_path) -> None:
+        assert self._findings(tmp_path, '    "prepare": "svelte-kit sync"') == []
 
     def test_a_consumer_time_hook_is_not(self, tmp_path) -> None:
         """The control, and the whole point of the distinction: `postinstall` is the npm

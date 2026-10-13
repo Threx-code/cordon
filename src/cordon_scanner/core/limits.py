@@ -30,6 +30,7 @@ _LIMIT_RANGES: dict[str, tuple[float, float | None, type]] = {
     # name: (minimum, maximum or None, accepted type)
     "max_file_bytes": (1, None, int),
     "max_stream_bytes": (0, None, int),
+    "max_member_bytes": (1, None, int),
     "max_line_bytes": (1, None, int),
     "max_total_bytes": (1, None, int),
     "max_files": (1, None, int),
@@ -74,13 +75,17 @@ class Limits:
     any hand-written source file, so the ceiling is reached by generated
     artefacts and by deliberate padding, not by real code."""
 
-    max_stream_bytes: int = 64 * 1024 * 1024
-    """Up to this size, a file over `max_file_bytes` is still read whole: its first
-    `max_file_bytes` get every rule, and the whole file is swept in chunks by the
-    high-signal rules (`CapabilityDetector.STREAMED_RULES`). An editor extension ships its
-    code as one bundle, and Amazon Q 1.84.0's 21 MB bundle carried the prompt that told the
-    agent to wipe the machine near its end -- past any prefix. Zero turns the sweep off, and a
-    larger file is read in part as before."""
+    max_stream_bytes: int = 512 * 1024 * 1024
+    """How much of a file over `max_file_bytes` is read at all. Its first `max_file_bytes` get
+    every rule, and the rest is read in windows of `max_file_bytes` by every rule that judges text
+    (`core/windows.py`), from disk a window at a time -- so this bounds time, not memory. An
+    editor extension ships its code as one bundle, and Amazon Q 1.84.0's 21 MB bundle carried the
+    prompt that told the agent to wipe the machine near its end; a padded payload can sit anywhere.
+    Zero turns the windows off, and a larger file is read to this point and reported as such."""
+
+    max_member_bytes: int = 64 * 1024 * 1024
+    """The largest archive member held in memory whole. An archive is read into memory, never
+    written out (`archive/safe.py`), so this bounds what one member can make the scanner hold."""
 
     max_line_bytes: int = 1 * 1024 * 1024
     """A single line this long is minified output or an attack on the

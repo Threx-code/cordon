@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,394 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,395 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -74,11 +74,12 @@ rule's own samples.
 
 ## Archive
 
-3 rules.
+4 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.ARCHIVE.NESTING.001` | high | Archives nested past the depth the scan opens |
+| `SUSPECT.ARCHIVE.PADDED.001` | high | Archive padded past the scan's budget |
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | Archive member named to write outside the archive |
 | `SUSPECT.ARCHIVE.POLYGLOT.001` | high | Archive that is a tarball and a zip at once |
 

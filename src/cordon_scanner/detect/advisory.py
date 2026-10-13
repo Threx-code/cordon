@@ -811,6 +811,18 @@ class AdvisoryDetector(BaseDetector):
         )
         if maintainers_only:
             severity = min(severity, Severity.LOW)
+        # A published Go module's own `go.mod` `require` is a MINIMUM version: minimal version
+        # selection may pick a newer one for the build that uses the module, and that build's own
+        # go.mod and go.sum name what was selected -- and scanning that build reports the version
+        # it really uses at full severity, exploited or not. Here it is reported at MEDIUM, saying
+        # so, with an exploited one still named as exploited. Blocking on these blocked 75% of
+        # 7,000 real modules, and keeping exploited ones blocking still blocked 26% (old
+        # `golang.org/x/net` floors below the HTTP/2 rapid-reset fix) (review 98).
+        go_minimum = (
+            not malicious and ctx.distribution == "gomod" and dependency.scope is Scope.RUNTIME
+        )
+        if go_minimum:
+            severity = min(severity, Severity.MEDIUM)
         # Bundled inside an editor extension: only the extension's author can upgrade it, and
         # blocking would leave whoever installs it a choice between the extension and the gate --
         # 451 of 1,943 popular extensions. Reported at MEDIUM, in every report and in the editor.
@@ -879,6 +891,12 @@ class AdvisoryDetector(BaseDetector):
                     f" It is pinned in {dependency.declared_in or 'a lockfile'} inside this package, which "
                     f"describes the maintainers' development environment; installing the package does "
                     f"not install it, so it is reported at LOW."
+                )
+            if go_minimum:
+                message += (
+                    " This module's go.mod asks for at least this version; a build that uses the "
+                    "module may select a newer one, and that build's own go.mod names what it "
+                    "selected. Reported at MEDIUM."
                 )
             if bundled_in_extension:
                 message += (

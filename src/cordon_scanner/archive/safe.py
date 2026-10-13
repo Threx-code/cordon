@@ -83,6 +83,9 @@ class Rejection:
     NAME = "unsafe_name"
     POLYGLOT = "polyglot_archive"
     HIDDEN = "hidden_zip_member"
+    PADDED = "padded_expansion"
+    """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
+    padding was not read, and padding is how a payload is put out of a scanner's reach."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +119,10 @@ class ExtractionResult:
     truncated: bool = False
     """True when a limit stopped extraction early. The caller must report it:
     a partial extraction that looks complete is a false negative."""
+    expansion_cap: int = 0
+    """How far this archive may expand: `max(max_member_bytes, its size x max_archive_ratio)`,
+    from the WHOLE archive's size, known before a byte is decompressed. Past it the read stops and
+    what was read is kept (`ArchiveReader.expansion_cap`)."""
 
     @property
     def ratio(self) -> float:
@@ -187,7 +194,7 @@ class ArchiveReader:
         unprocessable. Individual bad members are recorded in ``rejected`` so one
         hostile entry does not discard an otherwise legitimate package.
         """
-        result = ExtractionResult()
+        result = ExtractionResult(expansion_cap=ArchiveReader.expansion_cap(len(data), limits))
 
         if depth > limits.max_archive_depth:
             raise ArchiveError(
@@ -387,7 +394,6 @@ class ArchiveReader:
         # ratio ceiling -- the control the module documents first -- applied to
         # exactly one of the two archive formats.
         result.total_compressed = max(result.total_compressed, len(data))
-        ArchiveReader._check_ratio(result, limits, path)
 
     @staticmethod
     def _extract_tar(
@@ -410,7 +416,9 @@ class ArchiveReader:
             # deadline checked only between members, so a few-KB bz2 declaring 100 GB burned
             # minutes of CPU (PK-03). Now the ratio, a total budget and the deadline are enforced
             # on the bytes as they are produced.
-            stream = _BudgetedStream.open(data, limits=limits, deadline=deadline, path=path)
+            stream = _BudgetedStream.open(
+                data, limits=limits, deadline=deadline, path=path, cap=result.expansion_cap
+            )
             archive = tarfile.open(fileobj=stream, mode="r|")  # type: ignore[call-overload]  # noqa: SIM115
         except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
             # EOFError specifically: a truncated gzip stream raises it rather than
@@ -513,22 +521,52 @@ class ArchiveReader:
                         )
                     )
 
+            except BudgetExceeded as exc:
+                # Stopped where the budget ran out. What was read is kept and scanned; past an
+                # expansion this lopsided, what was not read is behind padding.
+                result.truncated = True
+                shape = Rejection.PADDED if exc.padded else Rejection.SIZE
+                result.rejected.append(RejectedMember(path, shape, str(exc)))
+            except ArchiveError as exc:
+                result.truncated = True
+                result.rejected.append(RejectedMember(path, Rejection.ENTRIES, str(exc)))
             except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
-                # A corrupt index now surfaces mid-iteration rather than up
-                # front, so it is caught around the loop instead of around
-                # the materialisation that no longer happens.
-                raise ArchiveError(f"{path}: archive index is corrupt: {exc}") from exc
+                # A corrupt index surfaces mid-iteration. The members before it are kept: npm and
+                # pip extract a tarball as a stream, and install every file they read before the
+                # damage. Refusing the whole archive passed `legoa-repodb` 66.0.0 and its kind --
+                # internal names republished on npm, the dependency-confusion shape -- unread.
+                if not result.members:
+                    raise ArchiveError(f"{path}: archive index is corrupt: {exc}") from exc
+                result.truncated = True
+                result.rejected.append(
+                    RejectedMember(
+                        path,
+                        Rejection.UNREADABLE,
+                        f"damaged after {len(result.members)} member(s): {exc}",
+                    )
+                )
 
         result.total_compressed = max(result.total_compressed, len(data))
-        ArchiveReader._check_ratio(result, limits, path)
 
     @staticmethod
     def member_limit(limits: Limits) -> int:
-        """The largest member extracted. Up to `max_stream_bytes`, not `max_file_bytes`: a member
-        over the latter is read whole so the high-signal sweep can cover it, and every other rule
-        reads its first `max_file_bytes` (`FileContent.from_bytes`). The ratio and total budgets
-        still bound what an archive can make this reader allocate."""
-        return max(limits.max_file_bytes, limits.max_stream_bytes)
+        """The largest member extracted. Up to `max_member_bytes`, not `max_file_bytes`: a member
+        over the latter is held whole so its windows can be read (`core/windows.py`), and every
+        rule reads its first `max_file_bytes` (`FileContent.from_bytes`). The ratio and total
+        budgets still bound what an archive can make this reader allocate."""
+        return max(limits.max_file_bytes, limits.max_member_bytes)
+
+    @staticmethod
+    def expansion_cap(compressed: int, limits: Limits) -> int:
+        """How far an archive of `compressed` bytes may expand before the read stops.
+
+        An archive is held in memory once expanded, so a lopsided one must stop early: 600 KB of
+        tar.gz held 600 MB of zeros without this (PK-02). It is judged against the whole archive's
+        size, not the bytes consumed so far: that running ratio spikes at the start of honest
+        archives and refused `ricklib` (23:1 overall), `compliance-checker` (120:1) and a Gradle
+        repository (21:1) as bombs, unread (review 98). Every archive may reach
+        `max_member_bytes`; past that, `max_archive_ratio` times its size."""
+        return max(limits.max_member_bytes, compressed * limits.max_archive_ratio)
 
     @staticmethod
     def _would_exceed(
@@ -540,10 +578,13 @@ class ArchiveReader:
     ) -> bool:
         """Reject a member before reading it, where the declared size allows."""
         if declared > ArchiveReader.member_limit(limits):
+            # A zip states each member's compressed size: sixty megabytes declared from sixty
+            # kilobytes stored is padding, refused on its face before a byte is inflated.
+            padded = compressed > 0 and declared > compressed * limits.max_archive_ratio
             result.rejected.append(
                 RejectedMember(
                     name,
-                    Rejection.SIZE,
+                    Rejection.PADDED if padded else Rejection.SIZE,
                     f"declared {declared} bytes, over the {ArchiveReader.member_limit(limits)} limit",
                 )
             )
@@ -595,23 +636,25 @@ class ArchiveReader:
                 )
                 return None
 
-            if compressed_size > 0:
-                ratio = read_total / compressed_size
-                if ratio > limits.max_archive_ratio:
-                    result.rejected.append(
-                        RejectedMember(
-                            name,
-                            Rejection.RATIO,
-                            f"expanded {ratio:.0f}:1, over the {limits.max_archive_ratio}:1 ceiling",
-                        )
+            if 0 < result.expansion_cap < result.total_uncompressed + read_total:
+                result.truncated = True
+                result.rejected.append(
+                    RejectedMember(
+                        name,
+                        Rejection.PADDED,
+                        f"the archive expanded past {result.expansion_cap} bytes, over "
+                        f"{limits.max_archive_ratio} times its size",
                     )
-                    return None
+                )
+                return None
 
             if result.total_uncompressed + read_total > limits.max_uncompressed_bytes:
                 result.truncated = True
                 result.rejected.append(
                     RejectedMember(
-                        name, Rejection.SIZE, "archive exceeds the total uncompressed budget"
+                        name,
+                        Rejection.SIZE,
+                        "archive exceeds the total uncompressed budget",
                     )
                 )
                 return None
@@ -621,23 +664,6 @@ class ArchiveReader:
         result.total_uncompressed += read_total
         result.total_compressed += compressed_size
         return b"".join(chunks)
-
-    @staticmethod
-    def _check_ratio(result: ExtractionResult, limits: Limits, path: str) -> None:
-        """Whole-archive ratio check, for formats with no per-member sizes.
-
-        A compressed tar reports no per-member compressed size, so the per-member
-        ceiling cannot apply. The aggregate ratio is checked once the whole archive
-        has streamed, which still catches a bomb before anything is scanned.
-        """
-        if result.total_compressed <= 0:
-            return
-        if result.ratio > limits.max_archive_ratio:
-            raise ArchiveError(
-                f"{path}: archive expands {result.ratio:.0f}:1, over the "
-                f"{limits.max_archive_ratio}:1 ceiling",
-                hint="This is the shape of a decompression bomb.",
-            )
 
     @staticmethod
     def walk_archive(
@@ -723,22 +749,27 @@ class ArchiveReader:
             yield member_path, member.data
 
 
+class BudgetExceeded(ArchiveError):
+    """A decompressed budget was reached. `padded` when it was the expansion cap."""
+
+    def __init__(self, message: str, *, hint: str = "", padded: bool = False) -> None:
+        super().__init__(message, hint=hint)
+        self.padded = padded
+
+
 class _BudgetedStream:
     """A tar archive's DECOMPRESSED bytes, metered as they are produced.
 
     Every byte tarfile reads - a header, a member it hands back, or the data of a member it skips -
     passes through `read`, so three limits hold whatever tarfile does with the bytes:
 
-    * the compression ratio, decompressed so far over compressed consumed so far, once past
-      `RATIO_FLOOR` (small, highly compressible archives are ordinary);
+    * the expansion cap, `ArchiveReader.expansion_cap`, judged from the whole archive's size;
     * a total decompressed budget, `Limits.max_uncompressed_bytes`;
     * the deadline.
 
-    Any of them raises `ArchiveError`, which refuses the archive as a whole: the shape of a bomb is
-    the finding, and nothing more of it is worth reading.
+    Each raises; the members read before it are kept (`ArchiveReader._extract_tar`), as a
+    streaming installer would have written them.
     """
-
-    RATIO_FLOOR = 16 << 20
 
     def __init__(
         self,
@@ -747,6 +778,7 @@ class _BudgetedStream:
         limits: Limits,
         deadline: float | None,
         path: str,
+        cap: int = 0,
     ) -> None:
         self.inner, self.compressed, self.limits, self.deadline, self.path = (
             inner,
@@ -755,11 +787,12 @@ class _BudgetedStream:
             deadline,
             path,
         )
+        self.cap = cap
         self.produced = 0
 
     @classmethod
     def open(
-        cls, data: bytes, *, limits: Limits, deadline: float | None, path: str
+        cls, data: bytes, *, limits: Limits, deadline: float | None, path: str, cap: int = 0
     ) -> _BudgetedStream:
         import bz2
         import gzip
@@ -775,8 +808,8 @@ class _BudgetedStream:
         elif data[:6] == b"\xfd7zXZ\x00":
             inner = lzma.LZMAFile(cast(Any, raw), mode="rb")  # noqa: SIM115
         else:
-            return cls(raw, None, limits, deadline, path)
-        return cls(inner, raw, limits, deadline, path)
+            return cls(raw, None, limits, deadline, path, cap)
+        return cls(inner, raw, limits, deadline, path, cap)
 
     def read(self, size: int = -1) -> bytes:
         if self.deadline is not None and time.monotonic() > self.deadline:
@@ -785,19 +818,18 @@ class _BudgetedStream:
             size = READ_CHUNK
         chunk: bytes = self.inner.read(min(size, READ_CHUNK * 16))
         self.produced += len(chunk)
+        if self.compressed is not None and 0 < self.cap < self.produced:
+            raise BudgetExceeded(
+                f"{self.path}: expanded past {self.cap} bytes, over {self.limits.max_archive_ratio} "
+                f"times its size",
+                hint="This is the shape of padding or a decompression bomb.",
+                padded=True,
+            )
         if self.produced > self.limits.max_uncompressed_bytes:
-            raise ArchiveError(
+            raise BudgetExceeded(
                 f"{self.path}: archive expands past the {self.limits.max_uncompressed_bytes}-byte budget",
                 hint="This is the shape of a decompression bomb.",
             )
-        if self.compressed is not None and self.produced > self.RATIO_FLOOR:
-            consumed = max(self.compressed.tell(), 1)
-            if self.produced / consumed > self.limits.max_archive_ratio:
-                raise ArchiveError(
-                    f"{self.path}: archive expands {self.produced / consumed:.0f}:1, over the "
-                    f"{self.limits.max_archive_ratio}:1 ceiling",
-                    hint="This is the shape of a decompression bomb.",
-                )
         return chunk
 
 

@@ -351,6 +351,60 @@ class Formula:
         return tuple(Formula.CONDITIONS[s] for s in stack if s in Formula.CONDITIONS)
 
 
+class NotRunAtInstall:
+    """The parts of a formula or cask that `brew install` never runs (review 98, FP-13).
+
+    The whole file is an install hook, because `install` and `post_install` -- and a cask's
+    `preflight` and `postflight` -- run at install time. These do not: `service` is started later,
+    by `brew services`, if the user asks; `test` runs under `brew test`; `livecheck` and `bottle`
+    are metadata; `caveats` is text printed to the user; a cask's `uninstall`, `zap` and
+    `uninstall_*flight` run at removal. `liquidprompt`'s caveats telling the user to add a line to
+    `~/.bash_profile` read as an install script planting persistence, and blocked it.
+    """
+
+    BLOCKS: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(service|test|livecheck|bottle|caveats|uninstall|zap|uninstall_preflight|"
+        r"uninstall_postflight)\b"
+    )
+    CAVEATS_HEREDOC: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*(?:def\s+)?caveats\s*(?:\(\s*\))?\s*(?:=\s*)?<<[~-]?['\"]?([A-Z_][A-Z0-9_]*)"
+    )
+
+    @staticmethod
+    def spans(text: str) -> list[tuple[int, int]]:
+        """`(first line, last line)` of each such block."""
+        out: list[tuple[int, int]] = []
+        stack: list[tuple[str | None, int]] = []
+        raw = text.splitlines()
+        for number, line in Ruby.lines(text):
+            stripped = line.strip()
+            heredoc = NotRunAtInstall.CAVEATS_HEREDOC.match(line)
+            if heredoc is not None and not stripped.startswith("def "):
+                # `caveats <<~EOS` in a cask: the statement runs to the heredoc's terminator.
+                terminator = heredoc.group(1)
+                last = next(
+                    (i for i in range(number, len(raw)) if raw[i].strip() == terminator), number - 1
+                )
+                out.append((number, last + 1))
+                continue
+            named = NotRunAtInstall.BLOCKS.match(stripped)
+            if stripped.startswith("def "):
+                name = stripped[4:].split("(")[0].split()[0] if stripped[4:].split() else ""
+                stack.append(("caveats" if name == "caveats" else None, number))
+                continue
+            if named and Ruby.BLOCK_OPEN.search(stripped):
+                stack.append((named.group(1), number))
+                continue
+            if Ruby.opens_block(stripped) and not stripped.startswith("class "):
+                stack.append((None, number))
+                continue
+            if re.match(r"^end\b", stripped) and stack:
+                kind, first = stack.pop()
+                if kind is not None:
+                    out.append((first, number))
+        return out
+
+
 class Cask:
     """Casks/<token>.rb."""
 

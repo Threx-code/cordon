@@ -87,6 +87,15 @@ PASTE_HOSTS: Final = frozenset(
         "justpaste.it",
         "paste.gg",
         "dpaste.org",
+        # Anonymous file hosts that hand back a direct link, the same use: `files.catbox.moe` served
+        # the batch files two malicious Solidity extensions downloaded and ran (review 98).
+        "catbox.moe",
+        "files.catbox.moe",
+        "litterbox.catbox.moe",
+        "pixeldrain.com",
+        "uguu.se",
+        "tmpfiles.org",
+        "filebin.net",
     }
 )
 """Anonymous paste and file-drop services.

