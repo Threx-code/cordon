@@ -37,6 +37,8 @@ from __future__ import annotations
 import re
 from typing import Final
 
+from cordon_scanner.core.literals import LiteralGate
+
 WEBHOOK_HOSTS: Final = frozenset(
     {
         "discord.com/api/webhooks",
@@ -267,15 +269,16 @@ class Destinations:
     def could_match(raw: bytes) -> bool:
         """Whether any destination could appear in these bytes.
 
-        One compiled alternation of literals rather than a loop of substring tests.
-        The loop is the obvious way to write it and measures about a third slower
-        across a large repository, because per-call overhead dominates on the small
-        files that make up most of a tree.
+        A substring test per literal (`LiteralGate`), not one compiled alternation. The
+        alternation was chosen when it measured a third faster on a tree of small files; over
+        ten thousand files of ordinary packages it took 10.6 s against the loop's 5.6 s, the
+        same answer for every file -- the regex engine tries the alternation at every byte,
+        where a substring search skips ahead.
         """
-        global _PREFILTER_MATCHER
-        if _PREFILTER_MATCHER is None:
-            _PREFILTER_MATCHER = re.compile(b"|".join(re.escape(x) for x in PREFILTER))
-        return _PREFILTER_MATCHER.search(raw) is not None
+        global _PREFILTER_GATE
+        if _PREFILTER_GATE is None:
+            _PREFILTER_GATE = LiteralGate(PREFILTER)
+        return _PREFILTER_GATE.present(raw)
 
     @staticmethod
     def destination_matcher() -> re.Pattern[bytes]:
@@ -347,7 +350,7 @@ prefilter would mean the alternation runs anyway."""
 PREFILTER: Final = Destinations._prefilter()
 
 
-_PREFILTER_MATCHER: re.Pattern[bytes] | None = None
+_PREFILTER_GATE: LiteralGate | None = None
 
 
 _MATCHER: re.Pattern[bytes] | None = None
