@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
+from cordon_scanner.core.atomic import AtomicFile
 from cordon_scanner.version import PROGRAM
 
 CLIENT_ID: Final = "cordon-cli"
@@ -90,11 +91,7 @@ class CloudAuth:
         directory = CloudAuth.config_dir()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         target = directory / CREDENTIALS_NAME
-        staging = target.with_suffix(".tmp")
-        fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(asdict(credentials), handle, indent=2, sort_keys=True)
-        staging.replace(target)
+        AtomicFile.write(target, json.dumps(asdict(credentials), indent=2, sort_keys=True))
         return target
 
     @staticmethod

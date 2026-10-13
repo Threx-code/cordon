@@ -54,6 +54,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.core.atomic import AtomicFile
 from cordon_scanner.core.local_seal import LocalSeal
 from cordon_scanner.intel import _ed25519
 
@@ -341,9 +342,7 @@ class FeedStore:
 
     @staticmethod
     def _atomic_write(path: Path, data: bytes) -> None:
-        temporary = path.with_name(path.name + ".tmp")
-        temporary.write_bytes(data)
-        temporary.replace(path)
+        AtomicFile.write(path, data)
 
     # -- Deltas and overlays -----------------------------------------------------------------
 

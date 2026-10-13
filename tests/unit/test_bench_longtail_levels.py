@@ -68,12 +68,16 @@ class TestIncomplete:
         assert Incomplete.kind({"complete": True, "findings": []}) is None
 
 
-def write(tmp: Path, manifest: list[dict], scans: list[dict], version: bool = True) -> Path:
-    (tmp / "manifest.jsonl").write_text("".join(json.dumps(m) + "\n" for m in manifest), "utf-8")
-    (tmp / "scans.jsonl").write_text("".join(json.dumps(s) + "\n" for s in scans), "utf-8")
-    if version:
-        (tmp / "scanner-version.json").write_text('{"commit": "x"}', "utf-8")
-    return tmp
+class LongtailData:
+    @staticmethod
+    def write(tmp: Path, manifest: list[dict], scans: list[dict], version: bool = True) -> Path:
+        (tmp / "manifest.jsonl").write_text(
+            "".join(json.dumps(m) + "\n" for m in manifest), "utf-8"
+        )
+        (tmp / "scans.jsonl").write_text("".join(json.dumps(s) + "\n" for s in scans), "utf-8")
+        if version:
+            (tmp / "scanner-version.json").write_text('{"commit": "x"}', "utf-8")
+        return tmp
 
 
 class TestIntegrity:
@@ -84,25 +88,29 @@ class TestIntegrity:
 
     def test_a_complete_run_is_ok(self, tmp_path: Path) -> None:
         scans = [{"file": m["file"], "exit": 0, "findings": []} for m in self.MANIFEST]
-        summary = LongtailLevels.main(write(tmp_path, self.MANIFEST, scans))
+        summary = LongtailLevels.main(LongtailData.write(tmp_path, self.MANIFEST, scans))
         assert summary["integrity"]["ok"]
 
     def test_a_missing_result_is_reported(self, tmp_path: Path) -> None:
         scans = [{"file": "npm/a-1.tgz", "exit": 0, "findings": []}]
-        integrity = LongtailLevels.main(write(tmp_path, self.MANIFEST, scans))["integrity"]
+        integrity = LongtailLevels.main(LongtailData.write(tmp_path, self.MANIFEST, scans))[
+            "integrity"
+        ]
         assert not integrity["ok"] and integrity["missing"] == 1
 
     def test_scanner_errors_void_the_run(self, tmp_path: Path) -> None:
         scans = [{"file": m["file"], "exit": 2} for m in self.MANIFEST]
-        integrity = LongtailLevels.main(write(tmp_path, self.MANIFEST, scans))["integrity"]
+        integrity = LongtailLevels.main(LongtailData.write(tmp_path, self.MANIFEST, scans))[
+            "integrity"
+        ]
         assert not integrity["ok"]
         assert any("scanner errors" in p for p in integrity["problems"])
 
     def test_an_unnamed_scanner_is_reported(self, tmp_path: Path) -> None:
         scans = [{"file": m["file"], "exit": 0, "findings": []} for m in self.MANIFEST]
-        integrity = LongtailLevels.main(write(tmp_path, self.MANIFEST, scans, version=False))[
-            "integrity"
-        ]
+        integrity = LongtailLevels.main(
+            LongtailData.write(tmp_path, self.MANIFEST, scans, version=False)
+        )["integrity"]
         assert not integrity["ok"]
 
 
@@ -120,7 +128,7 @@ class TestHoldoutRefusal:
         manifest = self.manifest()
         holdout = Adjudicate.holdout_refused(manifest, list(manifest))[0]
         rows = [{"file": f, **m} for f, m in manifest.items()]
-        write(tmp_path, rows, [{"file": holdout, "exit": 1, "findings": []}])
+        LongtailData.write(tmp_path, rows, [{"file": holdout, "exit": 1, "findings": []}])
         with pytest.raises(SystemExit, match="holdout"):
             Adjudicate.show(tmp_path, [holdout])
 
@@ -128,7 +136,7 @@ class TestHoldoutRefusal:
         manifest = self.manifest()
         rows = [{"file": f, **m} for f, m in manifest.items()]
         scans = [{"file": f, "exit": 0, "findings": []} for f in manifest]
-        write(tmp_path, rows, scans)
+        LongtailData.write(tmp_path, rows, scans)
         before = LongtailLevels.main(tmp_path, "holdout")["all"]["scanned"]
         excluded = Adjudicate.holdout_refused(manifest, list(manifest))[:2]
         (tmp_path / "holdout-excluded.txt").write_text("\n".join(excluded), "utf-8")

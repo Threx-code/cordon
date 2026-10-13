@@ -33,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.core.atomic import AtomicFile
 from cordon_scanner.core.local_seal import LocalSeal
 
 SEAL_LABEL: Final = "osv-delta"
@@ -243,10 +244,7 @@ class OsvDelta:
         directory = OsvDelta.state_dir()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         path = OsvDelta.overlay_path(name)
-        temporary = path.with_name(path.name + ".tmp")
-        temporary.write_text(json.dumps(LocalSeal.sealed(SEAL_LABEL, document)), encoding="utf-8")
-        temporary.chmod(0o600)
-        temporary.replace(path)
+        AtomicFile.write(path, json.dumps(LocalSeal.sealed(SEAL_LABEL, document)))
 
     @staticmethod
     def refresh(since: float, now: float | None = None) -> DeltaResult:

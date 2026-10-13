@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.core.atomic import AtomicFile
+
 if TYPE_CHECKING:
     from cordon_scanner.images.osv import Matches, Query
 
@@ -315,10 +317,7 @@ class DistroDatabase:
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         payload = gzip.compress(json.dumps(index, separators=(",", ":")).encode(), mtime=0)
         path = directory / f"os-{family}.json.gz"
-        temporary = path.with_suffix(".tmp")
-        temporary.write_bytes(payload)
-        temporary.chmod(0o600)
-        temporary.replace(path)
+        AtomicFile.write(path, payload)
         manifest_path = directory / MANIFEST
         digests: dict[str, Any] = {}
         if manifest_path.exists():
