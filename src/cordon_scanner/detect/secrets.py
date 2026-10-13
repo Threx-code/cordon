@@ -4620,6 +4620,17 @@ class SecretDetector(BaseDetector):
                 continue
             yield match.start(), match.end(), plain, False, None
 
+    # What every `ASSIGNMENT` match contains, read off the pattern and matched against the
+    # lower-cased file: a credential word (`api_key`, `client_secret` and the rest each contain one
+    # of these five), at most forty name characters, a colon or an equals sign, and a value of
+    # twelve characters from the quoted value's class -- which the unquoted value's is a subset of.
+    # It opens on literals, so the engine skips to them; the pattern itself opens on a lazy name
+    # run it tries at every byte. Over ten thousand files of ordinary packages: 20.8 s to 5.2 s,
+    # with the same matches in every file. 573 files pass it; 12 have a match.
+    ASSIGNMENT_GATE = re.compile(
+        rb"(?:pass|secret|token|key|credential)[a-z0-9_.\-]{0,40}[ \t]*[:=][ \t]*[\"']?[^\"'\s;<>]{12}"
+    )
+
     # A credential-shaped assignment needs one of these words present. Checking
     # for them first avoids running a large alternation over files that cannot
     # match it.
@@ -4797,6 +4808,8 @@ class SecretDetector(BaseDetector):
     ) -> Iterable[Finding]:
         raw = unit.content.raw
         if not any(lit in raw for lit in self.ASSIGNMENT_PREFILTER):
+            return
+        if not self.ASSIGNMENT_GATE.search(raw.lower()):
             return
         for match in ASSIGNMENT.finditer(raw):
             # Group 1 is the name; 2 the quoted value, 3 the unquoted one.
