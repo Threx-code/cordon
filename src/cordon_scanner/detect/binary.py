@@ -425,9 +425,14 @@ SOURCE_TEXT_EXTENSIONS = frozenset(
 """Extensions that promise text. A native executable under one of these names is a disguise."""
 
 NUL_FREE_SOURCE_EXTENSIONS = frozenset(
-    {".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".rb", ".php", ".pl", ".lua", ".sh", ".bash"}
+    {".py", ".pyw", ".js", ".mjs", ".cjs", ".rb", ".php", ".pl", ".lua", ".sh", ".bash"}
 )
-"""Source languages in which a NUL byte never appears. See `BinaryDetector.binary_source`."""
+"""Source languages in which a NUL byte never appears. See `BinaryDetector.binary_source`.
+
+Not `.ts`: the extension is as often an MPEG transport stream (video) or a Java truststore
+(ActiveMQ's `conf/broker.ts`) as TypeScript, and a binary one is those. A PHP file is judged only
+when it does not open as PHP: PHP strings are binary-safe, and protobuf's generated
+`GPBMetadata/*.php` carries its descriptor as raw bytes inside one."""
 
 
 class BinaryDetector(BaseDetector):
@@ -637,12 +642,20 @@ class BinaryDetector(BaseDetector):
         # Reported as OPERATIONAL instead, because a file that was not examined must
         # not look like a file that was examined and found clean - which is the
         # invariant this whole detector set is built around.
-        own_format = self.named_by_its_own_format(content.path, raw)
+        # A file in an image past the per-file limit is scanned as its printable strings, under
+        # its own name. Its format is judged from its real first bytes, which the image reader
+        # keeps: judged from the strings, every large `.so`, `.dll` and `.jar` in 36 of 650 real
+        # images read as disguised (review 98), and skipping the check instead would let a
+        # disguised executable hide by being padded past the limit.
+        head = BinaryDetector.real_head(content.path, ctx)
+        judged = raw if head is None else head
+        named = found if head is None else self.identify(head)
+        own_format = self.named_by_its_own_format(content.path, judged)
         mismatch = (
-            None if content.is_lfs_pointer or own_format else self.mismatch(content.path, found)
+            None if content.is_lfs_pointer or own_format else self.mismatch(content.path, named)
         )
-        if mismatch is None and found is None and not content.is_lfs_pointer and not own_format:
-            mismatch = self.binary_source(content.path, raw)
+        if mismatch is None and named is None and not content.is_lfs_pointer and not own_format:
+            mismatch = self.binary_source(content.path, judged)
         if mismatch is not None:
             findings.append(self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch))
 
@@ -673,6 +686,22 @@ class BinaryDetector(BaseDetector):
             findings.extend(self._content_findings(unit, ctx, content))
 
         return findings
+
+    @staticmethod
+    def _opens_as_php(head: bytes) -> bool:
+        """`<?php` before any NUL: the bytes after it sit inside PHP, which reads binary strings."""
+        stripped = head.lstrip(b"\xef\xbb\xbf \t\r\n")
+        return stripped[:5].lower() == b"<?php" and b"\x00" not in stripped[:5]
+
+    @staticmethod
+    def real_head(path: str, ctx: ScanContext) -> bytes | None:
+        """The real first bytes of an image member scanned as its strings, else None."""
+        if ctx.image is None:
+            return None
+        member = path.partition("!")[2]
+        if "!strings-" in member:
+            return b""  # a later part of the strings: nothing about the format to judge
+        return ctx.image.as_strings.get(member)
 
     @staticmethod
     def _looks_binary(raw: bytes) -> bool:
@@ -717,6 +746,8 @@ class BinaryDetector(BaseDetector):
             return None
         head = raw[:1024]
         if b"\x00" not in head or head.startswith((b"\xff\xfe", b"\xfe\xff")):
+            return None
+        if extension == ".php" and BinaryDetector._opens_as_php(head):
             return None
         return (
             f"named {extension} but its contents are binary data, which no interpreter for it reads"

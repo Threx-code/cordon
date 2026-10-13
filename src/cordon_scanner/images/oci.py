@@ -278,6 +278,10 @@ class ImageInventory:
     """Reason -> files not content-scanned for it."""
     binaries_as_strings: int = 0
     """Files past the per-file limit content-scanned as their printable strings."""
+    as_strings: dict[str, bytes] = field(default_factory=dict)
+    """Those files by path, each with its real first bytes (`HEAD_BYTES`). What is scanned under
+    the path is the file's strings, so a rule about what the bytes ARE -- an ELF named `.png` --
+    judges these instead: padding a disguised executable past the limit does not hide it."""
     removed_files: int = 0
     """Added files a later layer deleted or replaced: absent from the running container, still in
     the image's layers for anyone who pulls it."""
@@ -787,6 +791,7 @@ class ImageLayers:
         inventory.skipped = skipped
         inventory.added_files = len(files)
         inventory.binaries_as_strings = len(peek.strings)
+        inventory.as_strings = {path: peek.heads.get(path, b"") for path in peek.strings}
         from cordon_scanner.images.binmeta import KnownBinaries
 
         for path in sorted(files):
@@ -835,6 +840,29 @@ OVERSIZE_STRINGS: Final = "more printable text than is scanned, so its strings w
 STRINGS_PART: Final = "{}!strings-{}"
 
 
+HEAD_BYTES: Final = 64
+"""Enough of a file's start for every signature `detect/binary.FORMATS` reads."""
+
+
+class PrefixedReader:
+    """A stream whose first bytes were read off already, put back in front of it."""
+
+    def __init__(self, head: bytes, handle: Any) -> None:
+        self._head = head
+        self._handle = handle
+
+    def read(self, n: int = -1) -> bytes:
+        if not self._head:
+            return self._handle.read(n)
+        if n < 0:
+            out, self._head = self._head + self._handle.read(), b""
+            return out
+        out, self._head = self._head[:n], self._head[n:]
+        if len(out) < n:
+            out += self._handle.read(n - len(out))
+        return out
+
+
 class Peek:
     """Files past the per-file content limit, read once: the packages a compiled artefact records
     (`images/binmeta.py`) and, for content rules, its printable strings in place of its bytes."""
@@ -851,6 +879,7 @@ class Peek:
         self.strings: dict[str, list[bytes]] = {}
         self.truncated = 0
         self.budget = budget
+        self.heads: dict[str, bytes] = {}
 
     def wants(self, path: str, size: int) -> bool:
         return (
@@ -876,6 +905,7 @@ class Peek:
         ]
         from cordon_scanner.images.binmeta import BinaryClassifiers
 
+        self.heads[path] = data[:HEAD_BYTES]
         self.packages.extend(BinaryMetadata.extract(path, data))
         from cordon_scanner.images.binmeta import KnownBinaries
 
@@ -890,6 +920,9 @@ class Peek:
         from cordon_scanner.images.binmeta import BinaryClassifiers, StreamedBinary, StreamedJar
 
         self.packages = [p for p in self.packages if p.path != path]
+        head = handle.read(HEAD_BYTES)
+        self.heads[path] = head
+        handle = PrefixedReader(head, handle)
         if path.lower().endswith((".jar", ".war", ".ear")):
             # An application packed as one jar past the hold limit (an uberjar of every library it
             # uses): its entries walked for the Maven artifacts they record. A jar's bytes are
