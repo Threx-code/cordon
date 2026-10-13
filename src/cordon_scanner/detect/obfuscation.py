@@ -680,6 +680,10 @@ class ObfuscationDetector(BaseDetector):
         """
         from cordon_scanner.detect.agents import INSTRUCTION_PATHS, InstructionText
 
+        if b"\xf3\xa0" not in content.raw:
+            # The lead bytes of every Tag character, so `TAG_RUN` cannot match without them: the
+            # path globs and the search are skipped for the files that have none.
+            return
         if any(PathGlob.matches(content.path.rpartition("!")[2], p) for p in INSTRUCTION_PATHS):
             return
         match = next(
@@ -709,6 +713,10 @@ class ObfuscationDetector(BaseDetector):
         )
 
     def _bidi(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
+        if content.raw.isascii():
+            # Every alternative of both patterns consumes a byte above 0x7F, so neither can match
+            # an ASCII file -- most files -- and the path globs and both searches are skipped.
+            return
         # Translation catalogues are excluded. Trojan Source is about source
         # that renders differently from how it compiles, and a `.po` or `.mo`
         # for a right-to-left language legitimately embeds directional
@@ -874,10 +882,15 @@ class ObfuscationDetector(BaseDetector):
         return (len(values), printable, len(set(values)))
 
     def _escapes(self, content: FileContent) -> Iterable[_Hit]:
-        for pattern, label, unit_pattern in (
-            (ESCAPE_RUN, "escape sequences", ESCAPE_UNIT),
-            (CHAR_CODE_RUN, "character codes", CHAR_CODE_UNIT),
+        for pattern, label, unit_pattern, needed in (
+            (ESCAPE_RUN, "escape sequences", ESCAPE_UNIT, (b"\\x", b"\\u")),
+            (CHAR_CODE_RUN, "character codes", CHAR_CODE_UNIT, (b"chr", b"fromCharCode")),
         ):
+            if not any(literal in content.raw for literal in needed):
+                # What every match of both patterns contains. Without it the run finds nothing
+                # and the file-wide count is zero, under `CUMULATIVE_ENCODED_UNITS` -- the
+                # `continue` below, reached without two scans of the file.
+                continue
             match = pattern.search(content.raw)
             if match is None:
                 # Nothing crosses the single-construct threshold. Count across
