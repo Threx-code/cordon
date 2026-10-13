@@ -1048,7 +1048,7 @@ class PythonAnalyzer:
                     else [t.id for t in getattr(node, "targets", []) if isinstance(t, ast.Name)]
                 )
                 self._local_reads.update(names)
-        for node in PythonSyntax.nodes(tree):
+        for node in PythonSyntax.of(tree, ast.Import, ast.ImportFrom, ast.Assign, ast.For):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     self._aliases[alias.asname or alias.name] = alias.name
@@ -1423,7 +1423,7 @@ class PythonAnalyzer:
         identical credential hits at one span. Reading a function without calling
         it is not the act the primitive describes."""
 
-        for node in PythonSyntax.nodes(tree):
+        for node in PythonSyntax.of(tree, ast.Call, ast.Attribute, ast.Name, ast.Subscript):
             if isinstance(node, ast.Call):
                 self._call(node)
                 self._written_code(node)
@@ -1509,7 +1509,7 @@ class PythonAnalyzer:
         """
         fetched: set[str] = set()
         downloaded: set[str] = set()
-        for node in PythonSyntax.nodes(tree):
+        for node in PythonSyntax.of(tree, ast.Assign, ast.With, ast.AsyncWith):
             if isinstance(node, ast.Assign) and self._egress_call(node.value):
                 fetched.update(t.id for t in node.targets if isinstance(t, ast.Name))
             elif isinstance(node, ast.With | ast.AsyncWith):
@@ -1554,7 +1554,7 @@ class PythonAnalyzer:
                 key = self._file_key(node.args[0])
                 if key and mode and ("w" in mode or "a" in mode):
                     writers[f"{getattr(node, 'lineno', 0)}:{getattr(node, 'col_offset', 0)}"] = key
-        for node in PythonSyntax.nodes(tree):
+        for node in PythonSyntax.of(tree, ast.Call):
             # `with open(P, "wb") as out: out.write(response.read())` and
             # `open(P, "wb").write(r.content)`, where `response` or `r` came from a request.
             if not (
@@ -2176,7 +2176,7 @@ class PythonAnalyzer:
                 return " ".join(candidates[node.id])
             return key
 
-        for node in PythonSyntax.nodes(tree):
+        for node in PythonSyntax.of(tree, ast.Subscript, ast.Call, ast.Compare):
             if isinstance(node, ast.Subscript):
                 # `os.environ["NAME"]`
                 key = key_of(node.slice)

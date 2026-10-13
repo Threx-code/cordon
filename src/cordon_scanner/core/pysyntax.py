@@ -101,7 +101,14 @@ class PythonSyntax:
         cache: dict[tuple[type, ...], list[Any]] = tree.__dict__.setdefault("_cordon_by_type", {})
         found = cache.get(types)
         if found is None:
-            found = [node for node in PythonSyntax.nodes(tree) if isinstance(node, types)]
+            place: tuple[Any, int, int] | None = tree.__dict__.get("_cordon_place")
+            index: TreeIndex | None = place[0]() if place is not None else None
+            if index is not None and place is not None and place[1] == 0:
+                # The root of an indexed tree: its per-type positions, merged in order, are the same
+                # list in the same order as filtering every node, without testing every node.
+                found = [index.order[p] for p in index.positions(types)]
+            else:
+                found = [node for node in PythonSyntax.nodes(tree) if isinstance(node, types)]
             cache[types] = found
         return found
 
@@ -147,6 +154,11 @@ class TreeIndex:
             # field directly rather than through two generators per node.
             children: list[ast.AST] = []
             for name in node._fields:
+                if name == "ctx":
+                    # `Load`, `Store`, `Del`: one shared marker per kind, pushed again under every
+                    # name, attribute and subscript -- a third of the traversal. No reader asks the
+                    # index for them; `node.ctx` is read directly where it matters.
+                    continue
                 value = getattr(node, name, None)
                 if isinstance(value, ast.AST):
                     children.append(value)
@@ -157,6 +169,16 @@ class TreeIndex:
                 parents[id(child)] = node
             stack.extend((child, -1) for child in reversed(children))
         return index
+
+    def positions(self, types: tuple[type, ...]) -> list[int]:
+        """Every position of a node of `types`, ascending: each matching type's list, merged."""
+        kinds = self.kinds.get(types)
+        if kinds is None:
+            kinds = [kind for kind in self.by_type if issubclass(kind, types)]
+            self.kinds[types] = kinds
+        if len(kinds) == 1:
+            return self.by_type[kinds[0]]
+        return sorted(p for kind in kinds for p in self.by_type[kind])
 
     def between(self, entry: int, exit_: int, types: tuple[type, ...]) -> list[Any]:
         """The nodes of `types` whose entry numbers lie in [entry, exit_), each type in order."""
