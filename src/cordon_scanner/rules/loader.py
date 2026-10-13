@@ -423,140 +423,13 @@ class PatternCompiler:
     # ---------------------------------------------------------------------------
 
     @staticmethod
-    def _split_top_level_alternation(pattern: bytes) -> list[bytes]:
-        """Split a pattern on `|` that is not inside a group or character class."""
-        branches: list[bytes] = []
-        depth = 0
-        in_class = False
-        start = 0
-        i = 0
-        while i < len(pattern):
-            ch = pattern[i : i + 1]
-            if ch == b"\\":
-                i += 2
-                continue
-            if in_class:
-                if ch == b"]":
-                    in_class = False
-            elif ch == b"[":
-                in_class = True
-            elif ch == b"(":
-                depth += 1
-            elif ch == b")":
-                depth = max(0, depth - 1)
-            elif ch == b"|" and depth == 0:
-                branches.append(pattern[start:i])
-                start = i + 1
-            i += 1
-        branches.append(pattern[start:])
-        return branches
-
-    @staticmethod
-    def _longest_literal_run(pattern: bytes) -> bytes:
-        """Longest substring that every match of this pattern must contain.
-
-        Conservative by design. It walks only the top level, stops at any construct
-        that makes continuation unsafe, and returns empty whenever it is unsure. A
-        wrong answer here is a missed match, which is the one error class this
-        project treats as unacceptable, so uncertainty always resolves to "no
-        prefilter" rather than to a guess.
-        """
-        literal = bytearray()
-        best = bytearray()
-        i = 0
-        depth = 0
-        n = len(pattern)
-
-        def flush() -> None:
-            nonlocal best
-            if len(literal) > len(best):
-                best = literal.copy()
-            literal.clear()
-
-        while i < n:
-            ch = pattern[i : i + 1]
-
-            if ch == b"\\":
-                nxt = pattern[i + 1 : i + 2]
-                # An escaped punctuation character is a literal; a class shorthand
-                # such as \d or an anchor such as \b is not.
-                if nxt and nxt not in b"dDwWsSbBAZzntrfvxu0123456789":
-                    if depth == 0:
-                        literal += nxt
-                else:
-                    flush()
-                i += 2
-                continue
-
-            if ch in b"([":
-                depth += 1
-                flush()
-                i += 1
-                continue
-
-            if ch in b")]":
-                depth = max(0, depth - 1)
-                i += 1
-                continue
-
-            if ch in b"*?":
-                # The preceding character is optional, so it cannot be required.
-                if literal:
-                    literal.pop()
-                flush()
-                i += 1
-                continue
-
-            if ch == b"{":
-                # Skip the whole `{m,n}` token. Flushing on `{` alone and then
-                # continuing left `0`, `,`, `4` and `}` to be accumulated as
-                # required literal bytes, so `secret\w{4,9}token` produced the
-                # prefilter `4,9}token` -- a literal that appears in no file the
-                # rule is meant to match. Every affected rule was skipped for
-                # every file it should have caught, silently, and its own
-                # positive samples still passed because the sample runner did
-                # not apply the prefilter.
-                close = pattern.find(b"}", i)
-                if close == -1:
-                    # A bare `{` is a literal brace in a regex, not a quantifier.
-                    if depth == 0:
-                        literal += ch
-                    i += 1
-                    continue
-                body = pattern[i + 1 : close]
-                if body and all(c in b"0123456789," for c in body):
-                    # A genuine quantifier. The preceding character may repeat
-                    # zero times, so it cannot be required either.
-                    if body.startswith(b"0") and literal:
-                        literal.pop()
-                    flush()
-                    i = close + 1
-                    continue
-                if depth == 0:
-                    literal += ch
-                i += 1
-                continue
-
-            if ch in b"+|.^$":
-                flush()
-                i += 1
-                continue
-
-            if depth == 0:
-                literal += ch
-            i += 1
-
-        flush()
-        return bytes(best)
-
-    @staticmethod
     def required_literals(
-        pattern: str, shortest: int = 3, adjacent: bool = False
+        pattern: str, shortest: int = 3, adjacent: bool = False, fold: bool = True
     ) -> tuple[bytes, ...]:
         """Lower-cased literals at least one of which every match of `pattern` contains, or ().
 
         Read from Python's own parse of the pattern (`re._parser`), so alternation groups and
-        `(?i:...)` -- which `_extract_prefilter`'s scanner cannot see into -- yield their literals:
+        `(?i:...)` yield their literals:
         `\\b(?:xmrig|minerd|cgminer)\\b` requires one of the three names. The derivation is sound
         construct by construct:
 
@@ -581,6 +454,11 @@ class PatternCompiler:
         a run. A repeat of a set at least once contributes it once and ends the run, which resumes
         with the same set (its last repetition touches what follows). Sets beyond `PRODUCT_LIMIT`
         strings, and negated classes, break the run as before.
+
+        `fold=False` gives the literals in their own case, for a test against the file as it
+        is (`_extract_prefilter`). A `(?i:...)` group then requires nothing -- its literals
+        match in any case, so no one spelling of them is required -- and a pattern that is
+        case-insensitive as a whole gives ().
         """
         try:
             import importlib
@@ -590,6 +468,13 @@ class PatternCompiler:
             tree = parser.parse(pattern.encode("utf-8"))
         except Exception:  # any doubt means no prefilter, never a wrong one
             return ()
+        ignorecase = sre.SRE_FLAG_IGNORECASE
+        if not fold and tree.state.flags & ignorecase:
+            return ()
+
+        def any_case(av: Any) -> bool:
+            """Whether a group's own flags make its literals match in any case."""
+            return not fold and bool(av[1] & ignorecase)
 
         def sequence(items: Any) -> set[bytes] | None:
             candidates: list[set[bytes]] = []
@@ -674,7 +559,7 @@ class PatternCompiler:
                     return None
                 return {bytes([c]) for c in chars}
             if op is sre.SUBPATTERN:
-                return finite_items(av[3])
+                return None if any_case(av) else finite_items(av[3])
             if op is sre.BRANCH:
                 union: set[bytes] = set()
                 for branch in av[1]:
@@ -699,7 +584,7 @@ class PatternCompiler:
 
         def node(op: Any, av: Any) -> set[bytes] | None:
             if op is sre.SUBPATTERN:
-                return sequence(av[3])
+                return None if any_case(av) else sequence(av[3])
             if op is sre.ATOMIC_GROUP:
                 return sequence(av)
             if op is sre.BRANCH:
@@ -718,7 +603,7 @@ class PatternCompiler:
         found = sequence(tree)
         if not found or min(len(x) for x in found) < shortest:
             return ()
-        return tuple(sorted({x.lower() for x in found}))
+        return tuple(sorted({x.lower() if fold else x for x in found}))
 
     @staticmethod
     def _extract_prefilter(pattern: bytes) -> tuple[bytes, ...]:
@@ -734,17 +619,13 @@ class PatternCompiler:
         branch yields one: a single branch with no extractable literal means that
         branch could match a file the prefilter would have skipped, so the whole
         prefilter is discarded.
+
+        Derived from Python's own parse of the pattern (`required_literals`, in the file's
+        case), construct by construct. It was a hand-written scan of the pattern text, which
+        read past a nested alternation: for a pattern ending in `(?:sys.exit|...|return)` it
+        required `return`, and a file that exits by `sys.exit` was never shown to the rule.
         """
-        branches = PatternCompiler._split_top_level_alternation(pattern)
-        literals: list[bytes] = []
-        for branch in branches:
-            found = PatternCompiler._longest_literal_run(branch)
-            # Below three bytes a prefilter matches almost everything and costs more
-            # than it saves.
-            if len(found) < 3:
-                return ()
-            literals.append(found)
-        return tuple(sorted(set(literals)))
+        return PatternCompiler.required_literals(pattern.decode("utf-8"), fold=False)
 
     # ---------------------------------------------------------------------------
     # Rule pack
@@ -1265,11 +1146,9 @@ class RuleLoader:
             required = [PatternCompiler.required_literals(p) for p in patterns]
             if not prefilter and all(required):
                 folded = tuple(sorted({lit for group in required for lit in group}))
-            # And per pattern, for `regex_for`: its required literals, else two-byte ones, else none
-            # (always run). Only the parsed derivation: the scanner's `_longest_literal_run` reads
-            # past a nested alternation -- it gives `return` for a pattern that ends in
-            # `(?:sys.exit|...|return)` -- which the whole-rule prefilter survives only because
-            # such rules rarely have a literal from every pattern. A gate per pattern would not.
+            # And per pattern, for `regex_for`: its required literals, lower-cased, else two-byte
+            # ones, else none (always run). Tested against the lower-cased file, which the per-
+            # pattern gates share; the exact-case prefilter above is the same derivation.
             branches: list[tuple[LiteralGate | None, LiteralGate | None]] = []
             for pattern, needed in zip(patterns, required, strict=True):
                 coarse = needed or PatternCompiler.required_literals(pattern, shortest=2)

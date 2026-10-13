@@ -289,6 +289,24 @@ class TestPrefilterExtraction:
         for literal in extracted:
             assert b"u" not in literal or b"colou" not in literal
 
+    def test_a_nested_alternation_requires_none_of_its_branches_alone(self) -> None:
+        """The hand-written scan this replaced read straight past a nested alternation: for
+        `CAP.ANTI.ENVIRONMENT.001`'s shape it required `return`, so a file that bails out with
+        `sys.exit` was never shown to the rule."""
+        pattern = (
+            rb"(?:\bos\.environ\.get\(|\bgetenv\()['\"]?(?:CI|GITHUB_ACTIONS)\b[^\n]{0,100}"
+            rb"(?:\b(?:sys\s*\.\s*exit|os\s*\._exit)|[:)}]\s*return)"
+        )
+        data = b"if os.environ.get('CI'): sys.exit(0)\n"
+        assert re.compile(pattern).search(data) is not None
+        prefilter = PatternCompiler._extract_prefilter(pattern)
+        assert b"return" not in prefilter
+        assert any(literal in data for literal in prefilter)
+
+    def test_a_case_insensitive_group_requires_no_spelling(self) -> None:
+        assert PatternCompiler._extract_prefilter(rb"(?i:secretkey)") == ()
+        assert PatternCompiler._extract_prefilter(rb"x(?i:abc)defg") == (b"defg",)
+
 
 class TestPrefilterSoundness:
     """The prefilter decides which files a rule never sees.
@@ -309,12 +327,21 @@ class TestPrefilterSoundness:
         rb"\.npmrc|\.ssh/|id_rsa",
         rb"colou?r_profile",
         rb"a{2,4}bcdef",
+        # Nested alternations and case-insensitive groups: the shapes the hand-written scan
+        # got wrong, and the one the parsed derivation must not.
+        rb"(?:foo|bar)\s*(?:exit|return)",
+        rb"(?:\bab(?:cd|ef)|gh)ijk(?:x|yz)",
+        rb"x(?i:abc)defg",
+        rb"(?i:secret)_key",
+        rb"(?:getenv\(|environ\[)[^)]{0,20}(?:\bsys\.exit|[:)]\s*return)",
     ]
 
     @pytest.mark.parametrize("pattern", PATTERNS)
     @given(
         haystack=st.text(
-            alphabet=st.sampled_from("abcdefghijklmnopqrstuvwxyz._/'\"()[]{} \n0123456789\\"),
+            alphabet=st.sampled_from(
+                "abcdefghijklmnopqrstuvwxyzABCDEFGIJKSTX._/'\"()[]{}:= \n0123456789\\"
+            ),
             max_size=200,
         )
     )
