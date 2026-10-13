@@ -622,7 +622,7 @@ class CapabilityDetector(BaseDetector):
         folded = (
             raw.lower()
             if any(
-                (c.match.prefilter_folded and not c.match.prefilter) or c.match.residual_literals
+                (c.match.prefilter_folded and not c.match.prefilter) or c.match.folds
                 for c in candidates
             )
             else None

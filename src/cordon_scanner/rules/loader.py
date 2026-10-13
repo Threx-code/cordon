@@ -27,10 +27,11 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.core.config import RestrictedYamlParser
 from cordon_scanner.core.errors import RulePackError, UnsafePatternError
+from cordon_scanner.core.literals import LiteralGate
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -549,7 +550,9 @@ class PatternCompiler:
         return bytes(best)
 
     @staticmethod
-    def required_literals(pattern: str, shortest: int = 3) -> tuple[bytes, ...]:
+    def required_literals(
+        pattern: str, shortest: int = 3, adjacent: bool = False
+    ) -> tuple[bytes, ...]:
         """Lower-cased literals at least one of which every match of `pattern` contains, or ().
 
         Read from Python's own parse of the pattern (`re._parser`), so alternation groups and
@@ -570,6 +573,14 @@ class PatternCompiler:
         is then run on every file, as before.
         `shortest` lowers that floor for a pattern that has no three-byte literal: a weaker filter,
         but still a sound one.
+
+        `adjacent` also reads what sits next to a literal run. A small character class or an
+        alternation of plain strings is a finite set of strings, and a run of such sets is the set
+        of their concatenations: `rm\\s+-(?:rf|fr)` requires `rm` followed by one whitespace byte,
+        and `-rf` or `-fr`. A zero-width assertion (`\\b`, `^`) consumes nothing and does not break
+        a run. A repeat of a set at least once contributes it once and ends the run, which resumes
+        with the same set (its last repetition touches what follows). Sets beyond `PRODUCT_LIMIT`
+        strings, and negated classes, break the run as before.
         """
         try:
             import importlib
@@ -582,23 +593,109 @@ class PatternCompiler:
 
         def sequence(items: Any) -> set[bytes] | None:
             candidates: list[set[bytes]] = []
-            run = bytearray()
-            for op, av in items:
-                if op is sre.LITERAL:
-                    run.append(av)
-                    continue
+            if adjacent:
+                run_set: set[bytes] | None = None
+
+                def close() -> None:
+                    nonlocal run_set
+                    if run_set:
+                        candidates.append(run_set)
+                    run_set = None
+
+                def extend(piece: set[bytes]) -> None:
+                    nonlocal run_set
+                    if run_set is None:
+                        run_set = set(piece)
+                    elif len(run_set) * len(piece) <= RequiredLiterals.PRODUCT_LIMIT:
+                        run_set = {a + b for a in run_set for b in piece}
+                    else:
+                        close()
+                        run_set = set(piece)
+
+                for op, av in items:
+                    if op is sre.AT:
+                        continue
+                    piece = finite(op, av)
+                    if piece is not None:
+                        extend(piece)
+                        continue
+                    if op in (
+                        sre.MAX_REPEAT,
+                        sre.MIN_REPEAT,
+                        getattr(sre, "POSSESSIVE_REPEAT", None),
+                    ):
+                        low, _, item = av
+                        inner = finite_items(item) if low >= 1 else None
+                        if inner is not None:
+                            extend(inner)
+                            close()
+                            run_set = set(inner)
+                            continue
+                    close()
+                    found = node(op, av)
+                    if found is not None:
+                        candidates.append(found)
+                close()
+            else:
+                run = bytearray()
+                for op, av in items:
+                    if op is sre.LITERAL:
+                        run.append(av)
+                        continue
+                    if run:
+                        candidates.append({bytes(run)})
+                        run = bytearray()
+                    found = node(op, av)
+                    if found is not None:
+                        candidates.append(found)
                 if run:
                     candidates.append({bytes(run)})
-                    run = bytearray()
-                found = node(op, av)
-                if found is not None:
-                    candidates.append(found)
-            if run:
-                candidates.append({bytes(run)})
             usable = [c for c in candidates if c and min(len(x) for x in c) >= shortest]
             if not usable:
                 return None
             return max(usable, key=lambda c: (min(len(x) for x in c), -len(c)))
+
+        def finite(op: Any, av: Any) -> set[bytes] | None:
+            """The exact strings one item can match, when there are few; else None."""
+            if op is sre.LITERAL:
+                return {bytes([av])}
+            if op is sre.IN:
+                chars: set[int] = set()
+                for kind, value in av:
+                    if kind is sre.LITERAL:
+                        chars.add(value)
+                    elif kind is sre.RANGE and value[1] - value[0] < RequiredLiterals.CLASS_LIMIT:
+                        chars.update(range(value[0], value[1] + 1))
+                    elif kind is sre.CATEGORY and value is sre.CATEGORY_SPACE:
+                        chars.update(b" \t\n\r\x0b\x0c")
+                    else:
+                        return None
+                if not chars or len(chars) > RequiredLiterals.CLASS_LIMIT:
+                    return None
+                return {bytes([c]) for c in chars}
+            if op is sre.SUBPATTERN:
+                return finite_items(av[3])
+            if op is sre.BRANCH:
+                union: set[bytes] = set()
+                for branch in av[1]:
+                    found = finite_items(branch)
+                    if found is None:
+                        return None
+                    union |= found
+                return union if len(union) <= RequiredLiterals.PRODUCT_LIMIT else None
+            return None
+
+        def finite_items(items: Any) -> set[bytes] | None:
+            """The exact strings a sequence can match, when every item is finite and few."""
+            result: set[bytes] = {b""}
+            for op, av in items:
+                if op is sre.AT:
+                    return None  # an assertion inside an alternative: keep it simple, no set
+                piece = finite(op, av)
+                if piece is None or len(result) * len(piece) > RequiredLiterals.PRODUCT_LIMIT:
+                    return None
+                result = {a + b for a in result for b in piece}
+            return result
 
         def node(op: Any, av: Any) -> set[bytes] | None:
             if op is sre.SUBPATTERN:
@@ -654,6 +751,15 @@ class PatternCompiler:
     # ---------------------------------------------------------------------------
 
 
+class RequiredLiterals:
+    """Bounds for `PatternCompiler.required_literals(adjacent=True)`."""
+
+    CLASS_LIMIT: ClassVar[int] = 8
+    """A character class larger than this is not expanded into its characters."""
+    PRODUCT_LIMIT: ClassVar[int] = 64
+    """A run's set of strings is not grown beyond this many."""
+
+
 @dataclass(frozen=True, slots=True)
 class CompiledMatch:
     """A rule's matching strategy, resolved at load time."""
@@ -696,38 +802,72 @@ class CompiledMatch:
     """Lower-cased literals from `PatternCompiler.required_literals`, used only when `prefilter`
     is empty: one must appear in the file lower-cased. See `admits`."""
 
-    residual: re.Pattern[bytes] | None = None
-    """For a rule with no whole-rule prefilter: only its patterns that have no required literal,
-    in their original order. See `regex_for`."""
-    residual_literals: tuple[bytes, ...] = ()
-    """Lower-cased literals of the rule's other patterns: one of them present means any pattern
-    may match, and the full regex runs."""
-    residual_gate: tuple[bytes, ...] = ()
-    """Lower-cased literals, two bytes or more, at least one of which every match of `residual`
-    contains: none present means the residual cannot match either. Empty means it always runs."""
+    branches: tuple[tuple[LiteralGate | None, LiteralGate | None], ...] = field(
+        default=(), compare=False
+    )
+    """Per pattern, in order: two gates over the lower-cased file, each on lower-cased literals at
+    least one of which every match of that pattern contains -- the required literals, then a
+    sharper set tested only once the first passes. None is no condition; a pattern with neither
+    always runs. See `regex_for`."""
+    sources: tuple[str, ...] = field(default=(), compare=False, repr=False)
+    """The patterns themselves, to compile the subset a file needs."""
+    rule_id: str = field(default="", compare=False, repr=False)
+    folds: bool = field(default=False, compare=False)
+    """Whether any branch has a gate, which reads the lower-cased file."""
+    subsets: dict[tuple[int, ...], re.Pattern[bytes]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
+    """Compiled alternations of the patterns a file can match, keyed by their positions."""
+
+    SUBSETS_KEPT: ClassVar[int] = 256
 
     def regex_for(self, data: bytes, folded: bytes | None = None) -> re.Pattern[bytes] | None:
         """The regex that finds exactly this rule's matches in `data`, cheapest first; None when
         nothing can match.
 
-        A rule whose patterns all require a literal is skipped without one (`admits`). A rule with
-        some patterns that require none used to run every pattern on every file. Now, when none of
-        the other patterns' literals is in the file, only the literal-free ones run: an
-        alternation tries its branches in order at each position, and a branch that cannot match
-        anywhere in the file changes neither which branch matches there nor where scanning
-        resumes, so the residual finds the same matches, in the same order.
+        Only the patterns that can match somewhere in `data` run. A pattern whose every match
+        contains one of its literals cannot match a file holding none of them, and an alternation
+        tries its branches in order at each position: a branch that cannot match anywhere changes
+        neither which branch matches there nor where scanning resumes. So the alternation of the
+        remaining patterns, in their order, finds the same matches in the same order -- and the
+        engine stops trying seventeen branches at every byte of a file where one of them had a
+        literal present. Callers read only a match's span and text, never its group numbers.
         """
-        if self.prefilter or self.prefilter_folded:
+        if not self.branches:
             return self.regex if self.admits(data, folded) else None
-        if self.residual_literals:
-            lowered = data.lower() if folded is None else folded
-            if not any(literal in lowered for literal in self.residual_literals):
-                if self.residual_gate and not any(
-                    literal in lowered for literal in self.residual_gate
-                ):
-                    return None
-                return self.residual
-        return self.regex
+        # Without gates nothing reads it, so the file is not lowered for nothing.
+        lowered = folded if folded is not None else (data.lower() if self.folds else data)
+        chosen: list[int] = []
+        for position, (required, sharper) in enumerate(self.branches):
+            if required is not None and not required.present(lowered):
+                continue
+            if sharper is not None and not sharper.present(lowered):
+                continue
+            chosen.append(position)
+        if not chosen:
+            return None
+        if len(chosen) == len(self.branches):
+            return self.regex
+        key = tuple(chosen)
+        found: re.Pattern[bytes] | None = self.subsets.get(key)
+        if found is None:
+            found = self._subset(key)
+            if found is not None and len(self.subsets) < self.SUBSETS_KEPT:
+                self.subsets[key] = found
+        return found
+
+    def _subset(self, positions: tuple[int, ...]) -> re.Pattern[bytes] | None:
+        """The alternation of the patterns at `positions`, compiled as the whole rule was; the
+        whole rule's regex if that cannot be done identically."""
+        try:
+            subset = PatternCompiler.validate_pattern(
+                "|".join(f"(?:{self.sources[i]})" for i in positions), rule_id=self.rule_id
+            )
+        except (re.error, RulePackError, UnsafePatternError):
+            return self.regex
+        if self.regex is None or subset.flags != self.regex.flags:
+            return self.regex
+        return subset
 
     def admits(self, data: bytes, folded: bytes | None = None) -> bool:
         """Whether this rule could match `data` at all; False means its regex need not run.
@@ -1122,32 +1262,39 @@ class RuleLoader:
             # Where the scanner above found none, the parsed derivation may: every pattern must
             # yield a requirement, or the rule keeps no prefilter at all.
             folded: tuple[bytes, ...] = ()
-            residual: re.Pattern[bytes] | None = None
-            residual_literals: tuple[bytes, ...] = ()
-            residual_gate: tuple[bytes, ...] = ()
-            if not prefilter:
-                required = [PatternCompiler.required_literals(p) for p in patterns]
-                if all(required):
-                    folded = tuple(sorted({lit for group in required for lit in group}))
-                elif any(required):
-                    # Some patterns require a literal and some do not: the literal-free ones, in
-                    # their order, are what can still match a file without the others' literals.
-                    bare = [p for p, r in zip(patterns, required, strict=True) if not r]
-                    residual = PatternCompiler.validate_pattern(
-                        "|".join(f"(?:{p})" for p in bare), rule_id=rule_id
+            required = [PatternCompiler.required_literals(p) for p in patterns]
+            if not prefilter and all(required):
+                folded = tuple(sorted({lit for group in required for lit in group}))
+            # And per pattern, for `regex_for`: its required literals, else two-byte ones, else none
+            # (always run). Only the parsed derivation: the scanner's `_longest_literal_run` reads
+            # past a nested alternation -- it gives `return` for a pattern that ends in
+            # `(?:sys.exit|...|return)` -- which the whole-rule prefilter survives only because
+            # such rules rarely have a literal from every pattern. A gate per pattern would not.
+            branches: list[tuple[LiteralGate | None, LiteralGate | None]] = []
+            for pattern, needed in zip(patterns, required, strict=True):
+                coarse = needed or PatternCompiler.required_literals(pattern, shortest=2)
+                # And a second, sharper gate where the adjacent-set derivation finds longer
+                # literals: `rm\\s+-rf` also needs whitespace then `-rf`, not only `rm`, which half
+                # of all English prose contains. Tested only once the coarse gate passes, so a
+                # file without `rm` pays for one substring search, not twelve.
+                sharper = PatternCompiler.required_literals(pattern, shortest=3, adjacent=True)
+                if not (sharper and (not coarse or min(map(len, sharper)) > min(map(len, coarse)))):
+                    sharper = ()
+                branches.append(
+                    (
+                        LiteralGate(coarse) if coarse else None,
+                        LiteralGate(sharper) if sharper else None,
                     )
-                    residual_literals = tuple(sorted({lit for r in required for lit in r}))
-                    gates = [PatternCompiler.required_literals(p, shortest=2) for p in bare]
-                    if all(gates):
-                        residual_gate = tuple(sorted({lit for g in gates for lit in g}))
+                )
             return CompiledMatch(
                 kind=kind,
                 regex=regex,
                 prefilter=prefilter,
                 prefilter_folded=folded,
-                residual=residual,
-                residual_literals=residual_literals,
-                residual_gate=residual_gate,
+                branches=tuple(branches),
+                sources=tuple(patterns),
+                rule_id=rule_id,
+                folds=any(gate is not None for pair in branches for gate in pair),
                 raw=dict(raw),
             )
 
