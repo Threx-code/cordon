@@ -2,6 +2,18 @@
 """Turn data/scans.jsonl into the benign-noise tables: per ecosystem, per rule, per path context.
 
     python3 bench/longtail_levels.py bench/longtail > bench/longtail/summary.json
+    python3 bench/longtail_levels.py bench/longtail --split work      # tune on this half
+    python3 bench/longtail_levels.py bench/longtail --split holdout   # publish this half
+    python3 bench/longtail_levels.py bench/longtail --strict          # exit 1 if integrity fails
+
+Split (fixed and published, so no package can be moved between halves): sha256 of
+"<ecosystem>:<lower-cased name>"; first byte even -> work, odd -> holdout. Packages read by hand
+while tuning are listed in <data>/holdout-excluded.txt (one manifest `file` per line) and are left
+out of the holdout half, because reading them would have leaked them into the tuning.
+
+Integrity (reported in every summary; `--strict` fails on any of them): every manifest entry has
+exactly one result, scanner errors (exit 2 / unparseable) stay under 0.1%, and the data directory
+records the scanner version that produced it (scanner-version.json).
 
 Levels, per package:
   known    -- blocked, and a known-malicious intel record matched (MALWARE.*.KNOWN*): real malware
@@ -15,6 +27,7 @@ Levels, per package:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -31,6 +44,61 @@ VENDOR = re.compile(
     r"(^|/)(node_modules|vendor|third_party|3rdparty|external|dist|build)(/|$)|\.min\.js$|\.bundle\.js$",
     re.I,
 )
+
+
+class Split:
+    @staticmethod
+    def of(ecosystem: str, name: str) -> str:
+        digest = hashlib.sha256(f"{ecosystem}:{name.lower()}".encode()).digest()
+        return "work" if digest[0] % 2 == 0 else "holdout"
+
+
+class Kind:
+    """What a blocking rule is about. A CVE in a declared dependency answers a different question
+    from malicious code, and the two are never added together."""
+
+    PRIORITY = ("malicious-or-suspicious-code", "secret", "iac-or-policy", "vulnerability")
+
+    @staticmethod
+    def of(rule: str) -> str:
+        if rule.startswith("VULNERABLE."):
+            return "vulnerability"
+        if rule.startswith("SECRET."):
+            return "secret"
+        if rule.startswith(("MALWARE.", "SUSPECT.")) and not rule.startswith(
+            ("SUSPECT.IAC.", "SUSPECT.K8S.", "SUSPECT.CFN.")
+        ):
+            return "malicious-or-suspicious-code"
+        return "iac-or-policy"
+
+    @classmethod
+    def primary(cls, kinds: set[str]) -> str:
+        return next((k for k in cls.PRIORITY if k in kinds), "other")
+
+
+class Incomplete:
+    """Why a scan says `complete: false`. Two different things share the flag: content Cordon did
+    not read (members rejected, truncated, pruned, timed out), and an ecosystem with no offline
+    advisory feed, where every byte was read. Only the first is a detection gap."""
+
+    CONTENT = (
+        "OPERATIONAL.ARCHIVE.",
+        "OPERATIONAL.FILE.TRUNCATED",
+        "OPERATIONAL.FORMAT.UNREADABLE",
+        "POLICY.COVERAGE.PRUNED",
+    )
+    ADVISORY = ("OPERATIONAL.ADVISORY.",)
+
+    @classmethod
+    def kind(cls, rec: dict) -> str | None:
+        if rec.get("complete") is not False:
+            return None
+        rules = [f[0] for f in rec.get("findings", [])]
+        if rec.get("exit") == "timeout" or any(r.startswith(cls.CONTENT) for r in rules):
+            return "content"
+        if any(r.startswith(cls.ADVISORY) for r in rules):
+            return "advisory-only"
+        return "unexplained"
 
 
 class LongtailLevels:
@@ -72,12 +140,68 @@ class LongtailLevels:
         return "source"
 
     @staticmethod
-    def main(data: Path) -> dict:
+    def integrity(data: Path, manifest: dict, results: list[dict]) -> dict:
+        counts = Counter(r["file"] for r in results)
+        missing = sorted(set(manifest) - set(counts))
+        duplicated = sorted(f for f, n in counts.items() if n > 1)
+        errors = sum(1 for r in results if r.get("exit") == 2 or "parse_error" in r)
+        version = data / "scanner-version.json"
+        problems = []
+        if manifest and missing:
+            problems.append(f"{len(missing)} manifest entries have no result")
+        if duplicated:
+            problems.append(f"{len(duplicated)} files have more than one result")
+        if results and errors / len(results) > 0.001:
+            problems.append(f"{errors} scanner errors ({errors / len(results):.2%}) exceed 0.1%")
+        if not version.exists():
+            problems.append("no scanner-version.json: the numbers cannot name the scanner")
+        return {
+            "results": len(results),
+            "manifest_entries": len(manifest),
+            "missing": len(missing),
+            "missing_examples": missing[:10],
+            "duplicated": len(duplicated),
+            "scanner_errors": errors,
+            "scanner_version": json.loads(version.read_text(encoding="utf-8"))
+            if version.exists()
+            else None,
+            "ok": not problems,
+            "problems": problems,
+        }
+
+    @staticmethod
+    def main(data: Path, split: str | None = None) -> dict:
         manifest = {}
         if (data / "manifest.jsonl").exists():
             for line in (data / "manifest.jsonl").read_text(encoding="utf-8").splitlines():
                 r = json.loads(line)
                 manifest[r["file"]] = r
+        excluded = set()
+        if (data / "holdout-excluded.txt").exists():
+            excluded = {
+                x.strip()
+                for x in (data / "holdout-excluded.txt").read_text(encoding="utf-8").splitlines()
+                if x.strip() and not x.startswith("#")
+            }
+        results = [
+            json.loads(x)
+            for x in (data / "scans.jsonl").read_text(encoding="utf-8").splitlines()
+            if x
+        ]
+        integrity = LongtailLevels.integrity(data, manifest, results)
+
+        def half(rec: dict) -> str:
+            meta = manifest.get(rec["file"])
+            eco = meta["ecosystem"] if meta else rec["file"].split("/", 1)[0]
+            name = meta["name"] if meta else rec["file"].split("/", 1)[-1]
+            return Split.of(eco, name)
+
+        if split is not None:
+            results = [
+                r
+                for r in results
+                if half(r) == split and not (split == "holdout" and r["file"] in excluded)
+            ]
         per_eco: dict[str, Counter] = defaultdict(Counter)
         defaultdict(Counter)  # rule -> level of the finding -> packages
         rule_eco: dict[str, Counter] = defaultdict(Counter)
@@ -85,15 +209,17 @@ class LongtailLevels:
         warn_rules: Counter = Counter()
         ctx_counts: dict[str, Counter] = defaultdict(Counter)
         incomplete = Counter()
+        incomplete_kind: dict[str, Counter] = defaultdict(Counter)
         blocked_list = []
-        for line in (data / "scans.jsonl").read_text(encoding="utf-8").splitlines():
-            rec = json.loads(line)
+        for rec in results:
             eco = rec["file"].split("/", 1)[0]
             lv = LongtailLevels.level(rec)
             per_eco[eco][lv] += 1
             per_eco[eco]["total"] += 1
-            if rec.get("complete") is False:
+            why = Incomplete.kind(rec)
+            if why:
                 incomplete[eco] += 1
+                incomplete_kind[eco][why] += 1
             seen_block, seen_warn = set(), set()
             # A known-malicious package is a true positive; its findings are not benign noise.
             for rule, sev, conf, cat, path in [] if lv == "known" else rec.get("findings", []):
@@ -116,6 +242,9 @@ class LongtailLevels:
                 warn_rules[r] += 1
                 rule_eco[r]["warn:" + eco] += 1
             if lv == "blocked":
+                per_eco[eco][
+                    "blocked_primary:" + Kind.primary({Kind.of(r) for r in seen_block})
+                ] += 1
                 blocked_list.append(
                     {
                         "file": rec["file"],
@@ -132,6 +261,10 @@ class LongtailLevels:
             "contexts": {k: dict(v) for k, v in ctx_counts.items()},
             "blocked": blocked_list,
             "incomplete": dict(incomplete),
+            "incomplete_by_kind": {k: dict(v) for k, v in incomplete_kind.items()},
+            "split": split,
+            "holdout_excluded": len(excluded) if split == "holdout" else 0,
+            "integrity": integrity,
             "rule_by_eco": {k: dict(v) for k, v in rule_eco.items()},
         }
         total = Counter()
@@ -149,6 +282,14 @@ class LongtailLevels:
                 "no_warning_rate": round((c["clean"] + c["noted"]) / n, 4) if n else None,
                 "no_warning_ci": LongtailLevels.wilson(c["clean"] + c["noted"], n),
                 "clean_rate": round(c["clean"] / n, 4) if n else None,
+                "blocked_primary": {
+                    k.split(":", 1)[1]: v for k, v in c.items() if k.startswith("blocked_primary:")
+                },
+                "not_blocked_for_code_rate": round(
+                    1 - c["blocked_primary:malicious-or-suspicious-code"] / n, 4
+                )
+                if n
+                else None,
             }
         n = total["total"] - total["error"] - total["known"]
         out["all"] = {
@@ -166,4 +307,12 @@ class LongtailLevels:
 
 
 if __name__ == "__main__":
-    json.dump(LongtailLevels.main(Path(sys.argv[1])), sys.stdout, indent=1)
+    args = sys.argv[1:]
+    split = args[args.index("--split") + 1] if "--split" in args else None
+    if split not in (None, "work", "holdout"):
+        raise SystemExit("--split must be work or holdout")
+    summary = LongtailLevels.main(Path(args[0]), split)
+    json.dump(summary, sys.stdout, indent=1)
+    if "--strict" in args and not summary["integrity"]["ok"]:
+        print("\nintegrity: " + "; ".join(summary["integrity"]["problems"]), file=sys.stderr)
+        raise SystemExit(1)

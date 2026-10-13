@@ -11,6 +11,9 @@ Record each reading as one line of `adjudication.jsonl`: {"file", "rules", "verd
 
     docker run --rm -v "$PWD:/r:ro" python:3.12-slim \
       python -I /r/bench/adjudicate.py show /r/bench/longtail npm/<file> [npm/<file> ...]
+
+`show` refuses files in the holdout half (`longtail_levels.Split`) unless `--release` is given:
+holdout blocks are read only for the release-time adjudication, never while tuning.
 """
 
 from __future__ import annotations
@@ -64,11 +67,31 @@ class Adjudicate:
                         yield m.name, t.extractfile(m).read()
 
     @staticmethod
-    def show(data: Path, files: list[str]) -> None:
+    def holdout_refused(manifest: dict, files: list[str]) -> list[str]:
+        """Files in the holdout half. Reading one while rules are being tuned leaks it into the
+        tuning, so `show` refuses them unless the reading is the release-time adjudication."""
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from longtail_levels import Split
+
+        return [
+            f
+            for f in files
+            if f in manifest
+            and Split.of(manifest[f]["ecosystem"], manifest[f]["name"]) == "holdout"
+        ]
+
+    @staticmethod
+    def show(data: Path, files: list[str], release: bool = False) -> None:
         manifest = {
             json.loads(x)["file"]: json.loads(x)
             for x in (data / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
         }
+        refused = [] if release else Adjudicate.holdout_refused(manifest, files)
+        if refused:
+            raise SystemExit(
+                f"refusing {len(refused)} holdout file(s) (e.g. {refused[0]}): the holdout half is "
+                "read only at release. Pass --release for the release-time adjudication."
+            )
         scans = {
             json.loads(x)["file"]: json.loads(x)
             for x in (data / "scans.jsonl").read_text(encoding="utf-8").splitlines()
@@ -171,4 +194,5 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["tally"]:
         print(json.dumps(Adjudicate.tally(Path(sys.argv[2])), indent=1))
     else:
-        Adjudicate.show(Path(sys.argv[2]), sys.argv[3:])
+        rest = [a for a in sys.argv[3:] if a != "--release"]
+        Adjudicate.show(Path(sys.argv[2]), rest, release="--release" in sys.argv[3:])
