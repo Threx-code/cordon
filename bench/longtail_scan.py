@@ -5,9 +5,15 @@ Run with no network. Cordon's rules, detectors and advisories are loaded once (a
 scanner does, `cordon_scanner/mcp/warm.py`) and each archive is scanned in a forked child with
 `--offline`, so a sample costs its scan, not an interpreter start. Nothing is executed.
 
-    docker run --rm --network none --cap-drop ALL -v cordon-corpus-q:/q \
-      -v "$PWD/src:/src:ro" -e PYTHONPATH=/src -v "$PWD/bench:/tools:ro" \
-      -v "$PWD/bench/longtail:/out" python:3.12-slim python /tools/longtail_scan.py
+Cordon must run as an INSTALLED package: its output formats and detectors are found through
+package entry points, which a bare `PYTHONPATH=src` does not provide (every scan then exits 2;
+`BrokenScanner` stops such a run). Build the wheel once with network, then scan without it:
+
+    docker run --rm -v "$PWD:/repo:ro" -v cordon-wheel:/w python:3.12-slim \
+      sh -c "cp -r /repo /tmp/r && pip wheel -q --no-deps -w /w /tmp/r"
+    docker run --rm --network none --cap-drop ALL -v cordon-corpus-q:/q -v cordon-wheel:/w:ro \
+      -v "$PWD/bench:/tools:ro" -v "$PWD/bench/longtail:/out" python:3.12-slim \
+      sh -c "pip install -q --no-index --no-deps /w/cordon_scanner-*.whl && python /tools/longtail_scan.py --keep"
 
 Output: /out/scans.jsonl -- per archive: file, exit code, completeness, and per finding the rule,
 severity, confidence, category and path inside the archive (no content). Resumable.
@@ -26,9 +32,56 @@ import time
 from pathlib import Path
 
 TIMEOUT = 300
+LIST_EVERY = 15.0
+MARKERS = frozenset({".fetch-done"})
+"""The queue's own control files. Only these are skipped by name: a package may legitimately be
+named with a leading dot (RubyGems has `.omghi`), and skipping every dot-file dropped it silently."""
+
+
+class BrokenScanner:
+    """Stops a run whose first results say the scanner itself is broken.
+
+    From a clean checkout, Cordon's plugins are missing unless the package metadata is generated,
+    and every scan exits 2 ("unknown output format 'json'"). A benchmark that counted blocks would
+    record each of those as "not blocked": a broken scanner reported as a perfectly quiet one. So
+    after the first CHECK_AFTER results, a run where at least BROKEN_SHARE of them are scanner
+    errors (exit 2, or output that does not parse) stops with exit 3 instead of continuing.
+    """
+
+    CHECK_AFTER = 50
+    BROKEN_SHARE = 0.9
+
+    def __init__(self) -> None:
+        self.seen = 0
+        self.errors = 0
+        self.checked = False
+
+    def observe(self, rec: dict) -> bool:
+        """Record one result; True when the run should stop."""
+        if self.checked:
+            return False
+        self.seen += 1
+        if rec.get("exit") == 2 or "parse_error" in rec:
+            self.errors += 1
+        if self.seen < self.CHECK_AFTER:
+            return False
+        self.checked = True
+        return self.errors >= self.BROKEN_SHARE * self.seen
+
+    def reason(self) -> str:
+        return (
+            f"stopping: {self.errors} of the first {self.seen} scans failed with a scanner error "
+            "(exit 2 or unparseable output). The scanner is broken, not the packages: from a clean "
+            "checkout, generate the package metadata (pip install -e .) before scanning."
+        )
 
 
 class LongtailScan:
+    @staticmethod
+    def queued(name: str) -> bool:
+        """Whether a file in the queue is an archive to scan (not a marker, not mid-write)."""
+        return not name.endswith(".part") and name not in MARKERS
+
     @staticmethod
     def warm():
         from cordon_scanner.mcp.warm import WarmHelper
@@ -98,6 +151,9 @@ class LongtailScan:
         running: dict[int, tuple[str, Path, float]] = {}
         fh = results.open("a", encoding="utf-8")
         idle_since = time.monotonic()
+        guard = BrokenScanner()
+        pending: list[Path] = []
+        listed_at = 0.0
         while True:
             # Reap finished or overdue children.
             for pid, (rel, out, started) in list(running.items()):
@@ -112,11 +168,17 @@ class LongtailScan:
                     got, status = pid, None
                 if got:
                     code = "timeout" if status is None else os.waitstatus_to_exitcode(status)
-                    fh.write(
-                        json.dumps(LongtailScan.record(rel, code, out, time.monotonic() - started))
-                        + "\n"
-                    )
+                    rec = LongtailScan.record(rel, code, out, time.monotonic() - started)
+                    fh.write(json.dumps(rec) + "\n")
                     fh.flush()
+                    if guard.observe(rec):
+                        print(guard.reason(), file=sys.stderr, flush=True)
+                        for other in running:
+                            if other != pid:
+                                with contextlib.suppress(ProcessLookupError):
+                                    os.killpg(other, signal.SIGKILL)
+                        fh.close()
+                        raise SystemExit(3)
                     out.unlink(missing_ok=True)
                     if not a.keep:
                         (a.queue / rel).unlink(missing_ok=True)
@@ -124,26 +186,33 @@ class LongtailScan:
             # Start new ones.
             if len(running) < a.workers:
                 busy = {r for r, _, _ in running.values()}
-                # Oldest first, so every registry the fetcher interleaves is scanned in the same
-                # proportion, and the queue is listed only when a worker is free.
-                found = []
-                for root, _, files in os.walk(a.queue):
-                    for name in files:
-                        if name.endswith(".part") or name.startswith("."):
-                            continue
-                        p = Path(root, name)
-                        if p.relative_to(a.queue).as_posix() in busy:
-                            continue
-                        with contextlib.suppress(FileNotFoundError):
-                            found.append((p.stat().st_mtime, p))
-                todo = [p for _, p in sorted(found)[: a.workers * 4]]
-                for p in todo:
-                    if len(running) >= a.workers:
-                        break
+                # With --keep the queue grows to every archive (200,000), so it is listed at most
+                # every LIST_EVERY seconds or when the pending list runs dry, and archives already
+                # scanned are left out of the list: picking the oldest N files, as before, picks
+                # the same scanned ones forever once they are kept. Oldest first, so registries the
+                # fetcher interleaves are scanned in the same proportion.
+                now = time.monotonic()
+                if not pending or now - listed_at > LIST_EVERY:
+                    listed_at = now
+                    found = []
+                    for root, _, files in os.walk(a.queue):
+                        for name in files:
+                            if not LongtailScan.queued(name):
+                                continue
+                            p = Path(root, name)
+                            rel = p.relative_to(a.queue).as_posix()
+                            if rel in done:
+                                if not a.keep:  # scanned before a restart, never deleted
+                                    p.unlink(missing_ok=True)
+                                continue
+                            with contextlib.suppress(FileNotFoundError):
+                                found.append((p.stat().st_mtime, p))
+                    pending[:] = [p for _, p in sorted(found)]
+                started_any = False
+                while pending and len(running) < a.workers:
+                    p = pending.pop(0)
                     rel = p.relative_to(a.queue).as_posix()
-                    if rel in done:
-                        if not a.keep:
-                            p.unlink(missing_ok=True)
+                    if rel in done or rel in busy or not p.exists():
                         continue
                     out = tmp / f"{len(done)}-{os.getpid()}-{time.monotonic_ns()}.json"
                     pid = os.fork()
@@ -151,7 +220,9 @@ class LongtailScan:
                         os._exit(LongtailScan.child(str(p), str(out)))
                     running[pid] = (rel, out, time.monotonic())
                     done.add(rel)
-                if todo:
+                    started_any = True
+                # Idle means nothing new was started: with --keep the queue is never empty.
+                if started_any:
                     idle_since = time.monotonic()
             if (
                 not running
