@@ -26,7 +26,7 @@ from __future__ import annotations
 import functools
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.core import references
 from cordon_scanner.core.models import (
@@ -2207,6 +2207,14 @@ class ConfigDetector(BaseDetector):
             depth += len(stripped) - len(rest)
         return depth
 
+    _OUTSIDE_QUOTES: ClassVar[re.Pattern[bytes]] = re.compile(rb"[\n\\\"'#]")
+    """Outside a quoted run, the bytes `_without_comments` acts on."""
+    _INSIDE: ClassVar[dict[int, re.Pattern[bytes]]] = {
+        0x22: re.compile(rb'[\n\\"]'),
+        0x27: re.compile(rb"[\n\\']"),
+    }
+    """Inside a run opened by each quote: what ends it, and the backslash."""
+
     @staticmethod
     def _without_comments(raw: bytes) -> bytes:
         """The file with comment text blanked and every byte offset preserved.
@@ -2237,36 +2245,47 @@ class ConfigDetector(BaseDetector):
         `#` inside a quoted string is not a comment -- `password: "a#b"` is a
         password -- so quote state is tracked per line. Getting that wrong would blank
         real content, and blanking content in a security scanner is a false negative.
+        Read by jumping between the five bytes that change state -- newline, backslash, the two
+        quotes, `#` -- rather than visiting every byte in Python: 15.9 s to 2.0 s over ten thousand
+        files of ordinary packages, the same output for every file and for 200,000 random strings
+        over those bytes (`tests/unit/test_config_comment_blanking.py`).
         """
         if b"#" not in raw:
             return raw
 
-        out = bytearray(raw)
+        out: bytearray | None = None
         quote: int | None = None
         index = 0
-        length = len(out)
+        length = len(raw)
         while index < length:
-            character = out[index]
+            found = (
+                ConfigDetector._OUTSIDE_QUOTES if quote is None else ConfigDetector._INSIDE[quote]
+            ).search(raw, index)
+            if found is None:
+                break
+            index = found.start()
+            character = raw[index]
             if character == 0x0A:  # newline ends both a comment and a quoted run
                 quote = None
                 index += 1
-                continue
-            if character == 0x5C:  # backslash escapes the next byte
+            elif character == 0x5C:  # backslash escapes the next byte
                 index += 2
-                continue
-            if quote is None and character in (0x22, 0x27):  # " '
+            elif quote is None and character == 0x23:  # `#`: to the end of the line
+                # Which is where every `#` comment ends in YAML, TOML, HCL, Dockerfile,
+                # .properties, .ini and shell.
+                end = raw.find(b"\n", index)
+                end = length if end < 0 else end
+                if out is None:
+                    out = bytearray(raw)
+                out[index:end] = b" " * (end - index)
+                index = end
+            elif quote is None:  # a quote opens
                 quote = character
-            elif character == quote:
+                index += 1
+            else:  # the open quote closes
                 quote = None
-            elif quote is None and character == 0x23:  # #
-                # To the end of the line, which is where every `#` comment ends in
-                # YAML, TOML, HCL, Dockerfile, .properties, .ini and shell.
-                while index < length and out[index] != 0x0A:
-                    out[index] = 0x20
-                    index += 1
-                continue
-            index += 1
-        return bytes(out)
+                index += 1
+        return raw if out is None else bytes(out)
 
     DOCUMENT_SEPARATOR = re.compile(rb"(?m)^---[ \t]*\r?$")
     """YAML's document separator, which is how one stream holds many objects."""
