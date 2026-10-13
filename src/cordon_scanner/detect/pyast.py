@@ -513,7 +513,7 @@ class PythonAnalyzer:
         analyzer._secret_sent(tree)
         return analyzer._hits
 
-    def _environment_handed_to_children(self, tree: ast.AST) -> set[int]:
+    def _environment_handed_to_children(self, tree: ast.AST) -> frozenset[int]:
         """`os.environ` nodes whose whole-environment copy only ever becomes a child's environment.
 
         `env = os.environ.copy(); env.update(extra); subprocess.call(cmd, env=env)` -- nodeenv,
@@ -524,6 +524,11 @@ class PythonAnalyzer:
         `env=`. Every other use of the holder -- serialised, sent, iterated, returned -- keeps
         the read a whole-environment read.
         """
+        # Kept on the tree: three passes ask, and the answer depends only on the tree and its
+        # name tables, which are complete before any of them runs.
+        kept: frozenset[int] | None = tree.__dict__.get("_cordon_handed")
+        if kept is not None:
+            return kept
         # Keyed by (enclosing function, name): `env` is the usual name, and one function's
         # hand-off says nothing about what another function does with its own `env`.
         environ_nodes: dict[tuple[int, str], list[int]] = {}
@@ -541,7 +546,8 @@ class PythonAnalyzer:
         def is_environ(node: ast.AST) -> bool:
             return self._dotted(node) in ENVIRONMENT
 
-        for node in PythonSyntax.nodes(tree):
+        # Only the node types `_dotted` can name; every other node is not `os.environ`.
+        for node in PythonSyntax.of(tree, ast.Name, ast.Attribute, ast.Call):
             if not is_environ(node):
                 continue
             parent = parents.get(id(node))
@@ -607,15 +613,14 @@ class PythonAnalyzer:
         for (scope, name), nodes in environ_nodes.items():
             uses = [
                 n
-                for n in PythonSyntax.nodes(tree)
-                if isinstance(n, ast.Name)
-                and n.id == name
-                and isinstance(n.ctx, ast.Load)
-                and id(scope_of(n)) == scope
+                for n in PythonSyntax.of(tree, ast.Name)
+                if n.id == name and isinstance(n.ctx, ast.Load) and id(scope_of(n)) == scope
             ]
             if uses and all(harmless(use) for use in uses):
                 excused.update(nodes)
-        return excused
+        result = frozenset(excused)
+        tree.__dict__["_cordon_handed"] = result
+        return result
 
     def _iterated_literals(self, tree: ast.AST) -> dict[str, list[str]]:
         """Loop variables whose every value is a string literal, with those values.
