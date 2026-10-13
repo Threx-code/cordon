@@ -932,7 +932,7 @@ class PythonAnalyzer:
 
         found: list[Assembled] = []
 
-        for node in PythonSyntax.nodes(tree):
+        for node in PythonSyntax.of(tree, ast.Assign, ast.AnnAssign, ast.AugAssign):
             targets: list[str] = []
             if isinstance(node, ast.Assign):
                 value: ast.AST | None = node.value
