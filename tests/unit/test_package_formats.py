@@ -81,6 +81,15 @@ class TestTheFormatIsRecognised:
             ("hex", ["VERSION", "CHECKSUM", "metadata.config"]),
             ("maven", ["META-INF/MANIFEST.MF", "com/example/App.class"]),
             ("conda", ["info/index.json", "info/paths.json", "lib/app.so"]),
+            # `.conda`: `info/` one level down, inside its zstd tarball (review 98, REC-8).
+            (
+                "conda",
+                [
+                    "metadata.json",
+                    "info-app-1.0-0.tar.zst!info/index.json",
+                    "pkg-app-1.0-0.tar.zst!lib/app.so",
+                ],
+            ),
             ("hackage", ["AVar-0.0.5.1/AVar.cabal", "AVar-0.0.5.1/Setup.lhs"]),
             ("cran", ["AID/DESCRIPTION", "AID/MD5", "AID/R/aid.R"]),
             ("galaxy", ["MANIFEST.json", "FILES.json", "plugins/modules/x.py"]),

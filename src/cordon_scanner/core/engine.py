@@ -3615,6 +3615,13 @@ class Engine:
             return "maven"
         if "info/index.json" in top:
             return "conda"
+        # A `.conda` package: a zip of `metadata.json` and two zstd tarballs, its `info/` inside
+        # `info-*.tar.zst` -- the same package as the `.tar.bz2`, one level further down.
+        if "metadata.json" in top and any(
+            re.search(r"![^!/]*info-[^!/]*\.tar\.zst!info/index\.json$", unit.path)
+            for unit in units
+        ):
+            return "conda"
         if "MANIFEST.json" in top and "FILES.json" in top:
             return "galaxy"
         if any(GO_MODULE_ROOT.match(m) for m in top):

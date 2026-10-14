@@ -89,10 +89,6 @@ class Rejection:
     NAME = "unsafe_name"
     POLYGLOT = "polyglot_archive"
     HIDDEN = "hidden_zip_member"
-    UNSUPPORTED = "unsupported_compression"
-    """zstd without a decoder: before Python 3.14 the standard library has none, and Cordon adds no
-    runtime dependency, so a `.conda` package's tarballs are reported unread -- never passed as
-    clean. `compression.zstd` (3.14) or an installed `zstandard` reads them."""
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""
@@ -750,21 +746,16 @@ class ArchiveReader:
                         deadline=deadline,
                     )
                     continue
-                except UnsupportedCompression as exc:
-                    # Unread, and said so: the scan is incomplete rather than clean.
-                    if rejected is not None:
-                        rejected.append((member_path, Rejection.UNSUPPORTED, str(exc)))
-                except ArchiveError:
+                except ArchiveError as exc:
                     # A nested archive that will not open is still worth scanning as
                     # bytes: a payload does not stop being a payload because its
-                    # container is malformed.
-                    pass
+                    # container is malformed. zstd is also reported unread: the core's
+                    # decoder refuses dictionaries, which libzstd and so the installer read,
+                    # so a stream it fails on may hold a payload it never saw.
+                    if member.data[:4] == ZSTD_MAGIC and rejected is not None:
+                        rejected.append((member_path, Rejection.UNREADABLE, str(exc)))
 
             yield member_path, member.data
-
-
-class UnsupportedCompression(ArchiveError):
-    """A stream this Python cannot decompress. Reported as unread, never as clean."""
 
 
 class BudgetExceeded(ArchiveError):
@@ -826,14 +817,17 @@ class _BudgetedStream:
         elif data[:6] == b"\xfd7zXZ\x00":
             inner = lzma.LZMAFile(cast(Any, raw), mode="rb")  # noqa: SIM115
         elif data[:4] == ZSTD_MAGIC:
-            inner = _BudgetedStream._zstd(raw, path)
+            # Past the budget by a read's worth, so `read` reports the budget, not the decoder.
+            inner = _BudgetedStream._zstd(raw, limits.max_uncompressed_bytes + READ_CHUNK * 16)
         else:
             return cls(raw, None, limits, deadline, path, cap)
         return cls(inner, raw, limits, deadline, path, cap)
 
     @staticmethod
-    def _zstd(raw: Any, path: str) -> Any:
-        """A zstd decompressing reader from the standard library (3.14) or `zstandard`."""
+    def _zstd(raw: _BytesReader, limit: int) -> Any:
+        """A zstd decompressing reader: the standard library's (3.14), `zstandard` where installed,
+        else the core's own decoder (`intel/zstd`), so a `.conda` package is read with no
+        third-party dependency (CONSTRAINT C1). The last fails past `limit` bytes."""
         try:
             from compression import zstd  # type: ignore[import-not-found]
 
@@ -845,10 +839,9 @@ class _BudgetedStream:
 
             return zstandard.ZstdDecompressor().stream_reader(raw)
         except ImportError:
-            raise UnsupportedCompression(
-                f"{path}: zstd-compressed, and no zstd decoder is available (Python 3.14's "
-                "compression.zstd, or the zstandard package)"
-            ) from None
+            from cordon_scanner.intel.zstd import Zstd
+
+            return Zstd.Reader(raw.getvalue(), limit)
 
     def read(self, size: int = -1) -> bytes:
         if self.deadline is not None and time.monotonic() > self.deadline:
@@ -878,6 +871,9 @@ class _BytesReader:
     def __init__(self, data: bytes) -> None:
         self._data = data
         self._pos = 0
+
+    def getvalue(self) -> bytes:
+        return self._data
 
     def read(self, size: int = -1) -> bytes:
         if size < 0:
