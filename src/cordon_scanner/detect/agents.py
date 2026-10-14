@@ -1538,6 +1538,10 @@ class AgentChainDetector(BaseDetector):
             score = McpDescriptionModel.score(description)
             limits = McpDescriptionModel.thresholds()
             learned = score is not None and limits is not None and score >= limits[1]
+            # ATR's phrase rules, read beside the model: on 980 real MCP servers they blocked 11
+            # on their own -- security tools quoting attacks, prompts that tell an agent how to
+            # use the tool -- and on MCP-SafetyBench none of 146 blocks needed them alone.
+            unconfirmed = limits is not None and not learned and reason is None
             if reason is not None or learned:
                 blocking = reason is not None or (limits is not None and score >= limits[0])
                 why = (
@@ -1555,7 +1559,9 @@ class AgentChainDetector(BaseDetector):
                     message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + why,
                     severity=None if blocking else Severity.MEDIUM,
                 )
-            yield from self._threat_rules(unit, ctx, description, atr.TEXT_KINDS, within=text)
+            yield from self._threat_rules(
+                unit, ctx, description, atr.TEXT_KINDS, within=text, unconfirmed=unconfirmed
+            )
         names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
             yield from self._threat_rules(unit, ctx, name, ("tool_name",), within=text)
@@ -1812,8 +1818,12 @@ class AgentChainDetector(BaseDetector):
         instruction_file: bool = False,
         corroborated: bool = False,
         local: bool = False,
+        unconfirmed: bool = False,
     ) -> Iterator[Finding]:
         """The Agent Threat Rules that match `text`, one finding per ATR category.
+
+        `unconfirmed`: a tool's text the description model read as an ordinary description. An
+        ATR match there still reports, at MEDIUM; it blocks only where the model agrees.
 
         `within` is the file's text when `text` is a piece of it -- a hook's command, a tool's
         description -- so the finding points at the piece; otherwise `text` is the file itself.
@@ -1855,6 +1865,7 @@ class AgentChainDetector(BaseDetector):
                 and m.rule.severity in ("critical", "high")
                 and (corroborated or not instruction_file)
                 and not local
+                and not unconfirmed
             ]
             # A stable production-grade match blocks, as the grading above says -- and for that it
             # needs the gate's confidence, not the rule's declared LOW: at LOW the default gate
