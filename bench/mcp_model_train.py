@@ -37,18 +37,33 @@ class McpModelTrainer:
 
     @staticmethod
     def matrix(rows: list[dict]):
-        from scipy.sparse import csr_matrix
+        import numpy as np
+        from scipy.sparse import csr_matrix, vstack
 
         from cordon_scanner.detect import mcp_model
 
         model = mcp_model.SKILL_MODEL if McpModelTrainer.KIND == "skill" else mcp_model.MCP_MODEL
-        data, indices, pointers = [], [], [0]
-        for r in rows:
-            for k, v in model.features(r["text"], r.get("channel", "description")).items():
-                indices.append(k)
-                data.append(v)
-            pointers.append(len(indices))
-        return csr_matrix((data, indices, pointers), shape=(len(rows), mcp_model.BUCKETS))
+        # In chunks, as float32 arrays: half a million rows of n-gram features held as Python
+        # lists took more than 10 GB.
+        chunks = []
+        for start in range(0, len(rows), 20_000):
+            data, indices, pointers = [], [], [0]
+            for r in rows[start : start + 20_000]:
+                for k, v in model.features(r["text"], r.get("channel", "description")).items():
+                    indices.append(k)
+                    data.append(v)
+                pointers.append(len(indices))
+            chunks.append(
+                csr_matrix(
+                    (
+                        np.asarray(data, dtype=np.float32),
+                        np.asarray(indices, dtype=np.int32),
+                        np.asarray(pointers, dtype=np.int64),
+                    ),
+                    shape=(len(pointers) - 1, mcp_model.BUCKETS),
+                )
+            )
+        return vstack(chunks, format="csr") if chunks else csr_matrix((0, mcp_model.BUCKETS))
 
     @staticmethod
     def per_group(rows: list[dict], scores) -> list[float]:
