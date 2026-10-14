@@ -120,6 +120,7 @@ TUNNEL_HOSTS: Final = frozenset(
         "oastify.com",
         "burpcollaborator.net",
         "requestbin.net",
+        "requestbin.com",
         "pipedream.net",
         "webhook.site",
         "dnslog.cn",
