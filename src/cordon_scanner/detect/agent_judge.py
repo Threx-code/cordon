@@ -48,6 +48,35 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import ScanContext, Unit
 
+
+class JudgeGate:
+    """Which files the judge reads: the grey band only (review 98, AG-5).
+
+    A file whose agent-facing text the static rules already block needs no second reading, and
+    one they found nothing in gets none: the judge would only add noise there. What it reads is
+    the band between -- agent-facing text reported at MEDIUM, nothing at HIGH or above -- so the
+    calls are bounded by the static verdict and a clean file is never sent anywhere.
+    """
+
+    ID: ClassVar[str] = "agent-judge"
+    AGENT_RULES: ClassVar[tuple[str, ...]] = ("SUSPECT.AGENT.", "SUSPECT.MCP.", "MALWARE.AGENT.")
+
+    @staticmethod
+    def last(detectors: list) -> list:
+        """The detectors with the judge moved to the end, so it can see what the rest found."""
+        return [d for d in detectors if getattr(d, "id", "") != JudgeGate.ID] + [
+            d for d in detectors if getattr(d, "id", "") == JudgeGate.ID
+        ]
+
+    @staticmethod
+    def wants(findings: list) -> bool:
+        """Whether a file's findings put its agent-facing text in the grey band."""
+        agent = [f for f in findings if f.rule_id.startswith(JudgeGate.AGENT_RULES)]
+        if any(f.severity >= Severity.HIGH for f in agent):
+            return False
+        return any(f.severity is Severity.MEDIUM for f in agent)
+
+
 JUDGED_RULE: Final = "SUSPECT.AGENT.JUDGED.001"
 STATUS_RULE: Final = "OPERATIONAL.JUDGE.STATUS"
 UNAVAILABLE_RULE: Final = "OPERATIONAL.JUDGE.UNAVAILABLE"

@@ -343,3 +343,41 @@ class TestThePromptHardening:
         from cordon_scanner.judge.review import Prompt
 
         assert Prompt.SYSTEM.count("\n- ") == 11
+
+
+class TestTheJudgeReadsTheGreyBandOnly:
+    """The judge runs last and only on a file whose agent-facing findings stop at MEDIUM
+    (review 98, AG-5): nothing to judge in a clean file, nothing to add to a blocked one."""
+
+    @staticmethod
+    def _finding(rule: str, severity: str):
+        from types import SimpleNamespace
+
+        from cordon_scanner.core.models import Severity
+
+        return SimpleNamespace(rule_id=rule, severity=Severity[severity])
+
+    def test_a_medium_agent_finding_is_judged(self) -> None:
+        from cordon_scanner.detect.agent_judge import JudgeGate
+
+        assert JudgeGate.wants([self._finding("SUSPECT.MCP.TOOL_DESCRIPTION.001", "MEDIUM")])
+
+    def test_a_clean_or_blocked_file_is_not(self) -> None:
+        from cordon_scanner.detect.agent_judge import JudgeGate
+
+        assert not JudgeGate.wants([])
+        assert not JudgeGate.wants([self._finding("SUSPECT.EXFIL.001", "MEDIUM")])
+        assert not JudgeGate.wants(
+            [
+                self._finding("SUSPECT.AGENT.SKILL_INSTRUCTIONS.001", "MEDIUM"),
+                self._finding("SUSPECT.AGENT.PHANTOM_PREREQUISITE.001", "HIGH"),
+            ]
+        )
+
+    def test_it_runs_after_every_other_detector(self) -> None:
+        from types import SimpleNamespace
+
+        from cordon_scanner.detect.agent_judge import JudgeGate
+
+        ids = [SimpleNamespace(id=i) for i in ("advisory", "agent-judge", "agents", "yara")]
+        assert [d.id for d in JudgeGate.last(ids)] == ["advisory", "agents", "yara", "agent-judge"]

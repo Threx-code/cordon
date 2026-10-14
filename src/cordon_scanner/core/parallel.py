@@ -231,6 +231,7 @@ class ParallelScanner:
         image: Any = None,
         install_entry_paths: frozenset[str] = frozenset(),
         consumer_install_paths: frozenset[str] = frozenset(),
+        package_facts: dict[str, Any] | None = None,
     ) -> None:
         """Build one worker's engine.
 
@@ -311,6 +312,11 @@ class ParallelScanner:
             # composites read both, and a worker cannot derive either from the inventory.
             install_entry_paths=context.install_entry_paths | install_entry_paths,
             consumer_install_paths=context.consumer_install_paths | consumer_install_paths,
+            # What the parent knows of the package as a whole -- whether it is a published
+            # distribution and which, its file list, its entry points, its repository -- which a
+            # worker reading single files cannot derive. Without them a large archive's files were
+            # judged as a repository's (review 98, FP-2), so a verdict depended on the core count.
+            **(package_facts or {}),
         )
         ParallelScanner._worker = _WorkerState(
             engine=engine,
@@ -413,10 +419,17 @@ class ParallelScanner:
                     )
                     return []
 
-            for detector in detectors:
+            from cordon_scanner.detect.agent_judge import JudgeGate
+
+            active = []
+            for detector in JudgeGate.last(list(detectors)):
+                # The judge on the grey band only, after the rest: as the serial path.
+                if getattr(detector, "id", "") == JudgeGate.ID and not JudgeGate.wants(produced):
+                    continue
+                active.append(detector)
                 produced.extend(inspect(detector, unit))
             # The rest of an oversized file, a window at a time: the call the serial path makes.
-            windowed, intact = WindowPass.run(unit, detectors, inspect, produced)
+            windowed, intact = WindowPass.run(unit, active, inspect, produced)
             if not intact:
                 out.append((index, [], False))
                 continue
@@ -493,6 +506,7 @@ class ParallelScanner:
         image: Any = None,
         install_entry_paths: frozenset[str] = frozenset(),
         consumer_install_paths: frozenset[str] = frozenset(),
+        package_facts: dict[str, Any] | None = None,
     ) -> list[tuple[int, list[Finding], bool]] | None:
         """Inspect files across a pool, returning results in input order.
 
@@ -545,6 +559,7 @@ class ParallelScanner:
                     image,
                     frozenset(install_entry_paths),
                     frozenset(consumer_install_paths),
+                    dict(package_facts or {}),
                 ),
             ) as pool:
                 futures = [

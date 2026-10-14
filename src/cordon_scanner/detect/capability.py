@@ -1185,6 +1185,48 @@ class CapabilityDetector(BaseDetector):
             for h in fetches
         )
 
+    #: The two grades of the same dropper pattern, the only findings `VerifiedDownload` may lower.
+    VERIFIABLE_DROPPERS: ClassVar[frozenset[str]] = frozenset(
+        {"MALWARE.DROPPER.001", "SUSPECT.DROPPER.001"}
+    )
+    VERIFIED_DOWNLOAD_REASON = (
+        "a checksum-verified download of the package's own release; whoever owns the release "
+        "also owns the checksum, so the binary itself is not vouched for"
+    )
+
+    @staticmethod
+    def _verified_release_download(
+        unit: FileUnit, ctx: ScanContext, file_hits: list[CapabilityHit]
+    ) -> bool:
+        from cordon_scanner.detect.verified_download import VerifiedDownload
+
+        if not ctx.package_distribution:
+            # Condition (b) places the digest in the package, and only a published package's
+            # members are known to be what the consumer receives beside the script.
+            return False
+        return VerifiedDownload.verified(
+            unit.content.text,
+            unit.language,
+            unit.content.path,
+            file_hits,
+            ctx.tree_paths,
+            # Condition (c), the package's own `repository` (`ScanContext.package_repository`):
+            # a release on github.com is the package's only if its owner and repository match.
+            # Hosts with no owner in the path (the npm registries, nodejs.org) do not need it.
+            ctx.package_repository or None,
+        )
+
+    def _suspect_dropper_reports(
+        self, ctx: ScanContext, path: str, hits: list[CapabilityHit]
+    ) -> bool:
+        """Whether `SUSPECT.DROPPER.001` fires on the window `MALWARE.DROPPER.001` matched: its
+        `unless` excludes test paths, and withdrawing the one where the other does not report
+        would leave the file clean."""
+        suspect = ctx.rules.get(self.DROPPER_RULE)
+        return suspect is not None and self._evaluate(
+            suspect, {hit.capability for hit in hits}, path, in_hook=True
+        )
+
     _SKILL_SCRIPT = re.compile(
         r"(?:^|/)skills/[^/\n]{1,200}/[^\n]{0,400}\.(?:py|js|mjs|cjs|ts|sh|bash|ps1|rb)$"
     )
@@ -2460,6 +2502,8 @@ class CapabilityDetector(BaseDetector):
         in_consumer = ctx.in_consumer_install(unit.path)
         # Read by the `install_entry` term. Composites are evaluated one file at a time.
         self._in_entry = unit.path in ctx.install_entry_paths
+        # A published package's own entry point, run on `require()`/`import` (REC-2).
+        self._in_import_entry = unit.path in ctx.import_entry_paths
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines
         # its functions without calling them -- so a pair of capabilities inside
@@ -2506,7 +2550,9 @@ class CapabilityDetector(BaseDetector):
             matched = matched_capabilities
             anchor = self._anchor(matched, local_by_capability, window)
 
-            finding = self._composite_finding(compiled, unit, ctx, anchor, matched, window)
+            finding = self._composite_finding(
+                compiled, unit, ctx, anchor, matched, window, file_hits=hits
+            )
             if finding is not None:
                 yield finding
 
@@ -2916,6 +2962,8 @@ class CapabilityDetector(BaseDetector):
                 return in_consumer
             if named == "install_entry":
                 return in_hook and getattr(self, "_in_entry", False)
+            if named == "import_entry":
+                return getattr(self, "_in_import_entry", False)
             return False
 
         return False
@@ -3149,9 +3197,17 @@ class CapabilityDetector(BaseDetector):
         anchor: CapabilityHit,
         matched: tuple[Capability, ...],
         hits: list[CapabilityHit],
+        *,
+        file_hits: list[CapabilityHit] | None = None,
     ) -> Finding | None:
         rule = compiled.rule
         content = unit.content
+        # A prebuilt binary from the package's own release, checked against a digest it ships
+        # before anything runs (review 98, FP-2: `@ohos-ports/larksuite-cli`). Read over the whole
+        # file's hits, not this window's: a credential read anywhere in it keeps the dropper.
+        verified = rule.id in self.VERIFIABLE_DROPPERS and self._verified_release_download(
+            unit, ctx, hits if file_hits is None else file_hits
+        )
 
         mode = Redactor.effective_mode(rule.evidence_policy, ctx.config.evidence)
         evidence = Redactor.build_evidence(content, anchor.byte_start, anchor.byte_end, mode)
@@ -3170,6 +3226,10 @@ class CapabilityDetector(BaseDetector):
             # and is not escalated as an install-time dropper. See `MALWARE.DROPPER.001` above.
             in_hook = False
         if rule.id in self.CONTEXT_FREE:
+            in_hook = False
+        if verified and rule.id == self.DROPPER_RULE:
+            # Not escalated as an install-time dropper either: the hook escalation would put the
+            # span straight back at CRITICAL. The ceiling below says why it is still reported.
             in_hook = False
 
         severity = RiskScorer.apply_category_floor(rule.category, rule.severity)
@@ -3231,6 +3291,19 @@ class CapabilityDetector(BaseDetector):
             # fetches and starts its own tools (Codespaces, APKLab, DOSBox) is not a compromised
             # host. `SUSPECT.DROPPER.001` reports the same span, below the gate. A download
             # written to an executable and started keeps this rule: that is the malicious shape.
+            return None
+
+        if (
+            verified
+            and compiled.rule.id == "MALWARE.DROPPER.001"
+            and self._suspect_dropper_reports(ctx, content.path, hits)
+        ):
+            # Withdrawn for the reason above, and only where `SUSPECT.DROPPER.001` reports the same
+            # span, so the file is never left clean. What is withdrawn is the claim that the content
+            # is whatever the host serves: the release URL is a literal, and the digest it is held
+            # to came with the package. What is not withdrawn is the question of what the binary
+            # is -- whoever owns the repository owns the release and the checksum too (`08` P3) --
+            # so it stays reported at MEDIUM, and every other rule over the file still applies.
             return None
 
         if rule.id == "MALWARE.EXFIL.BEACON.001" and CapabilityDetector._loopback_only(
@@ -3393,6 +3466,9 @@ class CapabilityDetector(BaseDetector):
                 # matters most here: a long encoded payload is itself what makes a hand-written
                 # file look minified (`eval(atob('...'))` in `tailwind-animation-effect`).
                 ceilinged = "minified output"
+            elif verified and compiled.rule.id == self.DROPPER_RULE:
+                ceilinged = CapabilityDetector.VERIFIED_DOWNLOAD_REASON
+                ceiling = Severity.MEDIUM
             elif (
                 compiled.rule.id in self.ON_REQUEST_RULES
                 and not in_hook
@@ -3451,6 +3527,7 @@ class CapabilityDetector(BaseDetector):
                     ""
                     if ceilinged in CapabilityDetector.ON_REQUEST_REASONS
                     or ceilinged == "the tool's own official installer"
+                    or ceilinged == CapabilityDetector.VERIFIED_DOWNLOAD_REASON
                     else ", where a pattern like this is usually written to be read rather than run"
                 )
             )

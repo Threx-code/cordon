@@ -88,6 +88,10 @@ class ScanContext:
     """Positive results a detector reaches without a finding -- a registry hash that matched,
     provenance that verified -- read into each dependency's record (`core/inventory.py`)."""
     install_hook_paths: frozenset[str] = frozenset()
+    import_entry_paths: frozenset[str] = frozenset()
+    """A published package's own entry points -- npm `main`, `bin` and `exports` targets, a
+    wheel's or sdist's top-level `__init__.py` -- whose top level runs on `require()`, `import`
+    or the command. Code there runs on every consumer without a hook (review 98, REC-2)."""
     install_entry_paths: frozenset[str] = frozenset()
     """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
     -- as distinct from the modules they import, which `install_hook_paths` also holds. A
@@ -186,6 +190,10 @@ class ScanContext:
     Its lockfiles then describe its maintainers' development environment, not what installing it
     brings in."""
 
+    package_repository: str = ""
+    """The published package's own `repository` URL (npm's `package.json`), as the registry shows
+    it; empty when there is none or the target is not a package. Lets a detector tell the
+    package's own release from someone else's (review 98, FP-2)."""
     distribution: str = ""
     """Which published format `package_distribution` recognised: `pypi`, `npm`, `cargo`,
     `rubygems`, `nuget`, `hex`, `gomod`, `maven`, `conda`, `hackage`, `cran` or `galaxy`; empty
