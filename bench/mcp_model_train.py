@@ -32,21 +32,23 @@ from pathlib import Path
 
 
 class McpModelTrainer:
+    KIND = "mcp"
+    """Which model: `mcp` (descriptions and returns) or `skill` (a skill's instructions)."""
+
     @staticmethod
     def matrix(rows: list[dict]):
         from scipy.sparse import csr_matrix
 
-        from cordon_scanner.detect.mcp_model import BUCKETS, McpDescriptionModel
+        from cordon_scanner.detect import mcp_model
 
+        model = mcp_model.SKILL_MODEL if McpModelTrainer.KIND == "skill" else mcp_model.MCP_MODEL
         data, indices, pointers = [], [], [0]
         for r in rows:
-            for k, v in McpDescriptionModel.features(
-                r["text"], r.get("channel", "description")
-            ).items():
+            for k, v in model.features(r["text"], r.get("channel", "description")).items():
                 indices.append(k)
                 data.append(v)
             pointers.append(len(indices))
-        return csr_matrix((data, indices, pointers), shape=(len(rows), BUCKETS))
+        return csr_matrix((data, indices, pointers), shape=(len(rows), mcp_model.BUCKETS))
 
     @staticmethod
     def per_group(rows: list[dict], scores) -> list[float]:
@@ -74,7 +76,10 @@ class McpModelTrainer:
         ap.add_argument("--positive-weight", type=float, default=60.0)
         ap.add_argument("--calibrate-on", default="corpus,mcptox-legit,msb-legit")
         ap.add_argument("--calibrate-returns-on", default="corpus-return,msb-legit-return")
+        ap.add_argument("--kind", choices=("mcp", "skill"), default="mcp")
+        ap.add_argument("--calibrate-skills-on", default="corpus-skill")
         args = ap.parse_args()
+        McpModelTrainer.KIND = args.kind
         rows = [json.loads(line) for line in args.devset.read_text(encoding="utf-8").splitlines()]
         work = [r for r in rows if r["half"] == "work"]
         hold = [r for r in rows if r["half"] == "holdout"]
@@ -86,10 +91,14 @@ class McpModelTrainer:
         # Calibrated on REAL servers only, per channel. Hard negatives written to sit beside attacks
         # (ATR's benign cases) train the model; counting them as servers would set the bar by a
         # test suite.
-        real = {
-            "description": set(args.calibrate_on.split(",")),
-            "return": set(args.calibrate_returns_on.split(",")),
-        }
+        real = (
+            {"skill": set(args.calibrate_skills_on.split(","))}
+            if args.kind == "skill"
+            else {
+                "description": set(args.calibrate_on.split(",")),
+                "return": set(args.calibrate_returns_on.split(",")),
+            }
+        )
         thresholds: dict[str, list[float]] = {}
         report: dict = {}
         for channel, sources in real.items():
@@ -137,7 +146,8 @@ class McpModelTrainer:
             "features": "word 1-3 grams + channel, crc32 mod 2^18, L2 (detect/mcp_model.py)",
         }
         args.out.mkdir(parents=True, exist_ok=True)
-        with gzip.open(args.out / "mcp-descriptions.json.gz", "wt", encoding="utf-8") as handle:
+        name = "skill-instructions.json.gz" if args.kind == "skill" else "mcp-descriptions.json.gz"
+        with gzip.open(args.out / name, "wt", encoding="utf-8") as handle:
             json.dump(model, handle, separators=(",", ":"), sort_keys=True)
         print(json.dumps(report, indent=2), f"\nweights kept: {len(weights)}")
 

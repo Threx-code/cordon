@@ -52,7 +52,7 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect import agent_config
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.mcp_model import McpDescriptionModel
+from cordon_scanner.detect.mcp_model import SKILL_MODEL, McpDescriptionModel
 from cordon_scanner.detect.secrets import SourcePaths
 from cordon_scanner.intel import atr
 from cordon_scanner.intel.installers import KNOWN_INSTALLERS, OfficialInstallers
@@ -1283,6 +1283,21 @@ RULES.update(
             "Replace the block with YAML front matter. No agent file needs executable metadata.",
             (ref.OWASP_LLM_PROMPT_INJECTION,),
         ),
+        "SUSPECT.AGENT.SKILL_INSTRUCTIONS.001": AgentRules._rule(
+            "SUSPECT.AGENT.SKILL_INSTRUCTIONS.001",
+            "A skill's instructions read as an attack on the agent",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "The learned reading of skill instructions (`detect/mcp_model.py`, trained on "
+            "MalSkillBench and MaliciousSkillBench against real public skills) scores this "
+            "SKILL.md as written to steer the agent -- to run something, send something, or "
+            "set its rules aside -- rather than to describe a task. It blocks above a threshold "
+            "set on real skills held out of training, and is reported below it.",
+            "Read the skill in full before installing it, including the files it tells the agent "
+            "to run. Install it only from an author you trust.",
+            (ref.OWASP_LLM_PROMPT_INJECTION,),
+        ),
         "SUSPECT.AGENT.SKILL_HOOK_FETCH.001": AgentRules._rule(
             "SUSPECT.AGENT.SKILL_HOOK_FETCH.001",
             "A skill script installs an agent hook that runs a download",
@@ -1725,6 +1740,29 @@ class AgentChainDetector(BaseDetector):
             start, end = InstructionText._byte_span(text, moved)
             yield self._finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
         yield from self._intents(unit, ctx, text)
+        corroborated = bool(hidden or injection or exfil or concealed or alarming is not None)
+        third_party = SkillOrigin.third_party(unit.content.path, ctx)
+        # A skill's instructions, read by the learned model (`SKILL_MODEL`). On held-out
+        # MalSkillBench it took the blocked share from 44% to 83% and the benign blocked share
+        # from 5.0% to 3.3%, because an ATR phrase match blocks only where the model agrees.
+        unconfirmed = False
+        if ContainerPaths.basename(unit.content.path).upper() == "SKILL.MD":
+            limits = SKILL_MODEL.thresholds("skill")
+            score = SKILL_MODEL.score(text, "skill") if limits is not None else None
+            if limits is not None and score is not None:
+                unconfirmed = score < limits[1] and not corroborated
+                if score >= limits[1]:
+                    blocking = third_party and score >= limits[0]
+                    yield self._finding(
+                        "SUSPECT.AGENT.SKILL_INSTRUCTIONS.001",
+                        unit,
+                        ctx,
+                        0,
+                        min(len(unit.content.raw), 200),
+                        message=RULES["SUSPECT.AGENT.SKILL_INSTRUCTIONS.001"].message
+                        + f" Model score {score:.2f}.",
+                        severity=None if blocking else Severity.MEDIUM,
+                    )
         yield from self._threat_rules(
             unit,
             ctx,
@@ -1732,8 +1770,9 @@ class AgentChainDetector(BaseDetector):
             atr.TEXT_KINDS,
             # The project's own instruction files get the instruction-file tolerance; a skill
             # installed from elsewhere is code being installed and keeps ATR's grades (AG-2).
-            instruction_file=not SkillOrigin.third_party(unit.content.path, ctx),
-            corroborated=bool(hidden or injection or exfil or concealed or alarming is not None),
+            instruction_file=not third_party,
+            corroborated=corroborated,
+            unconfirmed=unconfirmed,
         )
 
     def _intents(

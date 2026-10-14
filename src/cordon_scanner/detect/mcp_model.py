@@ -30,25 +30,31 @@ from pathlib import Path
 from typing import Any, ClassVar, Final
 
 MODEL_PATH: Final = Path(__file__).parent / "data" / "mcp-descriptions.json.gz"
+SKILL_MODEL_PATH: Final = Path(__file__).parent / "data" / "skill-instructions.json.gz"
 BUCKETS: Final = 1 << 18
 MAX_TEXT: Final = 8_000
 """A description longer than this is scored on its first part: none in either corpus is."""
+MAX_SKILL_TEXT: Final = 40_000
+"""A skill's instructions are longer; past this, the rest is not scored."""
 
 WORD: Final = re.compile(r"\w[\w'-]{0,60}")
 
 
-class McpDescriptionModel:
+class LinearTextModel:
+    """Hashed word n-grams and a logistic model shipped as data. One definition of a feature, for
+    the scanner and for `bench/mcp_model_train.py`, so what was trained is what is scored."""
+
     NGRAMS: ClassVar[tuple[int, ...]] = (1, 2, 3)
 
-    CHANNELS: ClassVar[tuple[str, ...]] = ("description", "return")
-    """Where the text reaches the agent: a tool's description, or what the tool returns."""
+    def __init__(self, path: Path, limit: int) -> None:
+        self.path = path
+        self.limit = limit
 
-    @staticmethod
-    def features(text: str, channel: str = "description") -> dict[int, float]:
+    def features(self, text: str, channel: str) -> dict[int, float]:
         """Hashed, L2-normalised counts of the text's word 1- to 3-grams, and its channel."""
-        words = WORD.findall(text[:MAX_TEXT].lower())
+        words = WORD.findall(text[: self.limit].lower())
         counts: dict[int, float] = {zlib.crc32(f"\x00channel:{channel}".encode()) % BUCKETS: 1.0}
-        for n in McpDescriptionModel.NGRAMS:
+        for n in self.NGRAMS:
             for i in range(len(words) - n + 1):
                 gram = " ".join(words[i : i + n])
                 index = zlib.crc32(gram.encode("utf-8")) % BUCKETS
@@ -56,36 +62,57 @@ class McpDescriptionModel:
         norm = math.sqrt(sum(v * v for v in counts.values())) or 1.0
         return {k: v / norm for k, v in counts.items()}
 
-    @staticmethod
-    @functools.cache
-    def model() -> dict[str, Any] | None:
+    @functools.cached_property
+    def model(self) -> dict[str, Any] | None:
         """The shipped weights, or None when they are absent (a source checkout without data)."""
         try:
-            with gzip.open(MODEL_PATH, "rt", encoding="utf-8") as handle:
+            with gzip.open(self.path, "rt", encoding="utf-8") as handle:
                 data = json.load(handle)
         except OSError:
             return None
         data["weights"] = {int(k): float(v) for k, v in data["weights"].items()}
         return data
 
-    @staticmethod
-    def score(text: str, channel: str = "description") -> float | None:
+    def score(self, text: str, channel: str) -> float | None:
         """The probability that this text steers the agent, or None without a model."""
-        model = McpDescriptionModel.model()
+        model = self.model
         if model is None or not text.strip():
             return None
         weights = model["weights"]
         z = model["bias"] + sum(
-            weights.get(index, 0.0) * value
-            for index, value in McpDescriptionModel.features(text, channel).items()
+            weights.get(index, 0.0) * value for index, value in self.features(text, channel).items()
         )
         return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, z))))
 
-    @staticmethod
-    def thresholds(channel: str = "description") -> tuple[float, float] | None:
-        """(block, warn) for the channel, set on held-out real servers."""
-        model = McpDescriptionModel.model()
+    def thresholds(self, channel: str) -> tuple[float, float] | None:
+        """(block, warn) for the channel, set on held-out real servers or skills."""
+        model = self.model
         if model is None or channel not in model.get("thresholds", {}):
             return None
         block, warn = model["thresholds"][channel]
         return float(block), float(warn)
+
+
+MCP_MODEL: Final = LinearTextModel(MODEL_PATH, MAX_TEXT)
+SKILL_MODEL: Final = LinearTextModel(SKILL_MODEL_PATH, MAX_SKILL_TEXT)
+
+
+class McpDescriptionModel:
+    CHANNELS: ClassVar[tuple[str, ...]] = ("description", "return")
+    """Where the text reaches the agent: a tool's description, or what the tool returns."""
+
+    @staticmethod
+    def features(text: str, channel: str = "description") -> dict[int, float]:
+        return MCP_MODEL.features(text, channel)
+
+    @staticmethod
+    def model() -> dict[str, Any] | None:
+        return MCP_MODEL.model
+
+    @staticmethod
+    def score(text: str, channel: str = "description") -> float | None:
+        return MCP_MODEL.score(text, channel)
+
+    @staticmethod
+    def thresholds(channel: str = "description") -> tuple[float, float] | None:
+        return MCP_MODEL.thresholds(channel)

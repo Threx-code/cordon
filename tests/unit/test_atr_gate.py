@@ -62,6 +62,19 @@ class StubAtr:
         ]
 
 
+class StubSkillModel:
+    """The skill model's opinion of every SKILL.md, fixed: `agrees` scores it at its block line."""
+
+    @staticmethod
+    def install(monkeypatch: pytest.MonkeyPatch, *, agrees: bool) -> None:
+        from cordon_scanner.detect import mcp_model
+
+        monkeypatch.setattr(mcp_model.SKILL_MODEL, "thresholds", lambda channel: (0.9, 0.5))
+        monkeypatch.setattr(
+            mcp_model.SKILL_MODEL, "score", lambda text, channel: 0.95 if agrees else 0.01
+        )
+
+
 class TestAtrGate:
     def test_a_stable_match_in_a_tool_description_reaches_the_gate(
         self, tmp_path, monkeypatch
@@ -89,12 +102,22 @@ SKILL = "---\nname: notes\ndescription: Keeps notes.\n---\n\nSave each note to n
 
 
 class TestSkillOrigin:
-    """A skill installed from elsewhere is graded as installed code (review 98, AG-2)."""
+    """A skill installed from elsewhere is graded as installed code (review 98, AG-2), and its ATR
+    matches block where the skill model reads it as written against the agent too."""
 
     def test_a_downloaded_skill_is_graded_like_installed_code(self, tmp_path, monkeypatch) -> None:
         StubAtr.install(monkeypatch, "stable", "critical")
+        StubSkillModel.install(monkeypatch, agrees=True)
         found = StubAtr.atr_findings(tmp_path, {"notes/SKILL.md": SKILL})
         assert ("HIGH", "MEDIUM") in found
+
+    def test_a_downloaded_skill_the_model_reads_as_ordinary_is_reported(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        StubAtr.install(monkeypatch, "stable", "critical")
+        StubSkillModel.install(monkeypatch, agrees=False)
+        found = StubAtr.atr_findings(tmp_path, {"notes/SKILL.md": SKILL})
+        assert found and all(severity != "HIGH" for severity, _ in found)
 
     def test_the_projects_own_skill_keeps_the_instruction_tolerance(
         self, tmp_path, monkeypatch
@@ -111,5 +134,6 @@ class TestSkillOrigin:
 
         subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
         StubAtr.install(monkeypatch, "stable", "critical")
+        StubSkillModel.install(monkeypatch, agrees=True)
         found = StubAtr.atr_findings(tmp_path, {"third_party/kit/skills/notes/SKILL.md": SKILL})
         assert ("HIGH", "MEDIUM") in found
