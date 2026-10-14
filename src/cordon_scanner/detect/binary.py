@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core import references
 from cordon_scanner.core.models import (
@@ -753,6 +753,19 @@ class BinaryDetector(BaseDetector):
             f"named {extension} but its contents are binary data, which no interpreter for it reads"
         )
 
+    LD_DIRECTIVE: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?:INPUT|GROUP|OUTPUT_FORMAT|OUTPUT_ARCH|AS_NEEDED|SEARCH_DIR|TARGET)\s*\(|\)"
+    )
+
+    @staticmethod
+    def _ld_script(raw: bytes) -> bool:
+        """A small text file of nothing but linker directives and comments."""
+        if len(raw) > 4096 or not raw.isascii() or b"\x00" in raw:
+            return False
+        body = re.sub(rb"/\*.*?\*/", b"", raw, flags=re.S)
+        lines = [line.strip() for line in body.splitlines() if line.strip()]
+        return bool(lines) and all(BinaryDetector.LD_DIRECTIVE.match(line) for line in lines)
+
     @staticmethod
     def named_by_its_own_format(path: str, raw: bytes) -> bool:
         """Files whose name and content disagree by the design of the tool that wrote them.
@@ -763,9 +776,15 @@ class BinaryDetector(BaseDetector):
           with the original name and the signature `00 05 16 07` -- every zip made on a Mac
           carries them under `__MACOSX/`;
         - an OS/2 bitmap-array icon (`BA` and a 40-byte header), the format `.ico` began as;
-        - a compiled terminfo entry under `terminfo/`, named for its terminal (`xterm.js`).
+        - a compiled terminfo entry under `terminfo/`, named for its terminal (`xterm.js`);
+        - a GNU ld linker script named as the library it stands for: `libgcc_s.so` and
+          `libncurses.so` in conda and biocontainers images are `GROUP ( ... )` text that tells
+          the linker which real libraries to use (review 98). Every line has to be a linker
+          directive, so what passes can only name libraries.
         """
         if raw.startswith(b"\x00\x05\x16\x07"):
+            return True
+        if ".so" in ContainerPaths.basename(path).lower() and BinaryDetector._ld_script(raw):
             return True
         name = ContainerPaths.basename(path).lower()
         if name.endswith(".ico") and raw.startswith(b"BA(\x00\x00\x00"):
