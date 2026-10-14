@@ -551,7 +551,13 @@ class McpPoisoningBench:
         from cordon_scanner.core.config import Config
         from cordon_scanner.core.policy import PolicyGate
 
-        config = Config.default().with_overrides(use_cache=False)
+        overrides: dict[str, Any] = {"use_cache": False}
+        # `--judge` (the operator's model, as `cordon-scanner --judge`): set once in the parent
+        # and inherited by every worker, so one run measures one configuration.
+        if os.environ.get("CORDON_BENCH_JUDGE"):
+            overrides["judge"] = os.environ["CORDON_BENCH_JUDGE"]
+            overrides["judge_blocks"] = os.environ.get("CORDON_BENCH_JUDGE_BLOCKS") == "1"
+        config = Config.default().with_overrides(**overrides)
         result = Scanner(config).scan(target)
         seen, out = set(), []
         for f in result.findings:
@@ -768,7 +774,12 @@ class McpPoisoningBench:
         ap.add_argument("--workers", type=int, default=4)
         ap.add_argument("--timeout", type=float, default=cls.TIMEOUT)
         ap.add_argument("--limit", type=int, default=0, help="at most this many units per dataset")
+        ap.add_argument("--judge", help="judge agent-facing text with this model, as --judge does")
+        ap.add_argument("--judge-blocks", action="store_true", help="a malicious verdict blocks")
         args = ap.parse_args()
+        if args.judge:
+            os.environ["CORDON_BENCH_JUDGE"] = args.judge
+            os.environ["CORDON_BENCH_JUDGE_BLOCKS"] = "1" if args.judge_blocks else "0"
         names = [n.strip() for n in args.datasets.split(",") if n.strip()]
         unknown = [n for n in names if n not in cls.LOADERS]
         if unknown:

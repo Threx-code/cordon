@@ -1175,6 +1175,36 @@ rules:
         - path_glob: "tests/**"
         - path_glob: "**/conftest.py"
 
+  - id: SUSPECT.DROPPER.REMOTE_COMMAND.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Runs a command a server sends it
+    message: >
+      This file decodes a field of a server's response and runs it as a shell command. The
+      request reads like a version check; the answer is a command, chosen by whoever controls
+      the server at the moment it is asked.
+    remediation: >
+      Do not install or run it. If it ran, treat the machine as having executed commands from
+      that server and review what they could reach.
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+      - https://attack.mitre.org/techniques/T1059/
+    provenance:
+      kind: research
+      reference: "review 98: EthCompiler.among-eth, JohnGaffney.blankebesxstnion, SmartContractAI.solaibot"
+      note: >
+        One term, as SUSPECT.REGISTRY.SELF_PUBLISH.001: the primitive is the whole act --
+        response parsed, field decoded, result executed, within one expression's reach.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.REMOTE_COMMAND.001
+
   - id: SUSPECT.DESTROY.HOME_OR_ROOT.001
     version: 1.0.0
     category: suspicious
@@ -1206,6 +1236,13 @@ rules:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
+        # Test suites hold the attack strings they test against: a bats case passing
+        # `a"; rm -rf / #` as input, protobuf's generator_unittest.cc (review 98).
+        - path_glob: "**/tests/**"
+        - path_glob: "**/test/**"
+        - path_glob: "**/*.bats"
+        - path_glob: "**/*_test.*"
+        - path_glob: "**/*_unittest.*"
 
   # ---------------------------------------------------------------------
   # Anti-analysis

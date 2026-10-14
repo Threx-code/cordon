@@ -756,4 +756,5 @@ rules:
       negative:
         - "import socket\nsocket.gethostbyname('api.example.com')"
         - "import socket\nsocket.gethostbyname(host)"
+        - "import socket\nsocket.gethostbyname(get_hostname())"
         - "self.gethostbyname(x + y)"

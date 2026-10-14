@@ -174,7 +174,8 @@ BUILTIN_MODULES = frozenset({"builtins", "__builtin__", "__builtins__"})
 WRITE_METHODS = frozenset({"write", "write_text", "write_bytes", "writelines"})
 MAX_FOLDED_CODES = 200_000
 """Character codes folded from one `map(chr, [...])`; a longer literal list is not read."""
-OWN_HOST_CALLS = frozenset({"gethostname", "getfqdn", "node"})
+#: Calls that return this machine's own name; `get_hostname` is Ansible's callback helper.
+OWN_HOST_CALLS = frozenset({"gethostname", "getfqdn", "node", "get_hostname"})
 UNSAFE_LOADERS = frozenset(
     {"torch.load", "pickle.load", "pickle.loads", "joblib.load", "dill.load", "cloudpickle.load"}
 )

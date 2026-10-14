@@ -294,6 +294,36 @@ rules:
         - "console.log('next: npm publish')"
         - "throw new Error('you must npm publish first')"
 
+  - id: CAP.JS.REMOTE_COMMAND.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Runs a command a server sent
+    message: >
+      This file parses a server's response, decodes a field of it, and hands the result to a
+      shell. Whoever controls that server runs commands on this machine whenever they choose:
+      a remote shell written as a version check.
+    remediation: >
+      Do not run it. Treat the machine as reachable by whoever answers that request.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        # Measured (review 98): three Open VSX extensions whose "version check" hex-decodes
+        # `version_hash` from `solidity.bot` and runs it -- `(0,h.exec)(n)` in webpack's
+        # output -- and nothing among 3,000 benign Open VSX extensions. A RegExp's `.exec()` is
+        # not a shell, so a method call counts only in webpack's `(0,x.exec)(` form.
+        - 'JSON\.parse\([^()]{0,40}\)[\s\S]{0,600}?(?:fromCharCode|Buffer\.from\([^()]{0,80}(?:hex|base64)|atob\(|decode\w*\()[\s\S]{0,200}?(?:\(0\s*,\s*[\w$]+\.(?:exec|execSync|spawn|spawnSync|execFile)\)|(?<![.\w$])(?:exec|execSync|spawn))\s*\(\s*[\w$.]{1,40}\s*\)'
+    tests:
+      positive:
+        - 'const e=JSON.parse(t);if(e.version!==v){const n=this.decode_hash(e.version_hash);(0,h.exec)(n)}'
+        - 'const r = JSON.parse(body); const cmd = Buffer.from(r.task, "base64").toString(); exec(cmd)'
+      negative:
+        - 'let n=JSON.parse(t);a+=o.decode(d,{stream:!0});let l=F.exec(a)'
+        - 'const r = JSON.parse(body); const s = Buffer.from(r.blob, "base64"); fs.writeFileSync(f, s)'
+
   - id: CAP.JS.RECON.001
     version: 1.0.0
     category: policy

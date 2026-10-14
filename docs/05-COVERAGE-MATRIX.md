@@ -256,6 +256,7 @@ rather than a document.
 | `SUSPECT.DOCUMENT.REMOTE_OBJECT.001` | high | `formats` | dropper |
 | `SUSPECT.DOCUMENT.RTF_OBJECT.001` | high | `formats` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
+| `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
