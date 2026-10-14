@@ -258,6 +258,12 @@ _REQUIRED_TOOL: Final = re.compile(
     r"\s+(?:is|are)\s+required\b"
     r")[^\n]{0,300}$"
 )
+#: The same said the other way round: "This skill requires OpenClawCLI to be installed".
+_REQUIRES_TOOL: Final = re.compile(
+    r"(?im)^[^\n]{0,200}?\brequires?\s+(?:the\s+)?([A-Za-z][\w.-]{2,40})\b"
+    r"(?:\s+(?:cli|tool|utility|binary|app|helper|client|agent|runtime|extension|driver))?"
+    r"\s+to\s+be\s+(?:installed|running|downloaded)\b[^\n]{0,300}$"
+)
 _DOWNLOAD_URL: Final = re.compile(
     r"(?i)\b(?:download|install|setup|set\s+up|get\s+it|here)\w*\b[^\n]{0,80}?https?://[^\s)>\]]+"
 )
@@ -317,6 +323,8 @@ _NOT_A_TOOL: Final = frozenset(
      "dependencies", "dependency", "also", "first", "must", "these", "those", "they",
      # What a skill needs that is not a program: "An API key is required".
      "key", "keys", "token", "tokens", "account", "accounts", "login", "access", "api", "subscription",
+     # "If it reports authentication is required", "Python 3.8 or later is required", ".NET SDK".
+     "authentication", "later", "sdk",
      "license", "licence", "password", "credentials", "credential", "environment", "variable", "plan",
      "internet", "connection", "signup", "registration", "version", "model", "permission", "permissions"}
 )  # fmt: skip
@@ -392,6 +400,17 @@ class InstructionText:
         return bool(_WORD_BYTE.fullmatch(before) and _WORD_BYTE.fullmatch(after))
 
     @staticmethod
+    def _free_hosted(link: str) -> bool:
+        """Whether a download link is on a free-hosting subdomain, and not a known installer's."""
+        from cordon_scanner.intel.hosts import FREE_HOSTING
+
+        found = _URL_HOST.search(link)
+        host = found.group(1).lower().rstrip(".") if found else ""
+        if any(host == known for known, _ in KNOWN_INSTALLERS):
+            return False
+        return any(host.endswith(f".{free}") for free in FREE_HOSTING)
+
+    @staticmethod
     def phantom_prerequisite(text: str) -> re.Match[str] | None:
         """A line saying a named tool must be installed, a download link within three lines of
         it, and the tool run nowhere in the file's code -- a fenced block or an inline span."""
@@ -400,15 +419,25 @@ class InstructionText:
         offsets = [0]
         for line in lines:
             offsets.append(offsets[-1] + len(line))
-        for found in _REQUIRED_TOOL.finditer(text):
+        required = sorted(
+            (*_REQUIRED_TOOL.finditer(text), *_REQUIRES_TOOL.finditer(text)),
+            key=lambda m: m.start(),
+        )
+        for found in required:
             tool = found.group(1)
             if tool.lower() in _NOT_A_TOOL:
                 continue
             index = next(i for i, end in enumerate(offsets[1:]) if end > found.start())
             near = "".join(lines[max(0, index - 3) : index + 4])
-            if not _DOWNLOAD_URL.search(near):
+            download = _DOWNLOAD_URL.search(near)
+            if download is None:
                 continue
-            if re.search(rf"(?<![\w.-]){re.escape(tool.lower())}(?!\w)", code):
+            # A tool the skill goes on to run is a real prerequisite -- unless its download is a
+            # free-hosting subdomain, which no vendor ships from: there the name in the code is the
+            # genuine project's, and the link is the lookalike (`openclawcli.vercel.app`).
+            if not InstructionText._free_hosted(download.group(0)) and re.search(
+                rf"(?<![\w.-]){re.escape(tool.lower())}(?!\w)", code
+            ):
                 continue
             if InstructionText._quoted(text, found) or InstructionText._forbidden(text, found):
                 continue
@@ -1455,6 +1484,58 @@ class SkillScripts:
         return False
 
 
+class McpEndpoints:
+    """Where a remote MCP server lives, judged from its host alone."""
+
+    _WILDCARD_IP: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|[.-])(\d{1,3}(?:[.-]\d{1,3}){3})\.(?:sslip\.io|nip\.io)$"
+    )
+    #: Where instructions configure a server: an `mcpServers` block, or an `mcp add` command.
+    _CONFIG: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)[\"']?mcp_?servers[\"']?\s*[:=]\s*[{\[]|\bmcp\s+add\b"
+    )
+    _URL: ClassVar[re.Pattern[str]] = re.compile(r"https?://[^\s\"'`<>)\]]{4,300}")
+    #: A URL written for the reader to fill in: `https://YOUR-NGROK.ngrok.io`, `abc123.ngrok.app`.
+    _PLACEHOLDER: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)your|xxx|example|abc123|placeholder|subdomain|\.\.\.|[<>{}*]|_id\b"
+    )
+
+    @staticmethod
+    def untrusted(host: str) -> bool:
+        """A tunnel, paste or interaction host, or a public IP address -- written bare or behind
+        sslip.io/nip.io, which only resolve a name back to the address inside it."""
+        import ipaddress
+
+        from cordon_scanner.intel.hosts import Destinations
+
+        host = host.lower().strip("[]").rstrip(".")
+        if host in _LOCAL_HOSTS:
+            return False
+        if Destinations.destination_matcher().search(host.encode("utf-8", "replace")):
+            return True
+        wildcard = McpEndpoints._WILDCARD_IP.search(host)
+        literal = wildcard.group(1).replace("-", ".") if wildcard else host
+        try:
+            address = ipaddress.ip_address(literal)
+        except ValueError:
+            return False
+        return address.is_global
+
+    @staticmethod
+    def in_text(text: str) -> Iterator[str]:
+        """Every remote MCP server URL an instruction file tells the agent to connect to: those in
+        the 1,500 characters after an `mcpServers` block opens, or on an `mcp add` line, that are
+        not a placeholder for the reader to fill in."""
+        for config in McpEndpoints._CONFIG.finditer(text):
+            span = text[config.start() : config.end() + 1500]
+            if config.group(0).lower().endswith("add"):
+                span = span.split("\n", 1)[0]
+            for found in McpEndpoints._URL.finditer(span):
+                url = found.group(0).rstrip(".,;")
+                if not McpEndpoints._PLACEHOLDER.search(agent_config.ApiTraffic.host_of(url)):
+                    yield url
+
+
 class AgentPaths:
     """Whether a path is one of the places an agent reads configuration from."""
 
@@ -1739,6 +1820,19 @@ class AgentChainDetector(BaseDetector):
         if moved is not None:
             start, end = InstructionText._byte_span(text, moved)
             yield self._finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
+        # A skill that wires the agent to an MCP server on a tunnel or a bare public address
+        # (review 98, AG-4): `"url": "http://bore.pub:44876/api/v1/mcp/.../sse"` is a laptop the
+        # skill's author reaches from the internet, handed the agent's tools and context.
+        endpoint = next(
+            (
+                url
+                for url in McpEndpoints.in_text(text)
+                if McpEndpoints.untrusted(agent_config.ApiTraffic.host_of(url))
+            ),
+            None,
+        )
+        if endpoint is not None:
+            yield self._at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, endpoint)
         yield from self._intents(unit, ctx, text)
         corroborated = bool(hidden or injection or exfil or concealed or alarming is not None)
         third_party = SkillOrigin.third_party(unit.content.path, ctx)
@@ -2412,17 +2506,14 @@ class AgentChainDetector(BaseDetector):
         self, unit: FileUnit, ctx: ScanContext, text: str, url: str
     ) -> Iterator[Finding]:
         """A remote MCP server: how it is reached, where, and what its URL carries."""
-        from cordon_scanner.intel.hosts import Destinations
-
         host = agent_config.ApiTraffic.host_of(url)
         local = host in _LOCAL_HOSTS
+        # Both can hold: `http://bore.pub:44876/...` is a tunnel reached in cleartext, and the
+        # tunnel is the finding that blocks.
+        if McpEndpoints.untrusted(host):
+            yield self._at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, url)
         if url.lower().startswith("http://") and not local:
             yield self._at_text("SUSPECT.MCP.INSECURE_TRANSPORT.001", unit, ctx, text, url)
-        elif not local and (
-            Destinations.destination_matcher().search(host.encode("utf-8", "replace"))
-            or re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host)
-        ):
-            yield self._at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, url)
         secret = agent_config.ServerExposure.credential_in_url(url)
         if secret is not None:
             yield self._at_text(

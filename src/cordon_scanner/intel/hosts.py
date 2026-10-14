@@ -135,6 +135,8 @@ TUNNEL_HOSTS: Final = frozenset(
         "xss.ht",
         "bxss.me",
         "interactsh.com",
+        # bore: a public TCP tunnel; `bore.pub:<port>` is a laptop reached from the internet.
+        "bore.pub",
     }
 )
 """Tunnels and out-of-band interaction services.
@@ -199,6 +201,27 @@ INTERACTION_HOSTS: Final = frozenset(
 )
 """Out-of-band interaction services: a request to one exists to tell whoever minted the subdomain
 that some code ran somewhere, and from where. Tunnels are not here -- developers run ngrok."""
+
+
+FREE_HOSTING: Final = frozenset(
+    {
+        "vercel.app",
+        "netlify.app",
+        "pages.dev",
+        "github.io",
+        "web.app",
+        "firebaseapp.com",
+        "glitch.me",
+        "onrender.com",
+        "herokuapp.com",
+        "surge.sh",
+        "replit.app",
+        "fly.dev",
+    }
+)
+"""Hosts where anyone gets a subdomain for nothing. Not a destination to flag on its own -- a
+project's site lives there as often as not -- but a download page there carries no vendor's name:
+ClawHavoc's skills send the reader to `openclawcli.vercel.app` for the "OpenClaw CLI"."""
 
 
 class Destinations:
@@ -367,6 +390,7 @@ _MATCHER: re.Pattern[bytes] | None = None
 
 __all__ = [
     "ALL_HOSTS",
+    "FREE_HOSTING",
     "PASTE_HOSTS",
     "PREFILTER",
     "TUNNEL_HOSTS",
