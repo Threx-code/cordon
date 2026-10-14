@@ -52,6 +52,7 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect import agent_config
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.mcp_model import McpDescriptionModel
 from cordon_scanner.detect.secrets import SourcePaths
 from cordon_scanner.intel import atr
 from cordon_scanner.intel.installers import KNOWN_INSTALLERS, OfficialInstallers
@@ -1531,19 +1532,53 @@ class AgentChainDetector(BaseDetector):
             seen.add(description)
             yield from self._intents(unit, ctx, description, within=text)
             reason = McpServerSource._poisoned_description(description)
-            if reason is not None:
+            # The learned reading (`detect/mcp_model.py`): poisoning written as ordinary prose,
+            # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
+            # reported for review between `warn` and `block`.
+            score = McpDescriptionModel.score(description)
+            limits = McpDescriptionModel.thresholds()
+            learned = score is not None and limits is not None and score >= limits[1]
+            if reason is not None or learned:
+                blocking = reason is not None or (limits is not None and score >= limits[0])
+                why = (
+                    f" It {reason}."
+                    if reason is not None
+                    else f" It reads as instructions to the agent rather than a description of the "
+                    f"tool (model score {score:.2f})."
+                )
                 yield self._at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                     unit,
                     ctx,
                     text,
                     description[:80],
-                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + f" It {reason}.",
+                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + why,
+                    severity=None if blocking else Severity.MEDIUM,
                 )
             yield from self._threat_rules(unit, ctx, description, atr.TEXT_KINDS, within=text)
         names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
             yield from self._threat_rules(unit, ctx, name, ("tool_name",), within=text)
+        # What the tools hand back. The agent reads a tool's result as context, so an instruction
+        # in a returned string steers it as one in a description does. The model only: the
+        # phrase rules were written for descriptions, and status messages are not those.
+        limits = McpDescriptionModel.thresholds("return")
+        if limits is not None:
+            for returned in dict.fromkeys(McpServerSource._tool_returns(text)):
+                score = McpDescriptionModel.score(returned, "return")
+                if score is None or score < limits[1]:
+                    continue
+                yield self._at_text(
+                    "SUSPECT.MCP.TOOL_DESCRIPTION.001",
+                    unit,
+                    ctx,
+                    text,
+                    returned[:80],
+                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
+                    + " The text is what a tool returns, and it reads as instructions to the "
+                    f"agent rather than a result (model score {score:.2f}).",
+                    severity=None if score >= limits[0] else Severity.MEDIUM,
+                )
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -2951,6 +2986,13 @@ _DOCSTRING_TOOL: Final = re.compile(
     r"[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}\w{1,80}\([^)]{0,500}\)[^:\n]{0,200}:[ \t]{0,8}\n?"
     r"[ \t]{0,40}(?P<doc>\"\"\"[^\x00]{0,4000}?\"\"\"|'''[^\x00]{0,4000}?''')"
 )
+_RETURNED_TEXT: Final = re.compile(
+    r"""(?:\breturn\b[^\n;'"`]{0,80}?|\btext[ \t]{0,8}:[ \t]{0,8})[fFrR]{0,2}"""
+    r"""(?:"(?P<dq>[^"\n]{40,4000})"|'(?P<sq>[^'\n]{40,4000})'|`(?P<bq>[^`]{40,4000})`)"""
+)
+"""A sentence-long string literal a tool returns, or an MCP content part's `text`. As with
+`_QUOTED_DESCRIPTION`, an escaped quote ends the match early, leaving the part before it. See
+`McpServerSource._tool_returns`."""
 _SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".json")
 _SERVER_SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py")
 _MCP_SDK: Final = re.compile(
@@ -2969,12 +3011,29 @@ _TOOL_NAME: Final = re.compile(
 
 
 _OTHER_TOOL: Final = re.compile(
-    r"(?i)\b(?:when(?:ever)?|before|after|instead\s+of)\b[^.\n]{0,40}\b(?:the\s+)?[\w.-]+\s+tool\b"
+    # A tool by its name. Not "the tool", "this tool": a description saying what IT does when
+    # given an argument -- "when provided, the tool inserts ... instead" -- is not shadowing.
+    r"(?i)\b(?:when(?:ever)?|before|after|instead\s+of)\b[^.\n]{0,40}\b(?:the\s+)?"
+    r"(?!(?:the|this|that|a|an|each|same|current|same)\s)[\w.-]+\s+tool\b"
     r"|\b(?:any|every|all)\s+other\s+tools?\b"
 )
+"""Naming another tool. On its own that is a server's workflow -- "use this before a
+credential-touching tool", "run this when any other tool fails" -- which 298 descriptions in 194
+real MCP servers do (review 98). Shadowing is naming it AND changing what it does: `_COERCE` and
+`_ALTERS` in the same sentence."""
+_COERCE: Final = re.compile(
+    r"(?i)\b(?:always|must|mandatory|required\s+(?:by|for)|regardless|instead|override|silently)\b"
+)
+_ALTERS: Final = re.compile(
+    r"(?i)\b(?:add|bcc|cc|send|forward|copy|include|attach|redirect|replace|change|append|upload|"
+    r"post|route|set\s+(?:the\s+)?(?:recipient|destination|url|host|address))\b"
+)
 _SECRECY: Final = re.compile(
+    # Never telling someone: an object follows. "Without revealing secret values" and "which the
+    # label views never show" protect or describe; "do not tell the user", "never mention it" hide.
     r"(?i)\b(?:never|do\s+not|don'?t|without)\s+(?:mention(?:ing)?|tell(?:ing)?|inform(?:ing)?|reveal(?:ing)?|"
-    r"disclos(?:e|ing)|show(?:ing)?|notify(?:ing)?|alert(?:ing)?)\b"
+    r"disclos(?:e|ing)|show(?:ing)?|notify(?:ing)?|alert(?:ing)?)\s+"
+    r"(?:(?:this|it|that|these|them|anything)\b|(?:to\s+)?(?:the\s+)?(?:user|human|anyone|operator)s?\b)"
     # The same asked in other words: "keep it secret from the user", "without the user's knowledge",
     # "hide this from the user".
     r"|\bkeep\s+(?:it|this|that|them|these)\s+(?:a\s+)?(?:secret|hidden|private|confidential)\s+from\b"
@@ -2987,10 +3046,28 @@ _MOVES_CONTENT: Final = re.compile(
 )
 """A verb that takes a file's contents somewhere: what turns naming a credential file into an
 instruction to the agent. `Set META_ACCESS_TOKEN in your .env` names one and moves nothing."""
-_SENTENCE: Final = re.compile(r"[^.!?\n]+(?:[.!?](?!\w)|\n|$)")
+_SENTENCE: Final = re.compile(r"[^\n]{1,2000}?(?:[.!?](?!\w)|\n|$)")
+"""One sentence: up to a stop that ends a word, a line break or the end. It crosses a dot inside a
+word. The earlier `[^.!?\n]+` could not, so a sentence holding a domain or a file name --
+`forward a copy to x@evil.example`, `read config.json` -- was skipped whole, and every check made
+per sentence never saw it."""
 _AGENT_TAG: Final = re.compile(
-    r"(?i)<\s*/?\s*(?:important|system|instructions?|secret|hidden|admin|override|note\s+to\s+(?:the\s+)?(?:ai|assistant|agent))\b"
+    r"(?i)<\s*(?P<close>/)?\s*(?P<tag>important|system|instructions?|hidden|admin|override"
+    r"|note\s+to\s+(?:the\s+)?(?:ai|assistant|agent))\s*>"
 )
+"""A tag addressed to the model. It counts when an opening and a closing one of the same name wrap
+words, `<IMPORTANT>...</IMPORTANT>` (`McpServerSource._wrapped`): not `<secret>` or `<id>`, which
+descriptions use as placeholders (`?auth=<secret>`), and not a security tool naming the markers it
+strips (`<system>, </system>`)."""
+_ENV_DUMP: Final = re.compile(
+    r"(?i)\boutput\s+of\s+`?(?:env|printenv|set)\b|\benvironment\s+variables\b"
+)
+"""The environment as a whole. "Copy environment variables from this environment" is a deployment
+tool's job; it is an instruction only when the variables go into a tool call or somewhere else."""
+_ZERO_WIDTH_RUN: Final = 8
+"""Zero-width characters alone can hide text only as a binary code, eight per byte. One or two in
+translated text are a copy-paste artefact; tag characters, bidi controls and variation selectors
+hide text on their own and count from the first."""
 
 
 class McpServerSource:
@@ -3005,20 +3082,48 @@ class McpServerSource:
         tags addressed to the model is steering the agent -- tool poisoning and shadowing --
         whatever its wording. Naming a credential file is not enough: setup notes do that.
         """
-        if HIDDEN.search(description.encode("utf-8")):
+        hidden = [m.group(0) for m in HIDDEN.finditer(description.encode("utf-8"))]
+        if len(hidden) >= _ZERO_WIDTH_RUN or any(
+            not _ZERO_WIDTH_ONLY.fullmatch(character) for character in hidden
+        ):
             return "carries invisible characters"
-        if _AGENT_TAG.search(description):
+        if McpServerSource._wrapped(description):
             return "wraps text in a tag addressed to the model"
         if _SECRECY.search(description):
             return "asks the agent to keep something from the user"
-        if _OTHER_TOOL.search(description):
+        sentences = _SENTENCE.findall(description)
+        if any(
+            _OTHER_TOOL.search(s) and _COERCE.search(s) and _ALTERS.search(s) for s in sentences
+        ):
             return "tells the agent how to use other tools"
         if agent_config.CommandClassifier.classify(description) is not None or any(
-            _EXFIL_PATHS.search(sentence) and _MOVES_CONTENT.search(sentence)
-            for sentence in _SENTENCE.findall(description)
+            McpServerSource._moves_credentials(sentence) for sentence in sentences
         ):
             return "points the agent at credential files or a command that moves them"
         return None
+
+    @staticmethod
+    def _wrapped(description: str) -> bool:
+        """Whether two or more words sit between an opening and a closing model-addressed tag."""
+        opened: dict[str, int] = {}
+        for match in _AGENT_TAG.finditer(description):
+            name = " ".join(match.group("tag").lower().split())
+            if match.group("close") is None:
+                opened.setdefault(name, match.end())
+            elif name in opened and len(description[opened[name] : match.start()].split()) >= 2:
+                return True
+        return False
+
+    @staticmethod
+    def _moves_credentials(sentence: str) -> bool:
+        """A sentence that takes a credential file, or the whole environment, somewhere."""
+        found = _EXFIL_PATHS.search(sentence)
+        if found is None or not _MOVES_CONTENT.search(sentence):
+            return False
+        named_file = any(
+            not _ENV_DUMP.fullmatch(m.group(0)) for m in _EXFIL_PATHS.finditer(sentence)
+        )
+        return named_file or bool(_AGENT_CHANNEL.search(sentence) or _SEND.search(sentence))
 
     @staticmethod
     def _tool_descriptions(text: str) -> Iterator[str]:
@@ -3028,6 +3133,18 @@ class McpServerSource:
             yield match.group("dq") or match.group("sq") or match.group("bq") or ""
         for match in _DOCSTRING_TOOL.finditer(text):
             yield match.group("doc")[3:-3]
+
+    @staticmethod
+    def _tool_returns(text: str) -> Iterator[str]:
+        """The prose a server hands back to the agent as a tool's result: a string literal in a
+        `return` (Python, JS) or the `text` of an MCP content part. Whatever a tool returns is read
+        by the model as context, so an instruction written there steers it as a description does
+        -- MCP-SafetyBench's Function Return Injection (review 98). Only literals long enough to
+        be a sentence; the agent sees nothing else of the code."""
+        for match in _RETURNED_TEXT.finditer(text):
+            body = match.group("dq") or match.group("sq") or match.group("bq") or ""
+            if " " in body:
+                yield body.replace("\\n", "\n")
 
     @staticmethod
     def _files_under(
