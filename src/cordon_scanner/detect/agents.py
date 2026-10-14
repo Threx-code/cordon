@@ -2986,13 +2986,13 @@ _DOCSTRING_TOOL: Final = re.compile(
     r"[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}\w{1,80}\([^)]{0,500}\)[^:\n]{0,200}:[ \t]{0,8}\n?"
     r"[ \t]{0,40}(?P<doc>\"\"\"[^\x00]{0,4000}?\"\"\"|'''[^\x00]{0,4000}?''')"
 )
-_RETURNED_TEXT: Final = re.compile(
-    r"""(?:\breturn\b[^\n;'"`]{0,80}?|\btext[ \t]{0,8}:[ \t]{0,8})[fFrR]{0,2}"""
-    r"""(?:"(?P<dq>[^"\n]{40,4000})"|'(?P<sq>[^'\n]{40,4000})'|`(?P<bq>[^`]{40,4000})`)"""
-)
-"""A sentence-long string literal a tool returns, or an MCP content part's `text`. As with
-`_QUOTED_DESCRIPTION`, an escaped quote ends the match early, leaving the part before it. See
-`McpServerSource._tool_returns`."""
+_RETURN_START: Final = re.compile(r"\breturn\b|\btext[ \t]{0,8}:")
+"""Where a tool's result is written: a `return` (Python, JS) or an MCP content part's `text`.
+What follows is read by `McpServerSource._tool_returns`, which has to lex rather than match:
+the attack strings are full of escaped quotes (`\\'JPM\\'`), and a pattern that ends at one
+reads nothing."""
+_RETURN_REACH: Final = 6_000
+_ESCAPES: Final = {"n": "\n", "t": "\t", "r": "", "'": "'", '"': '"', "`": "`", "\\": "\\"}
 _SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".json")
 _SERVER_SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py")
 _MCP_SDK: Final = re.compile(
@@ -3136,15 +3136,54 @@ class McpServerSource:
 
     @staticmethod
     def _tool_returns(text: str) -> Iterator[str]:
-        """The prose a server hands back to the agent as a tool's result: a string literal in a
-        `return` (Python, JS) or the `text` of an MCP content part. Whatever a tool returns is read
-        by the model as context, so an instruction written there steers it as a description does
-        -- MCP-SafetyBench's Function Return Injection (review 98). Only literals long enough to
-        be a sentence; the agent sees nothing else of the code."""
-        for match in _RETURNED_TEXT.finditer(text):
-            body = match.group("dq") or match.group("sq") or match.group("bq") or ""
-            if " " in body:
-                yield body.replace("\\n", "\n")
+        """The prose a server hands back to the agent as a tool's result: every string literal in
+        a `return` statement (Python, JS), concatenations included, or the `text` of an MCP
+        content part. Whatever a tool returns is read by the model as context, so an instruction
+        written there steers it as a description does -- MCP-SafetyBench's Function Return
+        Injection (review 98). Only literals long enough to be a sentence."""
+        for start in _RETURN_START.finditer(text):
+            single = start.group(0).startswith("text")
+            for literal in McpServerSource._statement_literals(text, start.end(), single=single):
+                if len(literal) >= 40 and " " in literal:
+                    yield literal
+
+    @staticmethod
+    def _statement_literals(text: str, index: int, *, single: bool) -> Iterator[str]:
+        """String literals from `index` to the end of the statement, escapes decoded. The
+        statement ends at a newline or `;` outside brackets, or after the first literal when
+        `single`; never more than `_RETURN_REACH` characters on."""
+        end = min(len(text), index + _RETURN_REACH)
+        depth = 0
+        while index < end:
+            char = text[index]
+            if char in "'\"`":
+                buffer: list[str] = []
+                cursor = index + 1
+                while cursor < end and text[cursor] != char:
+                    if text[cursor] == "\\" and cursor + 1 < end:
+                        buffer.append(_ESCAPES.get(text[cursor + 1], text[cursor + 1]))
+                        cursor += 2
+                        continue
+                    if text[cursor] == "\n" and char != "`":
+                        break
+                    buffer.append(text[cursor])
+                    cursor += 1
+                yield "".join(buffer)
+                if single:
+                    return
+                index = cursor + 1
+                continue
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+                if depth < 0:
+                    return
+            elif (depth == 0 and (char == ";" or (char == "\n" and text[index - 1] != "\\"))) or (
+                single and depth == 0 and char == ","
+            ):
+                return
+            index += 1
 
     @staticmethod
     def _files_under(
