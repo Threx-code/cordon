@@ -219,6 +219,12 @@ GENUINE_SPEC = re.compile(
 CONTROL = re.compile(r"(?:exit(?:\s+\d{1,3})?|true|:)")
 """Shell words that do nothing but end or succeed: `echo "use pnpm" && exit 1` is a guard."""
 
+FILE_TEST = re.compile(
+    r"(?:test|\[)\s+!?\s*-[defrsxz]\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}(?:\s+\])?"
+)
+"""A test of a path inside the package, as in `test -d dist || npm run build || true`: it runs
+nothing and only decides whether the step after it does, which is judged on its own."""
+
 CD_INSIDE = re.compile(r"cd\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}")
 """A change of directory inside the package: what the command after it runs still decides."""
 
@@ -448,6 +454,7 @@ class ManifestScripts:
         if (
             CONTROL.fullmatch(part)
             or CD_INSIDE.fullmatch(part)
+            or FILE_TEST.fullmatch(part)
             or ManifestScripts._only_prints(part)
         ):
             return True

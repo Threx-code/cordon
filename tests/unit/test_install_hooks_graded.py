@@ -59,6 +59,8 @@ class TestStandardHooksAreQuiet:
             {"postinstall": "./node_modules/.bin/bower install"},
             {"postinstall": "npx patch-package"},
             {"postinstall": "rm -rf node_modules/@types/react-native"},
+            {"postinstall": "test -d dist || npm run build || true", "build": "tsc"},
+            {"postinstall": "[ -f dist/index.js ] || npm run build", "build": "tsc"},
         ],
     )
     def test_no_finding(self, tmp_path: Path, scripts: dict[str, str]) -> None:
@@ -97,6 +99,12 @@ class TestTheSameShapesStillReport:
 
     def test_removing_outside_the_package(self, tmp_path: Path) -> None:
         assert HookKit.findings(tmp_path, {"postinstall": "rm -rf node_modules/../../x"})
+
+    def test_a_file_test_outside_the_package(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "test -d ~/.ssh || ./setup"})
+
+    def test_a_file_test_before_an_unknown_step(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "test -d dist || ./bin/fetch"})
 
     def test_a_guard_followed_by_a_step(self, tmp_path: Path) -> None:
         assert HookKit.findings(tmp_path, {"preinstall": "npx only-allow pnpm && ./setup"})
