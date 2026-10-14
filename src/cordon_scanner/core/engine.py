@@ -5316,6 +5316,12 @@ class Engine:
                 continue
             try:
                 manifest = ecosystem.parse_manifest(unit.content)
+                # And the hooks only the tree shows: a CRAN source package's `configure` and
+                # `cleanup` beside its DESCRIPTION. The manifest detector and the inventory
+                # already ask; without it here those scripts were never install-time code.
+                hooks_from_tree = getattr(ecosystem, "hooks_from_tree", None)
+                if hooks_from_tree is not None:
+                    manifest = hooks_from_tree(manifest, known)
             except Exception as exc:
                 # Same containment as the lockfile path, and reported for the
                 # same reason. Catching it and moving on quietly would trade one
@@ -5413,6 +5419,12 @@ class Engine:
             for token in re.split(r"[\s;&|]+", Engine._runs(hook.command)):
                 candidate = token.strip("\"'")
                 if not candidate or candidate.startswith("-"):
+                    continue
+                if candidate in known:
+                    # A command that names a member by its scan path, as a CRAN DESCRIPTION's
+                    # `sh <archive>!<pkg>/configure` does: that file runs at install, whatever
+                    # its extension. Exact membership only.
+                    found.add(candidate)
                     continue
                 if "." not in PurePosixPath(candidate).name:
                     # No extension: a program name such as `node` or `make`,

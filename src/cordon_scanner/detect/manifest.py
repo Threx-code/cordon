@@ -1151,8 +1151,16 @@ class ManifestDetector(BaseDetector):
                 # payload in them is already reported as what it is. What runs something
                 # opaque -- a binary, an inline `-e` string, a file that is not there -- keeps
                 # the dependency grading, because then this finding is all there is.
+                # Or a file the command hands to a shell, which is shell text whatever its name:
+                # `sh configure` and `sh cleanup` are how R installs a source package, and
+                # 11 of 300 CRAN packages were blocked on them (review 98). `sh` cannot run a
+                # binary, so what it runs is a script this scan read.
                 readable = bool(in_tree) and all(
-                    path.rsplit(".", 1)[-1].lower() in READABLE_HOOK_TARGETS for path in in_tree
+                    path.rsplit(".", 1)[-1].lower() in READABLE_HOOK_TARGETS
+                    or re.search(
+                        rf"(?:^|[\s;&|(])(?:ba|da|z)?sh\s+{re.escape(path)}(?:\s|$)", command
+                    )
+                    for path in in_tree
                 )
                 yield self._finding(
                     rule_id="SUSPECT.INSTALL.SCRIPT.001",
