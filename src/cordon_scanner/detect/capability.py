@@ -845,12 +845,32 @@ class CapabilityDetector(BaseDetector):
     )
     """A write, or the command that installs a unit, close to where persistence is named."""
 
+    FORMULA: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"^class\s+\w+\s*<\s*(?:Portable)?Formula\b", re.MULTILINE
+    )
+
+    #: Ruby's ways of writing a file, which a formula would have to use to plant anything.
+    RUBY_WRITE: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"\bappend_lines\b|\bwrite\b|\bputs\b|\bFile\s*\.\s*open\b|\batomic_write\b|"
+        rb"\bFileUtils\b|\bln_s|\bcp\b|>>"
+    )
+
     @staticmethod
-    def _writes_near(content: FileContent, hits: list[CapabilityHit], reach: int = 160) -> bool:
+    def _is_formula(content: FileContent) -> bool:
+        """A Homebrew formula: Ruby declaring `class Name < Formula`."""
+        return content.path.endswith(".rb") and bool(CapabilityDetector.FORMULA.search(content.raw))
+
+    @staticmethod
+    def _writes_near(
+        content: FileContent,
+        hits: list[CapabilityHit],
+        reach: int = 160,
+        writes: re.Pattern[bytes] | None = None,
+    ) -> bool:
         """Whether a persistence location in `hits` is written, not only named."""
         raw = content.raw
         return any(
-            CapabilityDetector.WRITE_NEAR.search(
+            (writes or CapabilityDetector.WRITE_NEAR).search(
                 raw, max(0, h.byte_start - reach), min(len(raw), h.byte_end + reach)
             )
             for h in hits
@@ -3312,6 +3332,22 @@ class CapabilityDetector(BaseDetector):
             # A daemon's health check on its own port: what reaches 127.0.0.1 never leaves the
             # machine, so it carries nothing anywhere (review 98, FP-3: aigentry-telepty). Any
             # other host or URL in the region keeps the rule.
+            return None
+
+        if (
+            in_hook
+            and rule.id == self.PERSIST_RULE
+            and CapabilityDetector._is_formula(content)
+            and not CapabilityDetector._writes_near(content, hits)
+            and not CapabilityDetector._writes_near(
+                content, hits, writes=CapabilityDetector.RUBY_WRITE
+            )
+        ):
+            # A Homebrew formula's `install` and `post_install` run in brew's build sandbox, which
+            # lets them write only under the prefix: a formula cannot plant a login item, so it has
+            # to be seen writing one. What a formula names is the user's profile in its caveats or
+            # `desc`, a LaunchAgent it unloads, an `etc/profile.d` under its own prefix (review 98:
+            # 27 formulas in one tap). A cask runs unsandboxed and keeps the rule.
             return None
 
         if in_hook and SourcePaths.is_editor_extension(content.path):

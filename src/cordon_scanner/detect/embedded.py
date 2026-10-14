@@ -26,6 +26,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass
+from typing import ClassVar
 
 MAX_COMMANDS = 32
 """Enough to characterise a file. A file with more spawn sites than this is
@@ -129,9 +130,11 @@ class EmbeddedCommands:
                 break
 
             window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
-            arguments = window[: EmbeddedCommands._close_paren(window)]
+            arguments = EmbeddedCommands._own_arguments(
+                window[: EmbeddedCommands._close_paren(window)], language
+            )
             parts = EmbeddedCommands._literals(arguments)
-            if not parts:
+            if not parts or _NAME.match(arguments):
                 # The command may be a name rather than a literal. One line of
                 # indirection defeated all of this:
                 #
@@ -144,7 +147,16 @@ class EmbeddedCommands:
                 # them: the JavaScript rules see `exec` handed a variable, and the
                 # shell rules never run because the file is JavaScript, so the
                 # command was read by nobody.
-                parts = EmbeddedCommands._assigned_literal(text, arguments, call.start())
+                #
+                # And resolved even when a literal sits later in the call: in
+                # `exec(command, (error) => { // no "noise" })` the only literal the
+                # arguments held was a word in the callback's comment, so the command
+                # read as `noise` and the PowerShell download-and-run assigned to
+                # `command` went unread (review 98: c11dff444).
+                parts = [
+                    *EmbeddedCommands._assigned_literal(text, arguments, call.start()),
+                    *parts,
+                ]
             if not parts:
                 continue
 
@@ -259,6 +271,58 @@ class EmbeddedCommands:
             index += 1
 
         return parts
+
+    #: Line and block comment openers by language, for reading a call's own arguments.
+    _COMMENTS: ClassVar[dict[str, tuple[str, ...]]] = {
+        "ruby": ("#",),
+        "perl": ("#",),
+        "lua": ("--",),
+        "php": ("//", "#", "/*"),
+        "xml": (),
+    }
+    _C_FAMILY_COMMENTS: ClassVar[tuple[str, ...]] = ("//", "/*")
+
+    @staticmethod
+    def _own_arguments(arguments: str, language: str | None) -> str:
+        """A call's arguments up to the first callback, with comments removed.
+
+        What a spawn call runs is in its leading arguments; a callback's body is code that runs
+        afterwards, and its comments and strings are not the command. Read whole, a word quoted
+        in the callback's comment was taken for the command line. Stops at an arrow, a
+        `function` or a block opened outside a literal; quoted text is kept as it is.
+        """
+        openers = EmbeddedCommands._COMMENTS.get(
+            language or "", EmbeddedCommands._C_FAMILY_COMMENTS
+        )
+        out: list[str] = []
+        index, length = 0, len(arguments)
+        while index < length:
+            char = arguments[index]
+            if char in _QUOTES:
+                end = index + 1
+                while end < length and arguments[end] != char:
+                    end += 2 if arguments[end] == "\\" else 1
+                out.append(arguments[index : end + 1])
+                index = end + 1
+                continue
+            opener = next((o for o in openers if arguments.startswith(o, index)), None)
+            if opener == "/*":
+                close = arguments.find("*/", index + 2)
+                index = length if close == -1 else close + 2
+                continue
+            if opener is not None:
+                newline = arguments.find("\n", index)
+                index = length if newline == -1 else newline
+                continue
+            if arguments.startswith("=>", index) or char == "{":
+                break
+            if arguments.startswith("function", index) and not (
+                index and (arguments[index - 1].isalnum() or arguments[index - 1] in "_$")
+            ):
+                break
+            out.append(char)
+            index += 1
+        return "".join(out)
 
     @staticmethod
     def _close_paren(window: str) -> int:

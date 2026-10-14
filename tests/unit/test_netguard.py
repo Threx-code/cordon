@@ -85,6 +85,55 @@ class TestTheGuard:
         assert found == {"10.1.2.3": "allowed", "10.9.9.9": "refused"}
 
 
+class TestTheSeal:
+    """A sealed scan phase refuses every resolution, public or private, then lifts cleanly."""
+
+    PROBE = (
+        "import json, socket\n"
+        "from cordon_scanner.core.netguard import NetworkGuard, NetworkSealed\n"
+        "out = {}\n"
+        "def probe(label, host):\n"
+        "    try:\n"
+        "        socket.getaddrinfo(host, 443)\n"
+        "        out[label] = 'allowed'\n"
+        "    except NetworkSealed:\n"
+        "        out[label] = 'sealed'\n"
+        "    except socket.gaierror:\n"
+        "        out[label] = 'refused'\n"
+        "host = __import__('sys').argv[1]\n"
+        "probe('before', host)\n"
+        "with NetworkGuard.sealed():\n"
+        "    probe('during', host)\n"
+        "probe('after', host)\n"
+        "print(json.dumps(out))\n"
+    )
+
+    def run(self, host: str, env: dict[str, str]) -> dict[str, str]:
+        done = subprocess.run(
+            [sys.executable, "-c", self.PROBE, host],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+            env={**os.environ, **env},
+        )
+        return json.loads(done.stdout)
+
+    def test_a_public_address_is_refused_while_sealed_and_allowed_after(self) -> None:
+        # Before the seal nothing is installed, so a numeric public address resolves; during the
+        # seal even it is refused with NetworkSealed; after, it resolves again.
+        assert self.run("8.8.8.8", {ENABLE: ""}) == {
+            "before": "allowed",
+            "during": "sealed",
+            "after": "allowed",
+        }
+
+    def test_the_seal_overrides_the_operator_private_allowlist(self) -> None:
+        # A host the operator allowed for online scans is still refused while the scan is sealed.
+        found = self.run("10.1.2.3", {ENABLE: "1", ALLOWED: "10.1.2.3"})
+        assert found["during"] == "sealed"
+
+
 class TestMcpScansAreGuarded:
     def test_scans_the_mcp_server_runs_reach_the_public_network_only(self) -> None:
         assert Runner(offline=False).environment[ENABLE] == "1"

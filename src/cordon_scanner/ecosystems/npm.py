@@ -618,6 +618,9 @@ class PnpmLock:
             f"/{name}@{bare}",
             f"/{name}/{reference}",
             f"/{name}/{bare}",
+            # The reference already a key: `registry.npmjs.org/@types/estree@1.0.0`.
+            bare,
+            f"/{bare}",
         ]
 
     @staticmethod
@@ -629,6 +632,12 @@ class PnpmLock:
         if reference.startswith(("link:", "file:", "http:", "https:", "git+", "github:")):
             return name, reference, None
         head = reference.split("(", 1)[0]
+        # A package from a non-default registry is keyed with the registry's host:
+        # `'@types/estree': registry.npmjs.org/@types/estree@1.0.0`. That is the package's key, not
+        # an alias -- read as one, every such dependency was named `registry.npmjs.org/`, and two
+        # of them at one version read as one package locked with two hashes (review 98).
+        if re.match(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/", head):
+            return name, reference, None
         at = head.find("@", 1 if head.startswith("@") else 0)
         if at > 0 and not head[:at].replace(".", "").isdigit():
             return head[:at], reference[at + 1 :], name

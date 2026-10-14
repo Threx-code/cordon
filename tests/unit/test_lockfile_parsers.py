@@ -505,6 +505,30 @@ class TestPnpmKeyShapes:
         graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("pnpm-lock.yaml", text))
         assert [(e.name, e.version) for e in graph.entries] == [("foo", "1.0.0")]
 
+    def test_a_registry_qualified_key_keeps_its_package_name(self) -> None:
+        """`'@types/estree': registry.npmjs.org/@types/estree@1.0.0` is a key, not an alias: read as
+        one, every such dependency was named `registry.npmjs.org/`, and two of them at one version
+        reported one package locked with two hashes (review 98: aspect_rules_js)."""
+        text = (
+            "lockfileVersion: '6.0'\n\nimporters:\n  .:\n    dependencies:\n"
+            "      '@types/estree':\n        specifier: 1.0.0\n"
+            "        version: registry.npmjs.org/@types/estree@1.0.0\n"
+            "      '@types/responselike':\n        specifier: 1.0.0\n"
+            "        version: registry.npmjs.org/@types/responselike@1.0.0\n"
+            "\npackages:\n"
+            "\n  registry.npmjs.org/@types/estree@1.0.0:\n"
+            "    resolution: {integrity: sha512-aaa, tarball: https://registry.npmjs.org/x.tgz}\n"
+            "    name: '@types/estree'\n    version: 1.0.0\n"
+            "\n  registry.npmjs.org/@types/responselike@1.0.0:\n"
+            "    resolution: {integrity: sha512-bbb, tarball: https://registry.npmjs.org/y.tgz}\n"
+            "    name: '@types/responselike'\n    version: 1.0.0\n"
+        )
+        graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("pnpm-lock.yaml", text))
+        assert {(e.name, e.version) for e in graph.entries} == {
+            ("@types/estree", "1.0.0"),
+            ("@types/responselike", "1.0.0"),
+        }
+
     def test_keys_none_of_which_parse_report_rather_than_empty(self) -> None:
         """An unread lockfile and a project with no dependencies must not
         produce the same empty graph."""

@@ -20,10 +20,12 @@ HTTP proxy is resolved by the proxy, which applies its own egress rules.
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import os
 import socket
 import threading
+from collections.abc import Iterator
 from typing import Any, ClassVar, Final
 
 ENABLE: Final = "CORDON_PUBLIC_NETWORK_ONLY"
@@ -34,10 +36,23 @@ class PrivateAddressRefused(socket.gaierror):
     """A name that resolves only to addresses inside the network, refused by the guard."""
 
 
+class NetworkSealed(socket.gaierror):
+    """Any name resolution attempted during a sealed (offline) scan phase, refused outright.
+
+    The seal is the security invariant behind "scan offline": once the pre-scan intel pull is
+    done, the scan phase must not reach the network at all, even if a detector, a parser or a
+    third-party library attempts it. An application flag that merely declines to fetch is not that
+    guarantee -- a bug or a hostile dependency could still open a socket. The seal sits at the one
+    place every outbound connection resolves (`socket.getaddrinfo`) and refuses it there, so the
+    guarantee is enforced rather than promised.
+    """
+
+
 class NetworkGuard:
     _installed: ClassVar[bool] = False
     _lock: ClassVar[threading.Lock] = threading.Lock()
     _allowed: ClassVar[frozenset[str]] = frozenset()
+    _sealed: ClassVar[bool] = False
 
     @staticmethod
     def public(address: str) -> bool:
@@ -77,8 +92,18 @@ class NetworkGuard:
             original = socket.getaddrinfo
 
             def guarded(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
-                answers = original(host, port, *args, **kwargs)
                 key = cls.host_key(host)
+                if cls._sealed:
+                    # The scan phase is sealed: refuse before resolving, so nothing reaches the
+                    # network even for the lookup. A loopback name is still refused -- a sealed
+                    # scan talks to nothing, and a detector with a real local-service need runs
+                    # outside the seal (online mode), not through an exception here.
+                    raise NetworkSealed(
+                        socket.EAI_NONAME,
+                        f"refused {key or 'an empty host'}: the scan phase is sealed and must not "
+                        f"reach the network; intel is pulled before the scan, never during it",
+                    )
+                answers = original(host, port, *args, **kwargs)
                 if key in cls._allowed:
                     return answers
                 kept = [a for a in answers if cls.public(str(a[4][0]))]
@@ -92,6 +117,27 @@ class NetworkGuard:
 
             socket.getaddrinfo = guarded
             cls._installed = True
+
+    @classmethod
+    @contextlib.contextmanager
+    def sealed(cls) -> Iterator[None]:
+        """Seal the network for the duration of the scan phase: every resolution is refused.
+
+        Installs the guard first (so `getaddrinfo` is patched even when the public-only mode was
+        not enabled), sets the seal, and restores the previous seal state on exit -- so nesting
+        and an online phase that follows an offline one both behave. The engine enters this around
+        the detector phase of a scan that may not use the network, so the "offline" guarantee is
+        enforced rather than trusted.
+        """
+        cls.install(cls._allowed if cls._installed else None)
+        with cls._lock:
+            previous = cls._sealed
+            cls._sealed = True
+        try:
+            yield
+        finally:
+            with cls._lock:
+                cls._sealed = previous
 
     @classmethod
     def install_if_enabled(cls) -> bool:

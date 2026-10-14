@@ -13385,7 +13385,7 @@ class TestAPublishedPackagesHookIsGradedByWhatItRuns:
             "package.json": self.MANIFEST,
             "install.js": b"const fs = require('fs');\nfs.mkdirSync('bin', {recursive: true});\n",
         }
-        assert self._severity(tmp_path, files) == ["MEDIUM"]
+        assert self._severity(tmp_path, files) == ["LOW"]
 
     def test_a_target_that_is_not_there_blocks(self, tmp_path) -> None:
         assert self._severity(tmp_path, {"package.json": self.MANIFEST}) == ["HIGH"]
@@ -13570,9 +13570,7 @@ class TestAnInlineRequireRunsTheFile:
         )
 
     def test_a_benign_banner_is_below_the_gate(self, tmp_path) -> None:
-        assert self._findings(tmp_path, b"console.log('Thank you for using core-js');\n") == [
-            "MEDIUM"
-        ]
+        assert self._findings(tmp_path, b"console.log('Thank you for using core-js');\n") == ["LOW"]
 
     def test_the_required_file_runs_at_install(self, tmp_path) -> None:
         import io

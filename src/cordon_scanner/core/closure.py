@@ -194,13 +194,26 @@ class ImportClosure:
         """
         seen: set[str] = set()
         frontier = [(path, 0) for path in hooks if path in sources]
+        # Where an absolute import resolves: the directory the hook runs from, which is
+        # `sys.path[0]` for `python setup.py`. Relative to the importing file only, an
+        # `import setup.install_command` written in `setup/__init__.py` was looked for at
+        # `setup/setup/install_command.py`, so a sdist that kept its install command in a
+        # package beside `setup.py` ran that command unread as install-time code (review 98:
+        # randrange, whose command sends the environment away).
+        roots = {str(PurePosixPath(path).parent) for path in hooks if path in sources}
 
         while frontier and len(seen) < MAX_FILES:
             path, depth = frontier.pop()
             if depth >= MAX_DEPTH:
                 continue
             for module in cls.imported_by(sources[path], path):
-                for candidate in cls.candidates(module, path):
+                rooted = [
+                    f"{root}/{'/'.join(module.split('.'))}{suffix}"
+                    for root in roots
+                    if root != "."
+                    for suffix in (".py", "/__init__.py")
+                ]
+                for candidate in [*cls.candidates(module, path), *rooted]:
                     normalised = candidate.lstrip("./")
                     if normalised in sources and normalised not in seen:
                         seen.add(normalised)

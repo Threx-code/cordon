@@ -134,6 +134,11 @@ both would be silenced by comparing kinds alone. Nor is `data`, which is a
 default rather than a claim that two formats mean the same thing."""
 
 
+NATIVE_FORMATS = frozenset({"ELF executable", "PE executable", "Mach-O executable"})
+"""Compiled machine code for one platform or another. Swapped for each other they are a build's
+naming convention; a script or a Java class in their place is still a disguise."""
+
+
 FORMATS: tuple[Format, ...] = (
     Format(
         "ELF executable",
@@ -652,7 +657,9 @@ class BinaryDetector(BaseDetector):
         named = found if head is None else self.identify(head)
         own_format = self.named_by_its_own_format(content.path, judged)
         mismatch = (
-            None if content.is_lfs_pointer or own_format else self.mismatch(content.path, named)
+            None
+            if content.is_lfs_pointer or own_format or self.damaged_in_transit(content.path, judged)
+            else self.mismatch(content.path, named)
         )
         if mismatch is None and named is None and not content.is_lfs_pointer and not own_format:
             mismatch = self.binary_source(content.path, judged)
@@ -730,6 +737,29 @@ class BinaryDetector(BaseDetector):
             if any(head.startswith(magic, fmt.offset) for magic in fmt.magic):
                 return fmt
         return None
+
+    @staticmethod
+    def damaged_in_transit(path: str, raw: bytes) -> bool:
+        """Whether the bytes are the format the name promises, with its line endings rewritten.
+
+        PNG's signature carries `\r\n` and `\n` so that a transfer which rewrites line endings
+        breaks it detectably, and that is what git's text conversion does to a binary committed
+        without `-text`: `\x89PNG\r\n\x1a\n` arrives as `\x89PNG\n\x1a\n`. The file is a
+        damaged image, not a disguise -- a repository kept 128 of them in `static=broken/`
+        (review 98). Nothing runs a damaged PNG, and a script under the name still has no such
+        signature in front of it.
+        """
+        extension = "." + ContainerPaths.basename(path).lower().rpartition(".")[2]
+        promised = next((f for f in FORMATS if extension in f.extensions), None)
+        if promised is None:
+            return False
+        for magic in promised.magic:
+            if b"\n" not in magic:
+                continue
+            for rewritten in (magic.replace(b"\r\n", b"\n"), magic.replace(b"\n", b"\r\n")):
+                if rewritten != magic and raw.startswith(rewritten, promised.offset):
+                    return True
+        return False
 
     @staticmethod
     def binary_source(path: str, raw: bytes) -> str | None:
@@ -831,6 +861,15 @@ class BinaryDetector(BaseDetector):
             return None
         if extension in found.extensions:
             # Shared extensions: `.o` is both ELF and Mach-O, `.jar` is a ZIP.
+            return None
+        if found.name in NATIVE_FORMATS and promised.name in NATIVE_FORMATS | {"WebAssembly"}:
+            # One platform's binary under another's extension: dune names every Linux ELF
+            # `main.exe`, and cross-built npm packages ship `tool-linux-x64.exe` (review 98: 40
+            # of 201 benign units). It is a compiled program either way, judged as one by the
+            # executable rules; what the name hides from is a reader of text, which neither is.
+            return None
+        if found.name == "WebAssembly" and promised.name in NATIVE_FORMATS:
+            # Emscripten names a side module `.so`; it runs only inside a WebAssembly runtime.
             return None
         if found.kind == promised.kind and found.kind in INTERCHANGEABLE_KINDS:
             # A naming error rather than a disguise: a PNG saved as `.jpg` runs

@@ -46,6 +46,36 @@ WRITTEN = CAVEATS.replace(
 )
 
 
+#: How most of homebrew-core writes it: `def caveats; <<~EOS` on one line, the name and the
+#: heredoc together, and a `desc` naming the profile the tool manages.
+ONE_LINE = """class Sshrc < Formula
+  desc "Bring your .bashrc, .vimrc, etc. with you when you ssh"
+  url "https://example.invalid/sshrc-0.6.tar.gz"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+
+  def install
+    bin.install "sshrc"
+  end
+
+  def caveats; <<~EOS
+    Add the following line to your ~/.bash_profile or ~/.zshrc:
+      source #{HOMEBREW_PREFIX}/etc/sshrc.sh
+  EOS
+  end
+end
+"""
+
+#: A cask's removal stanza as a statement: the LaunchAgent is what `brew uninstall --zap` deletes.
+ZAP = """cask "x" do
+  app "X.app"
+  zap trash: [
+    "~/Library/Caches/x",
+    "~/Library/LaunchAgents/x.plist",
+  ]
+end
+"""
+
+
 class HomebrewKit:
     @staticmethod
     def rules(tmp_path: Path, formula: str) -> set[str]:
@@ -56,7 +86,7 @@ class HomebrewKit:
 
 
 class TestNotRunAtInstall:
-    def test_the_spans_are_caveats_service_and_test(self) -> None:
+    def test_the_spans_are_desc_caveats_service_and_test(self) -> None:
         lines = CAVEATS.splitlines()
         spans = NotRunAtInstall.spans(CAVEATS)
         opened = {
@@ -65,9 +95,17 @@ class TestNotRunAtInstall:
             else lines[first - 1].strip().split()[0]
             for first, _ in spans
         }
-        assert opened == {"def caveats", "service", "test"}
+        assert opened == {"desc", "def caveats", "service", "test"}
         install = next(i for i, line in enumerate(lines, 1) if line.strip() == "def install")
         assert not any(first <= install <= last for first, last in spans)
+
+    def test_a_one_line_caveats_heredoc_is_a_span(self) -> None:
+        lines = ONE_LINE.splitlines()
+        first = next(i for i, line in enumerate(lines, 1) if "def caveats" in line)
+        assert any(a == first and b > first for a, b in NotRunAtInstall.spans(ONE_LINE))
+
+    def test_a_zap_statement_is_a_span(self) -> None:
+        assert (3, 6) in NotRunAtInstall.spans(ZAP)
 
     def test_a_caskroom_caveats_heredoc_is_a_span(self) -> None:
         cask = 'cask "x" do\n  caveats <<~EOS\n    Add x to ~/.zshrc\n  EOS\n  postflight do\n    system "true"\n  end\nend\n'
@@ -80,3 +118,6 @@ class TestAFormula:
 
     def test_whose_install_writes_the_profile_still_is(self, tmp_path: Path) -> None:
         assert "MALWARE.INSTALL.PERSIST.001" in HomebrewKit.rules(tmp_path, WRITTEN)
+
+    def test_whose_one_line_caveats_and_desc_name_a_profile_is_not(self, tmp_path: Path) -> None:
+        assert "MALWARE.INSTALL.PERSIST.001" not in HomebrewKit.rules(tmp_path, ONE_LINE)

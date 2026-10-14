@@ -11,6 +11,8 @@ rather than format.
 
 from __future__ import annotations
 
+import pytest
+
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.models import Category, Severity
@@ -94,6 +96,33 @@ class TestPolyglot:
 
     def test_a_real_png_is_not_a_polyglot(self) -> None:
         assert "SUSPECT.POLYGLOT.MISMATCH.001" not in BinaryHelpers.ids_for("logo.png", PNG)
+
+    def test_a_png_whose_line_endings_were_rewritten_is_damaged_not_disguised(self) -> None:
+        # git's text conversion on a PNG committed without `-text`: `\r\n` became `\n`.
+        damaged = PNG.replace(b"\r\n", b"\n", 1)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in BinaryHelpers.ids_for("logo.png", damaged)
+
+    def test_a_script_after_a_damaged_signature_prefix_is_still_one(self) -> None:
+        # Only the signature is forgiven; the shebang test above still reports a script.
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" in BinaryHelpers.ids_for(
+            "logo.png", b"\x89PNG\r\n#!/bin/sh\n"
+        )
+
+    @pytest.mark.parametrize(
+        ("name", "head"),
+        [("main.exe", b"\x7fELF\x02\x01\x01"), ("tool-darwin-x64.exe", b"\xcf\xfa\xed\xfe")],
+    )
+    def test_one_platforms_binary_under_anothers_extension_is_a_convention(
+        self, name: str, head: bytes
+    ) -> None:
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in BinaryHelpers.ids_for(
+            name, head + b"\x00" * 64
+        )
+
+    def test_a_script_named_like_a_library_is_still_reported(self) -> None:
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" in BinaryHelpers.ids_for(
+            "libfoo.so", b"#!/bin/sh\necho\n"
+        )
 
     def test_a_source_extension_promises_nothing(self) -> None:
         """A `.py` file has no required first bytes, and most have no shebang.

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import io
 import json
 import posixpath
@@ -381,6 +382,11 @@ AUTHOR_TIME_FILENAMES = frozenset(
         "docker-compose.yml",
         "docker-compose.yaml",
         "compose.yaml",
+        # zc.buildout's bootstrap, which a developer runs by hand to set up a checkout: it fetches
+        # and runs the installer, and pip never runs it (review 98: 10 sdists blocked on it).
+        # `ez_setup.py` is not here -- an old `setup.py` imports it, and then it runs at install.
+        "bootstrap.py",
+        "bootstrap-buildout.py",
     }
 )
 """Files a published package may carry that only its maintainers' tooling runs."""
@@ -441,6 +447,8 @@ JS_CLOSURE_LIMIT = 500
 """Files followed from install-hook scripts, like the Python closure's bound."""
 
 INLINE_REQUIRE = re.compile(r"""require\(\s{0,4}['"](\.{1,2}/[^'"\s]{1,200})['"]\s{0,4}\)""")
+#: Programs whose argument is a JavaScript or TypeScript module, resolved as Node resolves one.
+JS_RUNNERS = frozenset({"node", "nodejs", "tsx", "ts-node", "bun"})
 """A relative `require` inside an inline `node -e` lifecycle command."""
 
 PRINTING_COMMANDS = frozenset({"echo", "printf"})
@@ -1094,9 +1102,10 @@ class Engine:
             ctx = replace(ctx, dependencies=Engine._packages(dependencies))
             graph_unit = GraphUnit(dependencies=Engine._packages(dependencies))
             self.progress.phase("dependencies")
-            for detector in self.detectors:
-                if detector.requires.dependencies and self._detector_enabled(detector, ctx):
-                    acc.add(self._run(detector, graph_unit, ctx, acc))
+            with self._sealed_scan():
+                for detector in self.detectors:
+                    if detector.requires.dependencies and self._detector_enabled(detector, ctx):
+                        acc.add(self._run(detector, graph_unit, ctx, acc))
         dependencies = self._annotated(dependencies, acc.findings, ctx, [])
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -1148,7 +1157,8 @@ class Engine:
             )
         intel = self._intel_status(acc)
         if root.is_file() and ArchiveReader.is_archive(root.name):
-            return replace(self._scan_archive(root, acc, started), intel=intel)
+            with self._sealed_scan():
+                return replace(self._scan_archive(root, acc, started), intel=intel)
         self.progress.phase("identifying")
         # One traversal for both phases where the source permits it. A git
         # source narrows the scan set, so there the inventory still describes
@@ -1260,30 +1270,37 @@ class Engine:
             else 1
         )
         self.progress.phase("scanning", total=len(units))
-        if workers > 1:
-            acc.add(
-                self._scan_parallel(
-                    units, root, ctx, acc, file_detectors, signature, carry_content=carry_content
+        with self._sealed_scan():
+            if workers > 1:
+                acc.add(
+                    self._scan_parallel(
+                        units,
+                        root,
+                        ctx,
+                        acc,
+                        file_detectors,
+                        signature,
+                        carry_content=carry_content,
+                    )
                 )
-            )
-        else:
-            for unit in units:
-                acc.add(self._inspect_file(unit, ctx, acc, file_detectors, signature))
-                self.progress.advance(unit.path)
-        acc.add(self._unexamined_install_code(acc.findings, ctx))
-        acc.add(self._native_code_in_a_pure_wheel(units, ctx))
-        acc.add(self._known_malicious_release(units, ctx))
+            else:
+                for unit in units:
+                    acc.add(self._inspect_file(unit, ctx, acc, file_detectors, signature))
+                    self.progress.advance(unit.path)
+            acc.add(self._unexamined_install_code(acc.findings, ctx))
+            acc.add(self._native_code_in_a_pure_wheel(units, ctx))
+            acc.add(self._known_malicious_release(units, ctx))
 
-        if dependencies:
-            self.progress.phase("graph")
-            graph_unit = GraphUnit(dependencies=Engine._packages(dependencies))
-            for detector in self.detectors:
-                if not detector.requires.dependencies:
-                    continue
-                if not self._detector_enabled(detector, ctx):
-                    continue
-                acc.add(self._run(detector, graph_unit, ctx, acc))
-        acc.add(self._sbom_listed_findings(acc.findings, ctx))
+            if dependencies:
+                self.progress.phase("graph")
+                graph_unit = GraphUnit(dependencies=Engine._packages(dependencies))
+                for detector in self.detectors:
+                    if not detector.requires.dependencies:
+                        continue
+                    if not self._detector_enabled(detector, ctx):
+                        continue
+                    acc.add(self._run(detector, graph_unit, ctx, acc))
+            acc.add(self._sbom_listed_findings(acc.findings, ctx))
 
         # Reachability annotates the vulnerability findings just produced, using
         # the imports of the files just scanned -- so it runs here, after the
@@ -1302,12 +1319,13 @@ class Engine:
         # about a file had no way to run at all -- the port was declared and
         # never wired.
         repository_unit = RepositoryUnit(repository=inventory)
-        for detector in self.detectors:
-            if not detector.requires.repository:
-                continue
-            if not self._detector_enabled(detector, ctx):
-                continue
-            acc.add(self._run(detector, repository_unit, ctx, acc))
+        with self._sealed_scan():
+            for detector in self.detectors:
+                if not detector.requires.repository:
+                    continue
+                if not self._detector_enabled(detector, ctx):
+                    continue
+                acc.add(self._run(detector, repository_unit, ctx, acc))
 
         if acc.capped:
             # Appended directly: the cap is full by definition, and the one
@@ -1380,6 +1398,26 @@ class Engine:
         )
 
         return PolicyGate.filter_for_reporting(result, self.config).sorted()
+
+    @contextlib.contextmanager
+    def _sealed_scan(self) -> Iterator[None]:
+        """Seal the network for the detector phase of a scan that may not use it (gap G1).
+
+        Intel is pulled before this (`_intel_status`), so the scan phase itself has no reason to
+        reach the network. When the config forbids network (a plain offline scan), the seal makes
+        that an enforced invariant rather than a promise: any `getaddrinfo` a detector, parser or
+        third-party library attempts inside here is refused by `NetworkGuard`. Entered in the
+        parent before the worker pool forks, so workers inherit the seal. When network is allowed
+        (`--online`, `--model`), detectors legitimately resolve input-named hosts, so the seal is
+        not applied and `NetworkGuard`'s public-only filter governs instead.
+        """
+        if self.config.constraints.allow_network:
+            yield
+            return
+        from cordon_scanner.core.netguard import NetworkGuard
+
+        with NetworkGuard.sealed():
+            yield
 
     def _intel_status(self, acc: _Accumulator) -> dict[str, Any]:
         """Refresh from the signed feed when allowed, and say how current the intel is.
@@ -5636,9 +5674,30 @@ class Engine:
                     if candidate in known and not candidate.startswith(".."):
                         found.add(candidate)
                         break
+            previous = ""
             for token in re.split(r"[\s;&|]+", Engine._runs(hook.command)):
                 candidate = token.strip("\"'")
+                runner, previous = previous, PurePosixPath(candidate).name
                 if not candidate or candidate.startswith("-"):
+                    continue
+                if runner in JS_RUNNERS and "." not in PurePosixPath(candidate).name.strip("."):
+                    # What a JavaScript runner is handed is a module, resolved the way Node
+                    # resolves one: `node setup` is `setup.js`, `node scripts/postinstall` is
+                    # `scripts/postinstall.js`, `node .` is the package's `index.js`, and
+                    # `node bin/preinstall` is that file, extension or not. Skipped as program
+                    # names, 40 published packages' own hooks read as opaque, and a payload in
+                    # `setup.js` reached this way was never install-time code (review 98).
+                    stem = posixpath.normpath(str(base / candidate))
+                    if stem.startswith(".."):
+                        continue
+                    for resolved in (
+                        stem,
+                        *(f"{stem}{suffix}" for suffix in (".js", ".cjs", ".mjs", ".ts")),
+                        *(f"{stem}/index{suffix}" for suffix in (".js", ".cjs", ".mjs")),
+                    ):
+                        if resolved in known:
+                            found.add(resolved)
+                            break
                     continue
                 if candidate in known:
                     # A command that names a member by its scan path, as a CRAN DESCRIPTION's

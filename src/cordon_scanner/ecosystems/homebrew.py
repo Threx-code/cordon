@@ -357,14 +357,15 @@ class NotRunAtInstall:
     The whole file is an install hook, because `install` and `post_install` -- and a cask's
     `preflight` and `postflight` -- run at install time. These do not: `service` is started later,
     by `brew services`, if the user asks; `test` runs under `brew test`; `livecheck` and `bottle`
-    are metadata; `caveats` is text printed to the user; a cask's `uninstall`, `zap` and
+    are metadata, as are `desc`, `homepage` and `license`, strings brew shows and never fetches
+    (`homepage "https://github.com/xmrig/xmrig"` is not mining); `caveats` is text printed to the user; a cask's `uninstall`, `zap` and
     `uninstall_*flight` run at removal. `liquidprompt`'s caveats telling the user to add a line to
     `~/.bash_profile` read as an install script planting persistence, and blocked it.
     """
 
     BLOCKS: ClassVar[re.Pattern[str]] = re.compile(
         r"^(service|test|livecheck|bottle|caveats|uninstall|zap|uninstall_preflight|"
-        r"uninstall_postflight)\b"
+        r"uninstall_postflight|desc|homepage|license)\b"
     )
     CAVEATS_HEREDOC: ClassVar[re.Pattern[str]] = re.compile(
         r"^\s*(?:def\s+)?caveats\s*(?:\(\s*\))?\s*(?:=\s*)?<<[~-]?['\"]?([A-Z_][A-Z0-9_]*)"
@@ -389,11 +390,28 @@ class NotRunAtInstall:
                 continue
             named = NotRunAtInstall.BLOCKS.match(stripped)
             if stripped.startswith("def "):
-                name = stripped[4:].split("(")[0].split()[0] if stripped[4:].split() else ""
+                # The method's name alone: `def caveats; <<~EOS` is how most formulas write it, and
+                # read as `caveats;` the text it prints was taken for install code (review 98: 26
+                # formulas in one tap, each "add this line to your ~/.zshrc").
+                head = re.match(r"[A-Za-z_]\w*[?!]?", stripped[4:].lstrip())
+                name = head.group(0) if head else ""
                 stack.append(("caveats" if name == "caveats" else None, number))
                 continue
             if named and Ruby.BLOCK_OPEN.search(stripped):
                 stack.append((named.group(1), number))
+                continue
+            if named and named.group(1) != "test":
+                # The statement form, `zap trash: [...]` or `uninstall launchctl: "..."`: one
+                # call whose arguments run until its brackets close. The paths in it are what
+                # removal deletes (review 98: a cask's `~/Library/LaunchAgents/*.plist`).
+                depth, last = 0, number - 1
+                for index in range(number - 1, len(raw)):
+                    depth += sum(raw[index].count(c) for c in "([{")
+                    depth -= sum(raw[index].count(c) for c in ")]}")
+                    last = index
+                    if depth <= 0:
+                        break
+                out.append((number, last + 1))
                 continue
             if Ruby.opens_block(stripped) and not stripped.startswith("class "):
                 stack.append((None, number))

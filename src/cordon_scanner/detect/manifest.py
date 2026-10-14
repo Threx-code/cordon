@@ -360,8 +360,11 @@ class ManifestScripts:
             f"{token}{suffix}"
             for token in list(tokens)
             if token and "." not in posixpath.basename(token)
-            for suffix in (".js", ".cjs", ".mjs", "/index.js")
+            for suffix in (".js", ".cjs", ".mjs", ".ts", "/index.js")
         }
+        if re.search(r"(?:^|[\s;&|(])(?:node|nodejs|tsx|ts-node|bun)\s+\.(?:\s|$)", command):
+            # `node .`: the package's own entry point.
+            tokens |= {f"{base}/index.js" if base else "index.js"}
         return tuple(
             sorted(path for path in known if path in tokens or path.lstrip("./") in tokens)
         )
@@ -564,6 +567,24 @@ class ManifestScripts:
             if isinstance(section, dict):
                 declared.update({k: v for k, v in section.items() if isinstance(v, str)})
         return scripts, declared
+
+    @staticmethod
+    def unpublishable(unit: FileUnit) -> bool:
+        """Whether a package.json declares `"private": true`, which npm refuses to publish.
+
+        No registry serves it, so nobody installs it as a dependency: its lifecycle scripts run
+        for whoever works in that tree, the project's own build. 9 of 18 benign repository
+        snapshots blocked on an install script were these (review 98: `jetify &&
+        patch-package`, `wxt prepare`, `husky`). A published package cannot carry the flag, so
+        no published package's hook is graded here.
+        """
+        import json
+
+        try:
+            data = json.loads(unit.content.text)
+        except ValueError:
+            return False
+        return isinstance(data, dict) and data.get("private") is True
 
     @staticmethod
     def _only_prints(part: str) -> bool:
@@ -1313,7 +1334,11 @@ class ManifestDetector(BaseDetector):
                 # compromises actually take. What the referenced file does is a
                 # separate question the file detectors answer -- and cannot
                 # answer at all if nothing points at it.
-                first_party = ManifestScripts._is_first_party(unit.path, ctx)
+                first_party = ManifestScripts._is_first_party(unit.path, ctx) or (
+                    manifest.ecosystem == "npm"
+                    and not ManifestScripts._is_vendored(unit.path)
+                    and ManifestScripts.unpublishable(unit)
+                )
                 vendored = not first_party
                 in_tree = (
                     (unit.path,)
@@ -1333,6 +1358,13 @@ class ManifestDetector(BaseDetector):
                 # binary, so what it runs is a script this scan read.
                 readable = bool(in_tree) and all(
                     path.rsplit(".", 1)[-1].lower() in READABLE_HOOK_TARGETS
+                    # A file `node` is handed is JavaScript, whatever it is called:
+                    # `node bin/preinstall` runs `bin/preinstall` as source.
+                    or re.search(
+                        rf"(?:^|[\s;&|(])(?:node|nodejs|tsx|ts-node|bun)\s+(?:\S*/)?"
+                        rf"{re.escape(path.rpartition('/')[2])}(?:\s|$)",
+                        command,
+                    )
                     or re.search(
                         rf"(?:^|[\s;&|(])(?:ba|da|z)?sh\s+{re.escape(path)}(?:\s|$)", command
                     )
@@ -1348,8 +1380,12 @@ class ManifestDetector(BaseDetector):
                     # And lowered again for an author-time hook, which cannot reach a
                     # consumer installing from a registry tarball. See
                     # `AUTHOR_TIME_HOOKS`.
+                    # A hook that runs only the package's own source is recorded, not raised: that
+                    # source was read here as install-time code and graded on what it does, so the
+                    # manifest adds only that a hook exists. Raised at MEDIUM it was the only code
+                    # warning on 9,352 of 234,509 benign units (review 98) and changed no verdict.
                     severity=min(
-                        (Severity.MEDIUM if readable else Severity.HIGH)
+                        (Severity.LOW if readable else Severity.HIGH)
                         if vendored
                         else Severity.LOW
                         if in_tree

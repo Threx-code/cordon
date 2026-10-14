@@ -199,7 +199,13 @@ rules:
         # `process.env` anywhere in the argument list, not only as the sole
         # argument. `Object.assign({}, process.env, extra)` is the ordinary way
         # to copy the environment and the anchored form missed all of it.
-        - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\([^)]{0,120}process\s*\.\s*env\b'
+        # Not a selection by prefix: the `debug` package's `Object.keys(process.env).filter(k =>
+        # /^debug_/i.test(k))` and LangChain's `Object.entries(process.env)` read with
+        # `k.startsWith("LANGCHAIN_")` take their own settings, bundled into thousands of
+        # extensions (8 of 300 Open VSX extensions reported MALWARE.EXFIL.001 on it, review 98).
+        # Copying every key (`forEach(k => out[k] = process.env[k])`) is still the whole
+        # environment: malware collects it that way before it sends it.
+        - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\([^)]{0,120}process\s*\.\s*env\b(?!\s*\)\s*\.\s*filter\s*\()(?![^\n]{0,80}?\.\s*startsWith\s*\()'
         # The SPREAD is deliberately absent, and it used to be here.
         #
         # `{ ...process.env, FOO: undefined }` is how every Node program builds an
@@ -235,6 +241,7 @@ rules:
         - "const keys = Object.keys(process.env);"
         - "fs.readFileSync(os.homedir() + '/.npmrc');"
         - "for (var k in process.env) { dump[k] = process.env[k]; }"
+        - "Object.keys(process.env).forEach(k => out[k] = process.env[k]);"
         - "for (const [k, v] of Object.entries(process.env)) send(k, v);"
         - "fs.readFileSync('/proc/1/environ', 'utf8');"
         - "fs.readFileSync(`/proc/${pid}/environ`, 'utf8');"
@@ -242,6 +249,8 @@ rules:
         - "const env = { ...process.env, npm_config_global: void 0 };"
         - "const port = process.env.PORT || 3000;"
         - "if (process.env.NODE_ENV === 'production') {}"
+        - "inspectOpts=Object.keys(process.env).filter(r=>/^debug_/i.test(r))"
+        - "for(let[e,t]of Object.entries(process.env))(e.startsWith(\"LANGCHAIN_\"))&&(o[e]=t)"
 
   # ---------------------------------------------------------------------
   # EGRESS
@@ -345,6 +354,13 @@ rules:
       patterns:
         - '\bos\s*\.\s*(?:hostname|userInfo|homedir|networkInterfaces)\s*\('
         - '\bprocess\s*\.\s*env\s*(?:\.\s*|\[\s*["''])(?:USERNAME|COMPUTERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)\b'
+        # The module under another name: `const o = require('os')` and then `o.hostname()`, or
+        # the calls destructured out of it. One letter was enough to hide the recon half of an
+        # install-time beacon posting hostname, user and home directory (review 98:
+        # @navancorp/*). Anchored on the `os` module itself, so another library's `hostname()`
+        # method is not this.
+        - 'require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)[\s\S]{0,4000}?\.\s{0,4}(?:hostname|userInfo|networkInterfaces)\s{0,4}\(\s{0,4}\)'
+        - '\{[^}\n]{0,120}\b(?:hostname|userInfo|networkInterfaces)\b[^}\n]{0,120}\}\s{0,4}=\s{0,4}require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)'
         # `os.platform()`, `os.arch()` and `process.cwd()` are deliberately absent.
         # Every bundler, test runner and postinstall build step in the ecosystem
         # calls them, and they say what kind of machine this is rather than which
@@ -354,8 +370,12 @@ rules:
         - "const h = os.hostname();"
         - "const who = os.userInfo().username;"
         - "const name = process.env.COMPUTERNAME;"
+        - "const o = require('os');\nconst d = { h: o.hostname(), u: o.userInfo().username };"
+        - "const { hostname, userInfo } = require('os');"
       negative:
         - "const p = os.platform();"
+        - "const o = require('os');\nconst a = o.arch();"
+        - "const u = new URL(x);\nconst h = u.hostname;"
         - "const cwd = process.cwd();"
         - "const node = process.env.NODE_ENV;"
 

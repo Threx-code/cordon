@@ -1228,7 +1228,12 @@ class ObfuscationDetector(BaseDetector):
                 "Read the line. If it is generated or vendored, move it into a "
                 "build artefact so it is not reviewed as source."
             ),
-            severity=Severity.MEDIUM,
+            # Recorded, not raised, unless an install hook runs the file (raised to HIGH below):
+            # a long line elsewhere is what minified and generated code is made of, and what
+            # decodes and runs a payload is reported by the rules that see it do so. At MEDIUM
+            # it was the only code warning on 4,841 of 234,509 benign units -- jQuery, Ace's
+            # `src-min-noconflict`, R vignettes -- and decided no block (review 98).
+            severity=Severity.LOW,
             confidence=Confidence.MEDIUM,
             start=start,
             end=min(start + 200, len(content.raw)),

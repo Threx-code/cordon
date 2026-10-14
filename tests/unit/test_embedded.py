@@ -54,6 +54,36 @@ class TestExtraction:
         assert "tail.txt" in " ".join(c.text for c in found)
 
 
+class TestTheCallsOwnArguments:
+    """What a spawn call runs is in its leading arguments, not in the callback after them."""
+
+    def test_a_quoted_word_in_the_callbacks_comment_is_not_the_command(self) -> None:
+        # `c11dff444`'s shape (review 98): the command assigned to a name, the call handed the
+        # name, and the callback's comment quoting a word. Read whole, the command was `noise`.
+        source = (
+            f'const command = "{FETCH}x {DESTINATION}";\n'
+            "exec(command, (error) => {\n"
+            '    // no "noise" in the terminal\n'
+            "    if (error) { return; }\n"
+            "});\n"
+        )
+        found = embedded.EmbeddedCommands.extract(source, "javascript")
+        assert found and DESTINATION in found[0].text
+        assert "noise" not in found[0].text
+
+    def test_a_literal_command_keeps_its_options(self) -> None:
+        found = embedded.EmbeddedCommands.extract(
+            'execSync("make build", { stdio: "inherit" });', "javascript"
+        )
+        assert [c.text for c in found] == ["make build"]
+
+    def test_a_function_callback_ends_the_arguments(self) -> None:
+        found = embedded.EmbeddedCommands.extract(
+            'exec("ls", function (err) { console.log("done"); });', "javascript"
+        )
+        assert [c.text for c in found] == ["ls"]
+
+
 class TestLanguageGating:
     def test_a_language_that_does_not_spawn_this_way_yields_nothing(self) -> None:
         """A rule pack, a lockfile or a document may all contain the text of a
