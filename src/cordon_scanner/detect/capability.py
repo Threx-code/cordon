@@ -691,6 +691,12 @@ class CapabilityDetector(BaseDetector):
                 ):
                     # A sleep inside a loop. See `delays` above.
                     continue
+                if compiled.rule.id == "CAP.JS.CREDENTIAL.001" and (
+                    CapabilityDetector._narrowed_environment(content, match.end())
+                ):
+                    # The environment enumerated, then cut down to one prefix or handed to a
+                    # child process. See `_narrowed_environment`.
+                    continue
                 if compiled.rule.id == "CAP.ANTI.ENVIRONMENT.001" and (
                     CapabilityDetector._courtesy_gate(content, match.start())
                 ):
@@ -788,6 +794,24 @@ class CapabilityDetector(BaseDetector):
             ctx.package_distribution
             and ctx.distribution == "npm"
             and CapabilityDetector.SHIPPED_OUTPUT.search(path) is not None
+        )
+
+    NARROWED_ENVIRONMENT: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"\.\s{0,4}filter\s{0,4}\(\s{0,4}\(?\s{0,4}[\w$]{1,20}\s{0,4}\)?\s{0,4}=>\s{0,4}/\^[A-Za-z_]{2,30}"
+        rb"|\.\s{0,4}startsWith\s{0,4}\(\s{0,4}[\"'`][A-Za-z][A-Za-z0-9]{1,30}_"
+        rb"|\bELECTRON_RUN_AS_NODE\b"
+    )
+    """What follows an enumeration of `process.env` when it reads one family of variables or
+    passes the environment to a child: `Object.keys(process.env).filter(k => /^debug_/i.test(k))`
+    is the `debug` package's options, `startsWith("LANGCHAIN_")` is LangChain's configuration,
+    and `ELECTRON_RUN_AS_NODE` is vscode-languageclient starting its server. Each is bundled into
+    thousands of extensions, and 6 of 8 benign ones blocked as credential theft were these (review
+    98). The environment dumped whole, or sent anywhere, still matches."""
+
+    @staticmethod
+    def _narrowed_environment(content: FileContent, end: int) -> bool:
+        return (
+            CapabilityDetector.NARROWED_ENVIRONMENT.search(content.raw[end : end + 160]) is not None
         )
 
     @staticmethod

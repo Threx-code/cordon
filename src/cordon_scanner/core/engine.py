@@ -28,7 +28,7 @@ import re
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.archive.safe import ArchiveReader, Rejection
 from cordon_scanner.core.cache import CacheKey, ScanCache
@@ -329,6 +329,8 @@ SWEPT_NOTE = "Read to its end in windows."
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
+NPM_PLACEHOLDER_VERSION: Final = re.compile(r"0\.0\.\d{1,4}-security(?:\.\d{1,4})?")
+"""The version npm publishes in place of a malicious package it removed."""
 ARCHIVE_SLICE = 4000
 """Archive members handed to the worker pool at a time, between deadline checks."""
 ARCHIVE_ESCAPE_RULE = "SUSPECT.ARCHIVE.PATH_ESCAPE.001"
@@ -532,6 +534,7 @@ class Engine:
         from cordon_scanner.intel.advisories import AdvisoryDatabase
 
         identities: list[tuple[str, str, str, str]] = []
+        placeholders: set[str] = set()
         for unit in units:
             member = unit.path.rpartition("!")[2]
             parts = member.split("/")
@@ -551,6 +554,11 @@ class Engine:
                         identities.append(
                             ("npm", str(document["name"]), str(document["version"]), unit.path)
                         )
+                        if NPM_PLACEHOLDER_VERSION.fullmatch(str(document["version"])) and (
+                            str(document.get("description", "")).strip().lower()
+                            == "security holding package"
+                        ):
+                            placeholders.add(unit.path)
                 elif name == "package.json" and parent == "extension":
                     # A VS Code / Open VSX extension package (.vsix): the Marketplace names it
                     # `publisher.name`, and that is the key OSV's VSCode records use.
@@ -611,6 +619,36 @@ class Engine:
             if not records:
                 continue
             record = records[0]
+            if path in placeholders:
+                # npm's own stand-in for a release it removed: `0.0.1-security`, "security holding
+                # package", nothing that runs. The name is the finding, not the tarball: 16 of
+                # 300 random npm packages in the corpus were these, blocked as malware.
+                out.append(
+                    replace(
+                        Engine._operational(
+                            path=path,
+                            rule_id=KNOWN_MALICIOUS_RELEASE_RULE,
+                            message=(
+                                f"{name} {version} is npm's security placeholder for a package "
+                                f"removed as malicious ({record.identifier}). It contains no code; "
+                                "what it says is that something depended on a name that carried "
+                                "malware."
+                            ),
+                            remediation=(
+                                "Remove the dependency, and find out where it came from: a "
+                                "lockfile or manifest that names it once resolved the malicious "
+                                "release."
+                            ),
+                            category=Category.SUSPICIOUS,
+                            severity=Severity.MEDIUM,
+                        ),
+                        confidence=Confidence.CONFIRMED,
+                        risk=ctx.scorer.score(Severity.MEDIUM, Confidence.CONFIRMED),
+                        detector="advisory",
+                        references=(record.reference,) if record.reference else (),
+                    )
+                )
+                continue
             out.append(
                 replace(
                     Engine._operational(
