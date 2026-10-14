@@ -137,18 +137,51 @@ class TextReporter(BaseReporter):
         if opts.verbose:
             for finding in reportable:
                 yield from self._finding(finding, color, verbose=True)
+        elif opts.blocking is not None:
+            yield from self._tiered(reportable, opts, color)
         else:
             yield from self._grouped(reportable, color)
 
         # Operational findings are grouped at the end rather than interleaved.
         # They describe the scan rather than the code, and mixing the two makes
         # a reader work to tell "your code is fine" from "I could not look".
+        if opts.blocking is not None and not opts.verbose:
+            # Tiered: a note about the scan that changes nothing (the advisory database's scope,
+            # a cache hit) is informational like any other; one that does (stale intel, files
+            # not read) still prints.
+            operational = [f for f in operational if f.severity > Severity.INFO]
         if operational:
             yield from self._operational_block(operational, color)
 
         yield from self._summary(result, color, hidden, compact=not opts.verbose)
 
     # -- Findings --------------------------------------------------------
+
+    def _tiered(self, findings: list[Finding], opts: ReportOptions, color: bool) -> Iterator[bytes]:
+        """The default view once the gate is known: what fails it, in full; the rest, counted.
+
+        Review 98 measured why a quiet scan matters more than a short one. Three in four real
+        packages carried at least one finding below the gate -- a capability, a policy note, a
+        LOW signal in a bundled file -- so a report that prints all of them teaches its reader
+        that output means nothing, and then the one finding that blocks is read the same way.
+        Everything is still there: `-v` prints every finding, and JSON and SARIF carry them all.
+        """
+        blocking = opts.blocking or frozenset()
+        gate = [f for f in findings if f.fingerprint in blocking]
+        yield from self._grouped(gate, color)
+        review = [
+            f for f in findings if f.fingerprint not in blocking and f.severity > Severity.INFO
+        ]
+        if review and not opts.quiet:
+            files = len({f.location.path for f in review})
+            noun = "signal" if len(review) == 1 else "signals"
+            where = "file" if files == 1 else "files"
+            yield b"\n"
+            yield self._line(
+                f"{DIM}{len(review)} {noun} below the failure policy in {files} {where}, worth a "
+                f"look when reviewing this code; `-v` lists them.{RESET}",
+                color,
+            )
 
     def _grouped(self, findings: list[Finding], color: bool) -> Iterator[bytes]:
         """The default view: one line per finding, grouped under its file.

@@ -1335,13 +1335,16 @@ class CommandLine:
             result = _replace_vex(result, findings=ruled)
 
         formats = args.format or ["text"]
+        # The verdict first: it is a pure function of the result, and the text view prints what
+        # fails the gate in full and the rest as one line (`ReportOptions.blocking`).
+        verdict = PolicyGate.evaluate(result, config.policy)
         opts = ReportOptions(
             color=cls._use_color(args.no_color),
             verbose=args.verbose,
+            blocking=frozenset(f.fingerprint for f in verdict.triggering),
+            quiet=args.quiet,
         )
         cls._emit(result, formats, args.output, opts, quiet=args.quiet)
-
-        verdict = PolicyGate.evaluate(result, config.policy)
 
         if audit is not None:
             # After the verdict, so the recorded exit code is the one the

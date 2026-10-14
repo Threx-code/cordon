@@ -49,6 +49,14 @@ class ReportOptions:
     repository_uri: str = ""
     revision: str = ""
 
+    blocking: frozenset[str] | None = None
+    """Fingerprints of the findings the failure policy trips on, when the caller evaluated it.
+    With it the default text view is tiered: those in full, everything else below the gate as one
+    line, informational findings not at all (`verbose`, JSON and SARIF keep every finding)."""
+
+    quiet: bool = False
+    """With `blocking`: the gate's findings only, without the line about the rest."""
+
 
 @runtime_checkable
 class Reporter(Protocol):
