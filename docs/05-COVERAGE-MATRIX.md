@@ -132,6 +132,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
+| `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | `manifest` | malicious_code |
 | `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
 | `POLICY.DEPENDENCY.ABANDONED.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001` | medium | `manifest` | policy |
@@ -154,6 +155,7 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | `registry` | policy |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |

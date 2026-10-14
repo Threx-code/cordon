@@ -56,6 +56,9 @@ if TYPE_CHECKING:
     from cordon_scanner.ecosystems.base import DeclaredDependency, Manifest
 
 MUTABLE_REF_RULE = "POLICY.DEPENDENCY.MUTABLE_REF.001"
+REMOTE_TARBALL_RULE = "SUSPECT.DEPENDENCY.REMOTE_TARBALL.001"
+MALICIOUS_REMOTE_TARBALL_RULE = "MALWARE.DEPENDENCY.REMOTE_TARBALL.001"
+RAW_IP_HOST = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,45}\]")
 SOURCE_PRIORITY_RULE = "SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001"
 WRAPPER_RULE = "POLICY.BUILD.WRAPPER_UNVERIFIED.001"
 CLEARTEXT_SOURCE_RULE = "POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001"
@@ -466,6 +469,65 @@ class ManifestScripts:
             )
         return False
 
+    #: Where a project's own source is archived: a tarball from here is code anyone can read.
+    _CODE_HOSTS: ClassVar[tuple[str, ...]] = (
+        "github.com",
+        "codeload.github.com",
+        "githubusercontent.com",
+        "gitlab.com",
+        "bitbucket.org",
+    )
+    #: A source-archive path a code host serves for a ref.
+    _SOURCE_ARCHIVE: ClassVar[re.Pattern[str]] = re.compile(
+        r"/(?:repository/archive|-/archive|archive|tarball|zipball)(?:/|\.tar\.gz|\.zip|\?)"
+    )
+    #: A file named for a release, `xlsx-0.20.3.tgz`: what a vendor's CDN serves, fixed per URL.
+    _VERSIONED_TARBALL: ClassVar[re.Pattern[str]] = re.compile(
+        r"/[^/?#]*\d+\.\d+[^/?#]*\.(?:tgz|tar\.gz)(?:[?#].*)?$"
+    )
+
+    @staticmethod
+    def _remote_tarball(
+        spec: str, path: str, ctx: ScanContext, checksummed: bool
+    ) -> tuple[str, str, Severity] | None:
+        """(rule, host, severity) when a published npm package's own manifest depends on an
+        http(s) URL off any registry.
+
+        Measured on the 193 malware samples with URL dependencies and 1,158 benign units with
+        them (review 98, REC-3): the malware's URLs are version-less endpoints on lookalike
+        artifact hosts (`packages.storeartifact.com/npm/<name>`) or raw addresses, served fresh on
+        every install; the benign ones are GitHub archives and release tarballs on a vendor's CDN
+        (`cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`). Those two are reported below the gate.
+        """
+        from cordon_scanner.intel.hosts import ALL_HOSTS, INTERACTION_HOSTS
+
+        member = path.rpartition("!")[2]
+        own_manifest = member == "package/package.json" or (
+            ctx.package_distribution and member == "package.json"
+        )
+        if not own_manifest or checksummed:
+            return None
+        found = re.match(r"https?://(?:[^@/]{1,200}@)?([^/:?#]{1,253})", spec.strip())
+        if found is None:
+            return None
+        host = found.group(1).lower()
+        if host in ("registry.npmjs.org", "registry.yarnpkg.com", "registry.npmmirror.com"):
+            return None
+        if RAW_IP_HOST.fullmatch(host) is not None or any(
+            host == known or host.endswith("." + known) for known in ALL_HOSTS | INTERACTION_HOSTS
+        ):
+            return MALICIOUS_REMOTE_TARBALL_RULE, host, Severity.CRITICAL
+        code_host = (
+            any(host == h or host.endswith("." + h) for h in ManifestScripts._CODE_HOSTS)
+            # A self-hosted GitLab or Gitea serving a source archive: `gitlab.<company>/...
+            # /repository/archive.tar.gz?ref=v1.0`, `.../-/archive/...`, `.../archive/<ref>.tar.gz`.
+            or host.startswith(("gitlab.", "git.", "gitea."))
+            or ManifestScripts._SOURCE_ARCHIVE.search(spec.strip()) is not None
+        )
+        if code_host or ManifestScripts._VERSIONED_TARBALL.search(spec.strip()):
+            return REMOTE_TARBALL_RULE, host, Severity.MEDIUM
+        return REMOTE_TARBALL_RULE, host, Severity.HIGH
+
     @staticmethod
     def _without_assignments(part: str) -> str:
         """`part` without leading `VAR=value` words (or `env` and them) whose values run nothing:
@@ -711,6 +773,40 @@ class ManifestDetector(BaseDetector):
                 ),
                 references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Resolve through one index, or pin internal packages to their index.",
+            ),
+            DeclaredRule(
+                id=REMOTE_TARBALL_RULE,
+                title="A published package installs a dependency from an arbitrary URL",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector="manifest",
+                message=(
+                    "A dependency of this published package is an http(s) URL on a host that is "
+                    "not a registry. Every install fetches whatever that host serves at that "
+                    "moment and runs its install scripts: no hash, no advisory and no review "
+                    "applies, and the package itself can be empty -- the PhantomRaven shape."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+                remediation="Do not install it until the URL's content has been examined.",
+            ),
+            DeclaredRule(
+                id=MALICIOUS_REMOTE_TARBALL_RULE,
+                title="A published package installs a dependency from a drop-point host",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.HIGH,
+                category=Category.MALICIOUS,
+                detector="manifest",
+                message=(
+                    "A dependency of this published package is fetched from a raw IP address or "
+                    "from a paste, webhook, tunnel or interaction host. No package is distributed "
+                    "that way; it is how a payload is kept off the registry so that scanning the "
+                    "package finds nothing."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+                remediation=(
+                    "Do not install it. Treat any machine that did as having run untrusted code."
+                ),
             ),
             DeclaredRule(
                 id=MUTABLE_REF_RULE,
@@ -1834,6 +1930,44 @@ class ManifestDetector(BaseDetector):
             if getattr(ecosystem, "registryless", False):
                 # No registry exists to depart from (Nix): every source is a repository or an
                 # archive. Plain HTTP is the cleartext rule's to report.
+                continue
+            remote = ManifestScripts._remote_tarball(declared.spec, unit.path, ctx, checksummed)
+            if remote is not None:
+                # A published package whose dependency is a URL (review 98, REC-3): 339 malicious
+                # npm samples declare one, and in 58 it is the entire package.
+                rule_id, host, severity = remote
+                malicious = rule_id == MALICIOUS_REMOTE_TARBALL_RULE
+                yield self._finding(
+                    rule_id=rule_id,
+                    category=Category.MALICIOUS if malicious else Category.SUSPICIOUS,
+                    severity=severity,
+                    confidence=Confidence.HIGH if malicious else Confidence.MEDIUM,
+                    title=(
+                        "A published package installs a dependency from a drop-point host"
+                        if malicious
+                        else "A published package installs a dependency from an arbitrary URL"
+                    ),
+                    message=(
+                        f"{declared.name!r} is declared as {declared.spec!r}: every install of "
+                        f"this package fetches it from {host} and runs it, unpinned and unreviewed"
+                        + (
+                            ", and that host is a raw address or a paste, webhook or tunnel "
+                            "service, which no package is distributed from."
+                            if malicious
+                            else "."
+                        )
+                    ),
+                    remediation=(
+                        "Do not install it. Treat any machine that did as having run untrusted code."
+                        if malicious
+                        else "Do not install it until the URL's content has been examined."
+                    ),
+                    unit=unit,
+                    ctx=ctx,
+                    detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
+                    capabilities=(),
+                    reasons=[f"declared in {declared.field_name}", f"fetched from {host}"],
+                )
                 continue
             if pinned and getattr(ecosystem, "git_distribution", False):
                 # Where git is how the ecosystem distributes every package (SwiftPM), a commit

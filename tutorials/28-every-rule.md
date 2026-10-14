@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,396 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,398 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -459,11 +459,12 @@ rule's own samples.
 
 ## Dependencies
 
-21 rules.
+23 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | Dependency is a known-malicious release |
+| `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | A published package installs a dependency from a drop-point host |
 | `POLICY.DEPENDENCY.ABANDONED.001` | medium | Dependency is abandoned by its maintainer |
 | `POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001` | medium | Package source over plain HTTP |
 | `POLICY.DEPENDENCY.DEPRECATED.001` | medium | Dependency pins a version its publisher deprecated |
@@ -476,6 +477,7 @@ rule's own samples.
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | Internal package name resolved from a public registry |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | Dependency pins a version its publisher deprecated for a security reason |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | A dependency's name is a documented AI hallucination |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | Dependency resolved from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | A private package index merged with a public one |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | Dependency name is one edit from a popular package |
