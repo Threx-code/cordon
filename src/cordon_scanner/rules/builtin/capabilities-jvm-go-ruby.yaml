@@ -138,7 +138,10 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\bSystem\s*\.\s*getenv\s*\(\s*\)'
+        # The whole environment, not one variable read through it: `System.getenv()["CI"]`,
+        # `.get("BASE_IMAGE")` and `.containsKey("CI")` name the variable they read
+        # (review 98: three Gradle builds blocked as credential theft for it).
+        - '\bSystem\s*\.\s*getenv\s*\(\s*\)(?!\s*(?:\[|\.\s*(?:get|containsKey|getOrDefault)\s*\(\s*["'']))'
         - '\.ssh/id_|\.aws/credentials|\.m2/settings\.xml'
         - '\bKeyStore\s*\.\s*getInstance\b'
     tests:
@@ -146,6 +149,8 @@ rules:
         - "Map<String,String> all = System.getenv();"
       negative:
         - "String port = System.getenv(\"PORT\");"
+        - 'from(System.getenv()["BASE_IMAGE"])'
+        - 'downloadSources.set(!System.getenv().containsKey("CI"))'
 
   - id: CAP.JVM.EGRESS.001
     version: 1.0.0

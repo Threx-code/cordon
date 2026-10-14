@@ -140,7 +140,10 @@ rules:
       # serialising the whole environment, and a rule that cannot tell them apart
       # fires on every configuration module in existence".
       patterns:
-        - '\bSystem\s*\.\s*getenv\s*\(\s*\)'
+        # The whole environment, not one variable read through it: `System.getenv()["CI"]`,
+        # `.get("BASE_IMAGE")` and `.containsKey("CI")` name the variable they read
+        # (review 98: three Gradle builds blocked as credential theft for it).
+        - '\bSystem\s*\.\s*getenv\s*\(\s*\)(?!\s*(?:\[|\.\s*(?:get|containsKey|getOrDefault)\s*\(\s*["'']))'
         - '\bSystem\s*\.\s*getenv\s*\(\s*["''][A-Za-z0-9_]{0,40}(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|AUTH)'
         - '\bSystem\s*\.\s*getProperties\s*\(\s*\)'
         - '\benvironment\s*\[\s*["''][A-Za-z0-9_]{0,40}(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|AUTH)'
@@ -161,6 +164,8 @@ rules:
         - "systemProperty 'file.encoding', 'UTF-8'"
         # The case that produced a critical malware finding on a Gradle build file.
         - 'options.incremental = System.getenv("JENKINS_URL") == null'
+        - 'from(System.getenv()["BASE_IMAGE"])'
+        - 'downloadSources.set(!System.getenv().containsKey("CI"))'
         - 'def url = System.getenv("BUILDKITE_BUILD_URL")'
         - "environment['JAVA_HOME']"
 
