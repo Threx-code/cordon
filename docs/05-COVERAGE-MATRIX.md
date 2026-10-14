@@ -178,6 +178,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | `manifest` | integrity |
+| `SUSPECT.PACKAGE.NAME_RISK.001` | high | `manifest` | integrity |
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.STARJACKING.001` | high | `registry` | integrity |

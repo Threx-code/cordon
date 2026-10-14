@@ -993,6 +993,23 @@ class ManifestDetector(BaseDetector):
                 remediation="Install the package that was meant, and report this one.",
             ),
             DeclaredRule(
+                id="SUSPECT.PACKAGE.NAME_RISK.001",
+                title="Published package is a name with nothing behind it",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "A published package whose name looks chosen to be installed by mistake -- a "
+                    "slip of a popular name, an organisation's name outside its scope, a "
+                    "dependency-confusion version, a self-declared probe -- with no code in it "
+                    "and no source named. HIGH when the name evidence is strong and there is "
+                    "nothing to run; LOW, at low confidence, otherwise."
+                ),
+                references=(references.DEPENDENCY_CONFUSION,),
+                remediation="Install the package that was meant, and report this one.",
+            ),
+            DeclaredRule(
                 id="MALWARE.INSTALL.FETCH_EXEC.001",
                 title="Install script fetches and executes remote content",
                 severity=Severity.CRITICAL,
@@ -1049,9 +1066,12 @@ class ManifestDetector(BaseDetector):
         if not isinstance(unit, FileUnit):
             return ()
 
+        # Read before the manifest lookup: a wheel's METADATA and an sdist's PKG-INFO are a
+        # release's own metadata without being dependency manifests.
+        name_risk = list(self._name_risk_findings(unit, ctx))
         ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
         if ecosystem_id is None:
-            return ()
+            return name_risk
 
         ecosystem = EcosystemRegistry.get(ecosystem_id)
         if ecosystem is None:
@@ -1080,8 +1100,61 @@ class ManifestDetector(BaseDetector):
         findings.extend(self._lifecycle_findings(manifest, unit, ctx))
         findings.extend(self._source_findings(manifest, unit, ctx))
         findings.extend(self._own_name_findings(manifest, unit, ctx, ecosystem_id))
+        findings.extend(name_risk)
         findings.extend(self._wrapper_findings(unit, ctx))
         return findings
+
+    def _name_risk_findings(self, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
+        """A published package with nothing in it but a name worth suspecting (`detect.name_risk`).
+
+        Blocks only when the name evidence is strong and there is nothing in the package to run
+        and no source to read; otherwise a warning. The package's code, if it has any, is read by
+        the content rules on its own merits, so this never has to stand in for them.
+        """
+        from cordon_scanner.detect.name_risk import RULE, NameRisk, PackageIdentities
+
+        identity = PackageIdentities.read(unit, ctx)
+        if identity is None:
+            return
+        assessment = NameRisk.assess(identity)
+        if assessment is None:
+            return
+        reasons = [signal.reason for signal in assessment.signals]
+        yield self._finding(
+            rule_id=RULE,
+            category=Category.SUSPICIOUS,
+            # Below a block it is recorded, not raised: measured on 162,499 long-tail units the
+            # warning fell on 5,164 benign releases against 674 of 1,567 no-payload samples, a
+            # warning on 3.2% of ordinary packages for signals each common alone (review 98, REC-4).
+            severity=Severity.HIGH if assessment.blocks else Severity.LOW,
+            confidence=Confidence.MEDIUM if assessment.blocks else Confidence.LOW,
+            title="Published package is a name with nothing behind it",
+            message=(
+                f"{identity.name} {identity.version} "
+                + "; ".join(reasons)
+                + ". "
+                + (
+                    "That is the shape of a dependency-confusion probe or a name-squat: the "
+                    "name is the whole of the package."
+                    if assessment.blocks
+                    else "Each of these is common alone; together they are worth a look "
+                    "before installing."
+                )
+            ),
+            remediation=(
+                "Confirm this is the package you meant, from the publisher you meant. If it was "
+                "pulled in by name from a private registry, pin that registry for the scope."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=f"name: {identity.name} {identity.version} (score {assessment.score})",
+            capabilities=[],
+            reasons=reasons,
+            # The file is the release's own metadata, so the directory it sits in is named for
+            # the release: `example-utils-1.0/PKG-INFO` and `test-helpers-2.0/PKG-INFO` are not
+            # test fixtures, they are packages whose names contain those words.
+            fixture_ceiling=False,
+        )
 
     def _wrapper_findings(self, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
         """A build wrapper that downloads its tool without a pinned checksum.
@@ -2022,10 +2095,15 @@ class ManifestDetector(BaseDetector):
         detail: str,
         capabilities: list[Capability] | tuple[Capability, ...],
         reasons: list[str],
+        fixture_ceiling: bool = True,
     ) -> Finding:
         line = self._line_of(unit, detail)
 
-        if category is not Category.MALICIOUS and SourcePaths.is_test_material_here(unit.path, ctx):
+        if (
+            fixture_ceiling
+            and category is not Category.MALICIOUS
+            and SourcePaths.is_test_material_here(unit.path, ctx)
+        ):
             # The ceiling every other detector applies, arrived at last here because a
             # manifest felt like the one file that is never a fixture. It is: a package
             # manager's own tests need packages to install, so pnpm carries
