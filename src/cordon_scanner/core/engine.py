@@ -21,6 +21,8 @@ parallelised or cached without disturbing its neighbours.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import io
 import json
 import posixpath
@@ -102,6 +104,11 @@ class _Accumulator:
 
     findings: list[Finding] = field(default_factory=list)
     complete: bool = True
+    """Every file's content was read: nothing refused, truncated, pruned or timed out."""
+    advisory_complete: bool = True
+    """Every dependency was checked against an advisory or registry source, and the threat intel
+    was current. A missing feed is reported and never blocks a package for malware purposes
+    (review 98, REC-5): the two halves are kept apart so the gate can tell them apart."""
     rejected_archives: set[str] = field(default_factory=set)
     """Archives already reported as read in part (`OPERATIONAL.ARCHIVE.REJECTED`), which the
     truncation notice would only repeat."""
@@ -159,6 +166,10 @@ BLINDING_SETTINGS = frozenset(
 )
 """Repository settings that would switch detection off or load code into the scanner. Refused
 from a scan target and reported at HIGH, where the default gate fails, like a weakened gate."""
+
+ADVISORY_DETECTORS = frozenset({"advisory", "registry", "provenance", "ospackages"})
+"""Detectors whose lost coverage is about what is KNOWN of a dependency (an advisory feed, a registry,
+an attestation), not about content left unread."""
 
 INCOMPLETE_WHEN_REPORTED = frozenset(
     {
@@ -329,6 +340,17 @@ SWEPT_NOTE = "Read to its end in windows."
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
+CERTIFICATE_BLOCK: Final = re.compile(
+    rb"-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\s]{40,20000}?)-----END CERTIFICATE-----"
+)
+DER_STRING: Final = re.compile(rb"[\x0c\x13\x16]([\x02-\x7f])([ -~]{2,127})")
+"""A DER PrintableString, UTF8String or IA5String: tag, short length, then the text."""
+TEST_IDENTITY: Final = re.compile(
+    rb"(?i)testing purposes|\btest(?:ing)?\b|\bexample\b|localhost|127\.0\.0\.1|some-state|"
+    rb"internet widgits|snakeoil|\bdummy\b|\bfake\b"
+)
+"""What a certificate made for tests calls itself; `Some-State` and `Internet Widgits Pty Ltd`
+are OpenSSL's defaults for a subject nobody filled in."""
 NPM_PLACEHOLDER_VERSION: Final = re.compile(r"0\.0\.\d{1,4}-security(?:\.\d{1,4})?")
 """The version npm publishes in place of a malicious package it removed."""
 ARCHIVE_SLICE = 4000
@@ -1087,7 +1109,9 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
             ),
-            complete=acc.complete,
+            complete=acc.complete and acc.advisory_complete,
+            content_complete=acc.complete,
+            advisory_complete=acc.advisory_complete,
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -1322,6 +1346,7 @@ class Engine:
             )
         )
 
+        findings = tuple(Engine._test_identity_keys(list(findings), units))
         dependencies = self._annotated(dependencies, findings, ctx, units)
         result = ScanResult(
             findings=findings,
@@ -1342,7 +1367,9 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
             ),
-            complete=acc.complete,
+            complete=acc.complete and acc.advisory_complete,
+            content_complete=acc.complete,
+            advisory_complete=acc.advisory_complete,
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -1366,7 +1393,7 @@ class Engine:
             self.progress.phase("intel")
         status = feed.FeedClient.status(use_feed=use_feed, max_age=self.config.max_intel_age)
         if status.stale:
-            acc.complete = False
+            acc.advisory_complete = False
             age = (
                 f"{status.age_seconds // 3600} hours old"
                 if status.age_seconds is not None
@@ -1724,6 +1751,7 @@ class Engine:
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
 
+        acc.findings[:] = Engine._test_identity_keys(acc.findings, units)
         dependencies = self._annotated(dependencies, acc.findings, ctx, units)
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -1738,7 +1766,9 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
             ),
-            complete=acc.complete,
+            complete=acc.complete and acc.advisory_complete,
+            content_complete=acc.complete,
+            advisory_complete=acc.advisory_complete,
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -3393,6 +3423,57 @@ class Engine:
                 )
             ):
                 finding = replace(finding, severity=Severity.INFO)
+            out.append(finding)
+        return out
+
+    @staticmethod
+    def _certificate_names(raw: bytes) -> bytes:
+        """The printable names in the certificates a file holds: subject and issuer fields."""
+        names: list[bytes] = []
+        for block in CERTIFICATE_BLOCK.findall(raw[:200_000])[:8]:
+            try:
+                der = base64.b64decode(b"".join(block.split()), validate=False)
+            except (ValueError, binascii.Error):
+                continue
+            names.extend(m.group(2)[: m.group(1)[0]] for m in DER_STRING.finditer(der))
+        return b" ".join(names)
+
+    @staticmethod
+    def _test_identity_keys(findings: list[Finding], units: Sequence[FileUnit]) -> list[Finding]:
+        """A private key whose certificate says it is for testing is a test key (review 98, FP-6).
+
+        OpenSSL's `apps/` ships `client.pem` and `server2.pem` issued by "OpenSSL Test
+        Intermediate CA ... FOR TESTING PURPOSES ONLY", and `ca-key.pem` beside "Server test
+        cert"; every Bazel module that vendors OpenSSL carried 6 such blocks. Judged from the
+        certificate in the key's own file or its directory, never from a path: a real key in
+        `certs/` beside a real certificate keeps its grade. Reported at LOW, not withdrawn."""
+        keys = [
+            f
+            for f in findings
+            if f.rule_id == "SECRET.PRIVATE_KEY.001" and f.severity >= Severity.HIGH
+        ]
+        if not keys:
+            return findings
+        directories = {f.location.path.rpartition("/")[0] for f in keys}
+        testing: dict[str, bool] = {}
+        for unit in units:
+            directory = unit.path.rpartition("/")[0]
+            if directory not in directories or testing.get(directory):
+                continue
+            raw = unit.content.raw
+            if b"BEGIN CERTIFICATE" in raw[:200_000]:
+                names = Engine._certificate_names(raw)
+                testing[directory] = bool(names and TEST_IDENTITY.search(names))
+        out: list[Finding] = []
+        for finding in findings:
+            if finding in keys and testing.get(finding.location.path.rpartition("/")[0]):
+                finding = replace(
+                    finding,
+                    severity=Severity.LOW,
+                    message=finding.message
+                    + " The certificate beside it names a test identity, so this is read as a "
+                    "test key: confirm it is not used anywhere real.",
+                )
             out.append(finding)
         return out
 
@@ -5949,7 +6030,10 @@ class Engine:
         # cannot observe from outside: that it answered fewer questions than it
         # was asked. Reading it here keeps `complete` meaning the same thing
         # whether the coverage was lost in the walk or inside a detector.
-        if any(f.degrades_coverage for f in produced):
+        degrading = [f for f in produced if f.degrades_coverage]
+        if any(f.detector in ADVISORY_DETECTORS for f in degrading):
+            acc.advisory_complete = False
+        if any(f.detector not in ADVISORY_DETECTORS for f in degrading):
             acc.complete = False
 
         return self._drop_disabled(produced)

@@ -1558,6 +1558,12 @@ class ScanResult:
     dependencies: tuple[Dependency, ...] = ()
     stats: ScanStats = field(default_factory=ScanStats)
     complete: bool = True
+    content_complete: bool = True
+    """Every file's content was read (review 98, REC-5). `complete` is this AND `advisory_complete`,
+    kept for every pipeline that already reads it."""
+    advisory_complete: bool = True
+    """Every dependency was checked against an advisory or registry source and the intel was
+    current. Its absence is reported; it is no reason to call a package's content unread."""
     schema_version: int = 1
     engine_version: str = "0.0.0"
     rulepack_version: str = "0.0.0"
@@ -1627,6 +1633,8 @@ class ScanResult:
             "rulepack_hash": self.rulepack_hash,
             "config_hash": self.config_hash,
             "complete": self.complete,
+            "content_complete": self.content_complete,
+            "advisory_complete": self.advisory_complete,
             "intel": self.intel,
             "stats": self.stats.to_dict(),
             "repository": self.repository.to_dict() if self.repository else None,

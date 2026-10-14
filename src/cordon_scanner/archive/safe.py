@@ -61,11 +61,17 @@ ARCHIVE_SUFFIXES = (
     ".txz",
     ".crate",
     ".gem",
+    # conda's current format: a zip of `info-*.tar.zst` and `pkg-*.tar.zst`. 85.5% of conda-forge
+    # noarch packages publish their newest build only this way (review 98, REC-8).
+    ".conda",
+    ".tar.zst",
+    ".tzst",
 )
 
 READ_CHUNK = 65536
-_COMPRESSED_MAGIC = (b"\x1f\x8b", b"BZh", b"\xfd7zXZ\x00")
-"""gzip, bzip2 and xz: the streams a tarball is compressed in."""
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+_COMPRESSED_MAGIC = (b"\x1f\x8b", b"BZh", b"\xfd7zXZ\x00", ZSTD_MAGIC)
+"""gzip, bzip2, xz and zstd: the streams a tarball is compressed in."""
 
 
 class Rejection:
@@ -83,6 +89,10 @@ class Rejection:
     NAME = "unsafe_name"
     POLYGLOT = "polyglot_archive"
     HIDDEN = "hidden_zip_member"
+    UNSUPPORTED = "unsupported_compression"
+    """zstd without a decoder: before Python 3.14 the standard library has none, and Cordon adds no
+    runtime dependency, so a `.conda` package's tarballs are reported unread -- never passed as
+    clean. `compression.zstd` (3.14) or an installed `zstandard` reads them."""
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""
@@ -740,6 +750,10 @@ class ArchiveReader:
                         deadline=deadline,
                     )
                     continue
+                except UnsupportedCompression as exc:
+                    # Unread, and said so: the scan is incomplete rather than clean.
+                    if rejected is not None:
+                        rejected.append((member_path, Rejection.UNSUPPORTED, str(exc)))
                 except ArchiveError:
                     # A nested archive that will not open is still worth scanning as
                     # bytes: a payload does not stop being a payload because its
@@ -747,6 +761,10 @@ class ArchiveReader:
                     pass
 
             yield member_path, member.data
+
+
+class UnsupportedCompression(ArchiveError):
+    """A stream this Python cannot decompress. Reported as unread, never as clean."""
 
 
 class BudgetExceeded(ArchiveError):
@@ -807,9 +825,30 @@ class _BudgetedStream:
             inner = bz2.BZ2File(cast(Any, raw), mode="rb")
         elif data[:6] == b"\xfd7zXZ\x00":
             inner = lzma.LZMAFile(cast(Any, raw), mode="rb")  # noqa: SIM115
+        elif data[:4] == ZSTD_MAGIC:
+            inner = _BudgetedStream._zstd(raw, path)
         else:
             return cls(raw, None, limits, deadline, path, cap)
         return cls(inner, raw, limits, deadline, path, cap)
+
+    @staticmethod
+    def _zstd(raw: Any, path: str) -> Any:
+        """A zstd decompressing reader from the standard library (3.14) or `zstandard`."""
+        try:
+            from compression import zstd  # type: ignore[import-not-found]
+
+            return zstd.ZstdFile(raw, mode="rb")
+        except ImportError:
+            pass
+        try:
+            import zstandard  # type: ignore[import-not-found]
+
+            return zstandard.ZstdDecompressor().stream_reader(raw)
+        except ImportError:
+            raise UnsupportedCompression(
+                f"{path}: zstd-compressed, and no zstd decoder is available (Python 3.14's "
+                "compression.zstd, or the zstandard package)"
+            ) from None
 
     def read(self, size: int = -1) -> bytes:
         if self.deadline is not None and time.monotonic() > self.deadline:

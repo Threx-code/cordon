@@ -98,6 +98,10 @@ class TestTheScan:
         assert [f.rule_id for f in degraded] == [
             "OPERATIONAL.ADVISORY.NO_FEED.001"
         ] and "homebrew" in degraded[0].message
+        # And it is a gap in what is known, not in what was read (review 98, REC-5).
+        assert result.advisory_complete is False
+        assert result.content_complete is True
+        assert result.complete is False
         vulnerable = {
             f.location.package.split("@")[0]
             for f in result.findings

@@ -1248,6 +1248,11 @@ class ObfuscationDetector(BaseDetector):
 
     # -- Construction ----------------------------------------------------
 
+    DESCRIPTION_VALUE: ClassVar[re.Pattern[str]] = re.compile(
+        r"""(?:\b(?:long_)?description\s{0,4}=|["'](?:long_)?description["']\s{0,4}:)"""
+    )
+    """A package description's value, keyword or dict entry: the README a build tool inlined."""
+
     #: What turns a long line in an install hook into a payload: it is run, or decoded to be run.
     RUNS_LONG_LINE: ClassVar[re.Pattern[str]] = re.compile(
         r"\b(?:exec|eval|compile|b64decode|a85decode|b32decode|decompress|loads|unhexlify|fromhex|"
@@ -1256,25 +1261,23 @@ class ObfuscationDetector(BaseDetector):
 
     @staticmethod
     def _long_line_runs(content: FileContent, offset: int) -> bool:
-        """Whether a long line in an install hook is executed or decoded, as against a README
-        inlined as `long_description` -- what a poetry-generated `setup.py` holds (review 98, FP-5):
-        the call is on the line, or the name the line assigns is passed to one."""
+        """Whether a long line in an install hook is install-time payload, as against a README
+        inlined as `long_description` -- what a poetry-generated `setup.py` holds (review 98,
+        FP-5: pfzy, grpc-interceptor, InquirerPy).
+
+        Judged by excluding that one shape, not by requiring an `exec`: `mariabd`'s `setup.py`
+        writes a 2,263-character obfuscated browser extension to `%APPDATA%` with `.write()` and
+        points every browser shortcut at it, and a rule that escalated only executed or decoded
+        lines let it and seven other malregistry and DataDog payloads through (measured on the
+        v10 malware run). A description is prose for an index page; anything else that long in
+        code an installer runs is the payload until shown otherwise."""
         text = content.text
         start = text.rfind("\n", 0, offset) + 1
         end = text.find("\n", offset)
         line = text[start : len(text) if end == -1 else end]
         if ObfuscationDetector.RUNS_LONG_LINE.search(line):
             return True
-        assigned = re.match(r"\s*([A-Za-z_]\w{0,60})\s*=(?!=)", line)
-        if assigned is None:
-            return False
-        name = re.escape(assigned.group(1))
-        return bool(
-            re.search(
-                rf"\b(?:exec|eval|compile|b64decode|decompress|loads|Function)\s*\([^)\n]{{0,200}}\b{name}\b",
-                text,
-            )
-        )
+        return ObfuscationDetector.DESCRIPTION_VALUE.search(line) is None
 
     def _finding(self, hit: _Hit, unit: FileUnit, ctx: ScanContext) -> Finding:
         content = unit.content
