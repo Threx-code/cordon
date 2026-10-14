@@ -258,9 +258,15 @@ class AtrText:
 _INVISIBLE_CODES: Final = (
     *(0x200B, 0x200C, 0x200D, 0xFEFF, 0x2060, 0x180E, 0x200E, 0x200F),
     *range(0x202A, 0x202F),
+    *range(0x2061, 0x2065),
     *range(0x2066, 0x206A),
+    *range(0xFE00, 0xFE10),
+    *range(0xE0000, 0xE0080),
 )
-"""Zero-width characters and direction overrides: removed before matching, as ATR's engine does."""
+"""Characters with no visible form, removed before matching: zero-width, direction overrides, the
+invisible operators, variation selectors and the Tag block. ATR's own engine removes the first
+two; the rest are the same evasion -- `ig\ufe00nore` reads as "ignore" and matched nothing --
+and `detect/agent_intent.py` already folds them (review 98, AG-8)."""
 _INVISIBLE: Final = re.compile("[" + "".join(chr(code) for code in _INVISIBLE_CODES) + "]")
 _CONFUSABLE_PAIRS: Final = (
     # Cyrillic lowercase
