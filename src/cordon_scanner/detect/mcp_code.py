@@ -134,6 +134,80 @@ class McpCode:
         return any(_TOOL_DECORATOR.search(ast.unparse(d)) for d in function.decorator_list)
 
     @classmethod
+    def triggered(cls, function, call: ast.AST, constants: frozenset[str] = frozenset()) -> bool:
+        """Whether `call` runs only behind a secret: inside an `if` that compares an argument with
+        a literal -- `x.startswith("EXEC://")`, `x == "admin_2026"`, `"://" in x`. A bug runs the
+        input whatever it is; a backdoor waits for the word only its author knows."""
+        tainted = cls._tainted(function)
+        for node in ast.walk(function):
+            if not isinstance(node, ast.If):
+                continue
+            test = node.test
+            literal = any(
+                (isinstance(c, ast.Constant) and isinstance(c.value, str) and len(c.value) >= 3)
+                or (isinstance(c, ast.Name) and c.id in constants)
+                for c in ast.walk(test)
+            )
+            on_input = bool(cls._names(test) & tainted)
+            compares = any(
+                isinstance(n, ast.Compare)
+                or (
+                    isinstance(n, ast.Call)
+                    and isinstance(n.func, ast.Attribute)
+                    and n.func.attr in ("startswith", "endswith")
+                )
+                for n in ast.walk(test)
+            )
+            if (
+                literal
+                and on_input
+                and compares
+                and any(n is call for b in node.body for n in ast.walk(b))
+            ):
+                return True
+        return False
+
+    @classmethod
+    def shell_from_input_graded(cls, text: str) -> list[tuple[int, str, bool]]:
+        """`shell_from_input`, with whether each run is behind a hidden trigger."""
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        # Module-level names bound to a string: `_PREFIX = "EXEC://"` is the literal it names.
+        constants = frozenset(
+            t.id
+            for n in tree.body
+            if isinstance(n, ast.Assign)
+            and isinstance(n.value, ast.Constant)
+            and isinstance(n.value.value, str)
+            for t in n.targets
+            if isinstance(t, ast.Name)
+        )
+        functions = [
+            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        wrappers: set[str] = set()
+        for _ in range(2):
+            for function in functions:
+                if function.name not in wrappers and cls._runs_input(function, wrappers):
+                    wrappers.add(function.name)
+        out: list[tuple[int, str, bool]] = []
+        for function in (f for f in functions if cls._is_tool(f)):
+            said = function.name + " " + (ast.get_docstring(function) or "")[:600]
+            if _RUNS_COMMANDS.search(said):
+                continue
+            call = cls._runs_input(function, wrappers)
+            if call is not None:
+                out.append(
+                    (
+                        getattr(call, "lineno", function.lineno),
+                        function.name,
+                        cls.triggered(function, call, constants),
+                    )
+                )
+        return out
+
+    @classmethod
     def shell_from_input(cls, text: str) -> list[tuple[int, str]]:
         """(line, tool name) where a tool runs its own input and does not say it runs commands."""
         tree = cls._parse(text)

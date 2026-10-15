@@ -1814,8 +1814,22 @@ class AgentChainDetector(BaseDetector):
                 last = len(text) if last < 0 else last
                 return len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
 
-            for line, _tool in McpCode.shell_from_input(text):
-                yield self._finding("SUSPECT.MCP.HANDLER_SHELL.001", unit, ctx, *at(line))
+            for line, _tool, triggered in McpCode.shell_from_input_graded(text):
+                # Behind a secret prefix or value it is a backdoor and blocks; run on whatever
+                # arrives it is a command-injection bug, reported as one (MCP-SafetyBench's own
+                # benign yahoo_finance server runs `os.system(f"echo {msg}")`).
+                yield self._finding(
+                    "SUSPECT.MCP.HANDLER_SHELL.001",
+                    unit,
+                    ctx,
+                    *at(line),
+                    severity=None if triggered else Severity.MEDIUM,
+                    message=None
+                    if triggered
+                    else RULES["SUSPECT.MCP.HANDLER_SHELL.001"].message
+                    + " No secret gates it: it runs whatever arrives, a vulnerability rather than "
+                    "a backdoor.",
+                )
             for line in McpCode.secret_harvest(text):
                 yield self._finding("SUSPECT.MCP.SECRET_HARVEST.001", unit, ctx, *at(line))
             listening = McpCode.listener(text)
