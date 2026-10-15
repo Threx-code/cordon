@@ -349,6 +349,7 @@ class CapabilityDetector(BaseDetector):
             return ()
 
         hits = self._match_capabilities(content, candidates, unit.language)
+        hits.extend(self._folded_capabilities(content, candidates, unit.language, hits))
         resolved, commands = self._resolved_capabilities(unit, content, ctx)
         if not commands and unit.language != "python":
             commands = embedded.EmbeddedCommands.extract(content.text, unit.language)
@@ -584,6 +585,53 @@ class CapabilityDetector(BaseDetector):
         # address, and stripping both ends turned it into `1`, which the suite caught.
         trimmed = [host.rstrip(b":.'\"") for host in hosts]
         return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
+
+    def _folded_capabilities(
+        self,
+        content: FileContent,
+        candidates: tuple[CompiledRule, ...],
+        language: str | None,
+        seen: list[CapabilityHit],
+    ) -> list[CapabilityHit]:
+        """Capabilities that appear only once split string fragments are joined (`js_fold`).
+
+        Placed on the original line, which the fold keeps, and spanning it, since the joined text
+        is not in the file byte for byte.
+        """
+        if language not in ("javascript", "typescript"):
+            return []
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.js_fold import JsFold
+
+        text = content.text
+        if "+" not in text or not JsFold.has_fragments(text):
+            return []
+        folded = JsFold.fold(text)
+        if folded == text:
+            return []
+        already = {(h.rule_id, h.line) for h in seen}
+        starts = [0]
+        raw = text.encode("utf-8")
+        for index, byte in enumerate(raw):
+            if byte == 0x0A:
+                starts.append(index + 1)
+        extra: list[CapabilityHit] = []
+        view = FileContent.from_bytes(content.path, folded.encode("utf-8"))
+        for hit in self._match_capabilities(view, candidates, language):
+            if (hit.rule_id, hit.line) in already or hit.line > len(starts):
+                continue
+            begin = starts[hit.line - 1]
+            end = starts[hit.line] - 1 if hit.line < len(starts) else len(raw)
+            extra.append(
+                CapabilityHit(
+                    capability=hit.capability,
+                    rule_id=hit.rule_id,
+                    byte_start=begin,
+                    byte_end=max(begin, end),
+                    line=hit.line,
+                )
+            )
+        return extra
 
     def _match_capabilities(
         self,
@@ -2455,7 +2503,7 @@ class CapabilityDetector(BaseDetector):
     _JS_DECODER_CALLS: ClassVar[int] = 10
     #: A module name decoded from a literal on the spot: hex, base64, char codes or a byte array.
     _JS_DECODED_REQUIRE: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?<![\w$.])(?:require|import)\s{0,4}\(\s{0,4}(?:"
+        r"(?<![\w$.])(?:require|import)\s{0,4}\(\s{0,24}(?:"
         r"Buffer\s{0,4}\.\s{0,4}from\s{0,4}\(\s{0,4}(?:[\"'][A-Za-z0-9+/=]{2,200}[\"']\s{0,4},\s{0,4}"
         r"[\"'](?:hex|base64|base64url)[\"']|\[[\d\s,x]{1,400}\])\s{0,4}\)\s{0,4}\.\s{0,4}toString"
         r"|atob\s{0,4}\(\s{0,4}[\"'][A-Za-z0-9+/=]{2,200}[\"']"

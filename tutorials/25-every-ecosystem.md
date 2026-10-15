@@ -804,7 +804,7 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 | Groovy | `Jenkinsfile`, `build.gradle` | 11 |
 | Haskell | `*.hs`, `*.lhs` | 8 |
 | Java | `*.java` | 10 |
-| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 18 |
+| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 19 |
 | JSON | `*.json` | 0 |
 | Julia | `*.jl` | 8 |
 | Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 18 |
@@ -826,7 +826,7 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 | SQL | `*.sql` | 0 |
 | Swift | `*.swift`, `Package.swift` | 8 |
 | TOML | `*.toml` | 0 |
-| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 18 |
+| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 19 |
 | XML | `*.csproj`, `*.fsproj`, `*.props`, `*.targets`, `*.vbproj`, `*.xml` | 11 |
 | YAML | `*.yaml`, `*.yml` | 0 |
 | Zig | `*.zig`, `build.zig` | 7 |

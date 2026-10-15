@@ -368,6 +368,7 @@ class TestSelfScan(CorpusFixtures):
             # The tool-call guard's tests are the calls it must refuse -- a cron write, an
             # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
             and f.location.path != "tests/unit/test_tool_call_guard.py"
+            and f.location.path != "tests/unit/test_pattern_literals.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/skills_measure.py"

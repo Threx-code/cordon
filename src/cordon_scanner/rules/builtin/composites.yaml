@@ -1639,6 +1639,36 @@ rules:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
 
+  - id: MALWARE.INSTALL.WINDOWS_LOADER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script starts a Windows loader
+    message: >
+      Code that runs at install time starts rundll32, regsvr32, mshta, wscript or cscript: a
+      program whose job is to run code from the DLL, scriptlet or HTA it is handed. Installing a
+      JavaScript package compiles nothing with them; this is a native payload run on the
+      developer's machine.
+    remediation: >
+      Do not install this package. Treat machines that installed it as compromised and rotate
+      what they could reach.
+    provenance:
+      kind: research
+      reference: >
+        The compromised eslint-config-prettier releases (July 2025) started a bundled DLL from
+        postinstall through rundll32 (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1218/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.JS.WINDOWS_LOADER.001
+
   - id: SUSPECT.EXFIL.CREDENTIAL_STORE.001
     version: 1.0.0
     category: suspicious

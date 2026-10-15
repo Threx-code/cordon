@@ -111,6 +111,42 @@ rules:
         - "const evaluate = (x) => x * 2;"
 
   # ---------------------------------------------------------------------
+  # A WINDOWS LOADER STARTED FROM JAVASCRIPT
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.WINDOWS_LOADER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Starts a Windows loader that runs a DLL or a script
+    message: >
+      This file hands rundll32, regsvr32, mshta, wscript or cscript to a process call. Each runs
+      code from a file or a URL it is given -- a DLL's entry point, a scriptlet, an HTA -- which is
+      how a package ships a native payload without a build step.
+    remediation: >
+      Find what file it is given and where that file came from. A library has no reason to start
+      one of these.
+    provenance:
+      kind: research
+      reference: >
+        The compromised eslint-config-prettier releases (July 2025) ran a bundled node-gyp.dll from
+        postinstall through rundll32, with every name split into string fragments (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\s{0,4}["''\]]{0,2}\s{0,4}\(\s{0,4}["''](?:[\w:\\/.-]{0,80}[\\/])?(?:rundll32|regsvr32|mshta|wscript|cscript)(?:\.exe)?(?:["'']|\s))'
+    tests:
+      positive:
+        - 'cp.spawn("rundll32", [dll + ",main"]);'
+        - 'require("child_process")["spawn"]("rundll32", [p]);'
+        - "execSync('regsvr32 /s x.dll');"
+      negative:
+        - 'spawn("node", ["build.js"]);'
+        - "// rundll32 is how Windows runs a DLL entry point"
+
+  # ---------------------------------------------------------------------
   # SPAWN
   # ---------------------------------------------------------------------
   - id: CAP.JS.SPAWN.001
@@ -136,7 +172,7 @@ rules:
         # `SUSPECT.DECODE_EXEC.001` finding on `import { execFile } from
         # 'node:child_process'`, the first line of the file, 200 lines from anything
         # it was paired with.
-        - 'require\s*\(\s*["''](?:node:)?child_process["'']\s*\)\s*\.\s*\w{1,20}\s*\('
+        - 'require\s*\(\s*["''](?:node:)?child_process["'']\s*\)\s*(?:\.\s*\w{1,20}|\[\s*["'']\w{1,20}["'']\s*\])\s*\('
         # The unambiguous names, which mean one thing in JavaScript.
         - '\b(?:execSync|spawnSync|execFileSync|execFile|fork)\s{0,4}\('
         # `exec` and `spawn` are NOT unambiguous, and the bare spelling was the
@@ -160,6 +196,7 @@ rules:
     tests:
       positive:
         - "require('child_process').exec(cmd);"
+        - "require('child_process')[\"spawn\"](\"x\", [p]);"
         - "execSync('npm run build');"
         - "exec('rm -rf /tmp/x');"
         - "child_process.exec(cmd);"
