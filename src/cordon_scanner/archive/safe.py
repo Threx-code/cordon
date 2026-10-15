@@ -120,6 +120,9 @@ class ExtractedMember:
 class ExtractionResult:
     members: list[ExtractedMember] = field(default_factory=list)
     rejected: list[RejectedMember] = field(default_factory=list)
+    links: list[str] = field(default_factory=list)
+    """Link members whose target is another member of the same archive: not followed, and not a
+    coverage gap, because the content they name is read as that member (`link_stays_inside`)."""
     total_uncompressed: int = 0
     total_compressed: int = 0
     truncated: bool = False
@@ -184,6 +187,35 @@ class ArchiveReader:
         normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
         text = str(normalised)
         return None if text in {".", ""} else text
+
+    @staticmethod
+    def link_stays_inside(member: str, target: str, *, hard: bool = False) -> bool:
+        """Whether a link member points at another path inside the same archive.
+
+        Such a link is never followed, and it carries no content of its own: what it names is a
+        member read in its own right. Refused, it marked the scan incomplete -- 470 of 3,000 nix
+        repositories and 504 of 3,000 bazel archives were scored "not fully examined" for symlinks
+        such as `include/alsa -> ../alsa` (review 98). A target that is absolute or climbs out of
+        the archive stays refused: that link is how an extractor is made to read or write outside.
+        """
+        if not target or "\x00" in target:
+            return False
+        cleaned = target.replace("\\", "/")
+        if cleaned.startswith("/") or (len(cleaned) > 1 and cleaned[1] == ":"):
+            return False
+        # A hard link names an archive path; a symbolic link is relative to its own directory.
+        base = () if hard else PurePosixPath(member.replace("\\", "/")).parent.parts
+        depth: list[str] = [p for p in base if p not in {".", ""}]
+        for part in PurePosixPath(cleaned).parts:
+            if part in {".", ""}:
+                continue
+            if part == "..":
+                if not depth:
+                    return False
+                depth.pop()
+            else:
+                depth.append(part)
+        return bool(depth)
 
     @staticmethod
     def extract(
@@ -363,6 +395,16 @@ class ArchiveReader:
                 # extractor is made to write, or read, outside its own directory.
                 mode = info.external_attr >> 16
                 if mode and (mode & 0o170000) == 0o120000:
+                    # A zip symlink's data is its target path: a few bytes, read only to place it.
+                    target = ""
+                    if info.file_size <= 4096:
+                        try:
+                            target = archive.read(info).decode("utf-8", "replace")
+                        except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
+                            target = ""
+                    if ArchiveReader.link_stays_inside(safe, target):
+                        result.links.append(safe)
+                        continue
                     result.rejected.append(
                         RejectedMember(
                             safe, Rejection.LINK, "symbolic-link members are never extracted"
@@ -478,6 +520,11 @@ class ArchiveReader:
                     # device node or FIFO can block a reader indefinitely, and a link
                     # can redirect it outside the archive entirely.
                     if member.issym() or member.islnk():
+                        if ArchiveReader.link_stays_inside(
+                            member.name, member.linkname, hard=member.islnk()
+                        ):
+                            result.links.append(member.name)
+                            continue
                         result.rejected.append(
                             RejectedMember(
                                 member.name, Rejection.LINK, "link members are never extracted"

@@ -208,6 +208,58 @@ class TestTraversalAndLinks:
         assert not result.members
         assert result.rejected[0].reason == Rejection.LINK
 
+    @pytest.mark.parametrize(
+        ("name", "target", "kind"),
+        [
+            ("pkg/include/alsa", "../sound", tarfile.SYMTYPE),
+            ("pkg/CLAUDE.md", "AGENTS.md", tarfile.SYMTYPE),
+            ("pkg/copy.py", "pkg/real.py", tarfile.LNKTYPE),
+        ],
+    )
+    def test_a_link_inside_the_archive_is_not_a_gap(self, name, target, kind) -> None:
+        """Never followed, and nothing to read: the content it names is a member of its own."""
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            link = tarfile.TarInfo(name)
+            link.type = kind
+            link.linkname = target
+            archive.addfile(link)
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.tar")
+        assert not result.members
+        assert not result.rejected
+        assert result.links == [name]
+
+    @pytest.mark.parametrize(
+        ("name", "target", "kind"),
+        [
+            ("pkg/key", "/root/.ssh/id_rsa", tarfile.SYMTYPE),
+            ("pkg/key", "../../.ssh/id_rsa", tarfile.SYMTYPE),
+            ("key", "..", tarfile.SYMTYPE),
+            ("pkg/x", "../../etc/passwd", tarfile.LNKTYPE),
+            ("pkg/c", "C:/Windows/win.ini", tarfile.SYMTYPE),
+        ],
+    )
+    def test_a_link_out_of_the_archive_is_still_refused(self, name, target, kind) -> None:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            link = tarfile.TarInfo(name)
+            link.type = kind
+            link.linkname = target
+            archive.addfile(link)
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.tar")
+        assert result.rejected[0].reason == Rejection.LINK
+
+    def test_a_zip_symlink_inside_and_outside(self) -> None:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for name, target in (("pkg/doc.md", "README.md"), ("pkg/key", "/etc/shadow")):
+                info = zipfile.ZipInfo(name)
+                info.external_attr = 0o120777 << 16
+                archive.writestr(info, target)
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.zip")
+        assert result.links == ["pkg/doc.md"]
+        assert [r.name for r in result.rejected] == ["pkg/key"]
+
     def test_special_files_are_refused(self) -> None:
         """A device node or FIFO can block a reader indefinitely."""
         buffer = io.BytesIO()

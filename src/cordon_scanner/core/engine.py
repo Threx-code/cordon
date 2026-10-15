@@ -786,6 +786,17 @@ class Engine:
         )
 
     @staticmethod
+    def _read_to_end(content: FileContent) -> bool:
+        """Whether a file over `max_file_bytes` was still read to its last byte, in windows.
+
+        Every text-reading rule then saw all of it. Counting it as unexamined scored 62 of 132
+        sampled benign units with a coverage gap "not fully examined" for a font, a CLI binary or
+        a bundle read whole (review 98). A file past `max_stream_bytes` is not read to its end and
+        keeps the scan incomplete: padding a payload past the limit is the evasion.
+        """
+        return content.window_source is not None and content.limits.max_stream_bytes >= content.size
+
+    @staticmethod
     def _truncated_note(path: str, content: FileContent) -> Finding:
         """What a file over `max_file_bytes` had examined, said exactly."""
         if content.window_source is not None:
@@ -1584,7 +1595,7 @@ class Engine:
                     member_path, member_data, self.config.limits
                 )
                 if member_content.truncated:
-                    acc.complete = False
+                    acc.complete = acc.complete and Engine._read_to_end(member_content)
                     acc.append(Engine._truncated_note(member_path, member_content))
                 units.append(
                     FileUnit(
@@ -1611,7 +1622,8 @@ class Engine:
             )
 
         for member_path, reason, detail in rejected:
-            acc.complete = False
+            # A link has no content of its own: refusing it leaves nothing unread.
+            acc.complete = acc.complete and reason == Rejection.LINK
             acc.append(
                 Engine._rejected_member(member_path, reason, detail, image=image is not None)
             )
@@ -2901,8 +2913,9 @@ class Engine:
                 # catches the timeout variant of this -- did not catch the
                 # sharpest one: `max_file_bytes: 65536` in a repository's own
                 # config, which reads as ordinary tuning and pads a payload out
-                # of reach.
-                acc.complete = False
+                # of reach. Unless the windows read it to its end: then every text rule saw
+                # every byte, and only the whole-file parsers stopped at the limit.
+                acc.complete = acc.complete and Engine._read_to_end(loaded)
                 # Said here, for every such file. It was said by the capability detector, which
                 # returns before it for a binary file and for one no rule applies to -- so a
                 # repository with a 12 MB font was incomplete, failed the Action's default gate,
@@ -5590,7 +5603,7 @@ class Engine:
                     )
                 directory = rel_path[: -len(prefix)]
                 for member_path, reason, detail in rejected:
-                    acc.complete = False
+                    acc.complete = acc.complete and reason == Rejection.LINK
                     acc.append(Engine._rejected_member(directory + member_path, reason, detail))
             cache[digest] = members
             if members is not None:
@@ -5603,7 +5616,7 @@ class Engine:
             member_path = rel_path + suffix
             content = FileContent.from_bytes(member_path, data, self.config.limits)
             if content.truncated:
-                acc.complete = False
+                acc.complete = acc.complete and Engine._read_to_end(content)
                 acc.append(Engine._truncated_note(member_path, content))
             units.append(
                 FileUnit(content=content, language=LanguageRegistry.of_file(member_path, content))

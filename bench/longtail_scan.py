@@ -130,6 +130,11 @@ class LongtailScan:
             text = out.read_text(encoding="utf-8", errors="replace")
             rep = json.loads(text[text.index("{") :])
             rec["complete"] = rep.get("complete")
+            # Kept apart: an offline scan has no fresh advisory data by design, which says
+            # nothing about whether the package's content was examined. A result whose content
+            # was not fully examined must never be scored as a clean one (review 98, phase 0).
+            rec["content_complete"] = rep.get("content_complete")
+            rec["advisory_complete"] = rep.get("advisory_complete")
             rec["findings"] = [
                 [
                     f["rule_id"],
