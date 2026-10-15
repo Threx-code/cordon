@@ -271,6 +271,7 @@ rather than a document.
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
+| `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |
 | `SUSPECT.YARA.MATCH.001` | high | `yara` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion
@@ -628,6 +629,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `POLICY.BINARY.COMMITTED.001` | low | `binary` | policy |
+| `SUSPECT.ARCHIVE.LINK_TO_SECRET.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.NESTING.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.PADDED.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | `manifest` | obfuscation |
@@ -701,13 +703,16 @@ rather than a document.
 | `SUSPECT.AGENT.ATR.PROMPT_INJECTION.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | `agents` | malicious_code |
 | `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | `agents` | exfiltration |
 | `SUSPECT.AGENT.DROPPER_PROSE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
 | `SUSPECT.AGENT.FRONT_MATTER_CODE.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.HIDDEN_DIRECTIVE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |
@@ -721,20 +726,24 @@ rather than a document.
 | `SUSPECT.AGENT.SKILL_INSTRUCTIONS.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.UNATTENDED.001` | medium | `composites` | prompt_injection |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |
 | `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.BORROWED_NAME.001` | high | `manifest` | misconfiguration |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.INPUT_MIRROR.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LISTENER.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
+| `SUSPECT.MCP.TIME_BOMB.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
