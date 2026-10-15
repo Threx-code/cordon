@@ -369,6 +369,8 @@ class TestSelfScan(CorpusFixtures):
             # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
             and f.location.path != "tests/unit/test_tool_call_guard.py"
             and f.location.path != "tests/unit/test_pattern_literals.py"
+            # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
+            and f.location.path != "tests/unit/test_recovered_misses.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/skills_measure.py"
