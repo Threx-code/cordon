@@ -298,6 +298,75 @@ class Harness:
         return archives[0] if len(archives) == 1 and not others else into
 
     @staticmethod
+    def _datadog_as_published(archive: Path, into: Path) -> Path | None:
+        """A DataDog sample as the registry served it: the unpacked tree repacked into the
+        artefact a user installs, so the scanner grades it as a published package exactly as it
+        grades the benign corpus (which is all tarballs).
+
+        DataDog stores releases unpacked. Scanned as a folder, an npm package's install hooks and
+        a wheel's import-time entry point are read as a working tree's, which neither is
+        (review 98). Repacked: an npm `package/` folder with a `package.json` as `.tgz`, a tree
+        holding `<name>.dist-info/METADATA` as `.whl`, a tree whose top holds `PKG-INFO` as an
+        sdist `.tar.gz`. Some samples store each file inside a folder named for it
+        (`m/__init__.py/m/__init__.py`); the repeated half is the file's real path. Anything else
+        stays the folder `_unzip_datadog` returns.
+        """
+        import tarfile
+
+        target = Harness._unzip_datadog(archive, into)
+        if target is None or target.is_file():
+            return target
+        files = [
+            p for p in target.rglob("*") if p.is_file() and not p.name.startswith("package_info")
+        ]
+
+        def real(path: Path, root: Path) -> str:
+            parts = path.relative_to(root).parts
+            half = len(parts) // 2
+            if len(parts) % 2 == 0 and half and parts[:half] == parts[half:]:
+                parts = parts[:half]
+            return "/".join(parts)
+
+        manifests = [p for p in files if p.name == "package.json" and p.parent.name == "package"]
+        if len(manifests) == 1:
+            root = manifests[0].parent
+            out = into / f"{root.parent.name or 'package'}.tgz"
+            with tarfile.open(out, "w:gz") as tgz:
+                for path in files:
+                    if root in path.parents:
+                        tgz.add(path, arcname="package/" + real(path, root))
+            return out
+        metadata = [p for p in files if p.name == "METADATA" and ".dist-info" in str(p)]
+        if metadata:
+            # The outermost folder holding a `.dist-info`: the doubled layout nests another.
+            root = min(
+                (
+                    parent
+                    for parent in metadata[0].parents
+                    if (parent == target or target in parent.parents)
+                    and any(child.name.endswith(".dist-info") for child in parent.iterdir())
+                ),
+                key=lambda folder: len(folder.parts),
+            )
+            dist = next(c.name for c in root.iterdir() if c.name.endswith(".dist-info"))
+            out = into / f"{dist.removesuffix('.dist-info')}-py3-none-any.whl"
+            with zipfile.ZipFile(out, "w") as wheel:
+                for path in files:
+                    if root in path.parents:
+                        wheel.write(path, real(path, root))
+            return out
+        pkg_info = [p for p in files if p.name == "PKG-INFO" and "egg-info" not in str(p)]
+        if pkg_info:
+            root = min((p.parent for p in pkg_info), key=lambda d: len(d.parts))
+            out = into / f"{root.name}.tar.gz"
+            with tarfile.open(out, "w:gz") as sdist:
+                for path in files:
+                    if root in path.parents:
+                        sdist.add(path, arcname=f"{root.name}/" + real(path, root))
+            return out
+        return target
+
+    @staticmethod
     def _release_key(name: str, version: str) -> tuple[str, str]:
         return re.sub(r"[-_.]+", "-", name).lower(), version.lower().removeprefix("v")
 
