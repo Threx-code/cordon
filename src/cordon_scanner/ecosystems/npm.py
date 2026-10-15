@@ -61,6 +61,17 @@ class NpmEcosystem(BaseEcosystem):
             "registry.npmjs.org",
             "registry.yarnpkg.com",
             "registry.npmmirror.com",
+            # Public mirrors of the npm registry, serving its packages under its names: npmmirror's
+            # earlier hosts (Taobao, cnpm) and the cloud providers' mirrors. In the long tail they
+            # were a common cause of `SUSPECT.LOCKFILE.SOURCE.001` (review 98), and a package
+            # resolved from one is the registry's package, so advisories match it as one.
+            "registry.npm.taobao.org",
+            "npm.taobao.org",
+            "r.cnpmjs.org",
+            "registry.cnpmjs.org",
+            "mirrors.cloud.tencent.com/npm",
+            "repo.huaweicloud.com/repository/npm",
+            "mirrors.huaweicloud.com/repository/npm",
             # Deno's registries: JSR (and its npm-compatible endpoint) and deno.land/x, and the
             # CDNs that serve npm packages by name and version to `import` statements.
             "jsr.io",

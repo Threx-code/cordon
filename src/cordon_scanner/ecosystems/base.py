@@ -491,6 +491,35 @@ class Ecosystem(Protocol):
         ...
 
 
+class RegistryHosts:
+    """Whether a URL is served by one of an ecosystem's registry hosts."""
+
+    @staticmethod
+    def matches(url: str, known: frozenset[str]) -> bool:
+        """The URL's host is a listed host or a subdomain of one; a listed `host/path` entry
+        also needs the URL's path to start there (`mirrors.aliyun.com/pypi`).
+
+        Not a substring test. `registry.npmjs.org.example.net` contains the npm registry's
+        name and is somebody else's server; under a substring test it read as the registry,
+        and a lockfile resolving from it was neither reported as foreign nor kept apart from
+        advisory matching.
+        """
+        rest = url.lower().split("://", 1)[-1]
+        authority, _, path = rest.partition("/")
+        host = authority.rpartition("@")[2].split(":", 1)[0].rstrip(".")
+        for entry in known:
+            entry_host, _, entry_path = entry.lower().partition("/")
+            if host != entry_host and not host.endswith("." + entry_host):
+                continue
+            if (
+                not entry_path
+                or path == entry_path
+                or path.startswith(entry_path.rstrip("/") + "/")
+            ):
+                return True
+        return False
+
+
 class BaseEcosystem:
     """Shared behaviour. Implementing the protocol directly is equally valid."""
 
@@ -702,9 +731,7 @@ class BaseEcosystem:
         if "://" not in lowered:
             return True
 
-        host = lowered.split("://", 1)[1].split("/", 1)[0]
-        host = host.rpartition("@")[2]  # strip any userinfo
-        return any(known in host for known in self.registry_hosts)
+        return RegistryHosts.matches(lowered, self.registry_hosts)
 
     def is_public_registry(self, url: str | None) -> bool:
         """Whether a resolution is this ecosystem's PUBLIC registry, where anyone can publish a
@@ -713,8 +740,7 @@ class BaseEcosystem:
         if url and url.lower().startswith("registry:"):
             named = url.lower().removeprefix("registry:").strip()
             if "://" in named:
-                host = named.split("://", 1)[1].split("/", 1)[0].rpartition("@")[2]
-                return any(known in host for known in self.registry_hosts)
+                return RegistryHosts.matches(named, self.registry_hosts)
             return named in PUBLIC_REGISTRY_NAMES
         return self.is_registry_host(url)
 

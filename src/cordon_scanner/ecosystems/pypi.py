@@ -283,7 +283,22 @@ class PypiEcosystem(BaseEcosystem):
         "**/requirements/*.txt",
     )
     registry_hosts: frozenset[str] = frozenset(
-        {"pypi.org", "files.pythonhosted.org", "pypi.python.org"}
+        {
+            "pypi.org",
+            "files.pythonhosted.org",
+            "pypi.python.org",
+            # Public mirrors of PyPI, serving its files under its names (see npm's list).
+            "pypi.tuna.tsinghua.edu.cn",
+            "mirrors.tuna.tsinghua.edu.cn/pypi",
+            "mirrors.aliyun.com/pypi",
+            "pypi.douban.com",
+            "pypi.mirrors.ustc.edu.cn",
+            "mirrors.ustc.edu.cn/pypi",
+            "mirrors.bfsu.edu.cn/pypi",
+            "mirrors.cloud.tencent.com/pypi",
+            "repo.huaweicloud.com/repository/pypi",
+            "mirrors.huaweicloud.com/repository/pypi",
+        }
     )
 
     def normalize_name(self, name: str) -> str:

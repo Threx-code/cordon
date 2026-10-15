@@ -610,7 +610,16 @@ class RubyGemsEcosystem(BaseEcosystem):
         "**/.ruby-version",
     )
     lockfile_globs: tuple[str, ...] = ("**/Gemfile.lock", "**/gems.locked")
-    registry_hosts: frozenset[str] = frozenset({"rubygems.org", "index.rubygems.org"})
+    registry_hosts: frozenset[str] = frozenset(
+        {
+            "rubygems.org",
+            "index.rubygems.org",
+            # Public mirrors of RubyGems.org, serving its gems under its names (see npm's list).
+            "gems.ruby-china.com",
+            "gems.ruby-china.org",
+            "mirrors.tuna.tsinghua.edu.cn/rubygems",
+        }
+    )
     records_integrity = False
     """Bundler writes a CHECKSUMS section only from 2.6, and only when enabled: a lock without one
     is the ordinary case, not hashes gone missing. Checksums that are there are validated and,
