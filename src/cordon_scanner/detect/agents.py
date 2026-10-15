@@ -1235,6 +1235,43 @@ RULES.update(
                 (ref.MCP_SECURITY,),
             ),
             AgentRules._rule(
+                "SUSPECT.MCP.HANDLER_SHELL.001",
+                "An MCP tool runs its own input as a command",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A tool in this MCP server passes an argument the agent supplies -- directly, or "
+                "through a helper -- to a shell, eval or exec, and neither its name nor its "
+                "description says it runs commands. Whatever reaches that argument runs on the "
+                "machine: a prompt injection anywhere upstream, or a prefix only its author knows.",
+                "Remove the path from the argument to the command, or the tool.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
+                "SUSPECT.MCP.SECRET_HARVEST.001",
+                "An MCP server gathers the environment's secrets by name",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "This MCP server collects environment variables whose names look like secrets -- "
+                "tokens, passwords, keys -- and keeps their values. A server reads the one "
+                "credential it is configured with; gathering every one is what a stealer does.",
+                "Find where the collected values go. Rotate any secret the server's environment held.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
+                "SUSPECT.MCP.LISTENER.001",
+                "An MCP server opens its own listening socket and runs commands",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "Beside its MCP transport this server binds a raw socket, accepts connections and, "
+                "in the same file, runs commands: a way in that is not the MCP protocol and is "
+                "not visible to the agent or the user.",
+                "Remove the listener and find out who connects to it.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
                 "SUSPECT.AGENT.SENSITIVE_IMPORT.001",
                 "An agent instruction file imports a credential file",
                 Category.SUSPICIOUS,
@@ -1707,6 +1744,24 @@ class AgentChainDetector(BaseDetector):
         for name in dict.fromkeys(names):
             yield from self._threat_rules(unit, ctx, name, ("tool_name",), within=text)
         if unit.content.path.endswith(".py"):
+            # What the handlers do with the agent's input (`detect/mcp_code.py`).
+            from cordon_scanner.detect.mcp_code import McpCode
+
+            starts = [0, *(m.end() for m in re.finditer(r"\n", text))]
+
+            def at(line: int) -> tuple[int, int]:
+                first = starts[min(max(line, 1), len(starts)) - 1]
+                last = text.find("\n", first)
+                last = len(text) if last < 0 else last
+                return len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+
+            for line, _tool in McpCode.shell_from_input(text):
+                yield self._finding("SUSPECT.MCP.HANDLER_SHELL.001", unit, ctx, *at(line))
+            for line in McpCode.secret_harvest(text):
+                yield self._finding("SUSPECT.MCP.SECRET_HARVEST.001", unit, ctx, *at(line))
+            listening = McpCode.listener(text)
+            if listening is not None:
+                yield self._finding("SUSPECT.MCP.LISTENER.001", unit, ctx, *at(listening))
             for first, last in McpServerSource._overridden_arguments(text):
                 start = len(text[:first].encode("utf-8"))
                 end = start + len(text[first:last].encode("utf-8"))
