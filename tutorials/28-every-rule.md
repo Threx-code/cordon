@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,400 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,402 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -546,7 +546,7 @@ rule's own samples.
 
 ## Exfiltration
 
-13 rules.
+14 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -563,6 +563,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | Credential or machine identity, and a request to a drop point |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
+| `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
 
 ## Extension
 
@@ -1504,12 +1505,13 @@ rule's own samples.
 
 ## MCP servers
 
-13 rules.
+14 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.MCP.LIVE_UNREAD.001` | info | A remote MCP server could not be read |
 | `OPERATIONAL.MCP.UNRESOLVED` | info | An MCP server package was not examined |
+| `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | An MCP tool replaces the argument it was called with |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | A remote MCP server over plain HTTP |
@@ -1543,7 +1545,7 @@ rule's own samples.
 | `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | Cordon's model judges a package malicious |
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | A pickle imports something ordinary model files do not |
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | Loads a model with trust_remote_code, running its repository's Python |
-| `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | medium | Loads a model with the loader's safety switch turned off |
+| `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | Loads a model with the loader's safety switch turned off |
 
 ## Obfuscation
 
@@ -1752,7 +1754,7 @@ rule's own samples.
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| `SUSPECT.SUBMODULE.UNTRUSTED.001` | medium | Submodule fetched over plain HTTP or from a personal account |
+| `SUSPECT.SUBMODULE.UNTRUSTED.001` | medium | Submodule fetched over an unauthenticated transport |
 
 ## Targeted Payload
 

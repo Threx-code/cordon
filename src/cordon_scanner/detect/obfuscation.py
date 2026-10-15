@@ -512,6 +512,25 @@ the phrase is exempt."""
 TRANSLATION_PATHS = ("**/*.po", "**/*.mo", "**/*.pot", "**/LC_MESSAGES/**")
 """Message catalogues, which hold display text rather than code."""
 
+CONCEALED_TEXT = re.compile(
+    r"(?i)[a-z][a-z0-9+.-]{1,9}://"
+    r"|\b(?:\d{1,3}\.){3}\d{1,3}\b"
+    r"|\b[a-z0-9-]{2,63}\.(?:com|net|org|io|xyz|ru|cn|top|info|biz|me|cc|tk|su|pw|online|site|app"
+    r"|dev|link|club|shop|live|sh|ws)\b"
+    r"|/bin/|/tmp/|/etc/|\.ssh|id_rsa|cmd\.exe|powershell"
+    r"|\b(?:require|child_process|eval|exec|execSync|spawn|Function|atob|btoa|Buffer|process|env"
+    r"|fromCharCode|https?|net|socket|fs|os|writeFile|readFile|unlink|import|__import__|subprocess"
+    r"|system|popen|getattr|setattr|globals|compile|marshal|base64|zlib|cookie|localStorage"
+    r"|XMLHttpRequest|fetch|WebSocket|token|password|passwd|wallet|discord|telegram|webhook|curl"
+    r"|wget|chmod|crontab|whoami|hostname|homedir|platform)\b"
+)
+"""What concealed text decodes to: an address, a path, a command, or the name of something that
+runs code, reaches the network or holds a secret. A run of escapes that decodes to none of these
+is data written as escapes -- curl's `"0123456789ABCDEF"`, a regular expression's
+`[\x21\x23-\x7e]`, libmagic's `\x00OpenTimestamps\x00`, TLS's `"DOWNGRD\x01"` -- and was the
+only code warning on 116 of 11,005 benign units rescanned, while what malware hides behind escapes
+is a module name, a host or a command (review 98)."""
+
 MIN_DISTINCT_ENCODED = 6
 """How many distinct characters a run of escapes must decode to.
 
@@ -564,6 +583,8 @@ class _Hit:
     confidence: Confidence
     start: int
     end: int
+    offscreen: bool = False
+    """Code placed after a run of padding, past the right edge of an editor."""
 
 
 MINIFIED_LINE_FOR_BIDI = 5_000
@@ -679,9 +700,67 @@ class ObfuscationDetector(BaseDetector):
         hits.extend(self._tag_smuggling(content))
         hits.extend(self._escapes(content))
         hits.extend(self._packers(content, unit.language))
-        hits.extend(self._long_lines(content, ctx, unit.language))
+        long_lines = list(self._long_lines(content, ctx, unit.language))
+        hits.extend(long_lines)
+        if not long_lines:
+            hits.extend(self._offscreen_code(content, unit.language))
 
         return [self._finding(hit, unit, ctx) for hit in hits]
+
+    #: Code after a gap of padding in the middle of a line: `import os` followed by two hundred
+    #: spaces and then the payload, which a reader's editor never shows without scrolling right.
+    #: Not a gap before a comment, and not a gap at the end of a line. A `;` after the gap is a
+    #: statement separator, which is how the samples carry on: `...;exec(...)`.
+    OFFSCREEN_CODE: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?m)\S[ \t]{200,4000}(?=[A-Za-z_$;(\[])(?!//|--)\S"
+    )
+
+    @staticmethod
+    def _inside_quotes(raw: bytes, offset: int) -> bool:
+        """Whether a quote is open on this line before `offset`: padding in a string literal is a
+        table or a message laid out in columns (curl's test strings, Prettier's lexer tables)."""
+        line = raw[raw.rfind(b"\n", 0, offset) + 1 : offset + 1]
+        line = re.sub(rb"\\.", b"", line)
+        return any(line.count(quote) % 2 for quote in (b'"', b"'", b"`"))
+
+    def _offscreen_code(self, content: FileContent, language: str | None) -> Iterable[_Hit]:
+        """Code pushed past the right edge of the screen by padding, whatever its entropy.
+
+        The long-line rule wants the line to be high-entropy, because a long line of words is
+        text. Padding is the other half of its own premise -- "a payload is either one token or
+        pushed past the edge of the screen" -- and the pushed half needs no entropy: the Roblox
+        cookie stealers in malregistry and `spl-types` hide plain Python after hundreds of
+        spaces on an ordinary line (review 98). Source languages only; prose and data align
+        columns with spaces."""
+        if language is None or language in PROSE_LANGUAGES or content.truncated:
+            return
+        raw = content.raw
+        found = next(
+            (
+                m
+                for m in self.OFFSCREEN_CODE.finditer(raw)
+                if not ObfuscationDetector._inside_quotes(raw, m.start())
+            ),
+            None,
+        )
+        if found is None:
+            return
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
+            title="Code pushed past the edge of the screen",
+            message=(
+                f"Line {content.line_of(found.start())} continues with code after a run of "
+                f"{found.end() - found.start() - 2} blank characters, so an editor shows the "
+                f"start of the line and nothing of what follows it. Padding has no use in code "
+                f"except keeping something out of a reviewer's sight."
+            ),
+            remediation="Read the whole line. Remove the padding, or the code after it.",
+            severity=Severity.LOW,
+            confidence=Confidence.HIGH,
+            start=found.start(),
+            end=min(found.end(), found.start() + 200),
+            offscreen=True,
+        )
 
     # -- Signals ---------------------------------------------------------
 
@@ -835,7 +914,11 @@ class ObfuscationDetector(BaseDetector):
                     "Remove the characters, or write them as explicit escapes so they "
                     "are visible to the next reader."
                 ),
-                severity=Severity.LOW if documented else Severity.MEDIUM,
+                # Recorded: a defect it may be, a reordering it cannot be. In the long tail it
+                # was mostly a BOM in iconv-lite's generated tables, KaTeX, CSV readers that
+                # strip one, and bundles (review 98). Text hidden in invisible characters --
+                # variation selectors, tag characters -- is `CAP.INVISIBLE_SMUGGLING.001`'s.
+                severity=Severity.LOW,
                 confidence=Confidence.HIGH,
                 start=match.start(),
                 end=match.end(),
@@ -907,6 +990,17 @@ class ObfuscationDetector(BaseDetector):
                 open_quote = None
             index += 1
         return open_quote is not None
+
+    @staticmethod
+    def _decoded(raw: bytes, unit_pattern: re.Pattern[bytes]) -> str:
+        """What the escapes or character codes decode to, joined in order."""
+        values: list[int] = []
+        if unit_pattern is CHAR_CODE_UNIT:
+            for call in unit_pattern.finditer(raw):
+                values.extend(int(n) for n in NUMERIC_ARG.findall(call.group(0)))
+        else:
+            values.extend(int(escape.group(0)[2:], 16) for escape in unit_pattern.finditer(raw))
+        return "".join(chr(value) for value in values if 0 < value < 0x110000)
 
     @staticmethod
     def _encoded_units(raw: bytes, unit_pattern: re.Pattern[bytes]) -> tuple[int, int, int]:
@@ -984,6 +1078,11 @@ class ObfuscationDetector(BaseDetector):
                 # measurable rather than a matter of where the file lives.
                 if printable < total * PRINTABLE_SHARE:
                     continue
+                if not CONCEALED_TEXT.search(self._decoded(content.raw, unit_pattern)):
+                    # Printable, and still not something anybody hides: a table of hex digits,
+                    # a regular expression's character range, a protocol constant
+                    # (`"DOWNGRD\x01"`), a file-format signature. See `CONCEALED_TEXT`.
+                    continue
                 first = unit_pattern.search(content.raw)
                 if first is None:  # pragma: no cover - findall implies a match
                     continue
@@ -1020,6 +1119,8 @@ class ObfuscationDetector(BaseDetector):
             if run_printable < run_total * PRINTABLE_SHARE:
                 continue
             if run_distinct < MIN_DISTINCT_ENCODED:
+                continue
+            if not CONCEALED_TEXT.search(self._decoded(match.group(0), unit_pattern)):
                 continue
 
             yield _Hit(
@@ -1284,6 +1385,14 @@ class ObfuscationDetector(BaseDetector):
             return True
         return ObfuscationDetector.DESCRIPTION_VALUE.search(line) is None
 
+    @staticmethod
+    def _long_line_executed(content: FileContent, offset: int) -> bool:
+        text = content.text
+        start = text.rfind("\n", 0, offset) + 1
+        end = text.find("\n", offset)
+        line = text[start : len(text) if end == -1 else end]
+        return ObfuscationDetector.RUNS_LONG_LINE.search(line) is not None
+
     def _finding(self, hit: _Hit, unit: FileUnit, ctx: ScanContext) -> Finding:
         content = unit.content
         # The same ceiling the secrets detector and the composites apply, and these
@@ -1369,6 +1478,18 @@ class ObfuscationDetector(BaseDetector):
                 or ObfuscationDetector._long_line_runs(content, hit.start)
             )
         ):
+            severity = Severity.HIGH
+        elif (
+            hit.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"
+            and (content.path in ctx.import_entry_paths or ctx.in_install_hook(content.path))
+            and severity < Severity.HIGH
+            and (hit.offscreen or ObfuscationDetector._long_line_executed(content, hit.start))
+        ):
+            # A published package's entry point -- the `__init__.py` every `import` runs --
+            # holding a long high-entropy line that is itself executed or decoded: the payload
+            # runs for every consumer without any hook. Stricter than the install-hook case:
+            # entry points carry tables and data, so the line has to be what runs. The Roblox
+            # cookie stealers in malregistry hide behind exactly this (review 98).
             severity = Severity.HIGH
         return Finding(
             rule_id=hit.rule_id,

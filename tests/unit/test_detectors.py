@@ -213,6 +213,26 @@ class TestLockfileDetector(DetectorsFixtures):
         assert "SUSPECT.LOCKFILE.SOURCE.001" in ids
         assert "POLICY.LOCKFILE.INTEGRITY.001" not in ids
 
+    @pytest.mark.parametrize(
+        ("resolved", "severity"),
+        [
+            ("git+ssh://git@github.com/a/b.git", Severity.LOW),
+            ("https://codeload.github.com/a/b/tar.gz/v2.0.0", Severity.LOW),
+            ("https://packages.example.net/b-2.0.0.tgz", Severity.MEDIUM),
+        ],
+    )
+    def test_a_code_host_is_recorded_and_an_unknown_host_warned(
+        self, rules, resolved: str, severity: Severity
+    ) -> None:
+        text = HASHED_LOCK.replace(
+            '"resolved":"https://registry.npmjs.org/b/-/b-2.0.0.tgz"', f'"resolved":"{resolved}"'
+        )
+        findings = DetectorsHelpers.run(
+            LockfileDetector(), "package-lock.json", text, DetectorsHelpers.context(rules)
+        )
+        found = [f for f in findings if f.rule_id == "SUSPECT.LOCKFILE.SOURCE.001"]
+        assert [f.severity for f in found] == [severity]
+
     def test_an_unpinned_requirements_file_is_not_a_lockfile(self, rules) -> None:
         """It matches the glob and legitimately resolves nothing, so silence is
         correct rather than a finding."""
@@ -361,6 +381,29 @@ class TestObfuscationDetector(DetectorsFixtures):
         host = "".join(f"\\x{ord(c):02x}" for c in "evil.example.net")
         findings = DetectorsHelpers.run(
             ObfuscationDetector(), "a.js", f'const h="{host}";', DetectorsHelpers.context(rules)
+        )
+        assert any(f.rule_id == "SUSPECT.OBFUSCATION.ENCODED.001" for f in findings)
+
+    @pytest.mark.parametrize(
+        "plain",
+        [
+            "0123456789ABCDEF",  # curl's hex digits
+            "DOWNGRD\x01",  # a TLS protocol constant
+            "OpenTimestamps",  # a file-format signature
+            "!#$%&'*+-.^_`|~",  # a regular expression's character range
+        ],
+    )
+    def test_data_written_as_escapes_is_not_concealment(self, rules, plain: str) -> None:
+        escaped = "".join(f"\\x{ord(c):02x}" for c in plain)
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(), "a.js", f'const t="{escaped}";', DetectorsHelpers.context(rules)
+        )
+        assert not any(f.rule_id == "SUSPECT.OBFUSCATION.ENCODED.001" for f in findings)
+
+    def test_a_module_name_written_as_escapes_is(self, rules) -> None:
+        escaped = "".join(f"\\x{ord(c):02x}" for c in "child_process")
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(), "a.js", f'const m="{escaped}";', DetectorsHelpers.context(rules)
         )
         assert any(f.rule_id == "SUSPECT.OBFUSCATION.ENCODED.001" for f in findings)
 

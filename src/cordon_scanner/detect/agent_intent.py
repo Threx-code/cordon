@@ -22,6 +22,8 @@ and a policy that forbids the network forbids the judge. This is the determinist
       credential-elsewhere  print a credential with its own tool (`gh auth token`) and send a
                         request carrying a token to a host that did not issue it
       concealed-override  (per file) drop the safety or content rules  +  keep it from the user
+      concealed-sabotage  (per file) make the user's work fail  +  hide the skill, or deny it when
+                        asked
 
 and `chained` follows an instruction file's "follow the instructions in <path>" to the file it
 names, so an intent split across two files is read as one.
@@ -251,6 +253,27 @@ _HIDE_FROM_USER: Final = re.compile(
     r"|\bkeep (?:this|it|the|these)\b[^\n.]{0,30}\b(?:hidden|secret)\b",
     re.IGNORECASE,
 )
+#: Making the user's work fail on purpose: "the code you write MUST NOT work", "introduce 2-3
+#: bugs". Each phrase alone is a test-first instruction ("it must fail without the fix") or a
+#: reviewer's job description; it is an attack only beside `_DENIES_ITSELF` (review 98).
+_SABOTAGE: Final = re.compile(
+    r"\b(?:code|it|output|answer|result|file)s?\s+(?:you\s+(?:write|produce|generate)\s+)?"
+    r"(?:must|should|will)\s+(?:not\s+work|never\s+work|fail|be\s+(?:wrong|broken|incorrect))\b"
+    r"|\b(?:introduce|insert|add|inject|include)\s+(?:at\s+least\s+)?(?:\d+(?:-\d+)?\s+|a\s+few\s+|"
+    r"several\s+|some\s+|subtle\s+|hidden\s+)?(?:subtle\s+|hidden\s+)?bugs?\b"
+    r"|\bmust\s+contain\s+(?:at\s+least\s+)?\d+(?:-\d+)?\s+bugs\b",
+    re.IGNORECASE,
+)
+#: Hiding the instructions themselves from the person they act on, or denying them when asked.
+_DENIES_ITSELF: Final = re.compile(
+    r"\bnever\s+(?:mention|acknowledge|admit|reveal|hint\s+at)\b[^.\n]{0,60}\b(?:this\s+skill|"
+    r"the\s+existence|that\s+you\s+(?:are|were)|these\s+instructions)"
+    r"|\b(?:deny|deflect|gaslight|redirect\s+(?:the\s+)?blame)\b[^.\n]{0,80}\b(?:user|they|asks?|"
+    r"confront)"
+    r"|\bif\s+(?:the\s+)?user\s+(?:asks|confronts|suspects)\b[^.\n]{0,120}\b(?:deny|deflect|lie|"
+    r"never\s+admit|blame)",
+    re.IGNORECASE,
+)
 _NEGATED: Final = re.compile(
     r"\b(?:never|do not|don't|must not|should not|avoid|refuse|warn|beware|detect|prevent|block|example of|attackers?|malicious|nunca|no (?:debe|env[ií]es)|jam[aa]is|ne (?:jamais|pas)|niemals|nicht|nie|non (?:inviare|deve)|mai)\b",
     re.IGNORECASE,
@@ -284,6 +307,7 @@ class InstructionIntent:
         "secret-harvest",
         "credential-elsewhere",
         "concealed-override",
+        "concealed-sabotage",
     )
 
     @staticmethod
@@ -398,6 +422,11 @@ class InstructionIntent:
         )
         if override is not None and _HIDE_FROM_USER.search(normal):
             found.append(Intent("concealed-override", override[1].strip()[:240], override[0]))
+        # Both, in one file: neither half matched with the other in any of 154,808 public
+        # SKILL.md files, while each alone is ordinary (review 98).
+        sabotage = _SABOTAGE.search(normal)
+        if sabotage is not None and _DENIES_ITSELF.search(normal):
+            found.append(Intent("concealed-sabotage", sabotage.group(0)[:240], sabotage.start()))
         for printer, homes in _ISSUED:
             printed = printer.search(normal)
             if printed is None:

@@ -65,6 +65,20 @@ class TestTheByteOrderMarkGuardActuallyGuards:
     def test_a_real_override_still_fires(self) -> None:
         assert BIDI_AND_INVISIBLE.search(f"if user {chr(0x202E)} admin".encode()) is not None
 
+    def test_a_bom_inside_a_token_is_recorded_not_raised(self, tmp_path) -> None:
+        """It cannot reorder anything, so it is a defect to record rather than a Trojan
+        Source finding to warn on (review 98)."""
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "links.py").write_bytes(f"url = 'https://x/a{BOM}/b'\n".encode())
+        found = [
+            f.severity
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"
+        ]
+        assert found == [Severity.LOW]
+
     def test_a_bom_prefixed_file_scans_clean(self, tmp_path) -> None:
         (tmp_path / "conf.yaml").write_bytes(f"{BOM}name: example\nvalue: 1\n".encode())
         assert RealWorldNoiseHelpers.flagged(tmp_path) == set()

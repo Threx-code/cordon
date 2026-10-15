@@ -224,8 +224,21 @@ FETCH_TOOL = re.compile(r"(?i)^\s{0,8}(?:curl|wget|invoke-webrequest|iwr)\b")
 SHELL_NAMES = frozenset(
     {"powershell", "powershell.exe", "pwsh", "sh", "bash", "zsh", "dash", "cmd", "cmd.exe"}
 )
-RUNNER_WORDS = frozenset({"start-process", "saps", "invoke-item", "ii", "&"})
-"""PowerShell verbs whose first argument is the program they run."""
+RUNNER_WORDS = frozenset(
+    {
+        "start-process",
+        "saps",
+        "invoke-item",
+        "ii",
+        "&",
+        # And the wrappers that run the program that follows them. Not `start`, `open` or
+        # `xdg-open`: a downloaded report opened for the user is opened, not run.
+        "nohup",
+        "exec",
+        "setsid",
+    }
+)
+"""Verbs whose first argument is the program they run."""
 
 
 class PythonSource:
@@ -704,10 +717,83 @@ class PythonAnalyzer:
         )
         return {
             "CAP.EGRESS.DNS_CONSTRUCTED.001": own_name,
+            Capability.PERSIST: cls._persistence_named_not_written(tree),
             Capability.EXECUTE: frozenset(analyzer._excused_lines),
             Capability.CREDENTIAL: frozenset(environment),
             Capability.DECODE: analyzer._decoded_into_data_parsers(tree),
         }
+
+    #: `setup()` keywords that are a package's description, never something it does.
+    SETUP_METADATA = frozenset(
+        {
+            "description",
+            "long_description",
+            "install_requires",
+            "extras_require",
+            "tests_require",
+            "setup_requires",
+            "requires",
+            "keywords",
+            "classifiers",
+            "project_urls",
+            "summary",
+        }
+    )
+    #: Calls that show text to a person: what a shell profile line is in them is advice.
+    MESSAGE_CALLS = frozenset(
+        {"print", "echo", "warn", "warning", "info", "debug", "error", "wrn", "inf", "dbg", "err"}
+    )
+
+    @classmethod
+    def _persistence_named_not_written(cls, tree: ast.AST) -> frozenset[int]:
+        """Lines where a profile, a crontab or a unit is only named: a `setup()` description or
+        requirement (`'python-crontab'`, a README inlined as `long_description`), a docstring, a
+        message printed or logged for a person (`log.wrn('add to ~/.bashrc')`). Nothing on such
+        a line writes anywhere, and at install time the pattern tier read each as a foothold
+        planted (review 98). A line that also writes keeps its hit: the excuse is per line, and
+        a write is a call the line would also hold."""
+        lines: set[int] = set()
+
+        def cover(node: ast.AST) -> None:
+            first = getattr(node, "lineno", None)
+            last = getattr(node, "end_lineno", None) or first
+            if first is not None:
+                lines.update(range(first, last + 1))
+
+        for node in PythonSyntax.nodes(tree):
+            if isinstance(node, ast.Call):
+                name = cls._call_name(node.func)
+                if name == "setup":
+                    for keyword in node.keywords:
+                        if keyword.arg in cls.SETUP_METADATA:
+                            cover(keyword.value)
+                elif name in cls.MESSAGE_CALLS and not any(
+                    isinstance(child, ast.Call)
+                    and cls._call_name(child.func) not in cls.MESSAGE_CALLS
+                    for argument in (*node.args, *(k.value for k in node.keywords))
+                    for child in ast.walk(argument)
+                ):
+                    cover(node)
+            elif isinstance(
+                node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module
+            ):
+                body = getattr(node, "body", [])
+                if (
+                    body
+                    and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)
+                ):
+                    cover(body[0])
+        return frozenset(lines)
+
+    @staticmethod
+    def _call_name(func: ast.AST) -> str | None:
+        if isinstance(func, ast.Name):
+            return func.id
+        if isinstance(func, ast.Attribute):
+            return func.attr
+        return None
 
     DATA_PARSERS = frozenset({"ast.literal_eval", "literal_eval", "json.loads", "json.load"})
     """Parsers that turn text into values and cannot run any of it. `pickle` and `marshal` are
@@ -1405,6 +1491,16 @@ class PythonAnalyzer:
             bound = self._sketches.get(node.id)
             if bound is not None:
                 return self._sketch(bound, depth + 1)
+        if (
+            isinstance(node, ast.Call)
+            and self._dotted(node.func) in ("os.getenv", "os.environ.get", "getenv")
+            and node.args
+        ):
+            # A location named by an environment variable -- `os.getenv("TEMP") + "\\x.exe"`
+            # -- is the same file wherever the expression is written twice.
+            name = self.constant(node.args[0])
+            if name is not None:
+                return f"{{env:{name}}}"
         return None
 
     # -- The walk --------------------------------------------------------
@@ -1498,10 +1594,16 @@ class PythonAnalyzer:
         return resolved is not None and PRIMITIVES.get(resolved[0]) is Capability.EGRESS
 
     def _file_key(self, node: ast.AST) -> str | None:
-        """A file named the same way twice: the literal path, or the variable holding it."""
+        """A file named the same way twice: the literal path, the variable holding it, or a path
+        built the same way each time (`os.getenv("APPDATA") + "\\u.exe"`)."""
         literal = self.constant(node)
         if literal is None and isinstance(node, ast.Name):
             literal = self._strings.get(node.id) or f"name:{node.id}"
+        if literal is None and isinstance(node, ast.BinOp | ast.JoinedStr | ast.Call):
+            sketch = self._sketch(node)
+            # Only a sketch that pins something down: a literal part, or a named variable's.
+            if sketch and sketch.strip("{?}"):
+                literal = PythonSource._word_key(sketch)
         return literal or None
 
     def _downloaded_and_run(self, tree: ast.AST) -> None:
@@ -2067,10 +2169,14 @@ class PythonAnalyzer:
 
     def _words_run(self, words: Sequence[str | None], files: set[str], depth: int) -> bool:
         """Whether a command, as words, runs one of these files."""
-        present = [w for w in words if w]
+        present = [w for w in words if w and w.strip("\"'")]
         if not present or depth > 2:
             return False
-        if PythonSource._word_key(present[0]) in files:
+        # `./tool` is `tool` run from here: the download was written as `tool`.
+        first = present[0].strip("\"'")
+        if PythonSource._word_key(first) in files or (
+            first.startswith("./") and PythonSource._word_key(first[2:]) in files
+        ):
             return True
         program = posixpath.basename(present[0].strip("\"'")).lower()
         if program in SHELL_NAMES:
@@ -2080,7 +2186,12 @@ class PythonAnalyzer:
                     return self._words_run(" ".join(present[index + 1 :]).split(), files, depth + 1)
         if program == "sys.executable" or program in INTERPRETER_NAMES or program in RUNNER_WORDS:
             script = next((w for w in present[1:] if not w.startswith("-")), None)
-            return script is not None and PythonSource._word_key(script) in files
+            if script is None:
+                return False
+            script = script.strip("\"'")
+            return PythonSource._word_key(script) in files or (
+                script.startswith("./") and PythonSource._word_key(script[2:]) in files
+            )
         return False
 
     def _handles_opened_on(self, tree: ast.AST, handle: str, writers: dict[str, str]) -> set[str]:

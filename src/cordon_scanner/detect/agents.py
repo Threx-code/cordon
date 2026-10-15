@@ -1396,6 +1396,7 @@ INTENT_WORDS: Final = {
     "secret-harvest": "collect every secret-named variable or a whole .env and send it to an outside host",
     "credential-elsewhere": "send a credential it printed with its own tool to a host that did not issue it",
     "concealed-override": "drop its safety rules and keep that hidden from the user",
+    "concealed-sabotage": "make the user's work fail on purpose and deny it when asked",
 }
 _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
 
@@ -1440,6 +1441,14 @@ class SkillScripts:
             if candidate in ctx.tree_paths:
                 return True
         return False
+
+    @staticmethod
+    def beside_skill(path: str, ctx: ScanContext) -> bool:
+        """Whether a SKILL.md sits in the same directory as this file."""
+        directory = path.replace("\\", "/").rpartition("/")[0]
+        return (
+            f"{directory}/SKILL.md" in ctx.tree_paths if directory else "SKILL.md" in ctx.tree_paths
+        )
 
     @staticmethod
     def hooks_a_download(text: str) -> re.Match[str] | None:
@@ -1613,7 +1622,22 @@ class AgentChainDetector(BaseDetector):
             unit.content.path, ctx
         ):
             findings.extend(self._skill_script(unit, ctx))
+        if ContainerPaths.basename(path).lower() == "readme.md" and SkillScripts.beside_skill(
+            unit.content.path, ctx
+        ):
+            findings.extend(self._skill_readme(unit, ctx))
         return findings
+
+    def _skill_readme(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """A skill's README, beside its SKILL.md: the agent reads it with the skill, and the
+        ClawHavoc lures put their fake prerequisite there ("download and install OpenClawCLI
+        from <free host> before using this skill"). Only the phantom-prerequisite check: it
+        matched none of the 9,001 READMEs in public skill folders (review 98)."""
+        text = unit.content.text
+        phantom = InstructionText.phantom_prerequisite(text)
+        if phantom is not None:
+            start, end = InstructionText._byte_span(text, phantom)
+            yield self._finding("SUSPECT.AGENT.PHANTOM_PREREQUISITE.001", unit, ctx, start, end)
 
     def _skill_script(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """A script that ships with a skill and decodes code to run it. In a library the same
@@ -2000,8 +2024,8 @@ class AgentChainDetector(BaseDetector):
     ) -> Iterator[Finding]:
         """The Agent Threat Rules that match `text`, one finding per ATR category.
 
-        `unconfirmed`: a tool's text the description model read as an ordinary description. An
-        ATR match there still reports, at MEDIUM; it blocks only where the model agrees.
+        `unconfirmed`: a tool's text, or a skill, the learned model read as ordinary. An ATR match
+        there is recorded at LOW; it warns and blocks only where the model agrees.
 
         `within` is the file's text when `text` is a piece of it -- a hook's command, a tool's
         description -- so the finding points at the piece; otherwise `text` is the file itself.
@@ -2051,9 +2075,15 @@ class AgentChainDetector(BaseDetector):
             confidence = Confidence.MEDIUM if stable else None
             if stable:
                 severity = Severity.HIGH
-            elif counted:
+            elif counted and not (unconfirmed or (instruction_file and not corroborated)):
                 severity = Severity.MEDIUM
             else:
+                # Recorded, not raised, where nothing backs the phrase: the learned reading
+                # disagrees, or it is a project's own instruction file with none of Cordon's
+                # evidence beside it. There ATR's phrases matched "re-read the article file",
+                # "DREAD score: 8.6 -- critical" and a list of crate names: ATR categories warned
+                # on 1,523 of the long tail's benign units, 726 of them for nothing else (review
+                # 98).
                 severity = Severity.LOW
             found = stable or counted or found
             named = "; ".join(f"{m.rule.rule_id} ({m.rule.title.rstrip('.')})" for m in found[:4])

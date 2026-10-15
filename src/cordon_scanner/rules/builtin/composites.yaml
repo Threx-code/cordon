@@ -846,9 +846,14 @@ rules:
         - path_glob: "tests/**"
 
   - id: SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001
-    version: 1.0.0
+    version: 1.1.0
     category: suspicious
-    severity: medium
+    # Low: the switch is a weakness of whatever file is loaded, usually one the project wrote
+    # (`np.load(stats_file, allow_pickle=True)`). The attack -- a package unpickling the model
+    # it ships when it is imported -- is `SUSPECT.MODEL.LOADED_ON_IMPORT.001`, at high. At
+    # medium this was the only code warning on 53 of 14,000 benign units rescanned and on
+    # none of 4,269 malware samples (review 98).
+    severity: low
     confidence: high
     title: Loads a model with the loader's safety switch turned off
     message: >
@@ -1204,6 +1209,34 @@ rules:
       proximity: 1
       all:
         - rule: CAP.JS.REMOTE_COMMAND.001
+
+  - id: SUSPECT.EXFIL.WALLET_SECRET.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Sends a wallet's secret to an outside address
+    message: >
+      A request to a fixed outside address carries a wallet's mnemonic, seed or private key.
+      A wallet signs with its secret and sends what it signed; nothing it does needs the
+      secret itself to leave the process, and whoever holds it holds the funds.
+    remediation: >
+      Do not install or run it. Move funds from any wallet this code opened to a new one.
+    references:
+      - https://attack.mitre.org/techniques/T1552/
+    provenance:
+      kind: research
+      reference: "review 98: the compromised xrpl 2.14.2 and 4.2.1-4.2.4 releases (April 2025)"
+      note: >
+        One term, as SUSPECT.DROPPER.REMOTE_COMMAND.001: the request and the secret it carries
+        are found together by `CapabilityDetector._js_wallet_secret_sent`.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.WALLET_SECRET_SENT
 
   - id: SUSPECT.DESTROY.HOME_OR_ROOT.001
     version: 1.0.0
@@ -1563,6 +1596,17 @@ rules:
       all:
         - context: install_hook
         - capability: persist
+      unless:
+        # A container build. `useradd`, a service enabled, a line appended to a profile:
+        # each changes the image being built, inside the builder's sandbox, never the
+        # machine running the build. 13 of the 49 benign units this blocked in the long
+        # tail were Dockerfiles creating the image's user (review 98). What a RUN step
+        # fetches and runs is the dropper rules' to judge.
+        - path_glob: "**/Dockerfile"
+        - path_glob: "**/Dockerfile.*"
+        - path_glob: "**/*.Dockerfile"
+        - path_glob: "**/*.dockerfile"
+        - path_glob: "**/Containerfile"
 
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0

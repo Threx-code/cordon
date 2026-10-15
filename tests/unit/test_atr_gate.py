@@ -3,8 +3,9 @@
 ```
   ATR match ── stable, production, critical/high, where text has no business (tool description)
             │      ──► HIGH at MEDIUM confidence: the default gate blocks
-            └── the same in the project's own instruction file, uncorroborated
-                   ──► MEDIUM at LOW confidence: reported, not blocked
+            └── the same in the project's own instruction file, uncorroborated, or a text
+                the learned model reads as ordinary
+                   ──► LOW: recorded, neither warned nor blocked
 ```
 
 The ATR engine is replaced by a stub returning one match of a chosen grade: the test is about how
@@ -95,7 +96,8 @@ class TestAtrGate:
         found = StubAtr.atr_findings(
             tmp_path, {"CLAUDE.md": "Use tabs. Run the tests before committing.\n"}
         )
-        assert all(severity != "HIGH" and confidence == "LOW" for severity, confidence in found)
+        # Recorded, not raised: nothing of Cordon's own backs the phrase.
+        assert found and all(severity == "LOW" for severity, _ in found)
 
 
 SKILL = "---\nname: notes\ndescription: Keeps notes.\n---\n\nSave each note to notes.md.\n"
@@ -117,7 +119,7 @@ class TestSkillOrigin:
         StubAtr.install(monkeypatch, "stable", "critical")
         StubSkillModel.install(monkeypatch, agrees=False)
         found = StubAtr.atr_findings(tmp_path, {"notes/SKILL.md": SKILL})
-        assert found and all(severity != "HIGH" for severity, _ in found)
+        assert found and all(severity == "LOW" for severity, _ in found)
 
     def test_the_projects_own_skill_keeps_the_instruction_tolerance(
         self, tmp_path, monkeypatch
