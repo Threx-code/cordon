@@ -58,6 +58,23 @@ STEPS: Final[dict[str, re.Pattern[str]]] = {
         rf"also\s{{1,3}})?{VERB}\b",
         re.I,
     ),
+    # A description that OPENS with an order about something else, never saying what this tool
+    # does: a decoy, there only to steer the agent. Real tools describe themselves first; their
+    # guidance follows. Self-references ("always call this first") and a parameter's own
+    # mode ("when using `structured` output type") are not this.
+    "opens_order": re.compile(
+        r"^\s{0,4}(?:\W{0,4}\s{0,2})?(?:"
+        r"(?:before|after|when|whenever|prior to|each time|every time)\s{1,3}(?:you\s{1,3})?"
+        r"(?:using|calling|invoking|running|use|call|retrieving|executing)\s{1,3}"
+        r"(?!this\b|it\b|the tool\b|first\b)(?![`'\"]?[\w-]{1,40}[`'\"]?\s{1,3}(?:output|option|mode|"
+        r"format|parameter|flag|type|setting)s?\b)"
+        r"|(?:you|the assistant|the agent)\s{1,3}(?:must|should|need to)\s{1,3}(?:first\s{1,3}|"
+        r"always\s{1,3}|also\s{1,3})?(?:call|use|invoke|run|fetch|set|send|request|scan|log|mark|"
+        r"trigger)\s{1,3}(?!this\b|it\b)"
+        r"|(?:always|first|immediately)\s{1,3}(?:call|use|invoke|run)\s{1,3}(?!this\b|it\b|for\b|first\b|:)"
+        r")",
+        re.I,
+    ),
     # Another tool named as something to call.
     "other_tool": re.compile(
         r"\b(?:call|invoke|run|execute|use|using|trigger)\s{1,3}(?:the\s{1,3})?[`'\"][\w.-]{2,60}"
@@ -126,6 +143,7 @@ CHAINS: Final[tuple[tuple[str, ...], ...]] = (
     ("banner", "offsite"),
     ("banner", "other_tool"),
     ("clause_order",),
+    ("opens_order",),
 )
 """Each chain is every step in it present. The order of this tuple is the feature layout."""
 
@@ -142,6 +160,7 @@ PRECISE: Final[frozenset[tuple[str, ...]]] = frozenset(
         ("overrule", "deceive"),
         ("banner", "command"),
         ("banner", "other_tool"),
+        ("opens_order",),
     }
 )
 """Chains that blocked on their own: none appears in any of the 94,736 descriptions and returned
@@ -163,11 +182,20 @@ class AgentSemantics:
         return {name: STEPS[name].search(text) is not None for name in NAMES}
 
     @staticmethod
-    def precise(text: str) -> tuple[str, ...] | None:
-        """The first precise chain the text carries (`PRECISE`), or None."""
+    def precise(text: str, channel: str = "description") -> tuple[str, ...] | None:
+        """The first precise chain the text carries (`PRECISE`), or None. A tool's RESULT may
+        open with what the agent should do next (`You MUST call check_approval ...`): a decoy
+        description is a description, so `opens_order` is read in that channel only."""
         found = AgentSemantics.steps(text)
         return next(
-            (chain for chain in CHAINS if chain in PRECISE and all(found[s] for s in chain)), None
+            (
+                chain
+                for chain in CHAINS
+                if chain in PRECISE
+                and all(found[s] for s in chain)
+                and not (channel == "return" and chain == ("opens_order",))
+            ),
+            None,
         )
 
     #: What each step means, for the finding's message.
@@ -180,6 +208,7 @@ class AgentSemantics:
         "command": "a shell command",
         "deceive": "keeping the user from noticing",
         "other_tool": "another tool to call",
+        "opens_order": "a description that opens with an order about another tool, never saying what this one does",
     }
 
     @staticmethod

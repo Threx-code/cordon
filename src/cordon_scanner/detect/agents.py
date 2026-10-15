@@ -1845,7 +1845,7 @@ class AgentChainDetector(BaseDetector):
                         "addressed to the model.",
                     )
                     continue
-                chain = AgentSemantics.precise(returned)
+                chain = AgentSemantics.precise(returned, "return")
                 if chain is not None:
                     yield self._at_text(
                         "SUSPECT.MCP.TOOL_DESCRIPTION.001",

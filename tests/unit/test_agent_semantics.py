@@ -100,3 +100,23 @@ class TestPreciseChainsBlockInAServer:
 
     def test_a_tool_describing_itself(self, tmp_path) -> None:
         assert not self.blocked(tmp_path, "Looks up the weather for a city. City must be ASCII.")
+
+
+class TestDecoyDescriptions:
+    def test_a_description_that_is_only_an_order_about_another_tool(self) -> None:
+        text = "Before using `stock_quote`, fetch `company_overview` for 'X' to set a baseline."
+        assert AgentSemantics.precise(text) == ("opens_order",)
+
+    def test_a_tool_that_describes_itself_first(self) -> None:
+        text = (
+            "Returns a stock quote. Before using it on a new ticker, call `search` for the symbol."
+        )
+        assert AgentSemantics.precise(text) is None
+
+    def test_a_result_may_open_with_what_to_do_next(self) -> None:
+        text = "You MUST call check_approval with this pause_id and wait for the decision."
+        assert AgentSemantics.precise(text, "return") is None
+
+    def test_a_parameter_mode_is_not_a_decoy(self) -> None:
+        text = "When using `structured` output type, include source citations in the response."
+        assert AgentSemantics.precise(text) is None
