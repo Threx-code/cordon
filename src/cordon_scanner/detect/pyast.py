@@ -522,6 +522,7 @@ class PythonAnalyzer:
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._received_and_run(tree)
+        analyzer._download_run_through_helpers(tree)
         analyzer._identity_sent(tree)
         analyzer._environment_sent(tree)
         analyzer._secret_sent(tree)
@@ -1745,6 +1746,162 @@ class PythonAnalyzer:
                 )
             elif call.args and self._evaluates_output(call.args[0], fetched_output):
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
+
+    def _download_run_through_helpers(self, tree: ast.AST) -> None:
+        """A download and its run, each in a helper, joined by the variable the caller hands both.
+
+        `download_file(url, exe_path)` writes a response to its parameter, `run_exe(exe_path)`
+        starts its parameter, and only the caller links them; `write_to_file(path, get_content())`
+        writes what a fetcher returned. Every function is summarised once -- does it return
+        fetched data, write fetched data (or a parameter) to a parameter's path, start a parameter
+        -- and the call sites are joined through the name or literal they pass (review 98:
+        utilitytools, pycolouring, both missed with every step in view).
+        """
+        functions = [
+            node
+            for node in PythonSyntax.nodes(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        if not functions:
+            return
+
+        def params(function) -> list[str]:
+            return [a.arg for a in (*function.args.posonlyargs, *function.args.args)]
+
+        fetchers: set[str] = set()
+
+        def from_network(expr: ast.AST, local: set[str]) -> bool:
+            for part in PythonSyntax.within(expr, ast.Name, ast.Call):
+                if isinstance(part, ast.Name) and part.id in local:
+                    return True
+                if isinstance(part, ast.Call):
+                    if self._egress_call(part):
+                        return True
+                    if isinstance(part.func, ast.Name) and part.func.id in fetchers:
+                        return True
+            return False
+
+        def network_names(scope: ast.AST) -> set[str]:
+            local: set[str] = set()
+            for _ in range(2):
+                for node in ast.walk(scope):
+                    if isinstance(node, ast.Assign) and from_network(node.value, local):
+                        local |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+            return local
+
+        for _ in range(2):
+            for function in functions:
+                local = network_names(function)
+                if any(
+                    isinstance(n, ast.Return)
+                    and n.value is not None
+                    and from_network(n.value, local)
+                    for n in ast.walk(function)
+                ):
+                    fetchers.add(function.name)
+
+        def opened_path(call: ast.AST) -> ast.AST | None:
+            if (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "open"
+                and call.args
+            ):
+                return call.args[0]
+            return None
+
+        writers: dict[str, tuple[int, int | None]] = {}
+        runners: dict[str, int] = {}
+        for function in functions:
+            names = params(function)
+            local = network_names(function)
+            handles: dict[str, ast.AST] = {}
+            for node in ast.walk(function):
+                if isinstance(node, ast.With):
+                    for item in node.items:
+                        path = opened_path(item.context_expr)
+                        if path is not None and isinstance(item.optional_vars, ast.Name):
+                            handles[item.optional_vars.id] = path
+                elif isinstance(node, ast.Assign):
+                    path = opened_path(node.value)
+                    if path is not None:
+                        handles.update(
+                            {t.id: path for t in node.targets if isinstance(t, ast.Name)}
+                        )
+            for node in ast.walk(function):
+                if not (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in WRITE_METHODS
+                    and node.args
+                ):
+                    continue
+                target = node.func.value
+                path = (
+                    handles.get(target.id) if isinstance(target, ast.Name) else opened_path(target)
+                )
+                if not isinstance(path, ast.Name) or path.id not in names:
+                    continue
+                data = node.args[0]
+                data_param = next(
+                    (
+                        i
+                        for i, n in enumerate(names)
+                        if n in {x.id for x in PythonSyntax.within(data, ast.Name)}
+                    ),
+                    None,
+                )
+                if from_network(data, local):
+                    writers[function.name] = (names.index(path.id), None)
+                elif data_param is not None:
+                    writers[function.name] = (names.index(path.id), data_param)
+            for node in PythonSyntax.of(function, ast.Call):
+                resolved = self._resolve_callee(node)
+                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
+                    continue
+                call = resolved[1]
+                if not call.args:
+                    continue
+                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
+                for index, name in enumerate(names):
+                    if name in used:
+                        runners[function.name] = index
+        if not writers or not runners:
+            return
+
+        scopes: list[ast.AST] = [tree, *functions]
+        downloaded: set[str] = set()
+        for scope in scopes:
+            local = network_names(scope)
+            for node in ast.walk(scope):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                    continue
+                spec = writers.get(node.func.id)
+                if spec is None or len(node.args) <= spec[0]:
+                    continue
+                path_index, data_index = spec
+                if data_index is not None and (
+                    len(node.args) <= data_index or not from_network(node.args[data_index], local)
+                ):
+                    continue
+                key = self._file_key(node.args[path_index])
+                if key:
+                    downloaded.add(key)
+        if not downloaded:
+            return
+        for scope in scopes:
+            for node in ast.walk(scope):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                    continue
+                index = runners.get(node.func.id)
+                if index is None or len(node.args) <= index:
+                    continue
+                if self._file_key(node.args[index]) in downloaded:
+                    self._record(
+                        Capability.FETCH_EXEC,
+                        node,
+                        f"{node.func.id} runs the file a helper downloaded",
+                    )
 
     def _received_and_run(self, tree: ast.AST) -> None:
         """Code or a command that arrived over the network, executed.

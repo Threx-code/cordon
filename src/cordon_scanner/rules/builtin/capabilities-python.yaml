@@ -405,6 +405,35 @@ rules:
   # ---------------------------------------------------------------------
   # PERSIST
   # ---------------------------------------------------------------------
+  - id: CAP.PY.CLIPBOARD.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads the clipboard
+    message: >
+      This file reads what the user last copied. A copied password, token, seed phrase or wallet
+      address is there; read beside a request, it is a source an exfiltration needs.
+    remediation: Confirm the clipboard is read only for the feature that needs it, and never sent.
+    provenance:
+      kind: research
+      reference: A clipboard stealer posting pyperclip.paste() to a webhook from import (review 98).
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\bpyperclip\s{0,4}\.\s{0,4}paste\s{0,4}\('
+        - '\bGetClipboardData\s{0,4}\('
+        - '\.\s{0,4}clipboard_get\s{0,4}\('
+        - '\bImageGrab\s{0,4}\.\s{0,4}grabclipboard\s{0,4}\('
+    tests:
+      positive:
+        - "data = pyperclip.paste()"
+        - "text = win32clipboard.GetClipboardData()"
+      negative:
+        - "pyperclip.copy(result)"
+
   - id: CAP.PY.PERSIST.001
     version: 1.0.0
     category: policy
@@ -448,7 +477,9 @@ rules:
         - '["''`]systemd["''`][ \t]{0,4},[ \t]{0,4}["''`](?:system|user)["''`]'
         - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
         - 'WantedBy=(?:default|multi-user)\.target'
-        - 'CurrentVersion\\\\Run'
+        # The registry key a login runs, spelled as Python source does: one escaped backslash or a raw
+        # string's single one (review 98: a clipboard stealer's `winreg` Run entry was missed).
+        - 'CurrentVersion\\{1,2}Run'
         - 'sitecustomize\.py|usercustomize\.py'
     tests:
       positive:

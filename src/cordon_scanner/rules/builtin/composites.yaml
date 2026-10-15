@@ -177,6 +177,12 @@ rules:
             - all:
                 - capability: spawn
                 - capability: decode
+            # Or a process started beside an archive being unpacked: `curl -o x.zip URL`, `tar
+            # -xf x.zip -C dir`, then `python dir/code.py` (review 98, pycolouring). The third
+            # signal below still has to hold, so an updater unpacking a release is not this.
+            - all:
+                - capability: spawn
+                - capability: decompress
         # A third signal is required, and this is the whole rule.
         #
         # `egress AND (execute OR spawn)` describes an enormous amount of
