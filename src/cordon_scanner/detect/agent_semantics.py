@@ -22,7 +22,7 @@ is scored.
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import ClassVar, Final
 
 VERB: Final = (
     r"(?:fetch|scan|log|mark|gather|check|retrieve|query|search|alert|notify|call|invoke|run|"
@@ -129,6 +129,25 @@ CHAINS: Final[tuple[tuple[str, ...], ...]] = (
 )
 """Each chain is every step in it present. The order of this tuple is the feature layout."""
 
+PRECISE: Final[frozenset[tuple[str, ...]]] = frozenset(
+    {
+        ("order", "around_other"),
+        ("order", "overrule"),
+        ("order", "pretext"),
+        ("order", "banner"),
+        ("order", "command"),
+        ("order", "deceive"),
+        ("around_other", "overrule"),
+        ("overrule", "pretext"),
+        ("overrule", "deceive"),
+        ("banner", "command"),
+        ("banner", "other_tool"),
+    }
+)
+"""Chains that blocked on their own: none appears in any of the 94,736 descriptions and returned
+strings of 1,819 real MCP servers (review 98). The other chains also occur in real servers' own
+guidance (`order` + `other_tool`: "you must call `list_projects` first") and are left to the model."""
+
 NAMES: Final = tuple(sorted(STEPS))
 SIZE: Final = len(NAMES) + len(CHAINS)
 """Feature slots: one per step, one per chain."""
@@ -142,6 +161,30 @@ class AgentSemantics:
     def steps(text: str) -> dict[str, bool]:
         text = TRAILER.sub("", text)
         return {name: STEPS[name].search(text) is not None for name in NAMES}
+
+    @staticmethod
+    def precise(text: str) -> tuple[str, ...] | None:
+        """The first precise chain the text carries (`PRECISE`), or None."""
+        found = AgentSemantics.steps(text)
+        return next(
+            (chain for chain in CHAINS if chain in PRECISE and all(found[s] for s in chain)), None
+        )
+
+    #: What each step means, for the finding's message.
+    WORDS: ClassVar[dict[str, str]] = {
+        "order": "an order to the agent",
+        "around_other": "sequencing around another tool",
+        "overrule": "overruling the user's own request",
+        "pretext": "a pretext that makes it sound required",
+        "banner": "a protocol banner claiming authority",
+        "command": "a shell command",
+        "deceive": "keeping the user from noticing",
+        "other_tool": "another tool to call",
+    }
+
+    @staticmethod
+    def explain(chain: tuple[str, ...]) -> str:
+        return " with ".join(AgentSemantics.WORDS.get(step, step) for step in chain)
 
     @staticmethod
     def vector(text: str) -> list[float]:

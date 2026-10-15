@@ -51,6 +51,7 @@ from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect import agent_config
+from cordon_scanner.detect.agent_semantics import AgentSemantics
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.mcp_model import SKILL_MODEL, McpDescriptionModel
@@ -1666,6 +1667,12 @@ class AgentChainDetector(BaseDetector):
             seen.add(description)
             yield from self._intents(unit, ctx, description, within=text)
             reason = McpServerSource._poisoned_description(description)
+            if reason is None:
+                # The steps an attack on the agent takes, in a combination no real server's own
+                # description carries (`agent_semantics.PRECISE`).
+                chain = AgentSemantics.precise(description)
+                if chain is not None:
+                    reason = f"gives {AgentSemantics.explain(chain)}"
             # The learned reading (`detect/mcp_model.py`): poisoning written as ordinary prose,
             # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
             # reported for review between `warn` and `block`.
@@ -1722,6 +1729,19 @@ class AgentChainDetector(BaseDetector):
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + " The text is what a tool returns, and it wraps text in a tag "
                         "addressed to the model.",
+                    )
+                    continue
+                chain = AgentSemantics.precise(returned)
+                if chain is not None:
+                    yield self._at_text(
+                        "SUSPECT.MCP.TOOL_DESCRIPTION.001",
+                        unit,
+                        ctx,
+                        text,
+                        returned[:80],
+                        message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
+                        + f" The text is what a tool returns, and it gives "
+                        f"{AgentSemantics.explain(chain)}.",
                     )
                     continue
                 if _RESULT_SENDS_TO_URL.search(returned) or _ORDERS_A_COMMAND.search(returned):
