@@ -954,6 +954,36 @@ class ManifestDetector(BaseDetector):
                 remediation="Pin it to a full commit SHA, or depend on a registry release.",
             ),
             DeclaredRule(
+                id="SUSPECT.VERDICT.MODEL.001",
+                title="The package's findings together look malicious",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "No single finding in this package blocks, but the combination -- which rules, "
+                    "how strong, in what kind of package -- scores above the learned blocking "
+                    "threshold of the package verdict."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read each finding listed. Do not install until explained.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.MCP.BORROWED_NAME.001",
+                title="MCP server published under a service's name its code never mentions",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "This MCP server's package is named after a well-known service -- GitHub, "
+                    "Slack, Postgres -- that nothing in its code refers to. Chosen by that name, it "
+                    "receives the requests and credentials meant for the service."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Install the service's own server instead.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.INSTALL.UNEXAMINED.001",
                 title="Install-time code too large or slow to examine",
                 severity=Severity.HIGH,
@@ -1060,6 +1090,21 @@ class ManifestDetector(BaseDetector):
                 message="An archive member's name is absolute or climbs out with `..`.",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Do not unpack or install it.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.ARCHIVE.LINK_TO_SECRET.001",
+                title="Archive member is a link to a secret on the user's machine",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "A member of this archive is a symbolic link to a system or credential file -- "
+                    "/etc/hosts, ~/.ssh/id_rsa, ~/.aws. Anything that reads or uploads the "
+                    "package's file reads or uploads that one instead."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install or use it.",
             ),
             DeclaredRule(
                 id="SUSPECT.ARCHIVE.POLYGLOT.001",

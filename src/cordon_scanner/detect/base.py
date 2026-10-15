@@ -97,6 +97,9 @@ class ScanContext:
     -- as distinct from the modules they import, which `install_hook_paths` also holds. A
     library is in the closure because `setup.py` reads its `__version__`; its own design
     choices are not the install script's."""
+    agent_run_paths: frozenset[str] = frozenset()
+    """Skill scripts and MCP server sources: in `install_hook_paths` because an agent runs them
+    unasked, but tools, not install scripts -- a bundle read to its end is not padding."""
     """Paths that execute during install or build.
 
     Precomputed because it is consulted for every finding and is the largest

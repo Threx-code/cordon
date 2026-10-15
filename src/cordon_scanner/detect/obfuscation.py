@@ -701,9 +701,13 @@ class ObfuscationDetector(BaseDetector):
         hits.extend(self._escapes(content))
         hits.extend(self._packers(content, unit.language))
         long_lines = list(self._long_lines(content, ctx, unit.language))
-        hits.extend(long_lines)
-        if not long_lines:
-            hits.extend(self._offscreen_code(content, unit.language))
+        # Padding is the stronger reading of the same line: a long line is often a bundle, code
+        # after six hundred spaces never is. When both fire the padded one is reported, so the
+        # entry-point and install grading see it (review 98: gluestack's `react-native-aria`
+        # releases appended their payload after 630 spaces in `lib/commonjs/index.js`, the
+        # package's `main`, and were reported LOW as a long line).
+        offscreen = list(self._offscreen_code(content, unit.language))
+        hits.extend(offscreen or long_lines)
 
         return [self._finding(hit, unit, ctx) for hit in hits]
 

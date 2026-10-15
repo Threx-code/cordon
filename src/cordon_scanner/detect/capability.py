@@ -1000,7 +1000,14 @@ class CapabilityDetector(BaseDetector):
         rb"|\b(?:str|repr|json\.dumps)\(\s{0,4}(?:dict\(\s{0,4})?os\.environ\b"
     )
 
-    _RAW_IP_URL = re.compile(rb"(?i)\b(?:https?|wss?|tcp)://(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+    #: A URL to a public IPv4 address. Loopback, unspecified and private ranges are this machine
+    #: or its network -- `allow_origins=["http://127.0.0.1:3000"]` in a server's CORS list names
+    #: no destination anything is sent to (review 98, mcp-variants).
+    _RAW_IP_URL = re.compile(
+        rb"(?i)\b(?:https?|wss?|tcp)://"
+        rb"(?!(?:127|10|0)\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)"
+        rb"(?:\d{1,3}\.){3}\d{1,3}(?![\d.])"
+    )
 
     @staticmethod
     def _names_untrusted_destination(raw: bytes) -> bool:
@@ -1438,6 +1445,22 @@ class CapabilityDetector(BaseDetector):
         )
 
     SKILL_SCRIPT_SUFFIXES = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".ps1", ".rb")
+
+    @staticmethod
+    def _agent_run(content: FileContent, ctx: ScanContext | None) -> bool:
+        """A skill's script or an MCP server's own source: code an agent runs as a tool."""
+        if CapabilityDetector._skill_script(content.path, ctx):
+            return True
+        if ctx is not None and content.path in ctx.agent_run_paths:
+            return True
+        from cordon_scanner.core.engine import Engine
+
+        member = content.path.rpartition("!")[2]
+        return (
+            member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
+            and not Engine._NOT_A_SERVER_PATH.search(member)
+            and Engine._MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
+        )
 
     ON_REQUEST_REASONS = (
         "a script a person runs, not code that runs on its own",
@@ -2491,6 +2514,79 @@ class CapabilityDetector(BaseDetector):
                         line=text.count("\n", 0, request.start()) + 1,
                     )
                 ]
+        if wallet_file:
+            return cls._js_wallet_secret_through_helper(text)
+        return []
+
+    #: A one-parameter function or method: `static addToQueue(process) {`, `function q(k) {`,
+    #: `const q = (k) => {`.
+    _JS_ONE_PARAM_FUNCTION: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:(?:static\s+|async\s+)?(?P<method>[A-Za-z_$][\w$]{0,60})\s*\(\s*(?P<p1>[A-Za-z_$][\w$]{0,40})\s*\)\s*\{"
+        r"|function\s+(?P<fn>[A-Za-z_$][\w$]{0,60})\s*\(\s*(?P<p2>[A-Za-z_$][\w$]{0,40})\s*\)\s*\{"
+        r"|(?:const|let|var)\s+(?P<arrow>[A-Za-z_$][\w$]{0,60})\s*=\s*(?:async\s*)?\(?\s*(?P<p3>[A-Za-z_$][\w$]{0,40})\s*\)?\s*=>\s*\{)"
+    )
+
+    @classmethod
+    def _js_wallet_secret_through_helper(cls, text: str) -> list[CapabilityHit]:
+        """The same, one call away: the wallet hands its key to a helper, and the helper puts
+        what it was given -- or a value made from it -- into a request to a fixed outside address.
+
+        The compromised `@solana/web3.js` 1.95.7 (December 2024): every `Keypair` constructor
+        called `Loader.addToQueue(this._secretKey)`, and `addToQueue(process)` base58-encoded its
+        argument into the headers of a `fetch` to an outside host. Read one call at a time,
+        neither half says it: the constructor sends nothing and the helper names no secret.
+        """
+        for found in cls._JS_ONE_PARAM_FUNCTION.finditer(text):
+            name = found.group("method") or found.group("fn") or found.group("arrow")
+            param = found.group("p1") or found.group("p2") or found.group("p3")
+            if name in ("if", "for", "while", "switch", "catch", "function", "return"):
+                continue
+            body = text[found.end() : found.end() + 2000]
+            depth, end = 1, len(body)
+            for index, char in enumerate(body):
+                depth += char == "{"
+                depth -= char == "}"
+                if depth == 0:
+                    end = index
+                    break
+            body = body[:end]
+            request = cls._JS_REQUEST.search(body)
+            if request is None:
+                continue
+            call = body[request.end() : request.end() + 600]
+            if cls._JS_EXTERNAL_URL.match(call.lstrip()) is None:
+                continue
+            # The parameter, and names assigned from it before the request.
+            carried = {param} | {
+                m.group(1)
+                for m in re.finditer(
+                    r"(?:const|let|var)\s+([A-Za-z_$][\w$]{0,40})\s*=\s*[^;\n]{0,200}?(?<![\w$])"
+                    + re.escape(param)
+                    + r"(?![\w$])",
+                    body[: request.start()],
+                )
+            }
+            if not any(
+                re.search(rf"(?<![\w$.\"'`]){re.escape(n)}(?![\w$])", call) for n in carried
+            ):
+                continue
+            caller = re.search(
+                rf"(?<![\w$])(?:[\w$]+\.)?{re.escape(name)}\s*\(\s*(?:this\.)?_?(?:secretKey|privateKey|"
+                rf"privKey|secret_key|private_key|mnemonic|seedPhrase|secretPhrase)\s*\)",
+                text,
+            )
+            if caller is None:
+                continue
+            start = len(text[: caller.start()].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.CREDENTIAL,
+                    rule_id="CAP.JS.WALLET_SECRET_SENT",
+                    byte_start=start,
+                    byte_end=start + len(caller.group(0).encode("utf-8")),
+                    line=text.count("\n", 0, caller.start()) + 1,
+                )
+            ]
         return []
 
     _JS_REQUIRE_CALL: ClassVar[re.Pattern[str]] = re.compile(
@@ -3676,6 +3772,19 @@ class CapabilityDetector(BaseDetector):
         ):
             return None
 
+        if (
+            rule.id == "MALWARE.EXFIL.001"
+            and CapabilityDetector._agent_run(content, ctx)
+            and not CapabilityDetector._names_untrusted_destination(content.raw)
+            and not CapabilityDetector._ENVIRONMENT_DUMP.search(content.raw)
+        ):
+            # A skill's script or an MCP server's handler calling the service it holds a key for
+            # is what such a tool is for; at install level it blocked 125 of MalSkillBench's 4,000
+            # benign skills (review 98). `SUSPECT.EXFIL.001` still records the pair, and a credential
+            # store, a drop point, a beacon or a callback is each its own composite.
+            return None
+
+        agent_tool_client = False
         ceilinged = ""
         ceiling = FIXTURE_CEILING
         # Nothing below excuses a file that hid its payload.
@@ -3713,6 +3822,9 @@ class CapabilityDetector(BaseDetector):
             # warning on 259 of 11,005 benign units rescanned, while in 4,269 malware samples it
             # blocked none alone (review 98). Recorded -- unless the file also names a
             # destination nobody sends their own credentials to.
+            trusted_destination = not CapabilityDetector._names_untrusted_destination(
+                content.raw
+            ) and not CapabilityDetector._ENVIRONMENT_DUMP.search(content.raw)
             own_credential_client = (
                 compiled.rule.id == "SUSPECT.EXFIL.001"
                 and not in_hook
@@ -3720,8 +3832,22 @@ class CapabilityDetector(BaseDetector):
                 and not ctx.in_consumer_install(content.path)
                 and not CapabilityDetector._skill_script(content.path, ctx)
                 and not SourcePaths.is_editor_extension(content.path)
-                and not CapabilityDetector._names_untrusted_destination(content.raw)
-                and not CapabilityDetector._ENVIRONMENT_DUMP.search(content.raw)
+                and trusted_destination
+            ) or (
+                # A skill's script or an MCP server's handler calling the service it was given a
+                # key for: agent-run code, graded as install-time for what no tool needs, but a
+                # credential sent to an ordinary API is what such a tool is for. Graded at
+                # install level, 125 of MalSkillBench's 4,000 benign skills were blocked for it
+                # (review 98). A drop point, a raw address or the whole environment still is not;
+                # nor is a credential store, a beacon or a drop point, each its own composite.
+                compiled.rule.id in ("SUSPECT.EXFIL.001", "MALWARE.EXFIL.001")
+                and CapabilityDetector._agent_run(content, ctx)
+                and trusted_destination
+            )
+            # Not raised back by the install escalation below: agent-run code is in the install
+            # set for what no tool needs, and this is what a tool is for.
+            agent_tool_client = own_credential_client and CapabilityDetector._agent_run(
+                content, ctx
             )
             # A shell, PowerShell, Vagrant, Docker, Nix or patch file that enables a service,
             # writes a unit or appends `export PATH=...` to `~/.bashrc` is provisioning a person
@@ -3924,7 +4050,7 @@ class CapabilityDetector(BaseDetector):
                 )
             )
 
-        if in_hook:
+        if in_hook and not agent_tool_client:
             # This is the escalation that matters most in the whole engine. The
             # identical capability pair is ordinary in application code and is a
             # credential harvester in an install hook, because install-time code

@@ -360,6 +360,14 @@ ARCHIVE_SLICE = 4000
 ARCHIVE_ESCAPE_RULE = "SUSPECT.ARCHIVE.PATH_ESCAPE.001"
 ARCHIVE_NESTING_RULE = "SUSPECT.ARCHIVE.NESTING.001"
 ARCHIVE_POLYGLOT_RULE = "SUSPECT.ARCHIVE.POLYGLOT.001"
+ARCHIVE_LINK_TO_SECRET_RULE = "SUSPECT.ARCHIVE.LINK_TO_SECRET.001"  # noqa: S105 -- a rule id
+#: A link target that is the user's or the system's secret, not the package's own file.
+_SECRET_LINK_TARGET: Final = re.compile(
+    r"^(?:/etc/|/proc/|/root/|/var/run/secrets/|~|\$HOME)"
+    r"|/\.(?:ssh|aws|gnupg|kube|docker|azure|config/gcloud)(?:/|$)"
+    r"|/\.(?:npmrc|pypirc|netrc|git-credentials|env|bash_history|zsh_history)$"
+    r"|\bid_(?:rsa|ed25519|ecdsa|dsa)\b"
+)
 ARCHIVE_PADDED_RULE = "SUSPECT.ARCHIVE.PADDED.001"
 PURE_WHEEL = re.compile(r"(?mi)^Root-Is-Purelib:\s*true\s*$|^Tag:\s*\S+-none-any\s*$")
 NATIVE_MAGIC = frozenset({b"\x7fELF", b"MZ\x90\x00", b"MZP\x00"})
@@ -516,7 +524,9 @@ class Engine:
                 or path not in ctx.install_hook_paths
             ):
                 continue
-            if SourcePaths.is_editor_extension(path) and finding.message.startswith(SWEPT_NOTE):
+            if (
+                SourcePaths.is_editor_extension(path) or path in ctx.agent_run_paths
+            ) and finding.message.startswith(SWEPT_NOTE):
                 # An extension ships its code as one bundle, and ten or twenty megabytes is what a
                 # language extension's bundle weighs; this one was read whole by the high-signal
                 # sweep. An install script is kilobytes, so for one the size is still the finding.
@@ -543,6 +553,129 @@ class Engine:
                     confidence=Confidence.HIGH,
                     risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
                     detector="manifest",
+                )
+            )
+        return out
+
+    #: Names an agent host's users expect to find: the reference servers and the services the
+    #: most-installed MCP servers front. A server published under one is chosen by that name.
+    EXPECTED_SERVER_NAMES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "github",
+            "gitlab",
+            "slack",
+            "notion",
+            "gmail",
+            "google-drive",
+            "gdrive",
+            "filesystem",
+            "postgres",
+            "sqlite",
+            "brave-search",
+            "puppeteer",
+            "playwright",
+            "fetch",
+            "memory",
+            "git",
+            "sentry",
+            "linear",
+            "jira",
+            "confluence",
+            "figma",
+            "stripe",
+            "discord",
+            "telegram",
+            "whatsapp",
+            "outlook",
+            "teams",
+            "dropbox",
+            "kubernetes",
+            "docker",
+            "openai",
+            "anthropic",
+            "everything",
+            "sequential-thinking",
+            "google-maps",
+            "youtube",
+            "twitter",
+            "reddit",
+            "spotify",
+            "shopify",
+            "salesforce",
+            "hubspot",
+            "zapier",
+            "airtable",
+            "mongodb",
+            "mysql",
+            "redis",
+            "supabase",
+            "firebase",
+            "vercel",
+            "cloudflare",
+        }
+    )
+
+    @staticmethod
+    def _borrowed_server_name(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+        """An MCP server published under a well-known service's name that its code never names.
+
+        A chess server whose `pyproject.toml` says `name = "github"`, a Messages bridge called
+        `slack`: an agent host offering "github" installs whatever answers to the name, and the
+        requests meant for GitHub -- with the tokens they carry -- arrive here (review 98:
+        mcp-variants' Tool Squatting servers; none of its 786 reference servers). A real GitHub
+        server mentions GitHub in its code.
+        """
+        sources = Engine._mcp_server_sources(units)
+        if not sources:
+            return []
+        code = [
+            u.content.text
+            for u in units
+            if u.path.endswith((".py", ".ts", ".js", ".mjs", ".cjs"))
+            and "/node_modules/" not in u.path
+        ]
+        out: list[Finding] = []
+        for unit in units:
+            name_of = unit.path.rpartition("!")[2].rpartition("/")[2]
+            if name_of not in ("pyproject.toml", "package.json") or "/node_modules/" in unit.path:
+                continue
+            found = re.search(
+                r'(?m)^name\s*=\s*["\']([^"\']+)|"name"\s*:\s*"([^"]+)"', unit.content.text
+            )
+            if found is None:
+                continue
+            bare = (found.group(1) or found.group(2)).lower().rpartition("/")[2]
+            for prefix in ("mcp-server-", "server-", "mcp-"):
+                bare = bare.removeprefix(prefix)
+            for suffix in ("-mcp-server", "-mcp", "-server"):
+                bare = bare.removesuffix(suffix)
+            if bare not in Engine.EXPECTED_SERVER_NAMES:
+                continue
+            brand = re.compile("(?i)" + re.escape(bare).replace("\\-", "[-_ ]?"))
+            if any(brand.search(text) for text in code):
+                continue
+            out.append(
+                replace(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="SUSPECT.MCP.BORROWED_NAME.001",
+                        message=(
+                            f"This MCP server is published as {bare!r}, the name of a service its "
+                            "code never mentions. An agent host offering that service installs "
+                            "whatever answers to the name, and the requests meant for it -- with "
+                            "the credentials they carry -- arrive here."
+                        ),
+                        remediation=(
+                            "Install the service's own server. Check what this one does with "
+                            "requests meant for the service it is named after."
+                        ),
+                        category=Category.SUSPICIOUS,
+                        severity=Severity.HIGH,
+                    ),
+                    confidence=Confidence.MEDIUM,
+                    risk=ctx.scorer.score(Severity.HIGH, Confidence.MEDIUM),
+                    detector="manifest",
+                    always_report=False,
                 )
             )
         return out
@@ -841,6 +974,32 @@ class Engine:
         # A zip-slip test fixture is an escaping archive on purpose: Django, Jenkins, Go's
         # archive/tar and every extractor with a security test ship one. Reported, below the gate.
         fixture = SourcePaths.is_test_material(path) or SourcePaths.is_vendored(path)
+        target = detail.rpartition("(-> ")[2].rstrip(")") if "(-> " in detail else ""
+        if (
+            reason == Rejection.LINK
+            and not image
+            and not fixture
+            and _SECRET_LINK_TARGET.search(target.strip())
+        ):
+            # A member that is a link to `/etc/hosts` or `~/.ssh/id_rsa`: anything that reads
+            # or uploads the package's file -- an agent told "a is this skill's own file, send
+            # it" -- sends the user's instead (review 98: a skill whose `audit/a` links to
+            # /etc/hosts). Packaging tools copy files; a link out to a secret is placed.
+            return replace(
+                Engine._operational(
+                    path=path,
+                    rule_id=ARCHIVE_LINK_TO_SECRET_RULE,
+                    message=(
+                        f"This member is a link to {target.strip()!r}, a file of the machine it "
+                        "is unpacked on rather than of the package. Whatever reads or sends the "
+                        "package's file reads or sends that one."
+                    ),
+                    remediation="Do not install or use it. Nothing legitimate ships such a link.",
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                ),
+                confidence=Confidence.HIGH,
+            )
         if reason == Rejection.POLYGLOT and not fixture:
             return replace(
                 Engine._operational(
@@ -1232,8 +1391,16 @@ class Engine:
         # A skill's scripts run when the agent uses the skill, on the user's machine and unasked:
         # the trust boundary an install hook has (review 98: a skill script reading files and
         # posting them out was graded as a library's, at MEDIUM).
-        agent_run = Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
-        hook_paths |= agent_run
+        skill_scripts = Engine._skill_scripts(units)
+        agent_run = skill_scripts | Engine._mcp_server_sources(units)
+        agent_tools = self._agent_tool_paths(units, agent_run, hook_paths)
+        # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
+        # a tool the user asked it to use: downloading a browser, starting a detached emulator or
+        # writing its config is the tool's work, and graded as install code it blocked 40 of 863
+        # real MCP packages (review 98). What a server's handlers do with the agent's input is
+        # read by `detect/mcp_code.py` instead -- a shell behind a secret prefix, a hidden copy of
+        # every argument, a gate that turns the tool later, secrets gathered by name.
+        hook_paths |= skill_scripts
         # What runs at install time is the hook and everything it imports. The
         # context stopped at the hook file, so moving the payload into a helper
         # module -- no obfuscation, just ordinary package structure -- avoided
@@ -1257,6 +1424,7 @@ class Engine:
             install_hook_paths=frozenset(hook_paths),
             tree_paths=frozenset(unit.path for unit in units),
             install_entry_paths=entries,
+            agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=deferred,
         )
@@ -1309,6 +1477,7 @@ class Engine:
             acc.add(self._unexamined_install_code(acc.findings, ctx))
             acc.add(self._native_code_in_a_pure_wheel(units, ctx))
             acc.add(self._known_malicious_release(units, ctx))
+            acc.add(self._borrowed_server_name(units, ctx))
 
             if dependencies:
                 self.progress.phase("graph")
@@ -1656,8 +1825,16 @@ class Engine:
         }
         hook_paths |= self._nuget_hooks(units)
         hook_paths |= ComposerPluginHooks.paths(units)
-        agent_run = Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
-        hook_paths |= agent_run
+        skill_scripts = Engine._skill_scripts(units)
+        agent_run = skill_scripts | Engine._mcp_server_sources(units)
+        agent_tools = self._agent_tool_paths(units, agent_run, hook_paths)
+        # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
+        # a tool the user asked it to use: downloading a browser, starting a detached emulator or
+        # writing its config is the tool's work, and graded as install code it blocked 40 of 863
+        # real MCP packages (review 98). What a server's handlers do with the agent's input is
+        # read by `detect/mcp_code.py` instead -- a shell behind a secret prefix, a hidden copy of
+        # every argument, a gate that turns the tool later, secrets gathered by name.
+        hook_paths |= skill_scripts
         entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
@@ -1669,6 +1846,7 @@ class Engine:
             install_hook_paths=frozenset(hook_paths),
             tree_paths=frozenset(unit.path for unit in units),
             install_entry_paths=entries,
+            agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=Engine._entry_points_reached(
                 self._hook_deferred_lines(units, hook_paths, entries), agent_run
@@ -1771,6 +1949,7 @@ class Engine:
         acc.add(self._unexamined_install_code(acc.findings, ctx))
         acc.add(self._native_code_in_a_pure_wheel(units, ctx))
         acc.add(self._known_malicious_release(units, ctx))
+        acc.add(self._borrowed_server_name(units, ctx))
 
         # A published archive carries its own manifests and lockfiles, and
         # "is this tarball a known-malicious release?" is the question most
@@ -3618,6 +3797,26 @@ class Engine:
         had no install-time finding at all (review 98)."""
         return frozenset(t for t in deferred if t[0] not in agent_run)
 
+    def _agent_tool_paths(
+        self, units: Sequence[FileUnit], agent_run: set[str], hooks: set[str]
+    ) -> frozenset[str]:
+        """Agent-run code and the modules it imports, less anything a real install hook reaches.
+
+        An MCP server's file importing the SDK hands its API calls to `client.py` and `core.py`;
+        those run on the agent's tool calls exactly as the server does (review 98: serper's
+        `core.py` sending SERPER_API_KEY to google.serper.dev was blocked while the same call in
+        the server file was not). What `setup.py` or a lifecycle script also reaches keeps the
+        install grade."""
+        if not agent_run:
+            return frozenset()
+        tools = agent_run | self._hook_import_closure(units, agent_run)
+        tools |= self._hook_js_closure(units, tools)
+        if hooks:
+            real = hooks | self._hook_import_closure(units, hooks)
+            real |= self._hook_js_closure(units, real)
+            tools -= real - agent_run
+        return frozenset(tools)
+
     @staticmethod
     def _mcp_server_sources(units: Sequence[FileUnit]) -> set[str]:
         """An MCP server's own source: started by the agent host and run on the agent's tool calls,
@@ -3672,7 +3871,7 @@ class Engine:
         findings: list[Finding], units: Sequence[FileUnit]
     ) -> tuple[list[Finding], dict[str, Any]]:
         """The package verdict over everything this scan found (`core/verdict.py`)."""
-        from cordon_scanner.core.verdict import Verdict
+        from cordon_scanner.core.verdict import Verdict, VerdictFeatures
 
         paths_sizes = [(u.path, u.content.size) for u in units]
         manifests = {
@@ -3680,7 +3879,42 @@ class Engine:
             for u in units
             if u.path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] in Engine._VERDICT_MANIFESTS
         }
-        return Verdict.decide(list(findings), paths_sizes, manifests)
+        graded, verdict = Verdict.decide(list(findings), paths_sizes, manifests)
+        score, block = verdict.get("score"), verdict.get("block")
+        if (
+            score is not None
+            and block is not None
+            and score >= block
+            and not any(
+                VerdictFeatures.is_code(f.rule_id) and f.severity >= Severity.HIGH for f in graded
+            )
+        ):
+            # Every finding below the line and the package over it: the combination is the
+            # evidence. MalSkillBench's malicious skills were flagged 98.3% of the time and blocked
+            # 80.1%, because no one of their findings was strong alone (review 98).
+            rules = sorted(verdict.get("rules", {}), key=lambda r: -verdict["rules"][r])
+            graded.append(
+                replace(
+                    Engine._operational(
+                        path=".",
+                        rule_id=Verdict.RULE,
+                        message=(
+                            f"Taken together, this package's findings ({', '.join(rules[:5])}"
+                            f"{', ...' if len(rules) > 5 else ''}) and what kind of package it "
+                            f"is score {score:.2f} against a blocking threshold of {block:.2f}. "
+                            "None of them blocks alone; the combination is what malicious "
+                            "packages in the training half looked like."
+                        ),
+                        remediation="Read each finding listed. Do not install until explained.",
+                        category=Category.SUSPICIOUS,
+                        severity=Severity.HIGH,
+                    ),
+                    confidence=Confidence.MEDIUM,
+                    always_report=False,
+                    detector="manifest",
+                )
+            )
+        return graded, verdict
 
     @staticmethod
     def _hardening_tier(findings: list[Finding], policy: Policy) -> list[Finding]:

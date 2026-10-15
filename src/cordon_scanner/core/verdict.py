@@ -86,6 +86,8 @@ class VerdictFeatures:
         "n_deps",
         "version_odd",
         "name_digits",
+        "skill",
+        "agent_text",
     )
 
     @staticmethod
@@ -135,6 +137,17 @@ class VerdictFeatures:
             "n_deps": 0.0,
             "version_odd": 0.0,
             "name_digits": 0.0,
+            # What the package is to an agent: a skill (a SKILL.md near the top), or documents
+            # an agent reads as instructions. Malicious skills are judged against other skills.
+            "skill": float(
+                any(n.rsplit("/", 1)[-1].upper() == "SKILL.MD" and n.count("/") <= 3 for n in names)
+            ),
+            "agent_text": float(
+                any(
+                    re.search(r"(?i)(^|/)(AGENTS|CLAUDE|GEMINI)\.md$|\.mdc$|/\.cursor/rules/", n)
+                    for n in names
+                )
+            ),
         }
         for path, data in sorted(manifests.items(), key=lambda kv: kv[0].count("/")):
             base = path.rsplit("!", 1)[-1]

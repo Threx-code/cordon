@@ -93,6 +93,9 @@ CLASSIFIED_BY_VERB_ALONE = frozenset(
         "MALWARE.REVERSE_SHELL.002",
         "SUSPECT.DECODE_CHAIN.001",
         "SUSPECT.REGISTRY.SELF_PUBLISH.001",
+        # The package verdict: about the whole package's combination of findings, whatever
+        # domains they came from, so no one family names it.
+        "SUSPECT.VERDICT.MODEL.001",
     }
 )
 

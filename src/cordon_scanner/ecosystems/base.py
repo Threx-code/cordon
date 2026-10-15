@@ -751,10 +751,16 @@ class BaseEcosystem:
         somebody chooses to run tests; a `postinstall` script runs whether they
         wanted it to or not.
         """
+        # And a key that is one only in another case: `postInstall` beside the real scripts is
+        # how a Shai-Hulud worm copy named its `node bundle.js` (review 98). The package manager
+        # may not run it, but nothing but a lifecycle hook is spelled that way, and the file it
+        # names is read as install code either way.
+        canonical = {k.lower(): k for k in self.lifecycle_keys}
         for key, command in sorted(scripts.items()):
-            if key in self.lifecycle_keys:
+            kind = key if key in self.lifecycle_keys else canonical.get(key.lower())
+            if kind is not None:
                 yield Hook(
-                    kind=key,
+                    kind=kind,
                     path=path,
                     name=key,
                     command=str(command),

@@ -407,7 +407,9 @@ class ArchiveReader:
                         continue
                     result.rejected.append(
                         RejectedMember(
-                            safe, Rejection.LINK, "symbolic-link members are never extracted"
+                            safe,
+                            Rejection.LINK,
+                            f"symbolic-link members are never extracted (-> {target[:200]})",
                         )
                     )
                     continue
@@ -527,7 +529,9 @@ class ArchiveReader:
                             continue
                         result.rejected.append(
                             RejectedMember(
-                                member.name, Rejection.LINK, "link members are never extracted"
+                                member.name,
+                                Rejection.LINK,
+                                f"link members are never extracted (-> {member.linkname[:200]})",
                             )
                         )
                         continue
