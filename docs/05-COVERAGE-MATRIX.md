@@ -725,9 +725,12 @@ rather than a document.
 | `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
+| `SUSPECT.MCP.HANDLER_SHELL.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LISTENER.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
+| `SUSPECT.MCP.SECRET_HARVEST.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |

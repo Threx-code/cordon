@@ -219,13 +219,18 @@ class Verdict:
     RULE: ClassVar[str] = "SUSPECT.VERDICT.MODEL.001"
 
     @staticmethod
-    def floored(finding: Finding) -> bool:
-        """Malicious on its own: never re-graded by anything the package says about itself."""
-        return (
-            finding.rule_id.startswith("MALWARE.")
-            and ".KNOWN" not in finding.rule_id
-            and finding.confidence in Verdict.FLOOR_CONFIDENCE
-        )
+    def floored(finding: Finding, floor: frozenset[str] | None = None) -> bool:
+        """Malicious on its own: never re-graded by anything the package says about itself.
+
+        With a model, the floor is the rules it ships as never having fired on a benign unit of
+        its training half (`bench/model/verdict_train.py`); a rule that did is the model's to weigh
+        until its own precision is fixed. Without one, every MALWARE.* finding at high confidence.
+        """
+        if ".KNOWN" in finding.rule_id or finding.confidence not in Verdict.FLOOR_CONFIDENCE:
+            return False
+        if floor is not None:
+            return finding.rule_id in floor
+        return finding.rule_id.startswith("MALWARE.")
 
     @staticmethod
     def decide(
@@ -245,10 +250,11 @@ class Verdict:
         summary.update(
             score=round(score, 4), block=block, warn=warn, model=model.get("version", "")
         )
+        floor = frozenset(model["floor"]) if "floor" in model else None
         out: list[Finding] = []
         for finding in findings:
             code = VerdictFeatures.is_code(finding.rule_id) and ".KNOWN" not in finding.rule_id
-            if not code or Verdict.floored(finding) or score >= block:
+            if not code or Verdict.floored(finding, floor) or score >= block:
                 out.append(finding)
                 continue
             if score < warn and finding.severity > Severity.LOW:
