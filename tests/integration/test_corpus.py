@@ -17,6 +17,7 @@ the change that addresses it merges.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -88,6 +89,11 @@ class TestMaliciousCorpus(CorpusFixtures):
     @pytest.mark.parametrize("sample", CorpusHelpers.malicious_samples(), ids=lambda p: p.name)
     def test_sample_is_detected(self, scanner: Scanner, sample: Path) -> None:
         expectation = CorpusHelpers.load_expectation(sample)
+        if expectation.get("hardening"):
+            # A posture weakness (CI, container, infrastructure) is recorded at LOW by default and
+            # reported at its own severity in a hardening pass, which is what the sample shows.
+            config = scanner.config
+            scanner = Scanner(config.with_overrides(policy=replace(config.policy, hardening=True)))
         result = scanner.scan(sample)
         found = {f.rule_id for f in result.findings}
 
@@ -359,6 +365,9 @@ class TestSelfScan(CorpusFixtures):
             # an agent reads them from; its fixtures are attack text by construction, like
             # `corpus/`. Splitting the strings would not help: constant folding joins them.
             and f.location.path != "bench/agent_matrix.py"
+            # The tool-call guard's tests are the calls it must refuse -- a cron write, an
+            # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
+            and f.location.path != "tests/unit/test_tool_call_guard.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/skills_measure.py"

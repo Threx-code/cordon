@@ -715,11 +715,12 @@ class PythonAnalyzer:
             and node.args
             and cls._own_name_locally(node.args[0])
         )
+        patterns = cls._pattern_literals(tree)
         return {
             "CAP.EGRESS.DNS_CONSTRUCTED.001": own_name,
-            Capability.PERSIST: cls._persistence_named_not_written(tree),
+            Capability.PERSIST: cls._persistence_named_not_written(tree) | patterns,
             Capability.EXECUTE: frozenset(analyzer._excused_lines),
-            Capability.CREDENTIAL: frozenset(environment),
+            Capability.CREDENTIAL: frozenset(environment) | patterns,
             Capability.DECODE: analyzer._decoded_into_data_parsers(tree),
         }
 
@@ -739,6 +740,40 @@ class PythonAnalyzer:
             "summary",
         }
     )
+    #: `re` and `regex` functions whose first argument is a pattern: text to match against.
+    PATTERN_CALLS = frozenset(
+        {"compile", "match", "fullmatch", "search", "findall", "finditer", "sub", "subn", "split"}
+    )
+
+    @classmethod
+    def _pattern_literals(cls, tree: ast.AST) -> frozenset[int]:
+        """Lines of a regular expression written as literal text: `re.compile(r"/etc/rc\\.local|
+        ~/\\.ssh")`. A pattern says what to look for; nothing reads or writes the paths it names.
+        Cordon's own tool-call guard lists every persistence path it refuses, and the pattern
+        tier read it as persistence (review 98) -- as it would any scanner, linter or guard. Only
+        a pattern made of literals is covered: one built from a call or a variable keeps its hit."""
+        lines: set[int] = set()
+        for node in PythonSyntax.nodes(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in ("re", "regex")
+                and node.func.attr in cls.PATTERN_CALLS
+                and node.args
+            ):
+                continue
+            pattern = node.args[0]
+            if all(
+                isinstance(part, ast.Constant | ast.BinOp | ast.operator)
+                for part in ast.walk(pattern)
+            ):
+                first = getattr(pattern, "lineno", None)
+                last = getattr(pattern, "end_lineno", None) or first
+                if first is not None:
+                    lines.update(range(first, last + 1))
+        return frozenset(lines)
+
     #: Calls that show text to a person: what a shell profile line is in them is advice.
     MESSAGE_CALLS = frozenset(
         {"print", "echo", "warn", "warning", "info", "debug", "error", "wrn", "inf", "dbg", "err"}
