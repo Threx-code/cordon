@@ -12,9 +12,11 @@ from cordon_scanner.detect.agent_semantics import CHAINS, NAMES, SIZE, AgentSema
 from cordon_scanner.detect.mcp_model import BUCKETS, MCP_MODEL, SKILL_MODEL
 
 
-def chains(text: str) -> set[tuple[str, ...]]:
-    vector = AgentSemantics.vector(text)[len(NAMES) :]
-    return {chain for chain, value in zip(CHAINS, vector, strict=True) if value}
+class Kit:
+    @staticmethod
+    def chains(text: str) -> set[tuple[str, ...]]:
+        vector = AgentSemantics.vector(text)[len(NAMES) :]
+        return {chain for chain, value in zip(CHAINS, vector, strict=True) if value}
 
 
 class TestOrdersAboutSomethingElse:
@@ -37,7 +39,7 @@ class TestOrdersAboutSomethingElse:
         ],
     )
     def test_the_chain_is_present(self, text: str, chain: tuple[str, ...]) -> None:
-        assert chain in chains(text)
+        assert chain in Kit.chains(text)
 
 
 class TestOrdinaryDescriptionsHaveNoChain:
@@ -54,7 +56,7 @@ class TestOrdinaryDescriptionsHaveNoChain:
         ],
     )
     def test_quiet(self, text: str) -> None:
-        assert chains(text) == set()
+        assert Kit.chains(text) == set()
 
 
 class TestLayout:

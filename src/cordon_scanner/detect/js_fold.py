@@ -21,14 +21,12 @@ import re
 from typing import Final
 
 _FRAGMENT: Final = r"[\w.$-]{1,40}"
-
-
-def _literal(name: str) -> str:
-    """A quoted fragment, either quote, captured as `<name>s` or `<name>d` (no backreference)."""
-    return rf"""(?:'(?P<{name}s>{_FRAGMENT})'|"(?P<{name}d>{_FRAGMENT})")"""
-
-
-_PAIR: Final = re.compile(_literal("a") + r"\s{0,8}\+\s{0,8}" + _literal("b"))
+# Each literal in either quote, captured by name rather than matched again by backreference (which
+# the pattern validator refuses): `as`/`ad` the left piece, `bs`/`bd` the right.
+_PAIR: Final = re.compile(
+    rf"""(?:'(?P<as>{_FRAGMENT})'|"(?P<ad>{_FRAGMENT})")\s{{0,8}}\+\s{{0,8}}"""
+    rf"""(?:'(?P<bs>{_FRAGMENT})'|"(?P<bd>{_FRAGMENT})")"""
+)
 SHORT: Final = 8
 """A piece this long or shorter is a fragment of a word, not a word."""
 MAX_PASSES: Final = 6

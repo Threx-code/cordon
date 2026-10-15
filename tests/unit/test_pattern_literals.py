@@ -23,19 +23,21 @@ GUARD = (
 )
 
 
-def persistence(tmp_path, source: str) -> list[str]:
-    (tmp_path / "guard.py").write_text(source, encoding="utf-8")
-    findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
-    return [f.rule_id for f in findings if f.rule_id.endswith("PERSIST.001")]
+class Kit:
+    @staticmethod
+    def persistence(tmp_path, source: str) -> list[str]:
+        (tmp_path / "guard.py").write_text(source, encoding="utf-8")
+        findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
+        return [f.rule_id for f in findings if f.rule_id.endswith("PERSIST.001")]
 
 
 class TestAPatternIsNotAWrite:
     def test_a_guard_pattern(self, tmp_path) -> None:
-        assert persistence(tmp_path, GUARD) == []
+        assert Kit.persistence(tmp_path, GUARD) == []
 
     def test_the_same_paths_outside_a_pattern_still_report(self, tmp_path) -> None:
         """The control: the identical text, handed to a variable rather than `re.compile`."""
         source = GUARD.replace("REFUSED = re.compile(", "REFUSED = (").replace(
             "REFUSED.search(value) or REFUSED.search(text)", "value in REFUSED or text in REFUSED"
         )
-        assert persistence(tmp_path, source)
+        assert Kit.persistence(tmp_path, source)
