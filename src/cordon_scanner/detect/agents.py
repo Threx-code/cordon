@@ -1248,6 +1248,44 @@ RULES.update(
                 (ref.MCP_SECURITY,),
             ),
             AgentRules._rule(
+                "SUSPECT.AGENT.SKILL_RUNS_INPUT.001",
+                "A skill's script runs its own input as code or a command",
+                Category.SUSPICIOUS,
+                Severity.MEDIUM,
+                Confidence.MEDIUM,
+                "A function in a script this skill ships hands its argument to a shell, eval or "
+                "exec. The agent calls the skill's functions with text it was given, so whatever "
+                "reaches that argument -- a prompt injection upstream -- runs on the machine. A "
+                "vulnerability rather than an attack, and reported as one.",
+                "Pass arguments as data: an argument list, a parser, an allowlist of operations.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
+                "SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001",
+                "A skill's script installs a package named like a popular one",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A script this skill ships installs, at run time, a package whose name is one slip "
+                "from a popular package's and is not itself an established one. Installing it runs "
+                "its author's code on the machine: dependency confusion and typosquatting, carried "
+                "out by the agent.",
+                "Do not use the skill. Check whether the package was installed anywhere.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
+                "SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001",
+                "A skill's script hands the agent text that tells it to drop its instructions",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A script this skill ships carries text telling the reading model to ignore its "
+                "previous instructions, become 'DAN' or reveal its system prompt. Whatever the "
+                "script returns, the agent reads as context.",
+                "Remove the text, or the skill.",
+                (ref.OWASP_LLM_PROMPT_INJECTION,),
+            ),
+            AgentRules._rule(
                 "SUSPECT.MCP.SECRET_HARVEST.001",
                 "An MCP server gathers the environment's secrets by name",
                 Category.SUSPICIOUS,
@@ -1689,6 +1727,27 @@ class AgentChainDetector(BaseDetector):
         if hooked is not None:
             start, end = InstructionText._byte_span(unit.content.text, hooked)
             yield self._finding("SUSPECT.AGENT.SKILL_HOOK_FETCH.001", unit, ctx, start, end)
+        if unit.content.path.endswith(".py"):
+            # What the agent gets when it calls the script's functions (`detect/mcp_code.py`).
+            from cordon_scanner.detect.mcp_code import McpCode
+
+            text = unit.content.text
+            starts = [0, *(m.end() for m in re.finditer(r"\n", text))]
+
+            def at(line: int) -> tuple[int, int]:
+                first = starts[min(max(line, 1), len(starts)) - 1]
+                last = text.find("\n", first)
+                last = len(text) if last < 0 else last
+                return len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+
+            for line, _function in McpCode.runs_own_input(text)[:3]:
+                yield self._finding("SUSPECT.AGENT.SKILL_RUNS_INPUT.001", unit, ctx, *at(line))
+            for line, _name, _popular in McpCode.installs_lookalikes(text)[:3]:
+                yield self._finding(
+                    "SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001", unit, ctx, *at(line)
+                )
+            for line in McpCode.returns_jailbreak(text)[:3]:
+                yield self._finding("SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001", unit, ctx, *at(line))
 
     def _server_source(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """An MCP server's own source: the tool names and descriptions it hands the agent.

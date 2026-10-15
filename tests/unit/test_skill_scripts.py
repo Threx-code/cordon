@@ -35,7 +35,12 @@ class SkillScriptKit:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
-        return {f.severity.name for f in result.findings if f.rule_id == "SUSPECT.DROPPER.001"}
+        # A skill script is agent-run code, graded as install-time: its dropper is MALWARE.DROPPER.
+        return {
+            f.severity.name
+            for f in result.findings
+            if f.rule_id in ("SUSPECT.DROPPER.001", "MALWARE.DROPPER.001")
+        }
 
 
 class TestSkillScripts:

@@ -1232,7 +1232,8 @@ class Engine:
         # A skill's scripts run when the agent uses the skill, on the user's machine and unasked:
         # the trust boundary an install hook has (review 98: a skill script reading files and
         # posting them out was graded as a library's, at MEDIUM).
-        hook_paths |= Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
+        agent_run = Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
+        hook_paths |= agent_run
         # What runs at install time is the hook and everything it imports. The
         # context stopped at the hook file, so moving the payload into a helper
         # module -- no obfuscation, just ordinary package structure -- avoided
@@ -1246,7 +1247,10 @@ class Engine:
         # And which of those files' bodies the hooks actually reach. A file is
         # in the closure because something imports it, which runs its top level
         # and defines its functions -- it does not call them.
-        deferred = self._hook_deferred_lines(units, hook_paths, entries)
+        # Every function of agent-run code is an entry point: the agent calls them by name.
+        deferred = Engine._entry_points_reached(
+            self._hook_deferred_lines(units, hook_paths, entries), agent_run
+        )
         ctx = replace(
             ctx,
             dependencies=Engine._packages(dependencies),
@@ -1652,7 +1656,8 @@ class Engine:
         }
         hook_paths |= self._nuget_hooks(units)
         hook_paths |= ComposerPluginHooks.paths(units)
-        hook_paths |= Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
+        agent_run = Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
+        hook_paths |= agent_run
         entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
@@ -1665,7 +1670,9 @@ class Engine:
             tree_paths=frozenset(unit.path for unit in units),
             install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
-            install_deferred_lines=self._hook_deferred_lines(units, hook_paths, entries),
+            install_deferred_lines=Engine._entry_points_reached(
+                self._hook_deferred_lines(units, hook_paths, entries), agent_run
+            ),
             # Known before any file is examined, so a detector can tell an image's files from a
             # source tree's: an image's executables are what it ships.
             image=image if image is not None else ctx.image,
@@ -3600,6 +3607,16 @@ class Engine:
                 )
             out.append(finding)
         return out
+
+    @staticmethod
+    def _entry_points_reached(
+        deferred: frozenset[tuple[str, int, int]], agent_run: set[str]
+    ) -> frozenset[tuple[str, int, int]]:
+        """Deferred bodies, less those in code an agent runs: a skill script's functions and an MCP
+        server's handlers are called by the agent by name, so none of them is unreached. Counted as
+        deferred, a skill script appending to `/etc/passwd` and `/etc/crontab` from its functions
+        had no install-time finding at all (review 98)."""
+        return frozenset(t for t in deferred if t[0] not in agent_run)
 
     @staticmethod
     def _mcp_server_sources(units: Sequence[FileUnit]) -> set[str]:

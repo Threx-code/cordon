@@ -181,6 +181,78 @@ class McpCode:
                     lines.append(node.lineno)
         return lines
 
+    @classmethod
+    def runs_own_input(cls, text: str) -> list[tuple[int, str]]:
+        """(line, function) where a public function of a script runs its own argument in a shell,
+        eval or exec. For an agent's skill script every public function is something the agent
+        may call with text it was given -- a vulnerability, reported as one."""
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        functions = [
+            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        wrappers: set[str] = set()
+        for _ in range(2):
+            for function in functions:
+                if function.name not in wrappers and cls._runs_input(function, wrappers):
+                    wrappers.add(function.name)
+        hits = []
+        for function in functions:
+            if function.name.startswith("_"):
+                continue
+            call = cls._runs_input(function, wrappers)
+            if call is not None:
+                hits.append((getattr(call, "lineno", function.lineno), function.name))
+        return hits
+
+    _INSTALL: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bpip3?\b[\"', ]{0,6}install[\"', ]{1,6}((?:[\"']?[A-Za-z][\w.-]{1,60}[\"']?[, ]{1,4}){1,12})"
+        r"|\bpackages\s{0,4}=\s{0,4}\[([^\]]{1,2000})\][\s\S]{0,600}?\bpip\b[\s\S]{0,200}?install"
+    )
+
+    @classmethod
+    def installs_lookalikes(cls, text: str) -> list[tuple[int, str, str]]:
+        """(line, name, popular) for a package a script installs at run time whose name is a slip
+        of a popular one: installing it is how a typosquat's code gets on the machine."""
+        from cordon_scanner.detect.dependency import DependencyDetector
+        from cordon_scanner.intel.popular import PackageIntel
+
+        out: list[tuple[int, str, str]] = []
+        for match in cls._INSTALL.finditer(text):
+            chunk = match.group(1) or match.group(2) or ""
+            for name in re.findall(r"[\"']([A-Za-z][\w.-]{1,60})[\"']", chunk):
+                low = name.lower()
+                if PackageIntel.is_known_package("pypi", low):
+                    continue
+                target = DependencyDetector._typosquat_target("pypi", low)
+                if target is not None:
+                    out.append((text.count("\n", 0, match.start()) + 1, name, target))
+        return out
+
+    _JAILBREAK: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)ignore\s{1,3}(?:all\s{1,3})?(?:the\s{1,3})?(?:previous|prior|above)\s{1,3}instructions"
+        r"|\byou\s{1,3}are\s{1,3}now\s{1,3}DAN\b|do\s{1,3}anything\s{1,3}now"
+        r"|reveal\s{1,3}your\s{1,3}system\s{1,3}prompt"
+    )
+
+    @classmethod
+    def returns_jailbreak(cls, text: str) -> list[int]:
+        """Lines of string literals in a script's functions that tell the reading model to drop
+        its instructions: what the agent reads back when it calls the function."""
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        return sorted(
+            {
+                n.lineno
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Constant)
+                and isinstance(n.value, str)
+                and cls._JAILBREAK.search(n.value)
+            }
+        )
+
     @staticmethod
     def listener(text: str) -> int | None:
         """The line of a raw socket that listens and accepts, in a file that also runs commands."""

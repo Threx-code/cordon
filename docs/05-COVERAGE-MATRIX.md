@@ -717,7 +717,10 @@ rather than a document.
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
 | `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_INSTRUCTIONS.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.UNATTENDED.001` | medium | `composites` | prompt_injection |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
