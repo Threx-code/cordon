@@ -106,7 +106,7 @@ class VerdictTrain:
         excluded = set()
         for path in a.adjudication:
             for r in cls.rows(path):
-                if r.get("verdict") in ("not-malicious", "no-payload"):
+                if r.get("verdict") in ("not-malicious", "no-payload", "vulnerable-fixture", "empty-template"):
                     excluded.add(r["file"])
         noisy = set(a.noisy.read_text().split())
         total = {"work": collections.Counter(), "holdout": collections.Counter()}
