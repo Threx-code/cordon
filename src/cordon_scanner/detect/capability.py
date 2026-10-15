@@ -2453,6 +2453,15 @@ class CapabilityDetector(BaseDetector):
         r"(?i)path|join|resolve|dir|file|module|plugin|config|load|locate|find|require|import|get"
     )
     _JS_DECODER_CALLS: ClassVar[int] = 10
+    #: A module name decoded from a literal on the spot: hex, base64, char codes or a byte array.
+    _JS_DECODED_REQUIRE: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w$.])(?:require|import)\s{0,4}\(\s{0,4}(?:"
+        r"Buffer\s{0,4}\.\s{0,4}from\s{0,4}\(\s{0,4}(?:[\"'][A-Za-z0-9+/=]{2,200}[\"']\s{0,4},\s{0,4}"
+        r"[\"'](?:hex|base64|base64url)[\"']|\[[\d\s,x]{1,400}\])\s{0,4}\)\s{0,4}\.\s{0,4}toString"
+        r"|atob\s{0,4}\(\s{0,4}[\"'][A-Za-z0-9+/=]{2,200}[\"']"
+        r"|String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\("
+        r")"
+    )
 
     @classmethod
     def _js_computed_require(
@@ -2471,6 +2480,24 @@ class CapabilityDetector(BaseDetector):
         if language not in ("javascript", "typescript"):
             return []
         text = content.text
+        if "require" not in text and "import" not in text:
+            return []
+        # The same disguise without a decoder function: `require(Buffer.from("6f73",
+        # "hex").toString())` loads `os` under a name nobody reads. No package hides which module
+        # it loads; a campaign of 28 releases ran its collector from `postinstall` this way, each
+        # module name in hex (review 98). One is enough: there is no benign reading of it.
+        decoded = cls._JS_DECODED_REQUIRE.search(text)
+        if decoded is not None:
+            start = len(text[: decoded.start()].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.DYNAMIC_DISPATCH,
+                    rule_id="CAP.JS.COMPUTED_REQUIRE",
+                    byte_start=start,
+                    byte_end=start + len(decoded.group(0).encode("utf-8")),
+                    line=text.count("\n", 0, decoded.start()) + 1,
+                )
+            ]
         if "require" not in text:
             return []
         for match in cls._JS_REQUIRE_CALL.finditer(text):

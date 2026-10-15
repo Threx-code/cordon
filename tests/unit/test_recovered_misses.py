@@ -145,6 +145,29 @@ class TestComputedRequire:
         }
         assert "MALWARE.DYNAMIC_DISPATCH.001" in found
 
+    def test_a_module_named_by_a_decoded_literal_blocks_at_install(self, tmp_path) -> None:
+        """Hex module names, one per `require`: no decoder function to count."""
+        hook = (
+            'const o = require(Buffer.from("6f73", "hex").toString());\n'
+            "const info = o.hostname();\n"
+        )
+        manifest = '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node m.js"}}'
+        found = {
+            f.rule_id for f in Helpers.findings(tmp_path, {"package.json": manifest, "m.js": hook})
+        }
+        assert "MALWARE.DYNAMIC_DISPATCH.001" in found
+
+    def test_a_named_module_is_not_decoded(self) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        for text in (
+            "const os = require('os');\nconst b = Buffer.from('6f73', 'hex').toString();\n",
+            "const m = require(path.join(__dirname, 'lib'));\n",
+        ):
+            content = FileContent.from_bytes("lib/a.js", text.encode())
+            assert CapabilityDetector._js_computed_require(content, "javascript") == []
+
     def test_a_path_helper_is_not_a_decoder(self, tmp_path) -> None:
         from cordon_scanner.core.content import FileContent
         from cordon_scanner.detect.capability import CapabilityDetector
