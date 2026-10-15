@@ -406,6 +406,53 @@ class PackageIntelRefresh:
         return sorted(seen.items()), source
 
     @staticmethod
+    def cran() -> tuple[list[tuple[str, int]], str]:
+        """CRAN: every package the archive serves, with last month's downloads from cranlogs.
+
+        The name list is CRAN's own `PACKAGES` index, so nothing outside the archive enters.
+        The counts come from the RStudio CRAN mirror's logs (cranlogs), the figure the R
+        community itself quotes, asked for in batches of names.
+        """
+        index = "https://cran.r-project.org/src/contrib/PACKAGES"
+        body = PackageIntelRefresh.fetch(index).decode("utf-8", "replace")
+        names = sorted(
+            set(re.findall(r"(?m)^Package:[ \t]*([A-Za-z][A-Za-z0-9.]{1,80})[ \t]*$", body))
+        )
+        counts = "https://cranlogs.r-pkg.org/downloads/total/last-month/"
+        out: dict[str, int] = {}
+        for start in range(0, len(names), CRAN_BATCH):
+            batch = names[start : start + CRAN_BATCH]
+            payload = PackageIntelRefresh.fetch_json_retrying(
+                counts + ",".join(batch), fetcher=PackageIntelRefresh.fetch_json
+            )
+            time.sleep(PACE)
+            for row in payload if isinstance(payload, list) else []:
+                if isinstance(row, dict) and row.get("package") in batch:
+                    out[str(row["package"])] = int(row.get("downloads") or 0)
+        return sorted(out.items()), f"{index} (names), {counts} (last month's downloads)"
+
+    @staticmethod
+    def homebrew() -> tuple[list[tuple[str, int]], str]:
+        """Homebrew formulae and casks, from Homebrew's own published install analytics."""
+        sources = (
+            ("https://formulae.brew.sh/api/analytics/install/365d.json", "formula"),
+            ("https://formulae.brew.sh/api/analytics/cask-install/365d.json", "cask"),
+        )
+        out: dict[str, int] = {}
+        for url, key in sources:
+            payload = PackageIntelRefresh.as_object(PackageIntelRefresh.fetch_json(url), url)
+            for item in payload.get("items") or []:
+                if not isinstance(item, dict) or not item.get(key):
+                    continue
+                # A tap-qualified name (`user/tap/name`) is that tap's, not core's.
+                name = str(item[key])
+                if "/" in name:
+                    continue
+                count = int(str(item.get("count") or "0").replace(",", "") or 0)
+                out[name] = max(out.get(name, 0), count)
+        return sorted(out.items()), ", ".join(url for url, _ in sources)
+
+    @staticmethod
     def pub_dev() -> tuple[list[tuple[str, int]], str]:
         """pub.dev, for Dart and Flutter, in popularity order.
 
@@ -785,7 +832,15 @@ SOURCES: dict[str, tuple[Callable[[], tuple[list[tuple[str, int]], str]], int]] 
     "rubygems": (PackageIntelRefresh.rubygems, 50_000),
     # A rank-derived score, not downloads: everything pub.dev returned.
     "pub": (PackageIntelRefresh.pub_dev, 0),
+    # Last month's downloads. CRAN reviews every submission by hand, so its long tail is
+    # real packages; the threshold only keeps the list to names people actually install.
+    "cran": (PackageIntelRefresh.cran, 1_000),
+    # A year of installs, formulae and casks together.
+    "homebrew": (PackageIntelRefresh.homebrew, 1_000),
 }
+
+#: Names per cranlogs request: the API takes a comma-separated list in the path.
+CRAN_BATCH = 100
 
 #: Supported ecosystems this script does not refresh, and why. Listed rather than
 #: omitted, because an ecosystem that is silently absent looks like one that was

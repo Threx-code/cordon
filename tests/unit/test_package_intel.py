@@ -44,6 +44,8 @@ MINIMUM_NAMES = {
     "composer": 500,
     "rubygems": 1_000,
     "pub": 500,
+    "cran": 3_000,
+    "homebrew": 3_000,
 }
 
 
