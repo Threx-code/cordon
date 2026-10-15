@@ -233,6 +233,24 @@ class Policy:
           advisory_domains: []
     """
 
+    hardening: bool = False
+    """Report the hardening tier at its own severity.
+
+    The advisory domains (`advisory_domains`) describe how a project configured its pipelines,
+    containers and infrastructure: `curl | sh` in a workflow, a release job restoring a cache, a
+    privileged pod. Those findings are correct and are not evidence that anything is attacking
+    the project, and on the long-tail corpus they were most of what stopped repositories reading
+    as quiet (review 98: Actions repositories 55% quiet with them, the infrastructure-heavy
+    repository snapshots under 75%). So by default they form a hardening tier: every one is
+    still in the report, recorded at LOW and labelled, and none is a warning. `--hardening`, or
+
+        policy:
+          hardening: true
+
+    reports them at their own severity, for a team doing a hardening pass. Anything in the
+    MALICIOUS category in those domains (`MALWARE.CI.SECRET_EXFIL.001`) is never in the tier.
+    """
+
     max_major_drift: int = DEFAULT_MAX_MAJOR_DRIFT
     """How many major versions behind the current release a pin may sit before
     `POLICY.DEPENDENCY.DOWNGRADE.001` reports it.
@@ -295,6 +313,7 @@ class Policy:
             "fail_on_incomplete": self.fail_on_incomplete,
             "min_confidence_to_fail": str(self.min_confidence_to_fail),
             "advisory_domains": sorted(str(d) for d in self.advisory_domains),
+            "hardening": self.hardening,
             "max_major_drift": self.max_major_drift,
             "packages": {"deny": list(self.package_deny), "allow": list(self.package_allow)},
             "accept_no_feed": sorted(self.accept_no_feed)
@@ -1075,6 +1094,7 @@ class Config:
                 "fail_on_incomplete": self.policy.fail_on_incomplete,
                 "min_confidence_to_fail": str(self.policy.min_confidence_to_fail),
                 "advisory_domains": sorted(str(d) for d in self.policy.advisory_domains),
+                "hardening": self.policy.hardening,
                 "max_major_drift": self.policy.max_major_drift,
                 **(
                     {"accept_no_feed": sorted(self.policy.accept_no_feed)}
@@ -1152,6 +1172,7 @@ _POLICY_KEYS = frozenset(
         "fail_on_incomplete",
         "min_confidence_to_fail",
         "advisory_domains",
+        "hardening",
         "max_major_drift",
         "packages",
         "licenses",
@@ -1886,6 +1907,7 @@ class ConfigParser:
             fail_on_incomplete=bool(raw.get("fail_on_incomplete", False)),
             min_confidence_to_fail=min_conf,
             advisory_domains=advisory,
+            hardening=bool(raw.get("hardening", False)),
             max_major_drift=drift,
             accept_no_feed=accepted,
             package_deny=ConfigParser._as_str_tuple(
@@ -2018,6 +2040,9 @@ class ConfigParser:
             # organisation policy that blocks on infrastructure is not undone by
             # a repository's own file leaving the default in place.
             advisory_domains=a.advisory_domains & b.advisory_domains,
+            # Either side asking for the hardening tier at full severity gets it: reporting more
+            # is the stricter choice.
+            hardening=a.hardening or b.hardening,
             # The tighter of the two, for the same reason: merging must never
             # end weaker than either side asked for.
             max_major_drift=min(a.max_major_drift, b.max_major_drift),

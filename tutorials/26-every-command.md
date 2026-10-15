@@ -67,6 +67,9 @@ Scan a directory, file or archive.
 │ --confidence LEVEL        report at or above: low|medium|high|confirmed    │
 │ --fail-on LEVEL           fail the build at or above this severity         │
 │ --fail-on-incomplete      treat a degraded scan as a failure               │
+│ --hardening               report pipeline, container and infrastructure    │
+│                           hardening findings at their own severity instead │
+│                           of recording them at LOW                         │
 │ --baseline PATH           treat findings recorded in this file as already- │
 │                           known                                            │
 │ --vex PATH                an OpenVEX or CycloneDX VEX document             │

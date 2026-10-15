@@ -227,6 +227,14 @@ class CommandLine:
             "--fail-on-incomplete", action="store_true", help="treat a degraded scan as a failure"
         )
         policy.add_argument(
+            "--hardening",
+            action="store_true",
+            help=(
+                "report pipeline, container and infrastructure hardening findings at their own "
+                "severity instead of recording them at LOW"
+            ),
+        )
+        policy.add_argument(
             "--baseline",
             metavar="PATH",
             help="treat findings recorded in this file as already-known",
@@ -1212,10 +1220,12 @@ class CommandLine:
         if args.jobs is not None:
             config = config.with_overrides(limits=config.limits.merged(max_workers=args.jobs))
 
-        if args.fail_on or args.fail_on_incomplete:
+        if args.fail_on or args.fail_on_incomplete or getattr(args, "hardening", False):
             from dataclasses import replace as _replace
 
             policy = config.policy
+            if getattr(args, "hardening", False):
+                policy = _replace(policy, hardening=True)
             if args.fail_on:
                 try:
                     policy = _replace(policy, fail_on_severity=Severity.parse(args.fail_on))

@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.archive.safe import ArchiveReader, Rejection
 from cordon_scanner.core.cache import CacheKey, ScanCache
 from cordon_scanner.core.composer_plugins import ComposerPluginHooks
-from cordon_scanner.core.config import Config
+from cordon_scanner.core.config import Config, Policy
 from cordon_scanner.core.content import FileContent, Skipped
 from cordon_scanner.core.errors import ArchiveError, SourceError
 from cordon_scanner.core.models import (
@@ -1759,9 +1759,13 @@ class Engine:
             # exception is a file that installer reads and obeys (`HONOURED_PINS`): what it pins
             # is what installing the package brings in.
             ctx = replace(ctx, package_distribution=True, distribution=package)
-            acc.findings[:] = self._publisher_hygiene(
-                self._publisher_secrets(self._author_time_ceiling(acc.findings, units, package)),
-                self.config.policy.advisory_domains,
+            acc.findings[:] = self._impersonator_runs_downloads(
+                self._publisher_hygiene(
+                    self._publisher_secrets(
+                        self._author_time_ceiling(acc.findings, units, package)
+                    ),
+                    self.config.policy.advisory_domains,
+                )
             )
             honoured = HONOURED_PINS.get(package)
             dependencies = tuple(
@@ -1792,7 +1796,9 @@ class Engine:
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
 
-        acc.findings[:] = Engine._test_identity_keys(acc.findings, units)
+        acc.findings[:] = Engine._hardening_tier(
+            Engine._test_identity_keys(acc.findings, units), self.config.policy
+        )
         dependencies = self._annotated(dependencies, acc.findings, ctx, units)
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -3562,6 +3568,79 @@ class Engine:
                     + " It ships inside a published package, so the exposure is its publisher's"
                     " to rotate; it does not act on whoever installs the package, and is reported"
                     " below the gate.",
+                )
+            out.append(finding)
+        return out
+
+    @staticmethod
+    def _hardening_tier(findings: list[Finding], policy: Policy) -> list[Finding]:
+        """Record pipeline, container and infrastructure hardening findings at LOW.
+
+        See `Policy.hardening`: those domains (`Policy.advisory_domains`) describe how a project
+        configured itself, and by default they are reported in full and below the warning level.
+        A MALICIOUS finding in them is never lowered; nor is anything when `--hardening` is on.
+        """
+        if policy.hardening:
+            return findings
+        from cordon_scanner.core.taxonomy import Taxonomy
+
+        out: list[Finding] = []
+        for finding in findings:
+            if (
+                finding.category is not Category.MALICIOUS
+                and finding.severity > Severity.LOW
+                and Taxonomy.domain_of(finding.rule_id) in policy.advisory_domains
+            ):
+                finding = replace(
+                    finding,
+                    severity=Severity.LOW,
+                    message=finding.message
+                    + " Hardening finding: recorded at LOW by default; `--hardening` reports it "
+                    "at its own severity.",
+                )
+            out.append(finding)
+        return out
+
+    #: Fetch-and-run findings a package-level verdict can raise.
+    _RUNS_DOWNLOADS: ClassVar[frozenset[str]] = frozenset({"SUSPECT.DROPPER.001"})
+
+    @staticmethod
+    def _impersonator_runs_downloads(findings: list[Finding]) -> list[Finding]:
+        """A published package named one slip from a popular one that downloads and runs code.
+
+        Each half is graded below the gate on its own: a typo-shaped name is common in the long
+        tail (`SUSPECT.PACKAGE.NAME_RISK.001` records it), and a library function that fetches
+        and starts a program is held at MEDIUM because it runs only when called. Together they
+        are the typosquat dropper -- `fequests`, `rwquests` and `tequests` wrap every `requests`
+        call in a download that is then run (review 98). The dropper finding is raised to HIGH;
+        a dropper in a test, a document or generated output keeps its ceiling.
+        """
+        from cordon_scanner.detect.secrets import SourcePaths
+
+        squat = any(
+            f.rule_id == "SUSPECT.PACKAGE.NAME_RISK.001"
+            and "one slip from the popular" in f.message
+            for f in findings
+        )
+        if not squat:
+            return findings
+        out: list[Finding] = []
+        for finding in findings:
+            path = finding.location.path
+            if (
+                finding.rule_id in Engine._RUNS_DOWNLOADS
+                and finding.severity < Severity.HIGH
+                and not SourcePaths.is_test_material(path)
+                and not SourcePaths.is_documentation(path)
+                and not SourcePaths.is_generated_artefact(path)
+            ):
+                finding = replace(
+                    finding,
+                    severity=Severity.HIGH,
+                    message=finding.message
+                    + " The package is named one slip from a popular one, and a package that "
+                    "imitates another's name while downloading and running code is a typosquat "
+                    "dropper.",
                 )
             out.append(finding)
         return out
