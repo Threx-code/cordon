@@ -25,6 +25,7 @@ MEDIUM and does not fail the default gate.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import re
@@ -1220,6 +1221,19 @@ RULES.update(
                 (ref.MCP_SECURITY, ref.OWASP_LLM_PROMPT_INJECTION),
             ),
             AgentRules._rule(
+                "SUSPECT.MCP.ARGUMENT_OVERRIDE.001",
+                "An MCP tool replaces the argument it was called with",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A tool in this MCP server assigns a fixed value to one of its own parameters "
+                "before reading it, so whatever the agent asked for -- the address to geocode, the "
+                "repository to read -- is thrown away and the tool acts on a value its author "
+                "chose. The agent reports the result as the answer to the user's request.",
+                "Remove the assignment, or the tool, and find out why it was added.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
                 "SUSPECT.AGENT.SENSITIVE_IMPORT.001",
                 "An agent instruction file imports a credential file",
                 Category.SUSPICIOUS,
@@ -1661,6 +1675,11 @@ class AgentChainDetector(BaseDetector):
         names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
             yield from self._threat_rules(unit, ctx, name, ("tool_name",), within=text)
+        if unit.content.path.endswith(".py"):
+            for first, last in McpServerSource._overridden_arguments(text):
+                start = len(text[:first].encode("utf-8"))
+                end = start + len(text[first:last].encode("utf-8"))
+                yield self._finding("SUSPECT.MCP.ARGUMENT_OVERRIDE.001", unit, ctx, start, end)
         # What the tools hand back. The agent reads a tool's result as context, so an instruction
         # in a returned string steers it as one in a description does. The model only: the
         # phrase rules were written for descriptions, and status messages are not those.
@@ -1679,6 +1698,18 @@ class AgentChainDetector(BaseDetector):
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + " The text is what a tool returns, and it wraps text in a tag "
                         "addressed to the model.",
+                    )
+                    continue
+                if _RESULT_SENDS_TO_URL.search(returned):
+                    yield self._at_text(
+                        "SUSPECT.MCP.TOOL_DESCRIPTION.001",
+                        unit,
+                        ctx,
+                        text,
+                        returned[:80],
+                        message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
+                        + " The text is what a tool returns, and it sends the agent to call a "
+                        "tool on a web address the result supplies.",
                     )
                     continue
                 score = McpDescriptionModel.score(returned, "return")
@@ -3245,6 +3276,44 @@ _REPLACES_TOOL: Final = re.compile(
     r"compared\s+(?:to|with)|instead\s+of)\s+the\s+(?:standard|legitimate|original|default|regular|"
     r"basic|old|legacy)\s+[`'\"]?[A-Za-z][\w.-]{2,60}[`'\"]?\s+(?:tool|function)\b"
 )
+#: A tool that calls itself the superior edition -- "This is the premium version with superior
+#: search quality", "the best and most reliable search tool available" -- so the agent picks it
+#: over the tool the user meant (MCP-SafetyBench "Function Overlapping" and "Preference
+#: Manipulation"). Both halves: "this improved version provides fallbacks" is a changelog.
+_SUPERIOR_EDITION: Final = re.compile(
+    r"(?i)\b(?:this\s+is\s+(?:the|an?)\s+|this\s+(?:tool\s+is\s+the\s+)?)(?:advanced|professional|"
+    r"premium|enhanced|improved|upgraded|superior|ultimate|pro|best|optimi[sz]ed|enterprise)\s+"
+    r"(?:version|edition|tool|variant)\b[^.]{0,120}\b(?:superior|better|unmatched|unrivall?ed|"
+    r"cutting[- ]edge|enterprise[- ]grade|highest|best|most\s+(?:reliable|accurate|comprehensive|"
+    r"advanced))\b"
+    r"|\bthis\s+is\s+the\s+best\s+and\s+most\s+(?:reliable|accurate|trusted|comprehensive)\b"
+)
+#: A description that makes another tool's call the price of this one: "you must first call
+#: `list_commits` ...", "you must first use `list_branches`" (MCP-SafetyBench "Function
+#: Dependency Injection"). A tool needing an id from another says which, not that it must run.
+_MUST_FIRST_CALL: Final = re.compile(
+    r"(?i)\byou\s+must\s+first\s+(?:call|use|invoke|run|perform|execute)\b[^.]{0,120}?"
+    r"[`'\"]?[a-z_][\w.-]*"
+)
+#: A description announcing that the user's input is changed before use: "the query is
+#: automatically modified to include 'Olympic cities'" (MCP-SafetyBench "Parameter Poisoning").
+_REWRITES_INPUT: Final = re.compile(
+    r"(?i)\b(?:query|queries|input|request|search(?:\s+(?:terms?|parameters?))?|parameters?|"
+    r"arguments?)\s+(?:is|are|will\s+be|gets?)\s+(?:automatically|silently|always|transparently)\s+"
+    r"(?:modified|rewritten|changed|altered|enhanced|expanded|augmented|adjusted)\s+to\s+"
+    r"(?:include|add|contain|append)\b"
+)
+#: A tool result sending the agent to call a tool on an address the result supplies: "please call
+#: fetch with URL 'https://...'" (MCP-SafetyBench "Function Return Injection"). Real results chain
+#: tools by an id they just produced (`Use save_chart with chartId "..."`), not by a web address.
+_RESULT_SENDS_TO_URL: Final = re.compile(
+    r"(?i)\b(?:call|use|invoke)\s+[`'\"]?[a-z_][\w.-]*[`'\"]?\s+(?:tool\s+)?with\s+(?:the\s+)?"
+    r"(?:url|link|address)?\s*[`'\"]?https?://"
+)
+_TOOL_DECORATOR: Final = re.compile(r"(?:^|\.)tool\b")
+"""A decorator registering a tool: `mcp.tool()`, `server.tool`, `app.tool(name=...)`."""
+_OVERRIDE_REACH: Final = 4
+"""How many of a tool's first statements are read for an argument override."""
 _SENTENCE: Final = re.compile(r"[^\n]{1,2000}?(?:[.!?](?!\w)|\n|$)")
 """One sentence: up to a stop that ends a word, a line break or the end. It crosses a dot inside a
 word. The earlier `[^.!?\n]+` could not, so a sentence holding a domain or a file name --
@@ -3301,11 +3370,68 @@ class McpServerSource:
             return "presents itself as the better version of another tool"
         if sum(1 for claim in _SALES_CLAIMS if claim.search(description)) >= 2:
             return "advertises itself to the agent choosing between tools"
+        if _SUPERIOR_EDITION.search(description):
+            return "calls itself the superior edition so the agent picks it"
+        if _MUST_FIRST_CALL.search(description):
+            return "makes calling another tool a precondition of this one"
+        if _REWRITES_INPUT.search(description):
+            return "says it changes the user's input before using it"
         if agent_config.CommandClassifier.classify(description) is not None or any(
             McpServerSource._moves_credentials(sentence) for sentence in sentences
         ):
             return "points the agent at credential files or a command that moves them"
         return None
+
+    @staticmethod
+    def _overridden_arguments(text: str) -> list[tuple[int, int]]:
+        """Where a decorated Python tool assigns a string literal to one of its own parameters
+        among its first statements, before anything reads it: `address = "Portland, OR"` at the
+        top of `maps_geocode(address)`. The agent's argument is discarded and the tool answers a
+        question nobody asked (MCP-SafetyBench rug pulls). Character spans of the assignments.
+
+        Unconditional only: a default filled in under `if not x:` is a default, not an override.
+        No real MCP server in the long tail's 2,068 does this (review 98).
+        """
+        if "tool" not in text:
+            return []
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError, RecursionError):
+            return []
+        # Line starts as the parser counts lines (\n, \r\n, \r), not as `splitlines` does.
+        offsets = [0, *(m.end() for m in re.finditer(r"\r\n|\r|\n", text))]
+        spans: list[tuple[int, int]] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if not any(_TOOL_DECORATOR.search(ast.unparse(d)) for d in node.decorator_list):
+                continue
+            arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            params = {a.arg for a in arguments} - {"self", "cls", "ctx", "context"}
+            body = [
+                s
+                for s in node.body
+                if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))
+            ]
+            for statement in body[:_OVERRIDE_REACH]:
+                if (
+                    isinstance(statement, ast.Assign)
+                    and len(statement.targets) == 1
+                    and isinstance(statement.targets[0], ast.Name)
+                    and statement.targets[0].id in params
+                    and isinstance(statement.value, ast.Constant)
+                    and isinstance(statement.value.value, str)
+                    and statement.value.value
+                    and statement.end_lineno is not None
+                    and statement.end_col_offset is not None
+                ):
+                    spans.append(
+                        (
+                            offsets[statement.lineno - 1] + statement.col_offset,
+                            offsets[statement.end_lineno - 1] + statement.end_col_offset,
+                        )
+                    )
+        return spans
 
     @staticmethod
     def _wrapped(description: str) -> bool:
