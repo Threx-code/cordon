@@ -23,7 +23,7 @@ installed is not knowable in advance.
 from __future__ import annotations
 
 from collections import Counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.core import references
 from cordon_scanner.core.models import (
@@ -58,6 +58,19 @@ if TYPE_CHECKING:
 MAX_INDIVIDUAL = 5
 MALFORMED_RULE = "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001"
 CONFLICT_RULE = "SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001"
+
+
+CODE_HOSTS: Final = frozenset(
+    {
+        "github.com",
+        "codeload.github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "git.sr.ht",
+        "codeberg.org",
+    }
+)
+"""Public code hosts: a dependency resolved from one is a repository anyone can read."""
 
 
 class LockfileDetector(BaseDetector):
@@ -127,6 +140,19 @@ class LockfileDetector(BaseDetector):
                 remediation="Regenerate the lockfile with the package manager and review the diff.",
             ),
         )
+
+    @staticmethod
+    def _code_host(url: str) -> str:
+        """The host a resolution names, in any of the shapes a lockfile writes it:
+        `https://`, `git+ssh://git@host/...`, scp-style `git@host:owner/repo`."""
+        lowered = url.lower()
+        if "://" in lowered:
+            authority = lowered.split("://", 1)[1].split("/", 1)[0]
+        elif "@" in lowered and ":" in lowered:
+            authority = lowered.split(":", 1)[0]
+        else:
+            return ""
+        return authority.rpartition("@")[2].split(":", 1)[0]
 
     @staticmethod
     def _host_of(url: str) -> str:
@@ -405,10 +431,17 @@ class LockfileDetector(BaseDetector):
         names = ", ".join(f"{e.name}@{e.version}" for e in foreign[:MAX_INDIVIDUAL])
         more = f" and {len(foreign) - MAX_INDIVIDUAL} more" if len(foreign) > MAX_INDIVIDUAL else ""
 
+        # Every one from a code host -- a git dependency, or GitHub's archive of a tag -- is a
+        # dependency on a public repository the lockfile pins, which is how a fork or an
+        # unreleased fix is consumed: Kotlin's own `kotlin-js-store/yarn.lock` takes karma from
+        # codeload.github.com. Recorded; a host nobody can look up keeps the warning.
+        code_hosts_only = all(
+            LockfileDetector._code_host(e.resolved_from or "") in CODE_HOSTS for e in foreign
+        )
         yield self._finding(
             rule_id="SUSPECT.LOCKFILE.SOURCE.001",
             category=Category.SUSPICIOUS,
-            severity=Severity.MEDIUM,
+            severity=Severity.LOW if code_hosts_only else Severity.MEDIUM,
             confidence=Confidence.CONFIRMED,
             title="Packages resolved from outside the registry",
             message=(
@@ -416,6 +449,11 @@ class LockfileDetector(BaseDetector):
                 f"{ecosystem.id} registry: {listed}. Affected: {names}{more}. "
                 f"Advisory matching and release-age policy apply to registry "
                 f"packages and do not apply to these."
+                + (
+                    " Each is a public repository on a code host, pinned by this lockfile."
+                    if code_hosts_only
+                    else ""
+                )
             ),
             remediation=(
                 "Confirm each host is one the organisation controls. Mirror the "

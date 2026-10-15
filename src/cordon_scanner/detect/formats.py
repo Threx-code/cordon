@@ -335,7 +335,13 @@ class FormatDetector(BaseDetector):
                     "MALWARE.MODEL.PICKLE_EXEC.001", unit, ctx, detail=f"It imports {listed}."
                 )
             ]
-        unknown = sorted({i.dotted for i in report.imports if not i.recognised})
+        unknown = sorted(
+            {
+                i.dotted
+                for i in report.imports
+                if not i.recognised and not FormatDetector._own_module(i.module, ctx)
+            }
+        )
         if unknown:
             listed = ", ".join(unknown[:MAX_IMPORTS_LISTED])
             return [
@@ -344,6 +350,20 @@ class FormatDetector(BaseDetector):
                 )
             ]
         return []
+
+    @staticmethod
+    def _own_module(module: str, ctx: ScanContext) -> bool:
+        """The import names a package this tree ships: `kotemari.domain.file_info.FileInfo` in
+        `kotemari`'s own cache file. Loading it calls the package's own classes, which installing
+        the package already trusts; that is not code hidden in a binary file."""
+        top = module.partition(".")[0]
+        if not top.isidentifier():
+            return False
+        marker = f"/{top}/__init__.py"
+        return any(
+            f"/{path.rpartition('!')[2]}".endswith(marker) or f"/{path}".find(marker) >= 0
+            for path in ctx.tree_paths
+        )
 
     def _document(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
         report = documents.DocumentReader.read(

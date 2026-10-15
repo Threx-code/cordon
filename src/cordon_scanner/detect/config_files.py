@@ -48,6 +48,7 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import FIXTURE_CEILING, RULE_MATERIAL_CEILING, SourcePaths
+from cordon_scanner.intel.hosts import Destinations
 from cordon_scanner.intel.installers import OfficialInstallers
 
 if TYPE_CHECKING:
@@ -185,6 +186,20 @@ class ConfigRule:
     limits the rule loader enforces on everyone.
 
     Empty means the rule does not care, which is every other rule here."""
+
+    aggravation: re.Pattern[bytes] | None = None
+    """What, near the match, makes the shape worth its declared severity; without it the
+    finding is recorded at LOW.
+
+    The inverse of `mitigation`, for a rule whose shape is mostly benign and only sometimes
+    the attack. `SUSPECT.CI.SECRET_EGRESS.001` is the case: a named secret beside `curl` is
+    how pipelines publish, and fired in 31% of 535 repositories; what makes it worth a
+    reviewer's time is a destination nobody publishes to -- a paste site, a tunnel, a
+    webhook catcher, a bare IP address, a raw socket."""
+
+    aggravation_in_file: bool = False
+    """Look for `aggravation` anywhere in the file rather than near the match: a workflow's
+    trigger is declared once at the top and decides what every job in it can be made to do."""
 
     mitigation: re.Pattern[bytes] | None = None
     """Evidence, near the match, that the weakness this rule names is controlled.
@@ -555,6 +570,25 @@ GRADLE_MAVEN_PATHS = (
 )
 
 
+UNTRUSTED_DESTINATION: Final = re.compile(
+    (
+        Destinations.pattern() + r"|https?://(?:\d{1,3}\.){3}\d{1,3}(?![\d.])|/dev/tcp/"
+        r"|\bnc[ \t]{1,4}(?:-\w{1,8}[ \t]{1,4}){0,4}[\w.-]{1,253}[ \t]{1,4}\d{2,5}\b"
+    ).encode("utf-8"),
+    re.IGNORECASE,
+)
+"""Where a pipeline has no business sending anything: a paste site, a tunnel, a webhook catcher
+or interaction service (`intel.hosts`), a bare IPv4 address, a raw socket."""
+
+
+UNTRUSTED_TRIGGER: Final = re.compile(
+    rb"(?m)^[ \t]{0,8}(?:-[ \t]{0,4})?(?:pull_request_target|issue_comment|workflow_run)[ \t]*:?[ \t]*$"
+    rb"|\bon[ \t]*:[ \t]*\[?[^\n]{0,80}\b(?:pull_request_target|issue_comment|workflow_run)\b"
+)
+"""A workflow trigger whose run an outside contributor can start, with the base repository's
+cache scope and secrets."""
+
+
 RULES: tuple[ConfigRule, ...] = (
     # -- CI -------------------------------------------------------------
     ConfigRule(
@@ -707,6 +741,7 @@ RULES: tuple[ConfigRule, ...] = (
                 r"(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp|scp\s)",
             )
         ),
+        aggravation=UNTRUSTED_DESTINATION,
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
     ),
@@ -1079,6 +1114,12 @@ RULES: tuple[ConfigRule, ...] = (
                 window=6000,
             )
         ),
+        # Raised only beside a trigger an outside contributor controls, which is how a poisoned
+        # cache entry reaches the default branch's scope (the 2024 Ultralytics release). A
+        # tag-triggered release that restores `setup-node`'s npm cache is the ordinary shape:
+        # it was a code warning on 135 of 11,005 benign units rescanned (review 98).
+        aggravation=UNTRUSTED_TRIGGER,
+        aggravation_in_file=True,
         paths=GITHUB_WORKFLOW_PATHS,
     ),
     ConfigRule(
@@ -1779,24 +1820,26 @@ RULES: tuple[ConfigRule, ...] = (
     ConfigRule(
         rule_id="SUSPECT.SUBMODULE.UNTRUSTED.001",
         references=(references.CLEARTEXT_TRANSMISSION, references.INSUFFICIENT_VERIFICATION),
-        title="Submodule fetched over plain HTTP or from a personal account",
+        title="Submodule fetched over an unauthenticated transport",
         message=(
-            "A submodule is fetched over plain HTTP, or tracks a branch rather "
-            "than a commit. Submodule content is checked out into the working tree "
-            "and built with the project, so whoever controls the source controls "
-            "the build -- and a branch reference means what arrives can change "
-            "without any commit appearing in this repository."
+            "A submodule is fetched over plain HTTP or the git:// protocol, neither of "
+            "which authenticates the server or protects what it sends. Submodule content "
+            "is checked out into the working tree and built with the project, so anyone "
+            "on the network path controls the build."
         ),
         remediation=(
             "Use HTTPS or SSH, and let the submodule stay pinned to the commit "
-            "recorded in the parent repository rather than following a branch."
+            "recorded in the parent repository."
         ),
         severity=Severity.MEDIUM,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(
-            r"url[ \t]{0,32}=[ \t]{0,32}(?:http|git)://|^[ \t]{0,32}branch[ \t]{0,32}="
-        ),
+        # Not `branch = ...`. The parent repository pins every submodule to a commit, and
+        # `git submodule update` checks out that commit whatever branch `.gitmodules` names;
+        # the branch is followed only by `git submodule update --remote`, a step some
+        # pipeline chooses, not something this file does. Read as "what arrives can change",
+        # it was 18 of 25 sampled benign warnings of this rule in the long tail (review 98).
+        pattern=ConfigRule._p(r"url[ \t]{0,32}=[ \t]{0,32}(?:http|git)://"),
         paths=("**/.gitmodules",),
     ),
     ConfigRule(
@@ -1930,12 +1973,19 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            # A bounded "URL <http-url> ... no URL_HASH before the call closes"
-            # window: each step of the repeat consumes exactly one character,
-            # so this is linear in the window size, not the backtracking shape
-            # the pattern-safety sweep (tests/unit/test_pattern_safety.py)
-            # exists to catch.
-            r"URL\s+https?://[^\s)]+(?:(?!URL_HASH)[\s\S]){0,400}?\)"
+            # Inside the call the message names, with `URL` as that call's own keyword, and no
+            # hash anywhere in the call. Each bounded repeat consumes one character, so this is
+            # linear in the window, not the backtracking shape the pattern-safety sweep
+            # (tests/unit/test_pattern_safety.py) exists to catch.
+            #
+            # It used to be any `URL https://` up to the next `)`: `HOMEPAGE_URL` in a
+            # `project()`, `set(JSON_TEST_DATA_URL ...)`, a documentation link in a Find
+            # module, and `GITLAB_URL` in vcpkg's `vcpkg_from_gitlab`, which verifies a SHA512.
+            # It warned on 249 of the long tail's benign units, 160 of them for nothing else (review
+            # 98).
+            r"(?:ExternalProject_Add|FetchContent_Declare)[ \t]{0,8}\("
+            r"(?:(?!URL_HASH)(?!URL_MD5)[^)]){0,500}?(?<![\w$])URL[ \t\r\n]{1,16}[\"']?https?://"
+            r"(?:(?!URL_HASH)(?!URL_MD5)[^)]){0,500}\)"
         ),
         paths=CMAKE_PATHS,
         capabilities=(Capability.EGRESS,),
@@ -2620,6 +2670,24 @@ class ConfigDetector(BaseDetector):
                 f"{rule.message} The file is another analyser's rule material -- a rule "
                 f"set, or a test case annotated for one -- so the shape was written in "
                 f"order to be matched rather than deployed. Reported for the record only."
+            )
+        elif rule.aggravation is not None and (
+            rule.aggravation.search(
+                content.raw
+                if rule.aggravation_in_file
+                else ConfigDetector._window_for(content, rule, match.start(), match.end())
+            )
+            is None
+        ):
+            severity = min(severity, Severity.LOW)
+            message = (
+                f"{rule.message} Nothing in the workflow lets an outside contributor's run write "
+                f"to it -- no `pull_request_target`, `issue_comment` or `workflow_run` trigger -- "
+                f"so it is recorded rather than raised."
+                if rule.aggravation_in_file
+                else f"{rule.message} Nothing near it sends to a destination a pipeline has no "
+                f"business with -- a paste site, a tunnel, a bare IP address -- so it is "
+                f"recorded rather than raised."
             )
         elif mitigated:
             severity = rule.severity.demote()

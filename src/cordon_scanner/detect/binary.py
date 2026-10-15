@@ -302,14 +302,21 @@ FORMATS: tuple[Format, ...] = (
     # already records for source extensions.
 )
 
-PACKERS: tuple[tuple[bytes, str], ...] = (
-    (b"UPX!", "UPX"),
-    (b"$Info: This file is packed with the UPX", "UPX"),
-    (b"PyInstaller", "PyInstaller"),
-    (b"MPRESS", "MPRESS"),
-    (b"Themida", "Themida"),
+PACKERS: tuple[tuple[tuple[bytes, ...], str], ...] = (
+    ((b"UPX!", b"UPX0", b"UPX1"), "UPX"),
+    ((b"$Info: This file is packed with the UPX",), "UPX"),
+    ((b"MEI\x0c\x0b\x0a\x0b\x0e",), "PyInstaller"),
+    ((b".MPRESS1",), "MPRESS"),
+    ((b".MPRESS2",), "MPRESS"),
+    ((b".themida",), "Themida"),
 )
-"""Packer signatures.
+"""Packer signatures: what each packer writes into its output, every part required.
+
+The section names a packer adds (`UPX0`/`UPX1` beside the `UPX!` stamp, `.MPRESS1`, `.themida`)
+and PyInstaller's archive cookie -- not the packer's name as a word. `MPRESS` alone is the middle
+of `COMPRESSED`, and matched in Java classes, Android DEX files and debug symbols: 569 of the long
+tail's benign units carried this finding, nearly all of them for that (review 98). Fourteen of
+4,269 malware samples had it and none was blocked by it alone.
 
 A packed binary is reported as packed and nothing more. Packing has legitimate
 uses -- installers and single-file distributions are packed -- so the finding
@@ -388,6 +395,17 @@ _COMMAND = re.compile(
     rb"(?:/bin/(?:sh|bash)|cmd\.exe|powershell(?:\.exe)?|curl\s+-|wget\s+"
     rb"|chmod\s\+x|crontab\s+-|schtasks\s+/create)"
 )
+_FONT_SIGNATURES: tuple[tuple[tuple[str, ...], bytes, int], ...] = (
+    ((".ttf",), b"\x00\x01\x00\x00", 0),
+    ((".ttf", ".otf"), b"OTTO", 0),
+    ((".ttc",), b"ttcf", 0),
+    ((".woff",), b"wOFF", 0),
+    ((".woff2",), b"wOF2", 0),
+    # Embedded OpenType keeps its magic after a header of lengths and versions.
+    ((".eot",), b"LP", 34),
+)
+"""Font files: the extensions each is stored under, its magic, and where the magic sits."""
+
 _CREDENTIAL_PATH = re.compile(
     rb"(?:\.ssh/id_[a-z0-9_]{1,20}|\.aws/credentials|\.npmrc|\.pypirc|\.docker/config\.json"
     rb"|Login\s?Data|wallet\.dat)"
@@ -664,7 +682,27 @@ class BinaryDetector(BaseDetector):
         if mismatch is None and named is None and not content.is_lfs_pointer and not own_format:
             mismatch = self.binary_source(content.path, judged)
         if mismatch is not None:
-            findings.append(self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch))
+            finding = self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch)
+            if (
+                named is None
+                and self._promises_a_binary_format(content.path)
+                and not self._reads_as_code(judged)
+            ):
+                # The name promises an image, an archive or a document, and the bytes are no
+                # format at all and no code either: a damaged or truncated file, a placeholder,
+                # an encrypted secret named for what it decrypts to. Nothing opens it as the
+                # name says and nothing runs it, so it is recorded. In the long tail these were
+                # test screenshots, `secrets/*.conf.png` and broken fixtures (review 98). A
+                # recognised executable or script under such a name is a disguise and keeps
+                # the declared grade; so does text that reads as code.
+                finding = replace(
+                    finding,
+                    severity=min(finding.severity, Severity.LOW),
+                    message=finding.message
+                    + " Its bytes are no recognised format and do not read as code, so it is "
+                    "recorded rather than raised.",
+                )
+            findings.append(finding)
 
         if found is not None and found.executable and found.name != "shell script":
             findings.extend(self._executable_findings(unit, ctx, content, found))
@@ -689,10 +727,51 @@ class BinaryDetector(BaseDetector):
         # being identified. The file is still not text, still contains whatever
         # it contained, and must not become silent -- so the content checks run
         # on what the bytes actually hold rather than on what the header claims.
-        if self._looks_binary(raw):
+        if self._looks_binary(raw) and not self._is_font(content.path, raw):
             findings.extend(self._content_findings(unit, ctx, content))
 
         return findings
+
+    #: What code looks like when nothing announces its format: a script's opening, a call that
+    #: runs or loads something, a language's markers. Read in the first few kilobytes.
+    _CODE_MARKERS: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?i)<\?php|<script\b|@echo\s+off|\bpowershell\b|cmd(?:\.exe)?\s+/c\b|\beval\s*\("
+        rb"|\bexec\s*\(|\brequire\s*\(|\bimport\s+[\w.]+|\bfunction\s*[\w$]*\s*\("
+        rb"|\b(?:var|const|let)\s+[\w$]+\s*=|\bdef\s+\w+\s*\(|\bInvoke-\w+|\bSet-\w+"
+        rb"|\bWScript\.|\bCreateObject\s*\(|/bin/(?:ba)?sh\b|\bcurl\s+-|\bwget\s+"
+        # What an image or document processor executes: ImageMagick's MVG (ImageTragick), SVG,
+        # HTML, an XML entity declaration, PostScript.
+        rb"|push\s+graphic-context|<svg\b|<html\b|<!doctype\b|<iframe\b|<!ENTITY\b|%!PS"
+    )
+
+    @staticmethod
+    def _reads_as_code(raw: bytes) -> bool:
+        return BinaryDetector._CODE_MARKERS.search(raw[:8192]) is not None
+
+    @staticmethod
+    def _promises_a_binary_format(path: str) -> bool:
+        """The name is an extension one of the non-executable formats is stored under."""
+        name = ContainerPaths.basename(path).lower()
+        _, dot, extension = name.rpartition(".")
+        if not dot:
+            return False
+        promised = next((f for f in FORMATS if f".{extension}" in f.extensions), None)
+        return promised is not None and not promised.executable
+
+    @staticmethod
+    def _is_font(path: str, raw: bytes) -> bool:
+        """A font, by its name and its own magic both: data a text renderer reads, never run.
+
+        An icon font is a table of glyph names -- `terminal`, `console`, `bash` -- beside the
+        foundry's URL, so the strings check read Material Design Icons and VS Code's codicons
+        as a binary holding a URL and a shell command. Both tests, because four bytes of
+        TrueType magic alone would let any blob opt out of the content checks.
+        """
+        name = path.rsplit("!", 1)[-1].lower()
+        for extensions, magic, offset in _FONT_SIGNATURES:
+            if name.endswith(extensions) and raw[offset : offset + len(magic)] == magic:
+                return True
+        return False
 
     @staticmethod
     def _opens_as_php(head: bytes) -> bool:
@@ -925,7 +1004,7 @@ class BinaryDetector(BaseDetector):
             )
 
         yield from self._import_findings(unit, ctx, content, found)
-        yield from self._content_findings(unit, ctx, content)
+        yield from self._content_findings(unit, ctx, content, executable=True)
 
     def _import_findings(
         self, unit: FileUnit, ctx: ScanContext, content: FileContent, found: Format
@@ -952,7 +1031,7 @@ class BinaryDetector(BaseDetector):
             yield finding
 
     def _content_findings(
-        self, unit: FileUnit, ctx: ScanContext, content: FileContent
+        self, unit: FileUnit, ctx: ScanContext, content: FileContent, *, executable: bool = False
     ) -> Iterable[Finding]:
         """What the bytes carry, independent of what the header claims.
 
@@ -963,7 +1042,9 @@ class BinaryDetector(BaseDetector):
         """
         window = content.raw[:MAX_STRINGS_BYTES]
 
-        packer = next((label for signature, label in PACKERS if signature in window), None)
+        packer = next(
+            (label for parts, label in PACKERS if all(part in window for part in parts)), None
+        )
         if packer is not None:
             yield self._finding("SUSPECT.BINARY.PACKED.001", unit, ctx, f"packed with {packer}")
 
@@ -976,7 +1057,14 @@ class BinaryDetector(BaseDetector):
         # they generated. What is worth saying is that a file carries a URL
         # *and* a shell command, or a credential path: a combination a data
         # format has no reason to hold.
-        if len(observed) >= 2:
+        #
+        # A program does have reason to hold a URL and a shell command: its help text links
+        # its homepage and it runs `/bin/sh`. ripgrep, cargo-clippy, PowerShell's own
+        # assemblies and every ad SDK framework do, and in a recognised executable that pair
+        # was the only code warning on 268 of the long tail's benign units (review 98) and
+        # blocked none of 4,269 malware samples. What a program has no reason to name is
+        # someone's credential store, so in an executable that is what it takes.
+        if len(observed) >= 2 and (not executable or "a credential path" in observed):
             yield self._finding(
                 "SUSPECT.BINARY.STRINGS.001",
                 unit,

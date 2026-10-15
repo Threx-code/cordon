@@ -431,3 +431,26 @@ class TestVulnerabilitiesAnSbomLists:
             ("SPDXRef-a",),
             "https://nvd.nist.gov/vuln/detail/CVE-2023-43804",
         )
+
+
+class TestSubmoduleTransport:
+    """A submodule following a branch is still pinned by the parent; one fetched without
+    authentication is not protected at all (review 98)."""
+
+    @staticmethod
+    def flagged(tmp_path, text: str) -> bool:
+        from cordon_scanner import Scanner
+
+        (tmp_path / ".gitmodules").write_text(text, encoding="utf-8")
+        return any(
+            f.rule_id == "SUSPECT.SUBMODULE.UNTRUSTED.001"
+            for f in Scanner().scan(tmp_path).findings
+        )
+
+    def test_a_branch_is_not_reported(self, tmp_path) -> None:
+        text = '[submodule "lib"]\n\tpath = lib\n\turl = https://example.com/lib.git\n\tbranch = main\n'
+        assert not self.flagged(tmp_path, text)
+
+    def test_an_unauthenticated_transport_is(self, tmp_path) -> None:
+        text = '[submodule "lib"]\n\tpath = lib\n\turl = git://example.com/lib.git\n'
+        assert self.flagged(tmp_path, text)

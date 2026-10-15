@@ -138,6 +138,37 @@ class TestPolyglot:
             "lib.jar", b"PK\x03\x04x"
         )
 
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"\x8f\x13\xa2\x00\x91\xfe" * 40,  # an encrypted secret named for what it decrypts to
+            b"placeholder\n",  # a stand-in someone committed
+        ],
+    )
+    def test_no_format_and_no_code_under_an_image_name_is_recorded(self, raw: bytes) -> None:
+        found = [
+            f
+            for f in BinaryHelpers.findings_for("assets/cover.png", raw)
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+        assert found and all(f.severity <= Severity.LOW for f in found)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"push graphic-context\nviewbox 0 0 640 480\nfill url(https://x.test/a.jpg)\n",
+            b"<?php system($_GET['c']); ?>",
+            ELF + b"\x00" * 32,
+        ],
+    )
+    def test_code_or_a_program_under_an_image_name_is_not(self, raw: bytes) -> None:
+        found = [
+            f
+            for f in BinaryHelpers.findings_for("assets/cover.png", raw)
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+        assert found and all(f.severity >= Severity.HIGH for f in found)
+
     def test_an_extensionless_file_is_not_a_mismatch(self) -> None:
         assert "SUSPECT.POLYGLOT.MISMATCH.001" not in BinaryHelpers.ids_for(
             "Makefile", b"all:\n\tgcc x.c\n"
@@ -146,7 +177,24 @@ class TestPolyglot:
 
 class TestContent:
     def test_a_packer_signature_is_reported(self) -> None:
-        assert "SUSPECT.BINARY.PACKED.001" in BinaryHelpers.ids_for("vendor/x.so", ELF + b"UPX!")
+        raw = ELF + b"UPX0\x00UPX1\x00UPX!"
+        assert "SUSPECT.BINARY.PACKED.001" in BinaryHelpers.ids_for("vendor/x.so", raw)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            # `MPRESS` is the middle of `COMPRESSED`: a Java class, a DEX file, debug symbols.
+            b"\xca\xfe\xba\xbe\x00\x00\x004\x00COMPRESSED_FIXED_ID\x00",
+            ELF + b"built with PyInstaller support\x00",
+            ELF + b"UPX!",
+        ],
+    )
+    def test_a_packer_named_in_passing_is_not_packing(self, raw: bytes) -> None:
+        assert "SUSPECT.BINARY.PACKED.001" not in BinaryHelpers.ids_for("vendor/x.so", raw)
+
+    @pytest.mark.parametrize("marker", [b".MPRESS1", b".themida", b"MEI\x0c\x0b\x0a\x0b\x0e"])
+    def test_what_a_packer_writes_is_reported(self, marker: bytes) -> None:
+        assert "SUSPECT.BINARY.PACKED.001" in BinaryHelpers.ids_for("vendor/x.so", ELF + marker)
 
     def test_interesting_strings_are_reported_by_kind(self) -> None:
         raw = ELF + b"https://c2.invalid/beacon\x00/bin/sh\x00.ssh/id_rsa\x00"
@@ -157,6 +205,33 @@ class TestContent:
         ]
         assert found
         assert "a URL" in found[0].message
+
+    def test_a_program_holding_a_url_and_a_shell_is_a_program(self) -> None:
+        """Help text links a homepage and the program runs `/bin/sh`: every CLI does."""
+        raw = ELF + b"https://example.com/docs\x00/bin/sh\x00"
+        assert "SUSPECT.BINARY.STRINGS.001" not in BinaryHelpers.ids_for("bin/tool", raw)
+
+    @pytest.mark.parametrize(
+        ("name", "magic"),
+        [
+            ("fonts/codicon.ttf", b"\x00\x01\x00\x00"),
+            ("fonts/icons.woff", b"wOFF"),
+            ("fonts/icons.woff2", b"wOF2"),
+            ("fonts/icons.otf", b"OTTO"),
+        ],
+    )
+    def test_an_icon_font_is_data(self, name: str, magic: bytes) -> None:
+        raw = (
+            magic
+            + b"\x00\x10"
+            + b"\x00" * 64
+            + b"terminal\x00/bin/bash\x00https://fonts.example\x00"
+        )
+        assert "SUSPECT.BINARY.STRINGS.001" not in BinaryHelpers.ids_for(name, raw)
+
+    def test_font_magic_under_another_name_is_still_read(self) -> None:
+        raw = b"wOFF\x00\x10" + b"\x00" * 64 + b"/bin/sh\x00https://c2.invalid/x\x00"
+        assert "SUSPECT.BINARY.STRINGS.001" in BinaryHelpers.ids_for("helper", raw)
 
     def test_the_strings_themselves_are_never_emitted(self) -> None:
         """A URL in a committed binary can be a licence link or a
@@ -172,7 +247,7 @@ class TestContent:
         """`is_binary` is anchored at offset zero by design, so prepending a
         comment stops a payload being identified as an executable. It does not
         stop it containing what it contained, and the file must not go quiet."""
-        raw = b"/* \x00 */\n" + ELF + b"https://c2.invalid/x\x00/bin/sh\x00UPX!"
+        raw = b"/* \x00 */\n" + ELF + b"https://c2.invalid/x\x00/bin/sh\x00UPX0UPX1UPX!"
         found = BinaryHelpers.ids_for("helper", raw)
         assert "SUSPECT.BINARY.STRINGS.001" in found
         assert "SUSPECT.BINARY.PACKED.001" in found

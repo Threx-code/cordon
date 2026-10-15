@@ -1384,13 +1384,17 @@ class ManifestDetector(BaseDetector):
                     # source was read here as install-time code and graded on what it does, so the
                     # manifest adds only that a hook exists. Raised at MEDIUM it was the only code
                     # warning on 9,352 of 234,509 benign units (review 98) and changed no verdict.
+                    # An author-time hook is recorded too: npm never fires it for a registry
+                    # install, and the git-dependency case is `SUSPECT.DEPENDENCY.SOURCE.001`'s.
+                    # At MEDIUM, `prepare: tsdx build` and `prepublish: npm run build` were most of
+                    # what remained of this warning in the long tail (review 98).
                     severity=min(
                         (Severity.LOW if readable else Severity.HIGH)
                         if vendored
                         else Severity.LOW
                         if in_tree
                         else Severity.MEDIUM,
-                        Severity.MEDIUM
+                        Severity.LOW
                         if hook.name.lower() in AUTHOR_TIME_HOOKS
                         else Severity.CRITICAL,
                     ),

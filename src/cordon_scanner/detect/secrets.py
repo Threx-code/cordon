@@ -2323,6 +2323,11 @@ DOCUMENTATION_PATHS = (
     "**/README*",
     "**/CHANGELOG*",
     "**/CONTRIBUTING*",
+    # A Python distribution's metadata: its headers, then its README as the long description.
+    # `curl -LsSf https://astral.sh/uv/install.sh | sh` there is an install instruction in the
+    # README, and nothing runs the file (review 98).
+    "**/PKG-INFO",
+    "**/*.dist-info/METADATA",
     "**/*.example",
     "**/*.example.*",
     "**/*.sample",

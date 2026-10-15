@@ -432,7 +432,9 @@ rules:
         # `home + "/.profile"` -- and the JavaScript rule has recorded this since the
         # corpus first measured it.
         - '\.bashrc|\.bash_profile|\.zshrc|[/~]\.profile(?![\w-])'
-        - 'crontab\b|/etc/cron'
+        # Not a package name: `python-crontab` in `install_requires` is a dependency, and
+        # `docker-cron` and `pibackup` were blocked for declaring it (review 98).
+        - '(?<![\w-])crontab\b(?!-)|/etc/cron'
         - 'LaunchAgents|LaunchDaemons'
         # And NOT a bare `.service`, for the reason the JavaScript rule gives about
         # `x.service.ts`: it is also how a name ends. `odoo` declares
