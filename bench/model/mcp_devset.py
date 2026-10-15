@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from mcp_poisoning import McpSafetyBench, McpTox
 
+from cordon_scanner.detect.agent_semantics import TRAILER
 from cordon_scanner.detect.agents import _MCP_SDK, _SERVER_SOURCE_SUFFIXES, McpServerSource
 
 MEMBER_LIMIT = 1_500_000
@@ -79,9 +80,10 @@ class McpDevset:
     def mcptox(cls, public: Path) -> Iterator[dict]:
         root = public / McpTox.DIRECTORY
         for case in McpTox.poisoned(root):
-            yield cls.row(
-                "mcptox", "mcptox", case["server"], "", 1, "description", case["description"]
-            )
+            # The benchmark renders each poisoned tool with an `Arguments:` list its legitimate
+            # tools lack: a format a word model would learn instead of the attack.
+            text = TRAILER.sub("", case["description"])
+            yield cls.row("mcptox", "mcptox", case["server"], "", 1, "description", text)
         for case in McpTox.legitimate(root):
             yield cls.row(
                 "mcptox-legit", "mcptox", case["server"], "", 0, "description", case["description"]

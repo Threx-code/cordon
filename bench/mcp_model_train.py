@@ -60,10 +60,10 @@ class McpModelTrainer:
                         np.asarray(indices, dtype=np.int32),
                         np.asarray(pointers, dtype=np.int64),
                     ),
-                    shape=(len(pointers) - 1, mcp_model.BUCKETS),
+                    shape=(len(pointers) - 1, mcp_model.FEATURES),
                 )
             )
-        return vstack(chunks, format="csr") if chunks else csr_matrix((0, mcp_model.BUCKETS))
+        return vstack(chunks, format="csr") if chunks else csr_matrix((0, mcp_model.FEATURES))
 
     @staticmethod
     def per_group(rows: list[dict], scores) -> list[float]:

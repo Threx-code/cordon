@@ -32,7 +32,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from cordon_scanner.detect.mcp_model import BUCKETS, McpDescriptionModel
+from cordon_scanner.detect.mcp_model import FEATURES, McpDescriptionModel
 
 
 class McpCrossVal:
@@ -50,7 +50,7 @@ class McpCrossVal:
             data.extend(features.values())
             indptr.append(len(indices))
         return csr_matrix(
-            (np.array(data, dtype=np.float32), indices, indptr), shape=(len(rows), BUCKETS)
+            (np.array(data, dtype=np.float32), indices, indptr), shape=(len(rows), FEATURES)
         )
 
     @staticmethod
@@ -116,7 +116,7 @@ class McpCrossVal:
                 "thresholds": {k: list(v) for k, v in thresholds.items()},
                 "calibration": {"fold": name},
                 "trained_on": sorted({r["source"] for r in train}),
-                "features": "word 1-3 grams + channel, crc32 mod 2^18, L2 (detect/mcp_model.py)",
+                "features": "word 1-3 grams + channel, crc32 mod 2^18, L2; agent_semantics slots (detect/mcp_model.py)",
             }
             with gzip.open(
                 args.out / f"{name.replace(':', '-')}.json.gz", "wt", encoding="utf-8"

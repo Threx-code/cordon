@@ -32,6 +32,8 @@ from typing import Any, ClassVar, Final
 MODEL_PATH: Final = Path(__file__).parent / "data" / "mcp-descriptions.json.gz"
 SKILL_MODEL_PATH: Final = Path(__file__).parent / "data" / "skill-instructions.json.gz"
 BUCKETS: Final = 1 << 18
+FEATURES: Final = BUCKETS + 64
+"""Word buckets, then reserved slots for `agent_semantics` (it uses fewer than 64)."""
 MAX_TEXT: Final = 8_000
 """A description longer than this is scored on its first part: none in either corpus is."""
 MAX_SKILL_TEXT: Final = 40_000
@@ -46,9 +48,13 @@ class LinearTextModel:
 
     NGRAMS: ClassVar[tuple[int, ...]] = (1, 2, 3)
 
-    def __init__(self, path: Path, limit: int) -> None:
+    def __init__(self, path: Path, limit: int, *, semantic: bool = False) -> None:
         self.path = path
         self.limit = limit
+        # Tool text also carries what it asks the agent to do (`agent_semantics`), in fixed slots
+        # after the word buckets. Skill instructions are orders to the agent by design, so the
+        # skill model does not read them this way.
+        self.semantic = semantic
 
     def features(self, text: str, channel: str) -> dict[int, float]:
         """Hashed, L2-normalised counts of the text's word 1- to 3-grams, and its channel."""
@@ -60,7 +66,14 @@ class LinearTextModel:
                 index = zlib.crc32(gram.encode("utf-8")) % BUCKETS
                 counts[index] = counts.get(index, 0.0) + 1.0
         norm = math.sqrt(sum(v * v for v in counts.values())) or 1.0
-        return {k: v / norm for k, v in counts.items()}
+        features = {k: v / norm for k, v in counts.items()}
+        if self.semantic:
+            from cordon_scanner.detect.agent_semantics import SCALE, AgentSemantics
+
+            for slot, value in enumerate(AgentSemantics.vector(text[: self.limit])):
+                if value:
+                    features[BUCKETS + slot] = value * SCALE
+        return features
 
     @functools.cached_property
     def model(self) -> dict[str, Any] | None:
@@ -93,7 +106,7 @@ class LinearTextModel:
         return float(block), float(warn)
 
 
-MCP_MODEL: Final = LinearTextModel(MODEL_PATH, MAX_TEXT)
+MCP_MODEL: Final = LinearTextModel(MODEL_PATH, MAX_TEXT, semantic=True)
 SKILL_MODEL: Final = LinearTextModel(SKILL_MODEL_PATH, MAX_SKILL_TEXT)
 
 
