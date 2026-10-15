@@ -1084,13 +1084,25 @@ CONSUMER_TIME_HOOKS = frozenset({"preinstall", "install", "postinstall"})
 These run on every machine that ever installs the package, transitively, as the user,
 with no review in between. `postinstall` is the npm attack shape."""
 
-AUTHOR_TIME_HOOKS = frozenset({"prepare", "prepublish", "prepack", "prepublishonly"})
+AUTHOR_TIME_HOOKS = frozenset(
+    {
+        "prepare",
+        "prepublish",
+        "prepack",
+        "prepublishonly",
+        "postpack",
+        "postpublish",
+        "dependencies",
+    }
+)
 """Lifecycle names that run on the AUTHOR's machine rather than on a consumer's.
 
 npm has documented the difference since version 7. `prepare` runs on a local install in
 the package's own directory and before `npm pack`; the publish hooks run only while
 publishing. None of them fires for a package installed from a registry tarball, which is
-how every transitive dependency arrives.
+how every transitive dependency arrives. `postpack` runs beside `prepack`, `postpublish` after a
+publish, and `dependencies` when the author's own `node_modules` changes; graded as consumer
+hooks, `postpack` scripts were what blocked two benign MCP servers (review 98).
 
 Read in two places, and the second one took a further pass to find. The manifest detector
 grades `SUSPECT.INSTALL.SCRIPT.001` by it; the engine excludes the SCRIPT THESE NAME from

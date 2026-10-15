@@ -242,6 +242,72 @@ ASSIGNED_NAME = re.compile(r"[A-Za-z_]\w{0,60}=")
 LOCAL_BIN = re.compile(r"^(?:\./)?node_modules/\.bin/")
 """`./node_modules/.bin/bower install` is `bower install`, as npm puts that directory on PATH."""
 
+TOOL_PACKAGES: dict[str, tuple[str, ...]] = {
+    "tsc": ("typescript",),
+    "coffee": ("coffee-script", "coffeescript"),
+    "jetify": ("jetifier",),
+    "ts-patch": ("ts-patch",),
+}
+"""Commands whose package is named otherwise. Elsewhere a command is its package's name, or the
+name after the scope (`@gov.au/pancake` provides `pancake`)."""
+
+RUNNERS = frozenset(
+    {
+        "node",
+        "nodejs",
+        "bun",
+        "deno",
+        "tsx",
+        "ts-node",
+        "esno",
+        "sh",
+        "bash",
+        "zsh",
+        "dash",
+        "python",
+        "python3",
+        "ruby",
+        "perl",
+        "php",
+        "pwsh",
+        "powershell",
+        "env",
+        "sudo",
+        "exec",
+        "npx",
+        "npm",
+        "pnpm",
+        "yarn",
+        "bunx",
+        "cmd",
+        "eval",
+        "source",
+    }
+)
+"""Commands that run whatever they are handed: never a tool's own work, whatever package shares
+the name."""
+
+OWN_INSTALL = re.compile(
+    r"(?:npm\s+(?:install|i|ci)|pnpm\s+(?:install|i)|yarn(?:\s+install)?)(?:\s+--?[\w-]{1,40}(?:=[\w.-]{1,80})?){0,6}"
+)
+"""Installing the package's own declared dependencies, with flags only: what it fetches is what
+the manifest already declares, each graded as a dependency. `npm install <name>` is not this."""
+
+INSIDE_PATH = r"(?![/~$\\])(?!.*\.\.)[\w./@-]{1,90}"
+FILE_OP_INSIDE = re.compile(
+    rf"(?:touch|cat|rm(?:\s+-[rfvR]{{1,4}})?|mkdir(?:\s+-p)?"
+    rf"|chmod\s+(?:[0-7]{{3,4}}|[ugoa]{{0,4}}[-+=][rwxX]{{1,4}}))"
+    rf"(?:\s+{INSIDE_PATH}){{1,10}}"
+)
+"""Creating a file or directory, or changing a mode, inside the package: it runs nothing; a later
+step that runs what it made is judged on its own."""
+
+INERT_ONE_LINER = re.compile(r"(?:node|nodejs|python3?)\s{1,4}(?:-e|-c)\s{1,4}''")
+"""A one-liner whose program `_prints_only` found to only talk or exit, after its program was blanked."""
+
+REDIRECT_OUTSIDE = re.compile(r"\$\(|`|<\(|>\s{0,4}[/~$]")
+"""A substitution, or output written outside the package: what makes a tool's run more than itself."""
+
 NPX_FLAGS = frozenset({"--yes", "-y", "--no-install"})
 """Flags npx takes before the tool it runs."""
 
@@ -410,7 +476,13 @@ class ManifestScripts:
         would have been defeated in one move. `npm run X` is judged by what script `X` runs,
         three levels deep at most; a tool is judged by where its package comes from.
         """
-        parts = [p.strip() for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip()]
+        if ManifestScripts._prints_only(command):
+            # The program a `-e` would be split inside of; already judged to only talk.
+            command = ONE_LINER_PROGRAM.sub(lambda m: m.group(0)[:2] + " ''", command)
+        parts = [p.strip(" ()") for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip(" ()")]
+        while len(parts) > 1 and re.fullmatch(r"cd\s+\.\.(?:/\.\.){0,4}/?", parts[-1]):
+            # `cd client && npm install && cd ..`: a last step that only returns runs nothing.
+            parts.pop()
         if not parts:
             return False
         return all(
@@ -430,8 +502,17 @@ class ManifestScripts:
         tokens = part.split()
         if tokens and tokens[0] == "npx":
             rest = " ".join(t for t in tokens[1:] if t not in NPX_FLAGS)
-            if any(rest == t or rest.startswith(f"{t} ") for t in SAFE_TOOLS):
+            if any(
+                rest == t or rest.startswith(f"{t} ") for t in SAFE_TOOLS
+            ) or ManifestScripts._popular_tool(rest, declared):
                 return ManifestScripts._safe_part(rest, scripts, declared, depth)
+        if (
+            OWN_INSTALL.fullmatch(part)
+            or FILE_OP_INSIDE.fullmatch(part)
+            or INERT_ONE_LINER.fullmatch(part)
+            or ManifestScripts._popular_tool(part, declared)
+        ):
+            return True
         if (
             len(tokens) >= 3
             and tokens[0] == "rm"
@@ -585,6 +666,35 @@ class ManifestScripts:
         except ValueError:
             return False
         return isinstance(data, dict) and data.get("private") is True
+
+    @staticmethod
+    def _popular_tool(part: str, declared: dict[str, str]) -> bool:
+        """Whether `part` runs the command of a popular package this manifest declares from the
+        registry: `gulp`, `webpack src/web.js > build/out.js`, `tsc`, `umi generate tmp`.
+
+        What runs is that package's published code, which is read where it is installed. Popular,
+        because declaring a package is what an attacker controls: `bitcoin-main-lib` ran
+        `postinstall: bip40`, the bin of a malicious dependency it declared (review 98). Measured
+        on the benign long tail, 9 of 23 published packages blocked on an install hook ran a build
+        tool this way.
+        """
+        from cordon_scanner.intel.real import RealPackages
+
+        command = part.split(maxsplit=1)[0] if part.strip() else ""
+        if not command or command in RUNNERS or REDIRECT_OUTSIDE.search(part):
+            # An interpreter runs whatever file it is handed: `vant`'s compromised releases ran
+            # `node lib/utils/support.js`, and `@types/node` is a popular package named `node`
+            # after its scope.
+            return False
+        popular = RealPackages.real_packages("npm")
+        named = TOOL_PACKAGES.get(command, ())
+        return any(
+            (name in named or name.rpartition("/")[2] == command)
+            and not name.startswith("@types/")
+            and name in popular
+            and not GENUINE_SPEC.match(spec)
+            for name, spec in declared.items()
+        )
 
     @staticmethod
     def _only_prints(part: str) -> bool:
@@ -1323,10 +1433,14 @@ class ManifestDetector(BaseDetector):
             # Case-insensitively, because npm spells one of them `prepublishOnly`.
             install_time = hook.name.lower() in INSTALL_TIME_HOOKS
             if not capabilities:
-                if not install_time or ManifestScripts._is_safe_lifecycle(
-                    command, scripts, declared
+                # A step whose one-liner only prints is safe to run, and still a hook that runs:
+                # recorded below the gate rather than dropped.
+                talks = ManifestScripts._prints_only(command)
+                if not install_time or (
+                    not talks and ManifestScripts._is_safe_lifecycle(command, scripts, declared)
                 ):
                     continue
+                talks = talks and ManifestScripts._is_safe_lifecycle(command, scripts, declared)
                 # An install-time script that is not a recognised build step.
                 # Reported for existing, rather than for containing a word from
                 # a list: `node ./scripts/setup.js` matched no hostile substring
@@ -1395,7 +1509,7 @@ class ManifestDetector(BaseDetector):
                         if in_tree
                         else Severity.MEDIUM,
                         Severity.LOW
-                        if hook.name.lower() in AUTHOR_TIME_HOOKS
+                        if talks or hook.name.lower() in AUTHOR_TIME_HOOKS
                         else Severity.CRITICAL,
                     ),
                     confidence=Confidence.MEDIUM,

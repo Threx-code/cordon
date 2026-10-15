@@ -4951,7 +4951,8 @@ class TestAPackageManagerTestsItsOwnInstaller:
     One of them declares `prepare`, `preinstall`, `install` and `postinstall`, each
     running `node -e "console.log('install')"` so the test can assert the order they
     fire in. Sixteen HIGH findings across four fixtures, every one of them about input
-    to a test.
+    to a test. A hook that only prints is no longer reported anywhere, so the fixture here
+    loads a helper instead, which is still a hook that does something.
 
     The manifest detector was the last one without the fixture ceiling, on the
     assumption that a manifest is never test material. A package manager's test suite is
@@ -4963,10 +4964,10 @@ class TestAPackageManagerTestsItsOwnInstaller:
         b'  "name": "with-many-scripts",\n'
         b'  "version": "1.0.0",\n'
         b'  "scripts": {\n'
-        b'    "prepare": "node -e \\"console.log(\'prepare\')\\"",\n'
-        b'    "preinstall": "node -e \\"console.log(\'preinstall\')\\"",\n'
-        b'    "install": "node -e \\"console.log(\'install\')\\"",\n'
-        b'    "postinstall": "node -e \\"console.log(\'postinstall\')\\""\n'
+        b'    "prepare": "node -e \\"require(\'./log\')(\'prepare\')\\"",\n'
+        b'    "preinstall": "node -e \\"require(\'./log\')(\'preinstall\')\\"",\n'
+        b'    "install": "node -e \\"require(\'./log\')(\'install\')\\"",\n'
+        b'    "postinstall": "node -e \\"require(\'./log\')(\'postinstall\')\\""\n'
         b"  }\n"
         b"}\n"
     )
