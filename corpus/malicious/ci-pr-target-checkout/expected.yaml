@@ -13,3 +13,4 @@ must_find:
     path: .github/workflows/build.yml
     min_severity: high
     category: suspicious
+hardening: true

@@ -5,3 +5,4 @@ must_find:
   - rule: SUSPECT.K8S.RBAC_WILDCARD.001
     min_severity: high
     category: suspicious
+hardening: true

@@ -4,5 +4,5 @@ description: >
 must_find:
   - rule: SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001
     path: serve/model.py
-    min_severity: medium
+    min_severity: low  # an unsafe load option is recorded, not warned (review 98): the load itself is graded where it runs
     category: suspicious

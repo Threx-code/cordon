@@ -14,3 +14,4 @@ must_find:
     category: suspicious
 must_not_find:
   - rule: SUSPECT.CI.PR_TARGET.001
+hardening: true

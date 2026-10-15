@@ -7,3 +7,4 @@ must_find:
     min_severity: critical
     category: malicious
 must_not_leak_evidence: true
+hardening: true
