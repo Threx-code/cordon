@@ -439,6 +439,24 @@ class ImageLayers:
             descriptor = manifests[0]
         raise ValueError("the OCI layout names no image manifest")
 
+    #: Stream magics a layer is compressed with: gzip, zstd, bzip2, xz.
+    _LAYER_MAGICS: ClassVar[tuple[bytes, ...]] = (
+        b"\x1f\x8b",
+        b"\x28\xb5\x2f\xfd",
+        b"BZh",
+        b"\xfd7zXZ\x00",
+    )
+
+    @staticmethod
+    def _is_archive(raw: IO[bytes]) -> bool:
+        """Whether a layer blob is a (compressed) tar at all, read from its first bytes only."""
+        head = raw.read(512)
+        raw.seek(0)
+        if any(head.startswith(magic) for magic in ImageLayers._LAYER_MAGICS):
+            return True
+        # An uncompressed tar: `ustar` at offset 257, or an empty archive of zero blocks.
+        return head[257:262] == b"ustar" or (len(head) == 512 and not head.strip(b"\x00"))
+
     @staticmethod
     def _open_layer(raw: IO[bytes]) -> tarfile.TarFile:
         head = raw.read(4)
@@ -451,17 +469,36 @@ class ImageLayers:
 
     @staticmethod
     def _zstd_reader(raw: IO[bytes]) -> IO[bytes]:
-        """A zstd decompressor from the standard library, which has one from Python 3.14."""
-        try:
-            import importlib
+        """A zstd decompressor: the standard library's (Python 3.14+), else the `zstandard` package
+        if installed, else the core's own decoder (`intel/zstd`), as conda packages are read. The
+        shipped image runs Python 3.11, where every zstd layer was left unread (review 98)."""
+        import importlib
 
+        try:
             zstd = importlib.import_module("compression.zstd")
-        except ImportError as exc:
+            reader: IO[bytes] = zstd.ZstdFile(raw)
+            return reader
+        except ImportError:
+            pass
+        try:
+            zstandard = importlib.import_module("zstandard")
+            stream: IO[bytes] = zstandard.ZstdDecompressor().stream_reader(raw)
+            return stream
+        except ImportError:
+            pass
+        from cordon_scanner.intel.zstd import Zstd
+
+        blob = raw.read(ImageLayers.MAX_ZSTD_LAYER + 1)
+        if len(blob) > ImageLayers.MAX_ZSTD_LAYER:
             raise ValueError(
-                "zstd-compressed layer; reading one needs Python 3.14 or later"
-            ) from exc
-        reader: IO[bytes] = zstd.ZstdFile(raw)
-        return reader
+                "zstd-compressed layer too large for the built-in decoder; install `zstandard` "
+                "or run on Python 3.14"
+            )
+        return io.BufferedReader(Zstd.Reader(blob, ImageLayers.MAX_ZSTD_OUTPUT))
+
+    #: The built-in decoder holds a compressed layer in memory and is pure Python.
+    MAX_ZSTD_LAYER: ClassVar[int] = 128 * 1024 * 1024
+    MAX_ZSTD_OUTPUT: ClassVar[int] = 1024 * 1024 * 1024
 
     @staticmethod
     def _apply_layer(
@@ -561,6 +598,12 @@ class ImageLayers:
                         inventory.problems.append(
                             f"layer {posixpath.basename(name)} could not be opened"
                         )
+                    continue
+                if not ImageLayers._is_archive(handle):
+                    # An OCI artifact's blob -- an attestation, an SBOM, a JSON document listed
+                    # as a layer -- holds no filesystem, so nothing of the OS inventory is in it.
+                    # Counted as unread, it scored 233 of 650 benign images "not fully examined"
+                    # for a 600-byte JSON file (review 98).
                     continue
                 try:
                     with ImageLayers._open_layer(handle) as layer:

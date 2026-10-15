@@ -53,6 +53,15 @@ class ImageKit:
         if compress == "gzip":
             return gzip.compress(raw)
         if compress == "zstd":
+            # A real zstd frame of raw (stored) blocks: single segment, a 4-byte content size,
+            # no checksum. Every decoder reads it; nothing here needs a zstd library.
+            frame = b"\x28\xb5\x2f\xfd" + bytes([0xA0]) + len(raw).to_bytes(4, "little")
+            chunks = [raw[i : i + 65536] for i in range(0, len(raw), 65536)] or [b""]
+            for index, chunk in enumerate(chunks):
+                last = int(index == len(chunks) - 1)
+                frame += ((len(chunk) << 3) | last).to_bytes(3, "little") + chunk
+            return frame
+        if compress == "zstd-corrupt":
             return b"\x28\xb5\x2f\xfd" + raw
         return raw
 

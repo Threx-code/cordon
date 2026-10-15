@@ -114,11 +114,18 @@ class TestLayers:
         [package] = oci.ImageLayers.read_image(image).packages
         assert (package.advisory_name, package.version) == ("openssl", "3.1.4-r0")
 
-    def test_a_zstd_layer_is_reported_not_skipped(self) -> None:
+    def test_a_zstd_layer_is_read(self) -> None:
+        """On every Python: the built-in decoder reads it where `compression.zstd` is missing."""
         inventory = oci.ImageLayers.read_image(
             ImageKit.docker_save([ImageKit.layer({STATUS: b""}, compress="zstd")])
         )
-        assert any("zstd" in p for p in inventory.problems)
+        assert not inventory.problems
+
+    def test_a_corrupt_zstd_layer_is_reported_not_skipped(self) -> None:
+        inventory = oci.ImageLayers.read_image(
+            ImageKit.docker_save([ImageKit.layer({STATUS: b""}, compress="zstd-corrupt")])
+        )
+        assert any("was not read" in p for p in inventory.problems)
 
     def test_an_unreadable_legacy_rpm_database_is_reported_not_guessed(self) -> None:
         inventory = oci.ImageLayers.read_image(
@@ -508,14 +515,11 @@ class TestWhatTheImageAdds:
         [hit] = [f for f in result.findings if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"]
         assert hit.location.path == "app/node_modules/event-stream/package.json"
 
-    def test_zstd_layers_are_reported_where_python_cannot_read_them(self) -> None:
-        import sys
-
+    def test_zstd_layers_are_read_without_python_3_14(self) -> None:
         inventory = oci.ImageLayers.read_image(
             ImageKit.docker_save([ImageKit.layer({STATUS: b""}, compress="zstd")])
         )
-        if sys.version_info < (3, 14):
-            assert any("zstd" in p and "3.14" in p for p in inventory.problems)
+        assert not [p for p in inventory.problems if "zstd" in p]
 
 
 class TestAPackageTarballIsNotAnImage:
