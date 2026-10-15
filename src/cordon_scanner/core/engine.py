@@ -1365,7 +1365,11 @@ class Engine:
             )
         )
 
-        findings = tuple(Engine._test_identity_keys(list(findings), units))
+        findings = tuple(
+            Engine._hardening_tier(
+                Engine._test_identity_keys(list(findings), units), self.config.policy
+            )
+        )
         dependencies = self._annotated(dependencies, findings, ctx, units)
         result = ScanResult(
             findings=findings,

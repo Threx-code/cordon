@@ -72,3 +72,15 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the shared fixtures. pytest finds hooks only as module-level functions
     in a conftest, so this one function stays one; everything else is a class."""
     config.pluginmanager.register(SharedFixtures(), "cordon-shared-fixtures")
+
+
+@pytest.fixture
+def hardening(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report the hardening tier at full severity, as `--hardening` does.
+
+    The CI, container and infrastructure rules' own tests check what each rule reports; by
+    default the engine records those domains at LOW (`Policy.hardening`), which is the tier's
+    behaviour and has its own tests (`test_hardening_tier.py`)."""
+    from cordon_scanner.core.engine import Engine
+
+    monkeypatch.setattr(Engine, "_hardening_tier", staticmethod(lambda findings, policy: findings))

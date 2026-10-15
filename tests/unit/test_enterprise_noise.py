@@ -650,6 +650,7 @@ class TestTheRemediationIsNotTheFinding:
         assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
+@pytest.mark.usefixtures("hardening")
 class TestPublishingIsNotExfiltration:
     """A named secret beside a network call is how a pipeline publishes a
     release and how one steals a token. Reported as critical and malicious, it
@@ -739,6 +740,7 @@ class TestPublishingIsNotExfiltration:
         assert "SUSPECT.CI.SECRET_EGRESS.001" not in EnterpriseNoiseHelpers.flagged(root)
 
 
+@pytest.mark.usefixtures("hardening")
 class TestCachePoisoningNeedsAnUntrustedTrigger:
     RELEASE = (
         "on:\n  {trigger}\njobs:\n  release:\n    steps:\n"

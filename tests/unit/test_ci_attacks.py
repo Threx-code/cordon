@@ -28,6 +28,7 @@ class CiAttacksHelpers:
         return CiAttacksHelpers.rules_for(root, ".github/workflows/ci.yml", body)
 
 
+@pytest.mark.usefixtures("hardening")
 class TestAForkOnASelfHostedRunner:
     RULE = "SUSPECT.CI.SELF_HOSTED_FORK.001"
 
