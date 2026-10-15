@@ -1376,14 +1376,17 @@ class Engine:
             )
         )
 
-        findings = tuple(
+        graded, verdict = Engine._package_verdict(
             Engine._hardening_tier(
                 Engine._test_identity_keys(list(findings), units), self.config.policy
-            )
+            ),
+            units,
         )
+        findings = tuple(graded)
         dependencies = self._annotated(dependencies, findings, ctx, units)
         result = ScanResult(
             findings=findings,
+            verdict=verdict,
             repository=inventory,
             dependencies=dependencies,
             sources=Engine._configured_sources(units),
@@ -1812,12 +1815,16 @@ class Engine:
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
 
-        acc.findings[:] = Engine._hardening_tier(
-            Engine._test_identity_keys(acc.findings, units), self.config.policy
+        acc.findings[:], verdict = Engine._package_verdict(
+            Engine._hardening_tier(
+                Engine._test_identity_keys(acc.findings, units), self.config.policy
+            ),
+            units,
         )
         dependencies = self._annotated(dependencies, acc.findings, ctx, units)
         result = ScanResult(
             findings=tuple(acc.findings),
+            verdict=verdict,
             dependencies=dependencies,
             repository=Repository(root=str(path), file_count=acc.files_scanned),
             target_kind=target_kind,
@@ -3588,6 +3595,24 @@ class Engine:
                 )
             out.append(finding)
         return out
+
+    #: Manifests the verdict reads for package context, by file name.
+    _VERDICT_MANIFESTS: ClassVar[tuple[str, ...]] = ("package.json", "setup.py")
+
+    @staticmethod
+    def _package_verdict(
+        findings: list[Finding], units: Sequence[FileUnit]
+    ) -> tuple[list[Finding], dict[str, Any]]:
+        """The package verdict over everything this scan found (`core/verdict.py`)."""
+        from cordon_scanner.core.verdict import Verdict
+
+        paths_sizes = [(u.path, u.content.size) for u in units]
+        manifests = {
+            u.path: u.content.raw[:1_000_000]
+            for u in units
+            if u.path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] in Engine._VERDICT_MANIFESTS
+        }
+        return Verdict.decide(list(findings), paths_sizes, manifests)
 
     @staticmethod
     def _hardening_tier(findings: list[Finding], policy: Policy) -> list[Finding]:

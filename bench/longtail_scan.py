@@ -135,6 +135,9 @@ class LongtailScan:
             # was not fully examined must never be scored as a clean one (review 98, phase 0).
             rec["content_complete"] = rep.get("content_complete")
             rec["advisory_complete"] = rep.get("advisory_complete")
+            # The package verdict's features and score, read by the same code that produced them:
+            # the training data for `core/verdict.py` is what scans report.
+            rec["verdict"] = rep.get("verdict")
             rec["findings"] = [
                 [
                     f["rule_id"],

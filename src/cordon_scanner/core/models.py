@@ -1596,6 +1596,9 @@ class ScanResult:
     archive, read layer by layer), ``package`` (a published package's distribution archive),
     ``archive`` (any other archive), ``sbom`` (a bill of materials it was given) or ``host`` (an
     installed system, `scan --host`). Sent with an upload so the console can tell them apart."""
+    verdict: dict[str, Any] | None = None
+    """The package verdict (`core/verdict.py`): the features it read and, with a model shipped, its
+    score and thresholds."""
 
     @property
     def active(self) -> tuple[Finding, ...]:
@@ -1638,22 +1641,26 @@ class ScanResult:
         return replace(self, findings=tuple(sorted(self.findings, key=Finding.sort_key)))
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "engine_version": self.engine_version,
-            "rulepack_version": self.rulepack_version,
-            "rulepack_hash": self.rulepack_hash,
-            "config_hash": self.config_hash,
-            "complete": self.complete,
-            "content_complete": self.content_complete,
-            "advisory_complete": self.advisory_complete,
-            "intel": self.intel,
-            "stats": self.stats.to_dict(),
-            "repository": self.repository.to_dict() if self.repository else None,
-            "dependencies": [d.to_dict() for d in self.dependencies],
-            "sources": [{"path": p, "ecosystem": e, "source": s} for p, e, s in self.sources],
-            "findings": [f.to_dict() for f in self.findings],
-        } | ({"image": self.image} if self.image is not None else {})
+        return (
+            {
+                "schema_version": self.schema_version,
+                "engine_version": self.engine_version,
+                "rulepack_version": self.rulepack_version,
+                "rulepack_hash": self.rulepack_hash,
+                "config_hash": self.config_hash,
+                "complete": self.complete,
+                "content_complete": self.content_complete,
+                "advisory_complete": self.advisory_complete,
+                "intel": self.intel,
+                "stats": self.stats.to_dict(),
+                "repository": self.repository.to_dict() if self.repository else None,
+                "dependencies": [d.to_dict() for d in self.dependencies],
+                "sources": [{"path": p, "ecosystem": e, "source": s} for p, e, s in self.sources],
+                "findings": [f.to_dict() for f in self.findings],
+            }
+            | ({"image": self.image} if self.image is not None else {})
+            | ({"verdict": self.verdict} if self.verdict is not None else {})
+        )
 
 
 __all__ = [
