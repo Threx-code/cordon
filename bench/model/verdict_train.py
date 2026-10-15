@@ -85,6 +85,26 @@ class VerdictTrain:
             "trained_on": trained_on,
         }
 
+    @staticmethod
+    def recall_by_area(rows, labels, scores, block, floored) -> dict[str, str]:
+        """Malicious blocked per area: each labelled set by its name, the malware set by group."""
+        caught: collections.Counter = collections.Counter()
+        seen: collections.Counter = collections.Counter()
+        for r, y, s in zip(rows, labels, scores, strict=True):
+            if not y:
+                continue
+            first = r["file"].split("/")[0]
+            area = (
+                first
+                if first in ("msb", "asb", "mcpv", "pub", "mcpc")
+                else "malware:" + "/".join(r["file"].split("/")[:2])
+            )
+            seen[area] += 1
+            caught[area] += bool(r["verdict"]["rules"]) and (s >= block or floored(r))
+        return {
+            k: f"{caught[k]}/{seen[k]} = {100 * caught[k] / seen[k]:.1f}%" for k in sorted(seen)
+        }
+
     @classmethod
     def main(cls) -> None:
         import numpy as np
@@ -98,6 +118,13 @@ class VerdictTrain:
         )
         p.add_argument("--noisy", type=Path, required=True)
         p.add_argument("--adjudication", type=Path, nargs="*", default=[])
+        p.add_argument(
+            "--labelled",
+            nargs="*",
+            default=[],
+            help="NAME=PATH rescans of labelled sets (skills, MCP servers): a row is malicious when "
+            "its path starts with malware/ or malicious-mcp-variants/; NAME is its ecosystem",
+        )
         p.add_argument("--out", type=Path)
         p.add_argument("--block-share", type=float, default=0.4)
         p.add_argument("--quiet", type=float, default=98.3)
@@ -106,7 +133,12 @@ class VerdictTrain:
         excluded = set()
         for path in a.adjudication:
             for r in cls.rows(path):
-                if r.get("verdict") in ("not-malicious", "no-payload", "vulnerable-fixture", "empty-template"):
+                if r.get("verdict") in (
+                    "not-malicious",
+                    "no-payload",
+                    "vulnerable-fixture",
+                    "empty-template",
+                ):
                     excluded.add(r["file"])
         noisy = set(a.noisy.read_text(encoding="utf-8").split())
         total = {"work": collections.Counter(), "holdout": collections.Counter()}
@@ -120,6 +152,24 @@ class VerdictTrain:
         for r in cls.rows(a.malware):
             if r["file"] not in excluded and r.get("verdict"):
                 data.append((r, 1, cls.half(cls.group(r["file"]))))
+        for spec in a.labelled:
+            name, _, path = spec.partition("=")
+            for r in cls.rows(Path(path)):
+                if not r.get("verdict"):
+                    continue
+                unit = r["file"]
+                malicious = unit.startswith(("malware/", "malicious-mcp-variants/"))
+                # The design split for mcp-variants (`mcpv:` + server), by name elsewhere.
+                key = (
+                    "mcpv:" + unit.rstrip("/").rsplit("/", 1)[-1]
+                    if name == "mcpv"
+                    else name + ":" + unit
+                )
+                h = "holdout" if hashlib.sha256(key.encode()).digest()[0] % 2 else "work"
+                r = {**r, "file": f"{name}/{unit}"}
+                data.append((r, int(malicious), h))
+                if not malicious:
+                    total[h][name] += 1
         vocab = sorted({k for r, _, _ in data for k in r["verdict"]["rules"]})
         model_stub = {"vocab": vocab}
 
@@ -217,6 +267,7 @@ class VerdictTrain:
                 "ecosystems": len(block_rate),
                 "worst_block": sorted(block_rate.items(), key=lambda x: -x[1])[:5],
                 "worst_quiet": sorted(quiet.items(), key=lambda x: x[1])[:5],
+                "recall_by_area": cls.recall_by_area(M[h], Y[h], prob[h], block, floored),
             }
         print(json.dumps({"block": block, "warn": warn, "floor": floor, **report}, indent=1))
         if a.out:
