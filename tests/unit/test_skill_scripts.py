@@ -43,7 +43,8 @@ class TestSkillScripts:
         found = SkillScriptKit.severities(
             tmp_path, {"gif/SKILL.md": SKILL, "gif/core/tool.py": FETCH_AND_RUN}
         )
-        assert "HIGH" in found
+        # A skill script runs unasked when the skill is used, as an install hook does.
+        assert {"HIGH", "CRITICAL"} & set(found)
 
     def test_the_same_function_in_project_code_is_lowered(self, tmp_path: Path) -> None:
         found = SkillScriptKit.severities(tmp_path, {"lib/tool.py": FETCH_AND_RUN})

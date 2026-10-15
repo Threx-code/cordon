@@ -1229,6 +1229,10 @@ class Engine:
             | self._nuget_hooks(units)
             | ComposerPluginHooks.paths(units)
         )
+        # A skill's scripts run when the agent uses the skill, on the user's machine and unasked:
+        # the trust boundary an install hook has (review 98: a skill script reading files and
+        # posting them out was graded as a library's, at MEDIUM).
+        hook_paths |= Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
         # What runs at install time is the hook and everything it imports. The
         # context stopped at the hook file, so moving the payload into a helper
         # module -- no obfuscation, just ordinary package structure -- avoided
@@ -1648,6 +1652,7 @@ class Engine:
         }
         hook_paths |= self._nuget_hooks(units)
         hook_paths |= ComposerPluginHooks.paths(units)
+        hook_paths |= Engine._skill_scripts(units) | Engine._mcp_server_sources(units)
         entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
@@ -3595,6 +3600,52 @@ class Engine:
                 )
             out.append(finding)
         return out
+
+    @staticmethod
+    def _mcp_server_sources(units: Sequence[FileUnit]) -> set[str]:
+        """An MCP server's own source: started by the agent host and run on the agent's tool calls,
+        never on a run the user chose -- the boundary an install hook has. Graded as application
+        code, a server reading the environment's secrets and posting them out was a warning
+        (review 98, mcp-variants: 12 of 177 malicious servers blocked by their code)."""
+        from cordon_scanner.detect.agents import _SERVER_SOURCE_SUFFIXES
+
+        return {
+            u.path
+            for u in units
+            if u.path.endswith(_SERVER_SOURCE_SUFFIXES)
+            and "/node_modules/" not in u.path
+            and "site-packages/" not in u.path
+            and not Engine._NOT_A_SERVER_PATH.search(u.path.rpartition("!")[2])
+            and Engine._MCP_SDK_IMPORT.search(u.content.text[:200_000]) is not None
+        }
+
+    #: An import statement of an MCP server SDK at the start of a line -- not the same words in a
+    #: string, which is how a test file holds a server's source as a fixture.
+    _MCP_SDK_IMPORT: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:from[ \t]+(?:mcp|fastmcp)(?:\.\w+)*[ \t]+import\b|import[ \t]+(?:mcp|fastmcp)\b"
+        r"|[ \t]*import\b[^\n]{0,200}[\"']@modelcontextprotocol/sdk"
+        r"|[^\n]{0,80}require\(\s*[\"']@modelcontextprotocol/sdk)",
+        re.MULTILINE,
+    )
+    #: Tests, fixtures, examples and documentation are read, not started by an agent host.
+    _NOT_A_SERVER_PATH: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|/)(?:tests?|__tests__|spec|fixtures?|examples?|docs?|bench(?:marks?)?)/"
+        r"|(?:^|/)test_[^/]*$|\.(?:test|spec)\.[^/]+$"
+    )
+
+    @staticmethod
+    def _skill_scripts(units: Sequence[FileUnit]) -> set[str]:
+        """Scripts an agent skill ships (`CapabilityDetector._skill_script`)."""
+        from types import SimpleNamespace
+
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units))
+        return {
+            u.path
+            for u in units
+            if CapabilityDetector._skill_script(u.path, tree)  # type: ignore[arg-type]
+        }
 
     #: Manifests the verdict reads for package context, by file name.
     _VERDICT_MANIFESTS: ClassVar[tuple[str, ...]] = ("package.json", "setup.py")
