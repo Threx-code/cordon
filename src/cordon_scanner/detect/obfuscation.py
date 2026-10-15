@@ -1483,7 +1483,16 @@ class ObfuscationDetector(BaseDetector):
             hit.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"
             and (content.path in ctx.import_entry_paths or ctx.in_install_hook(content.path))
             and severity < Severity.HIGH
-            and (hit.offscreen or ObfuscationDetector._long_line_executed(content, hit.start))
+            and (
+                hit.offscreen
+                # A long executed line counts only in a Python entry point: a JavaScript `main` is
+                # very often a minified bundle whose long lines hold `Function(` and `eval(` by
+                # construction -- 48 benign npm packages' `index.js` were blocked by it (review 98).
+                or (
+                    unit.language == "python"
+                    and ObfuscationDetector._long_line_executed(content, hit.start)
+                )
+            )
         ):
             # A published package's entry point -- the `__init__.py` every `import` runs --
             # holding a long high-entropy line that is itself executed or decoded: the payload

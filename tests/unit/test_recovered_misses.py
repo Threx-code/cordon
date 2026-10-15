@@ -171,3 +171,28 @@ class TestSkillReadmePrerequisite:
     def test_a_readme_with_no_skill_beside_it_is_not_read_for_it(self, tmp_path) -> None:
         found = {f.rule_id for f in Helpers.findings(tmp_path, {"docs/README.md": self.README})}
         assert "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001" not in found
+
+
+class TestMinifiedEntryIsNotOffscreenCode:
+    def test_a_bundle_main_with_function_on_a_long_line_stays_recorded(self, tmp_path) -> None:
+        import io
+        import tarfile
+
+        bundle = (
+            "!function(e){"
+            + ";".join(f"var a{i}=Function('return {i}')" for i in range(400))
+            + "}();\n"
+        )
+        archive = tmp_path / "x-1.0.0.tgz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for name, text in (
+                ("package/package.json", '{"name": "x", "version": "1.0.0", "main": "index.js"}'),
+                ("package/index.js", bundle),
+            ):
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        found = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"]
+        assert all(f.severity <= Severity.LOW for f in found)
