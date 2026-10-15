@@ -108,7 +108,7 @@ class VerdictTrain:
             for r in cls.rows(path):
                 if r.get("verdict") in ("not-malicious", "no-payload", "vulnerable-fixture", "empty-template"):
                     excluded.add(r["file"])
-        noisy = set(a.noisy.read_text().split())
+        noisy = set(a.noisy.read_text(encoding="utf-8").split())
         total = {"work": collections.Counter(), "holdout": collections.Counter()}
         for r in cls.rows(a.corpus):
             total[cls.half(r["file"])][r["file"].split("/")[0]] += 1
