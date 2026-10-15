@@ -134,15 +134,18 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\bdetached\s{0,4}:\s{0,4}(?:true|!0)\b'
-        - '\.\s{0,4}unref\s{0,4}\(\s{0,4}\)'
+        # The process call itself handed `detached`. A timer's or a socket's `.unref()` is not
+        # this: matching it alone blocked 21 benign bundles (review 98).
+        - '\b(?:spawn|fork|exec|execFile)\s{0,4}\([^;]{0,400}?\bdetached\s{0,4}:\s{0,4}(?:true|!0)\b'
     tests:
       positive:
         - "spawn('node', [f], { detached: true, stdio: 'ignore' });"
-        - "child.unref();"
+        - "const c = spawn(process.execPath, [w], {\n  detached: true,\n});"
       negative:
         - "spawn('node', [f], { stdio: 'inherit' });"
         - "const detached = false;"
+        - "setTimeout(tick, 1000).unref();"
+        - "server.unref();"
 
   # ---------------------------------------------------------------------
   # CODE SHIPPED IN A FORM NO READER CAN INSPECT

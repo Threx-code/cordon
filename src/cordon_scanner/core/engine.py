@@ -3622,9 +3622,9 @@ class Engine:
     #: An import statement of an MCP server SDK at the start of a line -- not the same words in a
     #: string, which is how a test file holds a server's source as a fixture.
     _MCP_SDK_IMPORT: ClassVar[re.Pattern[str]] = re.compile(
-        r"^(?:from[ \t]+(?:mcp|fastmcp)(?:\.\w+)*[ \t]+import\b|import[ \t]+(?:mcp|fastmcp)\b"
-        r"|[ \t]*import\b[^\n]{0,200}[\"']@modelcontextprotocol/sdk"
-        r"|[^\n]{0,80}require\(\s*[\"']@modelcontextprotocol/sdk)",
+        r"^(?:from[ \t]{1,8}(?:mcp|fastmcp)(?:\.\w{1,40}){0,4}[ \t]{1,8}import\b|import[ \t]{1,8}(?:mcp|fastmcp)\b"
+        r"|[ \t]{0,8}import\b[^\n]{0,200}[\"']@modelcontextprotocol/sdk"
+        r"|[^\n]{0,80}require\(\s{0,4}[\"']@modelcontextprotocol/sdk)",
         re.MULTILINE,
     )
     #: Tests, fixtures, examples and documentation are read, not started by an agent host.
