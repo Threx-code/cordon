@@ -111,6 +111,71 @@ rules:
         - "const evaluate = (x) => x * 2;"
 
   # ---------------------------------------------------------------------
+  # A PROCESS LEFT RUNNING AFTER ITS PARENT EXITS
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.DETACHED.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process that outlives the one that started it
+    message: >
+      A child process is started detached, or released with unref(), so it keeps running after
+      this program ends. A command-line tool may do that for a background job; an install script
+      that does it leaves code running on the machine after npm has finished.
+    remediation: Find what the child runs and why it must outlive the install.
+    provenance:
+      kind: research
+      reference: >
+        Install scripts that start a second file in the background and exit, so the payload runs
+        after the install reports success (review 98: adfg-project, apache-httpclient, kodane).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\bdetached\s{0,4}:\s{0,4}(?:true|!0)\b'
+        - '\.\s{0,4}unref\s{0,4}\(\s{0,4}\)'
+    tests:
+      positive:
+        - "spawn('node', [f], { detached: true, stdio: 'ignore' });"
+        - "child.unref();"
+      negative:
+        - "spawn('node', [f], { stdio: 'inherit' });"
+        - "const detached = false;"
+
+  # ---------------------------------------------------------------------
+  # CODE SHIPPED IN A FORM NO READER CAN INSPECT
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.OPAQUE_CODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Runs compiled JavaScript bytecode
+    message: >
+      This file runs V8 bytecode -- a .jsc file through bytenode, or a vm.Script given cached
+      data -- so the code that runs is not in the package in any form a person or a scanner can
+      read.
+    remediation: Do not install a package whose install-time code ships only as bytecode.
+    provenance:
+      kind: research
+      reference: An install hook that loads ./main.jsc through bytenode (review 98, alinet).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - 'require\s{0,4}\(\s{0,4}["'']bytenode["'']\s{0,4}\)'
+        - 'require\s{0,4}\(\s{0,4}["''][^"''\n]{1,200}\.jsc["'']\s{0,4}\)'
+        - '\bnew\s{1,4}vm\s{0,4}\.\s{0,4}Script\s{0,4}\([^)]{0,300}\bcachedData\b'
+    tests:
+      positive:
+        - "require('bytenode');\nrequire('./main.jsc');"
+      negative:
+        - "require('./main.js');"
+
+  # ---------------------------------------------------------------------
   # A WINDOWS LOADER STARTED FROM JAVASCRIPT
   # ---------------------------------------------------------------------
   - id: CAP.JS.WINDOWS_LOADER.001
@@ -398,6 +463,9 @@ rules:
         # method is not this.
         - 'require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)[\s\S]{0,4000}?\.\s{0,4}(?:hostname|userInfo|networkInterfaces)\s{0,4}\(\s{0,4}\)'
         - '\{[^}\n]{0,120}\b(?:hostname|userInfo|networkInterfaces)\b[^}\n]{0,120}\}\s{0,4}=\s{0,4}require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)'
+        # The call named as data and looked up: `[["userInfo", "username"], ["hostname"]]` walked
+        # with `reduce` over the `os` module, so no `.hostname(` is written (review 98: report.js).
+        - 'require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)[\s\S]{0,4000}?["''](?:userInfo|hostname|networkInterfaces)["'']'
         # `os.platform()`, `os.arch()` and `process.cwd()` are deliberately absent.
         # Every bundler, test runner and postinstall build step in the ecosystem
         # calls them, and they say what kind of machine this is rather than which
@@ -449,6 +517,11 @@ rules:
         # call that follows is named (`request({url, json})`, `got.post`, `needle('post', ...)`).
         - '(?:require\s{0,4}\(|from)\s{0,4}["''](?:request|got|needle|superagent|node-fetch|undici|phin|bent|cross-fetch|isomorphic-fetch|axios)["'']'
         - '\bnet\s*\.\s*(?:connect|createConnection)\s*\('
+        - '\bnew\s{1,4}(?:net\s{0,4}\.\s{0,4})?Socket\s{0,4}\('
+        # A name resolved is a packet sent: `dns.lookup(<data>.collector.example)` carries
+        # whatever it was built from in the name itself, and a lookup of a fixed name tells its
+        # owner the code ran. Install-time beacons do both (review 98: test_send.js, pre-install.js).
+        - '\bdns\s{0,4}\.\s{0,4}(?:promises\s{0,4}\.\s{0,4})?(?:lookup|resolve\w{0,8})\s{0,4}\('
         # A download written as a command line in a string the code runs.
         - '["''`]\s{0,8}(?:curl|wget)(?:\.exe)?\s[^\n]{0,200}?https?://'
     tests:

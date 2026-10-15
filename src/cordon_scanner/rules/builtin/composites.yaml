@@ -1639,6 +1639,59 @@ rules:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
 
+  - id: MALWARE.INSTALL.BACKGROUND.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script leaves a process running
+    message: >
+      Code that runs at install time starts a child process detached from it, so the child keeps
+      running after the install has reported success. Building a package finishes when the
+      install does; a process left behind is a payload given a life of its own.
+    remediation: >
+      Do not install this package. On a machine that installed it, find and stop the process it
+      started, and treat what that process could reach as exposed.
+    provenance:
+      kind: research
+      reference: >
+        Install scripts in the DataDog set that spawn a second file detached and exit (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1543/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.JS.DETACHED.001
+
+  - id: MALWARE.INSTALL.OPAQUE_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script runs code that cannot be read
+    message: >
+      Code that runs at install time executes compiled V8 bytecode. Nothing in the package says
+      what that code does, and nothing that reviews packages can read it; shipping install-time
+      code this way exists to keep it from being read.
+    remediation: Do not install this package.
+    provenance:
+      kind: research
+      reference: An install hook that loads ./main.jsc through bytenode (review 98).
+    evidence_policy: masked
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.JS.OPAQUE_CODE.001
+
   - id: MALWARE.INSTALL.WINDOWS_LOADER.001
     version: 1.0.0
     category: malicious
