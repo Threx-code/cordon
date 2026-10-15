@@ -116,9 +116,16 @@ class McpCode:
     @classmethod
     def _runs_input(cls, function, wrappers: set[str]) -> ast.AST | None:
         """The first call in `function` that runs something derived from its parameters."""
+        calls = cls._run_calls(function, wrappers)
+        return calls[0] if calls else None
+
+    @classmethod
+    def _run_calls(cls, function, wrappers: set[str]) -> list[ast.AST]:
+        """Every call in `function` that runs something derived from its parameters."""
         tainted = cls._tainted(function)
         if not tainted:
-            return None
+            return []
+        out: list[ast.AST] = []
         for node in ast.walk(function):
             if not isinstance(node, ast.Call):
                 continue
@@ -126,8 +133,8 @@ class McpCode:
             if args is None and isinstance(node.func, ast.Name) and node.func.id in wrappers:
                 args = list(node.args) + [k.value for k in node.keywords]
             if args and any(cls._names(a) & tainted for a in args):
-                return node
-        return None
+                out.append(node)
+        return out
 
     @staticmethod
     def _is_tool(function) -> bool:
@@ -193,18 +200,20 @@ class McpCode:
                     wrappers.add(function.name)
         out: list[tuple[int, str, bool]] = []
         for function in (f for f in functions if cls._is_tool(f)):
+            calls = cls._run_calls(function, wrappers)
+            if not calls:
+                continue
+            # Behind a secret it is a backdoor whatever the tool says it does: `run_terminal_command`
+            # is meant to run commands, not to read files when its input starts with `READ/`, and
+            # `get_system_info`'s docstring naming "processes" is no reason to run `EXEC://...`.
+            gated = next((c for c in calls if cls.triggered(function, c, constants)), None)
+            if gated is not None:
+                out.append((getattr(gated, "lineno", function.lineno), function.name, True))
+                continue
             said = function.name + " " + (ast.get_docstring(function) or "")[:600]
             if _RUNS_COMMANDS.search(said):
                 continue
-            call = cls._runs_input(function, wrappers)
-            if call is not None:
-                out.append(
-                    (
-                        getattr(call, "lineno", function.lineno),
-                        function.name,
-                        cls.triggered(function, call, constants),
-                    )
-                )
+            out.append((getattr(calls[0], "lineno", function.lineno), function.name, False))
         return out
 
     @classmethod
@@ -230,6 +239,163 @@ class McpCode:
             call = cls._runs_input(function, wrappers)
             if call is not None:
                 hits.append((getattr(call, "lineno", function.lineno), function.name))
+        return hits
+
+    @staticmethod
+    def _hidden_path(node: ast.AST) -> bool:
+        """A path written as a literal whose last component is a dotfile: `".capture.jsonl"`,
+        `os.path.expanduser("~/.hook")`, `Path.home() / ".trace"`."""
+        for part in ast.walk(node):
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                name = part.value.replace("\\", "/").rstrip("/").rpartition("/")[2]
+                if len(name) > 1 and name.startswith(".") and name not in (".", ".."):
+                    return True
+        return False
+
+    @classmethod
+    def _writes_hidden(cls, function, tainted: set[str]) -> bool:
+        """Whether `function` writes something derived from `tainted` names to a dotfile."""
+        handles: set[str] = set()
+        for node in ast.walk(function):
+            if isinstance(node, ast.With):
+                for item in node.items:
+                    call = item.context_expr
+                    if (
+                        isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Name)
+                        and call.func.id == "open"
+                        and call.args
+                        and cls._hidden_path(call.args[0])
+                        and isinstance(item.optional_vars, ast.Name)
+                    ):
+                        handles.add(item.optional_vars.id)
+        for node in ast.walk(function):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in ("write", "writelines")
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in handles
+                and node.args
+                and cls._names(node.args[0]) & tainted
+            ):
+                return True
+        return False
+
+    @classmethod
+    def mirrors_input(cls, text: str) -> list[tuple[int, str]]:
+        """(line, tool) where a tool copies its arguments into a hidden file.
+
+        `_capture("search", locals())` in a tool, and a helper -- or a thread it starts --
+        appending what it was given to `.capture.jsonl`: every query the agent makes, kept where
+        no one looks (review 98: mcp-variants' Tool Shadowing and Puppet servers). A server's
+        log goes through `logging`; a cache is keyed by what it fetched, not the caller's input.
+        """
+        if "open(" not in text:
+            return []
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        functions = [
+            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        writers = {f.name for f in functions if cls._writes_hidden(f, cls._tainted(f))}
+        for _ in range(2):
+            for function in functions:
+                if function.name in writers:
+                    continue
+                tainted = cls._tainted(function)
+                for node in ast.walk(function):
+                    if (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id in writers
+                        and any(cls._names(a) & tainted for a in node.args)
+                    ):
+                        writers.add(function.name)
+                        break
+        if not writers:
+            return []
+        hits: list[tuple[int, str]] = []
+        for function in (f for f in functions if cls._is_tool(f)):
+            tainted = cls._tainted(function)
+            for node in ast.walk(function):
+                if not isinstance(node, ast.Call):
+                    continue
+                into_writer = isinstance(node.func, ast.Name) and node.func.id in writers
+                every_argument = any(
+                    isinstance(c, ast.Call)
+                    and isinstance(c.func, ast.Name)
+                    and c.func.id == "locals"
+                    for a in node.args
+                    for c in ast.walk(a)
+                )
+                if into_writer and (
+                    every_argument or any(cls._names(a) & tainted for a in node.args)
+                ):
+                    hits.append((node.lineno, function.name))
+                    break
+            else:
+                if cls._writes_hidden(function, tainted):
+                    hits.append((function.lineno, function.name))
+        return hits
+
+    @staticmethod
+    def _trigger_kinds(node: ast.AST) -> set[str]:
+        """Which kinds of time-bomb trigger an expression or function body consults."""
+        kinds: set[str] = set()
+        for part in ast.walk(node):
+            if isinstance(part, ast.Attribute):
+                owner = ast.unparse(part.value)
+                if owner == "random" and part.attr in ("random", "randint", "uniform", "choice"):
+                    kinds.add("chance")
+                elif part.attr in ("day", "month", "weekday", "isoweekday", "hour", "minute") and (
+                    "today" in owner or "now" in owner or "date" in owner
+                ):
+                    kinds.add("calendar")
+            elif isinstance(part, ast.AugAssign) and isinstance(part.op, ast.Add):
+                kinds.add("count")
+        return kinds
+
+    @classmethod
+    def time_bomb(cls, text: str) -> list[tuple[int, str]]:
+        """(line, tool) where a tool returns something else once a gate of several unrelated
+        triggers opens -- chance, a date, a call count.
+
+        `if _gate(): return _other(...)` before the real work, where `_gate` is true on the first of
+        the month, after the 25th call, or one time in five hundred: a tool that behaves while it is
+        reviewed and turns later (review 98: mcp-variants' Rug Pull servers). One trigger is a
+        feature -- a rate limit counts calls, a market tool checks the weekday; mixing them so the
+        turn cannot be predicted has no use but that.
+        """
+        if "random" not in text and "today" not in text and "now" not in text:
+            return []
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        functions = {
+            n.name: n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        }
+        hits: list[tuple[int, str]] = []
+        for function in (f for f in functions.values() if cls._is_tool(f)):
+            for node in ast.walk(function):
+                if not isinstance(node, ast.If) or not any(
+                    isinstance(b, ast.Return) for b in node.body
+                ):
+                    continue
+                kinds = cls._trigger_kinds(node.test)
+                for call in ast.walk(node.test):
+                    if (
+                        isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Name)
+                        and call.func.id in functions
+                    ):
+                        kinds |= cls._trigger_kinds(functions[call.func.id])
+                if len(kinds) >= 2:
+                    hits.append((node.lineno, function.name))
+                    break
         return hits
 
     @classmethod
