@@ -100,8 +100,21 @@ class LongtailScan:
         from cordon_scanner.cli.main import CommandLine
 
         try:
+            # One process per scan: this harness already runs a scan per worker, and the engine's
+            # own pool inside each started ~10 more, so 8 workers ran ~80 processes on 8 CPUs and
+            # the corpus moved at ~7 archives a minute instead of ~75 (review 98).
             code = CommandLine.main(
-                ["scan", path, "--offline", "--no-color", "--quiet", "--format", "json"]
+                [
+                    "scan",
+                    path,
+                    "--offline",
+                    "--no-color",
+                    "--quiet",
+                    "--format",
+                    "json",
+                    "--jobs",
+                    "1",
+                ]
             )
         except SystemExit as e:
             code = e.code if isinstance(e.code, int) else 1
