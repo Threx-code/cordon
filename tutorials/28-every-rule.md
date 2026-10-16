@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,426 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,427 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -1443,7 +1443,7 @@ rule's own samples.
 
 ## Install-time code
 
-12 rules.
+13 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1451,6 +1451,7 @@ rule's own samples.
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | Code that runs on every machine that installs this package |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | Install script runs code that cannot be read |
 | `MALWARE.INSTALL.PERSIST.001` | critical | Install script plants code that runs again later |
