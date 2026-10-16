@@ -1750,6 +1750,35 @@ rules:
         - context: install_hook
         - rule: CAP.SHELL.IFS_SEPARATOR.001
 
+  - id: MALWARE.INSTALL.GYP_COMMAND.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Native-build file runs a script at install
+    message: >
+      npm configures a package's native build from `binding.gyp` on install, and a `<!( )` in that
+      file is a command gyp runs while reading it. Real build files use the form to ask for a
+      value -- an include path from `node -p`, flags from `pkg-config`, the platform from `uname`.
+      This one runs a script file, or throws the command's output away: code run at install under
+      the name of a build step, an install hook that does not appear in package.json.
+    remediation: >
+      Do not install this package. Read the script the command runs; treat machines that
+      installed it as having run it.
+    provenance:
+      kind: research
+      reference: >
+        Compromised releases (2026) whose binding.gyp ran `node index.js` with output discarded in
+        a target that builds nothing; none of 92 benign packages with gyp command expansions use
+        either form (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.GYP.SIDE_EFFECT_COMMAND.001
+
   - id: MALWARE.EXFIL.DNS_CALLBACK.001
     version: 1.0.0
     category: malicious
