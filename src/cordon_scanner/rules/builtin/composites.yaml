@@ -726,7 +726,7 @@ rules:
             # Modules loaded by names a local decoder produces: once everything is behind the
             # decoder there is no egress or decode left in plain sight to pair with (review 98:
             # a preinstall helper loading os, dns and https from hex through an alias of require).
-            - rule: CAP.JS.COMPUTED_REQUIRE
+            - rule: CAP.JS.COMPUTED_REQUIRE_SOURCE
             - capability: credential
             - capability: spawn
 
@@ -1727,6 +1727,51 @@ rules:
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.SHELL_EVASION.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script hides the spaces in the command it runs
+    message: >
+      The script an install runs builds a command whose spaces are written as ${IFS}, so the
+      command a reviewer or a scanner looks for is not in the file as written. An installer has
+      no reason to disguise its own commands.
+    remediation: Do not install this package. Read the command with spaces restored.
+    provenance:
+      kind: research
+      reference: ${IFS}-separated curl to an out-of-band host from preinstall (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.SHELL.IFS_SEPARATOR.001
+
+  - id: MALWARE.EXFIL.DNS_CALLBACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script resolves a fixed host name
+    message: >
+      The script an install runs looks up a host name it names itself. Installing a package needs
+      the registry, which the package manager reaches; a lookup from the install script tells the
+      domain's owner that this machine installed the package -- the confirmation a
+      dependency-confusion probe exists to get.
+    remediation: Do not install this package. Treat machines that installed it as known to the domain's owner.
+    provenance:
+      kind: research
+      reference: Postinstall dns.lookup of one fixed domain (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_entry
+        - rule: CAP.JS.DNS_LITERAL.001
 
   - id: MALWARE.EXFIL.HIDDEN_DESTINATION.001
     version: 1.0.0

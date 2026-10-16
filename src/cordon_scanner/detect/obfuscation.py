@@ -706,7 +706,9 @@ class ObfuscationDetector(BaseDetector):
         # entry-point and install grading see it (review 98: gluestack's `react-native-aria`
         # releases appended their payload after 630 spaces in `lib/commonjs/index.js`, the
         # package's `main`, and were reported LOW as a long line).
-        offscreen = list(self._offscreen_code(content, unit.language))
+        offscreen = list(self._offscreen_code(content, unit.language)) or list(
+            self._below_screen_code(content, unit.language)
+        )
         hits.extend(offscreen or long_lines)
 
         return [self._finding(hit, unit, ctx) for hit in hits]
@@ -726,6 +728,47 @@ class ObfuscationDetector(BaseDetector):
         line = raw[raw.rfind(b"\n", 0, offset) + 1 : offset + 1]
         line = re.sub(rb"\\.", b"", line)
         return any(line.count(quote) % 2 for quote in (b'"', b"'", b"`"))
+
+    #: Code after hundreds of blank lines: the vertical form of the padding below, past the bottom
+    #: of the screen instead of its right edge.
+    BELOW_SCREEN_LINES: ClassVar[int] = 400
+
+    def _below_screen_code(self, content: FileContent, language: str | None) -> Iterable[_Hit]:
+        """Code placed after hundreds of empty lines, so a file opens on a screen of nothing and
+        reads as ending where its visible part ends (review 98: bs58lite's preinstall runs its
+        collector after 2,000 blank lines). Source languages only."""
+        if language is None or language in PROSE_LANGUAGES or content.truncated:
+            return
+        # A linear count of consecutive blank lines, then the first line with code on it.
+        raw = content.raw
+        blank, offset = 0, 0
+        found_at = -1
+        for line in raw.split(b"\n"):
+            if line.strip():
+                if blank >= self.BELOW_SCREEN_LINES:
+                    found_at = offset
+                    break
+                blank = 0
+            else:
+                blank += 1
+            offset += len(line) + 1
+        if found_at < 0:
+            return
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
+            title="Code pushed below the screen",
+            message=(
+                f"Line {content.line_of(found_at)} continues the file after {blank} empty "
+                "lines, so an editor shows the visible part and nothing of what follows. Blank lines "
+                "in that number have no use in code except keeping something out of a reviewer's sight."
+            ),
+            remediation="Read to the end of the file. Remove the padding, or the code after it.",
+            severity=Severity.LOW,
+            confidence=Confidence.HIGH,
+            start=found_at,
+            end=min(len(raw), found_at + 200),
+            offscreen=True,
+        )
 
     def _offscreen_code(self, content: FileContent, language: str | None) -> Iterable[_Hit]:
         """Code pushed past the right edge of the screen by padding, whatever its entropy.

@@ -107,14 +107,18 @@ rules:
     match:
       kind: regex
       patterns:
-        - '(?:\[|(?<![=!<>])=)\s{0,4}Function\s{0,4}(?:,\s{0,4}(?:require|eval|process)\b|;)'
+        # Kept beside the loader or eval, as data: `[Function, require]`. Not an alias on its own --
+        # `var $Function = Function` is get-intrinsic and `const F = Function; new F("")` is a CSP
+        # probe, in thousands of bundles (review 98).
+        - '\[\s{0,4}Function\s{0,4},\s{0,4}(?:require|eval)\b|\[\s{0,4}(?:require|eval)\s{0,4},\s{0,4}Function\b'
     tests:
       positive:
         - "const func_list = [Function, require];"
-        - "const F = Function;"
       negative:
         - "if (x instanceof Function) {}"
         - "props: { cb: { type: [String, Function] } }"
+        - "var $Function = Function;"
+        - "const F = Function; new F('');"
 
   - id: CAP.JS.DATA_IN_HOSTNAME.001
     version: 1.0.0
