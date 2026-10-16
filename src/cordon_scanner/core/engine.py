@@ -3864,7 +3864,12 @@ class Engine:
         }
 
     #: Manifests the verdict reads for package context, by file name.
-    _VERDICT_MANIFESTS: ClassVar[tuple[str, ...]] = ("package.json", "setup.py")
+    _VERDICT_MANIFESTS: ClassVar[tuple[str, ...]] = (
+        "package.json",
+        "setup.py",
+        "pyproject.toml",
+        "requirements.txt",
+    )
 
     @staticmethod
     def _package_verdict(

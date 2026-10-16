@@ -246,6 +246,23 @@ class Verdict:
         return finding.rule_id.startswith("MALWARE.")
 
     @staticmethod
+    def area(package: dict[str, float], manifests: dict[str, bytes], rules: dict[str, int]) -> str:
+        """Which thresholds a package answers to: an agent skill, an MCP server, or a package.
+
+        Benign skills, MCP servers and libraries carry different findings by nature -- a skill's
+        instructions address the agent, a server's handlers run commands -- so each kind has its
+        own line, set on its own benign sets (`bench/model/verdict_train.py`).
+        """
+        if package.get("skill"):
+            return "skill"
+        if any(rule.startswith("SUSPECT.MCP.") for rule in rules) or any(
+            re.search(rb"@modelcontextprotocol/sdk|[\"']mcp(?:\[cli\])?[>=<~\"' ]|fastmcp", data)
+            for data in manifests.values()
+        ):
+            return "mcp"
+        return "package"
+
+    @staticmethod
     def decide(
         findings: list[Finding],
         paths_sizes: Sequence[tuple[str, int]],
@@ -259,9 +276,19 @@ class Verdict:
         if model is None or not rules:
             return findings, summary
         score = VerdictModel.score(model, VerdictModel.vector(model, rules, package))
-        block, warn = float(model["thresholds"]["block"]), float(model["thresholds"]["warn"])
+        area = Verdict.area(package, manifests, rules)
+        per_area = model["thresholds"].get("areas", {}).get(area)
+        block, warn = (
+            (float(per_area["block"]), float(per_area["warn"]))
+            if per_area
+            else (float(model["thresholds"]["block"]), float(model["thresholds"]["warn"]))
+        )
         summary.update(
-            score=round(score, 4), block=block, warn=warn, model=model.get("version", "")
+            score=round(score, 4),
+            block=block,
+            warn=warn,
+            area=area,
+            model=model.get("version", ""),
         )
         floor = frozenset(model["floor"]) if "floor" in model else None
         out: list[Finding] = []
