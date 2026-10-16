@@ -1704,6 +1704,30 @@ rules:
             - capability: egress
             - capability: reconnaissance
 
+  - id: SUSPECT.EXFIL.COMMAND_BEACON.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code reports the user and host to a URL
+    message: >
+      This file runs, or builds to run, a command that fetches a URL carrying the current user
+      or host name. Nothing a tool or library does for its user needs to tell a server who ran
+      it; this is how a beacon checks in.
+    remediation: Do not run it. Find where the command is executed and treat the host as known.
+    provenance:
+      kind: research
+      reference: The identity-in-URL beacon (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.EGRESS.IDENTITY_IN_URL.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.HIDDEN_DESTINATION.001
     version: 1.0.0
     category: malicious

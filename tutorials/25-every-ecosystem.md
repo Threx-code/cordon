@@ -793,21 +793,21 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 |---|---|---|
 | Batch | `*.bat`, `*.cmd` | 6 |
 | C | `*.c`, `*.h` | 0 |
-| C# | `*.cs` | 10 |
+| C# | `*.cs` | 11 |
 | C++ | `*.cc`, `*.cpp`, `*.cxx`, `*.hpp` | 0 |
 | Clojure | `*.bb`, `*.clj`, `*.cljc`, `*.cljs` | 8 |
 | CMake | `CMakeLists.txt` | 10 |
 | Dart | `*.dart` | 7 |
 | Dockerfile | `Containerfile`, `Dockerfile` | 0 |
 | Elixir | `*.ex`, `*.exs` | 8 |
-| Go | `*.go` | 10 |
+| Go | `*.go` | 11 |
 | Groovy | `Jenkinsfile`, `build.gradle` | 11 |
 | Haskell | `*.hs`, `*.lhs` | 8 |
-| Java | `*.java` | 10 |
-| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 25 |
+| Java | `*.java` | 11 |
+| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 26 |
 | JSON | `*.json` | 0 |
 | Julia | `*.jl` | 8 |
-| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 18 |
+| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 19 |
 | Lua | `*.lua` | 8 |
 | Makefile | `GNUmakefile`, `Makefile` | 10 |
 | Markdown | `*.markdown`, `*.md`, `*.mdc` | 0 |
@@ -815,18 +815,18 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 | Objective-C | `*.m`, `*.mm` | 8 |
 | OCaml | `*.ml`, `*.mli` | 8 |
 | Perl | `*.pl`, `*.pm` | 8 |
-| PHP | `*.php` | 10 |
-| PowerShell | `*.ps1`, `*.psm1` | 11 |
-| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 19 |
+| PHP | `*.php` | 11 |
+| PowerShell | `*.ps1`, `*.psm1` | 12 |
+| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 20 |
 | R | `*.r` | 8 |
-| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 11 |
-| Rust | `*.rs`, `build.rs` | 10 |
+| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 12 |
+| Rust | `*.rs`, `build.rs` | 11 |
 | Scala | `*.scala` | 10 |
-| Shell | `*.bash`, `*.sh`, `*.zsh` | 12 |
+| Shell | `*.bash`, `*.sh`, `*.zsh` | 13 |
 | SQL | `*.sql` | 0 |
 | Swift | `*.swift`, `Package.swift` | 8 |
 | TOML | `*.toml` | 0 |
-| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 25 |
+| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 26 |
 | XML | `*.csproj`, `*.fsproj`, `*.props`, `*.targets`, `*.vbproj`, `*.xml` | 11 |
 | YAML | `*.yaml`, `*.yml` | 0 |
 | Zig | `*.zig`, `build.zig` | 7 |

@@ -31,7 +31,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 03  Malware & vulnerabilities ... advisory DB, typosquats, dependency confusion
     ├─ 04  Reachability ................ cut CVE noise without hiding anything
     ├─ 05  Provenance & attestation .... prove a package was built from its real source
-    ├─ 06  Secrets & exfiltration ...... 61 secret rules, 16 exfiltration rules
+    ├─ 06  Secrets & exfiltration ...... 61 secret rules, 17 exfiltration rules
     ├─ 07  CI/CD pipeline attacks ...... attacks on the pipeline, across seven CI systems
     ├─ 08  Containers, K8s & IaC ....... Dockerfile, compose, Kubernetes, Terraform
     │
@@ -62,7 +62,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 25  Every ecosystem ............. all 28: the files read, the checks, the commands
     ├─ 26  Every command ............... every command and option, from the parser itself
     ├─ 27  Every agent location ........ each agent's files, MCP configs, hooks and rules
-    ├─ 28  Every rule .................. all 1,423 rules and every Agent Threat Rule
+    ├─ 28  Every rule .................. all 1,424 rules and every Agent Threat Rule
     │
   WHEN SOMETHING GOES WRONG
     └─ 29  Troubleshooting ............. exit codes, coverage notes, CI, hooks, images
