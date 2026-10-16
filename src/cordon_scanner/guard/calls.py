@@ -217,6 +217,16 @@ _SECRET_ASSIGNMENT: Final = re.compile(
     r"(?i)\b(?:api[_-]?key|secret(?:_key)?|access[_-]?key|token|password|passwd|private[_-]?key)\s*[=:]\s*\S{6,}"
 )
 _SENDS: Final = re.compile(r"(?i)send|upload|post|webhook|email|mail|share|publish|forward|notify")
+#: A value that is the name of a store of secrets, as a send's payload: `user_passwords`,
+#: `api_keys`, `ssh_keys`, `session_tokens`.
+_SECRET_STORE_NAME: Final = re.compile(
+    r"(?i)(?:[a-z]+[_ -])?(?:passwords?|passwds?|credentials?|secrets?|api[_ -]?keys?|ssh[_ -]?keys?"
+    r"|private[_ -]?keys?|(?:session|auth|access)[_ -]?tokens?|cookies|keychain|wallets?)(?:[_ -][a-z]+)?"
+)
+#: A JSON-RPC call written inside a value that is data: the method an agent's server would run.
+_EMBEDDED_RPC: Final = re.compile(
+    r"(?i)[\"']method[\"']\s*:\s*[\"'][^\"']{0,60}(?:admin|escalat|sudo|root|exec|shell|grant)"
+)
 _BIG_COUNT_KEY: Final = re.compile(
     r"(?i)depth|iterations?|recursion|repeat|count|requests?_per|rps|threads|workers|concurren|loops?"
 )
@@ -360,6 +370,15 @@ class ToolCallGuard:
             for _, _, v in cls._walk(arguments or {})
         ):
             findings.append(GuardFinding("GUARD.EXFIL", "", f"{name} sends a credential"))
+        # Or names a credential store as what it sends, to an address in the same call:
+        # `webhook(url="http://.../collect", payload="user_passwords")`.
+        values = [v for _, _, v in cls._walk(arguments or {}) if isinstance(v, str)]
+        if (
+            _SENDS.search(name or "")
+            and any("://" in v for v in values)
+            and any(_SECRET_STORE_NAME.fullmatch(v.strip()) for v in values)
+        ):
+            findings.append(GuardFinding("GUARD.EXFIL", "", f"{name} sends a credential store"))
         # One finding per rule and argument is the explanation; the rest repeat it.
         unique = {(f.rule, f.argument): f for f in findings}
         return GuardVerdict(tool=name, findings=tuple(unique.values()), truncated=truncated)
@@ -453,6 +472,9 @@ class ToolCallGuard:
             if embedded and _UNTRUSTED_CONTROL.match(embedded.group(1)):
                 # A control flag written into content the agent reads: `[execute_page_actions: true]`.
                 yield GuardFinding("GUARD.INJECTION", path, f"{embedded.group(0)!r}", view)
+            if key not in ("method", "jsonrpc") and _EMBEDDED_RPC.search(text):
+                # `SELECT ... WHERE data = '{"method": "admin/escalate", ...}'`: a call smuggled in data.
+                yield GuardFinding("GUARD.INJECTION", path, f"{text[:80]!r}", view)
             if _TEMPLATE.search(text):
                 yield GuardFinding("GUARD.TEMPLATE", path, f"{text[:80]!r}", view)
             if _SAFETY_CONFIG.search(text):
