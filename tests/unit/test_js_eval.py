@@ -40,6 +40,20 @@ class TestResolve:
         assert JsEval.resolve(text).count("\n") == text.count("\n")
 
 
+class TestRegexLiterals:
+    def test_brackets_inside_a_pattern_do_not_unbalance_the_file(self) -> None:
+        text = 'const re = /[(]+/g;\nconst u = String.fromCharCode(104, 105);\n'
+        assert '"hi"' in JsEval.resolve(text)
+
+    def test_division_is_not_a_pattern(self) -> None:
+        kinds = [t.kind for t in JsEval.tokens("x = a / b / c;")]
+        assert "regex" not in kinds
+
+    def test_a_pattern_after_return_and_after_an_operator(self) -> None:
+        kinds = [t.kind for t in JsEval.tokens("function f(s) { return /a\\/b/.test(s) || s.split(/,/); }")]
+        assert kinds.count("regex") == 2
+
+
 class TestBounds:
     def test_a_long_escaped_string_is_read_once(self) -> None:
         # A documentation site's search index: `JSON.parse("...")` of half a megabyte with an

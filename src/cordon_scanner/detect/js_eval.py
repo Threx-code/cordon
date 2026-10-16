@@ -28,6 +28,7 @@ from typing import Any, ClassVar, Final
 
 MAX_STEPS: Final = 40_000
 MAX_STRING: Final = 20_000
+MAX_REGEX: Final = 2_000
 MAX_DEPTH: Final = 60
 MAX_TEXT: Final = 600_000
 #: What a decoded value has to be to count as something hidden: a module that reaches the system or
@@ -132,6 +133,12 @@ class JsEval:
                 close = text.find("*/", pos + 2)
                 pos = n if close < 0 else close + 2
                 continue
+            if c == "/" and JsEval._regex_allowed(out):
+                end = JsEval._regex_end(text, pos)
+                if end > 0:
+                    out.append(Tok("regex", text[pos:end], pos, end))
+                    pos = end
+                    continue
             if c in "\"'`":
                 # To the literal's real end however long it is: giving up at a length and resuming
                 # one character later re-read the same string from every quote inside it, which on
@@ -188,6 +195,60 @@ class JsEval:
                     out.append(Tok("punct", c, pos, pos + 1))
                 pos += 1
         return out
+
+    #: After these a `/` starts a regular expression, not a division.
+    _REGEX_AFTER_NAME: ClassVar[frozenset[str]] = frozenset(
+        [
+            "return",
+            "typeof",
+            "case",
+            "in",
+            "of",
+            "delete",
+            "void",
+            "throw",
+            "new",
+            "else",
+            "do",
+            "yield",
+            "await",
+            "instanceof",
+        ]
+    )
+
+    @staticmethod
+    def _regex_allowed(out: list[Tok]) -> bool:
+        if not out:
+            return True
+        prev = out[-1]
+        if prev.kind == "punct":
+            return prev.value not in (")", "]", "}", "++", "--")
+        return prev.kind == "name" and prev.value in JsEval._REGEX_AFTER_NAME
+
+    @staticmethod
+    def _regex_end(text: str, pos: int) -> int:
+        """One past a regular expression literal starting at `pos` (flags included), or -1. A
+        linear scan: escapes and character classes, never a newline, and short -- a real pattern is,
+        and a `/` that only looks like one's start costs a bounded look on a minified line."""
+        j, n, in_class = pos + 1, len(text), False
+        while j < n and j - pos <= MAX_REGEX:
+            c = text[j]
+            if c == "\\":
+                j += 2
+                continue
+            if c == "\n":
+                return -1
+            if c == "[":
+                in_class = True
+            elif c == "]":
+                in_class = False
+            elif c == "/" and not in_class:
+                j += 1
+                while j < n and (text[j].isalpha()):
+                    j += 1
+                return j
+            j += 1
+        return -1
 
     @staticmethod
     def _unquote(raw: str) -> str:
