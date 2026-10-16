@@ -52,6 +52,99 @@ rules:
         - "const s = decodeURIComponent(location.search);"
         - "const buf = Buffer.from('plain text');"
 
+  - id: CAP.JS.CHARCODE_STRING.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: decode
+    title: Spells a string as character codes
+    message: >
+      This file writes a string as a list of character codes and turns it back into text at
+      runtime, so the text -- a URL, a module name, a command -- appears nowhere a reader or a
+      search would find it.
+    remediation: Decode the list and check what the string is used for.
+    provenance:
+      kind: research
+      reference: >
+        An install script building its collection URL from `[104,116,116,112,115,...]` mapped
+        through String.fromCharCode, then posting the host's details to it (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\[\s{0,4}(?:\d{2,3}\s{0,4},\s{0,4}){8,}\d{2,3}\s{0,4}\][^\n]{0,300}?fromCharCode'
+        # Or many short strings spelled that way, each handed to a local decoder: `d([111,115])`
+        # for `os`, `d([108,111,111,107,117,112])` for `lookup` (review 98, dax-styles).
+        - 'fromCharCode[\s\S]{0,2000}?(?<![\w$.])[A-Za-z_$][\w$]{0,20}\(\s{0,4}\[\s{0,4}\d{2,3}(?:\s{0,4},\s{0,4}\d{2,3}){1,40}\s{0,4}\]\s{0,4}\)'
+        - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}(?:\.\.\.\s{0,4})?\[?\s{0,4}(?:\d{2,3}\s{0,4},\s{0,4}){8,}\d{2,3}'
+    tests:
+      positive:
+        - "const codes=[104,116,116,112,115,58,47,47,101,120];const u=codes.map(c=>String.fromCharCode(c)).join('')"
+        - "const s = String.fromCharCode(104, 116, 116, 112, 115, 58, 47, 47, 120, 121);"
+      negative:
+        - "const nl = String.fromCharCode(10);"
+        - "const ch = String.fromCharCode(code);"
+
+  - id: CAP.JS.FUNCTION_AS_VALUE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: dynamic_dispatch
+    title: Keeps the Function constructor as a value
+    message: >
+      This file stores the Function constructor -- JavaScript's eval for whole function bodies --
+      in an array or a variable, so the code it later builds and runs is called through a name
+      that never says Function.
+    remediation: Find the strings it compiles and where they come from.
+    provenance:
+      kind: research
+      reference: >
+        A preinstall keeping `[Function, require]` in an array and compiling a request built
+        from string fragments that sends the user and working directory (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '(?:\[|(?<![=!<>])=)\s{0,4}Function\s{0,4}(?:,\s{0,4}(?:require|eval|process)\b|;)'
+    tests:
+      positive:
+        - "const func_list = [Function, require];"
+        - "const F = Function;"
+      negative:
+        - "if (x instanceof Function) {}"
+        - "props: { cb: { type: [String, Function] } }"
+
+  - id: CAP.JS.DATA_IN_HOSTNAME.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Puts data in the host name it contacts
+    message: >
+      This file builds a URL whose host name begins with a value it computed -- a label made of
+      data in front of a fixed domain. Whoever runs that domain's name server receives the data
+      in the lookup itself, before any request is sent.
+    remediation: Find what the label carries.
+    provenance:
+      kind: research
+      reference: >
+        A preinstall hex-encoding the host name, home directory and local addresses into the
+        subdomain of a "download speed test" (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '["''`]https?://["''`]\s{0,4}\+\s{0,4}[A-Za-z_$][\w$.]{0,40}\s{0,4}\+\s{0,4}["''`]\.[a-z0-9-]{1,63}\.'
+        - '`https?://\$\{\s{0,4}[A-Za-z_$][\w$.]{0,40}\s{0,4}\}\.[a-z0-9-]{1,63}\.[a-z0-9.-]{2,}'
+    tests:
+      positive:
+        - "const baseUrl = 'https://'+data+'.rockwell.example.online';"
+      negative:
+        - "const u = 'https://' + host + '/path';"
+
   # ---------------------------------------------------------------------
   # EXECUTE
   # ---------------------------------------------------------------------
@@ -137,9 +230,13 @@ rules:
         # The process call itself handed `detached`. A timer's or a socket's `.unref()` is not
         # this: matching it alone blocked 21 benign bundles (review 98).
         - '\b(?:spawn|fork|exec|execFile)\s{0,4}\([^;]{0,400}?\bdetached\s{0,4}:\s{0,4}(?:true|!0)\b'
+        # Or handed an options object built first: `const opts = { detached: true, ... };` then
+        # `spawn(process.execPath, [daemon], opts)` -- kodane's daemon installer (review 98).
+        - '(?:const|let|var)\s{1,4}[A-Za-z_$][\w$]{0,40}\s{0,4}=\s{0,4}\{[^{}]{0,400}?\bdetached\s{0,4}:\s{0,4}(?:true|!0)\b[\s\S]{0,1200}?\b(?:spawn|fork|execFile)\s{0,4}\([^;()]{0,300}?,\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\)'
     tests:
       positive:
         - "spawn('node', [f], { detached: true, stdio: 'ignore' });"
+        - "const spawnOptions = {\n  detached: true,\n  stdio: 'ignore',\n};\nconst d = spawn(process.execPath, [p], spawnOptions);"
         - "const c = spawn(process.execPath, [w], {\n  detached: true,\n});"
       negative:
         - "spawn('node', [f], { stdio: 'inherit' });"

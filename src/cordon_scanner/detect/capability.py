@@ -387,6 +387,7 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._js_downloaded_and_run(content, unit.language))
         hits.extend(self._js_wallet_secret_sent(content, unit.language))
         hits.extend(self._js_computed_require(content, unit.language))
+        hits.extend(self._js_spelled_names(content, unit.language))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -1411,6 +1412,8 @@ class CapabilityDetector(BaseDetector):
             # a release on github.com is the package's only if its owner and repository match.
             # Hosts with no owner in the path (the npm registries, nodejs.org) do not need it.
             ctx.package_repository or None,
+        ) or VerifiedDownload.own_release(
+            unit.content.text, unit.language, file_hits, ctx.package_repository or None
         )
 
     def _suspect_dropper_reports(
@@ -2607,6 +2610,40 @@ class CapabilityDetector(BaseDetector):
         r")"
     )
 
+    _JS_CODE_ARRAY_CALL: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w$.])(?P<decoder>[A-Za-z_$][\w$]{0,20})\(\s{0,4}\[\s{0,4}\d{2,3}(?:\s{0,4},\s{0,4}\d{2,3}){1,60}\s{0,4}\]\s{0,4}\)"
+    )
+
+    @classmethod
+    def _js_spelled_names(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
+        """Names reached through a local decoder of character codes, four times or more.
+
+        `global[d([112,114,111,99,101,115,115])]`, `module.constructor[d([95,108,111,97,100])]`:
+        when the module loader, the module and the call are all spelled as codes, no name the
+        other rules read is left (review 98, dax-styles). One decoded string is a constant; a
+        file that reaches four things this way is hiding what it reaches.
+        """
+        if language not in ("javascript", "typescript") or "fromCharCode" not in content.text:
+            return []
+        counts: dict[str, list[re.Match[str]]] = {}
+        for match in cls._JS_CODE_ARRAY_CALL.finditer(content.text):
+            counts.setdefault(match.group("decoder"), []).append(match)
+        for decoder, calls in counts.items():
+            if decoder in ("fromCharCode", "Array", "Uint8Array", "Buffer") or len(calls) < 4:
+                continue
+            first = calls[0]
+            start = len(content.text[: first.start()].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.DYNAMIC_DISPATCH,
+                    rule_id="CAP.JS.SPELLED_NAMES",
+                    byte_start=start,
+                    byte_end=start + len(first.group(0).encode("utf-8")),
+                    line=content.text.count("\n", 0, first.start()) + 1,
+                )
+            ]
+        return []
+
     @classmethod
     def _js_computed_require(
         cls, content: FileContent, language: str | None
@@ -2644,7 +2681,24 @@ class CapabilityDetector(BaseDetector):
             ]
         if "require" not in text:
             return []
-        for match in cls._JS_REQUIRE_CALL.finditer(text):
+        # `require` under another name first: `const _r = require; _r(_d("6f73"))` (review 98:
+        # a preinstall's helper loading os, dns and https through a hex decoder and an alias).
+        aliases = [
+            m.group(1)
+            for m in re.finditer(
+                r"(?:const|let|var)\s{1,4}([A-Za-z_$][\w$]{0,40})\s{0,4}=\s{0,4}require\s{0,4}[;,\n]",
+                text,
+            )
+        ]
+        calls = list(cls._JS_REQUIRE_CALL.finditer(text))
+        for alias in aliases:
+            calls += list(
+                re.finditer(
+                    rf"(?<![\w$.]){re.escape(alias)}\s{{0,4}}\(\s{{0,4}}(?P<decoder>[A-Za-z_$][\w$]{{0,40}})\s{{0,4}}\(",
+                    text,
+                )
+            )
+        for match in calls:
             decoder = match.group("decoder")
             if cls._JS_LOADER_HELPER.search(decoder):
                 continue
@@ -3018,6 +3072,17 @@ class CapabilityDetector(BaseDetector):
         which is what the message has always said.
         """
         proximity = compiled.match.proximity
+        if (
+            proximity > 0
+            and in_hook
+            and hits
+            and max(h.line for h in hits) <= self.SMALL_HOOK_LINES
+        ):
+            # An install script a few hundred lines long runs top to bottom, and its parts are one
+            # act: `@testcarrot/supply6` reads the username in one function and writes it to a raw
+            # socket from another 25 lines below, past a 30-line window (review 98). Proximity
+            # separates the halves of a library; it does not separate the halves of a hook.
+            proximity = 0
         if proximity <= 0:
             if self._evaluate_over(
                 compiled, hits, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
@@ -3051,6 +3116,9 @@ class CapabilityDetector(BaseDetector):
             ):
                 return window
         return None
+
+    SMALL_HOOK_LINES: ClassVar[int] = 300
+    """Install-time code whose every capability sits within this many lines is one window."""
 
     def _dense_window(
         self,

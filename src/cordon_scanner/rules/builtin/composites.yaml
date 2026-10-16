@@ -723,6 +723,10 @@ rules:
             - context: install_entry
             - capability: egress
             - capability: decode
+            # Modules loaded by names a local decoder produces: once everything is behind the
+            # decoder there is no egress or decode left in plain sight to pair with (review 98:
+            # a preinstall helper loading os, dns and https from hex through an alias of require).
+            - rule: CAP.JS.COMPUTED_REQUIRE
             - capability: credential
             - capability: spawn
 
@@ -1644,6 +1648,90 @@ rules:
       all:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
+
+  - id: MALWARE.EXFIL.TRACKING_CALLBACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script reports to a host named for this install
+    message: >
+      Code that runs at install time contacts a host whose name carries a unique identifier.
+      The lookup itself tells the owner which package, and so which machine, was installed --
+      the confirmation step of a dependency-confusion probe.
+    remediation: >
+      Do not install this package. Treat machines that installed it as known to whoever owns
+      the domain.
+    provenance:
+      kind: research
+      reference: Preinstall DNS lookups of UUID-labelled hosts (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - rule: CAP.EGRESS.TRACKING_HOST.001
+
+  - id: MALWARE.INSTALL.SPELLED_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script spells its names in character codes
+    message: >
+      The script an install runs writes the modules, functions and hosts it uses as lists of
+      character codes and decodes them as it runs. Nothing an installer does needs its own
+      names hidden from the person reading it.
+    remediation: >
+      Do not install this package. Decode the lists to see what it does, and treat what the
+      install could reach as exposed.
+    provenance:
+      kind: research
+      reference: >
+        An install script resolving `os`, `dns`, `userInfo` and `lookup` from code arrays and
+        sending the user, host and directory in a DNS name (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_entry
+        - rule: CAP.JS.CHARCODE_STRING.001
+        - any:
+            - capability: dynamic_dispatch
+            - capability: egress
+            - capability: reconnaissance
+
+  - id: MALWARE.EXFIL.HIDDEN_DESTINATION.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script contacts an address it spells out in character codes
+    message: >
+      Code that runs at install time reaches the network, and the address or name it uses is
+      written as a list of character codes rather than as text. An installer that needs a host
+      names it; spelling it in codes keeps it out of review, out of search and out of every
+      blocklist -- the address is the one thing the author did not want seen.
+    remediation: >
+      Do not install this package. Decode the codes to find the destination, and treat what the
+      install could read as sent there.
+    provenance:
+      kind: research
+      reference: >
+        A postinstall assembling its collection URL from character codes and posting the host's
+        name, platform and working directory to it, encrypted (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - capability: egress
+        - rule: CAP.JS.CHARCODE_STRING.001
 
   - id: MALWARE.INSTALL.BACKGROUND.001
     version: 1.0.0
