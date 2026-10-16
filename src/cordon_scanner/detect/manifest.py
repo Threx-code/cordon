@@ -58,6 +58,7 @@ if TYPE_CHECKING:
 MUTABLE_REF_RULE = "POLICY.DEPENDENCY.MUTABLE_REF.001"
 REMOTE_TARBALL_RULE = "SUSPECT.DEPENDENCY.REMOTE_TARBALL.001"
 MALICIOUS_REMOTE_TARBALL_RULE = "MALWARE.DEPENDENCY.REMOTE_TARBALL.001"
+FOREIGN_COMMIT_RULE = "SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001"
 RAW_IP_HOST = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,45}\]")
 SOURCE_PRIORITY_RULE = "SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001"
 WRAPPER_RULE = "POLICY.BUILD.WRAPPER_UNVERIFIED.001"
@@ -612,6 +613,41 @@ class ManifestScripts:
             return REMOTE_TARBALL_RULE, host, Severity.MEDIUM
         return REMOTE_TARBALL_RULE, host, Severity.HIGH
 
+    #: A git dependency pinned to a full commit: `github:owner/repo#<sha>`, `git+https://github.com/
+    #: owner/repo.git#<sha>`, `owner/repo#<sha>`.
+    _COMMIT_PINNED: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:github:|gitlab:|bitbucket:|git\+https?://(?:www\.)?(?:github|gitlab|bitbucket)\.(?:com|org)/"
+        r"|https?://(?:www\.)?(?:github|gitlab|bitbucket)\.(?:com|org)/|git\+ssh://git@[\w.-]+[:/]|git@[\w.-]+:)?"
+        r"(?P<owner>[\w.-]{1,100})/(?P<repo>[\w.-]{1,100}?)(?:\.git)?#(?P<sha>[0-9a-fA-F]{40})$"
+    )
+
+    @staticmethod
+    def _foreign_commit(name: str, spec: str, path: str, ctx: ScanContext) -> str | None:
+        """`owner/repo` when a published npm package's own manifest installs a dependency from a
+        commit of a repository that is not that dependency's: `"@antv/setup": "github:antvis/G2#<40
+        hex>"`. A full SHA reaches any commit in the repository's fork network, including one an
+        attacker pushed to a fork that no branch of the repository holds, and npm runs that
+        commit's lifecycle scripts at install. A project depending on its own fork names the
+        dependency after the repository; a name that is not the repository's borrows a trusted
+        organisation's for code it never published (review 98: 112 of 118 malicious git
+        dependencies; 0 of 19,036 benign npm and Open VSX units pin a full commit under another
+        name)."""
+        member = path.rpartition("!")[2]
+        own_manifest = member == "package/package.json" or (
+            ctx.package_distribution and member == "package.json"
+        )
+        found = ManifestScripts._COMMIT_PINNED.match(spec.strip())
+        if not own_manifest or found is None:
+            return None
+
+        def norm(text: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", text.lower())
+
+        repo, base = norm(found.group("repo")), norm(name.rsplit("/", 1)[-1])
+        if not repo or not base or repo in base or base in repo:
+            return None
+        return f"{found.group('owner')}/{found.group('repo')}"
+
     @staticmethod
     def _without_assignments(part: str) -> str:
         """`part` without leading `VAR=value` words (or `env` and them) whose values run nothing:
@@ -808,6 +844,25 @@ class ManifestDetector(BaseDetector):
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
         return (
+            DeclaredRule(
+                id=FOREIGN_COMMIT_RULE,
+                title="A published package installs a dependency from another project's commit",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector="manifest",
+                message=(
+                    "A dependency is installed from a full commit of a git repository whose name "
+                    "is not the dependency's. The hash reaches commits pushed to any fork, and npm "
+                    "runs the commit's install scripts."
+                ),
+                remediation="Do not install it; find where the commit came from.",
+                references=(
+                    references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+                    references.EMBEDDED_MALICIOUS_CODE,
+                    references.NPM_LIFECYCLE,
+                ),
+            ),
             DeclaredRule(
                 id=CLEARTEXT_SOURCE_RULE,
                 title="Package source over plain HTTP",
@@ -2239,6 +2294,40 @@ class ManifestDetector(BaseDetector):
                     detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
                     capabilities=(),
                     reasons=[f"declared in {declared.field_name}", f"fetched from {host}"],
+                )
+                continue
+            foreign = (
+                ManifestScripts._foreign_commit(declared.name, declared.spec, unit.path, ctx)
+                if manifest.ecosystem == "npm"
+                else None
+            )
+            if foreign is not None:
+                yield self._finding(
+                    rule_id=FOREIGN_COMMIT_RULE,
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                    confidence=Confidence.HIGH,
+                    title="A published package installs a dependency from another project's commit",
+                    message=(
+                        f"{declared.name!r} is declared as {declared.spec!r}: one commit of "
+                        f"{foreign}, a repository that is not that package's. A full commit hash "
+                        f"reaches any commit in the repository's fork network, including one pushed "
+                        f"to a fork that no branch of it holds, and npm runs that commit's install "
+                        f"scripts on every machine that installs this package."
+                    ),
+                    remediation=(
+                        "Do not install it. Find the commit's origin; a dependency the publisher "
+                        "meant to ship has a registry release or a repository of its own name."
+                    ),
+                    unit=unit,
+                    ctx=ctx,
+                    detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
+                    capabilities=(),
+                    reasons=[f"declared in {declared.field_name}", f"commit of {foreign}"],
+                    # Only a published package's own manifest is judged here, and that is never a
+                    # test fixture -- a test helper's own release is still a release (review 98:
+                    # jest-date-mock 1.0.11, a mocking library, was capped as test material).
+                    fixture_ceiling=False,
                 )
                 continue
             if pinned and getattr(ecosystem, "git_distribution", False):

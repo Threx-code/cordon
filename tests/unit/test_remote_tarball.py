@@ -111,3 +111,32 @@ class TestRemoteTarball:
     ) -> None:
         spec = "http://gitlab.example.invalid/fex/node-x/repository/archive.tar.gz?ref=v0.0.0"
         assert TarballKit.severity(tmp_path, spec) == "MEDIUM"
+
+
+class TestForeignCommit:
+    """A dependency installed from a commit of a repository that is not its own (review 98: a
+    2026 campaign shipping `"@antv/setup": "github:antvis/G2#<sha>"` in compromised releases)."""
+
+    RULE = "SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001"
+    SHA = "1916faa365f2788b6e193514872d51a242876569"
+
+    def test_another_projects_commit_under_a_borrowed_name(self, tmp_path: Path) -> None:
+        assert self.RULE in TarballKit.published(tmp_path, f"github:example/charts#{self.SHA}")
+
+    def test_the_url_form_too(self, tmp_path: Path) -> None:
+        spec = f"git+https://github.com/example/charts.git#{self.SHA}"
+        assert self.RULE in TarballKit.published(tmp_path, spec)
+
+    def test_a_fork_of_the_dependency_itself_is_not_this(self, tmp_path: Path) -> None:
+        # `helper` from someone's `helper` fork: the name and the repository agree.
+        assert self.RULE not in TarballKit.published(tmp_path, f"github:someone/helper#{self.SHA}")
+
+    def test_a_branch_or_a_short_hash_is_not_this(self, tmp_path: Path) -> None:
+        assert self.RULE not in TarballKit.published(tmp_path, "github:example/charts#v1.0.0")
+        assert self.RULE not in TarballKit.published(tmp_path, "github:example/charts#1916faa")
+
+    def test_a_repository_manifest_is_not_this(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text(
+            TarballKit.manifest(f"github:example/charts#{self.SHA}"), encoding="utf-8"
+        )
+        assert self.RULE not in TarballKit.rules(tmp_path)
