@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,427 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,432 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -467,7 +467,7 @@ rule's own samples.
 
 ## Dependencies
 
-23 rules.
+24 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -484,6 +484,7 @@ rule's own samples.
 | `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | Dependency has had no release in five years |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | Internal package name resolved from a public registry |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | Dependency pins a version its publisher deprecated for a security reason |
+| `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | A published package installs a dependency from another project's commit |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | A dependency's name is a documented AI hallucination |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | Dependency resolved from outside the registry |
@@ -554,7 +555,7 @@ rule's own samples.
 
 ## Exfiltration
 
-18 rules.
+20 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -563,6 +564,7 @@ rule's own samples.
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | Install script resolves a fixed host name |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
+| `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
@@ -574,6 +576,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.DNS.001` | high | Credential access and a hostname assembled for resolution |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | Credential or machine identity, and a request to a drop point |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
+| `SUSPECT.EXFIL.FLOW_SECRET.001` | high | Sends a credential file off the machine |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
 
@@ -1443,7 +1446,7 @@ rule's own samples.
 
 ## Install-time code
 
-13 rules.
+15 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1455,9 +1458,11 @@ rule's own samples.
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | Install script runs code that cannot be read |
 | `MALWARE.INSTALL.PERSIST.001` | critical | Install script plants code that runs again later |
+| `MALWARE.INSTALL.REMOTE_CODE.001` | critical | Install-time code runs what a server sends it |
 | `MALWARE.INSTALL.SHELL_EVASION.001` | critical | Install script hides the spaces in the command it runs |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | Install script spells its names in character codes |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
+| `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
 

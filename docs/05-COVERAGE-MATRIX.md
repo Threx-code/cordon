@@ -154,6 +154,7 @@ rather than a document.
 | `POLICY.PACKAGE.NOT_ALLOWED.001` | medium | `package-policy` | policy |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | `registry` | policy |
+| `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
@@ -241,6 +242,7 @@ rather than a document.
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.PERSIST.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.REMOTE_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.SHELL_EVASION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | `composites` | install_hook |
@@ -264,6 +266,7 @@ rather than a document.
 | `SUSPECT.DOCUMENT.RTF_OBJECT.001` | high | `formats` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
 | `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | `composites` | dropper |
+| `SUSPECT.INSTALL.AUTOSTART.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
@@ -369,6 +372,7 @@ rather than a document.
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | `composites` | exfiltration |
@@ -380,6 +384,7 @@ rather than a document.
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.FLOW_SECRET.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | `composites` | exfiltration |
 
