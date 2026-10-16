@@ -800,11 +800,11 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 | Dart | `*.dart` | 7 |
 | Dockerfile | `Containerfile`, `Dockerfile` | 0 |
 | Elixir | `*.ex`, `*.exs` | 8 |
-| Go | `*.go` | 11 |
+| Go | `*.go` | 12 |
 | Groovy | `Jenkinsfile`, `build.gradle` | 11 |
 | Haskell | `*.hs`, `*.lhs` | 8 |
 | Java | `*.java` | 11 |
-| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 26 |
+| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 28 |
 | JSON | `*.json` | 0 |
 | Julia | `*.jl` | 8 |
 | Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 19 |
@@ -815,18 +815,18 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 | Objective-C | `*.m`, `*.mm` | 8 |
 | OCaml | `*.ml`, `*.mli` | 8 |
 | Perl | `*.pl`, `*.pm` | 8 |
-| PHP | `*.php` | 11 |
+| PHP | `*.php` | 12 |
 | PowerShell | `*.ps1`, `*.psm1` | 12 |
-| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 20 |
+| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 21 |
 | R | `*.r` | 8 |
-| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 12 |
-| Rust | `*.rs`, `build.rs` | 11 |
+| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 13 |
+| Rust | `*.rs`, `build.rs` | 12 |
 | Scala | `*.scala` | 10 |
-| Shell | `*.bash`, `*.sh`, `*.zsh` | 13 |
+| Shell | `*.bash`, `*.sh`, `*.zsh` | 14 |
 | SQL | `*.sql` | 0 |
 | Swift | `*.swift`, `Package.swift` | 8 |
 | TOML | `*.toml` | 0 |
-| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 26 |
+| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 28 |
 | XML | `*.csproj`, `*.fsproj`, `*.props`, `*.targets`, `*.vbproj`, `*.xml` | 11 |
 | YAML | `*.yaml`, `*.yml` | 0 |
 | Zig | `*.zig`, `build.zig` | 7 |

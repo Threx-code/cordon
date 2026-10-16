@@ -144,7 +144,12 @@ class VerdictTrain:
             "blocks and warnings are scaled by sampled / scanned",
         )
         p.add_argument("--out", type=Path)
-        p.add_argument("--dump", type=Path, help="per-row half, label, area and score as JSON lines")
+        p.add_argument(
+            "--per-ecosystem", action="store_true", help="a threshold per package ecosystem"
+        )
+        p.add_argument(
+            "--dump", type=Path, help="per-row half, label, area and score as JSON lines"
+        )
         p.add_argument("--block-share", type=float, default=0.4)
         p.add_argument("--quiet", type=float, default=98.3)
         a = p.parse_args()
@@ -246,14 +251,31 @@ class VerdictTrain:
         def floored(r) -> bool:
             return any(strong(f) and f[0] in floor for f in r.get("findings", []))
 
+        malware_ecosystem = {
+            "datadog/npm": "npm",
+            "datadog/pypi": "pypi",
+            "datadog/ide_extensions": "openvsx",
+            "malregistry": "pypi",
+        }
+
         def area(r) -> str:
-            """Which threshold a row answers to: skills, MCP servers, or packages."""
+            """Which threshold a row answers to: skills, MCP servers, or a package ecosystem.
+
+            Each ecosystem's line is set on its own benign units: editor extensions' telemetry
+            must not decide where npm's malware stops being blocked."""
             first = r["file"].split("/")[0]
             if first in ("msb", "asb", "pub") or r["file"].startswith("datadog/ai-skills"):
                 return "skill"
             if first in ("mcpv", "mcpc", "mcp"):
                 return "mcp"
-            return "package"
+            for prefix, eco in malware_ecosystem.items():
+                if r["file"].startswith(prefix):
+                    return eco
+            # Only an ecosystem with malware to measure gets its own line; the rest share one,
+            # set on all of them together -- a line fitted to a few hundred benign units of one
+            # ecosystem moves on the other half (review 98: terraform, nix, actions).
+            own = set(malware_ecosystem.values())
+            return first if a.per_ecosystem and first in own else "package"
 
         def code(f) -> bool:
             return VerdictFeatures.is_code(f[0]) and ".KNOWN" not in f[0]
@@ -293,10 +315,10 @@ class VerdictTrain:
             quiet = {e: 100 - 100 * warned_b[e] * scale.get(e, 1.0) / max(ecos[e], 1) for e in ecos}
             return caught, max(n, 1), block_rate, quiet
 
-        areas = ("package", "skill", "mcp")
         eco_area = {}
         for r, _, _ in data:
             eco_area.setdefault(r["file"].split("/")[0], area(r))
+        areas = tuple(sorted({area(r) for r, _, _ in data}))
         thresholds = dict.fromkeys(areas, (0.99, 0.99))
         for x in areas:
             mine = {e for e, ar in eco_area.items() if ar == x}
@@ -319,7 +341,7 @@ class VerdictTrain:
                 (w for w in np.linspace(0.001, block, 200) if worst_quiet(w) >= a.quiet), block
             )
             thresholds[x] = (float(block), float(warn))
-        block, warn = thresholds["package"]
+        block, warn = thresholds.get("package", thresholds.get("npm", (0.99, 0.99)))
         if a.dump is not None:
             with a.dump.open("w", encoding="utf-8") as handle:
                 for h in ("work", "holdout"):

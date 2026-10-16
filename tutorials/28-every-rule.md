@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,424 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,426 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -554,13 +554,14 @@ rule's own samples.
 
 ## Exfiltration
 
-17 rules.
+18 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXFIL.001` | critical | Install script reads credentials and transmits them |
 | `MALWARE.EXFIL.BEACON.001` | critical | Install script reports the machine it is installing on |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
+| `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | Install script resolves a fixed host name |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
@@ -1442,7 +1443,7 @@ rule's own samples.
 
 ## Install-time code
 
-11 rules.
+12 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1453,6 +1454,7 @@ rule's own samples.
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | Install script runs code that cannot be read |
 | `MALWARE.INSTALL.PERSIST.001` | critical | Install script plants code that runs again later |
+| `MALWARE.INSTALL.SHELL_EVASION.001` | critical | Install script hides the spaces in the command it runs |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | Install script spells its names in character codes |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
