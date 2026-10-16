@@ -528,7 +528,10 @@ class _Evaluator:
                 k += 1
                 continue
             if toks[k].value == "...":
+                before = k
                 v, k = self._expr(k + 1, depth + 1, local)
+                if k <= before + 1:
+                    return args + [UNKNOWN], len(toks)
                 args.extend(v if isinstance(v, list) else [UNKNOWN])
                 continue
             arrow = self._arrow_at(k)
@@ -536,7 +539,12 @@ class _Evaluator:
                 args.append(arrow)
                 k = self._expr_end(k)
                 continue
+            before = k
             v, k = self._expr(k, depth + 1, local)
+            if k <= before:
+                # A stray closer (`]`, `}`) where an argument should be: the call is not one this
+                # evaluator understands. Stop here rather than read the same token forever.
+                return args + [UNKNOWN], len(toks)
             args.append(v)
         return args, k + 1
 

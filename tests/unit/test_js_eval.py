@@ -39,6 +39,20 @@ class TestResolve:
 
 
 class TestBounds:
+    def test_a_recursive_helper_with_a_callback_argument_terminates(self) -> None:
+        # Compiled TypeScript (`__awaiter`): evaluating the call re-entered the body, met the
+        # callback's closing brace where an argument should be, and read it forever (review 98).
+        text = (
+            "function convert(definition, top, cache = {}) {\n"
+            "    return __awaiter(this, void 0, void 0, function* () {\n"
+            "        schema.extra = yield convert(definition.values, false);\n"
+            "        }\n"
+            "    }\n"
+            "    return convert(definition, true);\n"
+            "}\n"
+        )
+        assert JsEval.resolve(text).count("\n") == text.count("\n")
+
     def test_an_unterminated_string_does_not_hang(self) -> None:
         text = '"' + "a" * 200_000
         assert JsEval.resolve(text) is not None
