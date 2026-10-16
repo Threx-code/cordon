@@ -240,6 +240,7 @@ rather than a document.
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.PERSIST.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.SPELLED_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | `composites` | install_hook |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
 | `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
@@ -365,7 +366,9 @@ rather than a document.
 | `MALWARE.EXFIL.BEACON.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | `composites` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BEACON.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CALLBACK.001` | high | `composites` | exfiltration |

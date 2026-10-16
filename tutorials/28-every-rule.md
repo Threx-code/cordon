@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,420 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,423 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -554,7 +554,7 @@ rule's own samples.
 
 ## Exfiltration
 
-14 rules.
+16 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -562,7 +562,9 @@ rule's own samples.
 | `MALWARE.EXFIL.BEACON.001` | critical | Install script reports the machine it is installing on |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
+| `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
 | `SUSPECT.EXFIL.CALLBACK.001` | high | Code calls an out-of-band interaction service |
@@ -1439,7 +1441,7 @@ rule's own samples.
 
 ## Install-time code
 
-10 rules.
+11 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1450,6 +1452,7 @@ rule's own samples.
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | Install script runs code that cannot be read |
 | `MALWARE.INSTALL.PERSIST.001` | critical | Install script plants code that runs again later |
+| `MALWARE.INSTALL.SPELLED_CODE.001` | critical | Install script spells its names in character codes |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |

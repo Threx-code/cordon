@@ -48,6 +48,18 @@ class VerdictTrain:
 
     @staticmethod
     def rows(path: Path):
+        seen: set[str] = set()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            # Two scanners over one sample from either end may both reach a unit.
+            if row.get("file") in seen:
+                continue
+            seen.add(row.get("file"))
+            yield row
+        return
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
                 yield json.loads(line)
@@ -86,21 +98,21 @@ class VerdictTrain:
         }
 
     @staticmethod
-    def recall_by_area(rows, labels, scores, block, floored) -> dict[str, str]:
-        """Malicious blocked per area: each labelled set by its name, the malware set by group."""
+    def recall_by_area(rows, labels, blocked) -> dict[str, str]:
+        """Malicious blocked per area: each labelled set by its name, the malware set by source."""
         caught: collections.Counter = collections.Counter()
         seen: collections.Counter = collections.Counter()
-        for r, y, s in zip(rows, labels, scores, strict=True):
+        for r, y, b in zip(rows, labels, blocked, strict=True):
             if not y:
                 continue
-            first = r["file"].split("/")[0]
+            parts = r["file"].split("/")
             area = (
-                first
-                if first in ("msb", "asb", "mcpv", "pub", "mcpc")
-                else "malware:" + "/".join(r["file"].split("/")[:2])
+                parts[0]
+                if parts[0] in ("msb", "asb", "mcpv")
+                else ("/".join(parts[:3]) if parts[0] == "datadog" else parts[0])
             )
             seen[area] += 1
-            caught[area] += bool(r["verdict"]["rules"]) and (s >= block or floored(r))
+            caught[area] += bool(b)
         return {
             k: f"{caught[k]}/{seen[k]} = {100 * caught[k] / seen[k]:.1f}%" for k in sorted(seen)
         }
@@ -125,7 +137,14 @@ class VerdictTrain:
             help="NAME=PATH rescans of labelled sets (skills, MCP servers): a row is malicious when "
             "its path starts with malware/ or malicious-mcp-variants/; NAME is its ecosystem",
         )
+        p.add_argument(
+            "--sample",
+            type=Path,
+            help="the benign sample list; when the rescan is partial, each ecosystem's benign "
+            "blocks and warnings are scaled by sampled / scanned",
+        )
         p.add_argument("--out", type=Path)
+        p.add_argument("--dump", type=Path, help="per-row half, label, area and score as JSON lines")
         p.add_argument("--block-share", type=float, default=0.4)
         p.add_argument("--quiet", type=float, default=98.3)
         a = p.parse_args()
@@ -145,10 +164,24 @@ class VerdictTrain:
         for r in cls.rows(a.corpus):
             total[cls.half(r["file"])][r["file"].split("/")[0]] += 1
 
+        if a.sample is not None:
+            # Every sampled unit is benign data: the noisy units, and those added because a newer
+            # rule might fire on them. Units outside the sample were quiet and stay counted so.
+            noisy |= set(a.sample.read_text(encoding="utf-8").split())
         data = []
+        scanned: collections.Counter = collections.Counter()
         for r in cls.rows(a.benign):
             if r["file"] in noisy and r.get("verdict"):
                 data.append((r, 0, cls.half(r["file"])))
+                scanned[r["file"].split("/")[0]] += 1
+        scale: dict[str, float] = {}
+        if a.sample is not None:
+            sampled = collections.Counter(
+                line.split("/")[0]
+                for line in a.sample.read_text(encoding="utf-8").split()
+                if line in noisy
+            )
+            scale = {e: sampled[e] / scanned[e] for e in scanned if scanned[e]}
         for r in cls.rows(a.malware):
             if r["file"] not in excluded and r.get("verdict"):
                 data.append((r, 1, cls.half(cls.group(r["file"]))))
@@ -213,47 +246,102 @@ class VerdictTrain:
         def floored(r) -> bool:
             return any(strong(f) and f[0] in floor for f in r.get("findings", []))
 
-        def score(h, block, warn):
+        def area(r) -> str:
+            """Which threshold a row answers to: skills, MCP servers, or packages."""
+            first = r["file"].split("/")[0]
+            if first in ("msb", "asb", "pub") or r["file"].startswith("datadog/ai-skills"):
+                return "skill"
+            if first in ("mcpv", "mcpc", "mcp"):
+                return "mcp"
+            return "package"
+
+        def code(f) -> bool:
+            return VerdictFeatures.is_code(f[0]) and ".KNOWN" not in f[0]
+
+        def outcome(r, s, block, warn) -> tuple[bool, bool]:
+            """(blocked, warned) as `Verdict.decide` and the engine grade the row."""
+            findings = [f for f in r.get("findings", []) if code(f)]
+            if not r["verdict"]["rules"]:
+                return False, False
+            if floored(r) or s >= block:
+                return True, True
+            if s >= warn:
+                blocked = any(
+                    len(f) > 3 and f[3] == "malicious" and Severity[f[1].upper()] >= Severity.HIGH
+                    for f in findings
+                )
+                warned = blocked or any(Severity[f[1].upper()] >= Severity.MEDIUM for f in findings)
+                return blocked, warned
+            return False, False
+
+        def score(h, thresholds):
             blocked_b = collections.Counter()
             warned_b = collections.Counter()
             caught = n = 0
             for r, y, s in zip(M[h], Y[h], prob[h], strict=True):
-                rules = r["verdict"]["rules"]
-                if not rules:
-                    continue
-                blocked = s >= block or floored(r)
+                block, warn = thresholds[area(r)]
+                blocked, warned = outcome(r, s, block, warn)
                 if y:
                     n += 1
                     caught += blocked
                     continue
                 eco = r["file"].split("/")[0]
                 blocked_b[eco] += blocked
-                medium = any(v >= int(Severity.MEDIUM) for v in rules.values())
-                warned_b[eco] += blocked or (medium and s >= warn)
+                warned_b[eco] += warned
             ecos = total[h]
-            block_rate = {e: 100 * blocked_b[e] / max(ecos[e], 1) for e in ecos}
-            quiet = {e: 100 - 100 * warned_b[e] / max(ecos[e], 1) for e in ecos}
+            block_rate = {e: 100 * blocked_b[e] * scale.get(e, 1.0) / max(ecos[e], 1) for e in ecos}
+            quiet = {e: 100 - 100 * warned_b[e] * scale.get(e, 1.0) / max(ecos[e], 1) for e in ecos}
             return caught, max(n, 1), block_rate, quiet
 
-        block = next(
-            (
-                t
-                for t in np.linspace(0.02, 0.99, 98)
-                if max(score("work", t, 1.0)[2].values()) <= a.block_share
-            ),
-            0.99,
-        )
-        warn = next(
-            (
-                t
-                for t in np.linspace(0.001, block, 300)
-                if min(score("work", block, t)[3].values()) >= a.quiet
-            ),
-            block,
-        )
+        areas = ("package", "skill", "mcp")
+        eco_area = {}
+        for r, _, _ in data:
+            eco_area.setdefault(r["file"].split("/")[0], area(r))
+        thresholds = dict.fromkeys(areas, (0.99, 0.99))
+        for x in areas:
+            mine = {e for e, ar in eco_area.items() if ar == x}
+
+            def worst_block(t, x=x, mine=mine):
+                trial = {**thresholds, x: (t, t)}
+                rates = score("work", trial)[2]
+                return max((rates.get(e, 0.0) for e in mine), default=0.0)
+
+            block = next(
+                (t for t in np.linspace(0.02, 0.99, 98) if worst_block(t) <= a.block_share), 0.99
+            )
+
+            def worst_quiet(w, x=x, mine=mine, block=block):
+                trial = {**thresholds, x: (block, w)}
+                rates = score("work", trial)[3]
+                return min((rates.get(e, 100.0) for e in mine), default=100.0)
+
+            warn = next(
+                (w for w in np.linspace(0.001, block, 200) if worst_quiet(w) >= a.quiet), block
+            )
+            thresholds[x] = (float(block), float(warn))
+        block, warn = thresholds["package"]
+        if a.dump is not None:
+            with a.dump.open("w", encoding="utf-8") as handle:
+                for h in ("work", "holdout"):
+                    for r, y, p_ in zip(M[h], Y[h], prob[h], strict=True):
+                        b, w = thresholds[area(r)]
+                        handle.write(
+                            json.dumps(
+                                {
+                                    "file": r["file"],
+                                    "half": h,
+                                    "y": int(y),
+                                    "area": area(r),
+                                    "score": round(float(p_), 4),
+                                    "blocked": outcome(r, p_, b, w)[0],
+                                    "rules": r["verdict"]["rules"],
+                                }
+                            )
+                            + "\n"
+                        )
         report = {}
         for h in ("work", "holdout"):
-            caught, n, block_rate, quiet = score(h, block, warn)
+            caught, n, block_rate, quiet = score(h, thresholds)
             z = 1.96
             p_hat = caught / n
             centre = p_hat + z * z / (2 * n)
@@ -267,9 +355,20 @@ class VerdictTrain:
                 "ecosystems": len(block_rate),
                 "worst_block": sorted(block_rate.items(), key=lambda x: -x[1])[:5],
                 "worst_quiet": sorted(quiet.items(), key=lambda x: x[1])[:5],
-                "recall_by_area": cls.recall_by_area(M[h], Y[h], prob[h], block, floored),
+                "recall_by_area": cls.recall_by_area(
+                    M[h],
+                    Y[h],
+                    [
+                        outcome(r, p_, *thresholds[area(r)])[0]
+                        for r, p_ in zip(M[h], prob[h], strict=True)
+                    ],
+                ),
             }
-        print(json.dumps({"block": block, "warn": warn, "floor": floor, **report}, indent=1))
+        print(
+            json.dumps(
+                {"thresholds": thresholds, "floor": floor, **report}, indent=1, default=float
+            )
+        )
         if a.out:
             model = cls.export(
                 clf,
@@ -283,6 +382,9 @@ class VerdictTrain:
                 },
             )
             model["floor"] = floor
+            model["thresholds"]["areas"] = {
+                x: {"block": b, "warn": w} for x, (b, w) in thresholds.items()
+            }
             with gzip.open(a.out, "wt", encoding="utf-8") as handle:
                 json.dump(model, handle, separators=(",", ":"))
 
