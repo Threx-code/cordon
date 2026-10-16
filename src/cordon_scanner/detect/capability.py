@@ -386,7 +386,14 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._destination_capabilities(content, unit.language))
         hits.extend(self._js_downloaded_and_run(content, unit.language))
         hits.extend(self._js_wallet_secret_sent(content, unit.language))
-        hits.extend(self._js_computed_require(content, unit.language))
+        computed = self._js_computed_require(content, unit.language)
+        hits.extend(computed)
+        if computed and not self._bundled(content):
+            # The same, in a hand-written file: the install-time composite may convict on this alone.
+            # A bundle's loader computes module names by construction (review 98: two extensions'
+            # dist/extension.js).
+            first = computed[0]
+            hits.append(replace(first, rule_id="CAP.JS.COMPUTED_REQUIRE_SOURCE"))
         hits.extend(self._js_spelled_names(content, unit.language))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
@@ -587,6 +594,14 @@ class CapabilityDetector(BaseDetector):
         trimmed = [host.rstrip(b":.'\"") for host in hosts]
         return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
 
+    _JS_EVAL_MAX_BYTES: ClassVar[int] = 100_000
+    #: What a file that computes its names contains; without one, there is nothing to evaluate.
+    _JS_EVAL_MARKERS: ClassVar[re.Pattern[str]] = re.compile(
+        r"fromCharCode|Buffer\s*\.\s*from\s*\(|\batob\s*\(|\.\s*concat\s*\(|=\s*require\s*[;,\n]"
+        r"|constructor\s*\.\s*_load|\\x[0-9a-fA-F]{2}|\[\s*\d{2,3}\s*,\s*\d{2,3}\s*,"
+        r"|\bdns\s*\.\s*(?:promises\s*\.\s*)?(?:lookup|resolve)"
+    )
+
     def _folded_capabilities(
         self,
         content: FileContent,
@@ -602,12 +617,19 @@ class CapabilityDetector(BaseDetector):
         if language not in ("javascript", "typescript"):
             return []
         from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.js_eval import JsEval
         from cordon_scanner.detect.js_fold import JsFold
 
         text = content.text
-        if "+" not in text or not JsFold.has_fragments(text):
-            return []
-        folded = JsFold.fold(text)
+        folded = JsFold.fold(text) if "+" in text and JsFold.has_fragments(text) else text
+        # And the names and strings the file computes from constants (`detect/js_eval.py`):
+        # decoders of character codes, hex and base64, `.concat` chains, `require` under an alias.
+        decoded_lines: list[int] = []
+        # Hand-written loaders are small; a bundle reuses its short names across scopes, and a
+        # constant bound "once" there is a different variable in each function (review 98: a
+        # BigQuery extension's 480-line bundle).
+        if len(text) <= self._JS_EVAL_MAX_BYTES and self._JS_EVAL_MARKERS.search(text):
+            folded, decoded_lines = JsEval.resolve_with_decodes(folded)
         if folded == text:
             return []
         already = {(h.rule_id, h.line) for h in seen}
@@ -630,6 +652,22 @@ class CapabilityDetector(BaseDetector):
                     byte_start=begin,
                     byte_end=max(begin, end),
                     line=hit.line,
+                )
+            )
+        # The evaluation itself is the decode: `Buffer.from(hex, "hex").toString()` written out as
+        # the command it held leaves no decoder in the view for the decode rules to see.
+        for line in decoded_lines:
+            if line > len(starts):
+                continue
+            begin = starts[line - 1]
+            end = starts[line] - 1 if line < len(starts) else len(raw)
+            extra.append(
+                CapabilityHit(
+                    capability=Capability.DECODE,
+                    rule_id="CAP.JS.EVALUATED_DECODE",
+                    byte_start=begin,
+                    byte_end=max(begin, end),
+                    line=line,
                 )
             )
         return extra
@@ -2610,6 +2648,18 @@ class CapabilityDetector(BaseDetector):
         r")"
     )
 
+    @staticmethod
+    def _bundled(content: FileContent) -> bool:
+        """Compiled or bundled output: a dist/out/build directory, a .min/.bundle file, or a file
+        too large to be a hand-written script."""
+        member = content.path.rpartition("!")[2]
+        return bool(
+            re.search(
+                r"(?:^|/)(?:dist|out|build|bundle|webpack)/|\.(?:min|bundle)\.[cm]?js$", member
+            )
+            or len(content.raw) > 100_000
+        )
+
     _JS_CODE_ARRAY_CALL: ClassVar[re.Pattern[str]] = re.compile(
         r"(?<![\w$.])(?P<decoder>[A-Za-z_$][\w$]{0,20})\(\s{0,4}\[\s{0,4}\d{2,3}(?:\s{0,4},\s{0,4}\d{2,3}){1,60}\s{0,4}\]\s{0,4}\)"
     )
@@ -2623,7 +2673,11 @@ class CapabilityDetector(BaseDetector):
         other rules read is left (review 98, dax-styles). One decoded string is a constant; a
         file that reaches four things this way is hiding what it reaches.
         """
-        if language not in ("javascript", "typescript") or "fromCharCode" not in content.text:
+        if (
+            language not in ("javascript", "typescript")
+            or "fromCharCode" not in content.text
+            or CapabilityDetector._bundled(content)
+        ):
             return []
         counts: dict[str, list[re.Match[str]]] = {}
         for match in cls._JS_CODE_ARRAY_CALL.finditer(content.text):
@@ -2683,13 +2737,22 @@ class CapabilityDetector(BaseDetector):
             return []
         # `require` under another name first: `const _r = require; _r(_d("6f73"))` (review 98:
         # a preinstall's helper loading os, dns and https through a hex decoder and an alias).
-        aliases = [
-            m.group(1)
-            for m in re.finditer(
-                r"(?:const|let|var)\s{1,4}([A-Za-z_$][\w$]{0,40})\s{0,4}=\s{0,4}require\s{0,4}[;,\n]",
-                text,
-            )
-        ]
+        # Not in a bundle: a bundler aliases `require` as routinely as it renames everything else.
+        bundled = re.search(
+            r"(?:^|/)(?:dist|out|build|bundle|webpack)/|\.(?:min|bundle)\.[cm]?js$|\.vsix!",
+            content.path.rpartition("!")[2] if ".vsix!" not in content.path else content.path,
+        )
+        aliases = (
+            []
+            if bundled or len(text) > 100_000
+            else [
+                m.group(1)
+                for m in re.finditer(
+                    r"(?:const|let|var)\s{1,4}([A-Za-z_$][\w$]{0,40})\s{0,4}=\s{0,4}require\s{0,4}[;,\n]",
+                    text,
+                )
+            ]
+        )
         calls = list(cls._JS_REQUIRE_CALL.finditer(text))
         for alias in aliases:
             calls += list(
@@ -3076,7 +3139,11 @@ class CapabilityDetector(BaseDetector):
             proximity > 0
             and in_hook
             and hits
-            and max(h.line for h in hits) <= self.SMALL_HOOK_LINES
+            and (
+                max(h.line for h in hits) <= self.SMALL_HOOK_LINES
+                # Lines of ordinary length: a minified bundle's 300 lines are a whole library.
+                and max(h.byte_start for h in hits) <= 160 * self.SMALL_HOOK_LINES
+            )
         ):
             # An install script a few hundred lines long runs top to bottom, and its parts are one
             # act: `@testcarrot/supply6` reads the username in one function and writes it to a raw
