@@ -355,6 +355,25 @@ class Harness:
                     if root in path.parents:
                         wheel.write(path, real(path, root))
             return out
+        # An editor extension: the marketplace serves a .vsix -- a zip holding `extension/` and
+        # `extension.vsixmanifest`. Scanned as a bare folder its `extension/package.json` is not
+        # recognised as an extension's, so the entry the editor starts on every launch was read as
+        # inert library code (review 98: every IDE sample was graded that way).
+        vsix = [
+            p
+            for p in files
+            if p.name == "package.json"
+            and p.parent.name == "extension"
+            and (p.parent.parent / "extension.vsixmanifest").is_file()
+        ]
+        if len(vsix) == 1:
+            root = vsix[0].parent.parent
+            out = into / f"{archive.parent.name}-{archive.stem}.vsix"
+            with zipfile.ZipFile(out, "w") as package:
+                for path in files:
+                    if root in path.parents:
+                        package.write(path, real(path, root))
+            return out
         pkg_info = [p for p in files if p.name == "PKG-INFO" and "egg-info" not in str(p)]
         if pkg_info:
             root = min((p.parent for p in pkg_info), key=lambda d: len(d.parts))
