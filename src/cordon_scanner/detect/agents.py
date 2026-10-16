@@ -3562,7 +3562,11 @@ _SERVER_SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py")
 _MCP_SDK: Final = re.compile(
     r"\b(?:server|mcp|app)\.(?:tool|registerTool)\s*\(\s*\{?\s*(?:name\s*:|[\"'`])|\bnew\s+McpServer\s*\("
     r"|@modelcontextprotocol/sdk|\bfrom[ \t]+(?:mcp(?:\.server)?|fastmcp)\b[^\n]{0,40}\bimport\b"
-    r"|^[ \t]*import[ \t]+(?:fastmcp|mcp)\b",
+    r"|^[ \t]*import[ \t]+(?:fastmcp|mcp)\b"
+    # A handler registered on the server object, however the module got hold of it: tools split
+    # across files import `mcp` from the package's own server module, not from the SDK (review
+    # 98: a selenium server's EXEC:// branch sat in `tools/element_interaction.py`).
+    r"|^[ \t]*@[ \t]*\w{0,20}(?:mcp|server)\w{0,20}\.(?:tool|resource|prompt)\s*\(",
     re.MULTILINE,
 )
 """An import of an MCP server SDK: the file declares tools an agent will be handed."""
