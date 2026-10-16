@@ -595,7 +595,9 @@ class TestBuiltinPacks:
         # the AST tier emits it. Requiring a regex for it would mean writing a
         # pattern that cannot exist, and the honest way to express that is to
         # say so here rather than to invent one.
-        pattern_expressible = set(Capability) - {Capability.DYNAMIC_DISPATCH}
+        # `flow` likewise: a value followed from where it is read to where it leaves, which only
+        # the dataflow analysis (`detect/js_flow.py`) can establish.
+        pattern_expressible = set(Capability) - {Capability.DYNAMIC_DISPATCH, Capability.FLOW}
         # And what a language cannot do at all. Dart has no native object deserialiser:
         # `dart:convert` decodes data into maps and lists, and nothing in the platform
         # turns bytes back into arbitrary classes. A `deserialize` rule for Dart would

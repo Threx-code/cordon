@@ -453,6 +453,16 @@ class Capability(enum.StrEnum):
     primitive: what makes it a finding is the instruction it carries, or what decided to run it.
     """
 
+    FLOW = "flow"
+    """A value followed from where it is read to where it leaves (`detect/js_flow.py`).
+
+    Not a primitive of its own but evidence of how two primitives connect, kept apart for the same
+    reason as the splits above: tagged `egress`, a followed flow also satisfied every composite
+    that asks only for a network call somewhere in the file, and turned bundled editor extensions
+    into install-time spelled-code findings (review 98, about twenty Open VSX agents). Only the
+    composites written for flows read it.
+    """
+
     MINE = "mine"
     """Consumes compute for a cryptocurrency.
 

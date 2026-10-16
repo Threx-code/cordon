@@ -156,6 +156,9 @@ class TestCategoryAndCapability:
             # beacon and not one of them produced a finding before this existed.
             "reconnaissance",
             "egress",
+            # A followed source-to-sink flow, separated from `egress` so that it feeds only the
+            # composites written for flows (review 98).
+            "flow",
             "persist",
             # A long wait, separated from `anti_analysis` for the fourth instance of the
             # same mistake. `SUSPECT.ANTI_ANALYSIS.001` is titled "Behaviour gated on

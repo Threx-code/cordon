@@ -42,7 +42,7 @@ class TestResolve:
 
 class TestRegexLiterals:
     def test_brackets_inside_a_pattern_do_not_unbalance_the_file(self) -> None:
-        text = 'const re = /[(]+/g;\nconst u = String.fromCharCode(104, 105);\n'
+        text = "const re = /[(]+/g;\nconst u = String.fromCharCode(104, 105);\n"
         assert '"hi"' in JsEval.resolve(text)
 
     def test_division_is_not_a_pattern(self) -> None:
@@ -50,7 +50,10 @@ class TestRegexLiterals:
         assert "regex" not in kinds
 
     def test_a_pattern_after_return_and_after_an_operator(self) -> None:
-        kinds = [t.kind for t in JsEval.tokens("function f(s) { return /a\\/b/.test(s) || s.split(/,/); }")]
+        kinds = [
+            t.kind
+            for t in JsEval.tokens("function f(s) { return /a\\/b/.test(s) || s.split(/,/); }")
+        ]
         assert kinds.count("regex") == 2
 
 
@@ -101,3 +104,19 @@ class TestBounds:
     def test_ordinary_code_is_unchanged(self) -> None:
         text = "function add(a, b) { return a + b; }\nmodule.exports = add;\n"
         assert JsEval.resolve(text) == text
+
+
+class TestModuleNames:
+    def test_a_module_under_a_borrowed_name_is_read_as_the_module(self) -> None:
+        text = 'var mint = require("vm");\nmint.runInContext(body, ctx);\n'
+        assert "vm.runInContext(body, ctx)" in JsEval.module_names(text)
+
+    def test_a_name_bound_twice_is_left_alone(self) -> None:
+        text = (
+            'var a = require("vm");\nfunction f() { var a = require("fs"); a.readFileSync(x); }\n'
+        )
+        assert JsEval.module_names(text) == text
+
+    def test_a_name_reassigned_is_left_alone(self) -> None:
+        text = 'let c = require("child_process");\nc = other;\nc.exec(x);\n'
+        assert JsEval.module_names(text) == text

@@ -386,6 +386,7 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._destination_capabilities(content, unit.language))
         hits.extend(self._js_downloaded_and_run(content, unit.language))
         hits.extend(self._js_wallet_secret_sent(content, unit.language))
+        hits.extend(self._js_flows(content, unit.language))
         computed = self._js_computed_require(content, unit.language)
         hits.extend(computed)
         if computed and not self._bundled(content):
@@ -404,6 +405,12 @@ class CapabilityDetector(BaseDetector):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
         hits = self._off_this_machine(content, hits)
+        if self._bundled(content):
+            # A compiled tool that schedules its own jobs (an agent runner's LaunchAgent, a
+            # crontab writer) registers autostart entries as its feature; three Open VSX agent
+            # extensions do it from dist/. The hand-written file is where an implant's is
+            # (review 98).
+            hits = [h for h in hits if h.rule_id != "CAP.JS.AUTOSTART.001"]
         return list(self._composite_findings(unit, ctx, hits, candidates))
 
     #: A call on an SSH session that takes a command: what it is given runs elsewhere.
@@ -670,7 +677,11 @@ class CapabilityDetector(BaseDetector):
         # Hand-written loaders are small; a bundle reuses its short names across scopes, and a
         # constant bound "once" there is a different variable in each function (review 98: a
         # BigQuery extension's 480-line bundle).
-        if len(text) <= self._JS_EVAL_MAX_BYTES and self._JS_EVAL_MARKERS.search(text):
+        if (
+            len(text) <= self._JS_EVAL_MAX_BYTES
+            and self._JS_EVAL_MARKERS.search(text)
+            and not self._bundled(content)
+        ):
             try:
                 folded, decoded_lines = JsEval.resolve_with_decodes(folded)
             except (IndexError, KeyError, ValueError, TypeError, RecursionError):
@@ -678,6 +689,10 @@ class CapabilityDetector(BaseDetector):
                 # file, the file is read as written -- every other rule still applies -- rather
                 # than the scan failing.
                 decoded_lines = []
+        elif len(text) <= self._JS_EVAL_MAX_BYTES and not self._bundled(content):
+            # Without anything to evaluate, still the modules under names chosen to look like
+            # anything else (`JsEval.module_names`), which the evaluator's view also writes back.
+            folded = JsEval.module_names(folded)
         if folded == text:
             return []
         already = {(h.rule_id, h.line) for h in seen}
@@ -2607,6 +2622,95 @@ class CapabilityDetector(BaseDetector):
             return cls._js_wallet_secret_through_helper(text)
         return []
 
+    #: Both ends of a flow must be possible before the dataflow analysis is worth running.
+    _JS_FLOW_SOURCE: ClassVar[re.Pattern[str]] = re.compile(
+        r"process\.env|\bos\.|require\(\s*['\"](?:node:)?os['\"]|from\s+['\"](?:node:)?os['\"]|readFile|readdir"
+        r"|createReadStream|privateKey|secretKey|mnemonic|seedPhrase|homedir|document\.cookie|localStorage"
+        r"|clipboard"
+    )
+    _JS_FLOW_SINK: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bfetch\s*\(|axios|https?['\"]|\.request\s*\(|WebSocket|XMLHttpRequest|\bdns\b|child_process"
+        r"|sendBeacon|node-fetch|undici|\bgot\b|superagent|needle|\bnet['\"]|\btls['\"]"
+    )
+    #: The flows reported, by source kind, and the sinks at which each is one. A secret leaves
+    #: through a request, a connection, a lookup or a child process (`curl -d @~/.ssh/id_rsa`);
+    #: the environment or the host name handed to a child process stays on this machine; what a
+    #: server sent is judged where it is executed.
+    _JS_FLOW_RULES: ClassVar[tuple[tuple[str, str, frozenset[str]], ...]] = (
+        (
+            "secret_file",
+            "CAP.JS.FLOW.SECRET_FILE_SENT",
+            frozenset({"request", "connection", "dns", "process"}),
+        ),
+        (
+            "wallet_key",
+            "CAP.JS.FLOW.WALLET_KEY_SENT",
+            frozenset({"request", "connection", "dns", "process"}),
+        ),
+        (
+            "home_file",
+            "CAP.JS.FLOW.HOME_FILE_SENT",
+            frozenset({"request", "connection", "dns", "process"}),
+        ),
+        ("identity", "CAP.JS.FLOW.IDENTITY_SENT", frozenset({"request", "connection", "dns"})),
+        (
+            "environment",
+            "CAP.JS.FLOW.ENVIRONMENT_SENT",
+            frozenset({"request", "connection", "dns"}),
+        ),
+        ("network_response", "CAP.JS.FLOW.REMOTE_CODE", frozenset({"execute", "process"})),
+    )
+
+    @classmethod
+    def _js_flows(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
+        """Sensitive values followed to where they leave, through bindings, helpers and callbacks
+        (`detect/js_flow.py`) -- the same act as the proximity composites, without needing the
+        read and the send to sit close. One hit per (rule, sink line); `detail` carries the
+        destination's kind (drop, ip, fixed, unknown) and the sink's (request, connection, dns,
+        process) for the composites to judge."""
+        if language not in ("javascript", "typescript"):
+            return []
+        text = content.text
+        if cls._JS_FLOW_SOURCE.search(text) is None or cls._JS_FLOW_SINK.search(text) is None:
+            return []
+        from cordon_scanner.detect.js_eval import JsEval
+        from cordon_scanner.detect.js_flow import JsFlow
+        from cordon_scanner.detect.js_fold import JsFold
+
+        try:
+            # Read where the evaluator writes out computed names and hosts; lines are kept.
+            view = (
+                JsEval.resolve(JsFold.fold(text))
+                if len(text) <= cls._JS_EVAL_MAX_BYTES
+                and cls._JS_EVAL_MARKERS.search(text)
+                and not cls._bundled(content)
+                else text
+            )
+            flows = JsFlow.flows(view)
+        except (IndexError, KeyError, ValueError, TypeError, RecursionError):
+            return []  # read as written: every other rule still applies
+        starts = [0]
+        for index, char in enumerate(text):
+            if char == "\n":
+                starts.append(index + 1)
+        hits: list[CapabilityHit] = []
+        for flow in flows:
+            for kind, rule_id, sinks in cls._JS_FLOW_RULES:
+                if kind not in flow.sources or flow.sink not in sinks:
+                    continue
+                offset = starts[min(flow.line, len(starts)) - 1]
+                start = len(text[:offset].encode("utf-8"))
+                hits.append(
+                    CapabilityHit(
+                        capability=Capability.FLOW,
+                        rule_id=f"{rule_id}.{flow.destination.upper()}",
+                        byte_start=start,
+                        byte_end=start + 1,
+                        line=flow.line,
+                    )
+                )
+        return hits
+
     #: A one-parameter function or method: `static addToQueue(process) {`, `function q(k) {`,
     #: `const q = (k) => {`.
     _JS_ONE_PARAM_FUNCTION: ClassVar[re.Pattern[str]] = re.compile(
@@ -2700,12 +2804,16 @@ class CapabilityDetector(BaseDetector):
     def _bundled(content: FileContent) -> bool:
         """Compiled or bundled output: a dist/out/build directory, a .min/.bundle file, or a file
         too large to be a hand-written script."""
-        member = content.path.rpartition("!")[2]
+        return CapabilityDetector._bundled_path(content.path) or len(content.raw) > 100_000
+
+    @staticmethod
+    def _bundled_path(path: str) -> bool:
+        """`_bundled` by the path alone: a dist/out/build directory or a .min/.bundle file."""
+        member = path.rpartition("!")[2]
         return bool(
             re.search(
                 r"(?:^|/)(?:dist|out|build|bundle|webpack)/|\.(?:min|bundle)\.[cm]?js$", member
             )
-            or len(content.raw) > 100_000
         )
 
     _JS_CODE_ARRAY_CALL: ClassVar[re.Pattern[str]] = re.compile(
@@ -3191,6 +3299,10 @@ class CapabilityDetector(BaseDetector):
                 max(h.line for h in hits) <= self.SMALL_HOOK_LINES
                 # Lines of ordinary length: a minified bundle's 300 lines are a whole library.
                 and max(h.byte_start for h in hits) <= 160 * self.SMALL_HOOK_LINES
+                # And written by hand: an editor extension's compiled entry is a bundle whose
+                # first hundred lines hold unrelated libraries (review 98: about twenty Open VSX
+                # AI-coding extensions read as one install-time act).
+                and not self._bundled_path(path)
             )
         ):
             # An install script a few hundred lines long runs top to bottom, and its parts are one

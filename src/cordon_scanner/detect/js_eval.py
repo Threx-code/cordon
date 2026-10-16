@@ -275,9 +275,50 @@ class JsEval:
             return text, []
         ev = _Evaluator(cls.tokens(text), text)
         ev.bind()
-        view = ev.rewrite()
+        view = cls.module_names(ev.rewrite())
         lines = sorted({text.count("\n", 0, offset) + 1 for offset in ev.decoded_offsets})
         return view, lines
+
+    #: Node's own modules whose members the rules name: `vm.runInContext`, `child_process.exec`.
+    _CORE_MODULE_BINDING: ClassVar[re.Pattern[str]] = re.compile(
+        r"""(?<![\w$.])(?:var|let|const)\s{1,8}([A-Za-z_$][\w$]{0,40})\s{0,4}=\s{0,4}require\s{0,4}\(\s{0,4}"""
+        r"""['"`](?:node:)?(child_process|vm|https?|http2|net|tls|dgram|dns|fs|os|crypto|zlib|module|worker_threads)['"`]\s{0,4}\)"""
+        r"""\s{0,4}(?=[;,\n])"""
+    )
+
+    @classmethod
+    def module_names(cls, text: str) -> str:
+        """`var mint_kiwi = require('vm'); mint_kiwi.runInContext(...)` read as `vm.runInContext`.
+
+        A module bound to a name chosen to look like anything else keeps every rule written
+        against the module's members from matching (review 98: an extension's payload ran a
+        server's response through `vm` under a food word). Each name bound once, to one module,
+        is written back as the module's name where it is used as an object (`name.member`); a name
+        bound twice is a reused short name in a bundle, and is left alone. Lengths change, line
+        breaks do not."""
+        found: dict[str, str] = {}
+        twice: set[str] = set()
+        for m in cls._CORE_MODULE_BINDING.finditer(text):
+            name, module = m.group(1), m.group(2)
+            if name in found or name in twice:
+                twice.add(name)
+                found.pop(name, None)
+            elif name != module.replace("_", "") and name != module:
+                found[name] = module
+        if not found:
+            return text
+        for name in list(found):
+            # Bound again anywhere else (`name = ...`, a parameter, another declaration): not one value.
+            if len(re.findall(rf"(?<![\w$.]){re.escape(name)}\s{{0,4}}=(?!=)", text)) > 1:
+                found.pop(name)
+        if not found:
+            return text
+        use = re.compile(
+            r"(?<![\w$.])("
+            + "|".join(re.escape(n) for n in found)
+            + r")(?=\s{0,4}\.\s{0,4}[A-Za-z_$])"
+        )
+        return use.sub(lambda m: found[m.group(1)], text)
 
 
 @dataclass

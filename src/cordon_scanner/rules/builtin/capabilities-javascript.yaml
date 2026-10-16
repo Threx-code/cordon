@@ -74,17 +74,23 @@ rules:
       kind: regex
       patterns:
         - '\[\s{0,4}(?:\d{2,3}\s{0,4},\s{0,4}){8,}\d{2,3}\s{0,4}\][^\n]{0,300}?fromCharCode'
-        # Or many short strings spelled that way, each handed to a local decoder: `d([111,115])`
-        # for `os`, `d([108,111,111,107,117,112])` for `lookup` (review 98, dax-styles).
-        - 'fromCharCode[\s\S]{0,2000}?(?<![\w$.])[A-Za-z_$][\w$]{0,20}\(\s{0,4}\[\s{0,4}\d{2,3}(?:\s{0,4},\s{0,4}\d{2,3}){1,40}\s{0,4}\]\s{0,4}\)'
+        # Or short strings spelled that way, each handed to a local decoder:
+        # `d([108,111,111,107,117,112])` for `lookup` (review 98, dax-styles). Four codes or more,
+        # each below 200 as text's are: a bundle's `f([12, 34])` and `rgb([255,255,255])` are
+        # numbers, not names (about twenty Open VSX extensions' dist/ bundles matched the looser
+        # form).
+        - 'fromCharCode[\s\S]{0,2000}?(?<![\w$.])(?<!new )(?!(?:U?[Ii]nt(?:8|16|32)(?:Clamped)?Array|Array|Buffer|Set)\b)[A-Za-z_$][\w$]{0,20}\(\s{0,4}\[\s{0,4}1?\d\d(?:\s{0,4},\s{0,4}1?\d\d){3,40}\s{0,4}\]\s{0,4}\)'
         - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}(?:\.\.\.\s{0,4})?\[?\s{0,4}(?:\d{2,3}\s{0,4},\s{0,4}){8,}\d{2,3}'
     tests:
       positive:
         - "const codes=[104,116,116,112,115,58,47,47,101,120];const u=codes.map(c=>String.fromCharCode(c)).join('')"
         - "const s = String.fromCharCode(104, 116, 116, 112, 115, 58, 47, 47, 120, 121);"
+        - "const d=a=>a.map(c=>String.fromCharCode(c)).join('');const x=d([108,111,111,107,117,112]);"
       negative:
         - "const nl = String.fromCharCode(10);"
         - "const ch = String.fromCharCode(code);"
+        - "String.fromCharCode(c);var m=f([12, 34]),k=rgb([255,255,255,0]);"
+        - "String.fromCharCode(c);var L=new Uint8Array([116,114,97,105,108,101,114]);"
 
   - id: CAP.JS.FUNCTION_AS_VALUE.001
     version: 1.0.0
@@ -692,15 +698,58 @@ rules:
         - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
         - 'WantedBy=(?:default|multi-user)\.target'
         - 'CurrentVersion\\\\Run'
+        # The Windows Startup folder, written whole or joined from parts (review 98: an extension
+        # copying a batch file there on activation).
+        - '(?i:start[ _]menu[\x22\x27\\\\/ ,]{1,8}programs[\x22\x27\\\\/ ,]{1,8}startup\b)'
+        - '(?i:shell:startup\b)'
     tests:
       positive:
         - "fs.appendFileSync(home + '/.bashrc', line);"
         - "execSync('crontab -l | ...');"
         - "const dir = path.join(home, '.config', 'systemd', 'user');"
         - "execSync(`systemctl --user enable ${name}.service`);"
+        - "path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')"
       negative:
         - "const profile = await loadUserProfile(id);"
         - "logger.info('service started');"
+
+  - id: CAP.JS.AUTOSTART.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: persist
+    title: Registers something to start at login or boot
+    message: >
+      This file names a place the operating system starts programs from on its own: the Windows
+      Startup folder, a Run key or a scheduled task, a macOS LaunchAgent, a crontab, or a systemd
+      unit it enables. A shell profile is not one of these -- completion installers append to
+      .bashrc -- but each of these runs its entry with nobody asking.
+    remediation: Confirm the user asked for something to run at every login or boot.
+    provenance:
+      kind: research
+      reference: An editor extension copying a batch file into the Startup folder on activation (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:start[ _]menu[\x22\x27\\\\/ ,]{1,8}programs[\x22\x27\\\\/ ,]{1,8}startup\b)'
+        - '(?i:shell:startup\b)'
+        - 'CurrentVersion\\\\{1,2}Run(?:Once)?\b'
+        - '(?i:\bschtasks(?:\.exe)?\b[^\n]{0,80}/create\b)'
+        - 'Library[/\\\x22\x27 ,]{1,8}LaunchAgents|/Library/LaunchDaemons'
+        - '(?<![\w-])crontab\b(?!-)[^\n]{0,40}(?:\s-\s?[\x22\x27`]|\|)|/etc/cron\.d/'
+        - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
+    tests:
+      positive:
+        - "path.join(home, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')"
+        - "execSync('reg add HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run /v x /d y')"
+        - "const plist = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.x.plist');"
+        - "execSync(`(crontab -l; echo '@reboot node x') | crontab -`);"
+      negative:
+        - "fs.appendFileSync(path.join(os.homedir(), '.bashrc'), completion);"
+        - "const startup = performance.now();"
+        - "// crontab-style schedule parser"
 
   # ---------------------------------------------------------------------
   # Fetch-execute adjacency

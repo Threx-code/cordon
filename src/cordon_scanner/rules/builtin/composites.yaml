@@ -1248,6 +1248,76 @@ rules:
       all:
         - rule: CAP.JS.WALLET_SECRET_SENT
 
+  - id: MALWARE.EXFIL.FLOW_TO_DROP.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Sends this machine's secrets or identity to a drop point
+    message: >
+      A value read here -- a credential file, a wallet key, a file from the home directory, the
+      whole environment, or who and where this machine is -- reaches a request bound for an
+      address that exists to collect data from other people's code: a webhook catcher, a chat
+      bot API, a tunnel, a paste site, or a bare IP address. Followed through bindings, helper
+      functions and callbacks (`detect/js_flow.py`), so it holds however far apart the read and
+      the send are written.
+    remediation: >
+      Do not install or run it. Treat what the code could read as sent: rotate those credentials,
+      move funds from any wallet whose key was on the machine.
+    references:
+      - https://attack.mitre.org/techniques/T1041/
+    provenance:
+      kind: research
+      reference: >
+        Review 98, on 40,768 benign units: drop-point destinations 0 benign; bare public addresses
+        3 benign before private and loopback ranges were excluded. Recovers wallet-key stealers
+        posting to bare addresses and a home-directory seed-phrase harvester whose read and send
+        sat in separate functions.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.DROP
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.IP
+        - rule: CAP.JS.FLOW.WALLET_KEY_SENT.DROP
+        - rule: CAP.JS.FLOW.WALLET_KEY_SENT.IP
+        - rule: CAP.JS.FLOW.HOME_FILE_SENT.DROP
+        - rule: CAP.JS.FLOW.HOME_FILE_SENT.IP
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.DROP
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.IP
+        - rule: CAP.JS.FLOW.ENVIRONMENT_SENT.DROP
+        - rule: CAP.JS.FLOW.ENVIRONMENT_SENT.IP
+
+  - id: SUSPECT.EXFIL.FLOW_SECRET.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Sends a credential file off the machine
+    message: >
+      The contents of a credential store -- an SSH key, cloud or registry credentials, a
+      browser's saved logins -- reach a request. No library needs to send them: a client
+      authenticates with a token it was given, not with the file that holds the user's others.
+      Followed through bindings, helper functions and callbacks (`detect/js_flow.py`).
+    remediation: >
+      Do not install or run it. Rotate the credentials and move funds from any wallet whose key
+      was on the machine.
+    references:
+      - https://attack.mitre.org/techniques/T1552/
+    provenance:
+      kind: research
+      reference: "Review 98: credential-file flows in 97 malicious units, 0 of 40,768 benign units."
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.FIXED
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.UNKNOWN
+
   - id: SUSPECT.DESTROY.HOME_OR_ROOT.001
     version: 1.0.0
     category: suspicious
@@ -1778,6 +1848,64 @@ rules:
       all:
         - context: install_hook
         - rule: CAP.GYP.SIDE_EFFECT_COMMAND.001
+
+  - id: MALWARE.INSTALL.REMOTE_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install-time code runs what a server sends it
+    message: >
+      Code that runs when the package is installed -- or, for an editor extension, when the
+      editor starts it -- executes the body of a network response: through eval, new Function,
+      the vm module or a child process. Followed from the request to the execution through
+      callbacks, promise chains and helper functions (`detect/js_flow.py`). What runs is whatever
+      the server chose at that moment, on every machine that installs it.
+    remediation: >
+      Do not install it. Treat any machine that did as having run code from that server.
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+    provenance:
+      kind: research
+      reference: >
+        An editor extension posting the machine's identity and running the reply through the vm
+        module, under a name chosen to hide the module (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - any:
+            - rule: CAP.JS.FLOW.REMOTE_CODE.DROP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.IP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.FIXED
+            - rule: CAP.JS.FLOW.REMOTE_CODE.UNKNOWN
+
+  - id: SUSPECT.INSTALL.AUTOSTART.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Install-time code makes something start at every login
+    message: >
+      Code that runs when the package is installed -- or, for an editor extension, when the
+      editor starts it -- registers a program to start at login or boot: the Startup folder, a
+      Run key or scheduled task, a LaunchAgent, a crontab entry, an enabled systemd unit.
+      Installing a library or an extension needs none of them; staying on the machine after the
+      package is removed does.
+    remediation: >
+      Do not install it. Remove the autostart entry it created and what that entry runs.
+    provenance:
+      kind: research
+      reference: An editor extension copying a batch file into the Startup folder on activation (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.JS.AUTOSTART.001
 
   - id: MALWARE.EXFIL.DNS_CALLBACK.001
     version: 1.0.0

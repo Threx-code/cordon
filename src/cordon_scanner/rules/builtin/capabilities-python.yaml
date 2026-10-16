@@ -481,8 +481,12 @@ rules:
         # string's single one (review 98: a clipboard stealer's `winreg` Run entry was missed).
         - 'CurrentVersion\\{1,2}Run'
         - 'sitecustomize\.py|usercustomize\.py'
+        # The Windows Startup folder, written whole or joined from parts.
+        - '(?i:start[ _]menu[\x22\x27\\\\/ ,]{1,8}programs[\x22\x27\\\\/ ,]{1,8}startup\b)'
+        - '(?i:shell:startup\b)'
     tests:
       positive:
+        - "os.path.join(appdata, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')"
         - "open(home + '/.bashrc', 'a').write(line)"
         - "subprocess.run(['crontab', '-'])"
         - "path = site_packages / 'sitecustomize.py'"
