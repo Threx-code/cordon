@@ -171,3 +171,56 @@ class TestTheSeamEndToEnd:
             encoding="utf-8",
         )
         assert self.flagged(tmp_path) == []
+
+
+class TestCommandsSentToAnotherMachine:
+    """A command handed to an SSH session runs on the server, not here (review 98: a deployment
+    library provisioning a server read as a dropper with persistence)."""
+
+    SESSION = 'import { openSshClient } from "./Ssh.ts";\nconst ssh = await openSshClient(host);\n'
+
+    def test_a_command_sent_over_ssh_is_not_a_local_command(self) -> None:
+        text = self.SESSION + f'await ssh.exec("{FETCH}x {DESTINATION}");\n'
+        assert embedded.EmbeddedCommands.extract(text, "javascript") == []
+
+    def test_a_member_session_is_one_too(self) -> None:
+        text = self.SESSION + f'yield* input.ssh.exec(["{FETCH}x {DESTINATION}"].join("\\n"));\n'
+        assert embedded.EmbeddedCommands.extract(text, "javascript") == []
+
+    def test_without_an_ssh_client_the_name_proves_nothing(self) -> None:
+        text = f'ssh.exec("{FETCH}x {DESTINATION}");\n'
+        assert embedded.EmbeddedCommands.extract(text, "javascript")
+
+    def test_child_process_named_ssh_is_still_local(self) -> None:
+        text = (
+            'const ssh = require("child_process");\n// ssh2 is not used here\n'
+            f'ssh.exec("{FETCH}x {DESTINATION}");\n'
+        )
+        assert embedded.EmbeddedCommands.extract(text, "javascript")
+
+    def test_capabilities_inside_a_command_sent_over_ssh_are_not_this_files(self) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.capability import CapabilityDetector, CapabilityHit
+
+        inside = 'unit += "WantedBy=multi-user.target";\n'
+        text = self.SESSION + "await ssh.exec([\n  `x`,\n].join());\n" + inside
+        remote = text.index("`x`")
+        here = text.index("WantedBy")
+        content = FileContent.from_bytes("deploy.js", text.encode())
+        hits = [
+            CapabilityHit(Capability.PERSIST, "CAP.JS.PERSIST.001", remote, remote + 3, 4),
+            CapabilityHit(Capability.PERSIST, "CAP.JS.PERSIST.001", here, here + 8, 6),
+        ]
+        kept = CapabilityDetector()._off_this_machine(content, hits)
+        assert [h.byte_start for h in kept] == [here]
+
+    def test_without_an_ssh_client_every_hit_stays(self) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.capability import CapabilityDetector, CapabilityHit
+
+        text = "await ssh.exec([\n  `x`,\n].join());\n"
+        content = FileContent.from_bytes("deploy.js", text.encode())
+        hit = CapabilityHit(Capability.PERSIST, "CAP.JS.PERSIST.001", text.index("`x`"), 0, 2)
+        assert CapabilityDetector()._off_this_machine(content, [hit]) == [hit]

@@ -403,7 +403,49 @@ class CapabilityDetector(BaseDetector):
         if NixCode.is_nix(content.path):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
+        hits = self._off_this_machine(content, hits)
         return list(self._composite_findings(unit, ctx, hits, candidates))
+
+    #: A call on an SSH session that takes a command: what it is given runs elsewhere.
+    _REMOTE_CALL: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?i)(?<![\w$])(?:ssh|sftp)[\w$]{0,24}\s{0,4}\.\s{0,4}"
+        rb"(?:exec|execCommand|exec_command|run|shell|spawn)\s{0,4}\("
+    )
+    _REMOTE_SPAN_MAX: ClassVar[int] = 200_000
+
+    def _off_this_machine(
+        self, content: FileContent, hits: list[CapabilityHit]
+    ) -> list[CapabilityHit]:
+        """Drop hits inside the arguments of a command sent to an SSH session.
+
+        A deployment tool provisions a server by sending it a script -- install a runtime with
+        `curl | bash`, write a systemd unit, enable it -- and every line of that script describes
+        the other machine. Read as this file's own behaviour it is a dropper with persistence
+        (review 98: a deployment library's server bootstrap). Not when the file binds the session's
+        name to `child_process`: see `EmbeddedCommands.remote_session`.
+        """
+        raw = content.raw
+        if not hits or not self._REMOTE_CALL.search(raw):
+            return hits
+        spans: list[tuple[int, int]] = []
+        for call in self._REMOTE_CALL.finditer(raw):
+            name = re.match(rb"[\w$]+", raw[call.start() : call.end()])
+            if not name or not embedded.EmbeddedCommands.remote_session(
+                content.text, name.group(0).decode("ascii", "replace")
+            ):
+                continue
+            depth, j, end = 1, call.end(), min(len(raw), call.end() + self._REMOTE_SPAN_MAX)
+            while j < end and depth:
+                c = raw[j]
+                if c == 0x28:
+                    depth += 1
+                elif c == 0x29:
+                    depth -= 1
+                j += 1
+            spans.append((call.start(), j))
+        if not spans:
+            return hits
+        return [h for h in hits if not any(a <= h.byte_start < b for a, b in spans)]
 
     # -- Labelling -------------------------------------------------------
 

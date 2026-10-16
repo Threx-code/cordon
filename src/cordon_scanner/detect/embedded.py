@@ -109,6 +109,47 @@ class Command:
 class EmbeddedCommands:
     """Commands written inside source code, and the ones hidden by encoding."""
 
+    #: A call made on an SSH session: `ssh.exec(...)`, `input.ssh.exec(...)`, `sshClient.exec(...)`.
+    #: What it runs, runs on the other machine.
+    _REMOTE_RECEIVER: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)(?<![\w$])((?:ssh|sftp)[\w$]{0,24}|[\w$]{1,24}Ssh)\s{0,4}\.\s{0,4}$"
+    )
+    #: Where an SSH session comes from: a client library, a client type, a module named for it.
+    SSH_SOURCE: ClassVar[re.Pattern[str]] = re.compile(
+        r"""ssh2\b|node-ssh|ssh2-sftp-client|\bSsh(?:Client|Connection|Session)\b|\bNodeSSH\b"""
+        r"""|\bopenSsh\w*|['"`][./\w@-]{0,80}[/\-_.]?[Ss]sh[\w.-]{0,30}['"`]"""
+    )
+
+    @staticmethod
+    def _remote(text: str, at: int) -> bool:
+        """Whether the call at `at` is made on an SSH session, so the command it is given runs on
+        another machine -- a deploy tool provisioning a server is not a dropper on this one (review
+        98: a deployment library's `ssh.exec` of a server bootstrap). See `remote_session`."""
+        m = EmbeddedCommands._REMOTE_RECEIVER.search(text, max(0, at - 60), at)
+        return EmbeddedCommands.remote_session(text, m.group(1)) if m else False
+
+    @staticmethod
+    def remote_session(text: str, name: str) -> bool:
+        """Whether `name` is an SSH session in this file: the file takes one from an SSH library or
+        client, and does not bind the name to `child_process` -- a local module called `ssh` is
+        still the local module."""
+        return EmbeddedCommands.SSH_SOURCE.search(text) is not None and not (
+            EmbeddedCommands.binds_child_process(text, name)
+        )
+
+    @staticmethod
+    def binds_child_process(text: str, name: str) -> bool:
+        """Whether the file binds `name` to Node's `child_process` module."""
+        n = re.escape(name)
+        return (
+            re.search(
+                rf"(?<![\w$.]){n}\s{{0,4}}=\s{{0,4}}(?:await\s{{1,4}})?(?:require|import)\s{{0,4}}\(\s{{0,4}}[\"'`](?:node:)?child_process"
+                rf"|import\s{{1,4}}(?:\*\s{{1,4}}as\s{{1,4}})?{n}\s{{1,4}}from\s{{0,4}}[\"'`](?:node:)?child_process",
+                text,
+            )
+            is not None
+        )
+
     @staticmethod
     def extract(text: str, language: str | None = None) -> list[Command]:
         """Command strings passed to spawn calls in this source.
@@ -128,6 +169,8 @@ class EmbeddedCommands:
         for call in _SPAWN_CALL.finditer(text):
             if len(commands) >= MAX_COMMANDS:
                 break
+            if EmbeddedCommands._remote(text, call.start()):
+                continue
 
             window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
             arguments = EmbeddedCommands._own_arguments(
