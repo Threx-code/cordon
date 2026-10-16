@@ -629,7 +629,13 @@ class CapabilityDetector(BaseDetector):
         # constant bound "once" there is a different variable in each function (review 98: a
         # BigQuery extension's 480-line bundle).
         if len(text) <= self._JS_EVAL_MAX_BYTES and self._JS_EVAL_MARKERS.search(text):
-            folded, decoded_lines = JsEval.resolve_with_decodes(folded)
+            try:
+                folded, decoded_lines = JsEval.resolve_with_decodes(folded)
+            except (IndexError, KeyError, ValueError, TypeError, RecursionError):
+                # The evaluator reads hostile, malformed and unusual code. If it ever trips on a
+                # file, the file is read as written -- every other rule still applies -- rather
+                # than the scan failing.
+                decoded_lines = []
         if folded == text:
             return []
         already = {(h.rule_id, h.line) for h in seen}

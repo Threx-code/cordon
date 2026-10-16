@@ -74,7 +74,7 @@ class Fn:
 
 @dataclass
 class Tok:
-    kind: str  # str num name punct tmpl regex
+    kind: str  # str longstr num name punct tmpl regex
     value: Any
     start: int
     end: int
@@ -133,8 +133,11 @@ class JsEval:
                 pos = n if close < 0 else close + 2
                 continue
             if c in "\"'`":
+                # To the literal's real end however long it is: giving up at a length and resuming
+                # one character later re-read the same string from every quote inside it, which on
+                # a long escaped JSON string was quadratic (review 98).
                 j = pos + 1
-                while j < n and text[j] != c and j - pos <= MAX_STRING:
+                while j < n and text[j] != c:
                     if text[j] == "\\":
                         j += 2
                         continue
@@ -144,10 +147,15 @@ class JsEval:
                         break
                     j += 1
                 if j < n and text[j] == c:
-                    out.append(Tok("str", JsEval._unquote(text[pos : j + 1]), pos, j + 1))
+                    if j - pos <= MAX_STRING:
+                        out.append(Tok("str", JsEval._unquote(text[pos : j + 1]), pos, j + 1))
+                    else:
+                        out.append(Tok("longstr", "", pos, j + 1))  # too long to evaluate
                     pos = j + 1
+                elif c == "`":
+                    pos += 1  # an interpolated template: read what is inside as code
                 else:
-                    pos += 1  # an unterminated or interpolated literal: read what is inside as code
+                    pos = max(j, pos + 1)  # unterminated on its line: what it held is not code
                 continue
             if c in _NAME_START:
                 j = pos + 1
@@ -531,7 +539,7 @@ class _Evaluator:
                 before = k
                 v, k = self._expr(k + 1, depth + 1, local)
                 if k <= before + 1:
-                    return args + [UNKNOWN], len(toks)
+                    return [*args, UNKNOWN], len(toks)
                 args.extend(v if isinstance(v, list) else [UNKNOWN])
                 continue
             arrow = self._arrow_at(k)
@@ -544,7 +552,7 @@ class _Evaluator:
             if k <= before:
                 # A stray closer (`]`, `}`) where an argument should be: the call is not one this
                 # evaluator understands. Stop here rather than read the same token forever.
-                return args + [UNKNOWN], len(toks)
+                return [*args, UNKNOWN], len(toks)
             args.append(v)
         return args, k + 1
 
@@ -835,6 +843,7 @@ class _Evaluator:
                 if isinstance(value, Holey)
                 else None
             )
+            end = min(end, len(toks))  # an evaluation that gave up reports the end of the tokens
             if text_value is not None and end > i + 1 and len(text_value) <= MAX_STRING:
                 lo, hi = t.start, toks[end - 1].end
                 original = self.text[lo:hi]

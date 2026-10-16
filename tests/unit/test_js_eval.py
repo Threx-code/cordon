@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from cordon_scanner.detect.js_eval import JsEval
 from cordon_scanner.detect.js_fold import JsFold
 
@@ -39,6 +41,31 @@ class TestResolve:
 
 
 class TestBounds:
+    def test_a_long_escaped_string_is_read_once(self) -> None:
+        # A documentation site's search index: `JSON.parse("...")` of half a megabyte with an
+        # escaped quote every few characters. Giving up at the length cap and resuming one character
+        # later re-read the string from every quote inside it (review 98: two minutes for one file).
+        body = '\\"k\\":\\"v\\",' * 12_000
+        text = f'window.searchData = JSON.parse("{body}");\n'
+        started = time.monotonic()
+        tokens = JsEval.tokens(text)
+        assert time.monotonic() - started < 5
+        assert [t.kind for t in tokens].count("longstr") == 1
+
+    def test_an_unterminated_quote_ends_at_its_line(self) -> None:
+        text = 'x = a \' b\ny = "ok";\n'
+        assert [t.value for t in JsEval.tokens(text) if t.kind == "str"] == ["ok"]
+
+    def test_nested_template_literals_do_not_index_past_the_end(self) -> None:
+        # A logger's format line (review 98): the evaluation gave up at the end of the tokens and
+        # the rewrite indexed one past them.
+        text = (
+            "    `${color(String(event.status), statusColor)} ${color(`+${formatLatency(event.latency)}`, "
+            '"magenta")} ` + color(`requestId=${event.requestId}`, "dim")\n'
+            "  return `${Math.round(latency * 100) / 100}ms`;\n"
+        )
+        assert JsEval.resolve(text).count("\n") == text.count("\n")
+
     def test_a_recursive_helper_with_a_callback_argument_terminates(self) -> None:
         # Compiled TypeScript (`__awaiter`): evaluating the call re-entered the body, met the
         # callback's closing brace where an argument should be, and read it forever (review 98).
