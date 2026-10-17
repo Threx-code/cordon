@@ -742,6 +742,17 @@ class CommandLine:
             "update", help="verify and apply the latest signed feed now"
         )
         intel_update.add_argument("--json", action="store_true", help="print as JSON")
+        intel_acquire = intel.add_parser(
+            "acquire",
+            help=(
+                "fetch what a later offline scan compares a published package with: the newest "
+                "release at least 90 days older, hashed per file (network: registries only)"
+            ),
+        )
+        intel_acquire.add_argument(
+            "targets", nargs="+", metavar="ARCHIVE", help="published package archives"
+        )
+        intel_acquire.add_argument("--json", action="store_true", help="print as JSON")
 
         sbom = sub.add_parser(
             "sbom", help="generate or inspect a bill of materials for a scan target"
@@ -2415,9 +2426,11 @@ class CommandLine:
         from cordon_scanner.intel import feed
 
         action = getattr(args, "intel_command", None)
-        if action not in ("status", "update"):
-            print(f"{cls.PROGRAM}: intel needs status or update", file=sys.stderr)
+        if action not in ("status", "update", "acquire"):
+            print(f"{cls.PROGRAM}: intel needs status, update or acquire", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
+        if action == "acquire":
+            return cls._intel_acquire(args)
         if action == "update" and feed.FeedClient.offline_requested():
             raise ConfigError("CORDON_OFFLINE is set, so the feed will not be fetched")
 
@@ -2450,6 +2463,80 @@ class CommandLine:
                 print("note:    no source could refresh the intel", file=sys.stderr)
             return int(ExitCode.SCANNER_ERROR)
         return int(ExitCode.CLEAN)
+
+    @classmethod
+    def _intel_acquire(cls, args: argparse.Namespace) -> int:
+        """`intel acquire`: for each published archive, store its established predecessor.
+
+        The one step of release comparison that uses the network, run when the operator asks,
+        and rerun whenever they want it current; the scan that follows reads only the store.
+        Refused under CORDON_OFFLINE. A package whose registry cannot answer is reported and
+        the rest are still acquired.
+        """
+        import json as _json
+
+        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.intel import feed
+        from cordon_scanner.intel.registry_client import RegistryError
+        from cordon_scanner.intel.release_history import ReleaseHistory
+
+        if feed.FeedClient.offline_requested():
+            raise ConfigError("CORDON_OFFLINE is set, so release history will not be fetched")
+        results: list[dict[str, object]] = []
+        failed = False
+        for target in args.targets:
+            path = Path(target)
+            try:
+                data = path.read_bytes()
+            except OSError as exc:
+                results.append({"target": target, "error": str(exc)})
+                failed = True
+                continue
+            units = [
+                FileUnit(content=FileContent.from_bytes(member, payload))
+                for member, payload in ArchiveReader.walk_archive(data, path=path.name)
+            ]
+            distribution = Engine._distribution_format(units)
+            identity = Engine._history_identity(units, distribution) if distribution else None
+            if identity is None or identity[0] not in ReleaseHistory.ECOSYSTEMS:
+                results.append({"target": target, "skipped": "not a release this can compare"})
+                continue
+            try:
+                baseline = ReleaseHistory.acquire(*identity)
+            except RegistryError as exc:
+                results.append(
+                    {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}
+                )
+                failed = True
+                continue
+            results.append(
+                {
+                    "target": target,
+                    "release": f"{identity[1]}@{identity[2]}",
+                    "baseline": baseline.baseline_version,
+                    "baseline_published": baseline.baseline_published,
+                    "files": len(baseline.files),
+                }
+            )
+        if args.json:
+            print(_json.dumps(results, indent=2, sort_keys=True))
+        else:
+            for row in results:
+                if "error" in row:
+                    print(f"{row['target']}: could not acquire: {row['error']}")
+                elif "skipped" in row:
+                    print(f"{row['target']}: skipped, {row['skipped']}")
+                elif row["baseline"]:
+                    print(
+                        f"{row['release']}: compared with {row['baseline']} "
+                        f"({str(row['baseline_published'])[:10]}, {row['files']} files)"
+                    )
+                else:
+                    print(f"{row['release']}: no release at least 90 days older")
+        return int(ExitCode.SCANNER_ERROR if failed else ExitCode.CLEAN)
 
     @classmethod
     def cmd_advisories(cls, args: argparse.Namespace) -> int:

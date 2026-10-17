@@ -612,6 +612,10 @@ The signed threat-intel feed: how current it is, and refreshing it.
 │ intel status                  show the intel's source, serial and age      │
 │                               without fetching anything                    │
 │ intel update                  verify and apply the latest signed feed now  │
+│ intel acquire                 fetch what a later offline scan compares a   │
+│                               published package with: the newest release   │
+│                               at least 90 days older, hashed per file      │
+│                               (network: registries only)                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -627,6 +631,15 @@ The signed threat-intel feed: how current it is, and refreshing it.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
+│ --json                    print as JSON                                    │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### intel acquire
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ ARCHIVE                   published package archives                       │
 │ --json                    print as JSON                                    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```

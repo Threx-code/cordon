@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import binascii
 import contextlib
+import hashlib
 import io
 import json
 import posixpath
@@ -688,22 +689,12 @@ class Engine:
         return out
 
     @staticmethod
-    def _known_malicious_release(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
-        """The scanned package is itself a recorded malicious release.
-
-        Dependencies have always been checked against the malicious-package records; the
-        package being vetted was not. A tarball whose own `package.json` names a release OSV
-        records as malicious is answered by that record, whatever its code does or no longer
-        contains -- the commonest shape in the public datasets is a dependency-confusion
-        placeholder whose payload was pulled, which no reading of the code can convict.
-
-        Only a package's own manifest counts, recognised by where its format puts it: an npm
-        tarball's `package/package.json`, an sdist's `<name>-<version>/PKG-INFO`, a wheel's
-        `*.dist-info/METADATA`. A repository's root `package.json` is not a release, so a project
-        that shares a name with a malicious package is never matched by name alone.
-        """
-        from cordon_scanner.intel.advisories import AdvisoryDatabase
-
+    def _release_identities(
+        units: Sequence[FileUnit],
+    ) -> tuple[list[tuple[str, str, str, str]], set[str]]:
+        """(ecosystem, name, version, manifest path) for each release manifest the archive holds,
+        recognised only where its format puts it (see `_known_malicious_release`); and the npm
+        security-holding placeholders among them."""
         identities: list[tuple[str, str, str, str]] = []
         placeholders: set[str] = set()
         for unit in units:
@@ -781,6 +772,26 @@ class Engine:
                         )
             except (ValueError, TypeError):
                 continue
+        return identities, placeholders
+
+    @staticmethod
+    def _known_malicious_release(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+        """The scanned package is itself a recorded malicious release.
+
+        Dependencies have always been checked against the malicious-package records; the
+        package being vetted was not. A tarball whose own `package.json` names a release OSV
+        records as malicious is answered by that record, whatever its code does or no longer
+        contains -- the commonest shape in the public datasets is a dependency-confusion
+        placeholder whose payload was pulled, which no reading of the code can convict.
+
+        Only a package's own manifest counts, recognised by where its format puts it: an npm
+        tarball's `package/package.json`, an sdist's `<name>-<version>/PKG-INFO`, a wheel's
+        `*.dist-info/METADATA`. A repository's root `package.json` is not a release, so a project
+        that shares a name with a malicious package is never matched by name alone.
+        """
+        from cordon_scanner.intel.advisories import AdvisoryDatabase
+
+        identities, placeholders = Engine._release_identities(units)
         if not identities:
             return []
         database = AdvisoryDatabase.bundled()
@@ -1979,8 +1990,12 @@ class Engine:
             acc.findings[:] = self._impersonator_runs_downloads(
                 self._publisher_hygiene(
                     self._publisher_secrets(
-                        self._author_time_ceiling(
-                            acc.findings, units, package, ctx.install_hook_paths
+                        self._established_release_ceiling(
+                            self._author_time_ceiling(
+                                acc.findings, units, package, ctx.install_hook_paths
+                            ),
+                            units,
+                            package,
                         )
                     ),
                     self.config.policy.advisory_domains,
@@ -4147,6 +4162,127 @@ class Engine:
                     message=finding.message
                     + " This file ships in the published package but is not run by installing it,"
                     " so it is reported below the gate.",
+                )
+            out.append(finding)
+        return out
+
+    _HISTORY_MANIFESTS: ClassVar[dict[str, re.Pattern[str]]] = {
+        # `<group>/<artifact>/pom.properties` inside a jar: the coordinates Maven resolved.
+        "maven": re.compile(r"(?:^|!)META-INF/maven/[^/!]+/[^/!]+/pom\.properties$"),
+        "gradle": re.compile(r"(?:^|!)META-INF/maven/[^/!]+/[^/!]+/pom\.properties$"),
+        # A Go module zip's own go.mod, at `<module>@<version>/go.mod`.
+        "gomod": re.compile(r"(?:^|!)([^!]+)@(v[^/!]+)/go\.mod$"),
+        "hex": re.compile(r"(?:^|!)metadata\.config$"),
+        "pub": re.compile(r"(?:^|!)[^/!]*/?pubspec\.yaml$"),
+        "rubygems": re.compile(r"(?:^|!)metadata(?:\.gz)?$"),
+    }
+
+    @staticmethod
+    def _history_identity(
+        units: Sequence[FileUnit], distribution: str
+    ) -> tuple[str, str, str] | None:
+        """(ecosystem, name, version) of the release a published archive is, for
+        `ReleaseHistory`: the manifest its format names, read the way that format writes it."""
+        if distribution in ("npm", "pypi", "cargo", "nuget"):
+            identities, _ = Engine._release_identities(units)
+            for ecosystem, name, version, _ in identities:
+                if ecosystem == distribution:
+                    return ecosystem, name, version
+            return None
+        pattern = Engine._HISTORY_MANIFESTS.get(distribution)
+        if pattern is None:
+            return None
+        for unit in units:
+            found = pattern.search(unit.path)
+            if not found:
+                continue
+            text = unit.content.text[:20000]
+            if unit.path.endswith(".gz"):
+                # A gem's `metadata.gz`: the gemspec as YAML, gzipped, read bounded.
+                import gzip
+                import zlib
+
+                try:
+                    with gzip.GzipFile(fileobj=io.BytesIO(unit.content.raw)) as stream:
+                        text = stream.read(20000).decode("utf-8", "replace")
+                except (OSError, EOFError, zlib.error):
+                    continue
+            if distribution == "gomod":
+                return "gomod", found.group(1).rpartition("!")[2], found.group(2).lstrip("v")
+            if distribution in ("maven", "gradle"):
+                group = re.search(r"(?m)^groupId=(\S+)", text)
+                artifact = re.search(r"(?m)^artifactId=(\S+)", text)
+                version = re.search(r"(?m)^version=(\S+)", text)
+                if group and artifact and version:
+                    # A shaded jar carries the poms of what it bundles, and may not carry its
+                    # own: only a pom whose artifact the jar was published as names it.
+                    archive = unit.path.split("!", 1)[0]
+                    if f"{artifact.group(1)}-{version.group(1)}" in archive:
+                        return (
+                            distribution,
+                            f"{group.group(1)}:{artifact.group(1)}",
+                            version.group(1),
+                        )
+            elif distribution == "hex":
+                name = re.search(r'\{<<"name">>,\s*<<"([^"]+)">>\}', text)
+                version = re.search(r'\{<<"version">>,\s*<<"([^"]+)">>\}', text)
+                if name and version:
+                    return "hex", name.group(1), version.group(1)
+            elif distribution == "pub":
+                name = re.search(r"(?m)^name:\s*['\"]?([\w-]+)", text)
+                version = re.search(r"(?m)^version:\s*['\"]?([\w.+-]+)", text)
+                if name and version:
+                    return "pub", name.group(1), version.group(1)
+            elif distribution == "rubygems":
+                name = re.search(r"(?m)^name:\s*(\S+)", text)
+                version = re.search(r"(?m)^\s+version:\s*['\"]?([\w.+-]+)", text)
+                if name and version:
+                    return "rubygems", name.group(1), version.group(1)
+        return None
+
+    @staticmethod
+    def _established_release_ceiling(
+        findings: list[Finding],
+        units: list[FileUnit],
+        distribution: str,
+        root: Path | None = None,
+    ) -> list[Finding]:
+        """Suspicious findings in files this package has shipped unchanged since an established
+        release, reported below the gate.
+
+        `intel/release_history.py` holds, for a release acquired beforehand (`cordon intel
+        acquire`), the per-file hashes of the newest release published at least
+        `release_history.MIN_AGE_DAYS` earlier. A finding in a file byte-identical to that
+        release describes code the ecosystem has carried for months; one in a file that is new
+        or changed in this release keeps its grade, and that is where a compromised release puts
+        its payload. Nothing acquired, nothing changed: this reads a file, never the network. A
+        MALICIOUS finding is never lowered.
+        """
+        from cordon_scanner.intel.release_history import ReleaseHistory
+
+        identity = Engine._history_identity(units, distribution)
+        if identity is None:
+            return findings
+        baseline = ReleaseHistory.load(*identity, root=root)
+        if baseline is None or not baseline.baseline_version:
+            return findings
+        digests = {unit.path: hashlib.sha256(unit.content.raw).hexdigest() for unit in units}
+        out: list[Finding] = []
+        for finding in findings:
+            path = finding.location.path
+            if (
+                finding.category is Category.SUSPICIOUS
+                and finding.severity > Severity.MEDIUM
+                and path in digests
+                and baseline.unchanged(ReleaseHistory.key(path, identity[2]), digests[path])
+            ):
+                finding = replace(
+                    finding,
+                    severity=Severity.MEDIUM,
+                    message=finding.message
+                    + f" This file is byte-identical in {baseline.baseline_version}, published "
+                    f"{(baseline.baseline_published or '')[:10]}, at least "
+                    "90 days before this release, so it is reported below the gate.",
                 )
             out.append(finding)
         return out
