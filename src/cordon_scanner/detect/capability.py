@@ -3233,13 +3233,17 @@ class CapabilityDetector(BaseDetector):
                 continue
 
             matched_capabilities = self._capabilities_of(compiled)
-            if (
-                Capability.CREDENTIAL in matched_capabilities
-                and Capability.EGRESS in matched_capabilities
-                and self._credential_reaches_its_own_issuer(unit.content, window)
+            if Capability.EGRESS in matched_capabilities and (
+                (
+                    Capability.CREDENTIAL in matched_capabilities
+                    and self._credential_reaches_its_own_issuer(unit.content, window)
+                )
+                # Not at install time: nothing installing a package needs its user's keys, and
+                # boto3 uploads just as well to a bucket the attacker owns.
+                or (not in_hook and self._store_used_by_its_own_client(unit.content, window))
             ):
                 # Authentication, not exfiltration. See
-                # `_credential_reaches_its_own_issuer`.
+                # `_credential_reaches_its_own_issuer` and `_store_used_by_its_own_client`.
                 continue
 
             local_by_capability = {hit.capability: hit for hit in window}
@@ -3906,6 +3910,68 @@ class CapabilityDetector(BaseDetector):
     )
 
     HOST_IN_URL = re.compile(rb"https?://([A-Za-z0-9._-]{4,253})")
+
+    #: A credential store, and the clients that store exists to serve.
+    STORE_CLIENTS: ClassVar[tuple[tuple[re.Pattern[bytes], re.Pattern[bytes]], ...]] = (
+        (
+            re.compile(rb"\.ssh[/\\\"', ]"),
+            re.compile(
+                rb"paramiko|SSHClient|asyncssh|\bssh2\b|x/crypto/ssh|\bssh\.(?:Dial|NewClient)\b"
+                rb"|SSH_AUTH_SOCK|net\.Dial\(\s{0,4}\"unix\"|\brsync\b|\bscp\b|\bsftp\b|Net::SSH|JSch"
+            ),
+        ),
+        (
+            re.compile(rb"\.aws[/\\]"),
+            re.compile(rb"boto3|botocore|aws-sdk|@aws-sdk|Aws::|AWSSDK|amazonaws\.com"),
+        ),
+        (
+            re.compile(rb"\.config/gcloud|application_default_credentials"),
+            re.compile(rb"google\.auth|googleapis\.com|google-auth|@google-cloud"),
+        ),
+        (
+            re.compile(rb"\.azure[/\\]"),
+            re.compile(
+                rb"azure\.identity|@azure/|management\.azure\.com|login\.microsoftonline\.com"
+            ),
+        ),
+        (
+            re.compile(rb"\.pypirc"),
+            re.compile(rb"\btwine\b|upload\.pypi\.org|test\.pypi\.org"),
+        ),
+    )
+
+    @classmethod
+    def _store_used_by_its_own_client(
+        cls, content: FileContent, window: list[CapabilityHit]
+    ) -> bool:
+        """Whether a credential store here is read only by the client it belongs to.
+
+        A deploy tool loads `~/.ssh/id_ed25519` into paramiko and connects; an S3 helper lets
+        boto3 read `~/.aws/credentials`. The key goes where it authenticates, which is what it
+        is for (review 98: SSH and cloud tools blocked by `SUSPECT.EXFIL.CREDENTIAL_STORE.001`).
+        Every store named must belong to a family here, and EVERY outbound call in the window
+        must be that family's client: a stealer that reads the same file and posts it with
+        `requests` or a raw socket is untouched, as is a browser's cookie store, which has no
+        client but the browser.
+        """
+        stores = [h for h in window if h.rule_id == "CAP.CREDENTIAL.STORE.001"]
+        egress = [h for h in window if h.capability is Capability.EGRESS]
+        if not stores or not egress:
+            return False
+        families: list[re.Pattern[bytes]] = []
+        for hit in stores:
+            text = content.raw[max(0, hit.byte_start - 2) : hit.byte_end + 2]
+            client = next((c for store, c in cls.STORE_CLIENTS if store.search(text)), None)
+            if client is None:
+                return False
+            families.append(client)
+        return all(
+            any(
+                client.search(content.raw[hit.byte_start : hit.byte_end + 40])
+                for client in families
+            )
+            for hit in egress
+        )
 
     @classmethod
     def _credential_reaches_its_own_issuer(

