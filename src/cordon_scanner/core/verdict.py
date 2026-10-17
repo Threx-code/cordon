@@ -105,9 +105,46 @@ class VerdictFeatures:
                 best[rule] = max(best.get(rule, 0), int(finding.severity))
         return best
 
+    #: What a package says it is, from its name, description and keywords.
+    PURPOSE: ClassVar[dict[str, re.Pattern[str]]] = {
+        name: re.compile(pattern, re.IGNORECASE)
+        for name, pattern in {
+            "math": r"\b(?:math|number|bignum|decimal|float|calc|arithmetic|matrix|statistics|random)\b",
+            "text": r"\b(?:string|text|format|formatter|slug|case|parse|parser|template|markdown|i18n|locale|unicode|emoji)\b",
+            "ui": r"\b(?:color|colour|style|css|theme|icon|font|ui|component|button|react|vue|angular|svelte|tailwind|animation)\b",
+            "time": r"\b(?:date|time|clock|cron|calendar|timezone|duration)\b",
+            "log": r"\b(?:log|logger|logging|debug|trace|console)\b",
+            "test": r"\b(?:test|mock|assert|jest|mocha|chai|spec|fixture)\b",
+            "build": r"\b(?:build|bundle|webpack|rollup|vite|babel|eslint|prettier|lint|compile|transpile|plugin|loader|preset)\b",
+            "http": r"\b(?:http|api|client|sdk|fetch|request|rest|graphql|webhook|proxy|axios)\b",
+            "cli": r"\b(?:cli|command|terminal|shell|tool|devtools|script)\b",
+            "crypto": r"\b(?:wallet|crypto|web3|ether|ethereum|solana|bitcoin|token|defi|nft|blockchain|swap|dex)\b",
+            "ai": r"\b(?:ai|llm|gpt|openai|claude|agent|mcp|copilot|chat)\b",
+        }.items()
+    }
+    #: What the package's own code can do. Bounded patterns over bounded text; flags, not counts.
+    ABILITY: ClassVar[dict[str, re.Pattern[bytes]]] = {
+        name: re.compile(pattern, re.IGNORECASE)
+        for name, pattern in {
+            "network": rb"require\(['\"](?:https?|net|tls|dgram|axios|node-fetch|undici|got|request)['\"]\)|\bfetch\(|XMLHttpRequest|new WebSocket\(|import requests|urllib\.request|socket\.socket",
+            "process": rb"child_process|execSync|spawnSync|\bspawn\(|subprocess\.|os\.system\(|os\.popen\(",
+            "env": rb"process\.env\b|os\.environ",
+            "recon": rb"os\.(?:hostname|userInfo|networkInterfaces)\(|platform\.node\(|getpass\.getuser|socket\.gethostname",
+            "secret_paths": rb"\.ssh/|id_rsa|\.aws/|\.npmrc|\.pypirc|\.git-credentials|\.kube/config|Login Data|Local State|wallet\.dat|Local Storage[/\\]leveldb",
+            "wallet_keys": rb"privateKey|secretKey|mnemonic|seedPhrase",
+            "decode": rb"atob\(|Buffer\.from\([^)]{0,120}(?:base64|hex)|fromCharCode|b64decode|zlib\.decompress",
+            "dynamic": rb"\beval\(|new Function\(|vm\.run|exec\(compile|__import__\(",
+            "exfil_host": rb"discord(?:app)?\.com/api/webhooks|api\.telegram\.org|webhook\.site|pastebin\.com|ngrok|pipedream|oast\.|burpcollaborator",
+            "raw_ip": rb"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",
+        }.items()
+    }
+    _PLAIN: ClassVar[tuple[str, ...]] = ("math", "text", "ui", "time", "log", "test")
+
     @staticmethod
     def package(
-        paths_sizes: Sequence[tuple[str, int]], manifests: dict[str, bytes]
+        paths_sizes: Sequence[tuple[str, int]],
+        manifests: dict[str, bytes],
+        sources: Sequence[tuple[str, bytes]] = (),
     ) -> dict[str, float]:
         names = [p.rsplit("!", 1)[-1] for p, _ in paths_sizes]
         sizes = [s for _, s in paths_sizes]
@@ -172,6 +209,7 @@ class VerdictFeatures:
                 features["name_digits"] = float(
                     bool(re.search(r"\d{2,}", str(manifest.get("name", ""))))
                 )
+                VerdictFeatures._purpose(features, manifest)
                 break
             if base.endswith("setup.py"):
                 features["hook"] = max(
@@ -180,7 +218,51 @@ class VerdictFeatures:
                         bool(re.search(rb"cmdclass|class \w+\((?:install|develop|egg_info)", data))
                     ),
                 )
+        VerdictFeatures._ability(features, sources)
         return features
+
+    @staticmethod
+    def _purpose(features: dict[str, float], manifest: dict[str, Any]) -> None:
+        """What the package claims to be (review 98: library malware is a small utility whose code
+        can do what no such utility needs)."""
+        description = str(manifest.get("description") or "")
+        keywords = manifest.get("keywords") or []
+        claim = (
+            " ".join(
+                [str(manifest.get("name") or ""), description]
+                + [str(k) for k in (keywords if isinstance(keywords, list) else [])]
+            )
+            .replace("-", " ")
+            .replace("_", " ")
+        )
+        for name, pattern in VerdictFeatures.PURPOSE.items():
+            features[f"purpose_{name}"] = float(bool(pattern.search(claim[:2000])))
+        features["desc_len"] = float(min(len(description), 400))
+        features["has_repo"] = float(bool(manifest.get("repository")))
+
+    @staticmethod
+    def _ability(features: dict[str, float], sources: Sequence[tuple[str, bytes]]) -> None:
+        """What the package's own code can do, and the mismatch with what it claims."""
+        own = [
+            data
+            for path, data in sources
+            if "node_modules/" not in path and "/test" not in path and "site-packages/" not in path
+        ][:400]
+        found = dict.fromkeys(VerdictFeatures.ABILITY, 0.0)
+        for data in own:
+            head = data[:2_000_000]
+            for name, pattern in VerdictFeatures.ABILITY.items():
+                if not found[name] and pattern.search(head):
+                    found[name] = 1.0
+        features.update({f"can_{name}": value for name, value in found.items()})
+        plain = any(features.get(f"purpose_{name}", 0.0) for name in VerdictFeatures._PLAIN)
+        sensitive = (
+            found["secret_paths"] + found["wallet_keys"] + found["exfil_host"] + found["raw_ip"]
+        )
+        features["plain_with_sensitive"] = float(plain and sensitive > 0)
+        features["plain_with_process_net"] = float(
+            plain and bool(found["process"]) and bool(found["network"])
+        )
 
 
 class VerdictModel:
@@ -267,10 +349,11 @@ class Verdict:
         findings: list[Finding],
         paths_sizes: Sequence[tuple[str, int]],
         manifests: dict[str, bytes],
+        sources: Sequence[tuple[str, bytes]] = (),
     ) -> tuple[list[Finding], dict[str, Any]]:
         """Findings re-graded by the package verdict, and the verdict to report."""
         rules = VerdictFeatures.rules(findings)
-        package = VerdictFeatures.package(paths_sizes, manifests)
+        package = VerdictFeatures.package(paths_sizes, manifests, sources)
         summary: dict[str, Any] = {"rules": rules, "package": package}
         model = VerdictModel.load()
         if model is None or not rules:

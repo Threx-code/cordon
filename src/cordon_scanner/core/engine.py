@@ -3884,7 +3884,12 @@ class Engine:
             for u in units
             if u.path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] in Engine._VERDICT_MANIFESTS
         }
-        graded, verdict = Verdict.decide(list(findings), paths_sizes, manifests)
+        sources = [
+            (u.path, u.content.raw)
+            for u in units
+            if u.path.rsplit("!", 1)[-1].lower().endswith((".js", ".mjs", ".cjs", ".ts", ".py"))
+        ]
+        graded, verdict = Verdict.decide(list(findings), paths_sizes, manifests, sources)
         score, block = verdict.get("score"), verdict.get("block")
         if (
             score is not None
