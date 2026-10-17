@@ -90,6 +90,7 @@ from cordon_scanner.version import SCHEMA_VERSION, __version__
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
 
+    from cordon_scanner.core.taxonomy import ThreatDomain
     from cordon_scanner.detect.base import Detector
     from cordon_scanner.ecosystems.base import DeclaredDependency
 
@@ -439,6 +440,12 @@ GO_MODULE_ROOT = re.compile(r"[^@!]{1,1024}@v\d[^/@!]{0,128}/")
 SHIPPED_DOCUMENTS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".odt")
 """Documents in a published package: pypdf ships sample forms for its own tests. Installing the
 package opens none of them; a document's active content runs when a person opens it."""
+
+STANDALONE_SCRIPTS = (".sh", ".bash", ".zsh", ".ksh", ".fish", ".ps1", ".psm1", ".bat", ".cmd")
+"""Scripts that run only when something starts them (`Engine._author_time_ceiling`)."""
+
+CONDA_LINK_SCRIPT = re.compile(r"-(?:pre|post)-(?:link|unlink)\.(?:sh|bat)$")
+"""conda runs a package's `bin/.<name>-post-link.sh` (and its kin) when it installs it."""
 
 COMPILED_SOURCE = (".rs", ".go", ".c", ".cc", ".cpp", ".h", ".hpp", ".java", ".kt", ".cs", ".swift")
 """Source an install compiles but does not run. maturin's `upload.rs` reads `.pypirc` to publish,
@@ -1972,7 +1979,9 @@ class Engine:
             acc.findings[:] = self._impersonator_runs_downloads(
                 self._publisher_hygiene(
                     self._publisher_secrets(
-                        self._author_time_ceiling(acc.findings, units, package)
+                        self._author_time_ceiling(
+                            acc.findings, units, package, ctx.install_hook_paths
+                        )
                     ),
                     self.config.policy.advisory_domains,
                 )
@@ -3940,10 +3949,19 @@ class Engine:
 
         out: list[Finding] = []
         for finding in findings:
+            domain = Taxonomy.domain_of(finding.rule_id)
+            if finding.category is Category.SUSPICIOUS:
+                # A generic code finding inside a container build file or a pipeline definition
+                # is about how the project builds and ships, whatever rule read it: the RUN line
+                # that downloads, unpacks and runs a toolchain is `SUSPECT.CONTAINER.*`'s
+                # finding, and reading the same text as shell does not make it an attack on
+                # whoever scans the repository (review 98: 45 benign units blocked by a dropper in
+                # a Dockerfile, against no malware sample).
+                domain = Engine._build_definition_domain(finding.location.path) or domain
             if (
                 finding.category is not Category.MALICIOUS
                 and finding.severity > Severity.LOW
-                and Taxonomy.domain_of(finding.rule_id) in policy.advisory_domains
+                and domain in policy.advisory_domains
             ):
                 finding = replace(
                     finding,
@@ -3954,6 +3972,41 @@ class Engine:
                 )
             out.append(finding)
         return out
+
+    _PIPELINE_FILES: ClassVar[frozenset[str]] = frozenset(
+        {
+            ".gitlab-ci.yml",
+            ".gitlab-ci.yaml",
+            "azure-pipelines.yml",
+            "azure-pipelines.yaml",
+            "bitbucket-pipelines.yml",
+            "cloudbuild.yml",
+            "cloudbuild.yaml",
+            ".drone.yml",
+            ".woodpecker.yml",
+        }
+    )
+
+    @staticmethod
+    def _build_definition_domain(path: str) -> ThreatDomain | None:
+        """CONTAINER for a container build file, CICD for a pipeline definition, else None."""
+        from cordon_scanner.core.taxonomy import ThreatDomain
+
+        member = "/" + path.rpartition("!")[2]
+        name = member.rpartition("/")[2]
+        lower = name.lower()
+        if lower.startswith(("dockerfile", "containerfile")) or lower.endswith(
+            (".dockerfile", ".containerfile")
+        ):
+            return ThreatDomain.CONTAINER
+        if (
+            lower in Engine._PIPELINE_FILES
+            or name.startswith("Jenkinsfile")
+            or (lower.endswith((".yml", ".yaml")) and "/.github/workflows/" in member)
+            or any(f"/{d}/" in member for d in (".circleci", ".buildkite", ".azure-pipelines"))
+        ):
+            return ThreatDomain.CICD
+        return None
 
     #: Fetch-and-run findings a package-level verdict can raise.
     _RUNS_DOWNLOADS: ClassVar[frozenset[str]] = frozenset({"SUSPECT.DROPPER.001"})
@@ -4001,7 +4054,10 @@ class Engine:
 
     @staticmethod
     def _author_time_ceiling(
-        findings: list[Finding], units: list[FileUnit], distribution: str
+        findings: list[Finding],
+        units: list[FileUnit],
+        distribution: str,
+        runs: frozenset[str] = frozenset(),
     ) -> list[Finding]:
         """Findings in files a published package carries but nothing installing it runs.
 
@@ -4017,34 +4073,71 @@ class Engine:
         Python and npm packages, whose install compiles an extension but does not run it: in a
         crate, a Go module or a jar that source IS the program the consumer runs. A Makefile
         stays a finding where installing runs make (`MAKE_AT_INSTALL`).
+
+        A shell, PowerShell or batch script runs only when something starts it. No installer
+        starts one on its own: a hook that does is in `runs` (the install-hook paths), and code
+        or a manifest that does names it. A script that is neither -- a `curl | sh` release
+        installer, a CI helper -- is the maintainers' (review 98: 103 of 293 benign units
+        blocked by a dropper alone, against 0 of 44 malware samples). A conda link script runs at
+        install and keeps its grade.
         """
+        from cordon_scanner.detect.secrets import SourcePaths
+
         compiled_is_inert = distribution in ("pypi", "npm")
         make_is_inert = distribution not in MAKE_AT_INSTALL
-        out: list[Finding] = []
-        for finding in findings:
-            member = finding.location.path.rpartition("!")[2]
+
+        def author_time(member: str) -> bool:
             name = ContainerPaths.basename(member)
+            lower = name.lower()
             other_ecosystem = (name == "package.json" and distribution != "npm") or (
                 name in ("setup.py", "pyproject.toml") and distribution != "pypi"
             )
             makefile = name in MAKEFILES or name.endswith(".mk")
-            author_time = (
+            return (
                 other_ecosystem
-                or name.lower().endswith(SHIPPED_DOCUMENTS)
-                or (
-                    compiled_is_inert
-                    and name.lower().endswith(COMPILED_SOURCE)
-                    and name != "build.rs"
-                )
+                or lower.endswith(SHIPPED_DOCUMENTS)
+                or (compiled_is_inert and lower.endswith(COMPILED_SOURCE) and name != "build.rs")
                 or member.startswith(AUTHOR_TIME_PREFIXES)
                 or f"/{member}".find("/.github/") >= 0
                 or (name in AUTHOR_TIME_FILENAMES and not makefile)
                 or (makefile and make_is_inert)
-                or name.startswith(("Dockerfile", "Containerfile"))
-                or name.endswith(".dockerfile")
+                or container(name)
+            )
+
+        def container(name: str) -> bool:
+            lower = name.lower()
+            return lower.startswith(("dockerfile", "containerfile")) or lower.endswith(
+                (".dockerfile", ".containerfile")
+            )
+
+        named: dict[str, bool] = {}
+
+        def started_by_the_package(path: str, name: str) -> bool:
+            """Whether code or a manifest the consumer's side runs names this script."""
+            if name not in named:
+                named[name] = any(
+                    unit.path != path
+                    and not unit.content.is_binary
+                    and not SourcePaths.is_documentation(unit.path)
+                    and not author_time(unit.path.rpartition("!")[2])
+                    and name in unit.content.text
+                    for unit in units
+                )
+            return named[name]
+
+        out: list[Finding] = []
+        for finding in findings:
+            path = finding.location.path
+            member = path.rpartition("!")[2]
+            name = ContainerPaths.basename(member)
+            lowered = author_time(member) or (
+                name.lower().endswith(STANDALONE_SCRIPTS)
+                and not CONDA_LINK_SCRIPT.search(name)
+                and path not in runs
+                and not started_by_the_package(path, name)
             )
             if (
-                author_time
+                lowered
                 and finding.category is not Category.MALICIOUS
                 and finding.severity > Severity.MEDIUM
             ):

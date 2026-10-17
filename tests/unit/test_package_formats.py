@@ -18,9 +18,11 @@ from test_exploited import ExploitedHelpers
 
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
+from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.engine import HONOURED_PINS, Engine
 from cordon_scanner.core.models import Severity
 from cordon_scanner.detect.advisory import EXPLOITED_RULE, VULNERABLE_RULE, AdvisoryDetector
+from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.intel import exploited
 from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase
 
@@ -246,6 +248,37 @@ class TestWhatTheInstallerRuns:
     def test_ci_workflows_never_run_for_a_consumer(self, finding, distribution) -> None:
         path = "p.tgz!p/.github/workflows/release.yml"
         assert self.ceiling(finding, path, distribution) is Severity.MEDIUM
+
+    def test_a_dockerfile_named_in_any_case_is_the_maintainers(self, finding) -> None:
+        path = "m.zip!github.com/a/b@v1.0.0/ci/ubuntu-24.04.Dockerfile"
+        assert self.ceiling(finding, path, "gomod") is Severity.MEDIUM
+
+    @staticmethod
+    def script_ceiling(finding, script: str, others: dict[str, str], runs=frozenset()) -> Severity:
+        moved = replace(finding, location=replace(finding.location, path=script))
+        units = [
+            FileUnit(FileContent(path=p, raw=t.encode(), size=len(t)))
+            for p, t in {script: "curl -fsSL x | sh\n", **others}.items()
+        ]
+        [out] = Engine._author_time_ceiling([moved], units, "npm", runs)
+        return out.severity
+
+    def test_a_release_installer_nothing_starts_is_the_maintainers(self, finding) -> None:
+        others = {"a.tgz!package/README.md": "Run install.sh to get the binary."}
+        assert self.script_ceiling(finding, "a.tgz!package/install.sh", others) is Severity.MEDIUM
+
+    def test_a_script_the_package_code_starts_keeps_its_grade(self, finding) -> None:
+        others = {"a.tgz!package/index.js": 'require("child_process").spawn("sh", ["install.sh"])'}
+        severity = self.script_ceiling(finding, "a.tgz!package/install.sh", others)
+        assert severity is Severity.CRITICAL
+
+    def test_a_script_an_install_hook_runs_keeps_its_grade(self, finding) -> None:
+        script = "a.tgz!package/install.sh"
+        assert self.script_ceiling(finding, script, {}, frozenset({script})) is Severity.CRITICAL
+
+    def test_a_conda_link_script_runs_at_install(self, finding) -> None:
+        script = "p.conda!bin/.p-post-link.sh"
+        assert self.script_ceiling(finding, script, {}) is Severity.CRITICAL
 
 
 class TestAPublishersSecret:
