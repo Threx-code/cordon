@@ -145,6 +145,9 @@ class LongtailScan:
                     f.get("confidence"),
                     f.get("category"),
                     ((f.get("location") or {}).get("path") or "").split("!", 1)[-1][-160:],
+                    # Where in the file: what region-level analyses (a release diff, a shared
+                    # idiom) compare. Appended, so every reader of the first five keeps working.
+                    (f.get("location") or {}).get("line"),
                 ]
                 for f in rep.get("findings", [])
             ]
