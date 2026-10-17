@@ -652,10 +652,32 @@ class Fetchers:
 
     @staticmethod
     def sri(value: str | None) -> str | None:
-        """A Nix hash as written (`sha256-<base64>` SRI, or a bare base32 / hex sha256)."""
+        """A Nix hash in one typed form, whichever way it was written.
+
+        Nix accepts an SRI hash (`sha256-<base64>`), a typed one (`sha256:<base32 or hex>`), and
+        a bare digest whose type the fetcher's attribute names: base32, hex or base64. Prefixing
+        every non-SRI value with `sha256:` doubled the type of an already typed one and left a
+        bare base64 digest in no recognised shape -- `INTEGRITY_MALFORMED` on helix's
+        `shell.nix` and on most of a package set's `default.nix` files (review 98).
+        """
         if not value:
             return None
-        return value if value.startswith(("sha256-", "sha512-")) else f"sha256:{value}"
+        value = value.strip()
+        if value.startswith(("sha1-", "sha256-", "sha384-", "sha512-")) or re.match(
+            r"(?:sha1|sha256|sha512):", value
+        ):
+            return value
+        if re.fullmatch(r"[A-Za-z0-9+/]{43}=", value):
+            return f"sha256-{value}"
+        if re.fullmatch(r"[A-Za-z0-9+/]{86}==", value):
+            return f"sha512-{value}"
+        if re.fullmatch(r"[0-9a-df-np-sv-z]{103}", value) or re.fullmatch(r"[0-9a-f]{128}", value):
+            return f"sha512:{value}"
+        if re.fullmatch(r"[0-9a-df-np-sv-z]{32}", value) and not re.fullmatch(
+            r"[0-9a-f]{32}", value
+        ):
+            return f"sha1:{value}"
+        return f"sha256:{value}"
 
 
 class FlakeLock:

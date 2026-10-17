@@ -86,6 +86,7 @@ class Coordinate:
         r"|h1:[A-Za-z0-9+/]{43}="  # Go module hash, Terraform h1
         r"|git-tree-sha1:[0-9a-fA-F]{40}"  # Julia: the git tree of a package version or artifact
         r"|sha256:[0-9a-df-np-sv-z]{52}"  # Nix: a sha256 in Nix's own base32 alphabet
+        r"|sha512:[0-9a-df-np-sv-z]{103}|sha1:[0-9a-df-np-sv-z]{32}"  # and its sha512 and sha1
         r"|zh:[0-9a-f]{64}"  # Terraform zip hash
         r"|\d{1,3}c\d{1,2}/[0-9a-f]{64,128}|\d{1,2}/[0-9a-f]{64,128}"  # Yarn Berry cache key / checksum
         r"|[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{56}|[0-9a-fA-F]{64}|[0-9a-fA-F]{96}|[0-9a-fA-F]{128}"
