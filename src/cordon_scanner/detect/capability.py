@@ -3240,6 +3240,8 @@ class CapabilityDetector(BaseDetector):
             rule_hits = (
                 [h for h in hits if not self._a_setting(unit.content, h)]
                 if compiled.rule.id in self.SETTINGS_ARE_NOT_LOOT
+                else [h for h in hits if not self._spawns_an_unpacker(unit.content, h)]
+                if compiled.rule.id in self.VERIFIABLE_DROPPERS
                 else hits
             )
             if compiled.rule.id in self.CONTEXT_FREE:
@@ -3276,6 +3278,33 @@ class CapabilityDetector(BaseDetector):
             )
             if finding is not None:
                 yield finding
+
+    _UNPACKER_CALL: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"^(?:[^\n]{0,80}?\(\s{0,4}\[?\s{0,4}[`'\"]|\s{0,16})(?:sudo\s{1,4})?"
+        rb"(?:tar|bsdtar|gtar|unzip|gunzip|bunzip2|unxz|xz|zstd|7z|7za)(?=[\s`'\",)\]])"
+        rb"(?![^\n]{0,240}?(?:&&|\|\||;[ \t]{0,8}[^\s}]|\||\$\())"
+    )
+    """A spawn whose program is an archive tool, and which runs nothing after it on the line."""
+
+    @classmethod
+    def _spawns_an_unpacker(cls, content: FileContent, hit: CapabilityHit) -> bool:
+        """Whether a spawn hit only unpacks an archive: `execSync(`tar -xzf "${tgz}"`)`.
+
+        A dropper runs what it fetched. Unpacking a downloaded release is how an npm package
+        installs its platform binary, and it runs nothing: the binary runs later, by a spawn of
+        its own that still counts. Measured in the long tail, `tar -xzf` beside the download was
+        the dropper's third signal in most of the benign install scripts it blocked (review 98).
+        """
+        if hit.capability is not Capability.SPAWN:
+            return False
+        raw = content.raw
+        start = raw.rfind(b"\n", 0, hit.byte_start) + 1
+        end = raw.find(b"\n", hit.byte_start)
+        line = raw[start : end if end != -1 else len(raw)]
+        return bool(
+            cls._UNPACKER_CALL.search(line[hit.byte_start - start :])
+            or cls._UNPACKER_CALL.match(line)
+        )
 
     #: Composites whose source half is what a file sends: a setting it reads to configure itself is
     #: not that. See `_a_setting`.
