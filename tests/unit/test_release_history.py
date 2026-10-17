@@ -215,3 +215,73 @@ class TestAcquireIsOnlineOnly:
             CommandLine._intel_acquire(
                 argparse.Namespace(targets=[str(tmp_path / "x.tgz")], json=False)
             )
+
+
+class TestANewYoungDependency:
+    """`Engine._young_dependency_introduced`."""
+
+    @staticmethod
+    def units(dependencies: dict[str, str], name: str = "tool") -> list[FileUnit]:
+        manifest = json.dumps({"name": name, "version": "2.0.0", "dependencies": dependencies})
+        return [
+            FileUnit(
+                FileContent(
+                    path="tool-2.0.0.tgz!package/package.json",
+                    raw=manifest.encode(),
+                    size=len(manifest),
+                )
+            )
+        ]
+
+    @staticmethod
+    def store(root, introduced: dict[str, str], name: str = "tool") -> None:
+        ReleaseHistory.save(
+            Baseline(
+                "npm",
+                name,
+                "2.0.0",
+                "1.4.0",
+                "2026-01-02T00:00:00+00:00",
+                published="2026-06-17T00:00:00+00:00",
+                dependencies=("left-pad",),
+                introduced=introduced,
+            ),
+            root,
+        )
+
+    @staticmethod
+    def found(units, root) -> list[str]:
+        from types import SimpleNamespace
+
+        from cordon_scanner.core.scoring import RiskScorer
+
+        ctx = SimpleNamespace(scorer=RiskScorer())
+        return [
+            f.rule_id for f in Engine._young_dependency_introduced(units, "npm", ctx, root=root)
+        ]
+
+    def test_a_dependency_created_days_before_the_release_is_reported(self, tmp_path) -> None:
+        self.store(tmp_path, {"easy-time-js": "2026-06-10T00:00:00+00:00"})
+        units = self.units({"left-pad": "1", "easy-time-js": "^1"})
+        assert self.found(units, tmp_path) == ["SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001"]
+
+    def test_an_old_dependency_newly_added_is_not(self, tmp_path) -> None:
+        self.store(tmp_path, {"chalk": "2014-01-01T00:00:00+00:00"})
+        assert self.found(self.units({"chalk": "^5"}), tmp_path) == []
+
+    def test_the_packages_own_scope_is_its_maintainers(self, tmp_path) -> None:
+        self.store(tmp_path, {"@acme/new-sibling": "2026-06-15T00:00:00+00:00"}, name="@acme/tool")
+        units = self.units({"@acme/new-sibling": "1"}, name="@acme/tool")
+        assert self.found(units, tmp_path) == []
+
+    def test_nothing_acquired_reports_nothing(self, tmp_path) -> None:
+        assert self.found(self.units({"easy-time-js": "^1"}), tmp_path) == []
+
+    def test_declared_dependencies_are_read_per_format(self) -> None:
+        npm = self.units({"a": "1"})
+        assert Engine._declared_dependencies(npm, "npm") == {"a"}
+        metadata = b"Name: x\nVersion: 1\nRequires-Dist: Foo_Bar>=1\nRequires-Dist: pytest; extra == 'test'\n"
+        pypi = [
+            FileUnit(FileContent(path="x-1.tar.gz!x-1/PKG-INFO", raw=metadata, size=len(metadata)))
+        ]
+        assert Engine._declared_dependencies(pypi, "pypi") == {"foo-bar"}

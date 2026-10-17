@@ -344,6 +344,7 @@ SWEPT_NOTE = "Read to its end in windows."
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
+YOUNG_DEPENDENCY_RULE = "SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001"
 CERTIFICATE_BLOCK: Final = re.compile(
     rb"-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\s]{40,20000}?)-----END CERTIFICATE-----"
 )
@@ -1987,6 +1988,7 @@ class Engine:
             # exception is a file that installer reads and obeys (`HONOURED_PINS`): what it pins
             # is what installing the package brings in.
             ctx = replace(ctx, package_distribution=True, distribution=package)
+            acc.add(self._young_dependency_introduced(units, package, ctx))
             acc.findings[:] = self._impersonator_runs_downloads(
                 self._publisher_hygiene(
                     self._publisher_secrets(
@@ -4239,6 +4241,126 @@ class Engine:
                 if name and version:
                     return "rubygems", name.group(1), version.group(1)
         return None
+
+    _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?m)^Requires-Dist:\s*([A-Za-z0-9][A-Za-z0-9._-]*)([^\n]*)$"
+    )
+
+    @staticmethod
+    def _declared_dependencies(units: Sequence[FileUnit], distribution: str) -> frozenset[str]:
+        """The runtime dependencies a published release declares: npm's `dependencies` and
+        `optionalDependencies`, a Python distribution's `Requires-Dist` outside any extra."""
+        if distribution == "npm":
+            manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
+            try:
+                document = json.loads(manifest.content.text) if manifest is not None else {}
+            except ValueError:
+                return frozenset()
+            if not isinstance(document, dict):
+                return frozenset()
+            names: set[str] = set()
+            for section in ("dependencies", "optionalDependencies"):
+                value = document.get(section)
+                if isinstance(value, dict):
+                    names.update(str(k) for k in value)
+            return frozenset(names)
+        if distribution == "pypi":
+            for unit in units:
+                member = unit.path.rpartition("!")[2]
+                if member.endswith(("/PKG-INFO", ".dist-info/METADATA")) and member.count("/") == 1:
+                    return frozenset(
+                        re.sub(r"[-_.]+", "-", found.group(1)).lower()
+                        for found in Engine._REQUIRES_DIST.finditer(unit.content.text[:200_000])
+                        if "extra ==" not in found.group(2)
+                    )
+        return frozenset()
+
+    @staticmethod
+    def _young_dependency_introduced(
+        units: list[FileUnit],
+        distribution: str,
+        ctx: ScanContext,
+        root: Path | None = None,
+    ) -> list[Finding]:
+        """A dependency this release adds over its established release that was itself first
+        published only days before this release.
+
+        Read from the store `cordon-scanner intel acquire` wrote; nothing acquired, nothing reported. An
+        established package's compromised release pulls in a name created for the attack -- the
+        `@mastra/*` releases of 2026-06-17 added `easy-day-js` -- while a dependency the
+        package's own scope publishes (a monorepo's new sibling) is the maintainers' and is not
+        counted.
+        """
+        from datetime import datetime, timedelta
+
+        from cordon_scanner.intel.release_history import YOUNG_DEPENDENCY_DAYS, ReleaseHistory
+
+        identity = Engine._history_identity(units, distribution)
+        if identity is None:
+            return []
+        baseline = ReleaseHistory.load(*identity, root=root)
+        if baseline is None or not baseline.baseline_version or not baseline.published:
+            return []
+        try:
+            released = datetime.fromisoformat(baseline.published)
+        except ValueError:
+            return []
+        scope = identity[1].split("/", 1)[0] + "/" if identity[1].startswith("@") else None
+        manifest = next(
+            (
+                u.path
+                for u in units
+                if u.path.endswith(("!package/package.json", "/PKG-INFO", ".dist-info/METADATA"))
+            ),
+            units[0].path if units else "",
+        )
+        out: list[Finding] = []
+        family = re.sub(r"^@[^/]+/", "", identity[1]).lower()
+        for dependency, first in sorted(baseline.introduced.items()):
+            if not first or (scope and dependency.startswith(scope)):
+                continue
+            bare = re.sub(r"^@[^/]+/", "", dependency).lower()
+            stem = min(family, bare, key=len)
+            if len(stem) >= 4 and (
+                bare.startswith(family) or family.startswith(bare.split("-")[0])
+            ):
+                # A package split into siblings: `astn` adds `astn-runtime` the day it is created.
+                continue
+            try:
+                appeared = datetime.fromisoformat(first)
+            except ValueError:
+                continue
+            if not timedelta(0) <= released - appeared <= timedelta(days=YOUNG_DEPENDENCY_DAYS):
+                continue
+            days = (released - appeared).days
+            out.append(
+                replace(
+                    Engine._operational(
+                        path=manifest,
+                        rule_id=YOUNG_DEPENDENCY_RULE,
+                        message=(
+                            f"{identity[1]} {identity[2]} adds the dependency {dependency}, which "
+                            f"its established release {baseline.baseline_version} did not have and "
+                            f"which was first published {days} day(s) before this release. A "
+                            "compromised release of an established package pulls in a name "
+                            "created for the attack."
+                        ),
+                        remediation=(
+                            f"Read {dependency} before installing this release; pin the previous "
+                            "release until its maintainers confirm the change."
+                        ),
+                        # A warning: maintainers add new packages of their own too (review 98:
+                        # 6 of 2,481 random npm and PyPI releases), so the name alone does not
+                        # block; what the new dependency's own code does is the decision.
+                        category=Category.SUSPICIOUS,
+                        severity=Severity.MEDIUM,
+                    ),
+                    confidence=Confidence.MEDIUM,
+                    risk=ctx.scorer.score(Severity.MEDIUM, Confidence.MEDIUM),
+                    detector="release-history",
+                )
+            )
+        return out
 
     @staticmethod
     def _established_release_ceiling(

@@ -2505,7 +2505,12 @@ class CommandLine:
                 results.append({"target": target, "skipped": "not a release this can compare"})
                 continue
             try:
-                baseline = ReleaseHistory.acquire(*identity)
+                baseline = ReleaseHistory.acquire(
+                    *identity,
+                    current_dependencies=tuple(
+                        sorted(Engine._declared_dependencies(units, distribution))
+                    ),
+                )
             except RegistryError as exc:
                 results.append(
                     {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}

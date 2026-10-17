@@ -1125,6 +1125,22 @@ class ManifestDetector(BaseDetector):
                 remediation="Read what changed between the two releases before installing this one.",
             ),
             DeclaredRule(
+                id="SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001",
+                title="This release adds a dependency that was itself published days ago",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector="release-history",
+                message=(
+                    "Compared with its established release (`cordon-scanner intel acquire`), this release "
+                    "declares a dependency the earlier one did not, first published within 30 days "
+                    "before this release, outside the package's own scope: the shape of a "
+                    "compromised release pulling in a package created for the attack."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read the new dependency before installing; pin the previous release meanwhile.",
+            ),
+            DeclaredRule(
                 id="MALWARE.PACKAGE.KNOWN.001",
                 title="The scanned package is a recorded malicious release",
                 severity=Severity.CRITICAL,

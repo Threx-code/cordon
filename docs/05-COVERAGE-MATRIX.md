@@ -188,6 +188,7 @@ rather than a document.
 | `SUSPECT.RELEASE.NEW_INSTALL_HOOK.001` | high | `manifest` | integrity |
 | `SUSPECT.RELEASE.NEW_OBFUSCATION.001` | high | `manifest` | integrity |
 | `SUSPECT.RELEASE.NEW_PUBLISHER.001` | medium | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001` | medium | `release-history` | integrity |
 
 ### Domain 4 — Build systems
 

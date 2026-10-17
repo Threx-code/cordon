@@ -7,7 +7,7 @@ has been in every release since the first is not a new attack, and on the long t
 what a reader of capabilities alone reports (review 98).
 
 ```
-  cordon intel acquire <target>          (network: registries only)
+  cordon-scanner intel acquire <target>  (network: registries only)
         │  for each release: the newest earlier release published >= MIN_AGE_DAYS before it,
         │  downloaded through the registry clients' pinned, digest-checked paths, hashed per file
         ▼
@@ -44,7 +44,12 @@ Long enough that a release has been installed, read and reported on by the ecosy
 malicious -- malicious packages are typically removed within days -- and short enough that an
 actively maintained package has one."""
 
-STORE_VERSION: Final = 1
+STORE_VERSION: Final = 2
+
+YOUNG_DEPENDENCY_DAYS: Final = 30
+"""A dependency a release introduces that was itself first published this recently before the
+release is the shape of a dependency injection: the compromised release of an established package
+pulls in a name created for the attack (review 98: `@mastra/*` 2026-06-17)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +64,11 @@ class Baseline:
     published: str | None = None
     files: dict[str, str] = field(default_factory=dict)
     """Per file, its path with the release's version replaced by `{version}`, and its sha256."""
+    dependencies: tuple[str, ...] = ()
+    """The runtime dependencies the established release declared."""
+    introduced: dict[str, str] = field(default_factory=dict)
+    """Each dependency this release declares and the established one did not, with when the
+    registry says it was first published ("" when the registry has no record of it)."""
 
     def unchanged(self, key: str, digest: str) -> bool:
         return bool(self.baseline_version) and self.files.get(key) == digest
@@ -73,6 +83,8 @@ class Baseline:
             "baseline_published": self.baseline_published,
             "published": self.published,
             "files": self.files,
+            "dependencies": list(self.dependencies),
+            "introduced": self.introduced,
         }
 
 
@@ -111,6 +123,7 @@ class ReleaseHistory:
         if not isinstance(data, dict) or data.get("store_version") != STORE_VERSION:
             return None
         files = data.get("files")
+        introduced = data.get("introduced")
         return Baseline(
             ecosystem=ecosystem,
             name=name,
@@ -119,6 +132,12 @@ class ReleaseHistory:
             baseline_published=data.get("baseline_published"),
             published=data.get("published"),
             files={str(k): str(v) for k, v in files.items()} if isinstance(files, dict) else {},
+            dependencies=tuple(str(d) for d in data.get("dependencies") or ()),
+            introduced=(
+                {str(k): str(v) for k, v in introduced.items()}
+                if isinstance(introduced, dict)
+                else {}
+            ),
         )
 
     @classmethod
@@ -156,6 +175,21 @@ class ReleaseHistory:
             out[cls.key(member_path, version)] = hashlib.sha256(member).hexdigest()
         return out
 
+    @staticmethod
+    def declared(data: bytes, filename: str, ecosystem: str) -> frozenset[str]:
+        """The runtime dependencies a published archive declares, read the way the scan reads
+        them (`Engine._declared_dependencies`)."""
+        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.detect.base import FileUnit
+
+        units = [
+            FileUnit(content=FileContent.from_bytes(member, payload))
+            for member, payload in ArchiveReader.walk_archive(data, path=filename)
+        ]
+        return Engine._declared_dependencies(units, ecosystem)
+
     # -- acquiring (online) -------------------------------------------------------------------
 
     @staticmethod
@@ -190,7 +224,9 @@ class ReleaseHistory:
             )
             listed = RegistryClient._mapping(document.get("versions"))
             for release, when in RegistryClient._mapping(document.get("time")).items():
-                if release in listed:
+                # The scanned release keeps its time after npm withdraws it (as it does a
+                # malicious one); a baseline must still be served.
+                if release in listed or release == version:
                     put(release, when)
         elif ecosystem == "pypi":
             document = RegistryClient._fetch(f"{REGISTRY_HOSTS['pypi']}/pypi/{quoted}/json")
@@ -301,7 +337,36 @@ class ReleaseHistory:
         return release, when, current
 
     @classmethod
-    def acquire(cls, ecosystem: str, name: str, version: str, root: Path | None = None) -> Baseline:
+    def first_published(cls, ecosystem: str, name: str) -> str:
+        """When the registry says a package was first published, ISO-8601, or "". Network."""
+        from cordon_scanner.intel.registry_client import RegistryError
+
+        if ecosystem == "gomod":
+            # The proxy dates versions, not modules; a module's first version is not asked here.
+            return ""
+        try:
+            if ecosystem == "npm":
+                from cordon_scanner.intel.registry_client import REGISTRY_HOSTS, RegistryClient
+
+                document = RegistryClient._fetch(
+                    f"{REGISTRY_HOSTS['npm']}/{urllib.parse.quote(name, safe='@')}"
+                )
+                created = cls._when(RegistryClient._mapping(document.get("time")).get("created"))
+                return created.isoformat() if created else ""
+            times = cls.timeline(ecosystem, name, "")
+        except RegistryError:
+            return ""
+        return min(times.values()).isoformat() if times else ""
+
+    @classmethod
+    def acquire(
+        cls,
+        ecosystem: str,
+        name: str,
+        version: str,
+        root: Path | None = None,
+        current_dependencies: tuple[str, ...] = (),
+    ) -> Baseline:
         """Fetch, hash and store the established release behind `name@version`. Network.
 
         A release with no established predecessor is stored too, as such: the scan then knows the
@@ -315,6 +380,11 @@ class ReleaseHistory:
         else:
             release, when, current = found
             archive = RegistryClient.package_archive(eco, name, release)
+            established = cls.declared(archive.data, archive.filename, ecosystem)
+            introduced = {
+                dependency: cls.first_published(eco, dependency)
+                for dependency in sorted(set(current_dependencies) - set(established))[:40]
+            }
             baseline = Baseline(
                 ecosystem=ecosystem,
                 name=name,
@@ -323,9 +393,11 @@ class ReleaseHistory:
                 baseline_published=when.isoformat(),
                 published=current.isoformat(),
                 files=cls.fingerprint(archive.data, archive.filename, archive.version),
+                dependencies=tuple(sorted(established)),
+                introduced=introduced,
             )
         cls.save(baseline, root)
         return baseline
 
 
-__all__ = ["MIN_AGE_DAYS", "Baseline", "ReleaseHistory"]
+__all__ = ["MIN_AGE_DAYS", "YOUNG_DEPENDENCY_DAYS", "Baseline", "ReleaseHistory"]
