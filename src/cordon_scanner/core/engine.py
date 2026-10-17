@@ -40,6 +40,7 @@ from cordon_scanner.core.composer_plugins import ComposerPluginHooks
 from cordon_scanner.core.config import Config, Policy
 from cordon_scanner.core.content import FileContent, Skipped
 from cordon_scanner.core.errors import ArchiveError, SourceError
+from cordon_scanner.core.inline_programs import InlinePrograms
 from cordon_scanner.core.models import (
     AUTHOR_TIME_HOOKS,
     Category,
@@ -1376,6 +1377,7 @@ class Engine:
         for unit in self._units(root, inventory, acc, deadline, walked=walked, walker=walker):
             units.append(unit)
             self.progress.advance(unit.path)
+        units.extend(self._inline_hook_units(units))
 
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
@@ -1831,6 +1833,7 @@ class Engine:
 
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
+        units.extend(self._inline_hook_units(units))
         hook_paths, consumer_hooks = self._manifest_hook_paths(units, acc)
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
@@ -3596,9 +3599,10 @@ class Engine:
                         len(unit.content.raw),
                         unit.content.sha256,
                         # An archive member has no path on disk to re-read. The whole of an
-                        # oversized one travels, so the worker can sweep it as well.
+                        # oversized one travels, so the worker can sweep it as well. Nor does
+                        # a hook's inline program (`core.inline_programs`).
                         (unit.content.streamed or unit.content.raw)
-                        if carry_content or "!" in unit.path
+                        if carry_content or "!" in unit.path or "#" in unit.path
                         else None,
                     )
                 )
@@ -6484,6 +6488,45 @@ class Engine:
         self._archive_stats[1] += len(units)
         return units
 
+    def _inline_hook_units(self, units: list[FileUnit]) -> list[FileUnit]:
+        """The programs install hooks carry inline, each as a unit of its own.
+
+        `node -e "<program>"` in a `postinstall` is install-time code like the file
+        `node install.js` runs, and is read the same way: by every content detector, with the
+        hook's escalation. See `core.inline_programs`. Author-time hooks are left alone, as
+        their files are.
+        """
+        lifted: list[FileUnit] = []
+        known = {unit.path for unit in units}
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            if ecosystem_id is None or ecosystem_id == "image" or unit.content.is_binary:
+                continue
+            ecosystem = EcosystemRegistry.get(ecosystem_id)
+            if ecosystem is None:
+                continue
+            try:
+                hooks = ecosystem.parse_manifest(unit.content).hooks
+            except Exception:  # noqa: S112 -- `_manifest_hook_paths` reports the failure
+                continue
+            for hook in hooks:
+                if not hook.command or hook.name.lower() in AUTHOR_TIME_HOOKS:
+                    continue
+                for program in InlinePrograms.found(unit.path, hook.name, hook.command):
+                    if program.path in known:
+                        continue
+                    known.add(program.path)
+                    content = FileContent.from_bytes(
+                        program.path, program.source.encode("utf-8"), self.config.limits
+                    )
+                    lifted.append(
+                        FileUnit(
+                            content=content,
+                            language=LanguageRegistry.of_file(program.path, content),
+                        )
+                    )
+        return lifted
+
     @staticmethod
     def _manifest_hook_paths(
         units: list[FileUnit], acc: _Accumulator | None = None
@@ -6576,10 +6619,26 @@ class Engine:
                 ]
                 if reaching:
                     paths |= Engine._hook_script_paths(unit.path, reaching, known)
+                    paths |= {
+                        program.path
+                        for hook in reaching
+                        for program in InlinePrograms.found(
+                            unit.path, hook.name, hook.command or ""
+                        )
+                        if program.path in known
+                    }
                 consuming = [hook for hook in manifest.hooks if hook.kind == "consumerinstall"]
                 if consuming:
                     consumer.add(unit.path)
                     consumer |= Engine._hook_script_paths(unit.path, consuming, known)
+                    consumer |= {
+                        program.path
+                        for hook in consuming
+                        for program in InlinePrograms.found(
+                            unit.path, hook.name, hook.command or ""
+                        )
+                        if program.path in known
+                    }
         return paths, consumer
 
     @staticmethod

@@ -335,18 +335,31 @@ class CapabilityDetector(BaseDetector):
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, FileUnit):
             return ()
+        labelled = self.labelled(unit, ctx)
+        if labelled is None:
+            return ()
+        hits, candidates = labelled
+        return list(self._composite_findings(unit, ctx, hits, candidates))
 
+    def labelled(
+        self, unit: FileUnit, ctx: ScanContext
+    ) -> tuple[list[CapabilityHit], tuple[CompiledRule, ...]] | None:
+        """The file's capability hits and the rules selected for it; None when no rule applies.
+
+        What the composites are evaluated over, and what another detector asks when it needs
+        to know what a piece of code can do: the manifest asks it of a hook's inline program.
+        """
         content = unit.content
 
         # Binary files are excluded from content rules. A byte sequence in a PNG
         # that happens to spell a pattern is a false positive with no upside,
         # and the file was never source to begin with.
         if content.is_binary:
-            return ()
+            return None
 
         candidates = RuleSelector.select_rules(ctx.rules, language=unit.language, path=content.path)
         if not candidates:
-            return ()
+            return None
 
         hits = self._match_capabilities(content, candidates, unit.language)
         hits.extend(self._folded_capabilities(content, candidates, unit.language, hits))
@@ -411,7 +424,7 @@ class CapabilityDetector(BaseDetector):
             # extensions do it from dist/. The hand-written file is where an implant's is
             # (review 98).
             hits = [h for h in hits if h.rule_id != "CAP.JS.AUTOSTART.001"]
-        return list(self._composite_findings(unit, ctx, hits, candidates))
+        return hits, candidates
 
     #: A call on an SSH session that takes a command: what it is given runs elsewhere.
     _REMOTE_CALL: ClassVar[re.Pattern[bytes]] = re.compile(

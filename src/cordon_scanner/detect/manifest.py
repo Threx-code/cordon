@@ -26,6 +26,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core import references
+from cordon_scanner.core.inline_programs import InlinePrograms
 from cordon_scanner.core.models import (
     AUTHOR_TIME_HOOKS,
     INSTALL_TIME_HOOKS,
@@ -130,6 +131,24 @@ HOSTILE_IN_LIFECYCLE = (
     ("/dev/tcp", Capability.EGRESS),
     ("chmod +x", Capability.PERSIST),
 )
+
+_INLINE_JS_LOAD = re.compile(r"""\b(?:require|import)\s{0,4}\(\s{0,4}[`'"]([^`'"\s]{1,200})[`'"]""")
+"""A module an inline JavaScript program loads by a literal name."""
+
+_INLINE_PY_IMPORT = re.compile(
+    r"(?:^|[;\n]\s{0,8})(?:from\s{1,4}([\w.]{1,100})\s{1,4}import|import\s{1,4}([\w., ]{1,200}))"
+)
+"""The modules an inline Python program imports."""
+
+_NODE_BUILTINS = frozenset({"fs", "path", "util", "assert", "events", "url", "process", "os"})
+"""Built-ins whose capabilities, when used, the capability rules label themselves."""
+
+_PYTHON_INERT_MODULES = frozenset({"sys", "os", "platform", "pathlib", "shutil", "json", "re"})
+"""Standard modules whose risky calls the capability rules label themselves."""
+
+INLINE_INTERPRETER_NEEDLES = frozenset({"node -e", "python -c"})
+"""The `HOSTILE_IN_LIFECYCLE` entries that stand for an inline program, which a lifted program's
+own unit answers for."""
 
 PIPE_TO_SHELL = ("| sh", "|sh", "| bash", "|bash", "| python", "|python")
 
@@ -435,6 +454,54 @@ class ManifestScripts:
         return tuple(
             sorted(path for path in known if path in tokens or path.lstrip("./") in tokens)
         )
+
+    @staticmethod
+    def _loads_only_what_was_read(path: str, source: str, ctx: ScanContext) -> bool:
+        """Whether every module an inline program loads is one this scan read or a runtime
+        built-in. `node -e "require('./log')()"` runs `log.js`: in the package and in the hook's
+        closure, it was read as install-time code; absent, what runs is unknown. A dependency's
+        module (`require('some-lib')`) is that package's code, not read here.
+        """
+        if path.endswith(".js"):
+            base = path.rpartition("#")[0].rpartition("/")[0]
+            for spec in _INLINE_JS_LOAD.findall(source):
+                spec = re.sub(r"^\$\{__dirname\}/", "./", spec).removeprefix("node:")
+                if spec in _NODE_BUILTINS:
+                    continue
+                if not spec.startswith(("./", "../")):
+                    return False
+                target = posixpath.normpath(f"{base}/{spec}" if base else spec)
+                if not any(
+                    f"{target}{suffix}" in ctx.install_hook_paths
+                    for suffix in ("", ".js", ".cjs", ".mjs", "/index.js")
+                ):
+                    return False
+            return True
+        if path.endswith(".py"):
+            names = [
+                name.split(" ")[0]
+                for single, listed in _INLINE_PY_IMPORT.findall(source)
+                for name in ([single] if single else re.split(r"\s*,\s*", listed.strip()))
+                if name
+            ]
+            return all(name.split(".")[0] in _PYTHON_INERT_MODULES for name in names)
+        # Ruby, Perl and PHP: lowered only when nothing is loaded at all.
+        return not re.search(r"\b(?:require|use|include|load)\b", source)
+
+    @staticmethod
+    def _capable(path: str, source: str, ctx: ScanContext) -> bool:
+        """Whether the capability rules label anything in a hook's inline program."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        if not ManifestScripts._loads_only_what_was_read(path, source, ctx):
+            return True
+        content = FileContent.from_bytes(path, source.encode("utf-8"), ctx.config.limits)
+        labelled = CapabilityDetector().labelled(
+            FileUnit(content=content, language=LanguageRegistry.of_file(path, content)), ctx
+        )
+        return labelled is not None and bool(labelled[0])
 
     @staticmethod
     def _prints_only(command: str) -> bool:
@@ -1525,11 +1592,27 @@ class ManifestDetector(BaseDetector):
                 # A one-liner whose only act is to load a file beside the manifest is that file,
                 # run: graded by what the file is, as `node <file>` would be.
                 command = f"node {loader.group('path')}"
+            # A program the hook carries inline was lifted into a unit of its own and read by
+            # every content detector as install-time code (`core.inline_programs`). Its
+            # interpreter flag is then no more a finding than `node install.js` is, and the
+            # hook is graded like one that runs a file this scan read.
+            programs = [] if loader else InlinePrograms.found(unit.path, hook.name, command)
+            lifted = (
+                bool(programs)
+                and all(p.path in ctx.tree_paths for p in programs)
+                # And only a program that can do nothing: no network, no process, no evaluation,
+                # no decoding, no credential or system read, no persistence. Whatever one of
+                # those does in a hook, a word list judged it before and still does.
+                and not any(ManifestScripts._capable(p.path, p.source, ctx) for p in programs)
+            )
+            tree_command = InlinePrograms.as_file_command(command, programs) if lifted else command
 
             capabilities: list[Capability] = []
             reasons: list[str] = []
 
             for needle, capability in HOSTILE_IN_LIFECYCLE:
+                if lifted and needle in INLINE_INTERPRETER_NEEDLES:
+                    continue
                 if needle in command:
                     capabilities.append(capability)
                     reasons.append(f"invokes {needle.strip()!r}")
@@ -1574,7 +1657,7 @@ class ManifestDetector(BaseDetector):
                     (unit.path,)
                     if hook.kind == "consumerinstall" and unit.path in ctx.install_hook_paths
                     else ManifestScripts._targets_in_tree(
-                        command, ctx.install_hook_paths, unit.path
+                        tree_command, ctx.install_hook_paths, unit.path
                     )
                 )
                 # A published package's hook that runs only source files inside the package:
@@ -1593,10 +1676,11 @@ class ManifestDetector(BaseDetector):
                     or re.search(
                         rf"(?:^|[\s;&|(])(?:node|nodejs|tsx|ts-node|bun)\s+(?:\S*/)?"
                         rf"{re.escape(path.rpartition('/')[2])}(?:\s|$)",
-                        command,
+                        tree_command,
                     )
                     or re.search(
-                        rf"(?:^|[\s;&|(])(?:ba|da|z)?sh\s+{re.escape(path)}(?:\s|$)", command
+                        rf"(?:^|[\s;&|(])(?:ba|da|z)?sh\s+{re.escape(path)}(?:\s|$)",
+                        tree_command,
                     )
                     for path in in_tree
                 )
