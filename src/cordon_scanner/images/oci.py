@@ -1057,6 +1057,12 @@ class ImageConfig:
             value = runtime.get(key)
             if isinstance(value, list):
                 commands.append(f"{key.upper()} " + " ".join(str(v) for v in value))
+        # What the engine needs to know what the image runs on start (`Engine._image_start_ceiling`).
+        if isinstance(runtime.get("WorkingDir"), str) and runtime["WorkingDir"]:
+            commands.append(f"WORKDIR {runtime['WorkingDir']}")
+        healthcheck = runtime.get("Healthcheck")
+        if isinstance(healthcheck, dict) and isinstance(healthcheck.get("Test"), list):
+            commands.append("HEALTHCHECK " + " ".join(str(v) for v in healthcheck["Test"]))
         for step in config.get("history") or ():
             if isinstance(step, dict) and isinstance(step.get("created_by"), str):
                 commands.append(step["created_by"])

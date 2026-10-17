@@ -2020,6 +2020,7 @@ class Engine:
             # A source tree read from an archive: graded as a repository (`_person_run_ceiling`).
             acc.findings[:] = self._person_run_ceiling(acc.findings, units, ctx)
         if image is not None:
+            acc.findings[:] = Engine._image_start_ceiling(acc.findings, units)
             ctx = replace(ctx, image=image)
             installed = self._image_dependencies(image)
             present = {(d.ecosystem, d.name.lower(), d.version) for d in installed}
@@ -6526,6 +6527,140 @@ class Engine:
                         )
                     )
         return lifted
+
+    #: Where an image's init systems, schedulers and shells keep what they start on their own.
+    _IMAGE_STARTED: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:etc/services\.d/[^/]{1,200}/(?:run|finish)|etc/cont-(?:init|finish)\.d/[^/]{1,200}"
+        r"|etc/s6-overlay/(?:s6-rc\.d/[^/]{1,200}/(?:run|up|finish)|scripts/[^/]{1,200})"
+        r"|etc/supervisor(?:d\.conf|/[^\n]{1,300}\.conf)|etc/supervisord\.d/[^\n]{1,300}"
+        r"|docker-entrypoint(?:-initdb)?\.d/[^/]{1,200}|etc/s(?:ervice|v)/[^/]{1,200}/run"
+        r"|etc/crontabs/[^/]{1,200}|etc/cron\.(?:d|hourly|daily|weekly|monthly)/[^/]{1,200}"
+        r"|var/spool/cron/[^\n]{1,300}|etc/periodic/[^\n]{1,300}|etc/profile|etc/profile\.d/[^/]{1,200}"
+        r"|etc/bash\.bashrc|etc/rc\.local|etc/init\.d/[^/]{1,200}"
+        r"|(?:usr/lib|etc)/systemd/system/[^\n]{1,300}"
+        r"|(?:usr/local/)?bin/docker-entrypoint[^/]{0,100}|(?:docker-)?entrypoint[^/]{0,100})$"
+    )
+    _INTERPRETED: ClassVar[frozenset[str]] = frozenset(
+        {"py", "js", "mjs", "cjs", "ts", "rb", "php", "pl", "sh", "bash", "lua", "r"}
+    )
+    _IMAGE_PATH_DIRS: ClassVar[tuple[str, ...]] = (
+        "usr/local/sbin", "usr/local/bin", "usr/sbin", "usr/bin", "sbin", "bin",
+    )  # fmt: skip
+
+    @staticmethod
+    def _image_start_ceiling(findings: list[Finding], units: list[FileUnit]) -> list[Finding]:
+        """Suspicious findings in an image's files that nothing in the image starts, reported
+        below the gate (review 98: option A, for images).
+
+        A container runs what its configuration starts -- the entrypoint and command, the
+        healthcheck -- and what its init system, scheduler and login shell start on their own,
+        and everything those name. The application the command runs lives under the working
+        directory. The rest of the image -- a vendored library's Makefile, a package manager's
+        cache, a script nobody calls -- runs when someone execs it. Malicious findings, secrets
+        (readable by anyone who pulls the image) and agent findings keep their grade, and an
+        image whose configuration cannot be read keeps every grade.
+        """
+        from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
+
+        def member(path: str) -> str:
+            return path.split("!", 1)[1] if "!" in path else path
+
+        history = next((u for u in units if member(u.path) == "image-config/history.txt"), None)
+        if history is None:
+            return findings
+        start: list[str] = []
+        workdir = ""
+        for line in history.content.text.splitlines():
+            head, _, rest = line.partition(" ")
+            if head in ("ENTRYPOINT", "CMD", "HEALTHCHECK"):
+                start.append(rest)
+            elif head == "WORKDIR":
+                workdir = rest.strip().strip("/")
+        if not start:
+            return findings
+        members = {
+            member(u.path): u for u in units if not member(u.path).startswith("image-config/")
+        }
+        by_name: dict[str, list[str]] = {}
+        for path in members:
+            by_name.setdefault(path.rpartition("/")[2], []).append(path)
+
+        def resolve(token: str, base: str) -> set[str]:
+            token = token.strip("'\"`;&|(){}")
+            if not token or token.startswith("-") or "=" in token:
+                return set()
+            out: set[str] = set()
+            if token.startswith("/"):
+                if token[1:] in members:
+                    out.add(token[1:])
+            else:
+                for root in (base, workdir):
+                    candidate = posixpath.normpath(f"{root}/{token}") if root else token
+                    if candidate in members:
+                        out.add(candidate)
+                if "/" not in token:
+                    out.update(
+                        f"{d}/{token}" for d in Engine._IMAGE_PATH_DIRS if f"{d}/{token}" in members
+                    )
+            return out
+
+        auto: set[str] = {p for p in members if Engine._IMAGE_STARTED.match(p)}
+        if workdir:
+            # The application under the working directory, in the languages a runtime loads from
+            # source. A Makefile runs at build time, and Go or Java sources never run: their
+            # binary does, and is reached from the command.
+            auto |= {
+                p
+                for p in members
+                if p.startswith(workdir + "/")
+                and p.rpartition(".")[2].lower() in Engine._INTERPRETED
+                and "/vendor/" not in f"/{p}"
+            }
+        for command in start:
+            for token in re.split(r"[\s;&|]+", command):
+                auto |= resolve(token, workdir)
+        # And what the started files name: a script they run or source, by path or by name.
+        frontier = set(auto)
+        for _ in range(6):
+            found: set[str] = set()
+            for path in frontier:
+                unit = members.get(path)
+                if unit is None or unit.content.is_binary or unit.content.size > 2_000_000:
+                    continue
+                text = unit.content.text
+                base = path.rpartition("/")[0]
+                for token in set(re.findall(r"[\w./${}-]{2,200}", text)):
+                    token = token.replace("${", "").replace("}", "")
+                    found |= resolve(token, base)
+                    name = token.rpartition("/")[2]
+                    if len(name) >= 6:
+                        found.update(by_name.get(name, ()))
+            frontier = found - auto
+            if not frontier:
+                break
+            auto |= frontier
+        out: list[Finding] = []
+        for finding in findings:
+            path = member(finding.location.path or "")
+            if (
+                finding.category is Category.SUSPICIOUS
+                and finding.severity > Severity.MEDIUM
+                and path in members
+                and path not in auto
+                and not finding.rule_id.startswith(("SECRET.", "SUSPECT.DESTROY."))
+                and Taxonomy.domain_of(finding.rule_id) is not ThreatDomain.AGENT
+            ):
+                finding = replace(
+                    finding,
+                    severity=Severity.MEDIUM,
+                    message=finding.message
+                    + " Nothing in this image starts this file -- not its entrypoint, command or "
+                    "healthcheck, not its init system or scheduler, not under its working "
+                    "directory, and not named by any of those -- so it runs only if someone runs "
+                    "it, and is reported below the gate.",
+                )
+            out.append(finding)
+        return out
 
     @staticmethod
     def _manifest_hook_paths(
