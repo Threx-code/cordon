@@ -66,6 +66,7 @@ from cordon_scanner.detect.secrets import (
     SourcePaths,
     SourceSpans,
 )
+from cordon_scanner.detect.store_flow import StoreFlow
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -1123,6 +1124,13 @@ class CapabilityDetector(BaseDetector):
         rb"(?!(?:127|10|0)\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)"
         rb"(?:\d{1,3}\.){3}\d{1,3}(?![\d.])"
     )
+
+    _CHAT_CLIENT: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?m)^[ \t]{0,8}(?:import|from)[ \t]{1,4}(?:discord|telebot|telegram|aiogram|pyrogram|telethon)\b"
+        rb"|\brequire[ \t]{0,4}\([ \t]{0,4}['\"](?:discord\.js|node-telegram-bot-api|telegraf)['\"]"
+        rb"|\bfrom[ \t]{1,4}['\"](?:discord\.js|node-telegram-bot-api|telegraf)['\"]"
+    )
+    """A chat bot's client library: the channel a webhook URL is, without the URL."""
 
     @staticmethod
     def _names_untrusted_destination(raw: bytes) -> bool:
@@ -4327,6 +4335,28 @@ class CapabilityDetector(BaseDetector):
                 # `core.samples.names_authentication`; scoped to this one rule, because
                 # its premise is a store "this component does not own".
                 ceilinged = "a file whose name says it handles authentication"
+            elif (
+                compiled.rule.id == self.CREDENTIAL_STORE_RULE
+                and not in_hook
+                and not ctx.in_consumer_install(content.path)
+                and not CapabilityDetector._agent_run(content, ctx)
+                # Nor code a published package runs when it is imported (REC-2).
+                and content.path not in ctx.import_entry_paths
+                # A paste site, a webhook, a chat API or a bare address beside the store keeps
+                # it: nobody sends their own keys there, whatever this test can follow.
+                and not CapabilityDetector._names_untrusted_destination(content.raw)
+                and not CapabilityDetector._CHAT_CLIENT.search(content.raw)
+                and not StoreFlow.reaches(
+                    content.text,
+                    [h.line for h in hits if h.rule_id == "CAP.CREDENTIAL.STORE.001"],
+                    [h.line for h in hits if h.capability is Capability.EGRESS],
+                )
+            ):
+                # Nothing the file reads from the store reaches the call (`detect/store_flow.py`):
+                # a dotfiles installer reading `~/.ssh/config` and running `curl | bash` forty
+                # lines on. Where code runs on its own -- a hook, an agent's tool -- reading
+                # somebody's keys is the act, and this does not apply.
+                ceilinged = "a credential store read with nothing it reads sent anywhere"
             elif content.is_rule_material:
                 # A rule set, or a test case annotated for one. `semgrep/semgrep-rules`
                 # supplies `bash/curl/security/curl-eval.bash`, whose whole content is
