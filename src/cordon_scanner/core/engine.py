@@ -1521,6 +1521,8 @@ class Engine:
                 acc.findings, units, dependencies
             )
 
+        acc.findings[:] = self._person_run_ceiling(acc.findings, units, ctx)
+
         # Repository-scoped detectors. `RepositoryUnit` existed and nothing
         # produced one, so a detector asking about the repository rather than
         # about a file had no way to run at all -- the port was declared and
@@ -2011,6 +2013,9 @@ class Engine:
                 else d
                 for d in dependencies
             )
+        elif image is None:
+            # A source tree read from an archive: graded as a repository (`_person_run_ceiling`).
+            acc.findings[:] = self._person_run_ceiling(acc.findings, units, ctx)
         if image is not None:
             ctx = replace(ctx, image=image)
             installed = self._image_dependencies(image)
@@ -4024,6 +4029,173 @@ class Engine:
         ):
             return ThreatDomain.CICD
         return None
+
+    #: Directories whose files a tool runs when the project is opened or committed to: editor
+    #: tasks, dev containers, agent settings and hooks, git hooks.
+    _OPENED_DIRECTORIES: ClassVar[tuple[str, ...]] = (
+        "/.vscode/",
+        "/.devcontainer/",
+        "/.claude/",
+        "/.cursor/",
+        "/.windsurf/",
+        "/.idea/",
+        "/.husky/",
+        "/.githooks/",
+        "/.git/hooks/",
+        "/.gemini/",
+        "/.codex/",
+        "/.continue/",
+    )
+    _OPENED_FILES: ClassVar[frozenset[str]] = frozenset(
+        {".envrc", ".mcp.json", "mcp.json", "devcontainer.json", ".pre-commit-config.yaml"}
+    )
+
+    @staticmethod
+    def _runs_on_its_own(path: str, ctx: ScanContext) -> bool:
+        """Whether a repository file runs without a person naming it: installing the project
+        (lifecycle hooks and what they import), building it (build definitions), opening it
+        (editor tasks, direnv, dev containers, git and agent hooks), or an agent using it (MCP
+        servers, skill scripts)."""
+        if (
+            path in ctx.install_hook_paths
+            or path in ctx.agent_run_paths
+            or path in ctx.install_entry_paths
+            or path in ctx.consumer_install_paths
+        ):
+            return True
+        member = path.rpartition("!")[2]
+        if any(
+            hook.kind in ("build", "startup", "projectbuild", "githook")
+            for hook in Engine._hooks_for(member)
+        ):
+            return True
+        slashed = "/" + member
+        name = ContainerPaths.basename(member)
+        return (
+            name in Engine._OPENED_FILES
+            or any(d in slashed for d in Engine._OPENED_DIRECTORIES)
+            or name in PROJECT_BUILD_FILENAMES
+            or name in DEPENDENCY_BUILD_FILENAMES
+            or name.endswith((".bzl", ".gradle", ".gradle.kts", ".mk"))
+            or name in ("BUILD", "BUILD.bazel", "WORKSPACE", "MODULE.bazel", "CMakeLists.txt")
+            or name in ("flake.nix", "default.nix", "shell.nix", "configure", "package.json")
+        )
+
+    _MCP_SDK_DECLARED: ClassVar[re.Pattern[str]] = re.compile(
+        r"@modelcontextprotocol/sdk|^\s*(?:fastmcp|mcp)\s*[<>=~\[\"',]|^\s*rmcp\s*=|\"(?:fastmcp|mcp)[<>=~\[]",
+        re.MULTILINE,
+    )
+
+    @staticmethod
+    def _agent_or_editor_tree(units: Sequence[FileUnit], ctx: ScanContext) -> bool:
+        """A tree an agent host or an editor starts: a skill (`SKILL.md`), an MCP server (its code
+        runs on the agent's tool calls, `agent_run_paths`, or its manifest declares an MCP SDK),
+        or an editor extension."""
+        from cordon_scanner.detect.secrets import SourcePaths
+
+        if ctx.agent_run_paths:
+            return True
+        for unit in units:
+            member = unit.path.rpartition("!")[2]
+            name = ContainerPaths.basename(member)
+            if name == "SKILL.md" or SourcePaths.is_editor_extension(unit.path):
+                return True
+            if name in ("package.json", "pyproject.toml", "requirements.txt", "Cargo.toml") and (
+                Engine._MCP_SDK_DECLARED.search(unit.content.text[:100_000])
+            ):
+                return True
+        return False
+
+    _SHELL_DOTFILES: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:\.|dot_)?(?:bashrc|bash_profile|bash_aliases|bash_logout|profile|zshrc|zshenv|"
+        r"zprofile|zlogin|aliases|functions|exports|inputrc)$|\.(?:bashrc|zshrc|fish)$|^config\.fish$"
+    )
+
+    @staticmethod
+    def _a_tool_a_person_runs(path: str, unit: FileUnit | None) -> bool:
+        """Whether a repository file is a tool someone starts by name, rather than the project's
+        source: a shell, PowerShell or batch script, an extensionless executable script (a
+        shebang), a container build file, or a shell startup file a dotfiles repository keeps."""
+        member = path.rpartition("!")[2]
+        name = ContainerPaths.basename(member)
+        lower = name.lower()
+        if lower.endswith(STANDALONE_SCRIPTS) or Engine._SHELL_DOTFILES.search(lower):
+            return True
+        if lower.startswith(("dockerfile", "containerfile")) or lower.endswith(
+            (".dockerfile", ".containerfile")
+        ):
+            return True
+        return (
+            "." not in name
+            and unit is not None
+            and not unit.content.is_binary
+            and unit.content.raw[:2] == b"#!"
+        )
+
+    @staticmethod
+    def _person_run_ceiling(
+        findings: list[Finding], units: list[FileUnit], ctx: ScanContext
+    ) -> list[Finding]:
+        """Suspicious findings in a repository file nothing runs on its own, reported below the
+        gate (review 98, option A, 2026-10-17).
+
+        A repository is scanned before someone builds or opens it. What runs then, unasked, is
+        the attack surface: the install hooks and what they import, the build definitions, the
+        editor tasks, dev container, git and agent hooks that fire on open, and the servers and
+        skills an agent starts. A release script, a dotfile, a provisioning script or a tool under
+        `bin/` runs when a person runs it by name, and the finding is still reported -- as a
+        warning. A file one of the auto-run files names (`sh ./scripts/x.sh` in a Makefile) is
+        auto-run too. A MALICIOUS finding is never lowered, wherever it is.
+        """
+        if Engine._agent_or_editor_tree(units, ctx):
+            # An agent skill, an MCP server or an editor extension: the agent host or the editor
+            # starts it, so none of it waits for a person to run it by name.
+            return findings
+        from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
+
+        auto = [u for u in units if Engine._runs_on_its_own(u.path, ctx)]
+        named: dict[str, bool] = {}
+
+        def named_by_auto_run(path: str) -> bool:
+            name = ContainerPaths.basename(path.rpartition("!")[2])
+            if len(name) < 4:
+                return False
+            if name not in named:
+                named[name] = any(
+                    u.path != path and not u.content.is_binary and name in u.content.text
+                    for u in auto
+                )
+            return named[name]
+
+        by_path = {u.path: u for u in units}
+        out: list[Finding] = []
+        for finding in findings:
+            path = finding.location.path
+            if (
+                finding.category is Category.SUSPICIOUS
+                and finding.severity > Severity.MEDIUM
+                and path
+                and path != REPOSITORY_SCOPE
+                # A leaked key is leaked whoever runs the file it sits in.
+                and not finding.rule_id.startswith("SECRET.")
+                # Wiping a home directory harms whoever runs the script, a person included.
+                and not finding.rule_id.startswith("SUSPECT.DESTROY.")
+                # An agent reads its instruction and configuration files on open, unasked.
+                and Taxonomy.domain_of(finding.rule_id) is not ThreatDomain.AGENT
+                and Engine._a_tool_a_person_runs(path, by_path.get(path))
+                and not Engine._runs_on_its_own(path, ctx)
+                and not named_by_auto_run(path)
+            ):
+                finding = replace(
+                    finding,
+                    severity=Severity.MEDIUM,
+                    message=finding.message
+                    + " Nothing in this repository runs this file on its own -- it is not an "
+                    "install or build step, not run when the project is opened, and not named by "
+                    "one -- so it runs when a person runs it, and is reported below the gate.",
+                )
+            out.append(finding)
+        return out
 
     #: Fetch-and-run findings a package-level verdict can raise.
     _RUNS_DOWNLOADS: ClassVar[frozenset[str]] = frozenset({"SUSPECT.DROPPER.001"})

