@@ -3216,13 +3216,18 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
+            rule_hits = (
+                [h for h in hits if not self._a_setting(unit.content, h)]
+                if compiled.rule.id in self.SETTINGS_ARE_NOT_LOOT
+                else hits
+            )
             if compiled.rule.id in self.CONTEXT_FREE:
                 window = self._satisfying_window(
-                    compiled, hits, unit.path, False, False, False, frozenset()
+                    compiled, rule_hits, unit.path, False, False, False, frozenset()
                 )
             else:
                 window = self._satisfying_window(
-                    compiled, hits, unit.path, in_hook, in_ci, in_consumer, deferred
+                    compiled, rule_hits, unit.path, in_hook, in_ci, in_consumer, deferred
                 )
             if window is None:
                 continue
@@ -3246,6 +3251,61 @@ class CapabilityDetector(BaseDetector):
             )
             if finding is not None:
                 yield finding
+
+    #: Composites whose source half is what a file sends: a setting it reads to configure itself is
+    #: not that. See `_a_setting`.
+    SETTINGS_ARE_NOT_LOOT: ClassVar[frozenset[str]] = frozenset({"SUSPECT.EXFIL.DROP_POINT.001"})
+
+    _SETTING_READ: ClassVar[re.Pattern[str]] = re.compile(
+        r"""^\s{0,8}(?:
+            process\.env\.(?P<dotted>[A-Za-z_][A-Za-z0-9_]{0,80})\b(?!\s{0,4}[\[(])
+          | (?:os\.(?:getenv|environ\.get|environ\s{0,4}\[)|process\.env\s{0,4}\[
+             |std::env::var(?:_os)?\s{0,4}\(|env!\s{0,4}\(|ENV(?:\.fetch\s{0,4}\(|\s{0,4}\[)
+             |System\.getenv\s{0,4}\(|Environment\.GetEnvironmentVariable\s{0,4}\(
+             |os\.Getenv\s{0,4}\()
+            \s{0,4}\(?\s{0,4}["'](?P<quoted>[A-Za-z_][A-Za-z0-9_]{0,80})["']
+        )""",
+        re.VERBOSE,
+    )
+    """One environment variable read by its literal name: `os.getenv("TELEGRAM_BOT_TOKEN")`,
+    `process.env.DINGTALK_TOKEN`, `std::env::var("SMTP_SERVER")`. A name computed at run time
+    (`os.getenv(k)`) is not this: a loop over names is how a stealer reads a list of them."""
+
+    _PLATFORM_LOOKUP: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s{0,8}(?:platform\.(?:machine|system|architecture|processor|python_version)\s{0,4}\("
+        r"|os\.(?:homedir|platform|arch|tmpdir|cpus|endianness)\s{0,4}\("
+        r"|process\.(?:platform|arch)\b|sys\.platform\b)"
+    )
+    """What the machine is, not who: the architecture a download is picked for, the home
+    directory a config file is kept under."""
+
+    @classmethod
+    def _a_setting(cls, content: FileContent, hit: CapabilityHit) -> bool:
+        """Whether a credential or reconnaissance hit reads only a setting the file configures
+        itself with, so that it is not what a request to a drop point carries away.
+
+        A notifier reads its bot token and posts a message; a stealer reads the environment, the
+        user and host names, or the public address, and posts those (review 98: the 62 benign
+        units blocked by `SUSPECT.EXFIL.DROP_POINT.001` alone against 16 malware samples, every
+        one of which sends identity or the whole environment). A named setting that is a
+        well-known credential of another service (`NPM_TOKEN`, `GITHUB_TOKEN`, AWS keys -- see
+        `secretflow.CREDENTIAL_HOMES`) is loot whatever reads it.
+        """
+        if hit.capability not in (Capability.CREDENTIAL, Capability.RECONNAISSANCE):
+            return False
+        if hit.rule_id.endswith("_SENT") or "PUBLIC_IP" in hit.rule_id:
+            return False
+        end = min(hit.byte_end, hit.byte_start + 240)
+        text = content.raw[hit.byte_start : max(end, hit.byte_start + 1)].decode("utf-8", "replace")
+        if cls._PLATFORM_LOOKUP.match(text):
+            return True
+        read = cls._SETTING_READ.match(text)
+        if read is None:
+            return False
+        from cordon_scanner.detect.secretflow import CREDENTIAL_HOMES
+
+        name = read.group("dotted") or read.group("quoted") or ""
+        return not any(pattern.match(name) for pattern, _ in CREDENTIAL_HOMES)
 
     BYTES_PER_LINE = 200
     """How far apart in bytes `proximity` lines are allowed to be.
