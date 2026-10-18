@@ -145,6 +145,24 @@ _USER_INPUT: Final = re.compile(
     r"(?:cada|toda) (?:mensagem|entrada)|(?:ogni|tutti i) (?:messaggio|input|richiesta)\w{0,2})\b",
     re.IGNORECASE,
 )
+#: An HTTP method written as one (`curl -X POST`, "should be a POST"): the request's verb, not
+#: an instruction to send anything.
+_HTTP_METHOD: Final = re.compile(r"(?:-X|--request)\s{0,4}[A-Z]{3,7}\b|\b(?:POST|PUT|PATCH)\b")
+#: The user's own input, named as such: every or each message, the user's prompt. "The request"
+#: and "the conversation" alone are what any API documentation talks about.
+_OWN_INPUT: Final = re.compile(
+    r"\b(?:(?:every|each|all) (?:user(?:'s)? )?(?:message|input|prompt|conversation|request)s?|"
+    r"user(?:'s)? (?:input|message|prompt|data)|"
+    r"(?:cada|todo|todos los) (?:mensaje|entrada|solicitud)\w{0,2}(?: del usuario)?|"
+    r"(?:chaque|tous les) (?:message|entr[ée]e|requ[êe]te)s?|(?:jede|alle) (?:nachricht|eingabe|anfrage)\w{0,2}|"
+    r"(?:cada|toda) (?:mensagem|entrada)|(?:ogni|tutti i) (?:messaggio|input|richiesta)\w{0,2})\b",
+    re.IGNORECASE,
+)
+_LOCAL_HOST: Final = re.compile(
+    r"^(?:localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0\.0\.0\.0|\[?::1\]?|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|[\w-]{1,63}\.local)(?::\d{1,5})?$",
+    re.IGNORECASE,
+)
 _REPLICATE: Final = re.compile(
     r"\b(?:copy|repeat|include|reproduce|append|insert|copia|repite|incluye|copie|r[ée]p[èe]te|inclus|kopiere|wiederhole|copie|repita|copia|ripeti)\b"
     r"[^.\n]{0,80}\b(?:th(?:is|ese)|este|estas|ce|ces|diese[nrs]?|dieses|questo|questi|esta|estas)\s(?:block|text|instructions?|prompt|message|bloque|texto|instrucciones|bloc|texte|instructions|block|text|anweisung(?:en)?|blocco|testo|istruzioni|bloco)\b"
@@ -339,12 +357,16 @@ class InstructionIntent:
             return None
         if _REPLICATE.search(normal) and (_SPREAD.search(normal) or _COVERT.search(normal)):
             return "self-replicate"
-        if (
-            _SEND.search(normal)
-            and _URL.search(normal)
-            and (_COVERT.search(normal) or _USER_INPUT.search(normal))
-        ):
-            return "covert-exfil"
+        if _SEND.search(_HTTP_METHOD.sub(" ", normal)) and _URL.search(normal):
+            if _COVERT.search(normal):
+                return "covert-exfil"
+            # Without a word of concealment the sentence must name the user's own input as what
+            # is sent -- every message, the user's prompt -- and an address outside this
+            # machine. "Send the request: curl -X POST https://api.<service>" is how a skill
+            # documents its own API, and a webhook on localhost is the user's own automation
+            # (review 98: 12 of 12 benign units this intent blocked alone, design half).
+            if _OWN_INPUT.search(normal) and InstructionIntent._outside_address(normal):
+                return "covert-exfil"
         if _DECEIVE.search(normal) and (_BACKGROUND.search(normal) or _SEND.search(normal)):
             return "deceive"
         if (
@@ -356,6 +378,20 @@ class InstructionIntent:
         if _MARKDOWN_IMAGE.search(normal):
             return "markdown-exfil"
         return None
+
+    @staticmethod
+    def _outside_address(normal: str) -> bool:
+        """A URL to a host off this machine and its network, or an e-mail address."""
+        for found in _URL.finditer(normal):
+            value = found.group(0)
+            if value.lower() == "webhook":
+                continue
+            if "://" not in value:
+                return True
+            host = value.split("://", 1)[1].split("/", 1)[0].rsplit("@", 1)[-1]
+            if not _LOCAL_HOST.match(host):
+                return True
+        return False
 
     @staticmethod
     def find(text: str) -> list[Intent]:
