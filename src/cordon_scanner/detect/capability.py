@@ -353,6 +353,7 @@ class CapabilityDetector(BaseDetector):
         content = unit.content
         language = unit.language
         dotnet_commands: list[embedded.Command] = []
+        assembly_view = False
 
         # Binary files are excluded from content rules. A byte sequence in a PNG
         # that happens to spell a pattern is a false positive with no upside,
@@ -383,17 +384,10 @@ class CapabilityDetector(BaseDetector):
             view = DotNetMetadata.view(data)
             if view is None:
                 return None
-            if (
-                self._DOTNET_DOWNLOAD.search(view)
-                and self._DOTNET_WRITE.search(view)
-                and self._DOTNET_START.search(view)
-            ):
-                # Downloads, writes a file and starts a process: the dropper's three steps, which
-                # in source sit together and in a compiled assembly sit in one member list.
-                view += "// download, write and start in one assembly: DOTNET_DOWNLOAD_RUN\n"
             raw = view.encode("utf-8")
             content = FileContent(path=content.path, raw=raw, size=len(raw))
             language = "csharp"
+            assembly_view = True
             for number, line in enumerate(view.splitlines(), 1):
                 if line.startswith('"') and self._DOTNET_COMMAND.search(line):
                     text = line[1:-1].replace('\\"', '"').replace("\\\\", "\\")
@@ -415,8 +409,15 @@ class CapabilityDetector(BaseDetector):
             if view != content.text:
                 raw = view.encode("utf-8")
                 matched_content = FileContent(path=content.path, raw=raw, size=len(raw))
-        hits = self._match_capabilities(matched_content, candidates, language)
-        hits.extend(self._folded_capabilities(matched_content, candidates, language, hits))
+        if assembly_view:
+            # A compiled assembly's member list puts every API it references within a few lines
+            # of every other, so "a request beside an execution" says nothing there: on 489 benign
+            # NuGet packages it blocked 121 (review 98). It is judged by the command lines its
+            # code carries, read by the shell rules as commands written in source are.
+            hits: list[CapabilityHit] = []
+        else:
+            hits = self._match_capabilities(matched_content, candidates, language)
+            hits.extend(self._folded_capabilities(matched_content, candidates, language, hits))
         resolved, commands = self._resolved_capabilities(unit, content, ctx)
         commands = commands + dotnet_commands
         if not commands and language not in ("python", "csharp"):
@@ -473,24 +474,6 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._js_spelled_names(content, unit.language))
         hits.extend(self._js_string_code_run(content, unit.language))
         hits.extend(self._credential_sweep(matched_content))
-        if language == "csharp" and content.text.endswith("DOTNET_DOWNLOAD_RUN\n"):
-            # At the download, so the fetch and the egress beside it fall in one window.
-            download = self._DOTNET_DOWNLOAD.search(content.text)
-            at = download.start() if download else len(content.text) - 1
-            line = content.text.count("\n", 0, at) + 1
-            start = len(content.text[:at].encode("utf-8"))
-            # The download is the egress: in a member list the client's constructor can sit
-            # hundreds of lines away from the call that fetches.
-            hits.extend(
-                CapabilityHit(
-                    capability=capability,
-                    rule_id="CAP.DOTNET.DOWNLOAD_RUN",
-                    byte_start=start,
-                    byte_end=start + 1,
-                    line=line,
-                )
-                for capability in (Capability.EGRESS, Capability.FETCH_EXEC)
-            )
         if unit.language == "go":
             hits.extend(self._go_ci_environment_write(matched_content))
             hits.extend(self._go_received_and_run(content))
@@ -3019,16 +3002,6 @@ class CapabilityDetector(BaseDetector):
         ]
         return on_load[:1]
 
-    _DOTNET_DOWNLOAD: ClassVar[re.Pattern[str]] = re.compile(
-        r"\b(?:WebClient\.Download(?:File|Data|String)(?:Async|TaskAsync)?|"
-        r"HttpClient\.Get(?:ByteArray|Stream|String)Async)\("
-    )
-    _DOTNET_WRITE: ClassVar[re.Pattern[str]] = re.compile(
-        r"\bFile\.(?:WriteAll(?:Bytes|Text)|Create|OpenWrite)\(|\bnew FileStream\("
-    )
-    _DOTNET_START: ClassVar[re.Pattern[str]] = re.compile(
-        r"\bProcess\.Start\(|\bProcessStartInfo\.set_FileName\("
-    )
     #: A string literal in a compiled assembly that is a command line, handed to the shell rules.
     _DOTNET_COMMAND: ClassVar[re.Pattern[str]] = re.compile(
         r"(?i)\b(?:powershell|pwsh|cmd(?:\.exe)?\s*/c|invoke-webrequest|iwr|invoke-expression|iex|"
