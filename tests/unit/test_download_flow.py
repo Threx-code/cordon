@@ -111,3 +111,30 @@ class TestPythonReadsTheDownload:
 
     def test_another_language_is_not_read(self):
         assert DownloadFlow.runs_download("fetch(u)", "javascript") is None
+
+
+class TestACheckoutIsADownload:
+    def test_a_cloned_repository_run_from_the_shell(self) -> None:
+        script = "git clone https://example.invalid/r.git /tmp/r\ncd /tmp/r\nbash install.sh\n"
+        assert DownloadFlow.runs_download(script, "shell")
+
+    def test_a_cloned_repository_only_read_is_not_run(self) -> None:
+        script = "git clone https://example.invalid/r.git docs\ncat docs/README.md\n"
+        assert DownloadFlow.runs_download(script, "shell") == []
+
+    def test_a_python_checkout_entered_and_run(self) -> None:
+        source = (
+            "import os, subprocess, git\n"
+            "git.Repo.clone_from('https://example.invalid/r.git', '/tmp/r')\n"
+            "os.chdir('/tmp/r')\n"
+            "subprocess.run(['python3', 'main.py'])\n"
+        )
+        assert DownloadFlow.runs_download(source, "python")
+
+    def test_a_python_checkout_never_run(self) -> None:
+        source = (
+            "import subprocess\n"
+            "subprocess.run(['git', 'clone', 'https://example.invalid/r.git', 'vendor/r'])\n"
+            "print(open('vendor/r/VERSION').read())\n"
+        )
+        assert DownloadFlow.runs_download(source, "python") == []

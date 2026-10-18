@@ -241,3 +241,24 @@ class TestDependenciesTheCodeNeverUses:
             b"import get from 'lodash/get';",
         )
         assert found["deps_unused"] == 0.0
+
+
+class TestWhatRunsOnItsOwn:
+    def test_the_profile_names_what_install_time_code_can_do(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        root = tmp_path / "demo-1.0"
+        root.mkdir()
+        (root / "PKG-INFO").write_text(
+            "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n", encoding="utf-8"
+        )
+        (root / "setup.py").write_text(
+            "import subprocess\nfrom setuptools import setup\n"
+            "subprocess.run(['echo', 'building'])\nsetup(name='demo', version='1.0')\n",
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        package = result.verdict["package"]
+        assert package["install_files"] >= 1.0
+        assert package["install_can_spawn"] == 1.0

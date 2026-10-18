@@ -466,10 +466,14 @@ class Verdict:
         paths_sizes: Sequence[tuple[str, int]],
         manifests: dict[str, bytes],
         sources: Sequence[tuple[str, bytes]] = (),
+        profile: dict[str, float] | None = None,
     ) -> tuple[list[Finding], dict[str, Any]]:
-        """Findings re-graded by the package verdict, and the verdict to report."""
+        """Findings re-graded by the package verdict, and the verdict to report.
+
+        `profile` is what the code that runs on its own can do (`Engine._capability_profile`),
+        read as package facts beside the rest."""
         rules = VerdictFeatures.rules(findings)
-        package = VerdictFeatures.package(paths_sizes, manifests, sources)
+        package = {**VerdictFeatures.package(paths_sizes, manifests, sources), **(profile or {})}
         area = Verdict.area([p for p, _ in paths_sizes], manifests, package, rules)
         summary: dict[str, Any] = {"rules": rules, "package": package, "area": area}
         model = VerdictModel.load()

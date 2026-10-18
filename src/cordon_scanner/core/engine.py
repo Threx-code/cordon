@@ -1581,9 +1581,11 @@ class Engine:
 
         graded, verdict = Engine._package_verdict(
             Engine._hardening_tier(
-                Engine._test_identity_keys(list(findings), units), self.config.policy
+                Engine._onto_manifest(Engine._test_identity_keys(list(findings), units), units),
+                self.config.policy,
             ),
             units,
+            self._capability_profile(units, ctx),
         )
         findings = tuple(graded)
         dependencies = self._annotated(dependencies, findings, ctx, units)
@@ -2055,9 +2057,11 @@ class Engine:
 
         acc.findings[:], verdict = Engine._package_verdict(
             Engine._hardening_tier(
-                Engine._test_identity_keys(acc.findings, units), self.config.policy
+                Engine._onto_manifest(Engine._test_identity_keys(acc.findings, units), units),
+                self.config.policy,
             ),
             units,
+            self._capability_profile(units, ctx),
         )
         dependencies = self._annotated(dependencies, acc.findings, ctx, units)
         result = ScanResult(
@@ -3919,9 +3923,108 @@ class Engine:
         "requirements.txt",
     )
 
+    #: A hook's whole command lifted out of its manifest: `package.json#preinstall.sh`.
+    _LIFTED_HOOK: ClassVar[re.Pattern[str]] = re.compile(r"^(?P<hook>[\w:.-]+?)\.sh$")
+
+    @staticmethod
+    def _onto_manifest(findings: list[Finding], units: Sequence[FileUnit]) -> list[Finding]:
+        """Findings on a hook's command read as shell, placed on the hook in its manifest.
+
+        The lifted command is not a file anyone can open; the manifest line declaring the hook
+        is. (An inline `node -e` program keeps its own path: `core.inline_programs`.)
+        The finding keeps what it says and its evidence hash, and points at that line.
+        """
+        manifests = {u.path: u.content.raw for u in units if "#" not in u.path}
+        out: list[Finding] = []
+        for finding in findings:
+            path = finding.location.path or ""
+            owner, _, lifted = path.rpartition("#")
+            hook = Engine._LIFTED_HOOK.match(lifted) if owner else None
+            raw = manifests.get(owner) if hook else None
+            if raw is None or hook is None:
+                out.append(finding)
+                continue
+            found = raw.find(f'"{hook.group("hook")}"'.encode())
+            start = max(found, 0)
+            end = raw.find(b"\n", start)
+            end = len(raw) if end < 0 else end
+            line_text = raw[start:end].decode("utf-8", "replace")
+            snippet = finding.evidence.snippet
+            out.append(
+                replace(
+                    finding,
+                    location=replace(
+                        finding.location,
+                        path=owner,
+                        line=raw[:start].count(b"\n") + 1,
+                        column=None,
+                        end_line=None,
+                        end_column=None,
+                        byte_start=start,
+                        byte_end=end,
+                    ),
+                    evidence=replace(
+                        finding.evidence,
+                        span=(start, end),
+                        snippet=line_text if snippet and "[redacted]" not in snippet else snippet,
+                    ),
+                )
+            )
+        return out
+
+    #: How many files of one kind the capability profile labels: the files that run at install or
+    #: on import are a handful in any real package; past this the rest are not read again.
+    _PROFILE_FILES: ClassVar[int] = 50
+
+    def _capability_profile(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]:
+        """What the code that runs on its own can do: the capabilities of the files an install
+        runs, of the files importing the package runs first, and of the scripts an agent runs.
+
+        A rule reports a combination it was written for; most malware that no rule names still
+        does, at install or on import, things a library's entry point does not -- start a
+        process, reach the network, decode and evaluate (review 98: a `setup.py` that clones a
+        repository and runs a script from it raised nothing). The verdict weighs the profile with
+        everything else; on its own it blocks nothing.
+        """
+        from cordon_scanner.detect.capability import CapabilityDetector
+        from cordon_scanner.detect.download_flow import DownloadFlow
+
+        detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
+        if detector is None:
+            return {}
+        out: dict[str, float] = {}
+        places = {
+            "install": ctx.install_hook_paths | ctx.install_entry_paths,
+            "import": ctx.import_entry_paths,
+            "agent": ctx.agent_run_paths,
+        }
+        for place, paths in places.items():
+            held: set[str] = set()
+            read = 0
+            for unit in units:
+                if unit.path not in paths or unit.content.size > 1_000_000:
+                    continue
+                if read >= Engine._PROFILE_FILES:
+                    break
+                read += 1
+                try:
+                    labelled = detector.labelled(unit, ctx)
+                except Exception:  # noqa: S112 -- a profile is evidence, never a scan failure
+                    continue
+                if labelled is not None:
+                    held |= {hit.capability.value for hit in labelled[0]}
+                if "runs_download" not in held and DownloadFlow.runs_download(
+                    unit.content.text, unit.language
+                ):
+                    held.add("runs_download")
+            out[f"{place}_files"] = float(read)
+            out[f"{place}_capabilities"] = float(len(held))
+            out.update({f"{place}_can_{name}": 1.0 for name in held})
+        return out
+
     @staticmethod
     def _package_verdict(
-        findings: list[Finding], units: Sequence[FileUnit]
+        findings: list[Finding], units: Sequence[FileUnit], profile: dict[str, float] | None = None
     ) -> tuple[list[Finding], dict[str, Any]]:
         """The package verdict over everything this scan found (`core/verdict.py`)."""
         from cordon_scanner.core.verdict import Verdict
@@ -3937,7 +4040,9 @@ class Engine:
             for u in units
             if u.path.rsplit("!", 1)[-1].lower().endswith((".js", ".mjs", ".cjs", ".ts", ".py"))
         ]
-        graded, verdict = Verdict.decide(list(findings), paths_sizes, manifests, sources)
+        graded, verdict = Verdict.decide(
+            list(findings), paths_sizes, manifests, sources, profile or {}
+        )
         score, block = verdict.get("score"), verdict.get("block")
         if score is not None and block is not None and score >= block:
             # The package over its line blocks as a package, whether or not one finding would
@@ -6797,7 +6902,7 @@ class Engine:
             for hook in hooks:
                 if not hook.command or hook.name.lower() in AUTHOR_TIME_HOOKS:
                     continue
-                for program in InlinePrograms.found(unit.path, hook.name, hook.command):
+                for program in InlinePrograms.lifted(unit.path, hook.name, hook.command):
                     if program.path in known:
                         continue
                     known.add(program.path)
@@ -6907,7 +7012,7 @@ class Engine:
                     paths |= {
                         program.path
                         for hook in reaching
-                        for program in InlinePrograms.found(
+                        for program in InlinePrograms.lifted(
                             unit.path, hook.name, hook.command or ""
                         )
                         if program.path in known
@@ -6919,7 +7024,7 @@ class Engine:
                     consumer |= {
                         program.path
                         for hook in consuming
-                        for program in InlinePrograms.found(
+                        for program in InlinePrograms.lifted(
                             unit.path, hook.name, hook.command or ""
                         )
                         if program.path in known

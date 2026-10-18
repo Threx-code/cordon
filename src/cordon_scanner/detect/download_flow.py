@@ -181,6 +181,8 @@ class ShellDownloads:
         if not path or "$" in path.replace("$(", ""):
             return False
         trimmed = path[2:] if path.startswith("./") else path
+        if "." in self.tainted_dirs and not trimmed.startswith(("/", "~", "-")):
+            return True  # inside a downloaded tree, every relative path is downloaded content
         return (
             path in self.tainted_paths
             or trimmed in self.tainted_paths
@@ -301,6 +303,21 @@ class ShellDownloads:
                 if head in self._UNPACKERS and any(self._is_tainted_word(w) for w in cmd[1:]):
                     target = self._unpack_target(cmd)
                     self.tainted_dirs.add(target if target is not None else ".")
+                if head == "git" and len(cmd) > 2 and cmd[1] == "clone":
+                    # A checkout is a download: what it holds is whatever the remote serves.
+                    places = [w for w in cmd[2:] if not w.startswith("-")]
+                    if places:
+                        repo = places[0].rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+                        self.tainted_dirs.add(self._expand(places[1]) if len(places) > 1 else repo)
+                if (
+                    head == "cd"
+                    and len(cmd) > 1
+                    and (
+                        self._expand(cmd[1]).rstrip("/") in self.tainted_dirs
+                        or self._is_tainted_path(cmd[1])
+                    )
+                ):
+                    self.tainted_dirs.add(".")
                 stream_tainted = False
             if redirect and stream_tainted:
                 self.tainted_paths.add(self._expand(redirect.group(1)))
@@ -384,6 +401,8 @@ class PythonDownloads:
         self.tainted: set[str] = set()
         self.paths: set[str] = set()
         self.constants: dict[str, str] = {}
+        self.inside_download = False
+        """The working directory is a downloaded tree (`os.chdir` into a checkout)."""
 
     @classmethod
     def runs(cls, text: str) -> list[int] | None:
@@ -546,6 +565,17 @@ class PythonDownloads:
             if self._carries(call.args[0]):
                 self.paths.add(self._path(call.args[1]))
             return False
+        if name in ("clone_from", "clone_repository", "clone") and len(call.args) > 1:
+            # `git.Repo.clone_from(url, path)`, pygit2, dulwich: a checkout is a download.
+            self.paths.add(self._path(call.args[1]))
+            return False
+        cloned = self._git_clone_target(args)
+        if cloned is not None:
+            self.paths.add(cloned)
+            return False
+        if name == "chdir" and owner == "os" and call.args and self._runs_arg(call.args[0]):
+            self.inside_download = True
+            return False
         if name == "chmod" and owner in ("os", "") and len(call.args) > 1:
             # Making a downloaded file executable has one purpose.
             return self._executable_mode(call.args[1]) and self._runs_arg(call.args[0])
@@ -591,9 +621,28 @@ class PythonDownloads:
                 return True
         return False
 
+    def _git_clone_target(self, args: list[ast.expr]) -> str | None:
+        """Where `subprocess.run(["git", "clone", URL, DIR])` checks out to, if it is that."""
+        for arg in args:
+            if not isinstance(arg, ast.List | ast.Tuple):
+                continue
+            words = [self._path(e) for e in arg.elts]
+            if len(words) > 2 and words[0].rsplit("/", 1)[-1] == "git" and words[1] == "clone":
+                places = [w for w in words[2:] if w and not w.startswith("-")]
+                if places:
+                    repo = places[0].rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+                    return places[1] if len(places) > 1 else repo
+        return None
+
     def _runs_arg(self, node: ast.AST) -> bool:
         if self._carries(node):
             return True
+        if self.inside_download and isinstance(node, ast.List | ast.Tuple):
+            # Run from inside a checkout: a relative file it is handed is the checkout's.
+            for element in node.elts[1:]:
+                path = self._path(element)
+                if path and not path.startswith(("/", "-", "~")) and ("." in path or "/" in path):
+                    return True
         for sub in ast.walk(node):
             path = self._path(sub)
             if path and any(

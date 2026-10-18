@@ -175,12 +175,20 @@ class VerdictTrain:
             size[cls.half("pkg:" + cls.package_name(unit))][ECOSYSTEM.get(eco, eco)] += 1
         data: list[dict] = []
         fresh: dict[str, dict] = {}
-        for path in a.features:
-            for row in cls.rows(path):
+        for spec in a.features:
+            name, _, path = spec.partition("=")
+            prefix = "" if name in ("benign", "malware") else f"{name}/"
+            for row in cls.rows(Path(path)):
                 if row.get("verdict"):
-                    fresh[row["file"]] = row["verdict"]
+                    fresh[prefix + row["file"]] = row["verdict"]
+
+        newer_scan: dict[str, dict] = {}
+        for path in a.override:
+            for row in cls.rows(path):
+                newer_scan[row["file"]] = row
 
         def add(row: dict, label: int, eco: str, key: str, source: str, family: str) -> None:
+            row = newer_scan.get(row["file"], row)
             if row["file"] in fresh:
                 newer = fresh[row["file"]]
                 row = {
@@ -327,11 +335,19 @@ class VerdictTrain:
         )
         p.add_argument(
             "--features",
+            nargs="*",
+            default=[],
+            help="NAME=PATH features-only passes (reviews/review-98/tools/features_only.py), NAME "
+            "benign, malware or a --labelled name: their package features and area replace the "
+            "scan's, unit by unit",
+        )
+        p.add_argument(
+            "--override",
             type=Path,
             nargs="*",
             default=[],
-            help="features-only passes (reviews/review-98/tools/features_only.py): their package "
-            "features and area replace the scan's, unit by unit",
+            help="targeted rescans with a newer scanner: each record replaces the full scan's "
+            "record of the same unit (the units a detector change can affect)",
         )
         p.add_argument("--budget", type=float, default=0.3, help="percent of an ecosystem's units")
         p.add_argument(
