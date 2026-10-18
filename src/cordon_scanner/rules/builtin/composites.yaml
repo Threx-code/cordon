@@ -960,6 +960,33 @@ rules:
         - context: install_entry
         - rule: AST.PY.HIDDEN_ACTION
 
+  - id: SUSPECT.INSTALL.STRING_CODE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: An install script runs a program it carries as a string
+    message: >
+      Code that runs when the package is installed hands a string literal of a thousand
+      characters or more to eval, Function or the vm module. The program that runs is written
+      inside quotes, where none of its calls are code a reader or a scanner sees as code.
+      Installing a package needs its install script, not a second program inside it.
+    remediation: >
+      Do not install it until the string has been read as code. A build step that needs to run
+      something writes it as a file in the package.
+    provenance:
+      kind: research
+      reference: >
+        A hijacked release of `is` whose postinstall ran `Function()` over an 822 KB string
+        from a file under `test/` (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.JS.STRING_CODE_RUN
+
   # ---------------------------------------------------------------------
   # Cryptomining
   # ---------------------------------------------------------------------
@@ -1881,6 +1908,116 @@ rules:
             - rule: CAP.JS.FLOW.REMOTE_CODE.IP
             - rule: CAP.JS.FLOW.REMOTE_CODE.FIXED
             - rule: CAP.JS.FLOW.REMOTE_CODE.UNKNOWN
+
+  - id: SUSPECT.DROPPER.REMOTE_CODE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code runs what a server sends it
+    message: >
+      The body of a network response reaches eval, new Function, the vm module or a child
+      process, followed from the request to the execution through bindings, destructuring,
+      promise chains and helper functions (`detect/js_flow.py`). Outside an install hook it runs
+      when the code is loaded or called -- a library's exported function that fetches a command
+      and executes it does so in every application that calls it, with that application's
+      permissions.
+    remediation: >
+      Read where the request goes and what decides its address. A library that needs remote
+      behaviour downloads data, not code; one that executes a server's reply runs whatever that
+      server is told to send.
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+    provenance:
+      kind: research
+      reference: >
+        Runtime droppers in the npm dataset that never touch an install hook: an exported
+        function reading a command from a server whose address comes from a smart contract and
+        passing it to `child_process.exec` (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - any:
+            - rule: CAP.JS.FLOW.REMOTE_CODE.DROP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.IP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.FIXED
+            - rule: CAP.JS.FLOW.REMOTE_CODE.UNKNOWN
+      unless:
+        - path_glob: "**/test/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/__tests__/**"
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+
+  - id: SUSPECT.EXFIL.CREDENTIAL_SWEEP.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code reads the credential stores of many services and reaches the network
+    message: >
+      This file names where several unrelated services keep their credentials -- SSH keys, the
+      AWS, npm, Docker, Kubernetes and GitHub CLI configurations, `.netrc` -- and makes network
+      requests. A tool reads the store of the service it is for; reading all of them is what a
+      stealer does, whatever runs it. The paths may be written plainly or recovered from an
+      encoding the scanner reverses.
+    remediation: >
+      Do not run it. If it has run, rotate every credential in each store it names.
+    references:
+      - https://attack.mitre.org/techniques/T1552/001/
+    provenance:
+      kind: research
+      reference: >
+        The 2025 Go module family `BufferZoneCorp/*`, whose `init()` read eight services'
+        credential files from XOR-encoded paths and posted them (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.CREDENTIAL.SWEEP
+        - capability: egress
+      unless:
+        - path_glob: "**/test/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/testdata/**"
+        - path_glob: "**/*_test.go"
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+
+  - id: SUSPECT.CI.ENVIRONMENT_INJECTION.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: A package writes the CI job's environment when it is imported
+    message: >
+      Code that runs on import -- a Go `init()` or package-level initialiser -- writes the CI
+      job's environment or PATH file (`GITHUB_ENV`, `GITHUB_PATH`). Every later step of the job
+      then runs with what it wrote: a proxy setting pointed elsewhere, a directory placed ahead
+      of the real tools. Importing a library asks it for nothing of the kind.
+    remediation: >
+      Remove the dependency, and treat any CI job that imported it as having run with an
+      attacker's settings: rotate the job's secrets and rebuild what it published.
+    references:
+      - https://attack.mitre.org/techniques/T1574/
+    provenance:
+      kind: research
+      reference: >
+        The 2025 Go modules `BufferZoneCorp/go-metrics-sdk`, `go-weather-sdk` and
+        `go-retryablehttp`, which from `init()` appended proxy settings to `GITHUB_ENV` and a
+        directory to `GITHUB_PATH`, and stripped `go.sum` (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.GO.CI_ENV_WRITE
+      unless:
+        - path_glob: "**/*_test.go"
+        - path_glob: "**/testdata/**"
 
   - id: SUSPECT.INSTALL.AUTOSTART.001
     version: 1.0.0

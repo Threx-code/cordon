@@ -351,22 +351,83 @@ class CapabilityDetector(BaseDetector):
         to know what a piece of code can do: the manifest asks it of a hook's inline program.
         """
         content = unit.content
+        language = unit.language
+        dotnet_commands: list[embedded.Command] = []
 
         # Binary files are excluded from content rules. A byte sequence in a PNG
         # that happens to spell a pattern is a false positive with no upside,
         # and the file was never source to begin with.
-        if content.is_binary:
-            return None
+        #
+        # A compiled .NET assembly is the exception: its metadata says, in readable form, every
+        # member it calls and every string literal its code uses (`detect/dotnet_meta.py`). The
+        # C# rules read that view as they read source, and a literal that is a command line goes
+        # to the shell rules as a command written in source does (review 98: 22 of 23 malicious
+        # NuGet releases carried their payload only in a DLL).
+        assembly = content.path.lower().endswith((".dll", ".exe")) and content.raw[:2] == b"MZ"
+        if content.is_binary or assembly:
+            if not assembly or content.size > 30_000_000:
+                return None
+            from cordon_scanner.core.content import FileContent
+            from cordon_scanner.detect.dotnet_meta import DotNetMetadata
 
-        candidates = RuleSelector.select_rules(ctx.rules, language=unit.language, path=content.path)
+            data = content.raw
+            if len(data) < content.size and content.window_source is not None:
+                # An assembly past `max_file_bytes` keeps its metadata near the end: read it whole
+                # (bounded above), or padding a DLL past the limit would hide what it calls.
+                from contextlib import suppress
+
+                from cordon_scanner.core.windows import WindowSourceChanged
+
+                with suppress(OSError, WindowSourceChanged), content.window_source.reader() as read:
+                    data = read(0, content.size)
+            view = DotNetMetadata.view(data)
+            if view is None:
+                return None
+            if (
+                self._DOTNET_DOWNLOAD.search(view)
+                and self._DOTNET_WRITE.search(view)
+                and self._DOTNET_START.search(view)
+            ):
+                # Downloads, writes a file and starts a process: the dropper's three steps, which
+                # in source sit together and in a compiled assembly sit in one member list.
+                view += "// download, write and start in one assembly: DOTNET_DOWNLOAD_RUN\n"
+            raw = view.encode("utf-8")
+            content = FileContent(path=content.path, raw=raw, size=len(raw))
+            language = "csharp"
+            for number, line in enumerate(view.splitlines(), 1):
+                if line.startswith('"') and self._DOTNET_COMMAND.search(line):
+                    text = line[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+                    dotnet_commands.append(embedded.Command(text[:4000], number))
+
+        candidates = RuleSelector.select_rules(ctx.rules, language=language, path=content.path)
         if not candidates:
             return None
 
-        hits = self._match_capabilities(content, candidates, unit.language)
-        hits.extend(self._folded_capabilities(content, candidates, unit.language, hits))
+        matched_content = content
+        if unit.language == "go" and content.size <= 2_000_000:
+            # What the file builds at run time -- commands added up from a table of characters,
+            # paths and endpoints XOR-decoded from byte tables -- written beside where it is built
+            # (`detect/go_eval.py`), so the rules read the paths and hosts the code reaches.
+            from cordon_scanner.core.content import FileContent
+            from cordon_scanner.detect.go_eval import GoEval
+
+            view = GoEval.resolve(content.text)
+            if view != content.text:
+                raw = view.encode("utf-8")
+                matched_content = FileContent(path=content.path, raw=raw, size=len(raw))
+        hits = self._match_capabilities(matched_content, candidates, language)
+        hits.extend(self._folded_capabilities(matched_content, candidates, language, hits))
         resolved, commands = self._resolved_capabilities(unit, content, ctx)
-        if not commands and unit.language != "python":
-            commands = embedded.EmbeddedCommands.extract(content.text, unit.language)
+        commands = commands + dotnet_commands
+        if not commands and language not in ("python", "csharp"):
+            source = content.text
+            if unit.language == "go":
+                # A command assembled from a table of characters is read as the command it
+                # becomes (`detect/go_eval.py`): the 2025 Go typosquats never wrote theirs down.
+                from cordon_scanner.detect.go_eval import GoEval
+
+                source = GoEval.resolve(source)
+            commands = embedded.EmbeddedCommands.extract(source, unit.language)
         # And the plaintext of any encoded command among them, so the shell rules
         # see what `powershell -EncodedCommand` was given rather than only that it
         # was given something. See `embedded.decode_encoded_commands`: this is the
@@ -410,6 +471,29 @@ class CapabilityDetector(BaseDetector):
             first = computed[0]
             hits.append(replace(first, rule_id="CAP.JS.COMPUTED_REQUIRE_SOURCE"))
         hits.extend(self._js_spelled_names(content, unit.language))
+        hits.extend(self._js_string_code_run(content, unit.language))
+        hits.extend(self._credential_sweep(matched_content))
+        if language == "csharp" and content.text.endswith("DOTNET_DOWNLOAD_RUN\n"):
+            # At the download, so the fetch and the egress beside it fall in one window.
+            download = self._DOTNET_DOWNLOAD.search(content.text)
+            at = download.start() if download else len(content.text) - 1
+            line = content.text.count("\n", 0, at) + 1
+            start = len(content.text[:at].encode("utf-8"))
+            # The download is the egress: in a member list the client's constructor can sit
+            # hundreds of lines away from the call that fetches.
+            hits.extend(
+                CapabilityHit(
+                    capability=capability,
+                    rule_id="CAP.DOTNET.DOWNLOAD_RUN",
+                    byte_start=start,
+                    byte_end=start + 1,
+                    line=line,
+                )
+                for capability in (Capability.EGRESS, Capability.FETCH_EXEC)
+            )
+        if unit.language == "go":
+            hits.extend(self._go_ci_environment_write(matched_content))
+            hits.extend(self._go_received_and_run(content))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -1761,8 +1845,13 @@ class CapabilityDetector(BaseDetector):
             return CapabilityDetector.ON_REQUEST_REASONS[1]
         return ""
 
+    #: A function or method declaration. Indented too: gofmt never indents one, so an indented
+    #: `func` is a file written not to be read by tools anchored at the margin (review 98:
+    #: `boltdb-go/bolt` 1.3.1 hid its command channel in `\tfunc ApiInit() {`).
     _GO_FUNC = re.compile(
-        r"^func[ \t]+([A-Za-z_]\w{0,80})[ \t]*\([^)\n]{0,300}\)[^{\n]{0,200}\{", re.MULTILINE
+        r"^[ \t]*func[ \t]+(?:\([^)\n]{0,120}\)[ \t]*)?([A-Za-z_]\w{0,80})[ \t]*"
+        r"\([^)\n]{0,300}\)[^{\n]{0,200}\{",
+        re.MULTILINE,
     )
     _GO_CALL = re.compile(r"\b([A-Za-z_]\w{0,80})[ \t]*\(")
 
@@ -2741,6 +2830,10 @@ class CapabilityDetector(BaseDetector):
         r"\bfetch\s*\(|axios|https?['\"]|\.request\s*\(|WebSocket|XMLHttpRequest|\bdns\b|child_process"
         r"|sendBeacon|node-fetch|undici|\bgot\b|superagent|needle|\bnet['\"]|\btls['\"]"
     )
+    #: The other source: a response, which matters only where something can execute it.
+    _JS_FLOW_EXECUTES: ClassVar[re.Pattern[str]] = re.compile(
+        r"\beval\s*\(|\bFunction\s*\(|\bvm\b|child_process|\bexec(?:Sync)?\s*\(|\bspawn"
+    )
     #: The flows reported, by source kind, and the sinks at which each is one. A secret leaves
     #: through a request, a connection, a lookup or a child process (`curl -d @~/.ssh/id_rsa`);
     #: the environment or the host name handed to a child process stays on this machine; what a
@@ -2770,6 +2863,248 @@ class CapabilityDetector(BaseDetector):
         ("network_response", "CAP.JS.FLOW.REMOTE_CODE", frozenset({"execute", "process"})),
     )
 
+    #: Where one service keeps its credentials on disk, by service. A tool reads its own; a
+    #: stealer reads every one it knows.
+    _CREDENTIAL_STORES: ClassVar[dict[str, re.Pattern[str]]] = {
+        name: re.compile(pattern)
+        for name, pattern in {
+            "ssh": r"\.ssh/(?:id_(?:rsa|ed25519|ecdsa|dsa)|identity)\b",
+            "aws": r"\.aws/credentials\b",
+            "npm": r"(?<![\w.])\.npmrc\b",
+            "netrc": r"(?<![\w.])\.netrc\b",
+            "kube": r"\.kube/config\b",
+            "docker": r"\.docker/config\.json\b",
+            "gh": r"\.config/gh/hosts\.ya?ml\b",
+            "git": r"(?<![\w.])\.git-credentials\b",
+            "pypi": r"(?<![\w.])\.pypirc\b",
+            "gcloud": r"\.config/gcloud/(?:credentials\.db|application_default_credentials\.json)",
+            "azure": r"\.azure/(?:accessTokens|msal_token_cache)",
+        }.items()
+    }
+    #: Distinct services' stores before reading them is a sweep rather than a tool's own login.
+    SWEEP_MIN: ClassVar[int] = 3
+
+    @classmethod
+    def _credential_sweep(cls, content: FileContent) -> list[CapabilityHit]:
+        """One file naming the credential stores of several unrelated services.
+
+        A cloud SDK reads `~/.aws/credentials`; a stealer reads that, the SSH keys, `.npmrc`,
+        `.netrc`, the kube and Docker configs and the GitHub CLI's tokens, because it takes
+        whatever is there (review 98: the 2025 Go `BufferZoneCorp/*` family, its paths
+        XOR-encoded and recovered by `detect/go_eval.py`). Read from the file as resolved, in any
+        language; documentation is excluded by the rule's path filter."""
+        text = content.text
+        if len(text) > 4_000_000:
+            return []
+        found: list[tuple[int, str]] = []
+        for name, pattern in cls._CREDENTIAL_STORES.items():
+            match = pattern.search(text)
+            if match:
+                found.append((match.start(), name))
+        if len({name for _, name in found}) < cls.SWEEP_MIN:
+            return []
+        first = min(offset for offset, _ in found)
+        start = len(text[:first].encode("utf-8"))
+        return [
+            CapabilityHit(
+                capability=Capability.CREDENTIAL,
+                rule_id="CAP.CREDENTIAL.SWEEP",
+                byte_start=start,
+                byte_end=start + 1,
+                line=text.count("\n", 0, first) + 1,
+            )
+        ]
+
+    _GO_CONNECTION: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?P<conn>[A-Za-z_]\w{0,40})\s*,\s*[A-Za-z_]\w{0,40}\s*:?=\s*"
+        r"(?:[A-Za-z_][\w.]{0,60}\.)?(?:Dial(?:Timeout|Context|TCP|UDP)?|Accept)\s*\("
+    )
+    _GO_EXEC: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bexec\.Command(?:Context)?\s*\(\s*(?P<first>[^,)\s]+)"
+    )
+
+    @classmethod
+    def _go_received_and_run(cls, content: FileContent) -> list[CapabilityHit]:
+        """A Go function that runs what arrives on a network connection it opened.
+
+        `conn := Dial(...)`, a line read from `conn`, split into arguments, `exec.Command(args[0],
+        args[1:]...)` and the output written back to `conn`: the command channel of
+        `boltdb-go/bolt` 1.3.1, served from the Go module mirror for three years (review 98).
+        Recorded at the process start as `fetch_exec`: what runs is whatever the other end sent.
+        One function at a time; the first argument to `exec.Command` must not be a literal."""
+        text = content.text
+        if "exec.Command" not in text or ("Dial" not in text and "Accept" not in text):
+            return []
+        for found in cls._GO_FUNC.finditer(text):
+            depth, index = 1, found.end()
+            limit = min(len(text), index + 200_000)
+            while index < limit and depth:
+                depth += text[index] == "{"
+                depth -= text[index] == "}"
+                index += 1
+            body = text[found.end() : index]
+            for connection in cls._GO_CONNECTION.finditer(body):
+                conn = re.escape(connection["conn"])
+                after = body[connection.end() :]
+                reads = re.search(
+                    rf"(?:\b{conn}\s*\.\s*Read\w*\(|\(\s*{conn}\s*\)\s*\.\s*(?:ReadString|ReadLine|ReadBytes|Scan|Decode)\b|NewScanner\(\s*{conn}\s*\))",
+                    after,
+                )
+                if reads is None:
+                    continue
+                for run in cls._GO_EXEC.finditer(after, reads.start()):
+                    if run["first"].startswith(('"', "`")):
+                        continue
+                    offset = found.end() + connection.end() + run.start()
+                    start = len(text[:offset].encode("utf-8"))
+                    # The connection it reads from is the egress: `d.Dial` on a `net.Dialer` value
+                    # is a connection whatever the variable is called.
+                    dialled = found.end() + connection.start()
+                    egress = len(text[:dialled].encode("utf-8"))
+                    return [
+                        CapabilityHit(
+                            capability=Capability.EGRESS,
+                            rule_id="CAP.GO.RECEIVED_RUN",
+                            byte_start=egress,
+                            byte_end=egress + 1,
+                            line=text.count("\n", 0, dialled) + 1,
+                        ),
+                        CapabilityHit(
+                            capability=Capability.FETCH_EXEC,
+                            rule_id="CAP.GO.RECEIVED_RUN",
+                            byte_start=start,
+                            byte_end=start + 1,
+                            line=text.count("\n", 0, offset) + 1,
+                        ),
+                    ]
+        return []
+
+    #: The CI job's environment and PATH files: what a step writes there, every later step runs with.
+    _CI_ENV_FILE: ClassVar[re.Pattern[str]] = re.compile(r"\bGITHUB_(?:ENV|PATH)\b")
+    _GO_FILE_WRITE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bos\.(?:OpenFile\([^\n]{0,200}O_(?:APPEND|WRONLY|RDWR)|WriteFile\(|Create\()"
+    )
+
+    @classmethod
+    def _go_ci_environment_write(cls, content: FileContent) -> list[CapabilityHit]:
+        """A Go package that, when imported, writes the CI job's environment or PATH file.
+
+        Every later step of the job runs with what is written there: a proxy pointed at the
+        attacker, a PATH entry ahead of the real `go`. The 2025 `BufferZoneCorp/*` modules did it
+        from `init()`, the name split as `_env("GITHUB_", "ENV")` (resolved by
+        `detect/go_eval.py`), and stripped `go.sum` lines so the next download is not checked
+        (review 98). Only from the load path -- `init()` or a package-level initialiser -- where
+        nothing in the importing program asked for it; a GitHub Action written in Go writes the
+        file from `main`, which is what an action is for."""
+        text = content.text
+        if cls._CI_ENV_FILE.search(text) is None:
+            return []
+        writes = list(cls._GO_FILE_WRITE.finditer(text))
+        if not writes:
+            return []
+        candidates = []
+        for write in writes:
+            start = len(text[: write.start()].encode("utf-8"))
+            candidates.append(
+                CapabilityHit(
+                    capability=Capability.PERSIST,
+                    rule_id="CAP.GO.CI_ENV_WRITE",
+                    byte_start=start,
+                    byte_end=start + 1,
+                    line=text.count("\n", 0, write.start()) + 1,
+                )
+            )
+        on_load = [
+            hit for hit in candidates if cls._in_go_load_path(content, [hit], (Capability.PERSIST,))
+        ]
+        return on_load[:1]
+
+    _DOTNET_DOWNLOAD: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:WebClient\.Download(?:File|Data|String)(?:Async|TaskAsync)?|"
+        r"HttpClient\.Get(?:ByteArray|Stream|String)Async)\("
+    )
+    _DOTNET_WRITE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bFile\.(?:WriteAll(?:Bytes|Text)|Create|OpenWrite)\(|\bnew FileStream\("
+    )
+    _DOTNET_START: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bProcess\.Start\(|\bProcessStartInfo\.set_FileName\("
+    )
+    #: A string literal in a compiled assembly that is a command line, handed to the shell rules.
+    _DOTNET_COMMAND: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)\b(?:powershell|pwsh|cmd(?:\.exe)?\s*/c|invoke-webrequest|iwr|invoke-expression|iex|"
+        r"start-process|curl|wget|bitsadmin|certutil|mshta|rundll32|regsvr32|/bin/(?:ba)?sh)\b"
+    )
+
+    #: Where JavaScript turns a string into code it runs.
+    _JS_STRING_EVALUATOR: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w$.])(?:eval|Function|new\s{1,4}Function)\s{0,4}\("
+        r"|(?:\bvm|require\(\s{0,4}['\"](?:node:)?vm['\"]\s{0,4}\))\s{0,4}\.\s{0,4}"
+        r"(?:runInThisContext|runInNewContext|runInContext|compileFunction)\s{0,4}\("
+        r"|\bnew\s{1,4}vm\s{0,4}\.\s{0,4}Script\s{0,4}\("
+    )
+    #: A string this long handed to an evaluator is a program carried as data. What code builds at
+    #: run time -- `new Function("return this")`, a template compiled to a function -- is short or
+    #: computed; nobody hand-writes a thousand characters of JavaScript inside quotes.
+    STRING_CODE_MIN: ClassVar[int] = 1000
+    _JS_SHORT_STRING_ARG: ClassVar[re.Pattern[str]] = re.compile(
+        r"""\s{0,8}(?:'[^'\\\n]{0,80}'|"[^"\\\n]{0,80}"|`[^`\\]{0,80}`)\s{0,8},"""
+    )
+
+    @classmethod
+    def _js_string_code_run(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
+        """An evaluator handed a long string literal: the program the file runs, kept out of its
+        code. `Function("w", "<822 KB>")(...)` from a postinstall was the whole of a hijacked `is`
+        release (review 98); nothing is decoded, so the decode-and-run composites never see it.
+        Up to three short leading arguments are skipped -- `Function`'s parameter names."""
+        if language not in ("javascript", "typescript"):
+            return []
+        text = content.text
+        if len(text) < cls.STRING_CODE_MIN:
+            return []
+        for call in cls._JS_STRING_EVALUATOR.finditer(text):
+            index = call.end()
+            for _ in range(3):
+                short = cls._JS_SHORT_STRING_ARG.match(text, index)
+                if short is None:
+                    break
+                index = short.end()
+            while index < len(text) and text[index] in " \t\r\n":
+                index += 1
+            if index >= len(text) or text[index] not in "'\"`":
+                continue
+            if cls._string_length(text, index) < cls.STRING_CODE_MIN:
+                continue
+            start = len(text[: call.start()].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.FLOW,
+                    rule_id="CAP.JS.STRING_CODE_RUN",
+                    byte_start=start,
+                    byte_end=start + len(call.group(0).encode("utf-8")),
+                    line=text.count("\n", 0, call.start()) + 1,
+                )
+            ]
+        return []
+
+    @staticmethod
+    def _string_length(text: str, open_quote: int) -> int:
+        """The length of the string literal opening at `open_quote`, or 0 if it does not close."""
+        quote = text[open_quote]
+        index = open_quote + 1
+        while index < len(text):
+            char = text[index]
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                return index - open_quote - 1
+            if char == "\n" and quote != "`":
+                return 0
+            if quote == "`" and text.startswith("${", index):
+                return 0  # a template that computes part of itself is not a literal
+            index += 1
+        return 0
+
     @classmethod
     def _js_flows(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
         """Sensitive values followed to where they leave, through bindings, helpers and callbacks
@@ -2780,7 +3115,10 @@ class CapabilityDetector(BaseDetector):
         if language not in ("javascript", "typescript"):
             return []
         text = content.text
-        if cls._JS_FLOW_SOURCE.search(text) is None or cls._JS_FLOW_SINK.search(text) is None:
+        if cls._JS_FLOW_SINK.search(text) is None or (
+            cls._JS_FLOW_SOURCE.search(text) is None and cls._JS_FLOW_EXECUTES.search(text) is None
+        ):
+            # A request is a source too (`network_response`), judged where it is executed.
             return []
         from cordon_scanner.detect.js_eval import JsEval
         from cordon_scanner.detect.js_flow import JsFlow
@@ -4615,6 +4953,9 @@ class CapabilityDetector(BaseDetector):
                     Capability.DECODE in present
                     and unit.language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND
                 )
+                # A command channel -- what arrives on a connection, run -- is not a routine a
+                # caller asks for; it is never lowered for running only when called.
+                and not any(hit.rule_id == "CAP.GO.RECEIVED_RUN" for hit in hits)
             ):
                 # Fetch-and-run is HIGH where it runs on its own: an install hook, a pipeline, a
                 # `.pth`, a library's top level that executes on import. An `install.sh` or a

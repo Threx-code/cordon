@@ -37,7 +37,11 @@ FEATURES: Final = BUCKETS + 64
 MAX_TEXT: Final = 8_000
 """A description longer than this is scored on its first part: none in either corpus is."""
 MAX_SKILL_TEXT: Final = 40_000
-"""A skill's instructions are longer; past this, the rest is not scored."""
+"""A skill's instructions are longer. Text past either limit is scored in windows of the limit's
+size (`LinearTextModel.score`), so an instruction placed past it is still read."""
+MAX_WINDOWS: Final = 24
+"""Windows scored per text. At the skill limit and half-window steps that is about half a megabyte
+of instructions; past it the text is not scored, and `windows_unread` says so."""
 
 WORD: Final = re.compile(r"\w[\w'-]{0,60}")
 
@@ -86,16 +90,40 @@ class LinearTextModel:
         data["weights"] = {int(k): float(v) for k, v in data["weights"].items()}
         return data
 
+    def windows(self, text: str) -> list[str]:
+        """The text as the model reads it: whole when it fits the limit it was trained on, else
+        overlapping windows of that size, half a window apart, so a passage that straddles one
+        boundary sits whole inside the next window. A long skill was scored on its first 40,000
+        characters only -- an instruction after them was never read (review 98, `13` STEP 2b)."""
+        if len(text) <= self.limit:
+            return [text]
+        step = max(1, self.limit // 2)
+        starts = range(0, len(text) - self.limit + step, step)
+        return [text[start : start + self.limit] for start in list(starts)[:MAX_WINDOWS]]
+
+    def windows_unread(self, text: str) -> int:
+        """Characters past the last window scored (0 when the whole text was read)."""
+        if len(text) <= self.limit:
+            return 0
+        step = max(1, self.limit // 2)
+        return max(0, len(text) - ((MAX_WINDOWS - 1) * step + self.limit))
+
     def score(self, text: str, channel: str) -> float | None:
-        """The probability that this text steers the agent, or None without a model."""
+        """The probability that this text steers the agent, or None without a model: the highest
+        over the text's windows (`windows`). The text a whole score would average away -- one
+        order inside a long manual -- is what a window keeps."""
         model = self.model
         if model is None or not text.strip():
             return None
         weights = model["weights"]
-        z = model["bias"] + sum(
-            weights.get(index, 0.0) * value for index, value in self.features(text, channel).items()
-        )
-        return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, z))))
+        best = -60.0
+        for window in self.windows(text):
+            z = model["bias"] + sum(
+                weights.get(index, 0.0) * value
+                for index, value in self.features(window, channel).items()
+            )
+            best = max(best, z)
+        return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, best))))
 
     def thresholds(self, channel: str) -> tuple[float, float] | None:
         """(block, warn) for the channel, set on held-out real servers or skills."""

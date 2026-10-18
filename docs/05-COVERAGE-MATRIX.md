@@ -183,6 +183,7 @@ rather than a document.
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.STARJACKING.001` | high | `registry` | integrity |
+| `SUSPECT.REGISTRY.REVIEW.001` | high | `registry-review` | integrity |
 | `SUSPECT.RELEASE.NEW_BINARY.001` | medium | `manifest` | integrity |
 | `SUSPECT.RELEASE.NEW_CAPABILITY.001` | high | `manifest` | integrity |
 | `SUSPECT.RELEASE.NEW_INSTALL_HOOK.001` | high | `manifest` | integrity |
@@ -216,6 +217,7 @@ rather than a document.
 | `SUSPECT.CI.BUILDKITE_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.CACHE_POISONING.001` | medium | `config` | misconfiguration |
 | `SUSPECT.CI.CIRCLE_INJECTION.001` | high | `config` | misconfiguration |
+| `SUSPECT.CI.ENVIRONMENT_INJECTION.001` | high | `composites` | misconfiguration |
 | `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.FETCH_EXEC.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.GITLAB_INJECTION.001` | high | `config` | misconfiguration |
@@ -266,9 +268,11 @@ rather than a document.
 | `SUSPECT.DOCUMENT.REMOTE_OBJECT.001` | high | `formats` | dropper |
 | `SUSPECT.DOCUMENT.RTF_OBJECT.001` | high | `formats` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
+| `SUSPECT.DROPPER.REMOTE_CODE.001` | high | `composites` | dropper |
 | `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
+| `SUSPECT.INSTALL.STRING_CODE.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
 | `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | `model` | malicious_code |
@@ -382,6 +386,7 @@ rather than a document.
 | `SUSPECT.EXFIL.CALLBACK.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.CREDENTIAL_SWEEP.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
@@ -742,6 +747,7 @@ rather than a document.
 | `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.UNATTENDED.001` | medium | `composites` | prompt_injection |
+| `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |

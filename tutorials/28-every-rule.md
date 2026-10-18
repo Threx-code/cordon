@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,435 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,441 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -147,7 +147,7 @@ rule's own samples.
 
 ## CI/CD pipelines
 
-19 rules.
+20 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -161,6 +161,7 @@ rule's own samples.
 | `SUSPECT.CI.BUILDKITE_INJECTION.001` | high | Buildkite pipeline interpolates a contributor-controlled value at upload |
 | `SUSPECT.CI.CACHE_POISONING.001` | medium | A publishing workflow restores a cache an untrusted run can write |
 | `SUSPECT.CI.CIRCLE_INJECTION.001` | high | CircleCI step interpolates a contributor-controlled pipeline value |
+| `SUSPECT.CI.ENVIRONMENT_INJECTION.001` | high | A package writes the CI job's environment when it is imported |
 | `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | Untrusted pipeline input interpolated into a shell command |
 | `SUSPECT.CI.FETCH_EXEC.001` | high | CI step fetches and executes remote content |
 | `SUSPECT.CI.GITLAB_INJECTION.001` | high | GitLab job interpolates a contributor-controlled variable into a script |
@@ -537,12 +538,13 @@ rule's own samples.
 
 ## Dropper
 
-3 rules.
+4 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DROPPER.001` | critical | Install script fetches and executes remote content |
 | `SUSPECT.DROPPER.001` | high | Content fetched from the network and executed |
+| `SUSPECT.DROPPER.REMOTE_CODE.001` | high | Code runs what a server sends it |
 | `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | Runs a command a server sends it |
 
 ## Dynamic Dispatch
@@ -556,7 +558,7 @@ rule's own samples.
 
 ## Exfiltration
 
-20 rules.
+21 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -574,6 +576,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.CALLBACK.001` | high | Code calls an out-of-band interaction service |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | Code reports the user and host to a URL |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | A credential store is read and the file reaches the network |
+| `SUSPECT.EXFIL.CREDENTIAL_SWEEP.001` | high | Code reads the credential stores of many services and reaches the network |
 | `SUSPECT.EXFIL.DNS.001` | high | Credential access and a hostname assembled for resolution |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | Credential or machine identity, and a request to a drop point |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
@@ -583,12 +586,13 @@ rule's own samples.
 
 ## Extension
 
-5 rules.
+6 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXTENSION.KNOWN.001` | critical | An editor extension is a recorded malicious release |
 | `MALWARE.EXTENSION.REMOVED.001` | critical | A recommended or vendored editor extension was removed from the Marketplace as malware |
+| `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | An editor extension's display name carries invisible characters |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | A recommended or vendored editor extension was removed from the Marketplace |
@@ -1447,7 +1451,7 @@ rule's own samples.
 
 ## Install-time code
 
-15 rules.
+16 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1465,6 +1469,7 @@ rule's own samples.
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
+| `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
 
 ## Judge
@@ -1642,13 +1647,14 @@ rule's own samples.
 
 ## Registry
 
-4 rules.
+5 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | Dependencies past the query ceiling or time budget were never asked about |
 | `OPERATIONAL.REGISTRY.NO_SOURCE.001` | low | No registry is configured for part of the dependency graph |
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | Registry could not be asked about a dependency |
+| `SUSPECT.REGISTRY.REVIEW.001` | high | What the registry recorded about this release looks like a malicious release |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | Shipped code that publishes packages |
 
 ## Release
