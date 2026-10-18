@@ -340,6 +340,135 @@ class McpCode:
                     hits.append((function.lineno, function.name))
         return hits
 
+    #: Calls that send a request: `requests.post(url, json=...)`, `httpx.get`, `session.put`,
+    #: `urllib.request.urlopen(Request(url, data=...))`.
+    _SEND_ATTRS: ClassVar[frozenset[str]] = frozenset(
+        {"post", "get", "put", "patch", "delete", "request", "urlopen", "Request", "fetch", "send"}
+    )
+    _HOST: ClassVar[re.Pattern[str]] = re.compile(r"^(?:https?|wss?)://([^/:?#\s]{1,253})", re.I)
+
+    @classmethod
+    def _sends(cls, function, constants: dict[str, str]) -> list[tuple[ast.Call, str | None]]:
+        """Each request the function makes, with the host its URL names when that is written out."""
+        out: list[tuple[ast.Call, str | None]] = []
+        for node in ast.walk(function):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = (
+                func.attr
+                if isinstance(func, ast.Attribute)
+                else func.id
+                if isinstance(func, ast.Name)
+                else ""
+            )
+            if name not in cls._SEND_ATTRS or (not node.args and not node.keywords):
+                continue
+            url = (
+                node.args[0]
+                if node.args
+                else next((k.value for k in node.keywords if k.arg in ("url", "uri")), None)
+            )
+            host = None
+            if isinstance(url, ast.Constant) and isinstance(url.value, str):
+                found = cls._HOST.match(url.value)
+                host = found.group(1).lower() if found else None
+            elif (
+                isinstance(url, ast.JoinedStr)
+                and url.values
+                and isinstance(url.values[0], ast.Constant)
+            ):
+                found = cls._HOST.match(str(url.values[0].value))
+                host = found.group(1).lower() if found else None
+            elif isinstance(url, ast.Name) and url.id in constants:
+                found = cls._HOST.match(constants[url.id])
+                host = found.group(1).lower() if found else None
+            out.append((node, host))
+        return out
+
+    @classmethod
+    def forwards_input(cls, text: str) -> list[tuple[int, str, str]]:
+        """(line, tool, host) where a tool sends what it was asked to a second host.
+
+        A tool calls the service it is for with its input: a weather tool sends the city to its
+        weather API. What a collector adds is a copy of the input sent somewhere else -- the
+        same request body to a second host, or the arguments to an address nobody's tool calls
+        (review 98: MCP servers whose tools work and also report every query). Read from the
+        tool and the helpers it hands its input to.
+        """
+        if "http" not in text:
+            return []
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        from cordon_scanner.intel.hosts import Destinations
+
+        constants = {
+            target.id: node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        functions = {
+            n.name: n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        }
+
+        def tainted_hosts(function, depth: int = 0) -> set[str | None]:
+            tainted = cls._tainted(function)
+            hosts: set[str | None] = set()
+            for call, host in cls._sends(function, constants):
+                carried = [
+                    *call.args[1:],
+                    *(
+                        k.value
+                        for k in call.keywords
+                        if k.arg not in ("url", "uri", "headers", "timeout")
+                    ),
+                ]
+                if any(cls._names(a) & tainted for a in carried):
+                    hosts.add(host)
+            if depth < 2:
+                for node in ast.walk(function):
+                    if (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id in functions
+                        and node.func.id != function.name
+                        and any(
+                            cls._names(a) & tainted
+                            for a in [*node.args, *(k.value for k in node.keywords)]
+                        )
+                    ):
+                        hosts |= tainted_hosts(functions[node.func.id], depth + 1)
+            return hosts
+
+        hits: list[tuple[int, str, str]] = []
+        for function in (f for f in functions.values() if cls._is_tool(f)):
+            hosts = tainted_hosts(function)
+            named = sorted(h for h in hosts if h)
+            untrusted = [
+                h
+                for h in named
+                # A bare public address: loopback and private ranges are this machine and its
+                # network, where a tool's own local service lives.
+                if (
+                    re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", h)
+                    and not h.startswith(("127.", "10.", "192.168.", "169.254.", "0."))
+                    and not re.match(r"172\.(?:1[6-9]|2\d|3[01])\.", h)
+                )
+                or Destinations.destination_matcher().search(h.encode()) is not None
+            ]
+            if untrusted:
+                hits.append((function.lineno, function.name, untrusted[0]))
+            elif len(named) >= 2:
+                hits.append((function.lineno, function.name, named[1]))
+        return hits
+
     @staticmethod
     def _trigger_kinds(node: ast.AST) -> set[str]:
         """Which kinds of time-bomb trigger an expression or function body consults."""

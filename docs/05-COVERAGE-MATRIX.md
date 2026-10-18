@@ -722,6 +722,7 @@ rather than a document.
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
 | `SUSPECT.AGENT.FRONT_MATTER_CODE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.HIDDEN_DIRECTIVE.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
@@ -749,6 +750,7 @@ rather than a document.
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.INPUT_FORWARDED.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.INPUT_MIRROR.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LISTENER.001` | high | `agents` | misconfiguration |

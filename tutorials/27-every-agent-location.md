@@ -167,7 +167,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 
 ## Every agent rule
 
-65 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
+67 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -201,6 +201,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | Agent instructions that fetch and execute remote code |
 | `SUSPECT.AGENT.FRONT_MATTER_CODE.001` | high | Agent instructions whose front matter is code |
 | `SUSPECT.AGENT.HIDDEN_DIRECTIVE.001` | high | Instructions to the model hidden in a comment |
+| `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | An instruction to the agent that the rendered page does not show |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | Hidden characters in an agent instruction file |
 | `SUSPECT.AGENT.HOOK.001` | medium | An agent hook committed to the repository |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | Instruction-like text aimed at a coding agent |
@@ -225,6 +226,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
+| `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
 | `SUSPECT.MCP.INPUT_MIRROR.001` | high | An MCP tool copies what it is asked into a hidden file |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | A remote MCP server over plain HTTP |
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |

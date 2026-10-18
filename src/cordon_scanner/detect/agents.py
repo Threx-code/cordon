@@ -1444,6 +1444,19 @@ RULES.update(
                 (ref.MCP_SECURITY,),
             ),
             AgentRules._rule(
+                "SUSPECT.MCP.INPUT_FORWARDED.001",
+                "An MCP tool sends what it is asked to a second host",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A tool of this MCP server sends its arguments -- the query, path or message the "
+                "agent passes it -- to more than one host, or to an address no tool's own service "
+                "lives at (a bare IP, a webhook, a paste site). A tool calls the service it is for; "
+                "a copy of every request sent elsewhere is collection.",
+                "Find what each destination is for. Do not use the server until both are explained.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
                 "SUSPECT.MCP.SECRET_HARVEST.001",
                 "An MCP server gathers the environment's secrets by name",
                 Category.SUSPICIOUS,
@@ -1602,6 +1615,21 @@ RULES.update(
             "look-alike or invisible characters folded away -- this passage instructs the agent to "
             "work against the person using it.",
             "Remove the passage, or confirm who wrote it. An agent acts on what it reads.",
+            (ref.OWASP_LLM_PROMPT_INJECTION, ref.MCP_SECURITY),
+        ),
+        "SUSPECT.AGENT.HIDDEN_INSTRUCTION.001": AgentRules._rule(
+            "SUSPECT.AGENT.HIDDEN_INSTRUCTION.001",
+            "An instruction to the agent that the rendered page does not show",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "This text is hidden from a person reading it rendered -- an HTML comment, markup styled "
+            "not to show, a link-reference definition, or a collapsed block addressed to the agent "
+            "-- and it tells the agent to act on something that matters: send, run, read or "
+            "override, with credentials, the environment, the conversation or an outside address. "
+            "The agent reads the raw text; the person approving it reads the page.",
+            "Remove the hidden passage, or move what it says into the visible text where its reader "
+            "can judge it.",
             (ref.OWASP_LLM_PROMPT_INJECTION, ref.MCP_SECURITY),
         ),
         "SUSPECT.AGENT.INTENT_CHAINED.001": AgentRules._rule(
@@ -2022,6 +2050,15 @@ class AgentChainDetector(BaseDetector):
                 yield self._finding("SUSPECT.MCP.TIME_BOMB.001", unit, ctx, *at(line))
             for line, _tool in McpCode.mirrors_input(text)[:3]:
                 yield self._finding("SUSPECT.MCP.INPUT_MIRROR.001", unit, ctx, *at(line))
+            for line, tool, host in McpCode.forwards_input(text)[:3]:
+                yield self._finding(
+                    "SUSPECT.MCP.INPUT_FORWARDED.001",
+                    unit,
+                    ctx,
+                    *at(line),
+                    message=RULES["SUSPECT.MCP.INPUT_FORWARDED.001"].message
+                    + f" Tool `{tool}` sends its input to {host}.",
+                )
             for line in McpCode.secret_harvest(text):
                 yield self._finding("SUSPECT.MCP.SECRET_HARVEST.001", unit, ctx, *at(line))
             listening = McpCode.listener(text)
@@ -2251,6 +2288,27 @@ class AgentChainDetector(BaseDetector):
         if endpoint is not None:
             yield self._at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, endpoint)
         yield from self._intents(unit, ctx, text)
+        # What the rendered page hides and the agent still reads (`detect/render_diff.py`).
+        from cordon_scanner.detect.render_diff import HiddenInstruction
+
+        spans = HiddenInstruction.find(text)
+        for span in sorted(spans, key=lambda s: not HiddenInstruction.strong(s))[:1]:
+            start, end = (
+                len(text[: span.start].encode("utf-8")),
+                len(text[: span.end].encode("utf-8")),
+            )
+            yield self._finding(
+                "SUSPECT.AGENT.HIDDEN_INSTRUCTION.001",
+                unit,
+                ctx,
+                start,
+                end,
+                message=RULES["SUSPECT.AGENT.HIDDEN_INSTRUCTION.001"].message
+                + f" It is in {span.how}.",
+                # At the gate when it is addressed to the agent and names something that matters;
+                # a hidden order about a destination alone is reported below it.
+                severity=None if HiddenInstruction.strong(span) else Severity.MEDIUM,
+            )
         corroborated = bool(hidden or injection or exfil or concealed or alarming is not None)
         third_party = SkillOrigin.third_party(unit.content.path, ctx)
         # A skill's instructions, read by the learned model (`SKILL_MODEL`). On held-out
