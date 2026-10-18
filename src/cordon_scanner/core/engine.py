@@ -1378,6 +1378,7 @@ class Engine:
             units.append(unit)
             self.progress.advance(unit.path)
         units.extend(self._inline_hook_units(units))
+        units.extend(self._deobfuscated_units(units))
 
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
@@ -1449,6 +1450,7 @@ class Engine:
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=deferred,
         )
+        ctx = Engine._lifted_inherit(ctx)
 
         file_detectors = [
             d
@@ -1524,6 +1526,7 @@ class Engine:
             )
 
         acc.findings[:] = self._person_run_ceiling(acc.findings, units, ctx)
+        acc.findings[:] = Engine._graded_by_what_it_does(acc.findings, ctx)
 
         # Repository-scoped detectors. `RepositoryUnit` existed and nothing
         # produced one, so a detector asking about the repository rather than
@@ -1834,6 +1837,7 @@ class Engine:
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
         units.extend(self._inline_hook_units(units))
+        units.extend(self._deobfuscated_units(units))
         hook_paths, consumer_hooks = self._manifest_hook_paths(units, acc)
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
@@ -1885,6 +1889,7 @@ class Engine:
             import_entry_paths=Engine._import_entries(units, early_format),
             package_repository=Engine._package_repository(units, early_format),
         )
+        ctx = Engine._lifted_inherit(ctx)
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
@@ -2025,6 +2030,7 @@ class Engine:
                 acc.findings[:] = self._established_release_ceiling(
                     acc.findings, units, "openvsx", hook_paths=ctx.install_hook_paths
                 )
+        acc.findings[:] = Engine._graded_by_what_it_does(acc.findings, ctx)
         if image is not None:
             acc.findings[:] = Engine._image_start_ceiling(acc.findings, units)
             ctx = replace(ctx, image=image)
@@ -6545,44 +6551,68 @@ class Engine:
         self._archive_stats[1] += len(units)
         return units
 
-    def _inline_hook_units(self, units: list[FileUnit]) -> list[FileUnit]:
-        """The programs install hooks carry inline, each as a unit of its own.
+    _DEOBFUSCATION_MARKERS: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"while\s*\(\s*!!\[\]\s*\)|\batob\s*\(|\bBuffer\s*\.\s*from\s*\(\s*['\"`][A-Za-z0-9+/=_\-]{16}"
+        rb"|fromCharCode\s*\(\s*(?:0x[0-9a-fA-F]+|\d+)\s*,|\xf3\xa0[\x80-\x87]|\xef\xb8[\x80-\x8f]"
+    )
+    """Bytes without which no reversal in `core.deobfuscation` applies: most files pay one search."""
 
-        `node -e "<program>"` in a `postinstall` is install-time code like the file
-        `node install.js` runs, and is read the same way: by every content detector, with the
-        hook's escalation. See `core.inline_programs`. Author-time hooks are left alone, as
-        their files are.
+    DEOBFUSCATED: ClassVar[str] = "#deobfuscated.js"
+    """Suffix of the unit an obfuscated file's recovered text is read as (`core.deobfuscation`)."""
+
+    def _deobfuscated_units(self, units: list[FileUnit]) -> list[FileUnit]:
+        """Each obfuscated JavaScript file reversed statically, as a unit of its own.
+
+        Read by every detector with the context of the file it came from (`_lifted_inherit`), so
+        what the code does is graded rather than that it was hidden. A file that cannot be
+        reversed, or only in part, is not lifted, and its obfuscation finding keeps its grade.
         """
+        from cordon_scanner.core.deobfuscation import Deobfuscator
+
         lifted: list[FileUnit] = []
-        known = {unit.path for unit in units}
         for unit in units:
-            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
-            if ecosystem_id is None or ecosystem_id == "image" or unit.content.is_binary:
+            if (
+                unit.content.is_binary
+                or unit.language not in ("javascript", "typescript")
+                or "#" in unit.path
+                or not Engine._DEOBFUSCATION_MARKERS.search(unit.content.raw)
+            ):
                 continue
-            ecosystem = EcosystemRegistry.get(ecosystem_id)
-            if ecosystem is None:
+            recovery = Deobfuscator.recover(unit.content.text, unit.language)
+            if recovery is None or recovery.resolved == 0:
                 continue
-            try:
-                hooks = ecosystem.parse_manifest(unit.content).hooks
-            except Exception:  # noqa: S112 -- `_manifest_hook_paths` reports the failure
+            if recovery.remaining > max(3, recovery.resolved // 20):
                 continue
-            for hook in hooks:
-                if not hook.command or hook.name.lower() in AUTHOR_TIME_HOOKS:
-                    continue
-                for program in InlinePrograms.found(unit.path, hook.name, hook.command):
-                    if program.path in known:
-                        continue
-                    known.add(program.path)
-                    content = FileContent.from_bytes(
-                        program.path, program.source.encode("utf-8"), self.config.limits
-                    )
-                    lifted.append(
-                        FileUnit(
-                            content=content,
-                            language=LanguageRegistry.of_file(program.path, content),
-                        )
-                    )
+            path = unit.path + Engine.DEOBFUSCATED
+            content = FileContent.from_bytes(
+                path, recovery.text.encode("utf-8"), self.config.limits
+            )
+            lifted.append(FileUnit(content=content, language="javascript"))
         return lifted
+
+    @staticmethod
+    def _lifted_inherit(ctx: ScanContext) -> ScanContext:
+        """A recovered unit runs when the file it came from runs: install hook, entry point,
+        consumer install, agent tool, or a published package's import entry."""
+        tree = ctx.tree_paths
+
+        def grown(paths: frozenset[str]) -> frozenset[str]:
+            more = {p + Engine.DEOBFUSCATED for p in paths if p + Engine.DEOBFUSCATED in tree}
+            return paths | more if more else paths
+
+        return replace(
+            ctx,
+            install_hook_paths=grown(ctx.install_hook_paths),
+            install_entry_paths=grown(ctx.install_entry_paths),
+            consumer_install_paths=grown(ctx.consumer_install_paths),
+            agent_run_paths=grown(ctx.agent_run_paths),
+            import_entry_paths=grown(ctx.import_entry_paths),
+        )
+
+    #: Form findings the recovered text repeats, because it keeps the obfuscator's variable names.
+    RECOVERED_FORM: ClassVar[frozenset[str]] = frozenset(
+        {"SUSPECT.OBFUSCATION.PACKED.001", "SUSPECT.OBFUSCATION.LONGLINE.001"}
+    )
 
     #: Where an image's init systems, schedulers and shells keep what they start on their own.
     _IMAGE_STARTED: ClassVar[re.Pattern[str]] = re.compile(
@@ -6717,6 +6747,76 @@ class Engine:
                 )
             out.append(finding)
         return out
+
+    @staticmethod
+    def _graded_by_what_it_does(findings: list[Finding], ctx: ScanContext) -> list[Finding]:
+        """Findings on recovered text (`<file>#deobfuscated.js`) that add nothing: the form rules
+        the recovered text repeats because it keeps the obfuscator's names, and anything the
+        original file already says under the same rule.
+
+        The obfuscation finding itself keeps its grade. Measured on the review-98 malware set,
+        lowering it when the recovered code carried nothing at the gate lost compromised
+        releases whose only visible symptom was the obfuscation -- `@draftlab/auth` 0.24.2 and
+        `@dirigible-ai/sdk` 0.6.3 recover to code that does nothing graded, their payload being
+        elsewhere. Reversal adds what the recovered code does; it does not excuse the hiding.
+        """
+        del ctx
+        on_original = {
+            (f.location.path, f.rule_id)
+            for f in findings
+            if f.location.path and not f.location.path.endswith(Engine.DEOBFUSCATED)
+        }
+        return [
+            f
+            for f in findings
+            if not (
+                (f.location.path or "").endswith(Engine.DEOBFUSCATED)
+                and (
+                    f.rule_id in Engine.RECOVERED_FORM
+                    or ((f.location.path or "")[: -len(Engine.DEOBFUSCATED)], f.rule_id)
+                    in on_original
+                )
+            )
+        ]
+
+    def _inline_hook_units(self, units: list[FileUnit]) -> list[FileUnit]:
+        """The programs install hooks carry inline, each as a unit of its own.
+
+        `node -e "<program>"` in a `postinstall` is install-time code like the file
+        `node install.js` runs, and is read the same way: by every content detector, with the
+        hook's escalation. See `core.inline_programs`. Author-time hooks are left alone, as
+        their files are.
+        """
+        lifted: list[FileUnit] = []
+        known = {unit.path for unit in units}
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            if ecosystem_id is None or ecosystem_id == "image" or unit.content.is_binary:
+                continue
+            ecosystem = EcosystemRegistry.get(ecosystem_id)
+            if ecosystem is None:
+                continue
+            try:
+                hooks = ecosystem.parse_manifest(unit.content).hooks
+            except Exception:  # noqa: S112 -- `_manifest_hook_paths` reports the failure
+                continue
+            for hook in hooks:
+                if not hook.command or hook.name.lower() in AUTHOR_TIME_HOOKS:
+                    continue
+                for program in InlinePrograms.found(unit.path, hook.name, hook.command):
+                    if program.path in known:
+                        continue
+                    known.add(program.path)
+                    content = FileContent.from_bytes(
+                        program.path, program.source.encode("utf-8"), self.config.limits
+                    )
+                    lifted.append(
+                        FileUnit(
+                            content=content,
+                            language=LanguageRegistry.of_file(program.path, content),
+                        )
+                    )
+        return lifted
 
     @staticmethod
     def _manifest_hook_paths(
