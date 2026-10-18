@@ -180,6 +180,7 @@ rather than a document.
 |---|---|---|---|
 | `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | `manifest` | integrity |
 | `SUSPECT.PACKAGE.NAME_RISK.001` | high | `manifest` | integrity |
+| `SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001` | high | `advisory` | integrity |
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.STARJACKING.001` | high | `registry` | integrity |
@@ -205,6 +206,8 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `MALWARE.CI.DECODED_PROGRAM.001` | critical | `composites` | malicious_code |
+| `MALWARE.CI.RUNNER_SECRETS.001` | critical | `composites` | malicious_code |
 | `MALWARE.CI.SECRET_EXFIL.001` | critical | `config` | exfiltration |
 | `POLICY.CI.UNPINNED_ACTION.001` | medium | `config` | policy |
 | `POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001` | medium | `config` | policy |
@@ -240,6 +243,7 @@ rather than a document.
 | `MALWARE.INSTALL.BACKGROUND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
@@ -270,6 +274,7 @@ rather than a document.
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
 | `SUSPECT.DROPPER.REMOTE_CODE.001` | high | `composites` | dropper |
 | `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | `composites` | dropper |
+| `SUSPECT.FILE.DISGUISED_PROGRAM.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | `composites` | install_hook |
@@ -289,6 +294,8 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `MALWARE.DECODE_EXEC.ENCODED_SHELL.001` | critical | `composites` | obfuscation |
+| `MALWARE.DECODE_EXEC.INVISIBLE.001` | critical | `composites` | obfuscation |
 | `MALWARE.DYNAMIC_DISPATCH.001` | critical | `composites` | obfuscation |
 | `SUSPECT.ANTI_ANALYSIS.001` | high | `composites` | anti_analysis |
 | `SUSPECT.DECODE_EXEC.001` | high | `composites` | obfuscation |
@@ -383,6 +390,7 @@ rather than a document.
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | `composites` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BEACON.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.BROWSER_SECRETS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CALLBACK.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | `composites` | exfiltration |
@@ -754,6 +762,7 @@ rather than a document.
 | `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.BORROWED_NAME.001` | high | `manifest` | misconfiguration |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.INPUT_FORWARDED.001` | high | `agents` | misconfiguration |
@@ -762,12 +771,14 @@ rather than a document.
 | `SUSPECT.MCP.LISTENER.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
+| `SUSPECT.MCP.SCHEMA_POISONING.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
 | `SUSPECT.MCP.TIME_BOMB.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
+| `SUSPECT.MCP.TOOL_SQUATTING.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.UNPINNED.001` | medium | `agents` | integrity |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | `agents` | misconfiguration |
 

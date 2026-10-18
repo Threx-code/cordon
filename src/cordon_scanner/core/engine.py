@@ -703,6 +703,10 @@ class Engine:
         for unit in units:
             member = unit.path.rpartition("!")[2]
             parts = member.split("/")
+            own = Engine._archive_release_identity(unit)
+            if own is not None:
+                identities.append((*own, unit.path))
+                continue
             # A root-level `.nuspec` is the one release manifest kept at the package's top; it
             # counts only inside an archive (a repository's own .nuspec is not a release).
             if len(parts) < 2 and not ("!" in unit.path and member.endswith(".nuspec")):
@@ -776,6 +780,110 @@ class Engine:
             except (ValueError, TypeError):
                 continue
         return identities, placeholders
+
+    _CRATE_MANIFEST: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|!)(?P<name>[A-Za-z0-9_-]{1,64})-(?P<version>\d[\w.+-]{0,40})/Cargo\.toml$"
+    )
+    _GO_MODULE: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|!)(?P<module>[^!@]{1,300})@(?P<version>v[^/!]{1,80})/go\.mod$"
+    )
+
+    @staticmethod
+    def _archive_release_identity(unit: FileUnit) -> tuple[str, str, str] | None:
+        """(ecosystem, name, version) when the unit is the release manifest of a published gem,
+        crate or Go module zip -- recognised only where each format puts it inside its archive.
+
+        npm, PyPI, NuGet and VS Code releases were matched against the malicious-package records
+        by their own manifests; these three were not, so a `.gem` OSV records as malicious was
+        judged by its code alone (review 98: 485 of 587 recovered malicious gems carry no code).
+        """
+        archive, bang, member = unit.path.rpartition("!")
+        if not bang:
+            return None
+        if member == "metadata.gz" and archive.lower().endswith(".gem"):
+            import gzip
+            import zlib
+
+            try:
+                with gzip.GzipFile(fileobj=io.BytesIO(unit.content.raw)) as stream:
+                    text = stream.read(50_000).decode("utf-8", "replace")
+            except (OSError, EOFError, zlib.error):
+                return None
+            name = re.search(r"(?m)^name:[ \t]{0,8}(\S{1,120})", text)
+            version = re.search(r"(?m)^[ \t]{1,8}version:[ \t]{0,8}['\"]?([\w.+-]{1,60})", text)
+            if name and version:
+                return "rubygems", name.group(1), version.group(1)
+            return None
+        crate = Engine._CRATE_MANIFEST.search(unit.path)
+        if crate is not None and archive.lower().endswith(".crate"):
+            return "cargo", crate.group("name"), crate.group("version")
+        module = Engine._GO_MODULE.search(unit.path)
+        if module is not None and archive.lower().endswith(".zip"):
+            return "gomod", module.group("module").rpartition("!")[2], module.group("version")
+        return None
+
+    _THROWAWAY_SUMMARY: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)\S{1,3}|test|tmp|temp|foo|bar|x gem|a gem|gem"
+    )
+    _GEM_CODE: ClassVar[tuple[str, ...]] = (".rb", ".sh", ".py", ".js", ".c", ".so", ".bundle")
+
+    @staticmethod
+    def _placeholder_release(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+        """A published gem with no code whose summary is a throwaway word.
+
+        RubyGems' malicious records are mostly releases that ship nothing -- an empty `lib/a.rb`,
+        a file `x` -- under the summary `x`, `a` or `x gem`: 478 of 485 code-free malicious gems
+        recovered from a mirror, and none of 6,999 benign gems (194 of which are also code-free,
+        as shims and renamed packages are, but say what they are). Measured, review 98.
+        """
+        import gzip
+        import zlib
+
+        out: list[Finding] = []
+        for unit in units:
+            gem, _, member = unit.path.rpartition("!")
+            if member != "metadata.gz" or not gem.lower().endswith(".gem"):
+                continue
+            code = sum(
+                u.content.size
+                for u in units
+                if u.path.startswith(f"{gem}!data.tar.gz!")
+                and u.path.lower().endswith(Engine._GEM_CODE)
+            )
+            if code >= 40:
+                continue
+            try:
+                with gzip.GzipFile(fileobj=io.BytesIO(unit.content.raw)) as stream:
+                    text = stream.read(50_000).decode("utf-8", "replace")
+            except (OSError, EOFError, zlib.error):
+                continue
+            summary = re.search(r"(?m)^summary:[ \t]{0,8}(.{0,120})$", text)
+            said = summary.group(1).strip().strip("'\"") if summary else ""
+            if not said or not Engine._THROWAWAY_SUMMARY.fullmatch(said):
+                continue
+            out.append(
+                replace(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001",
+                        message=(
+                            f"This gem carries no code and its summary is `{said}`: a name taken "
+                            "to be used, not a library. Most releases RubyGems records as "
+                            "malicious have exactly this shape."
+                        ),
+                        remediation=(
+                            "Do not depend on it; find out who published it and what depends on "
+                            "the name."
+                        ),
+                        category=Category.SUSPICIOUS,
+                        severity=Severity.HIGH,
+                    ),
+                    confidence=Confidence.HIGH,
+                    risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
+                    detector="advisory",
+                )
+            )
+        return out
 
     @staticmethod
     def _known_malicious_release(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
@@ -1404,11 +1512,12 @@ class Engine:
                 )
             )
         dependencies = (*dependencies, *ingested, *submodules)
-        manifest_hooks, consumer_hooks = self._manifest_hook_paths(units, acc)
+        manifest_hooks, consumer_hooks, ci_scripts = self._manifest_hook_paths(units, acc)
         hook_paths = (
             set(ctx.install_hook_paths)
             | manifest_hooks
             | self._nuget_hooks(units)
+            | self._gem_extension_hooks(units)
             | ComposerPluginHooks.paths(units)
         )
         # A skill's scripts run when the agent uses the skill, on the user's machine and unasked:
@@ -1450,6 +1559,7 @@ class Engine:
             agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=deferred,
+            ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
         )
         ctx = Engine._lifted_inherit(ctx)
 
@@ -1501,6 +1611,7 @@ class Engine:
             acc.add(self._unexamined_install_code(acc.findings, ctx))
             acc.add(self._native_code_in_a_pure_wheel(units, ctx))
             acc.add(self._known_malicious_release(units, ctx))
+            acc.add(self._placeholder_release(units, ctx))
             acc.add(self._borrowed_server_name(units, ctx))
 
             if dependencies:
@@ -1841,7 +1952,7 @@ class Engine:
         # time, which is the whole reason a package archive is worth scanning.
         units.extend(self._inline_hook_units(units))
         units.extend(self._deobfuscated_units(units))
-        hook_paths, consumer_hooks = self._manifest_hook_paths(units, acc)
+        hook_paths, consumer_hooks, ci_scripts = self._manifest_hook_paths(units, acc)
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
         # commonest thing to vet, and it was the one target that skipped all three.
@@ -1855,6 +1966,7 @@ class Engine:
             )
         }
         hook_paths |= self._nuget_hooks(units)
+        hook_paths |= self._gem_extension_hooks(units)
         hook_paths |= ComposerPluginHooks.paths(units)
         skill_scripts = Engine._skill_scripts(units)
         agent_run = skill_scripts | Engine._mcp_server_sources(units)
@@ -1879,6 +1991,7 @@ class Engine:
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
+            ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
             install_deferred_lines=Engine._entry_points_reached(
                 self._hook_deferred_lines(units, hook_paths, entries), agent_run
             ),
@@ -1981,6 +2094,7 @@ class Engine:
         acc.add(self._unexamined_install_code(acc.findings, ctx))
         acc.add(self._native_code_in_a_pure_wheel(units, ctx))
         acc.add(self._known_malicious_release(units, ctx))
+        acc.add(self._placeholder_release(units, ctx))
         acc.add(self._borrowed_server_name(units, ctx))
 
         # A published archive carries its own manifests and lockfiles, and
@@ -2981,6 +3095,46 @@ class Engine:
                     and inner.endswith((".targets", ".props"))
                 ):
                     hooks.add(unit.path)
+        return hooks
+
+    _GEM_EXTENSIONS: ClassVar[re.Pattern[str]] = re.compile(r"(?m)^extensions:[ \t]{0,8}$")
+    _GEM_LISTED: ClassVar[re.Pattern[str]] = re.compile(r"[ \t]{0,8}-[ \t]{1,8}([^\n]{1,300})")
+
+    @staticmethod
+    def _gem_extension_hooks(units: Sequence[FileUnit]) -> set[str]:
+        """The native-extension scripts a published `.gem` runs when it is installed.
+
+        `gem install` runs every `extconf.rb` (or extension Rakefile) its `metadata.gz` lists under
+        `extensions:`, on the installing machine, before any code is required. A gemspec in a
+        repository declares the same through `spec.extensions`; a built gem only through its
+        metadata, so the scripts read as ordinary library code (review 98: active-record_lite and
+        aliyun-live renamed a bundled image to `a.exe` and ran it from extconf.rb, unflagged).
+        """
+        import gzip
+        import zlib
+
+        hooks: set[str] = set()
+        by_path = {unit.path: unit for unit in units}
+        for unit in units:
+            gem, _, member = unit.path.rpartition("!")
+            if member != "metadata.gz" or not gem.lower().endswith(".gem"):
+                continue
+            try:
+                with gzip.GzipFile(fileobj=io.BytesIO(unit.content.raw)) as stream:
+                    text = stream.read(200_000).decode("utf-8", "replace")
+            except (OSError, EOFError, zlib.error):
+                continue
+            header = Engine._GEM_EXTENSIONS.search(text)
+            if header is None:
+                continue
+            for line in text[header.end() + 1 :].splitlines()[:64]:
+                item = Engine._GEM_LISTED.fullmatch(line)
+                if item is None:
+                    break
+                extension = item.group(1).strip().strip("'\"")
+                candidate = f"{gem}!data.tar.gz!{extension}"
+                if extension and not extension.startswith(("/", "..")) and candidate in by_path:
+                    hooks.add(candidate)
         return hooks
 
     @staticmethod
@@ -6972,8 +7126,9 @@ class Engine:
     @staticmethod
     def _manifest_hook_paths(
         units: list[FileUnit], acc: _Accumulator | None = None
-    ) -> tuple[set[str], set[str]]:
-        """Paths that execute at install time, according to their manifests.
+    ) -> tuple[set[str], set[str], set[str]]:
+        """Paths that execute at install time, according to their manifests -- and, third, the
+        scripts a published GitHub action's composite steps run, which are CI code.
 
         The same packaging test the inventory applies, for the same reason and
         against the same repository: this is the SECOND place a `setup.py`
@@ -6983,6 +7138,7 @@ class Engine:
         """
         paths: set[str] = set()
         consumer: set[str] = set()
+        ci_scripts: set[str] = set()
         """Paths that run for whoever INSTALLS the package, which is a subset.
 
         See `ScanContext.consumer_install_paths`. A `setup.py` is an install hook
@@ -7054,10 +7210,19 @@ class Engine:
             # The MANIFEST still counts whenever it declares any of them, because
             # `SUSPECT.INSTALL.SCRIPT.001` is about the declaration and grades itself by
             # which kind it is.
-            if manifest.hooks:
+            if any(not hook.action_step for hook in manifest.hooks):
                 paths.add(unit.path)
+            if manifest.hooks:
+                # A published action's composite steps run on its consumers' runners as CI code:
+                # what they name is read in CI context, not install context (review 98: as
+                # install code, 305 of 2,978 benign actions blocked).
+                steps = [hook for hook in manifest.hooks if hook.action_step]
+                if steps:
+                    ci_scripts |= Engine._hook_script_paths(unit.path, steps, known)
                 reaching = [
-                    hook for hook in manifest.hooks if hook.name.lower() not in AUTHOR_TIME_HOOKS
+                    hook
+                    for hook in manifest.hooks
+                    if hook.name.lower() not in AUTHOR_TIME_HOOKS and hook not in steps
                 ]
                 if reaching:
                     paths |= Engine._hook_script_paths(unit.path, reaching, known)
@@ -7081,7 +7246,11 @@ class Engine:
                         )
                         if program.path in known
                     }
-        return paths, consumer
+        return paths, consumer, ci_scripts
+
+    _ACTION_PATH: ClassVar[re.Pattern[str]] = re.compile(
+        r"""["']?(?:\$\{\{\s*github\.action_path\s*\}\}|\$\{?GITHUB_ACTION_PATH\}?)["']?/"""
+    )
 
     @staticmethod
     def _hook_script_paths(
@@ -7132,7 +7301,9 @@ class Engine:
                         found.add(candidate)
                         break
             previous = ""
-            for token in re.split(r"[\s;&|]+", Engine._runs(hook.command)):
+            # A GitHub action names its own files through the action's checkout directory.
+            command = Engine._ACTION_PATH.sub("./", Engine._runs(hook.command))
+            for token in re.split(r"[\s;&|]+", command):
                 candidate = token.strip("\"'")
                 runner, previous = previous, PurePosixPath(candidate).name
                 if not candidate or candidate.startswith("-"):

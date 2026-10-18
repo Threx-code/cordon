@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,441 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,452 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -147,10 +147,12 @@ rule's own samples.
 
 ## CI/CD pipelines
 
-20 rules.
+22 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.CI.DECODED_PROGRAM.001` | critical | A CI step runs a program it decodes on the spot |
+| `MALWARE.CI.RUNNER_SECRETS.001` | critical | Code dumps the CI runner's secrets |
 | `MALWARE.CI.SECRET_EXFIL.001` | critical | CI workflow serialises its secret context |
 | `POLICY.CI.UNPINNED_ACTION.001` | medium | Action referenced by a mutable tag |
 | `POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001` | medium | Reusable workflow called by a mutable ref |
@@ -461,10 +463,12 @@ rule's own samples.
 
 ## Decode Exec
 
-1 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.DECODE_EXEC.ENCODED_SHELL.001` | critical | A long encoded command is decoded straight into a shell |
+| `MALWARE.DECODE_EXEC.INVISIBLE.001` | critical | A payload written in invisible characters is decoded and run |
 | `SUSPECT.DECODE_EXEC.001` | high | Encoded data decoded and executed in the same file |
 
 ## Dependencies
@@ -558,7 +562,7 @@ rule's own samples.
 
 ## Exfiltration
 
-21 rules.
+22 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -573,6 +577,7 @@ rule's own samples.
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
+| `SUSPECT.EXFIL.BROWSER_SECRETS.001` | high | Code decrypts a browser's saved passwords or cookies |
 | `SUSPECT.EXFIL.CALLBACK.001` | high | Code calls an out-of-band interaction service |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | Code reports the user and host to a URL |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | A credential store is read and the file reaches the network |
@@ -596,6 +601,14 @@ rule's own samples.
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | A recommended or vendored editor extension was removed from the Marketplace |
+
+## File
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.FILE.DISGUISED_PROGRAM.001` | high | Code turns a file shipped as data into a program |
 
 ## Format
 
@@ -1451,13 +1464,14 @@ rule's own samples.
 
 ## Install-time code
 
-16 rules.
+17 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.INSTALL.BACKGROUND.001` | critical | Install script leaves a process running |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | Code that runs on every machine that installs this package |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
+| `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
@@ -1534,7 +1548,7 @@ rule's own samples.
 
 ## MCP servers
 
-21 rules.
+24 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1543,6 +1557,7 @@ rule's own samples.
 | `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | An MCP tool replaces the argument it was called with |
 | `SUSPECT.MCP.BORROWED_NAME.001` | high | MCP server published under a service's name its code never mentions |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
+| `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
 | `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
@@ -1551,12 +1566,14 @@ rule's own samples.
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |
 | `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | A remote MCP server's tools changed since they were approved |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | An MCP server's tool description hides text or instructs the agent |
+| `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
 | `SUSPECT.MCP.UNPINNED.001` | medium | An MCP server launched from an unpinned package |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | A remote MCP server on a tunnel, paste or interaction host |
 
@@ -1597,7 +1614,7 @@ rule's own samples.
 
 ## Package
 
-8 rules.
+9 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1606,6 +1623,7 @@ rule's own samples.
 | `POLICY.PACKAGE.NOT_ALLOWED.001` | medium | Dependency outside the policy's allowed packages |
 | `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | The manifest npm serves is not the package.json in the tarball |
 | `SUSPECT.PACKAGE.NAME_RISK.001` | high | Published package is a name with nothing behind it |
+| `SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001` | high | A published release ships no code under a throwaway description |
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | Version published without the provenance its package normally carries |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | Package claims a source repository the registry does not record |
 | `SUSPECT.PACKAGE.STARJACKING.001` | high | A new package claims a popular project's repository |

@@ -2019,6 +2019,46 @@ rules:
         - path_glob: "**/*_test.go"
         - path_glob: "**/testdata/**"
 
+  - id: SUSPECT.EXFIL.BROWSER_SECRETS.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code decrypts a browser's saved passwords or cookies
+    message: >
+      This file opens a browser's saved-login or cookie store and decrypts it -- with the user's
+      DPAPI key, the browser's own key from `Local State`, or its keychain item. A browser reads
+      its own store; a library or tool that turns another program's secrets back into plaintext
+      is taking them, whether it sends them now or leaves them for a later stage.
+    remediation: >
+      Do not run it. If it has run, sign out of every site in that browser profile and change the
+      passwords it had saved.
+    references:
+      - https://attack.mitre.org/techniques/T1555/003/
+    provenance:
+      kind: research
+      reference: >
+        `chrome_taker` on RubyGems: Chrome's Login Data and Cookies read through SQLite and
+        decrypted with DPAPI, the plaintext written to a file (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - rule: CAP.CREDENTIAL.BROWSER_DECRYPT
+        # Decrypting a browser's store is what cookie importers do -- yt-dlp, browser-cookie3,
+        # kooky: 26 benign corpus units (review 98). A stealer also sends it out, or kills the
+        # browser to unlock the database (chrome_taker's TASKKILL /IM chrome.exe).
+        - any:
+            - capability: egress
+            - rule: CAP.CREDENTIAL.BROWSER_KILL.001
+      unless:
+        - path_glob: "**/test/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/*_test.*"
+        - path_glob: "**/*.test.*"
+
   - id: SUSPECT.INSTALL.AUTOSTART.001
     version: 1.0.0
     category: suspicious
@@ -2148,6 +2188,171 @@ rules:
       all:
         - context: install_hook
         - rule: CAP.JS.OPAQUE_CODE.001
+
+  - id: MALWARE.INSTALL.DISGUISED_PROGRAM.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install code turns a file shipped as data into a program
+    message: >
+      Code that runs at install time renames a file the package ships as data -- an image, a text
+      file -- to a program name and so prepares it to run on the installing machine. Installing a
+      package needs neither the disguise nor the program.
+    remediation: >
+      Do not install this package. Treat machines that installed it as compromised and rotate
+      what they could reach.
+    provenance:
+      kind: research
+      reference: >
+        RubyGems active-record_lite 0.3.0 and aliyun-live 0.1.1: extconf.rb renamed `aaa.png` to
+        `a.exe` and ran it on Windows during `gem install` (review 98, real gems).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1036/008/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.FILE.DISGUISED_PROGRAM.001
+
+  - id: SUSPECT.FILE.DISGUISED_PROGRAM.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code turns a file shipped as data into a program
+    message: >
+      This file renames a file the package ships as data -- an image, a text file -- to a program
+      name. The program then travels through review and every image-skipping filter as data.
+    remediation: Find what the renamed file is, and remove it unless it is meant to be there.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1036/008/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - rule: CAP.FILE.DISGUISED_PROGRAM.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "spec/**"
+
+  - id: MALWARE.DECODE_EXEC.ENCODED_SHELL.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A long encoded command is decoded straight into a shell
+    message: >
+      A long encoded literal is decoded and piped into `sh`, so what runs is never written down.
+      No build, install or tool needs to hide what it runs from the person running it; this is
+      how XCSSET plants its loader in Xcode and Gradle projects.
+    remediation: >
+      Do not build or open this project. Treat machines that built it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        pub.dev universal_file_viewer 0.1.5 (XCSSET, 2025), real package (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+    match:
+      kind: composite
+      scope: file
+      proximity: 2
+      all:
+        - rule: CAP.SHELL.ENCODED_TO_SHELL.001
+
+  - id: MALWARE.DECODE_EXEC.INVISIBLE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A payload written in invisible characters is decoded and run
+    message: >
+      A long run of invisible Unicode characters sits beside code that maps them back to bytes and
+      evaluates the result. Nothing renders the payload -- not an editor, not a diff, not a review
+      -- and the file runs it. This is the GlassWorm loader, wherever it is written.
+    remediation: >
+      Do not install, build or open this project. Treat machines that ran it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        reworm package.json (2025) and @aifabrix/miso-client (review 98, real samples).
+    evidence_policy: hash_only
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+    match:
+      kind: composite
+      scope: file
+      proximity: 5
+      all:
+        - rule: CAP.INVISIBLE_SMUGGLING.001
+        - rule: CAP.EXEC.INVISIBLE_DECODER.001
+
+  - id: MALWARE.CI.DECODED_PROGRAM.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A CI step runs a program it decodes on the spot
+    message: >
+      A workflow or action step decodes content and pipes it straight into an interpreter. It runs
+      on the runner with the job's token and secrets, and nobody reading the step can see what it
+      runs. Steps that need a program check it in or download a pinned release; hiding it is what
+      the reviewdog and Trivy action compromises did.
+    remediation: >
+      Do not use this action or workflow at this revision. Rotate every secret the jobs that ran it
+      could read.
+    provenance:
+      kind: research
+      reference: >
+        reviewdog/action-setup (2025), aquasecurity/trivy-action and setup-trivy (2026), real
+        compromised revisions (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+    match:
+      kind: composite
+      scope: file
+      proximity: 2
+      all:
+        - context: ci_hook
+        - rule: CAP.SH.DECODED_INTO_INTERPRETER.001
+
+  - id: MALWARE.CI.RUNNER_SECRETS.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code dumps the CI runner's secrets
+    message: >
+      This file reads the runner's own record of the job's secrets -- the Runner.Worker process's
+      memory or its `"isSecret":true` entries -- where they sit unmasked. It is how the tj-actions
+      and reviewdog compromises stole every secret of every job that used them.
+    remediation: >
+      Do not use this code at this revision. Rotate every secret the jobs that ran it could read.
+    provenance:
+      kind: research
+      reference: >
+        tj-actions/changed-files and reviewdog/action-setup (2025), real compromised revisions
+        (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - rule: CAP.CI.RUNNER_SECRETS.001
 
   - id: MALWARE.INSTALL.WINDOWS_LOADER.001
     version: 1.0.0

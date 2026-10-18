@@ -122,6 +122,40 @@ class ActionsFile:
         r"""^(?P<indent>[ \t]+)["']?[A-Za-z_][\w-]*["']?[ \t]*:[ \t]*(?:#.*)?$"""
     )
 
+    _RUN_KEY: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?P<indent>[ \t]*)(?:-[ \t]+)?run[ \t]*:[ \t]*(?P<style>[|>][-+]?)?[ \t]*(?P<inline>.*)$"
+    )
+
+    @staticmethod
+    def run_blocks(text: str) -> list[str]:
+        """Each step's `run:` command: an inline value, or a `|`/`>` block scalar's lines."""
+        lines = text.splitlines()
+        out: list[str] = []
+        index = 0
+        while index < len(lines) and len(out) < 200:
+            found = ActionsFile._RUN_KEY.match(lines[index])
+            index += 1
+            if found is None:
+                continue
+            if not found["style"]:
+                inline = found["inline"].strip().strip("'\"")
+                if inline:
+                    out.append(inline)
+                continue
+            key_indent = len(found["indent"]) + (
+                2 if lines[index - 1].lstrip().startswith("-") else 0
+            )
+            body: list[str] = []
+            while index < len(lines):
+                line = lines[index]
+                if line.strip() and len(line) - len(line.lstrip()) <= key_indent:
+                    break
+                body.append(line.strip())
+                index += 1
+            if any(body):
+                out.append("\n".join(body))
+        return out
+
     @staticmethod
     def block_scalar_lines(text: str) -> set[int]:
         """Line numbers inside a YAML block scalar (`run: |`, `script: >-`): text, not keys."""
@@ -283,6 +317,33 @@ class ActionsFile:
                 return BaseEcosystem._err(
                     content, ecosystem, "a composite action whose steps hold no step"
                 )
+            # A published action -- `action.yml` at the root of what was scanned, not a local
+            # action under `.github/` -- runs on the runner of every workflow that uses it, with
+            # that job's token and secrets: install-time code for its consumers, not its author's
+            # CI. The reviewdog and Trivy action compromises (2025, 2026) ran their payload from
+            # a composite step's `run:` and the script it named (review 98).
+            # Inside a downloaded action archive the action sits under one wrapper directory
+            # (`owner-repo-sha/action.yml`); in a checkout, a subdirectory's action.yml is the
+            # repository's own local action, run by its own CI.
+            member = content.path.rpartition("!")[2]
+            depth = 1 if "!" in content.path else 0
+            published = member.count("/") <= depth and "/.github/" not in f"/{member}"
+            # Graded as CI, not as install-time code: running a tool it downloads and sending
+            # results to a service is what a published action is for (review 98: marked as
+            # consumer install, 305 of 2,978 benign actions blocked). What is read is the act
+            # every compromised action measured shared -- a program decoded into an interpreter.
+            kind_of_hook = "ci"
+            if kind == "composite" and published:
+                for index, run in enumerate(ActionsFile.run_blocks(text)):
+                    hooks.append(
+                        Hook(
+                            kind=kind_of_hook,
+                            path=content.path,
+                            name=f"steps-{index}",
+                            command=run,
+                            ecosystem=ecosystem,
+                        )
+                    )
             # A JavaScript action's main, pre and post scripts (and a container action's
             # entrypoint) run in every job that uses the action, with that job's token.
             for stage in ("pre", "main", "post", "entrypoint", "pre-entrypoint", "post-entrypoint"):
@@ -292,7 +353,7 @@ class ActionsFile:
                 if script and (kind.startswith("node") or kind == "docker"):
                     hooks.append(
                         Hook(
-                            kind="ci",
+                            kind=kind_of_hook,
                             path=content.path,
                             name=f"runs.{stage}",
                             command=script.group("script"),

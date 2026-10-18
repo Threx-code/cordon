@@ -119,6 +119,65 @@ rules:
         - "cat f | shasum -a 256"
         - "tar -cf - . | ssh host tar -xf -"
 
+  - id: CAP.SH.DECODED_INTO_INTERPRETER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: A decoded program is piped straight into an interpreter
+    message: >
+      This command base64-decodes content and pipes it into python, node, perl, ruby or a shell:
+      the program that runs is never written down where anyone reading the step would see it.
+    remediation: Decode the content in isolation and find what it runs.
+    provenance:
+      kind: research
+      reference: >
+        The compromised reviewdog/action-setup (2025) and aquasecurity trivy-action and
+        setup-trivy (2026) steps each ran `... | base64 -d | sudo python3` (review 98).
+    languages: [shell]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64[ \t]{1,8}(?:-d|-D|--decode)\b[^|\n]{0,60}\|[ \t]{0,8}(?:sudo[ \t]{1,16}(?:-[A-Za-z]{1,4}[ \t]{1,8}){0,3})?(?:python[0-9.]{0,4}|node|perl|ruby|(?:ba|z|da)?sh)\b'
+    tests:
+      positive:
+        - 'echo "$B" | base64 -d | sudo python3'
+        - "printf %s \"$X\" | base64 --decode | bash"
+      negative:
+        - 'echo "$KEY" | base64 -d > ~/.ssh/id_ed25519'
+        - "base64 -d cert.b64 | openssl x509 -noout"
+
+  - id: CAP.CI.RUNNER_SECRETS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: credential
+    title: Code harvests the CI runner's masked secrets
+    message: >
+      This file searches for the runner's secret records -- `"isSecret":true` entries, or the
+      memory of the Runner.Worker process -- which hold every secret of the job unmasked. Nothing
+      a step legitimately does needs another process's copy of the secrets it was given.
+    remediation: Remove the step; rotate every secret the jobs that ran it could read.
+    provenance:
+      kind: research
+      reference: >
+        tj-actions/changed-files and reviewdog/action-setup (2025): a decoded Python script read
+        Runner.Worker memory and the step grepped it for `"isSecret":true` (review 98, real).
+    languages: [shell, python, javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\\?"isSecret\\?"[ \t]{0,4}:[ \t]{0,4}true'
+        - '\bRunner\.Worker\b[^\n]{0,200}/proc/|/proc/[^\n]{0,200}\bRunner\.Worker\b'
+    tests:
+      positive:
+        - "grep -aoE '\"[^\"]+\":\\{\"value\":\"[^\"]*\",\"isSecret\":true\\}'"
+        - "pid=$(pgrep Runner.Worker); cat /proc/$pid/maps"
+      negative:
+        - "echo '::add-mask::$TOKEN'"
+
   - id: CAP.SH.SPAWN.001
     version: 1.0.0
     category: policy

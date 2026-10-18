@@ -1155,6 +1155,12 @@ class Hook:
     command: str = ""
     ecosystem: str | None = None
 
+    @property
+    def action_step(self) -> bool:
+        """A published GitHub action's composite step: CI code on its consumers' runners, read in
+        CI context and never as an install hook or a lifecycle script (review 98)."""
+        return self.ecosystem == "actions" and self.name.startswith("steps-")
+
     def to_dict(self) -> dict[str, Any]:
         out = {"kind": self.kind, "path": self.path, "name": self.name}
         if self.command:

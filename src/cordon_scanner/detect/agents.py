@@ -1158,6 +1158,45 @@ RULES: Final = {
             (ref.VSCODE_REMOVED_EXTENSIONS,),
         ),
         AgentRules._rule(
+            "SUSPECT.MCP.SCHEMA_POISONING.001",
+            "An MCP tool's parameter names an order to the agent",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "A parameter name or an allowed value in this server's tool schema is a sentence -- "
+            "include the environment, attach the SSH keys, add the conversation history. The agent "
+            "reads the schema to decide what to pass, so a name written as an instruction is one, "
+            "and descriptions that pass review do not show it (full-schema poisoning).",
+            "Remove the server, or rename the parameters to what they hold and review what the "
+            "tool does with them.",
+            (ref.MCP_SECURITY,),
+        ),
+        AgentRules._rule(
+            "SUSPECT.MCP.TOOL_SQUATTING.001",
+            "An MCP tool takes a well-known tool's name and claims to be the safer one",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "This server names a tool exactly as the widely used filesystem, shell, fetch or git "
+            "servers name theirs, and describes it as an enhanced or more secure version. MCP tool "
+            "names are not namespaced: where two servers offer the same name, the agent chooses by "
+            "description, and this one is written to be chosen.",
+            "Remove the server; if a tool by that name is needed, use the server it imitates.",
+            (ref.MCP_SECURITY,),
+        ),
+        AgentRules._rule(
+            "SUSPECT.MCP.DENIAL_OF_WALLET.001",
+            "An MCP tool's result tells the agent to call it again, deeper or for every item",
+            Category.SUSPICIOUS,
+            Severity.MEDIUM,
+            Confidence.MEDIUM,
+            "What this server returns instructs the agent to call the tool again -- one level "
+            "deeper each time, or once for each of several items it lists -- a loop or fan-out the "
+            "user did not ask for, paid for in tokens and calls.",
+            "Remove the server, or make it return a complete result.",
+            (ref.MCP_SECURITY,),
+        ),
+        AgentRules._rule(
             "OPERATIONAL.MCP.UNRESOLVED",
             "An MCP server package was not examined",
             Category.OPERATIONAL,
@@ -2138,6 +2177,70 @@ class AgentChainDetector(BaseDetector):
                     + " The text is what a tool returns, and it reads as instructions to the "
                     f"agent rather than a result (model score {score:.2f}).",
                     severity=None if score >= limits[0] else Severity.MEDIUM,
+                )
+        yield from self._server_content(unit, ctx, text)
+
+    def _server_content(self, unit: FileUnit, ctx: ScanContext, text: str) -> Iterator[Finding]:
+        """What an MCP server hands the agent besides its descriptions -- tool results, resource
+        content, a page it serves to itself -- and what its input schema asks for, read from every
+        string literal of its source (review 98: canack/bad-mcp, whose descriptions are clean).
+        """
+        from cordon_scanner.detect.render_diff import HiddenInstruction
+
+        if (
+            not _SERVER_BUILT.search(text)
+            and next(McpServerSource._tool_descriptions(text), None) is None
+        ):
+            # A file that names the SDK -- a scanner, a client, documentation -- is not a server:
+            # what it quotes is not what an agent is handed.
+            return
+        squat = _SQUATTED_TOOL.search(text)
+        if squat is not None:
+            yield self._at_text(
+                "SUSPECT.MCP.TOOL_SQUATTING.001",
+                unit,
+                ctx,
+                text,
+                squat.group("name"),
+                message=RULES["SUSPECT.MCP.TOOL_SQUATTING.001"].message
+                + f" The tool is named `{squat.group('name')}`.",
+            )
+        hidden = schema = wallet = False
+        # A parameter is a name in the code -- a Python argument, a zod key -- as often as a string.
+        for name in dict.fromkeys(_IDENTIFIER.findall(text)):
+            if _SCHEMA_ORDER.fullmatch(name) and _SCHEMA_ASKS.search(name.replace("_", " ")):
+                schema = True
+                yield self._at_text("SUSPECT.MCP.SCHEMA_POISONING.001", unit, ctx, text, name)
+                break
+        for literal in McpServerSource._all_literals(text):
+            if not hidden and ("<!--" in literal or "[//]:" in literal):
+                spans = [s for s in HiddenInstruction.find(literal) if HiddenInstruction.strong(s)]
+                if spans:
+                    hidden = True
+                    yield self._at_text(
+                        "SUSPECT.AGENT.HIDDEN_INSTRUCTION.001",
+                        unit,
+                        ctx,
+                        text,
+                        literal[:80],
+                        message=RULES["SUSPECT.AGENT.HIDDEN_INSTRUCTION.001"].message
+                        + " It is in text this MCP server returns or serves -- a tool result, a "
+                        "resource, a page -- which the agent reads in full and the user sees "
+                        "rendered.",
+                    )
+            if (
+                not schema
+                and _SCHEMA_ORDER.fullmatch(literal)
+                and _SCHEMA_ASKS.search(literal.replace("_", " "))
+            ):
+                schema = True
+                yield self._at_text(
+                    "SUSPECT.MCP.SCHEMA_POISONING.001", unit, ctx, text, literal[:80]
+                )
+            if not wallet and _CALL_AGAIN.search(literal):
+                wallet = True
+                yield self._at_text(
+                    "SUSPECT.MCP.DENIAL_OF_WALLET.001", unit, ctx, text, literal[:80]
                 )
 
     @staticmethod
@@ -3671,6 +3774,51 @@ _DOCSTRING_TOOL: Final = re.compile(
     r"[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}\w{1,80}\([^)]{0,500}\)[^:\n]{0,200}:[ \t]{0,8}\n?"
     r"[ \t]{0,40}(?P<doc>\"\"\"[^\x00]{0,4000}?\"\"\"|'''[^\x00]{0,4000}?''')"
 )
+_SQUATTED_TOOL: Final = re.compile(
+    r"""["'`](?P<name>read_file|read_text_file|write_file|edit_file|list_directory|directory_tree|"""
+    r"""search_files|move_file|create_directory|get_file_info|execute_command|run_command|"""
+    r"""shell_exec|fetch|git_status|git_commit)["'`][^\n]{0,40}\n?(?:[^\n]{0,240}\n?){0,3}?"""
+    r"""[^\n]{0,240}?(?i:enhanced\s+version|integrated\s+security|security[- ]enhanced|"""
+    r"""malware\s+(?:scan|detection)|virus\s+scan|integrity\s+verification|safer\s+(?:version|"""
+    r"""alternative|replacement)|secure\s+(?:version|replacement))"""
+)
+"""A tool named exactly as the filesystem, shell, fetch or git servers' tools are, described as the
+safer version of it: in a multi-server setup the agent picks between same-named tools by their
+descriptions, and this one is written to win (review 98: canack/bad-mcp squatting-file-ops)."""
+_SERVER_BUILT: Final = re.compile(
+    r"\bFastMCP[ \t]*\(|\bMcpServer[ \t]*\(|\bnew[ \t]+(?:Mcp)?Server[ \t]*\(|"
+    r"\bserver\.NewMCPServer[ \t]*\(|\bMCP::Server\.new\b|\bFastMcp::Server\.new\b|"
+    r"\.(?:AddTool|add_tool|registerTool|AddResource|registerResource)[ \t]*\(|"
+    r"@(?:mcp|server|app)\.(?:tool|resource|prompt)\b|\[McpServerTool[(\]]|#\[tool[(\]]|"
+    r"\bNewToolResult\w{0,20}[ \t]*\(|\bCallToolResult[ \t]*[({]"
+)
+"""Code that builds an MCP server or registers a tool on one, as written in each SDK."""
+_CONCATENATION: Final = re.compile(r"[ \t]*(?:[+.\\][ \t]*)?(?:\r?\n[ \t]*)?(?:[+.][ \t]*)?")
+"""What sits between two literals that are concatenated: an operator and at most one line break."""
+_SCHEMA_ORDER: Final = re.compile(
+    r"(?=[a-z0-9_]{12,120}$)[a-z0-9]{1,40}(?:_[a-z0-9]{1,40}){2,16}",
+)
+"""A parameter name or enum value written as an order (`content_also_include_all_env_variables`).
+Read with `_SCHEMA_ASKS` below: the name has to ask for something to be added AND name what."""
+_SCHEMA_ASKS: Final = re.compile(
+    r"\b(?:include|attach|append|collect|dump|harvest)\b(?:\s\w+){0,3}?\s"
+    r"(?:all\s|every\s|the\s)?(?:env|environment|ssh|credentials?|secrets?|passwords?|"
+    r"conversation|chat|cookies|private\s+keys?|api\s+keys?)\b"
+)
+"""What a schema name has to say to be an order: add something, and name something the user would
+not hand over -- `include_all_env_variables`, not `include_archived` or `with_access_token`."""
+_IDENTIFIER: Final = re.compile(r"\b[a-z][a-z0-9]{0,40}(?:_[a-z0-9]{1,40}){3,16}\b")
+_CALL_AGAIN: Final = re.compile(
+    r"(?i)\b(?:call|invoke|run)\s+(?:this\s+tool|it|`?\w{2,40}`?)\s+"
+    r"(?:again|recursively|with\b[^.\n]{0,80}\b(?:depth|level)\s*[=:+])"
+    r"|\beach\s+of\s+(?:these|the\s+following)\b[^.\n]{0,160}"
+    r"\b(?:call|invoke|must\s+(?:also\s+)?be\s+\w+ed|should\s+(?:also\s+)?be\s+\w+ed)\b"
+)
+"""A result telling the agent to call the tool again, deeper or once per item it lists: the
+denial-of-wallet shape. A page token ("call again with next_page") names no depth or fan-out."""
+_GO_PACKAGE: Final = re.compile(r"(?m)^package[ \t]+[A-Za-z_]\w{0,60}[ \t]*$")
+_GO_DESCRIPTION: Final = re.compile(r"\b(?:mcp\.)?(?:WithDescription|Description)[ \t]*\(")
+"""A Go MCP SDK's description option: what the agent is told about a tool or an argument."""
 _RETURN_START: Final = re.compile(r"\breturn\b|\btext[ \t]{0,8}:")
 """Where a tool's result is written: a `return` (Python, JS) or an MCP content part's `text`.
 What follows is read by `McpServerSource._tool_returns`, which has to lex rather than match:
@@ -3679,11 +3827,31 @@ reads nothing."""
 _RETURN_REACH: Final = 6_000
 _ESCAPES: Final = {"n": "\n", "t": "\t", "r": "", "'": "'", '"': '"', "`": "`", "\\": "\\"}
 _SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".json")
-_SERVER_SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py")
+_SERVER_SOURCE_SUFFIXES: Final = (
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".mts",
+    ".py",
+    # MCP servers in Go, Rust, C# and Java declare their tools the same way, through an SDK
+    # (review 98: canack/bad-mcp's ten Go servers, mark3labs/mcp-go, were read as nothing).
+    ".go",
+    ".rs",
+    ".cs",
+    ".java",
+    ".kt",
+    ".rb",
+    ".php",
+)
 _MCP_SDK: Final = re.compile(
     r"\b(?:server|mcp|app)\.(?:tool|registerTool)\s*\(\s*\{?\s*(?:name\s*:|[\"'`])|\bnew\s+McpServer\s*\("
     r"|@modelcontextprotocol/sdk|\bfrom[ \t]+(?:mcp(?:\.server)?|fastmcp)\b[^\n]{0,40}\bimport\b"
     r"|^[ \t]*import[ \t]+(?:fastmcp|mcp)\b"
+    r"|github\.com/mark3labs/mcp-go|github\.com/modelcontextprotocol/go-sdk|\bmcp\.NewTool\s*\("
+    r"|\buse[ \t]+rmcp\b|\busing[ \t]+ModelContextProtocol\b|\bimport[ \t]+io\.modelcontextprotocol\b"
+    r"|\bMCP::Server\b|\bFastMcp::|require[ \t(]+['\"](?:mcp|fast[-_]mcp)['\"]"
+    r"|\bPhpMcp\\\\|php-mcp/server"
     # A handler registered on the server object, however the module got hold of it: tools split
     # across files import `mcp` from the package's own server module, not from the SDK (review
     # 98: a selenium server's EXEC:// branch sat in `tools/element_interaction.py`).
@@ -4027,6 +4195,52 @@ class McpServerSource:
             yield match.group("dq") or match.group("sq") or match.group("bq") or ""
         for match in _DOCSTRING_TOOL.finditer(text):
             yield match.group("doc")[3:-3]
+        # Go (mcp-go, the official go-sdk): `mcp.WithDescription("..." + "...")` for a tool and
+        # `mcp.Description("...")` for each argument, concatenations across lines included --
+        # read from the call's own parenthesis so a line break inside it does not end it.
+        # Only in Go source: `Description(` is an ordinary name in every other language.
+        for match in _GO_DESCRIPTION.finditer(text) if _GO_PACKAGE.search(text[:4000]) else ():
+            literal = "".join(
+                McpServerSource._statement_literals(text, match.end() - 1, single=False)
+            )
+            if literal:
+                yield literal
+
+    @staticmethod
+    def _all_literals(text: str) -> Iterator[str]:
+        """Every string literal of a source file, escapes decoded: `'`, `"` and backtick
+        strings, a triple-quoted one read as one. Bounded: at most 20,000 literals."""
+        index, count, end = 0, 0, min(len(text), 4_000_000)
+        pending: list[str] = []
+        while index < end and count < 20_000:
+            char = text[index]
+            if char not in "'\"`":
+                index += 1
+                continue
+            triple = text[index : index + 3] in ('"""', "'''")
+            close = text[index : index + 3] if triple else char
+            cursor = index + len(close)
+            buffer: list[str] = []
+            while cursor < end and not text.startswith(close, cursor):
+                if text[cursor] == "\\" and cursor + 1 < end:
+                    buffer.append(_ESCAPES.get(text[cursor + 1], text[cursor + 1]))
+                    cursor += 2
+                    continue
+                if text[cursor] == "\n" and char != "`" and not triple:
+                    break
+                buffer.append(text[cursor])
+                cursor += 1
+            count += 1
+            index = cursor + len(close)
+            # Literals joined by concatenation -- `"a" +\n "b"` (Go, JS), `"a" "b"` (Python),
+            # `"a" \\\n "b"` (Ruby), `"a" . "b"` (PHP) -- are one string to whoever reads it.
+            gap = _CONCATENATION.match(text, index)
+            if gap is not None and gap.end() < end and text[gap.end()] == char and not triple:
+                pending.append("".join(buffer))
+                index = gap.end()
+                continue
+            yield "".join([*pending, "".join(buffer)])
+            pending = []
 
     @staticmethod
     def _tool_returns(text: str) -> Iterator[str]:

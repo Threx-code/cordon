@@ -352,6 +352,8 @@ class CapabilityDetector(BaseDetector):
         """
         content = unit.content
         language = unit.language
+        if self._rule_pack(content):
+            return None
         dotnet_commands: list[embedded.Command] = []
         assembly_view = False
 
@@ -364,6 +366,8 @@ class CapabilityDetector(BaseDetector):
         # C# rules read that view as they read source, and a literal that is a command line goes
         # to the shell rules as a command written in source does (review 98: 22 of 23 malicious
         # NuGet releases carried their payload only in a DLL).
+        if content.path.lower().endswith(".class") and content.raw[:4] == b"\xca\xfe\xba\xbe":
+            return self._jvm_class(unit, ctx)
         assembly = content.path.lower().endswith((".dll", ".exe")) and content.raw[:2] == b"MZ"
         if content.is_binary or assembly:
             if not assembly or content.size > 30_000_000:
@@ -474,6 +478,7 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._js_spelled_names(content, unit.language))
         hits.extend(self._js_string_code_run(content, unit.language))
         hits.extend(self._credential_sweep(matched_content))
+        hits.extend(self._browser_secrets_decrypted(matched_content))
         if unit.language == "go":
             hits.extend(self._go_ci_environment_write(matched_content))
             hits.extend(self._go_received_and_run(content))
@@ -2906,6 +2911,120 @@ class CapabilityDetector(BaseDetector):
         r"\bexec\.Command(?:Context)?\s*\(\s*(?P<first>[^,)\s]+)"
     )
 
+    _DETECTION_RULES: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?m)^[ \t]{0,8}tests:[ \t]*\n[ \t]{0,12}positive:[ \t]*$"
+        r"|^[ \t]{0,8}(?:pattern-either|pattern-inside|patterns):[ \t]*$"
+    )
+    _SIGMA: ClassVar[tuple[re.Pattern[str], re.Pattern[str]]] = (
+        re.compile(r"(?m)^detection:[ \t]*$"),
+        re.compile(r"(?m)^[ \t]{1,8}condition:[ \t]"),
+    )
+
+    @classmethod
+    def _rule_pack(cls, content: FileContent) -> bool:
+        """A detection rule pack -- Cordon's, Semgrep's, Sigma's.
+
+        It writes down the attacks it detects as patterns and sample lines, as a YARA file does
+        (`RuleSelector.select_rules`): nothing runs them, and read as code every such file reports
+        the malware it describes.
+        """
+        return (
+            content.path.lower().endswith((".yaml", ".yml"))
+            and not content.is_binary
+            and (
+                cls._DETECTION_RULES.search(content.text[:20_000]) is not None
+                or all(p.search(content.text[:20_000]) for p in cls._SIGMA)
+            )
+        )
+
+    _JVM_FETCH: ClassVar[frozenset[str]] = frozenset(
+        {
+            "java/net/URL.openConnection",
+            "java/net/URL.openStream",
+            "java/net/URLConnection.getInputStream",
+            "java/net/HttpURLConnection.getInputStream",
+            "java/net/http/HttpClient.send",
+        }
+    )
+    _JVM_RUN: ClassVar[frozenset[str]] = frozenset(
+        {
+            "groovy/lang/GroovyShell.evaluate",
+            "groovy/lang/GroovyShell.parse",
+            "javax/script/ScriptEngine.eval",
+            "java/lang/ClassLoader.defineClass",
+            "java/lang/invoke/MethodHandles$Lookup.defineClass",
+        }
+    )
+    _JVM_LOAD: ClassVar[frozenset[str]] = frozenset(
+        {"java/lang/Class.forName", "java/lang/ClassLoader.loadClass"}
+    )
+
+    def _jvm_class(
+        self, unit: FileUnit, ctx: ScanContext
+    ) -> tuple[list[CapabilityHit], tuple[CompiledRule, ...]] | None:
+        """A compiled Java class, judged by what its constant pool says it does (`jvm_class.py`).
+
+        Like a .NET assembly, a class lists every API it touches in one table, so "a request beside
+        an execution" says nothing there. Two acts are read precisely: what the class fetches,
+        handed to an evaluator (GroovyShell, ScriptEngine, defineClass); and a class loaded from a
+        web address added to the system class loader through reflection. Command lines among its
+        constants go to the shell rules as commands written in source do (review 98: two
+        brandjacked Maven plugins carried both in bytecode their published sources did not have).
+        """
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.jvm_class import JvmClass
+
+        content = unit.content
+        if content.size > 5_000_000:
+            return None
+        refs = JvmClass.references(content.raw)
+        if refs is None:
+            return None
+        lines = ["// JVM constant pool: the members this class calls, then its string constants"]
+        lines.extend(sorted(refs.calls))
+        lines.extend('"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"' for s in refs.strings)
+        raw = "\n".join(lines).encode("utf-8")
+        view = FileContent(path=content.path, raw=raw, size=len(raw))
+        candidates = RuleSelector.select_rules(ctx.rules, language="java", path=content.path)
+        if not candidates:
+            return None
+        hits: list[CapabilityHit] = []
+        # The class makes a URL of a web address it carries. A class loader opens jar URLs and
+        # defines classes from them (classworlds), and a generator names an XML namespace, and
+        # neither builds a URL from a web literal: on 4,999 benign Maven jars nothing did both
+        # with an evaluator or a reflective `addURL` (review 98).
+        web = "java/net/URL.<init>" in refs.calls and any(
+            s.startswith(("http://", "https://")) for s in refs.strings
+        )
+        fetched_run = (
+            web and bool(refs.calls & self._JVM_FETCH) and bool(refs.calls & self._JVM_RUN)
+        )
+        remote_class = (
+            web
+            and "addURL" in refs.strings
+            and "java/lang/reflect/Method.setAccessible" in refs.calls
+            and bool(refs.calls & self._JVM_LOAD)
+        )
+        if fetched_run or remote_class:
+            for capability in (Capability.EGRESS, Capability.FETCH_EXEC):
+                hits.append(
+                    CapabilityHit(
+                        capability=capability,
+                        rule_id="CAP.JVM.CLASS_FETCH_RUN",
+                        byte_start=0,
+                        byte_end=0,
+                        line=1,
+                    )
+                )
+        commands = [
+            embedded.Command(s[:4000], number)
+            for number, s in enumerate(refs.strings, len(refs.calls) + 2)
+            if self._DOTNET_COMMAND.search(f'"{s}"')
+        ]
+        commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
+        hits.extend(self._embedded_capabilities(ctx, view, commands))
+        return hits, candidates
+
     @classmethod
     def _go_received_and_run(cls, content: FileContent) -> list[CapabilityHit]:
         """A Go function that runs what arrives on a network connection it opened.
@@ -3007,6 +3126,44 @@ class CapabilityDetector(BaseDetector):
         r"(?i)\b(?:powershell|pwsh|cmd(?:\.exe)?\s*/c|invoke-webrequest|iwr|invoke-expression|iex|"
         r"start-process|curl|wget|bitsadmin|certutil|mshta|rundll32|regsvr32|/bin/(?:ba)?sh)\b"
     )
+
+    #: A browser's saved logins or cookies, by the files they live in.
+    _BROWSER_STORE: ClassVar[re.Pattern[str]] = re.compile(
+        r"[/\\\"'](?:Login\s?Data|Cookies|Web\s?Data)(?=[\"'/\\]|\s*$)|\b(?:logins\.json|key[34]\.db|cookies\.sqlite)\b"
+    )
+    #: Turning them back into plaintext: Windows DPAPI, Chrome's os_crypt key in `Local State`,
+    #: the macOS keychain item Chromium browsers keep their key in.
+    _BROWSER_DECRYPT: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:CryptUnprotectData|[Dd][Pp][Aa][Pp][Ii]|crypt32|win32crypt|ProtectedData\.Unprotect|os_crypt"
+        r"|encrypted_key"
+        r"|Chrome Safe Storage|Brave Safe Storage|Edge Safe Storage)\b"
+    )
+
+    @classmethod
+    def _browser_secrets_decrypted(cls, content: FileContent) -> list[CapabilityHit]:
+        """A file that opens a browser's saved-login or cookie store and decrypts what is in it.
+
+        Reading the database is what a browser does; turning its values back into plaintext with
+        the user's DPAPI key or the browser's own key is what a stealer does, whether it sends them
+        at once or leaves them for a second stage (review 98: `chrome_taker` on RubyGems wrote
+        Chrome's passwords and cookies to a file). Dual-use tools that import cookies from a
+        browser do it too; measured before it may block."""
+        text = content.text
+        if len(text) > 4_000_000:
+            return []
+        store = cls._BROWSER_STORE.search(text)
+        if store is None or cls._BROWSER_DECRYPT.search(text) is None:
+            return []
+        start = len(text[: store.start()].encode("utf-8"))
+        return [
+            CapabilityHit(
+                capability=Capability.CREDENTIAL,
+                rule_id="CAP.CREDENTIAL.BROWSER_DECRYPT",
+                byte_start=start,
+                byte_end=start + 1,
+                line=text.count("\n", 0, store.start()) + 1,
+            )
+        ]
 
     #: Where JavaScript turns a string into code it runs.
     _JS_STRING_EVALUATOR: ClassVar[re.Pattern[str]] = re.compile(

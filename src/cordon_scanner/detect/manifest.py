@@ -1235,6 +1235,20 @@ class ManifestDetector(BaseDetector):
                 remediation="Do not install it; treat any machine that did as compromised.",
             ),
             DeclaredRule(
+                id="SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001",
+                title="A published release ships no code under a throwaway description",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector="advisory",
+                message=(
+                    "A published gem carries no code and describes itself with a throwaway word "
+                    "(`x`, `a`, `test`): a name taken to be used, not a library."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not depend on it; find out who published it and what depends on the name.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.ARCHIVE.PATH_ESCAPE.001",
                 title="Archive member named to write outside the archive",
                 severity=Severity.HIGH,
@@ -1601,7 +1615,7 @@ class ManifestDetector(BaseDetector):
         )
         for hook in manifest.hooks:
             command = hook.command
-            if not command:
+            if not command or hook.action_step:
                 continue
             loader = _REQUIRE_ONLY.match(command.strip())
             if loader:
