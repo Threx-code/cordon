@@ -2003,6 +2003,7 @@ class Engine:
                             ),
                             units,
                             package,
+                            hook_paths=ctx.install_hook_paths,
                         )
                     ),
                     self.config.policy.advisory_domains,
@@ -4545,6 +4546,7 @@ class Engine:
         units: list[FileUnit],
         distribution: str,
         root: Path | None = None,
+        hook_paths: frozenset[str] = frozenset(),
     ) -> list[Finding]:
         """Suspicious findings in files this package has shipped unchanged since an established
         release, reported below the gate.
@@ -4570,6 +4572,26 @@ class Engine:
         for finding in findings:
             path = finding.location.path
             if (
+                finding.rule_id == "SUSPECT.OBFUSCATION.PACKED.001"
+                and finding.severity > Severity.MEDIUM
+                and path in digests
+                and path not in hook_paths
+                and ReleaseHistory.key(path, identity[2]) in baseline.obfuscated
+            ):
+                # Obfuscated output changes on every build, so it is never byte-identical; what
+                # the established release shows is that this file was already obfuscated months
+                # ago. A new package, or a readable file turned obfuscated in this release --
+                # the shape of a compromised release -- keeps its grade, as does anything an
+                # install hook runs.
+                finding = replace(
+                    finding,
+                    severity=Severity.MEDIUM,
+                    message=finding.message
+                    + f" The same file was already obfuscated in {baseline.baseline_version}, "
+                    f"published {(baseline.baseline_published or '')[:10]}, at least 90 days "
+                    "before this release, so it is reported below the gate.",
+                )
+            elif (
                 finding.category is Category.SUSPICIOUS
                 and finding.severity > Severity.MEDIUM
                 and path in digests

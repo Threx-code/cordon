@@ -44,6 +44,8 @@ class HistoryKit:
             '  res.on("end", () => eval(body));\n});\n',
             encoding="utf-8",
         )
+        # Run by the build, so a repository scan grades it as auto-run code (option A).
+        (tmp_path / "Makefile").write_text("all:\n\tnode fetch.js\n", encoding="utf-8")
         found = [
             f
             for f in Scanner(Config.default().with_overrides(use_cache=False))
@@ -285,3 +287,85 @@ class TestANewYoungDependency:
             FileUnit(FileContent(path="x-1.tar.gz!x-1/PKG-INFO", raw=metadata, size=len(metadata)))
         ]
         assert Engine._declared_dependencies(pypi, "pypi") == {"foo-bar"}
+
+
+class TestObfuscatedSinceAnEstablishedRelease:
+    """Obfuscated output differs on every build; the established release shows it was already
+    obfuscated months ago. A new package, or a file turned obfuscated now, keeps its grade."""
+
+    PACKED = b"".join(b"var _0x%04x = %d;\n" % (n, n) for n in range(12))
+
+    @staticmethod
+    def finding(tmp_path, path: str = "tool-2.0.0.tgz!package/lib.js"):
+        base = HistoryKit.suspicious(tmp_path / "s")
+        return replace(
+            base,
+            rule_id="SUSPECT.OBFUSCATION.PACKED.001",
+            location=replace(base.location, path=path),
+        )
+
+    @classmethod
+    def units(cls) -> list[FileUnit]:
+        return [
+            *HistoryKit.units(),
+            FileUnit(FileContent(path="tool-2.0.0.tgz!package/lib.js", raw=cls.PACKED, size=12)),
+        ]
+
+    @staticmethod
+    def store(root, obfuscated: tuple[str, ...]) -> None:
+        ReleaseHistory.save(
+            Baseline(
+                "npm",
+                "tool",
+                "2.0.0",
+                "1.4.0",
+                "2026-01-02T00:00:00+00:00",
+                obfuscated=obfuscated,
+            ),
+            root,
+        )
+
+    def test_a_file_obfuscated_in_the_established_release_is_lowered(self, tmp_path) -> None:
+        self.store(tmp_path / "h", ("package/lib.js",))
+        [out] = Engine._established_release_ceiling(
+            [self.finding(tmp_path)], self.units(), "npm", root=tmp_path / "h"
+        )
+        assert out.severity is Severity.MEDIUM
+        assert "already obfuscated in 1.4.0" in out.message
+
+    def test_a_file_newly_obfuscated_keeps_its_grade(self, tmp_path) -> None:
+        self.store(tmp_path / "h", ())
+        finding = self.finding(tmp_path)
+        [out] = Engine._established_release_ceiling(
+            [finding], self.units(), "npm", root=tmp_path / "h"
+        )
+        assert out.severity is finding.severity
+
+    def test_a_file_an_install_hook_runs_keeps_its_grade(self, tmp_path) -> None:
+        self.store(tmp_path / "h", ("package/lib.js",))
+        finding = self.finding(tmp_path)
+        [out] = Engine._established_release_ceiling(
+            [finding],
+            self.units(),
+            "npm",
+            root=tmp_path / "h",
+            hook_paths=frozenset({"tool-2.0.0.tgz!package/lib.js"}),
+        )
+        assert out.severity is finding.severity
+
+    def test_the_obfuscated_files_of_a_release_are_recorded(self) -> None:
+        import io
+        import tarfile
+
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for member, data in {
+                "package/lib.js": self.PACKED,
+                "package/index.js": b"module.exports = 1;\n",
+            }.items():
+                info = tarfile.TarInfo(member)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        assert ReleaseHistory.obfuscated(buffer.getvalue(), "tool-1.4.0.tgz", "1.4.0") == (
+            "package/lib.js",
+        )

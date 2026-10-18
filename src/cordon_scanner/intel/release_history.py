@@ -44,7 +44,7 @@ Long enough that a release has been installed, read and reported on by the ecosy
 malicious -- malicious packages are typically removed within days -- and short enough that an
 actively maintained package has one."""
 
-STORE_VERSION: Final = 2
+STORE_VERSION: Final = 3
 
 YOUNG_DEPENDENCY_DAYS: Final = 30
 """A dependency a release introduces that was itself first published this recently before the
@@ -69,6 +69,10 @@ class Baseline:
     introduced: dict[str, str] = field(default_factory=dict)
     """Each dependency this release declares and the established one did not, with when the
     registry says it was first published ("" when the registry has no record of it)."""
+    obfuscated: tuple[str, ...] = ()
+    """The established release's files (by `ReleaseHistory.key`) that already had an
+    obfuscator's output shape. Obfuscated output differs on every build, so an unchanged hash is
+    no test for it; that the file was obfuscated months ago is."""
 
     def unchanged(self, key: str, digest: str) -> bool:
         return bool(self.baseline_version) and self.files.get(key) == digest
@@ -85,6 +89,7 @@ class Baseline:
             "files": self.files,
             "dependencies": list(self.dependencies),
             "introduced": self.introduced,
+            "obfuscated": list(self.obfuscated),
         }
 
 
@@ -138,6 +143,7 @@ class ReleaseHistory:
                 if isinstance(introduced, dict)
                 else {}
             ),
+            obfuscated=tuple(str(k) for k in data.get("obfuscated") or ()),
         )
 
     @classmethod
@@ -174,6 +180,26 @@ class ReleaseHistory:
         for member_path, member in ArchiveReader.walk_archive(data, path=filename):
             out[cls.key(member_path, version)] = hashlib.sha256(member).hexdigest()
         return out
+
+    @classmethod
+    def obfuscated(cls, data: bytes, filename: str, version: str) -> tuple[str, ...]:
+        """The archive's files with an obfuscator's output shape, keyed by `key`. Matched, never
+        decoded: the same signatures `SUSPECT.OBFUSCATION.PACKED.001` reports."""
+        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.obfuscation import ObfuscationDetector
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        detector = ObfuscationDetector()
+        out: list[str] = []
+        for member_path, member in ArchiveReader.walk_archive(data, path=filename):
+            content = FileContent.from_bytes(member_path, member)
+            if content.is_binary:
+                continue
+            language = LanguageRegistry.of_file(member_path, content)
+            if any(True for _ in detector._packers(content, language)):
+                out.append(cls.key(member_path, version))
+        return tuple(sorted(out))
 
     @staticmethod
     def declared(data: bytes, filename: str, ecosystem: str) -> frozenset[str]:
@@ -395,6 +421,7 @@ class ReleaseHistory:
                 files=cls.fingerprint(archive.data, archive.filename, archive.version),
                 dependencies=tuple(sorted(established)),
                 introduced=introduced,
+                obfuscated=cls.obfuscated(archive.data, archive.filename, archive.version),
             )
         cls.save(baseline, root)
         return baseline
