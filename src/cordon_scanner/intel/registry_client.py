@@ -831,6 +831,7 @@ ARCHIVE_HOSTS = {
     "hex": frozenset({"repo.hex.pm"}),
     "pub": frozenset({"pub.dev"}),
     "maven": frozenset({"repo.maven.apache.org"}),
+    "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
 }
 MAX_ARCHIVE_BYTES = 64 << 20
 

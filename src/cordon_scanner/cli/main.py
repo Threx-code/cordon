@@ -2499,7 +2499,7 @@ class CommandLine:
                 FileUnit(content=FileContent.from_bytes(member, payload))
                 for member, payload in ArchiveReader.walk_archive(data, path=path.name)
             ]
-            distribution = Engine._distribution_format(units)
+            distribution = Engine._history_distribution(units)
             identity = Engine._history_identity(units, distribution) if distribution else None
             if identity is None or identity[0] not in ReleaseHistory.ECOSYSTEMS:
                 results.append({"target": target, "skipped": "not a release this can compare"})

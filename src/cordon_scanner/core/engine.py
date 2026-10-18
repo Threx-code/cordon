@@ -2020,6 +2020,11 @@ class Engine:
         elif image is None:
             # A source tree read from an archive: graded as a repository (`_person_run_ceiling`).
             acc.findings[:] = self._person_run_ceiling(acc.findings, units, ctx)
+            if Engine._history_distribution(units) == "openvsx":
+                # An editor extension against its own established release (`intel/openvsx.py`).
+                acc.findings[:] = self._established_release_ceiling(
+                    acc.findings, units, "openvsx", hook_paths=ctx.install_hook_paths
+                )
         if image is not None:
             acc.findings[:] = Engine._image_start_ceiling(acc.findings, units)
             ctx = replace(ctx, image=image)
@@ -4369,6 +4374,23 @@ class Engine:
                 if ecosystem == distribution:
                     return ecosystem, name, version
             return None
+        if distribution == "openvsx":
+            manifest = next((u for u in units if u.path.endswith("!extension/package.json")), None)
+            try:
+                document = json.loads(manifest.content.text) if manifest is not None else None
+            except ValueError:
+                return None
+            if not isinstance(document, dict):
+                return None
+            publisher, name, version = (
+                document.get("publisher"),
+                document.get("name"),
+                document.get("version"),
+            )
+            if all(isinstance(v, str) and v for v in (publisher, name, version)):
+                # As published: the API redirects any other spelling to this one.
+                return "openvsx", f"{publisher}.{name}", str(version)
+            return None
         pattern = Engine._HISTORY_MANIFESTS.get(distribution)
         if pattern is None:
             return None
@@ -4682,6 +4704,18 @@ class Engine:
                 ):
                     found.add(path)
         return frozenset(found)
+
+    @staticmethod
+    def _history_distribution(units: list[FileUnit]) -> str:
+        """The format release history knows this archive as: a published package's, or Open VSX
+        for an editor extension (`.vsix`), which is not otherwise graded as a package."""
+        package = Engine._distribution_format(units)
+        if package:
+            return package
+        tops = {u.path.partition("!")[2] for u in units if u.path.count("!") == 1}
+        if "extension.vsixmanifest" in tops and "extension/package.json" in tops:
+            return "openvsx"
+        return ""
 
     @staticmethod
     def _distribution_format(units: list[FileUnit]) -> str:

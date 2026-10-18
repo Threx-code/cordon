@@ -99,7 +99,19 @@ class ReleaseHistory:
     #: Ecosystems whose release times and archives this reads. Every other ecosystem answers
     #: `None`, which changes nothing about a scan.
     ECOSYSTEMS: Final = frozenset(
-        {"npm", "pypi", "cargo", "rubygems", "nuget", "gomod", "hex", "pub", "maven", "gradle"}
+        {
+            "npm",
+            "pypi",
+            "cargo",
+            "rubygems",
+            "nuget",
+            "gomod",
+            "hex",
+            "pub",
+            "maven",
+            "gradle",
+            "openvsx",
+        }
     )
 
     # -- the store (offline) ------------------------------------------------------------------
@@ -260,6 +272,10 @@ class ReleaseHistory:
                 for upload in files if isinstance(files, list) else ():
                     if isinstance(upload, dict) and not upload.get("yanked"):
                         put(release, upload.get("upload_time_iso_8601"))
+        elif ecosystem == "openvsx":
+            from cordon_scanner.intel.openvsx import OpenVsx
+
+            out.update(OpenVsx.timeline(name, version))
         elif ecosystem == "cargo":
             document = MoreRegistries._mapping(
                 MoreRegistries._json(f"{HOSTS['cargo']}/api/v1/crates/{quoted}")
@@ -405,7 +421,12 @@ class ReleaseHistory:
             baseline = Baseline(ecosystem, name, version, None)
         else:
             release, when, current = found
-            archive = RegistryClient.package_archive(eco, name, release)
+            if eco == "openvsx":
+                from cordon_scanner.intel.openvsx import OpenVsx
+
+                archive = OpenVsx.archive(name, release)
+            else:
+                archive = RegistryClient.package_archive(eco, name, release)
             established = cls.declared(archive.data, archive.filename, ecosystem)
             introduced = {
                 dependency: cls.first_published(eco, dependency)

@@ -369,3 +369,44 @@ class TestObfuscatedSinceAnEstablishedRelease:
         assert ReleaseHistory.obfuscated(buffer.getvalue(), "tool-1.4.0.tgz", "1.4.0") == (
             "package/lib.js",
         )
+
+
+class TestOpenVsx:
+    """An editor extension against its own established release on Open VSX (no network here)."""
+
+    @staticmethod
+    def vsix_units(publisher: str = "Acme", name: str = "tool", version: str = "1.2.0"):
+        manifest = json.dumps({"publisher": publisher, "name": name, "version": version}).encode()
+        return [
+            FileUnit(FileContent(path=f"x.vsix!{p}", raw=b, size=len(b)))
+            for p, b in {
+                "extension.vsixmanifest": b"<PackageManifest/>",
+                "extension/package.json": manifest,
+                "extension/out/extension.js": b"module.exports = {};\n",
+            }.items()
+        ]
+
+    def test_a_vsix_is_known_to_release_history_by_its_publisher_and_name(self) -> None:
+        units = self.vsix_units()
+        assert Engine._history_distribution(units) == "openvsx"
+        # As published: the API redirects any other spelling to this one.
+        assert Engine._history_identity(units, "openvsx") == ("openvsx", "Acme.tool", "1.2.0")
+
+    def test_a_name_that_is_not_publisher_dot_extension_is_refused(self) -> None:
+        from cordon_scanner.intel.openvsx import OpenVsx
+        from cordon_scanner.intel.registry_client import RegistryError
+
+        assert OpenVsx.split("Acme.tool") == ("Acme", "tool")
+        with pytest.raises(RegistryError):
+            OpenVsx.split("../etc.passwd")
+
+    def test_file_links_map_to_the_file_host_with_the_publishers_spelling(self) -> None:
+        from cordon_scanner.intel.openvsx import OpenVsx
+        from cordon_scanner.intel.registry_client import RegistryError
+
+        link = "https://open-vsx.org/api/BroadcomMFD/jcl/3.0.3/file/BroadcomMFD.jcl-3.0.3.vsix"
+        assert OpenVsx._on_file_host(link) == (
+            "https://openvsx.eclipsecontent.org/BroadcomMFD/jcl/3.0.3/BroadcomMFD.jcl-3.0.3.vsix"
+        )
+        with pytest.raises(RegistryError):
+            OpenVsx._on_file_host("https://elsewhere.example/api/x/y/1/file/z.vsix")
