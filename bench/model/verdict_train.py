@@ -2,64 +2,256 @@
 """Train the package verdict (`core/verdict.py`) from what scans reported, and measure it held out.
 
 ```
-  benign rows (long-tail rescan)  ┐                       work half ──► monotone trees
-  malware rows (as published)     ├─► result.verdict ───►            ──► block / warn thresholds
-  adjudication (not malicious,    ┘   features              holdout ──► the figures this prints
-  no payload: excluded)
+  benign corpus rescan ─┐                                   work half ──► monotone trees
+  malware (as published)├─► findings + verdict.package ──►      │  5-fold out-of-fold scores
+  skills, MCP sets      ┘   = VerdictFeatures.evidence          ▼
+  adjudication (not malicious, no payload: excluded)        a line per area: the lowest score at
+                                                            which no ecosystem in it blocks more
+                                                            than --budget of ITS corpus units
+                                                                │
+  holdout half ── scored once ──► per ecosystem, per malware source, content-only and with intel
+                                  + every miss and every benign block (attribution)
 ```
 
-Every row's features are the ones the scanner itself reported (`result.verdict`), so what is
-trained is what is scored. Halves are fixed by a hash: a benign unit by its name, a malware sample
-by its package (every version of one package on one side). Thresholds are chosen on the work half
-only -- `block` the lowest score at which no ecosystem blocks more than `--block-share` of its units,
-`warn` the lowest at which every ecosystem stays at or above `--quiet` with no warning -- and the
-holdout half is scored once with them.
+Every row's features are computed by the scanner's own `VerdictFeatures.evidence` from what the
+scan recorded, so what is trained is what is scored, and an outcome here is the outcome a user
+gets: a unit is blocked when its score reaches its area's line, or when a finding the verdict never
+re-grades (`Verdict.floored`) trips the default gate.
 
-    docker run --rm --network none -v OUT:/o -v DATA:/r:ro -v "$PWD:/s:ro" -e PYTHONPATH=/s/src \\
-      cordon-model:next python /s/bench/model/verdict_train.py --benign /o/benign.jsonl \\
-      --malware /o/malware-scans.jsonl --corpus /r/d0d8ea9/scans.jsonl --noisy /o/noisy.txt \\
-      --adjudication /r/adjudication-malware.jsonl /r/adjudication-malware-supplement.jsonl \\
-      --out /o/verdict.json.gz
+Benign rates are counted against every unit of the ecosystem in the corpus half, not against the
+rescanned sample: the sample is the units any earlier scan flagged plus a coverage extra, and the
+units outside it were quiet (review 98, 08-PROGRESS). Halves are fixed by a hash of the package
+name, so every version of one package is on one side.
+
+    docker run --rm --network none -v W:/w:ro -v OUT:/o -v "$PWD:/s:ro" -e PYTHONPATH=/s/src \\
+      cordon-model:next python /s/bench/model/verdict_train.py --corpus /w/corpus.txt \\
+      --benign /w/f3/benign/scans.jsonl --malware /w/f3/mal/malware-scans.jsonl \\
+      --labelled msb=/w/f3/msb/scans.jsonl asb=/w/f3/asb/scans.jsonl skills=/w/f3/pub/scans.jsonl \\
+                 mcpv=/w/f3/mcpv/scans.jsonl mcpc=/w/f3/mcpc/scans.jsonl \\
+      --adjudication /s/reviews/review-98/data/adjudication-malware.jsonl \\
+                     /s/reviews/review-98/data/adjudication-malware-supplement.jsonl \\
+                     /s/reviews/review-98/data/adjudication-mcp-variants.jsonl \\
+      --out /o/verdict.json.gz --report /o/verdict-report.json --attribution /o/attribution.jsonl
 """
 
 from __future__ import annotations
 
 import argparse
 import collections
+import datetime
 import gzip
 import hashlib
 import json
-import math
+import re
 from pathlib import Path
+from typing import Any
 
-from cordon_scanner.core.models import Severity
-from cordon_scanner.core.verdict import VerdictFeatures, VerdictModel
+from cordon_scanner.core.config import Config
+from cordon_scanner.core.models import Category, Confidence, Severity
+from cordon_scanner.core.taxonomy import Taxonomy
+from cordon_scanner.core.verdict import Verdict, VerdictFeatures, VerdictModel
+
+#: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
+#: the scan's own notes are not a malware verdict (review 98).
+NOT_MALWARE = ("SECRET.", "POLICY.", "VULNERABLE.", "OPERATIONAL.")
+#: Adjudicated not to be the malware the label says.
+EXCLUDED = {
+    "not-malicious",
+    "no-payload",
+    "vulnerable-fixture",
+    "empty-template",
+    "identical-to-benign-reference",
+}
+GENERATED = re.compile(r"__(CI|PI|MIXED)_(B\d+)$")
+#: A corpus directory and the ecosystem it is part of.
+ECOSYSTEM = {"popular-npm": "npm", "popular-pypi": "pypi"}
+#: The labelled sets: how a unit is labelled, and the key its half is drawn from.
+LABELLED = {
+    "msb": ("malware/", lambda u: "malskillbench:" + VerdictTrain.base(u.split("/", 1)[1])),
+    "asb": ("malware/", lambda u: "asb:" + u),
+    "skills": (None, lambda u: "corpus:" + "__".join(u.split("__")[:2])),
+    "mcpv": ("malicious", lambda u: "mcpv:" + u.split("/")[-1].split("_")[0]),
+    "mcpc": (None, lambda u: "pkg:" + VerdictTrain.package_name(u)),
+}
 
 
 class VerdictTrain:
+    POLICY = Config.default().policy
+
     @staticmethod
     def half(key: str) -> str:
         return "holdout" if hashlib.sha256(key.encode()).digest()[0] % 2 else "work"
 
     @staticmethod
-    def group(name: str) -> str:
-        parts = name.split("/")
-        return "/".join(parts[:4]) if parts[0] == "datadog" else "/".join(parts[:2])
+    def base(name: str) -> str:
+        m = GENERATED.search(name)
+        return name[: m.start()] if m else name
+
+    @staticmethod
+    def package_name(path: str) -> str:
+        """A package's name without its version: every release on one side of the split."""
+        name = path.split("/")[-1]
+        name = re.sub(
+            r"(\.tgz|\.tar\.gz|\.zip|\.whl|\.gem|\.crate|\.vsix|\.nupkg|\.jar)$", "", name
+        )
+        return re.sub(r"[-_.@]?v?\d[\w.+-]*$", "", name) or name
+
+    @staticmethod
+    def malware_key(unit: str) -> str:
+        return "pkg:" + VerdictTrain.package_name("/".join(unit.split("/")[:4]))
+
+    @staticmethod
+    def family_key(unit: str) -> str:
+        """A publisher family: the scope or first name token, so `@42ailab/*` and its platform
+        builds stay on one side (review 98, 15-ADVERSARIAL-REVIEW A1a)."""
+        parts = unit.split("/")
+        name = parts[3] if unit.startswith("datadog/") and len(parts) > 3 else parts[-1]
+        return "fam:" + re.split(r"[@/_\-.]", name.lstrip("@"))[0].lower()
 
     @staticmethod
     def rows(path: Path):
         seen: set[str] = set()
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                row = json.loads(line)
-            except ValueError:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                # A unit scanned twice (a restarted run) counts once; a crash or timeout is not
+                # a scan result and is reported, not scored.
+                if row.get("file") in seen or "findings" not in row:
+                    continue
+                if row.get("exit", 0) not in (0, 1):
+                    continue
+                seen.add(row["file"])
+                yield row
+
+    @classmethod
+    def trips(cls, finding: list) -> bool:
+        """`PolicyGate` on a recorded finding, as the default policy grades it."""
+        rule, severity, confidence, category = finding[:4]
+        if Category(category) in cls.POLICY.fail_on_categories:
+            return True
+        if Taxonomy.domain_of(rule) in cls.POLICY.advisory_domains:
+            return False
+        if Confidence[confidence.upper()] < cls.POLICY.min_confidence_to_fail:
+            return False
+        return (
+            cls.POLICY.fail_on_severity is not None
+            and Severity[severity.upper()] >= cls.POLICY.fail_on_severity
+        )
+
+    @staticmethod
+    def evidence(row: dict) -> dict[str, float]:
+        package = (row.get("verdict") or {}).get("package") or {}
+        return VerdictFeatures.evidence(
+            (
+                (
+                    f[0],
+                    int(Severity[f[1].upper()]),
+                    int(Confidence[f[2].upper()]),
+                    f[3],
+                    f[4] or "",
+                )
+                for f in row["findings"]
+            ),
+            package,
+        )
+
+    @classmethod
+    def load(cls, a: argparse.Namespace) -> tuple[list[dict], dict[str, collections.Counter]]:
+        """Every row with its label, ecosystem, area, halves and features; and the denominators."""
+        excluded: set[str] = set()
+        for path in a.adjudication:
+            for r in cls.rows_any(path):
+                if r.get("verdict") in EXCLUDED and r.get("file"):
+                    excluded.add(r["file"])
+        size: dict[str, collections.Counter] = {
+            "work": collections.Counter(),
+            "holdout": collections.Counter(),
+        }
+        for unit in a.corpus.read_text(encoding="utf-8").split():
+            eco = unit.split("/")[0]
+            size[cls.half("pkg:" + cls.package_name(unit))][ECOSYSTEM.get(eco, eco)] += 1
+        data: list[dict] = []
+        fresh: dict[str, dict] = {}
+        for path in a.features:
+            for row in cls.rows(path):
+                if row.get("verdict"):
+                    fresh[row["file"]] = row["verdict"]
+
+        def add(row: dict, label: int, eco: str, key: str, source: str, family: str) -> None:
+            if row["file"] in fresh:
+                newer = fresh[row["file"]]
+                row = {
+                    **row,
+                    "verdict": {
+                        **(row.get("verdict") or {}),
+                        "package": newer.get("package") or {},
+                        "area": newer.get("area"),
+                    },
+                }
+            features = cls.evidence(row)
+            rules = {k[2:]: v for k, v in features.items() if k.startswith("r:") and "#" not in k}
+            data.append(
+                {
+                    "file": row["file"],
+                    "label": label,
+                    "eco": eco,
+                    "source": source,
+                    "half": cls.half(key),
+                    "family_half": cls.half(family),
+                    "area": cls.area(row, eco, rules),
+                    "f": features,
+                    "findings": row["findings"],
+                    "date": (re.search(r"/(20\d\d-\d\d-\d\d)-", row["file"]) or [None, ""])[1],
+                }
+            )
+
+        # A labelled set scanned in full replaces the corpus directory it was drawn from: the MCP
+        # servers (`mcpc`) are the corpus's `mcp` directory, every unit scanned.
+        replaced = {"mcp"} if any(spec.startswith("mcpc=") for spec in a.labelled) else set()
+        for half in size.values():
+            for eco in replaced:
+                half.pop(eco, None)
+        for row in cls.rows(a.benign):
+            eco = row["file"].split("/")[0]
+            if eco in replaced:
                 continue
-            # Two scanners over one sample from either end may both reach a unit.
-            if row.get("file") in seen:
+            key = "pkg:" + cls.package_name(row["file"])
+            add(row, 0, ECOSYSTEM.get(eco, eco), key, "corpus", key)
+        for row in cls.rows(a.malware):
+            if row["file"] in excluded:
                 continue
-            seen.add(row.get("file"))
-            yield row
-        return
+            u = row["file"]
+            eco = (
+                "npm"
+                if u.startswith("datadog/npm")
+                else "pypi"
+                if u.startswith(("datadog/pypi", "malregistry"))
+                else "openvsx"
+                if u.startswith("datadog/ide")
+                else "skill"
+            )
+            source = "malregistry" if u.startswith("malregistry") else "/".join(u.split("/")[:2])
+            add(row, 1, eco, cls.malware_key(u), source, cls.family_key(u))
+        for spec in a.labelled:
+            name, _, path = spec.partition("=")
+            prefix, keyer = LABELLED[name]
+            for row in cls.rows(Path(path)):
+                unit = row["file"]
+                if unit in excluded:
+                    continue
+                label = int(bool(prefix) and unit.startswith(prefix))
+                key = keyer(unit)
+                row = {**row, "file": f"{name}/{unit}"}
+                add(row, label, name, key, name, key)
+                if not label:
+                    size[cls.half(key)][name] += 1
+        return data, size
+
+    @staticmethod
+    def rows_any(path: Path):
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
                 yield json.loads(line)
@@ -67,13 +259,31 @@ class VerdictTrain:
                 continue
 
     @staticmethod
-    def export(clf, vocab: list[str], block: float, warn: float, trained_on: dict) -> dict:
+    def area(row: dict, eco: str, rules: dict[str, int]) -> str:
+        """The line a row answers to, as `Verdict.area` decides it at scan time.
+
+        A scan that recorded its area is read as recorded. Older scans did not; the archive layout
+        is then known from the ecosystem the unit came from, and the rest from what was recorded.
+        """
+        recorded = (row.get("verdict") or {}).get("area")
+        if recorded:
+            return recorded
+        package = (row.get("verdict") or {}).get("package") or {}
+        if eco in ("mcp", "mcpv", "mcpc") or any(r.startswith("SUSPECT.MCP.") for r in rules):
+            return "mcp"
+        if eco in ("npm", "pypi", "openvsx"):
+            return eco
+        if package.get("skill") or eco in ("msb", "asb", "skills", "skill"):
+            return "skill"
+        return Verdict.FALLBACK
+
+    @staticmethod
+    def export(clf, names: list[str]) -> dict[str, Any]:
         """sklearn's HistGradientBoosting trees as `VerdictModel.score` walks them."""
         trees = []
         for predictors in clf._predictors:
-            nodes = predictors[0].nodes
             tree = []
-            for n in nodes:
+            for n in predictors[0].nodes:
                 tree.append(
                     {"leaf": True, "value": float(n["value"])}
                     if n["is_leaf"]
@@ -88,33 +298,10 @@ class VerdictTrain:
                 )
             trees.append(tree)
         return {
-            "version": trained_on.get("version", ""),
-            "vocab": vocab,
-            "package": list(VerdictFeatures.PACKAGE),
+            "format": VerdictModel.FORMAT,
+            "features": names,
             "baseline": float(clf._baseline_prediction.ravel()[0]),
             "trees": trees,
-            "thresholds": {"block": block, "warn": warn},
-            "trained_on": trained_on,
-        }
-
-    @staticmethod
-    def recall_by_area(rows, labels, blocked) -> dict[str, str]:
-        """Malicious blocked per area: each labelled set by its name, the malware set by source."""
-        caught: collections.Counter = collections.Counter()
-        seen: collections.Counter = collections.Counter()
-        for r, y, b in zip(rows, labels, blocked, strict=True):
-            if not y:
-                continue
-            parts = r["file"].split("/")
-            area = (
-                parts[0]
-                if parts[0] in ("msb", "asb", "mcpv")
-                else ("/".join(parts[:3]) if parts[0] == "datadog" else parts[0])
-            )
-            seen[area] += 1
-            caught[area] += bool(b)
-        return {
-            k: f"{caught[k]}/{seen[k]} = {100 * caught[k] / seen[k]:.1f}%" for k in sorted(seen)
         }
 
     @classmethod
@@ -123,292 +310,362 @@ class VerdictTrain:
         from sklearn.ensemble import HistGradientBoostingClassifier
 
         p = argparse.ArgumentParser()
+        p.add_argument("--corpus", type=Path, required=True, help="every benign corpus unit")
         p.add_argument("--benign", type=Path, required=True)
         p.add_argument("--malware", type=Path, required=True)
         p.add_argument(
-            "--corpus", type=Path, required=True, help="full-corpus scans: ecosystem sizes"
+            "--labelled", nargs="*", default=[], help="NAME=PATH, NAME in " + ",".join(LABELLED)
         )
-        p.add_argument("--noisy", type=Path, required=True)
         p.add_argument("--adjudication", type=Path, nargs="*", default=[])
         p.add_argument(
-            "--labelled",
+            "--pending",
+            type=Path,
             nargs="*",
             default=[],
-            help="NAME=PATH rescans of labelled sets (skills, MCP servers): a row is malicious when "
-            "its path starts with malware/ or malicious-mcp-variants/; NAME is its ecosystem",
+            help="proposed adjudications still awaiting a second review: never applied, reported "
+            "as the second denominator",
         )
         p.add_argument(
-            "--sample",
+            "--features",
             type=Path,
-            help="the benign sample list; when the rescan is partial, each ecosystem's benign "
-            "blocks and warnings are scaled by sampled / scanned",
+            nargs="*",
+            default=[],
+            help="features-only passes (reviews/review-98/tools/features_only.py): their package "
+            "features and area replace the scan's, unit by unit",
+        )
+        p.add_argument("--budget", type=float, default=0.3, help="percent of an ecosystem's units")
+        p.add_argument(
+            "--split",
+            choices=("package", "family", "time"),
+            default="package",
+            help="package: halves by package name; family: malware by publisher family; time: "
+            "malware published before --cutoff trains, after tests",
+        )
+        p.add_argument("--cutoff", default="2026-05-01")
+        p.add_argument(
+            "--leave-out", default="", help="a labelled set kept out of training entirely"
+        )
+        p.add_argument("--no-monotone", action="store_true")
+        p.add_argument(
+            "--add-only",
+            nargs="*",
+            default=[],
+            help="areas where the verdict may add a block but never lift one",
+        )
+        p.add_argument(
+            "--separate",
+            nargs="*",
+            default=[],
+            help="areas given trees of their own, fitted on that area's rows only",
         )
         p.add_argument("--out", type=Path)
-        p.add_argument(
-            "--per-ecosystem", action="store_true", help="a threshold per package ecosystem"
-        )
-        p.add_argument(
-            "--dump", type=Path, help="per-row half, label, area and score as JSON lines"
-        )
-        p.add_argument("--block-share", type=float, default=0.4)
-        p.add_argument("--quiet", type=float, default=98.3)
+        p.add_argument("--report", type=Path)
+        p.add_argument("--attribution", type=Path)
+        p.add_argument("--dump", type=Path, help="every row: half, eco, area, label, score, kept")
         a = p.parse_args()
 
-        excluded = set()
-        for path in a.adjudication:
-            for r in cls.rows(path):
-                if r.get("verdict") in (
-                    "not-malicious",
-                    "no-payload",
-                    "vulnerable-fixture",
-                    "empty-template",
+        data, size = cls.load(a)
+        for r in data:
+            if a.split == "family" and r["label"] and r["source"].startswith("datadog"):
+                r["half"] = r["family_half"]
+            if a.split == "time" and r["label"] and r["date"]:
+                r["half"] = "work" if r["date"] < a.cutoff else "holdout"
+            if (
+                a.split == "time"
+                and r["label"]
+                and not r["date"]
+                and r["source"].startswith("datadog")
+            ):
+                r["half"] = "none"
+            if a.leave_out and r["eco"] == a.leave_out:
+                r["half"] = "holdout"
+        work = [r for r in data if r["half"] == "work" and r["eco"] != a.leave_out]
+        test = [r for r in data if r["half"] == "holdout"]
+        names = sorted({k for r in work for k in r["f"]})
+        index = {k: i for i, k in enumerate(names)}
+
+        def matrix(rows):
+            x = np.zeros((len(rows), len(names)), dtype=np.float32)
+            for i, r in enumerate(rows):
+                for k, v in r["f"].items():
+                    if k in index:
+                        x[i, index[k]] = v
+            return x
+
+        monotone = [0 if (a.no_monotone or k.startswith("pkg:")) else 1 for k in names]
+
+        def model():
+            return HistGradientBoostingClassifier(
+                max_iter=300,
+                learning_rate=0.08,
+                max_leaf_nodes=31,
+                l2_regularization=1.0,
+                monotonic_cst=monotone,
+                random_state=0,
+            )
+
+        xw, yw = matrix(work), np.array([r["label"] for r in work])
+        # The floor: MALWARE.* rules that, at high confidence and high severity, fired on no benign
+        # unit of the work half and on at least three malware samples there.
+        strong = collections.Counter()
+        misfired = collections.Counter()
+        for r in work:
+            for f in r["findings"]:
+                if (
+                    f[0].startswith("MALWARE.")
+                    and VerdictFeatures.is_code(f[0])
+                    and f[2] in ("high", "confirmed")
+                    and Severity[f[1].upper()] >= Severity.HIGH
                 ):
-                    excluded.add(r["file"])
-        noisy = set(a.noisy.read_text(encoding="utf-8").split())
-        total = {"work": collections.Counter(), "holdout": collections.Counter()}
-        for r in cls.rows(a.corpus):
-            total[cls.half(r["file"])][r["file"].split("/")[0]] += 1
+                    (strong if r["label"] else misfired)[f[0]] += 1
+        floor = sorted(rule for rule, n in strong.items() if n >= 3 and not misfired[rule])
+        floor_set = frozenset(floor)
 
-        if a.sample is not None:
-            # Every sampled unit is benign data: the noisy units, and those added because a newer
-            # rule might fire on them. Units outside the sample were quiet and stay counted so.
-            noisy |= set(a.sample.read_text(encoding="utf-8").split())
-        data = []
-        scanned: collections.Counter = collections.Counter()
-        for r in cls.rows(a.benign):
-            if r["file"] in noisy and r.get("verdict"):
-                data.append((r, 0, cls.half(r["file"])))
-                scanned[r["file"].split("/")[0]] += 1
-        scale: dict[str, float] = {}
-        if a.sample is not None:
-            sampled = collections.Counter(
-                line.split("/")[0]
-                for line in a.sample.read_text(encoding="utf-8").split()
-                if line in noisy
-            )
-            scale = {e: sampled[e] / scanned[e] for e in scanned if scanned[e]}
-        for r in cls.rows(a.malware):
-            if r["file"] not in excluded and r.get("verdict"):
-                data.append((r, 1, cls.half(cls.group(r["file"]))))
-        for spec in a.labelled:
-            name, _, path = spec.partition("=")
-            for r in cls.rows(Path(path)):
-                if not r.get("verdict"):
+        def untouched_trip(r, content_only: bool) -> bool:
+            """A finding the verdict never re-grades trips the gate."""
+            for f in r["findings"]:
+                if f[0].startswith(NOT_MALWARE) or (
+                    content_only and VerdictFeatures.is_intel(f[0])
+                ):
                     continue
-                unit = r["file"]
-                malicious = unit.startswith(("malware/", "malicious-mcp-variants/"))
-                # The design split for mcp-variants (`mcpv:` + server), by name elsewhere.
-                key = (
-                    "mcpv:" + unit.rstrip("/").rsplit("/", 1)[-1]
-                    if name == "mcpv"
-                    else name + ":" + unit
-                )
-                h = "holdout" if hashlib.sha256(key.encode()).digest()[0] % 2 else "work"
-                r = {**r, "file": f"{name}/{unit}"}
-                data.append((r, int(malicious), h))
-                if not malicious:
-                    total[h][name] += 1
-        vocab = sorted({k for r, _, _ in data for k in r["verdict"]["rules"]})
-        model_stub = {"vocab": vocab}
+                code = VerdictFeatures.is_code(f[0])
+                kept = not code or (f[0] in floor_set and f[2] in ("high", "confirmed"))
+                if kept and cls.trips(f):
+                    return True
+            return False
 
-        def vec(r):
-            v = r["verdict"]
-            return VerdictModel.vector(model_stub, v["rules"], v["package"])
-
-        X = {h: [] for h in ("work", "holdout")}
-        Y = {h: [] for h in X}
-        M = {h: [] for h in X}
-        for r, y, h in data:
-            X[h].append(vec(r))
-            Y[h].append(y)
-            M[h].append(r)
-        mono = [1] * len(vocab) + [0] * len(VerdictFeatures.PACKAGE) + [1, 1, 0]
-        clf = HistGradientBoostingClassifier(
-            max_iter=300, learning_rate=0.08, max_leaf_nodes=31, monotonic_cst=mono, random_state=7
-        )
-        clf.fit(np.array(X["work"]), np.array(Y["work"]))
-        prob = {h: clf.predict_proba(np.array(X[h]))[:, 1] for h in X}
-
-        def strong(f) -> bool:
-            return (
-                f[0].startswith("MALWARE.")
-                and ".KNOWN" not in f[0]
-                and f[2] in ("high", "confirmed")
-                and Severity[f[1].upper()] >= Severity.HIGH
+        def gate_trip(r, content_only: bool) -> bool:
+            """Any finding trips the gate, as it does without the verdict."""
+            return any(
+                cls.trips(f)
+                for f in r["findings"]
+                if not f[0].startswith(NOT_MALWARE)
+                and not (content_only and VerdictFeatures.is_intel(f[0]))
             )
 
-        # The floor: MALWARE.* rules that never fired on a benign unit of the WORK half and caught
-        # malware there. A rule that misfired is weighed by the model until its precision is fixed.
-        benign_hits = collections.Counter()
-        malware_hits = collections.Counter()
-        for r, y, h in data:
-            if h != "work":
+        for r in data:
+            add_only = r["area"] in a.add_only
+            r["kept"] = (gate_trip if add_only else untouched_trip)(r, content_only=True)
+            r["kept_intel"] = (gate_trip if add_only else untouched_trip)(r, content_only=False)
+            r["has_code"] = any(k.startswith("r:") for k in r["f"])
+
+        groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in a.separate}
+        taken = {i for idx in groups.values() for i in idx}
+        groups["*"] = [i for i in range(len(work)) if i not in taken]
+        for idx in groups.values():
+            idx_a = np.array(idx)
+            g = np.arange(len(idx_a)) % 5
+            for k in range(5):
+                tr, te = idx_a[g != k], idx_a[g == k]
+                fold = model().fit(xw[tr], yw[tr]).predict_proba(xw[te])[:, 1]
+                for i, s_ in zip(te, fold, strict=True):
+                    work[i]["score"] = float(s_)
+        oof = np.array([r["score"] for r in work])
+
+        def blocked(r, lines, intel=False) -> bool:
+            over = r["has_code"] and r["score"] >= lines.get(r["area"], lines[Verdict.FALLBACK])
+            return bool(over or (r["kept_intel"] if intel else r["kept"]))
+
+        def benign_rates(rows, lines, half) -> dict[str, tuple[int, int]]:
+            hit = collections.Counter(
+                r["eco"] for r in rows if not r["label"] and blocked(r, lines)
+            )
+            return {e: (hit[e], size[half][e]) for e in size[half] if size[half][e]}
+
+        # Lines: start blocking nothing by score, then lower each area's line as far as every
+        # ecosystem it touches stays within budget -- counting what the other areas already block.
+        areas = sorted({r["area"] for r in work} | {Verdict.FALLBACK})
+        lines = dict.fromkeys(areas, 1.01)
+        grid = np.unique(np.concatenate([np.round(oof, 4), [1.01]]))
+        for area in ("skill", "mcp", "npm", "pypi", "openvsx", Verdict.FALLBACK):
+            if area not in lines:
                 continue
-            for rule in {f[0] for f in r.get("findings", []) if strong(f)}:
-                (malware_hits if y else benign_hits)[rule] += 1
-        floor = sorted(r for r in malware_hits if malware_hits[r] >= 3 and not benign_hits[r])
-
-        def floored(r) -> bool:
-            return any(strong(f) and f[0] in floor for f in r.get("findings", []))
-
-        malware_ecosystem = {
-            "datadog/npm": "npm",
-            "datadog/pypi": "pypi",
-            "datadog/ide_extensions": "openvsx",
-            "malregistry": "pypi",
-        }
-
-        def area(r) -> str:
-            """Which threshold a row answers to: skills, MCP servers, or a package ecosystem.
-
-            Each ecosystem's line is set on its own benign units: editor extensions' telemetry
-            must not decide where npm's malware stops being blocked."""
-            first = r["file"].split("/")[0]
-            if first in ("msb", "asb", "pub") or r["file"].startswith("datadog/ai-skills"):
-                return "skill"
-            if first in ("mcpv", "mcpc", "mcp"):
-                return "mcp"
-            for prefix, eco in malware_ecosystem.items():
-                if r["file"].startswith(prefix):
-                    return eco
-            # Only an ecosystem with malware to measure gets its own line; the rest share one,
-            # set on all of them together -- a line fitted to a few hundred benign units of one
-            # ecosystem moves on the other half (review 98: terraform, nix, actions).
-            own = set(malware_ecosystem.values())
-            return first if a.per_ecosystem and first in own else "package"
-
-        def code(f) -> bool:
-            return VerdictFeatures.is_code(f[0]) and ".KNOWN" not in f[0]
-
-        def outcome(r, s, block, warn) -> tuple[bool, bool]:
-            """(blocked, warned) as `Verdict.decide` and the engine grade the row."""
-            findings = [f for f in r.get("findings", []) if code(f)]
-            if not r["verdict"]["rules"]:
-                return False, False
-            if floored(r) or s >= block:
-                return True, True
-            if s >= warn:
-                blocked = any(
-                    len(f) > 3 and f[3] == "malicious" and Severity[f[1].upper()] >= Severity.HIGH
-                    for f in findings
-                )
-                warned = blocked or any(Severity[f[1].upper()] >= Severity.MEDIUM for f in findings)
-                return blocked, warned
-            return False, False
-
-        def score(h, thresholds):
-            blocked_b = collections.Counter()
-            warned_b = collections.Counter()
-            caught = n = 0
-            for r, y, s in zip(M[h], Y[h], prob[h], strict=True):
-                block, warn = thresholds[area(r)]
-                blocked, warned = outcome(r, s, block, warn)
-                if y:
-                    n += 1
-                    caught += blocked
-                    continue
-                eco = r["file"].split("/")[0]
-                blocked_b[eco] += blocked
-                warned_b[eco] += warned
-            ecos = total[h]
-            block_rate = {e: 100 * blocked_b[e] * scale.get(e, 1.0) / max(ecos[e], 1) for e in ecos}
-            quiet = {e: 100 - 100 * warned_b[e] * scale.get(e, 1.0) / max(ecos[e], 1) for e in ecos}
-            return caught, max(n, 1), block_rate, quiet
-
-        eco_area = {}
-        for r, _, _ in data:
-            eco_area.setdefault(r["file"].split("/")[0], area(r))
-        areas = tuple(sorted({area(r) for r, _, _ in data}))
-        thresholds = dict.fromkeys(areas, (0.99, 0.99))
-        for x in areas:
-            mine = {e for e, ar in eco_area.items() if ar == x}
-
-            def worst_block(t, x=x, mine=mine):
-                trial = {**thresholds, x: (t, t)}
-                rates = score("work", trial)[2]
-                return max((rates.get(e, 0.0) for e in mine), default=0.0)
-
-            block = next(
-                (t for t in np.linspace(0.02, 0.99, 98) if worst_block(t) <= a.block_share), 0.99
-            )
-
-            def worst_quiet(w, x=x, mine=mine, block=block):
-                trial = {**thresholds, x: (block, w)}
-                rates = score("work", trial)[3]
-                return min((rates.get(e, 100.0) for e in mine), default=100.0)
-
-            warn = next(
-                (w for w in np.linspace(0.001, block, 200) if worst_quiet(w) >= a.quiet), block
-            )
-            thresholds[x] = (float(block), float(warn))
-        block, warn = thresholds.get("package", thresholds.get("npm", (0.99, 0.99)))
-        if a.dump is not None:
-            with a.dump.open("w", encoding="utf-8") as handle:
-                for h in ("work", "holdout"):
-                    for r, y, p_ in zip(M[h], Y[h], prob[h], strict=True):
-                        b, w = thresholds[area(r)]
-                        handle.write(
-                            json.dumps(
-                                {
-                                    "file": r["file"],
-                                    "half": h,
-                                    "y": int(y),
-                                    "area": area(r),
-                                    "score": round(float(p_), 4),
-                                    "blocked": outcome(r, p_, b, w)[0],
-                                    "rules": r["verdict"]["rules"],
-                                }
-                            )
-                            + "\n"
-                        )
-        report = {}
-        for h in ("work", "holdout"):
-            caught, n, block_rate, quiet = score(h, thresholds)
-            z = 1.96
-            p_hat = caught / n
-            centre = p_hat + z * z / (2 * n)
-            margin = z * math.sqrt(p_hat * (1 - p_hat) / n + z * z / (4 * n * n))
-            report[h] = {
-                "malware": f"{caught}/{n}",
-                "recall": round(100 * p_hat, 2),
-                "recall_ci95_low": round(100 * (centre - margin) / (1 + z * z / n), 2),
-                "ecosystems_block_ok": sum(v <= 0.5 for v in block_rate.values()),
-                "ecosystems_quiet_ok": sum(v >= 98 for v in quiet.values()),
-                "ecosystems": len(block_rate),
-                "worst_block": sorted(block_rate.items(), key=lambda x: -x[1])[:5],
-                "worst_quiet": sorted(quiet.items(), key=lambda x: x[1])[:5],
-                "recall_by_area": cls.recall_by_area(
-                    M[h],
-                    Y[h],
-                    [
-                        outcome(r, p_, *thresholds[area(r)])[0]
-                        for r, p_ in zip(M[h], prob[h], strict=True)
-                    ],
-                ),
+            touched = {r["eco"] for r in work if r["area"] == area and not r["label"]}
+            # What each ecosystem already blocks without this area's score. One within budget must
+            # stay within it; one already over (an add-only area's gate) may take at most a sliver
+            # more, so a failing ecosystem neither pins every other line nor gets worse.
+            base = benign_rates(work, {**lines, area: 1.01}, "work")
+            cap = {
+                e: max(a.budget / 100 * n, k + 0.0005 * n)
+                for e, (k, n) in base.items()
+                if e in touched
             }
-        print(
-            json.dumps(
-                {"thresholds": thresholds, "floor": floor, **report}, indent=1, default=float
-            )
+
+            def ok(t, area=area, cap=cap) -> bool:
+                rates = benign_rates(work, {**lines, area: t}, "work")
+                return all(rates[e][0] <= c for e, c in cap.items())
+
+            lo, hi = 0, len(grid) - 1
+            while lo < hi:  # the lowest line within budget; blocking only grows as it falls
+                mid = (lo + hi) // 2
+                if ok(float(grid[mid])):
+                    hi = mid
+                else:
+                    lo = mid + 1
+            lines[area] = float(grid[lo])
+        # A package whose kind the scan cannot tell answers to the strictest package line.
+        lines[Verdict.FALLBACK] = max(
+            lines[x]
+            for x in ("npm", "pypi", "openvsx", Verdict.FALLBACK)
+            if x in lines and x not in a.add_only
         )
+
+        fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
+        xt = matrix(test)
+        for x, clf in fitted.items():
+            idx = [
+                i for i, r in enumerate(test) if (r["area"] if r["area"] in fitted else "*") == x
+            ]
+            if idx:
+                for i, s_ in zip(idx, clf.predict_proba(xt[idx])[:, 1], strict=True):
+                    test[i]["score"] = float(s_)
+        exported = cls.export(fitted["*"], names)
+        if a.separate:
+            exported["by_area"] = {x: cls.export(fitted[x], names) for x in a.separate}
+        # The exported trees must score exactly what was measured.
+        drift = max(
+            (
+                abs(
+                    VerdictModel.score(exported.get("by_area", {}).get(r["area"], exported), r["f"])
+                    - r["score"]
+                )
+                for r in test[:500]
+            ),
+            default=0,
+        )
+        print(f"exported trees against sklearn, largest difference: {drift:.2e}")
+        if drift >= 1e-4:
+            raise SystemExit(f"exported trees do not score what was measured: {drift}")
+
+        def ci_low(k: int, n: int) -> float:
+            if not n:
+                return 0.0
+            z, ph = 1.96, k / n
+            centre = ph + z * z / (2 * n)
+            margin = z * ((ph * (1 - ph) / n + z * z / (4 * n * n)) ** 0.5)
+            return round(100 * (centre - margin) / (1 + z * z / n), 2)
+
+        report: dict[str, Any] = {
+            "split": a.split,
+            "leave_out": a.leave_out,
+            "budget_percent": a.budget,
+            "lines": lines,
+            "floor": floor,
+            "add_only": a.add_only,
+            "benign_blocked": {},
+            "malware_caught": {},
+        }
+        pending: set[str] = set()
+        fixtures: set[str] = set()
+        for path in a.pending:
+            for r in cls.rows_any(path):
+                verdict = r.get("proposed") or r.get("verdict")
+                if verdict in EXCLUDED and r.get("file"):
+                    pending.add(r["file"])
+                if verdict == "malicious-fixture" and r.get("file"):
+                    fixtures.add(r["file"])
+        relabelled = collections.Counter(
+            r["eco"]
+            for r in test
+            if not r["label"] and r["file"].split("/", 1)[-1] in fixtures and blocked(r, lines)
+        )
+        dropped = collections.Counter(
+            r["eco"] for r in test if not r["label"] and r["file"].split("/", 1)[-1] in fixtures
+        )
+        for eco, (k, n) in sorted(benign_rates(test, lines, "holdout").items()):
+            report["benign_blocked"][eco] = {
+                "blocked": k,
+                "units": n,
+                "percent": round(100 * k / n, 3),
+                "within_bar": k / n <= 0.005,
+            }
+            if dropped[eco]:
+                k2, n2 = k - relabelled[eco], n - dropped[eco]
+                report["benign_blocked"][eco]["percent_if_pending_accepted"] = round(
+                    100 * k2 / n2, 3
+                )
+        by: dict[str, list[int]] = collections.defaultdict(lambda: [0, 0, 0, 0, 0])
+        for r in test:
+            if r["label"]:
+                for key in (r["source"], "ALL"):
+                    by[key][0] += 1
+                    by[key][1] += blocked(r, lines)
+                    by[key][2] += blocked(r, lines, intel=True)
+                    if r["file"] not in pending:
+                        by[key][3] += 1
+                        by[key][4] += blocked(r, lines)
+        for key, (n, k, ki, n2, k2) in sorted(by.items()):
+            report["malware_caught"][key] = {
+                "samples": n,
+                "content_only": round(100 * k / n, 2),
+                "content_only_ci95_low": ci_low(k, n),
+                "with_intel": round(100 * ki / n, 2),
+                "content_only_if_pending_accepted": round(100 * k2 / max(n2, 1), 2),
+                "samples_if_pending_accepted": n2,
+            }
+        print(json.dumps(report, indent=1))
+        if a.dump:
+            with a.dump.open("w", encoding="utf-8") as handle:
+                for r in work + test:
+                    handle.write(
+                        json.dumps(
+                            {
+                                k: r.get(k)
+                                for k in ("file", "half", "eco", "area", "label", "score", "kept")
+                            }
+                            | {"has_code": r["has_code"]}
+                        )
+                        + "\n"
+                    )
+        if a.attribution:
+            with a.attribution.open("w", encoding="utf-8") as handle:
+                for r in test:
+                    b = blocked(r, lines)
+                    if bool(r["label"]) == b:
+                        continue
+                    handle.write(
+                        json.dumps(
+                            {
+                                "file": r["file"],
+                                "label": "malware" if r["label"] else "benign",
+                                "outcome": "missed" if r["label"] else "blocked",
+                                "eco": r["eco"],
+                                "area": r["area"],
+                                "score": round(r["score"], 4),
+                                "line": lines.get(r["area"], lines[Verdict.FALLBACK]),
+                                "by_floor": r["kept"],
+                                "rules": sorted(
+                                    (k[2:] for k in r["f"] if k.startswith("r:") and "#" not in k),
+                                    key=lambda k: -r["f"]["r:" + k],
+                                )[:8],
+                            }
+                        )
+                        + "\n"
+                    )
         if a.out:
-            model = cls.export(
-                clf,
-                vocab,
-                float(block),
-                float(warn),
-                {
-                    "benign": len(Y["work"]) - sum(Y["work"]),
-                    "malware": sum(Y["work"]),
+            body = {**exported, "areas": lines, "floor": floor, "add_only": sorted(a.add_only)}
+            digest = hashlib.sha256(
+                json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            body["version"] = f"{datetime.date.today().isoformat()}-{digest[:12]}"
+            body["manifest"] = {
+                "digest": digest,
+                "trained_on": {
                     "half": "work",
+                    "benign": int(len(yw) - yw.sum()),
+                    "malware": int(yw.sum()),
+                    "inputs": [str(a.benign), str(a.malware), *a.labelled],
                 },
-            )
-            model["floor"] = floor
-            model["thresholds"]["areas"] = {
-                x: {"block": b, "warn": w} for x, (b, w) in thresholds.items()
+                "budget_percent": a.budget,
+                "measured_holdout": {
+                    "benign_blocked": report["benign_blocked"],
+                    "malware_caught": report["malware_caught"],
+                },
             }
             with gzip.open(a.out, "wt", encoding="utf-8") as handle:
-                json.dump(model, handle, separators=(",", ":"))
+                json.dump(body, handle, separators=(",", ":"))
+        if a.report:
+            a.report.write_text(json.dumps(report, indent=1), encoding="utf-8")
 
 
 if __name__ == "__main__":

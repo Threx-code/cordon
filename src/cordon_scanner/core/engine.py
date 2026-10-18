@@ -3924,7 +3924,7 @@ class Engine:
         findings: list[Finding], units: Sequence[FileUnit]
     ) -> tuple[list[Finding], dict[str, Any]]:
         """The package verdict over everything this scan found (`core/verdict.py`)."""
-        from cordon_scanner.core.verdict import Verdict, VerdictFeatures
+        from cordon_scanner.core.verdict import Verdict
 
         paths_sizes = [(u.path, u.content.size) for u in units]
         manifests = {
@@ -3939,17 +3939,11 @@ class Engine:
         ]
         graded, verdict = Verdict.decide(list(findings), paths_sizes, manifests, sources)
         score, block = verdict.get("score"), verdict.get("block")
-        if (
-            score is not None
-            and block is not None
-            and score >= block
-            and not any(
-                VerdictFeatures.is_code(f.rule_id) and f.severity >= Severity.HIGH for f in graded
-            )
-        ):
-            # Every finding below the line and the package over it: the combination is the
-            # evidence. MalSkillBench's malicious skills were flagged 98.3% of the time and blocked
-            # 80.1%, because no one of their findings was strong alone (review 98).
+        if score is not None and block is not None and score >= block:
+            # The package over its line blocks as a package, whether or not one finding would
+            # alone: the combination is the evidence. MalSkillBench's malicious skills were
+            # flagged 98.3% of the time and blocked 80.1%, because no one of their findings was
+            # strong alone (review 98).
             rules = sorted(verdict.get("rules", {}), key=lambda r: -verdict["rules"][r])
             graded.append(
                 replace(
@@ -3959,8 +3953,8 @@ class Engine:
                         message=(
                             f"Taken together, this package's findings ({', '.join(rules[:5])}"
                             f"{', ...' if len(rules) > 5 else ''}) and what kind of package it "
-                            f"is score {score:.2f} against a blocking threshold of {block:.2f}. "
-                            "None of them blocks alone; the combination is what malicious "
+                            f"is score {score:.2f} against the blocking line of {block:.2f} for "
+                            f"{verdict.get('area', 'packages')}: the combination is what malicious "
                             "packages in the training half looked like."
                         ),
                         remediation="Read each finding listed. Do not install until explained.",

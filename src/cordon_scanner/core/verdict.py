@@ -1,28 +1,29 @@
-"""One decision for a scanned package: block, warn or record -- learned, with a floor it cannot move.
+"""One decision for a scanned package: block or hold -- learned, with a floor it cannot move.
 
 Each rule reports what it sees in one file. Whether a package should fail a build is a different
 question, and answering it rule by rule meant any one of 1,400 rules could block alone: measured on
-the 234,509-unit benign corpus, single findings blocked 1-6% of every ecosystem while a lot of real
-malware also showed only one (review 98). A requirement of two signals cut false blocks and lost a
-fifth of the malware. What separates the two is the combination -- which rules, how strong, in what
-kind of package -- and that is learned, on one half of the data and measured on the other.
+the 234,509-unit benign corpus, single findings blocked 1-7% of most ecosystems while a lot of real
+malware also showed only one (review 98). What separates the two is the combination -- which rules,
+how strong, where they fired, in what kind of package -- and that is learned on one half of the
+data and measured on the other.
 
 ```
-  findings ──► per code rule, its strongest severity ┐
-  package  ──► size, files, docs/tests/types, hook,   ├─► monotone trees ─► p(malicious)
-              dependencies, version shape            ┘        (`data/verdict.json.gz`)
-       │
-       ▼
-  floor: a MALWARE.* finding at high or confirmed confidence is never re-graded
-  p >= block  -> what trips the gate still blocks; with no such finding, the verdict itself blocks
-  p <  block  -> suspicious findings that would block are held at MEDIUM (a warning)
-  p <  warn   -> code findings are recorded at LOW
+  findings ──► per rule / family / place / category: strongest severity and count ┐
+  package  ──► size, files, hook, dependencies, what it claims and can do          ├─► trees
+              (not the cosmetic facts an attacker adds for free: README, licence,  ┘     │
+               tests, changelog, repository, description)                     p(malicious)
+       │                                                                                 │
+       ▼                                                                                 ▼
+  floor: known-malware intel, and MALWARE.* rules that never fired on a benign unit,
+         are never re-graded
+  p >= block of its area (skill, MCP server, npm, PyPI, Open VSX, any other package)
+         -> what trips the gate still blocks, and the verdict itself blocks
+  p <  block -> every other code finding is held at MEDIUM, suspicious (a warning)
 ```
 
-The trees are monotone in every finding: a stronger or an extra finding never lowers the score. The
-package context can lower it -- a documented, tested library is not what malware looks like -- which
-is exactly why the floor exists: context an attacker controls never overrules a finding that is
-malicious on its own.
+The trees are monotone in every finding: a stronger or an extra finding never lowers the score.
+Each area's line is set so its own benign units are blocked at most at the shipped share, counted
+against every unit of that ecosystem in the corpus (`bench/model/verdict_train.py`).
 
 Without the model file nothing is re-graded; the features are still computed and reported, which is
 how the training data is made by the same code that scores it.
@@ -30,6 +31,7 @@ how the training data is made by the same code that scores it.
 
 from __future__ import annotations
 
+import array
 import functools
 import gzip
 import json
@@ -42,7 +44,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.core.models import Category, Confidence, Finding, Severity
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
 MODEL_PATH: Final = Path(__file__).resolve().parent.parent / "detect" / "data" / "verdict.json.gz"
 
@@ -69,30 +71,50 @@ _INFRA: Final = ("SUSPECT.IAC.", "SUSPECT.K8S.", "SUSPECT.CFN.")
 class VerdictFeatures:
     """What the model reads: the findings, and the package they are in."""
 
-    PACKAGE: ClassVar[tuple[str, ...]] = (
-        "n_files",
-        "log_bytes",
-        "n_code",
-        "code_share",
-        "max_code_share",
-        "has_readme",
-        "has_license",
-        "has_types",
-        "has_tests",
-        "has_changelog",
-        "has_map",
-        "min_files",
-        "hook",
-        "n_deps",
-        "version_odd",
-        "name_digits",
-        "skill",
-        "agent_text",
+    #: Package facts an attacker adds for nothing -- a README, a licence, tests, a changelog, a
+    #: repository link, a description, a plain version. Measured in review 98: a model that read
+    #: them lost 2.4 points of malware when each sample was given them. They are reported, never
+    #: scored, so they can neither block nor clear a package.
+    COSMETIC: ClassVar[frozenset[str]] = frozenset(
+        {
+            "has_readme",
+            "has_license",
+            "has_tests",
+            "has_changelog",
+            "has_types",
+            "has_repo",
+            "desc_len",
+            "min_files",
+            "version_odd",
+            "name_digits",
+        }
     )
+    #: Where a finding was made: an agent skill's instructions, other prose, a manifest, code.
+    _PLACES: ClassVar[tuple[tuple[str, tuple[str, ...]], ...]] = (
+        ("skilltext", ("skill.md",)),
+        ("text", (".md", ".mdc", ".txt", ".rst")),
+        ("manifest", ("package.json", "setup.py", "pyproject.toml", ".gemspec", "cargo.toml")),
+    )
+    #: The verdict's own finding, never its own evidence.
+    OWN_RULE: ClassVar[str] = "SUSPECT.VERDICT.MODEL.001"
+
+    #: Findings that are intelligence about a named package, not a reading of its content: a
+    #: known-malicious release, an extension Microsoft removed from its Marketplace. They always
+    #: stand, and they are never the model's evidence -- the verdict is about content.
+    INTEL: ClassVar[tuple[str, ...]] = (".KNOWN", ".EXTENSION.REMOVED.")
+
+    @staticmethod
+    def is_intel(rule: str) -> bool:
+        return any(marker in rule for marker in VerdictFeatures.INTEL)
 
     @staticmethod
     def is_code(rule: str) -> bool:
-        return rule.startswith(("MALWARE.", "SUSPECT.")) and not rule.startswith(_INFRA)
+        return (
+            rule.startswith(("MALWARE.", "SUSPECT."))
+            and not rule.startswith(_INFRA)
+            and not VerdictFeatures.is_intel(rule)
+            and rule != VerdictFeatures.OWN_RULE
+        )
 
     @staticmethod
     def rules(findings: Sequence[Finding]) -> dict[str, int]:
@@ -101,9 +123,48 @@ class VerdictFeatures:
         best: dict[str, int] = {}
         for finding in findings:
             rule = finding.rule_id
-            if VerdictFeatures.is_code(rule) and ".KNOWN" not in rule:
+            if VerdictFeatures.is_code(rule):
                 best[rule] = max(best.get(rule, 0), int(finding.severity))
         return best
+
+    @staticmethod
+    def place(path: str) -> str:
+        name = path.rpartition("!")[2].lower()
+        for place, suffixes in VerdictFeatures._PLACES:
+            if name.endswith(suffixes):
+                return place
+        return "code"
+
+    @staticmethod
+    def evidence(
+        findings: Iterable[tuple[str, int, int, str, str]], package: dict[str, float]
+    ) -> dict[str, float]:
+        """What the model scores, from (rule, severity, confidence, category, path) per finding.
+
+        For each rule, rule family, place and category: the strongest severity and how many times.
+        Every one only rises with another or a stronger finding, which is what lets the trees be
+        monotone in them. Then the package facts that are not cosmetic.
+        """
+        out: dict[str, float] = {}
+        for rule, severity, confidence, category, path in findings:
+            if not VerdictFeatures.is_code(rule):
+                continue
+            family = ".".join(rule.split(".")[:2])
+            for key in (
+                f"r:{rule}",
+                f"fam:{family}",
+                f"w:{VerdictFeatures.place(path)}",
+                f"cat:{category}",
+            ):
+                out[key] = max(out.get(key, 0.0), float(severity))
+                out[key + "#n"] = out.get(key + "#n", 0.0) + 1.0
+            out["max"] = max(out.get("max", 0.0), float(severity))
+            if severity >= int(Severity.HIGH) and confidence >= int(Confidence.MEDIUM):
+                out["gate"] = out.get("gate", 0.0) + 1.0
+        for name, value in package.items():
+            if name not in VerdictFeatures.COSMETIC and isinstance(value, int | float):
+                out[f"pkg:{name}"] = float(value)
+        return out
 
     #: What a package says it is, from its name, description and keywords.
     PURPOSE: ClassVar[dict[str, re.Pattern[str]]] = {
@@ -210,6 +271,7 @@ class VerdictFeatures:
                     bool(re.search(r"\d{2,}", str(manifest.get("name", ""))))
                 )
                 VerdictFeatures._purpose(features, manifest)
+                VerdictFeatures._dependencies_used(features, manifest, sources)
                 break
             if base.endswith("setup.py"):
                 features["hook"] = max(
@@ -240,6 +302,46 @@ class VerdictFeatures:
         features["desc_len"] = float(min(len(description), 400))
         features["has_repo"] = float(bool(manifest.get("repository")))
 
+    #: A module name in quotes: what `require`, `import` and a bundler's map name a dependency by.
+    _QUOTED_MODULE: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"[\"'`]((?:@[\w.-]{1,80}/)?[\w.-]{1,120})(?:/[^\"'`\s]{0,200})?[\"'`]"
+    )
+
+    @staticmethod
+    def _dependencies_used(
+        features: dict[str, float], manifest: dict[str, Any], sources: Sequence[tuple[str, bytes]]
+    ) -> None:
+        """Runtime dependencies the package's own code never names, and those that are not
+        established packages either.
+
+        A compromised release can carry nothing but one new dependency whose install hook is the
+        payload (axios 1.14.1, March 2026; the PhantomRaven packages): the package's own content
+        is clean, and the one trace is a dependency nothing in it uses. Type packages are left out:
+        they are named by no code.
+        """
+        from cordon_scanner.intel.real import RealPackages
+
+        deps = manifest.get("dependencies") or {}
+        if not isinstance(deps, dict):
+            deps = {}
+        wanted = {str(d) for d in deps if not str(d).startswith("@types/")}
+        named: set[str] = set()
+        scripts = manifest.get("scripts") or {}
+        for value in scripts.values() if isinstance(scripts, dict) else ():
+            named.update(w for w in re.split(r"[\s;&|()]+", str(value)) if w in wanted)
+        for path, data in sources:
+            if "node_modules/" in path or len(named) == len(wanted):
+                continue
+            for m in VerdictFeatures._QUOTED_MODULE.finditer(data[:2_000_000]):
+                name = m.group(1).decode("utf-8", "replace")
+                if name in wanted:
+                    named.add(name)
+        unused = wanted - named
+        known = RealPackages.real_packages("npm")
+        features["deps_unused"] = float(min(len(unused), 20))
+        features["deps_unused_unknown"] = float(min(sum(d not in known for d in unused), 20))
+        features["deps_unknown"] = float(min(sum(d not in known for d in wanted), 20))
+
     @staticmethod
     def _ability(features: dict[str, float], sources: Sequence[tuple[str, bytes]]) -> None:
         """What the package's own code can do, and the mismatch with what it claims."""
@@ -266,30 +368,30 @@ class VerdictFeatures:
 
 
 class VerdictModel:
-    """Gradient-boosted trees shipped as data, evaluated here without a dependency."""
+    """Gradient-boosted trees shipped as data, evaluated here without a dependency.
+
+    `detect/data/verdict.json.gz` (`bench/model/verdict_train.py`): the feature names in order, the
+    trees, trees of its own for an area that needs them (`by_area`), a line per area, the floor,
+    and a manifest of what it was trained and measured on.
+    """
+
+    FORMAT: ClassVar[int] = 2
 
     @staticmethod
     @functools.cache
     def load(path: Path = MODEL_PATH) -> dict[str, Any] | None:
         try:
             with gzip.open(path, "rt", encoding="utf-8") as handle:
-                return json.load(handle)
+                model = json.load(handle)
         except OSError:
             return None
+        return model if model.get("format") == VerdictModel.FORMAT else None
 
     @staticmethod
-    def vector(
-        model: dict[str, Any], rules: dict[str, int], package: dict[str, float]
-    ) -> list[float]:
-        vocab: list[str] = model["vocab"]
-        v = [float(rules.get(rule, 0)) for rule in vocab]
-        v += [float(package.get(name, 0.0)) for name in VerdictFeatures.PACKAGE]
-        families = {r.split(".")[1] for r, s in rules.items() if s >= int(Severity.MEDIUM)}
-        v += [float(len(families)), float(max(rules.values(), default=0)), 1.0]
-        return v
-
-    @staticmethod
-    def score(model: dict[str, Any], vector: Sequence[float]) -> float:
+    def score(model: dict[str, Any], features: dict[str, float]) -> float:
+        # In single precision, as the trees were fitted: a value near a split would otherwise fall
+        # on the other side of it.
+        vector = array.array("f", [features.get(name, 0.0) for name in model["features"]])
         raw = float(model["baseline"])
         for tree in model["trees"]:
             node = 0
@@ -311,38 +413,52 @@ class Verdict:
     FLOOR_CONFIDENCE: ClassVar[frozenset[Confidence]] = frozenset(
         {Confidence.HIGH, Confidence.CONFIRMED}
     )
-    RULE: ClassVar[str] = "SUSPECT.VERDICT.MODEL.001"
+    RULE: ClassVar[str] = VerdictFeatures.OWN_RULE
+    #: The line every package without one of its own answers to: the strictest of them all.
+    FALLBACK: ClassVar[str] = "package"
+    _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
+    _MCP: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"@modelcontextprotocol/sdk|[\"']mcp(?:\[cli\])?[>=<~\"' ]|fastmcp"
+    )
 
     @staticmethod
-    def floored(finding: Finding, floor: frozenset[str] | None = None) -> bool:
-        """Malicious on its own: never re-graded by anything the package says about itself.
-
-        With a model, the floor is the rules it ships as never having fired on a benign unit of
-        its training half (`bench/model/verdict_train.py`); a rule that did is the model's to weigh
-        until its own precision is fixed. Without one, every MALWARE.* finding at high confidence.
-        """
-        if ".KNOWN" in finding.rule_id or finding.confidence not in Verdict.FLOOR_CONFIDENCE:
-            return False
-        if floor is not None:
-            return finding.rule_id in floor
-        return finding.rule_id.startswith("MALWARE.")
+    def floored(finding: Finding, floor: frozenset[str]) -> bool:
+        """Never re-graded: anything that is not a code finding, known-malware intel, and the rules
+        the model ships as malicious on their own (they fired on no benign unit of its training
+        half, `bench/model/verdict_train.py`)."""
+        if not VerdictFeatures.is_code(finding.rule_id):
+            return True
+        return finding.rule_id in floor and finding.confidence in Verdict.FLOOR_CONFIDENCE
 
     @staticmethod
-    def area(package: dict[str, float], manifests: dict[str, bytes], rules: dict[str, int]) -> str:
-        """Which thresholds a package answers to: an agent skill, an MCP server, or a package.
+    def area(
+        names: Sequence[str],
+        manifests: dict[str, bytes],
+        package: dict[str, float],
+        rules: dict[str, int],
+    ) -> str:
+        """Which line a package answers to: an agent skill, an MCP server, an npm, PyPI or Open VSX
+        package by its archive layout, or any other package.
 
-        Benign skills, MCP servers and libraries carry different findings by nature -- a skill's
-        instructions address the agent, a server's handlers run commands -- so each kind has its
-        own line, set on its own benign sets (`bench/model/verdict_train.py`).
+        Benign skills, MCP servers and libraries of each registry carry different findings by
+        nature, so each has its own line, set on its own benign units. Anything not recognised
+        answers to the strictest line, so a wrong guess can only make the verdict more cautious.
         """
-        if package.get("skill"):
-            return "skill"
         if any(rule.startswith("SUSPECT.MCP.") for rule in rules) or any(
-            re.search(rb"@modelcontextprotocol/sdk|[\"']mcp(?:\[cli\])?[>=<~\"' ]|fastmcp", data)
-            for data in manifests.values()
+            Verdict._MCP.search(data) for data in manifests.values()
         ):
             return "mcp"
-        return "package"
+        # A registry package that also ships a skill is still judged as a package of its registry.
+        inner = [n.rsplit("!", 1)[-1] for n in names]
+        if any(n in ("extension.vsixmanifest", "extension/package.json") for n in inner):
+            return "openvsx"
+        if "package/package.json" in inner:
+            return "npm"
+        if any(Verdict._PYPI.match(n) for n in inner):
+            return "pypi"
+        if package.get("skill"):
+            return "skill"
+        return Verdict.FALLBACK
 
     @staticmethod
     def decide(
@@ -354,47 +470,41 @@ class Verdict:
         """Findings re-graded by the package verdict, and the verdict to report."""
         rules = VerdictFeatures.rules(findings)
         package = VerdictFeatures.package(paths_sizes, manifests, sources)
-        summary: dict[str, Any] = {"rules": rules, "package": package}
+        area = Verdict.area([p for p, _ in paths_sizes], manifests, package, rules)
+        summary: dict[str, Any] = {"rules": rules, "package": package, "area": area}
         model = VerdictModel.load()
         if model is None or not rules:
             return findings, summary
-        score = VerdictModel.score(model, VerdictModel.vector(model, rules, package))
-        area = Verdict.area(package, manifests, rules)
-        per_area = model["thresholds"].get("areas", {}).get(area)
-        block, warn = (
-            (float(per_area["block"]), float(per_area["warn"]))
-            if per_area
-            else (float(model["thresholds"]["block"]), float(model["thresholds"]["warn"]))
+        features = VerdictFeatures.evidence(
+            (
+                (f.rule_id, int(f.severity), int(f.confidence), str(f.category), f.location.path)
+                for f in findings
+            ),
+            package,
         )
-        summary.update(
-            score=round(score, 4),
-            block=block,
-            warn=warn,
-            area=area,
-            model=model.get("version", ""),
-        )
-        floor = frozenset(model["floor"]) if "floor" in model else None
+        # An area with trees of its own (agent skills read nothing like libraries) is scored by them.
+        score = VerdictModel.score(model.get("by_area", {}).get(area, model), features)
+        areas = model["areas"]
+        block = float(areas.get(area, areas[Verdict.FALLBACK]))
+        summary.update(score=round(score, 4), block=block, model=model.get("version", ""))
+        # In an area the model does not yet separate as well as the findings alone, it may add a
+        # block but never lift one: nothing that blocked without the verdict passes with it.
+        if score >= block or area in model.get("add_only", ()):
+            return findings, summary
+        floor = frozenset(model["floor"])
         out: list[Finding] = []
         for finding in findings:
-            code = VerdictFeatures.is_code(finding.rule_id) and ".KNOWN" not in finding.rule_id
-            if not code or Verdict.floored(finding, floor) or score >= block:
-                out.append(finding)
-                continue
-            if score < warn and finding.severity > Severity.LOW:
+            if not Verdict.floored(finding, floor) and (
+                finding.severity > Severity.MEDIUM or finding.category is Category.MALICIOUS
+            ):
                 finding = replace(
                     finding,
-                    severity=Severity.LOW,
+                    severity=min(finding.severity, Severity.MEDIUM),
+                    category=Category.SUSPICIOUS,
                     message=finding.message
-                    + f" Recorded by the package verdict: {score:.2f} against a warning threshold "
-                    f"of {warn:.2f}, from every finding in the package and what kind of package it is.",
-                )
-            elif finding.severity > Severity.MEDIUM and finding.category is not Category.MALICIOUS:
-                finding = replace(
-                    finding,
-                    severity=Severity.MEDIUM,
-                    message=finding.message
-                    + f" Held at MEDIUM by the package verdict: {score:.2f} against a blocking "
-                    f"threshold of {block:.2f}.",
+                    + f" Held as a warning by the package verdict: {score:.2f} against a blocking "
+                    f"line of {block:.2f} for {area}, from every finding in the package and what "
+                    "kind of package it is.",
                 )
             out.append(finding)
         return out, summary
