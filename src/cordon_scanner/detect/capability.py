@@ -1587,6 +1587,24 @@ class CapabilityDetector(BaseDetector):
             and Engine._MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
         )
 
+    @staticmethod
+    def _tool_runs_nothing_downloaded(unit: FileUnit, ctx: ScanContext) -> bool:
+        """An agent's tool script that fetches and runs, but never runs what it fetched.
+
+        A skill's helper is run by the agent on request, and `curl "$api" | jq` beside
+        `python3 -c` is what such a script does. Install-time code keeps the co-occurrence
+        rule: there the pair is the attack. See `detect/download_flow.py` for what is followed
+        and the measurement; a language it does not read keeps the co-occurrence verdict.
+        """
+        from cordon_scanner.detect.download_flow import DownloadFlow
+
+        content = unit.content
+        if content.path in ctx.consumer_install_paths or not CapabilityDetector._agent_run(
+            content, ctx
+        ):
+            return False
+        return DownloadFlow.runs_download(content.text, unit.language) == []
+
     ON_REQUEST_REASONS = (
         "a script a person runs, not code that runs on its own",
         "function bodies that run only when called",
@@ -4116,6 +4134,13 @@ class CapabilityDetector(BaseDetector):
             in_hook = False
         if rule.id in self.CONTEXT_FREE:
             in_hook = False
+        no_download_runs = rule.id in self.VERIFIABLE_DROPPERS and (
+            in_hook and CapabilityDetector._tool_runs_nothing_downloaded(unit, ctx)
+        )
+        if no_download_runs and rule.id == self.DROPPER_RULE:
+            # An agent's tool that never runs what it fetched is not escalated as an install-time
+            # dropper; `SUSPECT.DROPPER.001` reports the pair below the gate.
+            in_hook = False
         if verified and rule.id == self.DROPPER_RULE:
             # Not escalated as an install-time dropper either: the hook escalation would put the
             # span straight back at CRITICAL. The ceiling below says why it is still reported.
@@ -4180,6 +4205,12 @@ class CapabilityDetector(BaseDetector):
             # fetches and starts its own tools (Codespaces, APKLab, DOSBox) is not a compromised
             # host. `SUSPECT.DROPPER.001` reports the same span, below the gate. A download
             # written to an executable and started keeps this rule: that is the malicious shape.
+            return None
+
+        if no_download_runs and compiled.rule.id == "MALWARE.DROPPER.001":
+            # Withdrawn for the reason above: no byte the script downloads is executed, made
+            # executable, or evaluated (`detect/download_flow.py`). `SUSPECT.DROPPER.001` reports
+            # the same pair below the gate, and every other rule over the file still applies.
             return None
 
         if (
@@ -4436,6 +4467,12 @@ class CapabilityDetector(BaseDetector):
                 # to an executable and started, as one construct, is not lowered: that is the
                 # shape the malicious extensions use, `.bat` droppers included.
                 ceilinged = "an editor extension fetching and starting its own tools"
+                ceiling = Severity.MEDIUM
+            elif compiled.rule.id == self.DROPPER_RULE and no_download_runs:
+                # An agent's tool that never runs what it fetched (`detect/download_flow.py`):
+                # reported, below the gate. Running, evaluating or making executable anything
+                # downloaded is not lowered.
+                ceilinged = "an agent's tool that never runs what it downloads"
                 ceiling = Severity.MEDIUM
             elif content.path.rpartition("!")[2].endswith(".map"):
                 # A source map carries the original sources as JSON strings for a debugger to
