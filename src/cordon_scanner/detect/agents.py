@@ -1146,6 +1146,18 @@ RULES: Final = {
             (ref.VSCODE_REMOVED_EXTENSIONS,),
         ),
         AgentRules._rule(
+            "SUSPECT.EXTENSION.HIDDEN_NAME.001",
+            "An editor extension's display name carries invisible characters",
+            Category.SUSPICIOUS,
+            Severity.MEDIUM,
+            Confidence.MEDIUM,
+            "The name the editor and the Marketplace show for this extension contains characters "
+            "that render as nothing, so it reads the same as a name it is not -- the way an "
+            "impersonating extension sits beside the one it imitates in a search.",
+            "Compare the publisher with the extension you meant to install.",
+            (ref.VSCODE_REMOVED_EXTENSIONS,),
+        ),
+        AgentRules._rule(
             "OPERATIONAL.MCP.UNRESOLVED",
             "An MCP server package was not examined",
             Category.OPERATIONAL,
@@ -3132,6 +3144,57 @@ class AgentChainDetector(BaseDetector):
                 # npm or PyPI release; judging it here too would report one package twice.
                 osv=False,
             )
+            yield from self._impersonation(manifest, unit, ctx)
+
+    def _impersonation(
+        self, manifest: dict[str, Any], unit: FileUnit, ctx: ScanContext
+    ) -> Iterator[Finding]:
+        """An extension presenting itself as a popular one under another identity (review 98: the
+        misses an id comparison cannot see, because the impersonator changed its id as well).
+
+        A publisher spelled with look-alike characters (`juanbIanco` for `juanblanco`); a display
+        name that, invisible characters removed, is a popular extension's name under another
+        publisher; an entry bundle named after a popular extension. And separately: a display
+        name carrying invisible characters, which makes two names that read the same differ.
+        """
+        from cordon_scanner.intel import datafile
+
+        identifier = f"{manifest['publisher']}.{manifest['name']}".lower()
+        display = str(manifest.get("displayName") or "")
+        visible = ExtensionNames.INVISIBLE.sub("", display)
+        if visible != display and visible.strip():
+            yield self._at_text(
+                "SUSPECT.EXTENSION.HIDDEN_NAME.001",
+                unit,
+                ctx,
+                unit.content.text,
+                "displayName",
+                message=f"This extension's display name, read as {visible.strip()!r}, carries "
+                f"{len(display) - len(visible)} invisible character(s): it reads the same as a "
+                "name it is not.",
+            )
+        intel = datafile.IntelDataFile.newest("vscode-extensions.json")
+        popular = set(intel.get("popular") or ())
+        if not popular or identifier in popular:
+            return
+        imitated = ExtensionNames.imitated(
+            identifier,
+            visible,
+            [str(manifest.get(k) or "") for k in ("main", "browser")],
+            popular,
+        )
+        if imitated:
+            other, how = imitated
+            yield self._at_text(
+                "SUSPECT.EXTENSION.LOOKALIKE.001",
+                unit,
+                ctx,
+                unit.content.text,
+                str(manifest["publisher"]),
+                message=f"This extension, {identifier}, presents itself as the widely installed "
+                f"{other}: {how}. An impersonating extension is installed by people who meant to "
+                "install the one it imitates.",
+            )
 
     def _judge_extension(
         self,
@@ -4303,6 +4366,66 @@ _PROHIBITION: Final = re.compile(
 
 class ExtensionNames:
     """Editor extension ids, versions and lookalikes."""
+
+    #: Characters that render as nothing: zero-width, joiners, word joiner, BOM, Tag characters.
+    INVISIBLE: ClassVar[re.Pattern[str]] = re.compile(
+        "[\u200b-\u200f\u2060-\u2064\u206a-\u206f\ufeff\u00ad\u180e\U000e0000-\U000e007f]"
+    )
+    #: Letters a publisher name swaps for ones that read the same in a sans-serif font.
+    _CONFUSABLE: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("rn", "m"),
+        ("vv", "w"),
+        ("0", "o"),
+        ("1", "l"),
+        ("i", "l"),
+        ("|", "l"),
+    )
+
+    @classmethod
+    def _folded(cls, text: str) -> str:
+        """`text` as a reader sees it: case folded, look-alike letters made one."""
+        folded = text.lower()
+        for a, b in cls._CONFUSABLE:
+            folded = folded.replace(a, b)
+        return re.sub(r"[\s_.-]+", "", folded)
+
+    @classmethod
+    def imitated(
+        cls, identifier: str, display: str, entries: list[str], popular: set[str]
+    ) -> tuple[str, str] | None:
+        """(popular id, how) when an extension presents itself as a popular one it is not."""
+        publisher, _, name = identifier.partition(".")
+        by_publisher: dict[str, set[str]] = {}
+        for candidate in popular:
+            other_publisher, _, _ = candidate.partition(".")
+            by_publisher.setdefault(other_publisher, set()).add(candidate)
+        if publisher not in by_publisher:
+            folded = cls._folded(publisher)
+            for other_publisher, ids in sorted(by_publisher.items()):
+                if len(other_publisher) >= 5 and cls._folded(other_publisher) == folded:
+                    return min(ids), f"its publisher {publisher!r} reads as {other_publisher!r}"
+        shown = cls._folded(display)
+        # A display name that is the extension's own name ("Git Blame" for `x.git-blame`) is the
+        # extension naming itself, whoever else chose the same words (review 98: 3 of 5 benign
+        # Open VSX hits); an impersonator shows a name its id does not carry (`soli989`, "solidity").
+        if len(shown) >= 5 and shown not in cls._folded(name):
+            for candidate in sorted(popular):
+                other_publisher, _, other_name = candidate.partition(".")
+                if other_publisher != publisher and cls._folded(other_name) == shown:
+                    return (
+                        candidate,
+                        f"its display name {display.strip()!r} is that extension's name",
+                    )
+        for entry in entries:
+            base = re.sub(r"\.(?:bundle|min|web|main)?\.?(?:c|m)?js$", "", entry.rsplit("/", 1)[-1])
+            base = re.sub(r"\.(?:bundle|web)$", "", base)
+            if len(base) < 6 or base == name:
+                continue
+            for candidate in sorted(popular):
+                other_publisher, _, other_name = candidate.partition(".")
+                if other_publisher != publisher and other_name == base.lower():
+                    return candidate, f"its entry point {entry!r} is named after that extension"
+        return None
 
     @staticmethod
     def _semver(ref: str) -> tuple[int, int, int] | None:

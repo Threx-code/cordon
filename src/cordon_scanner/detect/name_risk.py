@@ -45,9 +45,12 @@ project, not a release, and an empty project is not suspicious.
 
 from __future__ import annotations
 
+import html
+import io
 import json
 import posixpath
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
 
@@ -166,6 +169,12 @@ class PackageIdentities:
         if "node_modules/" in f"/{member}" or "site-packages/" in member:
             return None
         parts = member.split("/")
+        if member.lower().endswith(".nuspec") and len(parts) == 1:
+            # A .nupkg's own `<id>.nuspec`, at the package root.
+            return "nuget"
+        if member == "metadata.gz" and unit.path.rpartition("!")[0].lower().endswith(".gem"):
+            # A .gem's gemspec, gzipped YAML beside `data.tar.gz`.
+            return "rubygems"
         if len(parts) < 2:
             return None
         parent, name = parts[-2], parts[-1]
@@ -218,7 +227,84 @@ class PackageIdentities:
             return cls._npm(unit, ctx)
         if kind == "pypi":
             return cls._pypi(unit, ctx)
+        if kind == "nuget":
+            return cls._nuget(unit, ctx)
+        if kind == "rubygems":
+            return cls._rubygems(unit, ctx)
         return None
+
+    @staticmethod
+    def _xml_text(text: str, tag: str) -> str:
+        found = re.search(rf"<(?:\w+:)?{tag}\b[^>]*>([^<]{{0,4000}})</(?:\w+:)?{tag}>", text)
+        return html.unescape(found.group(1).strip()) if found else ""
+
+    @classmethod
+    def _nuget(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
+        text = unit.content.text[:200_000]
+        name = cls._xml_text(text, "id")
+        if not name:
+            return None
+        repository = re.search(r"<(?:\w+:)?repository\b[^>]*\burl=\"([^\"]+)\"", text)
+        project = cls._xml_text(text, "projectUrl")
+        root = cls._root(unit)
+        prefix = f"{root}/" if root else ""
+        # What NuGet runs on the consumer's side: Visual Studio's `tools/install.ps1`/`init.ps1`,
+        # and the `build/` `.targets` and `.props` every referencing project imports.
+        runs = any(
+            path.startswith(prefix)
+            and re.match(
+                r"(?i)^(?:tools/(?:init|install)\.ps1|build(?:transitive|multitargeting)?/.+\.(?:targets|props))$",
+                path[len(prefix) :],
+            )
+            for path in ctx.tree_paths
+        )
+        return PackageIdentity(
+            ecosystem="nuget",
+            name=name.strip().lower(),
+            version=cls._xml_text(text, "version"),
+            description=cls._xml_text(text, "description") or cls._xml_text(text, "summary"),
+            has_source=bool(repository or project),
+            hooks=(),
+            code_files=cls._code_files(unit, ctx, python=False),
+            hook_runs_file=runs,
+            dependencies=len(re.findall(r"<(?:\w+:)?dependency\b", text)),
+        )
+
+    @classmethod
+    def _rubygems(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
+        import gzip
+        import zlib
+
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(unit.content.raw[:2_000_000])) as handle:
+                text = handle.read(1_000_000).decode("utf-8", "replace")
+        except (OSError, EOFError, zlib.error):
+            return None
+        name = re.search(r"(?m)^name:[ \t]*(\S+)", text)
+        if name is None:
+            return None
+        version = re.search(
+            r"(?m)^version:\s*!ruby/object:Gem::Version\s*\n\s+version:\s*['\"]?([^'\"\s]+)", text
+        )
+        # `[ \t]*`, never `\s*`: an empty field must not read the next line as its value.
+        description = re.search(r"(?m)^(?:summary|description):[ \t]*(\S.*)$", text)
+        homepage = re.search(r"(?m)^homepage:[ \t]*(\S+)", text)
+        source = re.search(r"(?m)^[ \t]+(?:source_code_uri|homepage_uri):[ \t]*(\S+)", text)
+        extensions = re.search(r"(?m)^extensions:\s*\n\s*-\s*\S", text)
+        runtime = re.findall(r"(?m)^\s+type:\s*:runtime\b", text)
+        value = description.group(1).strip().strip("'\"") if description else ""
+        return PackageIdentity(
+            ecosystem="rubygems",
+            name=name.group(1).strip("'\"").lower(),
+            version=version.group(1) if version else "",
+            description="" if value in ("", "null", "~") else value,
+            has_source=bool((homepage and homepage.group(1) not in ("null", "~", "''")) or source),
+            hooks=(),
+            code_files=cls._code_files(unit, ctx, python=False),
+            # A native extension is built, by running its extconf, on the installing machine.
+            hook_runs_file=bool(extensions),
+            dependencies=len(runtime),
+        )
 
     @classmethod
     def _npm(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
@@ -328,6 +414,25 @@ class NameSignals:
     DELIBERATE_SLIPS: ClassVar[frozenset[str]] = frozenset(
         {"transposition", "doubled", "homoglyph"}
     )
+
+    @staticmethod
+    def mixed_script(name: str) -> str | None:
+        """The other script when a name mixes Latin letters with Cyrillic or Greek ones.
+
+        `Micr\u043esoft.EntetyFrameworkCore` on NuGet spells its `o` as Cyrillic U+043E: it reads as
+        Microsoft's and sorts beside it, and no one types it by accident (review 98). A name
+        written wholly in another script is that script's, and is not this."""
+        latin = other = False
+        found = ""
+        for char in name:
+            if not char.isalpha():
+                continue
+            script = unicodedata.name(char, "").split(" ", 1)[0]
+            if script == "LATIN":
+                latin = True
+            elif script in ("CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE"):
+                other, found = True, script.capitalize()
+        return found if latin and other else None
 
     @staticmethod
     def confusion_version(version: str) -> str | None:
@@ -481,6 +586,7 @@ class NameRisk:
     WEIGHTS: ClassVar[dict[str, int]] = {
         # name: how the name was chosen. 3 is strong, 2 is medium.
         "typosquat-deliberate": 3,
+        "mixed-script": 3,
         "confusion-version": 3,
         "says-research": 3,
         "hook-only-prints": 3,
@@ -533,6 +639,9 @@ class NameRisk:
                 "name",
                 f"one slip from the popular {target!r}",
             )
+        scripts = NameSignals.mixed_script(identity.name)
+        if scripts is not None:
+            add("mixed-script", "name", f"spells its name with {scripts} letters among Latin ones")
         version = NameSignals.confusion_version(identity.version)
         if version is not None:
             add("confusion-version", "name", f"{version}, a dependency-confusion version")
