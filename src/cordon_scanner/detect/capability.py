@@ -1505,6 +1505,11 @@ class CapabilityDetector(BaseDetector):
             for h in fetches
         )
 
+    BEACON_RULE: ClassVar[str] = "MALWARE.EXFIL.BEACON.001"
+    #: Dataflow facts: the machine's identity reaches what a request sends.
+    IDENTITY_FLOWS: ClassVar[frozenset[str]] = frozenset(
+        {"AST.PY.IDENTITY_SENT", "FLOW.JS.IDENTITY_SENT"}
+    )
     #: The two grades of the same dropper pattern, the only findings `VerifiedDownload` may lower.
     VERIFIABLE_DROPPERS: ClassVar[frozenset[str]] = frozenset(
         {"MALWARE.DROPPER.001", "SUSPECT.DROPPER.001"}
@@ -1536,6 +1541,71 @@ class CapabilityDetector(BaseDetector):
             ctx.package_repository or None,
         ) or VerifiedDownload.own_release(
             unit.content.text, unit.language, file_hits, ctx.package_repository or None
+        )
+
+    #: Who this machine is, in shell: a command's output or the variable the shell fills in.
+    #: `$USER` is left out -- scripts assign it from their own settings (`USER="$NZBGET_USER"`).
+    _SHELL_IDENTITY = re.compile(
+        r"\$\(\s*(?:hostname|whoami|id\s+-un|uname\s+-n|scutil\s+--get\s+\w+)\b|`\s*(?:hostname|whoami)\b"
+        r"|\$\{?HOSTNAME\b"
+    )
+    _SHELL_ASSIGNED = re.compile(r"^\s*(?:export\s+|local\s+)?([A-Za-z_]\w*)=(.*)$", re.S)
+    _SHELL_SENDER = re.compile(r"\b(?:curl|wget|nc|ncat|nslookup|dig|Invoke-WebRequest|iwr)\b")
+
+    @classmethod
+    def _identity_in_what_is_sent(
+        cls, language: str | None, content: FileContent, hits: list[CapabilityHit]
+    ) -> bool:
+        """Whether the file puts the machine's identity into what it sends, for a language whose
+        flow is read: the dataflow facts for Python and JavaScript, and for shell the identity
+        -- directly or through a variable assigned from it -- on a line that sends. A language
+        with no flow read answers True, so nearness keeps deciding there."""
+        if language in ("python", "javascript", "typescript"):
+            return any(h.rule_id in cls.IDENTITY_FLOWS for h in hits)
+        if language != "shell":
+            return True
+        carrying: set[str] = set()
+        # A command continued over several lines with `\` is one line to the shell, and so is a
+        # command substitution: `PAYLOAD="$(python3 - <<EOF ... EOF)"` is one assignment.
+        lines = cls._shell_statements(re.sub(r"\\\r?\n", " ", content.text).splitlines())
+        for _ in range(2):
+            for line in lines:
+                assigned = cls._SHELL_ASSIGNED.match(line)
+                if assigned and cls._carries_identity(assigned[2], carrying):
+                    carrying.add(assigned[1])
+        return any(
+            cls._SHELL_SENDER.search(line) and cls._carries_identity(line, carrying)
+            for line in lines
+        )
+
+    @staticmethod
+    def _shell_statements(lines: list[str]) -> list[str]:
+        """Lines, with a `$(` left open joined to the lines up to the one that closes it."""
+        out: list[str] = []
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+            depth = line.count("$(") + line.count("(") - line.count("$(") - line.count(")")
+            end = index
+            while "$(" in line and depth > 0 and end + 1 < len(lines) and end - index < 200:
+                end += 1
+                line += "\n" + lines[end]
+                depth += lines[end].count("(") - lines[end].count(")")
+            out.append(line)
+            index = end + 1
+        return out
+
+    @classmethod
+    def _carries_identity(cls, text: str, carrying: set[str]) -> bool:
+        # A variable is read as `$NAME` by the shell, or -- once exported -- by the program a
+        # substitution runs: `os.environ["NAME"]`, `getenv("NAME")`, `process.env.NAME`.
+        return cls._SHELL_IDENTITY.search(text) is not None or any(
+            re.search(
+                rf"\$\{{?{re.escape(name)}\b|environ\s*\[\s*[\"']{re.escape(name)}[\"']"
+                rf"|getenv\s*\(\s*[\"']{re.escape(name)}[\"']|process\.env\.{re.escape(name)}\b",
+                text,
+            )
+            for name in carrying
         )
 
     def _suspect_dropper_reports(
@@ -4193,6 +4263,22 @@ class CapabilityDetector(BaseDetector):
         # registry", which is advice about a package somebody installed and means
         # nothing to the owner of a `.buildkite` script.
         if compiled.rule.id in self.EXFIL_RULES and self._credential_for_its_own_service(content):
+            return None
+
+        if (
+            compiled.rule.id == self.BEACON_RULE
+            and content.path in ctx.agent_run_paths
+            and content.path not in ctx.consumer_install_paths
+            and not self._identity_in_what_is_sent(
+                unit.language, content, hits if file_hits is None else file_hits
+            )
+        ):
+            # An agent's tool is in the install-hook set so that what it does is graded as code
+            # that runs unasked; an API client that names its platform in a User-Agent near its
+            # request is not a beacon. As the import-time beacon `SUSPECT.EXFIL.BEACON.001`
+            # requires, the machine's identity has to be IN what is sent (review 98: Asana,
+            # Notion, search and transcription clients in MalSkillBench were blocked on nearness
+            # alone). Where no flow is read for the language, nearness still decides.
             return None
 
         if (

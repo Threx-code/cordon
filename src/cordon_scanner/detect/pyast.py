@@ -48,7 +48,7 @@ from cordon_scanner.core.models import Capability
 from cordon_scanner.core.pysyntax import PythonSyntax
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
 # Dotted primitives, mapped to what they mean. The keys are what a resolved
 # call must look like once aliases and bindings are unwound, so `go(...)` where
@@ -2004,6 +2004,125 @@ class PythonAnalyzer:
         first = command.strip().split(" ", 1)[0].rsplit("/", 1)[-1].lower()
         return first.removesuffix(".exe") in IDENTITY_COMMANDS
 
+    @staticmethod
+    def _carried(
+        tree: ast.AST, is_source: Callable[[ast.AST], bool], kind: type
+    ) -> Callable[..., bool]:
+        """Whether an expression holds what `is_source` finds: the source itself, a name assigned
+        from it, or a call to a function of this file that returns it.
+
+        The last is how a collector is written -- `def collect(): return json.dumps({"host":
+        socket.gethostname(), ...})` in one function, `requests.post(URL, data=collect())` in
+        another. Read one function at a time, the request carries nothing (review 98: eight of the
+        MalSkillBench beacons; the API clients beside them, which name their platform in a header
+        and never send who the machine is, stay unflagged). Names are file-wide, as before.
+        """
+        carrying: set[str] = set()
+        returning: set[str] = set()
+
+        def callee(call: ast.Call) -> str | None:
+            func = call.func
+            if isinstance(func, ast.Name):
+                return func.id
+            # `self.collect()` and `Collector.collect()`: a method of a class in this file.
+            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+                return func.attr
+            return None
+
+        def holds(node: ast.AST, *, deep: bool = True) -> bool:
+            parts = PythonSyntax.within(node, kind, ast.Call, ast.Name) if deep else [node]
+            return any(
+                is_source(part)
+                or (isinstance(part, ast.Name) and part.id in carrying)
+                or (isinstance(part, ast.Call) and callee(part) in returning)
+                for part in parts
+            )
+
+        functions = PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
+        for _ in range(3):
+            for node in PythonSyntax.nodes(tree):
+                if isinstance(node, ast.Assign) and holds(node.value):
+                    carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            for function in functions:
+                if function.name not in returning and any(
+                    isinstance(part, ast.Return) and part.value is not None and holds(part.value)
+                    for part in PythonSyntax.within(function, ast.Return)
+                ):
+                    returning.add(function.name)
+        return holds
+
+    def _handed_to_a_sender(
+        self, tree: ast.AST, holds: Callable[..., bool]
+    ) -> list[tuple[ast.Call, str]]:
+        """Calls that hand what `holds` finds to a function of this file whose parameter reaches a
+        request: `send(gather())` where `def send(data): requests.post(URL, data=json.dumps(data))`.
+
+        The other half of `_carried`: a collector and a sender written as two functions, joined
+        at the call (review 98, MalSkillBench). A lookup of the parameter itself
+        (`def resolve(name): return socket.gethostbyname(name)`) is not a sender -- that is how
+        a machine's own name is resolved; a name BUILT from it, as DNS exfiltration does, is.
+        """
+        senders: dict[str, tuple[list[str], set[str]]] = {}
+        for function in PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
+            arguments = function.args
+            params = [a.arg for a in (*arguments.posonlyargs, *arguments.args)]
+            params += [a.arg for a in arguments.kwonlyargs]
+            reaching: dict[str, set[str]] = {name: {name} for name in params}
+            for _ in range(2):
+                for assign in PythonSyntax.within(function, ast.Assign):
+                    found = {
+                        param
+                        for part in PythonSyntax.within(assign.value, ast.Name)
+                        for param in reaching.get(part.id, ())
+                    }
+                    for target in assign.targets:
+                        if found and isinstance(target, ast.Name):
+                            reaching.setdefault(target.id, set()).update(found)
+            sent: set[str] = set()
+            for call in PythonSyntax.within(function, ast.Call):
+                resolved = self._resolve_callee(call)
+                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
+                    continue
+                values = [*call.args, *(k.value for k in call.keywords)]
+                if resolved[0] in DNS_LOOKUPS and values and isinstance(values[0], ast.Name):
+                    values = values[1:]
+                sent.update(
+                    param
+                    for value in values
+                    for part in PythonSyntax.within(value, ast.Name)
+                    for param in reaching.get(part.id, ())
+                )
+            if sent:
+                senders[function.name] = (params, sent)
+
+        found: list[tuple[ast.Call, str]] = []
+        if not senders:
+            return found
+        for call in PythonSyntax.of(tree, ast.Call):
+            func = call.func
+            name = (
+                func.id
+                if isinstance(func, ast.Name)
+                else func.attr
+                if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                else None
+            )
+            if name not in senders:
+                continue
+            params, sent = senders[name]
+            # A method called on an instance or a class: its first parameter is that object.
+            offset = (
+                1 if isinstance(func, ast.Attribute) and params[:1] in (["self"], ["cls"]) else 0
+            )
+            handed = [
+                (params[index + offset], value)
+                for index, value in enumerate(call.args)
+                if index + offset < len(params)
+            ] + [(k.arg, k.value) for k in call.keywords if k.arg]
+            if any(param in sent and holds(value) for param, value in handed):
+                found.append((call, name))
+        return found
+
     def _identity_sent(self, tree: ast.AST) -> None:
         """The machine's identity, in the arguments of a request.
 
@@ -2012,33 +2131,20 @@ class PythonAnalyzer:
         thirty lines is what a telemetry plugin, a socket demo and a browser installer all do;
         putting the hostname in the request is the probe.
         """
-        carrying: set[str] = set()
-        for _ in range(3):
-            for node in PythonSyntax.nodes(tree):
-                if isinstance(node, ast.Assign) and any(
-                    self._is_recon_call(part)
-                    or (isinstance(part, ast.Name) and part.id in carrying)
-                    for part in PythonSyntax.within(node.value, ast.Call, ast.Name)
-                ):
-                    carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        holds = self._carried(tree, self._is_recon_call, ast.Call)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
                 continue
             arguments = [*node.args, *(k.value for k in node.keywords)]
-            if resolved[0] in DNS_LOOKUPS and all(
-                self._is_recon_call(a) or (isinstance(a, ast.Name) and a.id in carrying)
-                for a in node.args[:1]
-            ):
+            if resolved[0] in DNS_LOOKUPS and all(holds(a, deep=False) for a in node.args[:1]):
                 # Looking up this machine's own name sends it to a resolver, not to anyone
                 # who collects it; a name built into another domain is what DNS exfiltration is.
                 continue
-            if any(
-                self._is_recon_call(part) or (isinstance(part, ast.Name) and part.id in carrying)
-                for argument in arguments
-                for part in PythonSyntax.within(argument, ast.Call, ast.Name)
-            ):
+            if any(holds(argument) for argument in arguments):
                 self._record(Capability.RECONNAISSANCE, node, f"identity sent: {resolved[0]}")
+        for node, function in self._handed_to_a_sender(tree, holds):
+            self._record(Capability.RECONNAISSANCE, node, f"identity sent: through {function}")
 
     def _environment_sent(self, tree: ast.AST) -> None:
         """The whole environment, in the arguments of a request.
@@ -2067,25 +2173,16 @@ class PythonAnalyzer:
                 and parent.attr in ("get", "setdefault", "pop", "__contains__")
             )
 
-        carrying: set[str] = set()
-        for _ in range(3):
-            for node in PythonSyntax.nodes(tree):
-                if isinstance(node, ast.Assign) and any(
-                    is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
-                    for part in PythonSyntax.within(node.value, ast.Attribute, ast.Name)
-                ):
-                    carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        holds = self._carried(tree, is_whole, ast.Attribute)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
                 continue
             arguments = [*node.args, *(k.value for k in node.keywords)]
-            if any(
-                is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
-                for argument in arguments
-                for part in PythonSyntax.within(argument, ast.Attribute, ast.Name)
-            ):
+            if any(holds(argument) for argument in arguments):
                 self._record(Capability.CREDENTIAL, node, f"environment sent: {resolved[0]}")
+        for node, function in self._handed_to_a_sender(tree, holds):
+            self._record(Capability.CREDENTIAL, node, f"environment sent: through {function}")
 
     def _secret_sent(self, tree: ast.AST) -> None:
         """One named credential, in a request to a host outside the credential's home.
