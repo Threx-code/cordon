@@ -18,6 +18,7 @@ and the finding is recorded below the gate rather than dropped.
 from __future__ import annotations
 
 import re
+from typing import Final
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
@@ -61,6 +62,14 @@ _PATH_LITERAL = re.compile(
 _LITERAL_MARK = "\x00"
 """Prefix that keeps a path literal apart from an identifier in the tainted set."""
 
+_IMPORTED: Final = re.compile(
+    r"^\s{0,8}(?:import\s{1,4}(?P<names>[\w${},\s*]{1,200}?)\s{1,4}from\b"
+    r"|(?:const|let|var)\s{1,4}(?P<required>[\w${},\s]{1,200}?)\s{0,4}=\s{0,4}require\s{0,4}\("
+    r"|from\s{1,4}[\w.]{1,100}\s{1,4}import\s{1,4}(?P<pyfrom>[\w,\s]{1,200})"
+    r"|import\s{1,4}(?P<pyimport>[\w.,\s]{1,200})$)"
+)
+"""An import line, and the names it binds."""
+
 _KEYWORDS = frozenset(
     {
         "if", "else", "for", "while", "in", "of", "return", "const", "let", "var", "def",
@@ -83,6 +92,7 @@ class StoreFlow:
         lines = text.split("\n")
         if not store_lines or not egress_lines:
             return False
+        egress_lines = StoreFlow._calls_of_imports(lines, egress_lines)
         # A call on the line that reads the store, or the line beside it: `cat ~/.aws/credentials |
         # curl -d @- ...`, `requests.post(u, files={"f": open(STORE)})`.
         if any(abs(s - e) <= 1 for s in store_lines for e in egress_lines):
@@ -111,6 +121,27 @@ class StoreFlow:
             if any(StoreFlow._mentions(line, tainted) for line in call):
                 return True
         return False
+
+    @staticmethod
+    def _calls_of_imports(lines: list[str], egress_lines: list[int]) -> list[int]:
+        """Egress lines, with an import's call sites added: a network library is often labelled
+        where it is imported (`import fetch from "node-fetch"`), and the request is made later."""
+        out = set(egress_lines)
+        for number in egress_lines:
+            if not 1 <= number <= len(lines):
+                continue
+            found = _IMPORTED.search(lines[number - 1])
+            if found is None:
+                continue
+            bound = next(g for g in found.groups() if g)
+            names = {n for n in _IDENTIFIER.findall(bound) if n not in _KEYWORDS and len(n) > 2}
+            if not names:
+                continue
+            call = re.compile(
+                r"(?<![\w$.])(?:" + "|".join(re.escape(n) for n in sorted(names)) + r")\s{0,4}[.(]"
+            )
+            out.update(i for i, line in enumerate(lines, start=1) if call.search(line))
+        return sorted(out)
 
     @staticmethod
     def _mentions(line: str, names: set[str]) -> bool:
