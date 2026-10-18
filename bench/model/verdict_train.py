@@ -41,6 +41,7 @@ import collections
 import datetime
 import gzip
 import hashlib
+import itertools
 import json
 import re
 from pathlib import Path
@@ -187,8 +188,37 @@ class VerdictTrain:
             for row in cls.rows(path):
                 newer_scan[row["file"]] = row
 
+        registry: dict[str, dict] = {}
+        for path in a.registry:
+            for row in cls.rows_any(path):
+                if isinstance(row.get("facts"), dict):
+                    registry[row["file"]] = row["facts"]
+        sampled: set[str] = set()
+        if a.registry:
+            # The second review's run: npm and PyPI only, every row with a registry record, the
+            # benign denominator the sample whose records were acquired. A unit without a record
+            # would teach the model that having one is the signal.
+            units = a.registry_units.read_text(encoding="utf-8").split()
+            sampled = {u for u in units if u in registry}
+            # Counted as rows are added: a sampled unit not yet scanned is not "quiet", it is
+            # unmeasured, and stays out of the denominator.
+            size = {"work": collections.Counter(), "holdout": collections.Counter()}
+
         def add(row: dict, label: int, eco: str, key: str, source: str, family: str) -> None:
             row = newer_scan.get(row["file"], row)
+            if a.registry:
+                facts = registry.get(row["file"])
+                if facts is None or eco not in ("npm", "pypi"):
+                    return
+                if not label and row["file"] not in sampled:
+                    return
+                if not label:
+                    size[cls.half(key)][eco] += 1
+                verdict = row.get("verdict") or {}
+                row = {
+                    **row,
+                    "verdict": {**verdict, "package": {**(verdict.get("package") or {}), **facts}},
+                }
             if row["file"] in fresh:
                 newer = fresh[row["file"]]
                 row = {
@@ -222,7 +252,11 @@ class VerdictTrain:
         for half in size.values():
             for eco in replaced:
                 half.pop(eco, None)
-        for row in cls.rows(a.benign):
+        seen: set[str] = set()
+        for row in itertools.chain(cls.rows(a.benign), *(cls.rows(p) for p in a.registry_scans)):
+            if row["file"] in seen:
+                continue
+            seen.add(row["file"])
             eco = row["file"].split("/")[0]
             if eco in replaced:
                 continue
@@ -374,6 +408,27 @@ class VerdictTrain:
             default=[],
             help="areas given trees of their own, fitted on that area's rows only",
         )
+        p.add_argument(
+            "--registry",
+            type=Path,
+            nargs="*",
+            default=[],
+            help="registry facts (reviews/review-98/tools/registry_facts.py): the second review's "
+            "publisher facts. With them the run is npm and PyPI only, on the units that have a "
+            "record on both sides -- never content-only",
+        )
+        p.add_argument(
+            "--registry-units",
+            type=Path,
+            help="the random benign units whose records were acquired: the benign denominator",
+        )
+        p.add_argument(
+            "--registry-scans",
+            type=Path,
+            nargs="*",
+            default=[],
+            help="scans of sampled benign units the --benign file does not hold (quiet units)",
+        )
         p.add_argument("--out", type=Path)
         p.add_argument("--report", type=Path)
         p.add_argument("--attribution", type=Path)
@@ -421,15 +476,16 @@ class VerdictTrain:
             )
 
         xw, yw = matrix(work), np.array([r["label"] for r in work])
-        # The floor: MALWARE.* rules that, at high confidence and high severity, fired on no benign
-        # unit of the work half and on at least three malware samples there.
+        # The floor: code rules that, at high confidence and high severity, fired on no benign unit
+        # of the work half and on at least three malware samples there. Chosen by that evidence,
+        # not by the rule's prefix: `SUSPECT.EXFIL.WALLET_SECRET.001` blocked every hijacked `xrpl`
+        # release at high confidence and the model held it as a warning (review 98).
         strong = collections.Counter()
         misfired = collections.Counter()
         for r in work:
             for f in r["findings"]:
                 if (
-                    f[0].startswith("MALWARE.")
-                    and VerdictFeatures.is_code(f[0])
+                    VerdictFeatures.is_code(f[0])
                     and f[2] in ("high", "confirmed")
                     and Severity[f[1].upper()] >= Severity.HIGH
                 ):
@@ -469,7 +525,9 @@ class VerdictTrain:
         taken = {i for idx in groups.values() for i in idx}
         groups["*"] = [i for i in range(len(work)) if i not in taken]
         for idx in groups.values():
-            idx_a = np.array(idx)
+            if not idx:
+                continue
+            idx_a = np.array(idx, dtype=int)
             g = np.arange(len(idx_a)) % 5
             for k in range(5):
                 tr, te = idx_a[g != k], idx_a[g == k]
@@ -479,7 +537,10 @@ class VerdictTrain:
         oof = np.array([r["score"] for r in work])
 
         def blocked(r, lines, intel=False) -> bool:
-            over = r["has_code"] and r["score"] >= lines.get(r["area"], lines[Verdict.FALLBACK])
+            # The second review scores content-free packages too: that is what it is for.
+            over = (r["has_code"] or bool(a.registry)) and r["score"] >= lines.get(
+                r["area"], lines[Verdict.FALLBACK]
+            )
             return bool(over or (r["kept_intel"] if intel else r["kept"]))
 
         def benign_rates(rows, lines, half) -> dict[str, tuple[int, int]]:

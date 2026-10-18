@@ -346,6 +346,7 @@ SWEPT_NOTE = "Read to its end in windows."
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
 YOUNG_DEPENDENCY_RULE = "SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001"
+REGISTRY_REVIEW_RULE = "SUSPECT.REGISTRY.REVIEW.001"
 CERTIFICATE_BLOCK: Final = re.compile(
     rb"-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\s]{40,20000}?)-----END CERTIFICATE-----"
 )
@@ -1585,7 +1586,7 @@ class Engine:
                 self.config.policy,
             ),
             units,
-            self._capability_profile(units, ctx),
+            {**self._capability_profile(units, ctx), **Engine._registry_facts(units)},
         )
         findings = tuple(graded)
         dependencies = self._annotated(dependencies, findings, ctx, units)
@@ -2061,7 +2062,7 @@ class Engine:
                 self.config.policy,
             ),
             units,
-            self._capability_profile(units, ctx),
+            {**self._capability_profile(units, ctx), **Engine._registry_facts(units)},
         )
         dependencies = self._annotated(dependencies, acc.findings, ctx, units)
         result = ScanResult(
@@ -3921,6 +3922,8 @@ class Engine:
         "setup.py",
         "pyproject.toml",
         "requirements.txt",
+        # A skill's claim about itself: its front matter's name and description.
+        "SKILL.md",
     )
 
     #: A hook's whole command lifted out of its manifest: `package.json#preinstall.sh`.
@@ -4023,6 +4026,26 @@ class Engine:
         return out
 
     @staticmethod
+    def _registry_facts(units: Sequence[FileUnit], root: Path | None = None) -> dict[str, float]:
+        """What the registry recorded about this release, as verdict facts (`reg_*`).
+
+        Read from the store `cordon-scanner intel acquire` wrote (`intel/registry_record.py`);
+        nothing acquired, nothing added -- and `reg_known` absent tells the verdict so. These are
+        second-review facts: the trainer keeps them out of the content-only measure.
+        """
+        from cordon_scanner.intel.registry_record import ECOSYSTEMS, RegistryRecord
+
+        files = [u for u in units if isinstance(u, FileUnit)]
+        distribution = Engine._history_distribution(files)
+        if distribution not in ECOSYSTEMS:
+            return {}
+        identity = Engine._history_identity(files, distribution)
+        if identity is None:
+            return {}
+        record = RegistryRecord.load(*identity, root=root)
+        return record.facts() if record is not None else {}
+
+    @staticmethod
     def _package_verdict(
         findings: list[Finding], units: Sequence[FileUnit], profile: dict[str, float] | None = None
     ) -> tuple[list[Finding], dict[str, Any]]:
@@ -4043,6 +4066,35 @@ class Engine:
         graded, verdict = Verdict.decide(
             list(findings), paths_sizes, manifests, sources, profile or {}
         )
+        second, line = verdict.get("registry_score"), verdict.get("registry_block")
+        if second is not None and line is not None and second >= line:
+            # The second review: what the registry recorded about this release -- who published
+            # it, when the name was made, what it added over the release before -- scores over its
+            # line (`intel/registry_record.py`). Content-free malware is found here or not at all.
+            graded.append(
+                replace(
+                    Engine._operational(
+                        path=".",
+                        rule_id=REGISTRY_REVIEW_RULE,
+                        message=(
+                            f"What the registry recorded about this release scores {second:.2f} "
+                            f"against the second review's line of {line:.2f} for "
+                            f"{verdict.get('area', 'packages')}: its publisher, its age, its "
+                            "release history and what it added are what malicious releases in the "
+                            "training half looked like."
+                        ),
+                        remediation=(
+                            "Check who published this release and why; pin a release from before "
+                            "it until that is explained."
+                        ),
+                        category=Category.SUSPICIOUS,
+                        severity=Severity.HIGH,
+                    ),
+                    confidence=Confidence.MEDIUM,
+                    always_report=False,
+                    detector="registry-review",
+                )
+            )
         score, block = verdict.get("score"), verdict.get("block")
         if score is not None and block is not None and score >= block:
             # The package over its line blocks as a package, whether or not one finding would

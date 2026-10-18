@@ -1208,6 +1208,22 @@ class ManifestDetector(BaseDetector):
                 remediation="Read the new dependency before installing; pin the previous release meanwhile.",
             ),
             DeclaredRule(
+                id="SUSPECT.REGISTRY.REVIEW.001",
+                title="What the registry recorded about this release looks like a malicious release",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector="registry-review",
+                message=(
+                    "The second review: the registry's record of this release, acquired beforehand "
+                    "(`cordon-scanner intel acquire`) -- who published it, how old the name was, what "
+                    "came before it and what it added -- scores over the line its model was measured "
+                    "at. It finds what the package's content cannot show; it never lifts a block."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Check who published this release and why; pin an earlier release until explained.",
+            ),
+            DeclaredRule(
                 id="MALWARE.PACKAGE.KNOWN.001",
                 title="The scanned package is a recorded malicious release",
                 severity=Severity.CRITICAL,

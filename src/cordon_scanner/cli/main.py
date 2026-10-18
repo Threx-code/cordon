@@ -2481,6 +2481,7 @@ class CommandLine:
         from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.intel import feed
         from cordon_scanner.intel.registry_client import RegistryError
+        from cordon_scanner.intel.registry_record import RegistryRecord
         from cordon_scanner.intel.release_history import ReleaseHistory
 
         if feed.FeedClient.offline_requested():
@@ -2501,6 +2502,15 @@ class CommandLine:
             ]
             distribution = Engine._history_distribution(units)
             identity = Engine._history_identity(units, distribution) if distribution else None
+            if identity is not None and identity[0] in RegistryRecord.ECOSYSTEMS_READ:
+                # The registry's record of this release, for the second review's publisher facts.
+                try:
+                    RegistryRecord.acquire(*identity)
+                except RegistryError as exc:
+                    results.append(
+                        {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}
+                    )
+                    failed = True
             if identity is None or identity[0] not in ReleaseHistory.ECOSYSTEMS:
                 results.append({"target": target, "skipped": "not a release this can compare"})
                 continue

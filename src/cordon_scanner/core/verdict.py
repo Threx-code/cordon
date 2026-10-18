@@ -281,7 +281,60 @@ class VerdictFeatures:
                     ),
                 )
         VerdictFeatures._ability(features, sources)
+        VerdictFeatures._skill_claim(features, manifests)
         return features
+
+    #: What a skill's own description says it reaches: the claims an attacker would have to make
+    #: to explain its scripts, and that an honest skill makes because it needs them.
+    SKILL_CLAIM: ClassVar[dict[str, re.Pattern[str]]] = {
+        name: re.compile(pattern, re.IGNORECASE)
+        for name, pattern in {
+            "network": r"\b(?:api|http|web|url|download|upload|fetch|online|search|browse|"
+            r"webhook|slack|github|notion|google|cloud|server|service|remote|sync)\b",
+            "credentials": r"\b(?:token|key|secret|credential|password|auth|oauth|login|"
+            r"wallet|keychain|ssh|vault)\b",
+            "shell": r"\b(?:shell|terminal|command|install|deploy|docker|kubectl|git|run|"
+            r"execute|script|process|system|automation)\b",
+            "files": r"\b(?:file|folder|directory|document|pdf|csv|excel|image|disk|backup)\b",
+        }.items()
+    }
+    _FRONT_FIELD: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(name|description)\s*:\s*(.+?)\s*$", re.MULTILINE
+    )
+
+    @staticmethod
+    def _skill_claim(features: dict[str, float], manifests: dict[str, bytes]) -> None:
+        """What a skill says it does, beside what its scripts can do (review 98, `13` STEP 2b).
+
+        A skill's front matter is the claim its user approves; its scripts are what runs. A
+        description-behaviour mismatch is published as weak on its own (ATR-2026-00061, 52.58%
+        false positives), so these are facts the verdict weighs, never a verdict: what the
+        description claims, how much it says, and the plain claim beside scripts that reach
+        secrets, a process or the network (`agent_can_*` from the capability profile).
+        """
+        skills = [
+            data
+            for path, data in manifests.items()
+            if path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] == "SKILL.md"
+            and path.rsplit("!", 1)[-1].count("/") <= 3
+        ]
+        if not skills:
+            return
+        text = min(skills, key=len)[:20_000].decode("utf-8", "replace")
+        front = text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 else ""
+        fields = {
+            k.lower(): v.strip("'\" ") for k, v in VerdictFeatures._FRONT_FIELD.findall(front)
+        }
+        description = fields.get("description", "")
+        claim = f"{fields.get('name', '')} {description}".replace("-", " ").replace("_", " ")
+        features["skill_front_matter"] = float(bool(front))
+        features["skill_desc_len"] = float(min(len(description), 600))
+        for name, pattern in VerdictFeatures.SKILL_CLAIM.items():
+            features[f"skill_claims_{name}"] = float(bool(pattern.search(claim)))
+        for name, pattern in VerdictFeatures.PURPOSE.items():
+            features[f"purpose_{name}"] = max(
+                features.get(f"purpose_{name}", 0.0), float(bool(pattern.search(claim[:2000])))
+            )
 
     @staticmethod
     def _purpose(features: dict[str, float], manifest: dict[str, Any]) -> None:
@@ -474,10 +527,36 @@ class Verdict:
         read as package facts beside the rest."""
         rules = VerdictFeatures.rules(findings)
         package = {**VerdictFeatures.package(paths_sizes, manifests, sources), **(profile or {})}
+        if package.get("skill_front_matter"):
+            # The skill's claim beside what its scripts can do (`VerdictFeatures._skill_claim`).
+            reaches = {
+                name[len("agent_can_") :]
+                for name, v in package.items()
+                if name.startswith("agent_can_") and v
+            }
+            package["skill_unclaimed_network"] = float(
+                bool(reaches & {"egress", "network"}) and not package.get("skill_claims_network")
+            )
+            package["skill_unclaimed_credentials"] = float(
+                "credential" in reaches and not package.get("skill_claims_credentials")
+            )
+            package["skill_unclaimed_process"] = float(
+                bool(reaches & {"spawn", "execute", "runs_download"})
+                and not package.get("skill_claims_shell")
+            )
         area = Verdict.area([p for p, _ in paths_sizes], manifests, package, rules)
         summary: dict[str, Any] = {"rules": rules, "package": package, "area": area}
         model = VerdictModel.load()
-        if model is None or not rules:
+        if model is None:
+            return findings, summary
+        # The second review (`intel/registry_record.py`): where the registry's record of this
+        # release was acquired, its own trees score the package -- content-free malware has no
+        # finding for the content verdict to weigh. It may add a block, never lift one.
+        registry = model.get("registry")
+        reviewed = (
+            registry is not None and package.get("reg_known") and area in registry.get("areas", {})
+        )
+        if not rules and not reviewed:
             return findings, summary
         features = VerdictFeatures.evidence(
             (
@@ -486,6 +565,13 @@ class Verdict:
             ),
             package,
         )
+        if reviewed:
+            summary.update(
+                registry_score=round(VerdictModel.score(registry, features), 4),
+                registry_block=float(registry["areas"][area]),
+            )
+        if not rules:
+            return findings, summary
         # An area with trees of its own (agent skills read nothing like libraries) is scored by them.
         score = VerdictModel.score(model.get("by_area", {}).get(area, model), features)
         areas = model["areas"]
