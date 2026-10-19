@@ -66,6 +66,23 @@ EXCLUDED = {
 GENERATED = re.compile(r"__(CI|PI|MIXED)_(B\d+)$")
 #: A corpus directory and the ecosystem it is part of.
 ECOSYSTEM = {"popular-npm": "npm", "popular-pypi": "pypi"}
+#: The real-malware benchmark's ecosystem names, as the corpus names the same ecosystem.
+BENCHMARK_ECOSYSTEM = {
+    "gomod": "go",
+    "cargo": "crates",
+    "composer": "packagist",
+    "vscode": "openvsx",
+}
+#: Benchmark sources that are also `--labelled` sets (scanned with their benign side there), and
+#: description rows that are not package scans.
+AREAS = {"npm", "pypi", "openvsx", "actions", *(name for name, _ in Verdict._ECOSYSTEMS)}
+BENCHMARK_ELSEWHERE = {
+    "maliciousskillbench",
+    "malskillbench",
+    "mcp-variants",
+    "mcptox",
+    "mcpsafetybench",
+}
 #: The labelled sets: how a unit is labelled, and the key its half is drawn from.
 LABELLED = {
     "msb": ("malware/", lambda u: "malskillbench:" + VerdictTrain.base(u.split("/", 1)[1])),
@@ -204,7 +221,15 @@ class VerdictTrain:
             # unmeasured, and stays out of the denominator.
             size = {"work": collections.Counter(), "holdout": collections.Counter()}
 
-        def add(row: dict, label: int, eco: str, key: str, source: str, family: str) -> None:
+        def add(
+            row: dict,
+            label: int,
+            eco: str,
+            key: str,
+            source: str,
+            family: str,
+            half: str | None = None,
+        ) -> None:
             row = newer_scan.get(row["file"], row)
             if a.registry:
                 facts = registry.get(row["file"])
@@ -237,8 +262,8 @@ class VerdictTrain:
                     "label": label,
                     "eco": eco,
                     "source": source,
-                    "half": cls.half(key),
-                    "family_half": cls.half(family),
+                    "half": half or cls.half(key),
+                    "family_half": half or cls.half(family),
                     "area": cls.area(row, eco, rules),
                     "f": features,
                     "findings": row["findings"],
@@ -262,7 +287,31 @@ class VerdictTrain:
                 continue
             key = "pkg:" + cls.package_name(row["file"])
             add(row, 0, ECOSYSTEM.get(eco, eco), key, "corpus", key)
-        for row in cls.rows(a.malware):
+        if a.benchmark:
+            # Every ecosystem's real malware, on the benchmark's own split: its holdout is never
+            # trained on, whatever this trainer's hash would have said.
+            manifest_path, scans_path = a.benchmark
+            manifest = {
+                r["path"]: r
+                for r in cls.rows_any(manifest_path)
+                if r.get("status") == "confirmed" and r.get("source") not in BENCHMARK_ELSEWHERE
+            }
+            for row in cls.rows(scans_path):
+                m = manifest.get(row["file"])
+                # The name the adjudications and earlier scans give the same sample.
+                alias = row["file"].replace("data/datadog/samples/", "datadog/", 1)
+                alias = alias.replace("data/malregistry/", "malregistry/", 1)
+                if m is None or alias in excluded:
+                    continue
+                row = {**row, "file": alias}
+                eco = BENCHMARK_ECOSYSTEM.get(m["ecosystem"], m["ecosystem"])
+                verdict = row.get("verdict") or {}
+                if verdict.get("area") in (None, Verdict.FALLBACK) and eco in AREAS:
+                    # A scan from before every ecosystem had its own area: the manifest knows the
+                    # ecosystem exactly, so the row answers to that ecosystem's line.
+                    row = {**row, "verdict": {**verdict, "area": eco}}
+                add(row, 1, eco, "bench:" + m["family"], m["source"], m["family"], m["split"])
+        for row in cls.rows(a.malware) if a.malware else ():
             if row["file"] in excluded:
                 continue
             u = row["file"]
@@ -308,12 +357,21 @@ class VerdictTrain:
         is then known from the ecosystem the unit came from, and the rest from what was recorded.
         """
         recorded = (row.get("verdict") or {}).get("area")
+        if recorded == Verdict.FALLBACK and eco in AREAS:
+            # Scanned before every ecosystem had an area of its own: the corpus folder names the
+            # ecosystem. (A layout the scan still cannot place, Bazel's upstream source archives,
+            # answers to the fallback line at scan time; round 2 trains on scans that record it.)
+            return eco
         if recorded:
             return recorded
         package = (row.get("verdict") or {}).get("package") or {}
         if eco in ("mcp", "mcpv", "mcpc") or any(r.startswith("SUSPECT.MCP.") for r in rules):
             return "mcp"
-        if eco in ("npm", "pypi", "openvsx") or eco in {r for r, _ in Verdict._ECOSYSTEMS} or eco == "actions":
+        if (
+            eco in ("npm", "pypi", "openvsx")
+            or eco in {r for r, _ in Verdict._ECOSYSTEMS}
+            or eco == "actions"
+        ):
             return eco
         if package.get("skill") or eco in ("msb", "asb", "skills", "skill"):
             return "skill"
@@ -354,7 +412,16 @@ class VerdictTrain:
         p = argparse.ArgumentParser()
         p.add_argument("--corpus", type=Path, required=True, help="every benign corpus unit")
         p.add_argument("--benign", type=Path, required=True)
-        p.add_argument("--malware", type=Path, required=True)
+        p.add_argument(
+            "--malware", type=Path, help="npm/PyPI malware scans (superseded by --benchmark)"
+        )
+        p.add_argument(
+            "--benchmark",
+            type=Path,
+            nargs=2,
+            metavar=("MANIFEST", "SCANS"),
+            help="the real-malware benchmark: every ecosystem, its own work/holdout split",
+        )
         p.add_argument(
             "--labelled", nargs="*", default=[], help="NAME=PATH, NAME in " + ",".join(LABELLED)
         )
@@ -435,6 +502,8 @@ class VerdictTrain:
         p.add_argument("--dump", type=Path, help="every row: half, eco, area, label, score, kept")
         a = p.parse_args()
 
+        if not (a.malware or a.benchmark):
+            raise SystemExit("--malware or --benchmark is required")
         data, size = cls.load(a)
         for r in data:
             if a.split == "family" and r["label"] and r["source"].startswith("datadog"):
@@ -730,7 +799,12 @@ class VerdictTrain:
                     "half": "work",
                     "benign": int(len(yw) - yw.sum()),
                     "malware": int(yw.sum()),
-                    "inputs": [str(a.benign), str(a.malware), *a.labelled],
+                    "inputs": [
+                        str(a.benign),
+                        str(a.malware),
+                        *map(str, a.benchmark or ()),
+                        *a.labelled,
+                    ],
                 },
                 "budget_percent": a.budget,
                 "measured_holdout": {

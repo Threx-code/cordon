@@ -482,6 +482,16 @@ class OsvImport:
             except rubysec.RubysecError as exc:
                 raise OsvImportError(f"rubygems: {exc}") from exc
 
+        if ecosystem in ("npm", "pypi", "vscode"):
+            # DataDog's dataset names malicious packages OSV has not recorded yet; see
+            # `intel.datadog_malware`.
+            from cordon_scanner.intel import datadog_malware
+
+            try:
+                records.extend(datadog_malware.DatadogMalware.new_records(ecosystem, records))
+            except datadog_malware.DatadogMalwareError as exc:
+                raise OsvImportError(f"{ecosystem}: {exc}") from exc
+
         return tuple(records)
 
     @staticmethod
