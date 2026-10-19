@@ -482,6 +482,9 @@ class CapabilityDetector(BaseDetector):
         if unit.language == "go":
             hits.extend(self._go_ci_environment_write(matched_content))
             hits.extend(self._go_received_and_run(content))
+        if unit.language in ("javascript", "typescript"):
+            hits.extend(self._js_received_and_run(content))
+            hits.extend(self._js_decoded_program_run(content))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -1267,6 +1270,10 @@ class CapabilityDetector(BaseDetector):
         rb"(?:\beval|\bnew\s{1,4}Function|\bFunction|\bexec)\s{0,4}\(\s{0,4}"
         rb"(?:atob|Buffer\s{0,4}\.\s{0,4}from|decodeURIComponent\s{0,4}\(\s{0,4}escape\s{0,4}\(\s{0,4}atob"
         rb"|base64\s{0,4}\.\s{0,4}b64decode|codecs\s{0,4}\.\s{0,4}decode)\s{0,4}\(\s{0,4}b?['\"`][A-Za-z0-9+/=_-]{60}"
+        # The decoder the file defines itself: `eval(_eval('<4 MB of base64>'))` in `1kzr` (review
+        # 98, npm work half). Longer literal, since the decoder's name says nothing.
+        rb"|(?:\beval|\bnew\s{1,4}Function|\bFunction)\s{0,4}\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\(\s{0,4}"
+        rb"['\"`][A-Za-z0-9+/=_-]{400}"
     )
 
     #: An agent started with its checks off AND told to destroy or to hunt for secrets.
@@ -3079,6 +3086,122 @@ class CapabilityDetector(BaseDetector):
                             line=text.count("\n", 0, offset) + 1,
                         ),
                     ]
+        return []
+
+    #: A connection JavaScript opens or accepts: a raw or TLS socket, a WebSocket, a socket.io client.
+    _JS_CONNECTION: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bnew\s{1,4}(?:net\s{0,4}\.\s{0,4})?Socket\s{0,4}\(|\b(?:net|tls)\s{0,4}\.\s{0,4}"
+        r"(?:connect|createConnection|createServer)\s{0,4}\(|\bnew\s{1,4}WebSocket\s{0,4}\(|\bio\s{0,4}\(\s{0,4}['\"`]"
+    )
+    #: What arrives on it, handed to a callback: `.on('data', (d) => ...)`, `.on('message', ...)`.
+    _JS_RECEIVED: ClassVar[re.Pattern[str]] = re.compile(
+        r"\.\s{0,4}on\s{0,4}\(\s{0,4}['\"](?:data|message|command|cmd|exec|run)['\"]\s{0,4},\s{0,4}"
+        r"(?:async\s{1,4})?(?:function\s{0,4}\w{0,40}\s{0,4})?\(?\s{0,4}(?P<arg>[A-Za-z_$][\w$]{0,40})"
+    )
+
+    @classmethod
+    def _js_received_and_run(cls, content: FileContent) -> list[CapabilityHit]:
+        """JavaScript that runs, as a command, what arrives on a connection it opened.
+
+        `client.on('data', (data) => exec(data.toString(), ...))` with the output written back:
+        a reverse shell that names no shell, so the stdio-joining rule never sees it (review 98,
+        `@ibm-org/custom-greeting` 1.0.1; 1.0.0 piped a named shell and was caught). The
+        JavaScript twin of `_go_received_and_run`: the process start's first argument must be
+        built from the received value, within the handler, and nothing else. Recorded at the
+        process start as `fetch_exec`, and the connection as the egress."""
+        text = content.text
+        connection = cls._JS_CONNECTION.search(text) if len(text) <= 4_000_000 else None
+        if connection is None:
+            return []
+        for received in cls._JS_RECEIVED.finditer(text):
+            arg = re.escape(received["arg"])
+            handler = text[received.end() : received.end() + 1500]
+            run = re.search(
+                # Called bare or on a child-process module: `re.exec(chunk)` is a regular expression.
+                rf"(?:(?<![\w$.])|\b(?:child_process|childProcess|cp|proc|shell)\s{{0,4}}\.\s{{0,4}})"
+                rf"(?:exec|execSync|spawn|spawnSync|execFile|execFileSync|eval)\s{{0,4}}\(\s{{0,4}}"
+                rf"(?:(?:String|Buffer\.from|JSON\.parse)\s{{0,4}}\(\s{{0,4}})?`?(?:\$\{{\s{{0,4}})?{arg}\b",
+                handler,
+            )
+            if run is None:
+                continue
+            offset = received.end() + run.start()
+            start = len(text[:offset].encode("utf-8"))
+            egress = len(text[: connection.start()].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.EGRESS,
+                    rule_id="CAP.JS.RECEIVED_RUN",
+                    byte_start=egress,
+                    byte_end=egress + 1,
+                    line=text.count("\n", 0, connection.start()) + 1,
+                ),
+                CapabilityHit(
+                    capability=Capability.FETCH_EXEC,
+                    rule_id="CAP.JS.RECEIVED_RUN",
+                    byte_start=start,
+                    byte_end=start + 1,
+                    line=text.count("\n", 0, offset) + 1,
+                ),
+            ]
+        return []
+
+    #: Bytes turned into something else by a key: an XOR loop over a buffer, a cipher, base64.
+    #: Decompression is not one -- a binary installer inflates a release, makes it executable and
+    #: starts it, which is its job.
+    _JS_BYTES_TRANSFORMED: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b[\w$]{1,40}\s{0,4}\[\s{0,4}[\w$]{1,40}\s{0,4}\]\s{0,4}\^=|\bcreateDecipher(?:iv)?\s{0,4}\("
+    )
+    #: Read from a file: what the transform works on is something the package carries.
+    _JS_READS_FILE: ClassVar[re.Pattern[str]] = re.compile(r"\breadFile(?:Sync)?\s{0,4}\(")
+    #: Written to disk.
+    _JS_WRITES_FILE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:writeFile(?:Sync)?|createWriteStream)\s{0,4}\("
+    )
+    #: What is written is a program: executable mode, an executable's own magic checked, or a
+    #: program's file name.
+    _JS_PROGRAM_WRITTEN: ClassVar[re.Pattern[str]] = re.compile(
+        r"\bmode\s{0,4}:\s{0,4}0o?7[0-7]{2}\b|\bchmod(?:Sync)?\s{0,4}\(|0x4[dD]\b[^\n]{0,80}0x5[aA]\b"
+        r"|['\"]MZ['\"]|0x7[fF]\b[^\n]{0,40}0x45\b[^\n]{0,40}0x4[cC]\b"
+        r"|\.(?:exe|dll|scr|bat|cmd|ps1|vbs|hta)['\"`]"
+    )
+    _JS_STARTS_PROCESS: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s{0,4}\("
+    )
+
+    @classmethod
+    def _js_decoded_program_run(cls, content: FileContent) -> list[CapabilityHit]:
+        """JavaScript that turns a file it carries into a program, writes it and starts it.
+
+        A data file shipped beside the code, XOR-decrypted byte by byte, checked for `MZ`, written
+        with mode 0755 and run hidden, from a function the module calls on load: the clone of
+        winston published as `@winstan/binston` (review 98, npm work half); the same with a cipher
+        in `@builderius/sense-ai`. In order -- a file read, its bytes XOR-ed or deciphered, written
+        as a program, started -- within 3,000 characters. Base64 and decompression are not the
+        transform: across 98,499 benign units they were bundles and installers doing their job."""
+        text = content.text
+        if len(text) > 4_000_000 or not cls._JS_READS_FILE.search(text):
+            return []
+        for found in cls._JS_BYTES_TRANSFORMED.finditer(text):
+            read = cls._JS_READS_FILE.search(text, max(0, found.start() - 1500), found.start())
+            window = text[found.start() : found.start() + 3000]
+            write = cls._JS_WRITES_FILE.search(window)
+            if read is None or write is None or not cls._JS_PROGRAM_WRITTEN.search(window):
+                continue
+            run = cls._JS_STARTS_PROCESS.search(window, write.end())
+            if run is None:
+                continue
+            offset = found.start() + run.start()
+            start = len(text[:offset].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.DECODE,
+                    rule_id="CAP.JS.DECODED_PROGRAM_RUN",
+                    byte_start=start,
+                    byte_end=start + 1,
+                    line=text.count("\n", 0, offset) + 1,
+                )
+            ]
         return []
 
     #: The CI job's environment and PATH files: what a step writes there, every later step runs with.
@@ -5085,7 +5208,9 @@ class CapabilityDetector(BaseDetector):
                 )
                 # A command channel -- what arrives on a connection, run -- is not a routine a
                 # caller asks for; it is never lowered for running only when called.
-                and not any(hit.rule_id == "CAP.GO.RECEIVED_RUN" for hit in hits)
+                and not any(
+                    hit.rule_id in ("CAP.GO.RECEIVED_RUN", "CAP.JS.RECEIVED_RUN") for hit in hits
+                )
             ):
                 # Fetch-and-run is HIGH where it runs on its own: an install hook, a pipeline, a
                 # `.pth`, a library's top level that executes on import. An `install.sh` or a

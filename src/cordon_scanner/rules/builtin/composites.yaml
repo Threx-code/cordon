@@ -763,6 +763,35 @@ rules:
         - capability: decode
         - capability: spawn
 
+  - id: MALWARE.DROPPER.SHIPPED_PAYLOAD.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code decrypts bytes it carries into a program, writes it and runs it
+    message: >
+      This file transforms data it carries -- an XOR loop over a buffer, a cipher, base64 --
+      writes the result as a program (executable mode, an executable's header checked, an `.exe`
+      name) and starts it. The program never appears in the package in a form anyone can read,
+      and nothing needs to be downloaded. Libraries that ship a binary ship it as one; decrypting
+      it first exists to hide it.
+    remediation: >
+      Do not install or import this package. Treat machines that loaded it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        `@winstan/binston` 1.0.1 (npm, a clone of winston): `transport.db` XOR-decrypted, checked
+        for `MZ`, written with mode 0755 and run hidden on load (review 98, work half).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+      - https://attack.mitre.org/techniques/T1140/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.JS.DECODED_PROGRAM_RUN
+
   - id: SUSPECT.EXFIL.CALLBACK.001
     version: 1.0.0
     category: suspicious

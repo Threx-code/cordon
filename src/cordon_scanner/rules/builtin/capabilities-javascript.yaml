@@ -42,9 +42,15 @@ rules:
         # A hand-written hex decoder: two characters at a time through parseInt(..., 16). How a
         # payload fetched as an innocent-looking "version_hash" becomes a command line.
         - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}parseInt\s{0,4}\([^\n]{0,80}?,\s{0,4}16\s{0,4}\)\s{0,4}\)'
+        # SYMMETRIC DECRYPTION, a decode with a key (as in the Python primitive). An install
+        # script that decrypts a file shipped beside it, runs the plaintext and deletes it hides
+        # the program from anyone reading the package -- the key is in the script, the program
+        # is not (npm, review 98, work half).
+        - '\bcreateDecipher(?:iv)?\s{0,4}\('
     tests:
       positive:
         - "const raw = atob(payload);"
+        - "var dc = cr.createDecipheriv(alg, k, iv);"
         - "const buf = Buffer.from(data, 'base64');"
         - "const s = decodeURIComponent(escape(x));"
         - "for (let n = 0; n < e.length; n += 2) t += String.fromCharCode(parseInt(e.slice(n, n + 2), 16));"

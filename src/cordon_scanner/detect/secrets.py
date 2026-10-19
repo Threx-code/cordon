@@ -2517,8 +2517,12 @@ class SourcePaths:
         on every install of the package; the word `samples` in the directory had ceilinged the
         obfuscated payload and the hook declaring it below the failure gate. Such a file is test
         material only under a directory whose whole name says so, the test `setup.py` already gets.
+
+        A published package's import entry is the same evidence: whatever imports the package runs
+        its top level. `api-demo-sample-lib1` reports the importer's host, user and DNS servers from
+        `index.js`, and the word `sample` in its own name had held that below the gate (review 98).
         """
-        if path in ctx.install_hook_paths:
+        if path in ctx.install_hook_paths or path in ctx.import_entry_paths:
             return ContainerPaths.under_fixture_directory(path)
         return SourcePaths.is_test_material(path)
 

@@ -240,6 +240,7 @@ rather than a document.
 | `MALWARE.CLAMAV.SIGNATURE.001` | critical | `clamav` | malicious_code |
 | `MALWARE.CRYPTOMINER.001` | critical | `composites` | cryptomining |
 | `MALWARE.DROPPER.001` | critical | `composites` | dropper |
+| `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | `composites` | dropper |
 | `MALWARE.INSTALL.BACKGROUND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | `composites` | install_hook |
