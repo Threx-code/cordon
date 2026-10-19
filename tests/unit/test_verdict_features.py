@@ -278,6 +278,14 @@ class TestTheShippedVerdict:
         assert summary["block"] == 0.95
         assert graded[0].severity == Severity.MEDIUM
 
+    def test_a_model_judges_only_the_ecosystems_in_its_scope(self) -> None:
+        findings = [VerdictKit.finding("SUSPECT.X.001", Severity.HIGH)]
+        scoped = {**VerdictKit.model(), "scope": ["pypi"]}
+        graded, summary = VerdictKit.decide(findings, scoped)
+        assert summary["area"] == "npm"
+        assert "score" not in summary
+        assert graded == findings
+
     def test_a_model_of_another_format_is_not_used(self, tmp_path) -> None:
         old = tmp_path / "verdict.json.gz"
         with gzip.open(old, "wt", encoding="utf-8") as handle:

@@ -628,6 +628,10 @@ class Verdict:
             )
         if not rules:
             return findings, summary
+        if "scope" in model and area not in model["scope"]:
+            # A model judges only the ecosystems it was trained and measured on; every other
+            # package keeps its findings exactly as the rules graded them.
+            return findings, summary
         # An area with trees of its own (agent skills read nothing like libraries) is scored by them.
         score = VerdictModel.score(model.get("by_area", {}).get(area, model), features)
         areas = model["areas"]

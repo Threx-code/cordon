@@ -377,6 +377,26 @@ class VerdictTrain:
             return "skill"
         return Verdict.FALLBACK
 
+    @classmethod
+    def unstable(cls, pair: list[Path], threshold: float = 0.01) -> set[str]:
+        """Features whose value differs between two scans of the same units by two scanner
+        versions on more than `threshold` of the units both scanned."""
+        old = {r["file"]: cls.evidence(r) for r in cls.rows(pair[0]) if "findings" in r}
+        differs: collections.Counter = collections.Counter()
+        shared = 0
+        for r in cls.rows(pair[1]):
+            if "findings" not in r or r["file"] not in old:
+                continue
+            shared += 1
+            before, after = old[r["file"]], cls.evidence(r)
+            for k in before.keys() | after.keys():
+                if abs(before.get(k, 0.0) - after.get(k, 0.0)) > 1e-6:
+                    differs[k] += 1
+        if shared < 500:
+            raise SystemExit(f"--version-check: only {shared} units scanned by both versions")
+        print(f"version check: {shared} units scanned by both")
+        return {k for k, n in differs.items() if n / shared > threshold}
+
     @staticmethod
     def export(clf, names: list[str]) -> dict[str, Any]:
         """sklearn's HistGradientBoosting trees as `VerdictModel.score` walks them."""
@@ -450,6 +470,20 @@ class VerdictTrain:
             help="targeted rescans with a newer scanner: each record replaces the full scan's "
             "record of the same unit (the units a detector change can affect)",
         )
+        p.add_argument(
+            "--version-check",
+            type=Path,
+            nargs=2,
+            metavar=("OLD", "FRESH"),
+            help="benign scans of the same units by the training scans' scanner and the current "
+            "one: features that differ between them are dropped",
+        )
+        p.add_argument(
+            "--scope",
+            nargs="*",
+            default=[],
+            help="the only areas the model judges (the scanner leaves every other area alone)",
+        )
         p.add_argument("--budget", type=float, default=0.3, help="percent of an ecosystem's units")
         p.add_argument(
             "--split",
@@ -519,6 +553,17 @@ class VerdictTrain:
                 r["half"] = "none"
             if a.leave_out and r["eco"] == a.leave_out:
                 r["half"] = "holdout"
+        if a.scope:
+            # One ecosystem at a time: train, set lines and report only where the model will judge.
+            data = [r for r in data if r["area"] in a.scope]
+        unstable = cls.unstable(a.version_check) if a.version_check else set()
+        if unstable:
+            # A feature the scanner computes differently now than when these scans were made
+            # teaches the model the scanner's version, not malware (round 1, 2026-10-19: benign
+            # scans without `import_files`, malware scans with it -> 64% of benign npm blocked).
+            print(f"dropped {len(unstable)} version-unstable features: {sorted(unstable)[:40]}")
+            for r in data:
+                r["f"] = {k: v for k, v in r["f"].items() if k not in unstable}
         work = [r for r in data if r["half"] == "work" and r["eco"] != a.leave_out]
         test = [r for r in data if r["half"] == "holdout"]
         names = sorted({k for r in work for k in r["f"]})
@@ -789,6 +834,8 @@ class VerdictTrain:
                     )
         if a.out:
             body = {**exported, "areas": lines, "floor": floor, "add_only": sorted(a.add_only)}
+            if a.scope:
+                body["scope"] = sorted(a.scope)
             digest = hashlib.sha256(
                 json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest()
