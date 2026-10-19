@@ -36,11 +36,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -140,18 +142,24 @@ class TimeSplit:
         samples = [s for s in listing["added"] if s not in STUDIED]
         empty = Path(tempfile.mkdtemp()) / "no-advisories.json"
         empty.write_text("[]", encoding="utf-8")
-        with ThreadPoolExecutor(workers) as pool:
-            rows = list(pool.map(lambda s: cls.scan_one(root, s, empty), samples))
+        # Processes, not threads: decrypting DataDog's password-protected zips is pure Python and
+        # holds the GIL, so nine threads unpacked one sample at a time and left one scan running.
+        with ProcessPoolExecutor(workers) as pool:
+            rows = list(pool.map(partial(cls.scan_one, root, empty=empty), samples))
         seen = Counter(str(r["level"]) for r in rows)
         answered = len(rows) - seen["error"]
+        # A release the shipped advisories already name is intel, not content: it counts only in
+        # the recall with intel. Content recall is a lower bound -- a known release whose content
+        # would also have been blocked is not credited to content.
         caught = seen["blocked"] + seen["known"]
         summary = {
             "frozen": listing["frozen"],
             "head": listing["head"],
             "samples": len(rows),
             "levels": dict(seen),
-            "content_recall": round(caught / max(answered, 1), 4),
-            "content_recall_95": list(Wilson.interval(caught, answered)),
+            "content_recall": round(seen["blocked"] / max(answered, 1), 4),
+            "content_recall_95": list(Wilson.interval(seen["blocked"], answered)),
+            "recall_with_intel": round(caught / max(answered, 1), 4),
             "enough_for_a_98_claim": answered >= 650,
         }
         out.mkdir(parents=True, exist_ok=True)
@@ -176,6 +184,8 @@ class TimeSplit:
         if args.command == "fetch":
             print(f"{len(cls.fetch(args.into))} samples added after {FROZEN[:12]}")
             return 0
+        if shutil.which("cordon-scanner") is None:
+            raise SystemExit("cordon-scanner is not on PATH: every sample would score as an error")
         print(json.dumps(cls.scan(args.root, args.out, args.workers), indent=1))
         return 0
 

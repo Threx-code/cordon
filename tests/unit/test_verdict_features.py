@@ -166,6 +166,32 @@ class TestTheShippedVerdict:
         assert area("extension.vsixmanifest", "extension/package.json") == "openvsx"
         assert area("src/main.go", "go.mod") == Verdict.FALLBACK
 
+    def test_every_registry_release_format_has_a_line_of_its_own(self) -> None:
+        # The layouts as each registry serves its releases (benign corpus, 2026-10-19).
+        def area(*names: str) -> str:
+            return Verdict.area(list(names), {}, {}, {})
+
+        assert area("metadata.gz", "lib/x.rb") == "rubygems"
+        assert area("x-0.1.0/Cargo.toml.orig", "x-0.1.0/src/lib.rs") == "crates"
+        assert area("X.Client.nuspec", "lib/net45/X.Client.dll") == "nuget"
+        assert area("META-INF/MANIFEST.MF", "at/x/A.class") == "maven"
+        assert (
+            area("bitbucket.org/a/rio@v0.0.0-2019/go.mod", "bitbucket.org/a/rio@v0.0.0-2019/f.go")
+            == "go"
+        )
+        assert area("a-api-ec4f957/composer.json", "a-api-ec4f957/src/Api.php") == "packagist"
+        assert area("AMAPVox/DESCRIPTION", "AMAPVox/R/A.R") == "cran"
+        assert area("metadata.config", "mix.exs") == "hex"
+        assert area("pubspec.yaml", "lib/acorn.dart") == "pub"
+
+    def test_a_repository_is_not_mistaken_for_a_release(self) -> None:
+        def area(*names: str) -> str:
+            return Verdict.area(list(names), {}, {}, {})
+
+        assert area("go.mod", "cmd/main.go") == Verdict.FALLBACK
+        assert area("composer.json", "src/A.php") == Verdict.FALLBACK
+        assert area("Cargo.toml", "src/lib.rs") == Verdict.FALLBACK
+
     def test_a_registry_package_that_ships_a_skill_is_judged_by_its_registry(self) -> None:
         names = ["package/package.json", "package/skills/x/SKILL.md"]
         assert Verdict.area(names, {}, {"skill": 1.0}, {}) == "npm"

@@ -470,6 +470,23 @@ class Verdict:
     #: The line every package without one of its own answers to: the strictest of them all.
     FALLBACK: ClassVar[str] = "package"
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
+    #: Each registry's archive layout, as its own release format puts it: a gem's `metadata.gz`, a
+    #: crate's `<name>-<version>/Cargo.toml.orig`, a nupkg's top-level `.nuspec`, a jar's
+    #: manifest, a Go module zip's `<module>@<version>/go.mod`, a Packagist dist's
+    #: `<dir>/composer.json`, a CRAN source's `<name>/DESCRIPTION`, a Hex tarball's
+    #: `metadata.config`, a pub archive's `pubspec.yaml`. Benign libraries of each carry
+    #: different findings by nature, so each answers to a line set on its own benign units.
+    _REGISTRIES: ClassVar[tuple[tuple[str, re.Pattern[str]], ...]] = (
+        ("rubygems", re.compile(r"^metadata\.gz$")),
+        ("crates", re.compile(r"^[^/]+-\d[^/]*/Cargo\.toml\.orig$")),
+        ("nuget", re.compile(r"^[^/]+\.nuspec$")),
+        ("maven", re.compile(r"^META-INF/MANIFEST\.MF$")),
+        ("go", re.compile(r"^(?:[^/]+/)*[^/@]+@v[^/]+/go\.mod$")),
+        ("packagist", re.compile(r"^[^/]+/composer\.json$")),
+        ("cran", re.compile(r"^[^/]+/DESCRIPTION$")),
+        ("hex", re.compile(r"^metadata\.config$")),
+        ("pub", re.compile(r"^pubspec\.yaml$")),
+    )
     _MCP: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"@modelcontextprotocol/sdk|[\"']mcp(?:\[cli\])?[>=<~\"' ]|fastmcp"
     )
@@ -490,8 +507,8 @@ class Verdict:
         package: dict[str, float],
         rules: dict[str, int],
     ) -> str:
-        """Which line a package answers to: an agent skill, an MCP server, an npm, PyPI or Open VSX
-        package by its archive layout, or any other package.
+        """Which line a package answers to: an agent skill, an MCP server, a package of a registry
+        recognised by its archive layout (npm, PyPI, Open VSX and `_REGISTRIES`), or any other.
 
         Benign skills, MCP servers and libraries of each registry carry different findings by
         nature, so each has its own line, set on its own benign units. Anything not recognised
@@ -509,6 +526,9 @@ class Verdict:
             return "npm"
         if any(Verdict._PYPI.match(n) for n in inner):
             return "pypi"
+        for registry, layout in Verdict._REGISTRIES:
+            if any(layout.match(n) for n in inner):
+                return registry
         if package.get("skill"):
             return "skill"
         return Verdict.FALLBACK

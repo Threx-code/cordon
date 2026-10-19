@@ -313,7 +313,7 @@ class VerdictTrain:
         package = (row.get("verdict") or {}).get("package") or {}
         if eco in ("mcp", "mcpv", "mcpc") or any(r.startswith("SUSPECT.MCP.") for r in rules):
             return "mcp"
-        if eco in ("npm", "pypi", "openvsx"):
+        if eco in ("npm", "pypi", "openvsx") or eco in {r for r, _ in Verdict._REGISTRIES}:
             return eco
         if package.get("skill") or eco in ("msb", "asb", "skills", "skill"):
             return "skill"
@@ -554,7 +554,8 @@ class VerdictTrain:
         areas = sorted({r["area"] for r in work} | {Verdict.FALLBACK})
         lines = dict.fromkeys(areas, 1.01)
         grid = np.unique(np.concatenate([np.round(oof, 4), [1.01]]))
-        for area in ("skill", "mcp", "npm", "pypi", "openvsx", Verdict.FALLBACK):
+        first = ("skill", "mcp", "npm", "pypi", "openvsx")
+        for area in [*first, *sorted(set(lines) - {*first, Verdict.FALLBACK}), Verdict.FALLBACK]:
             if area not in lines:
                 continue
             touched = {r["eco"] for r in work if r["area"] == area and not r["label"]}
@@ -582,9 +583,7 @@ class VerdictTrain:
             lines[area] = float(grid[lo])
         # A package whose kind the scan cannot tell answers to the strictest package line.
         lines[Verdict.FALLBACK] = max(
-            lines[x]
-            for x in ("npm", "pypi", "openvsx", Verdict.FALLBACK)
-            if x in lines and x not in a.add_only
+            lines[x] for x in lines if x not in ("skill", "mcp") and x not in a.add_only
         )
 
         fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
