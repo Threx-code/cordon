@@ -470,22 +470,48 @@ class Verdict:
     #: The line every package without one of its own answers to: the strictest of them all.
     FALLBACK: ClassVar[str] = "package"
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
-    #: Each registry's archive layout, as its own release format puts it: a gem's `metadata.gz`, a
-    #: crate's `<name>-<version>/Cargo.toml.orig`, a nupkg's top-level `.nuspec`, a jar's
-    #: manifest, a Go module zip's `<module>@<version>/go.mod`, a Packagist dist's
-    #: `<dir>/composer.json`, a CRAN source's `<name>/DESCRIPTION`, a Hex tarball's
-    #: `metadata.config`, a pub archive's `pubspec.yaml`. Benign libraries of each carry
-    #: different findings by nature, so each answers to a line set on its own benign units.
-    _REGISTRIES: ClassVar[tuple[tuple[str, re.Pattern[str]], ...]] = (
-        ("rubygems", re.compile(r"^metadata\.gz$")),
-        ("crates", re.compile(r"^[^/]+-\d[^/]*/Cargo\.toml\.orig$")),
-        ("nuget", re.compile(r"^[^/]+\.nuspec$")),
-        ("maven", re.compile(r"^META-INF/MANIFEST\.MF$")),
-        ("go", re.compile(r"^(?:[^/]+/)*[^/@]+@v[^/]+/go\.mod$")),
-        ("packagist", re.compile(r"^[^/]+/composer\.json$")),
-        ("cran", re.compile(r"^[^/]+/DESCRIPTION$")),
-        ("hex", re.compile(r"^metadata\.config$")),
-        ("pub", re.compile(r"^pubspec\.yaml$")),
+    #: Each ecosystem's layout, read on the outermost archive only (a jar bundled in a Gradle
+    #: repository is not a Maven release), measured on the benign corpus (2026-10-19). Release
+    #: formats first: a gem's `metadata.gz`, a crate's `Cargo.toml.orig`, a nupkg's `.nuspec`, a
+    #: jar's manifest, a Go module zip, a conda package's `info/`, a Hex tarball, an Ansible
+    #: collection's `FILES.json`, an image export. Then project layouts, one directory deep at most.
+    #: Benign code of each carries different findings by nature, so each answers to its own line.
+    _ECOSYSTEMS: ClassVar[tuple[tuple[str, re.Pattern[str]], ...]] = tuple(
+        (name, re.compile(layout))
+        for name, layout in (
+            ("rubygems", r"^metadata\.gz$"),
+            ("crates", r"^[^/]+-\d[^/]*/Cargo\.toml\.orig$"),
+            ("nuget", r"^[^/]+\.nuspec$"),
+            ("maven", r"^META-INF/(?:MANIFEST\.MF$|maven/)"),
+            ("go", r"^(?:[^/]+/)*[^/@]+@v\d[^/]*/"),
+            ("conda", r"^info/index\.json$|^info-[^/]+\.tar\.zst$"),
+            ("hex", r"^metadata\.config$"),
+            ("galaxy", r"^FILES\.json$"),
+            ("image", r"^image-config/|^sha256:[0-9a-f]{64}$|^blobs/sha256/"),
+            ("packagist", r"^[^/]+/composer\.json$"),
+            ("cran", r"^[^/]+/DESCRIPTION$"),
+            ("pub", r"^(?:[^/]+/)?pubspec\.yaml$"),
+            ("swift", r"^(?:[^/]+/)?Package\.swift$"),
+            ("cocoapods", r"^(?:[^/]+/)?[^/]+\.podspec(?:\.json)?$"),
+            ("hackage", r"^(?:[^/]+/)?[^/]+\.cabal$"),
+            ("helm", r"^(?:[^/]+/)?Chart\.yaml$"),
+            ("conan", r"^(?:[^/]+/)?conanfile\.py$"),
+            ("vcpkg", r"^(?:[^/]+/)?(?:vcpkg\.json|portfile\.cmake)$"),
+            ("opam", r"^(?:[^/]+/)?(?:[^/]+\.opam|opam|dune-project|_oasis|OMakeroot)$"),
+            ("julia", r"^(?:[^/]+/)?(?:Julia)?Project\.toml$"),
+            ("bazel", r"^(?:[^/]+/)?(?:MODULE\.bazel|WORKSPACE(?:\.bazel)?)$"),
+            ("gradle", r"^(?:[^/]+/){0,2}(?:settings|build)\.gradle(?:\.kts)?$"),
+            ("nix", r"^(?:[^/]+/)?(?:flake|default)\.nix$"),
+            ("homebrew", r"^(?:[^/]+/)?(?:Formula|Casks)/(?:[^/]+/)*[^/]+\.rb$"),
+            ("terraform", r"^(?:[^/]+/)?[^/]+\.tf$"),
+        )
+    )
+    #: After skills: an npm tarball whose root folder is the package (`@types/*` use the name, not
+    #: `package/`). Only a `.tgz` itself: a directory with a `package.json` in it is not a release.
+    _NPM_NAMED_ROOT: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/package\.json$")
+    #: Last, after skills: nearly every repository has workflows.
+    _ACTIONS: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:[^/]+/)?(?:action\.ya?ml|\.github/workflows/[^/]+\.ya?ml)$"
     )
     _MCP: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"@modelcontextprotocol/sdk|[\"']mcp(?:\[cli\])?[>=<~\"' ]|fastmcp"
@@ -508,7 +534,7 @@ class Verdict:
         rules: dict[str, int],
     ) -> str:
         """Which line a package answers to: an agent skill, an MCP server, a package of a registry
-        recognised by its archive layout (npm, PyPI, Open VSX and `_REGISTRIES`), or any other.
+        recognised by its layout (npm, PyPI, Open VSX, `_ECOSYSTEMS`, `_ACTIONS`), or any other.
 
         Benign skills, MCP servers and libraries of each registry carry different findings by
         nature, so each has its own line, set on its own benign units. Anything not recognised
@@ -519,18 +545,28 @@ class Verdict:
         ):
             return "mcp"
         # A registry package that also ships a skill is still judged as a package of its registry.
-        inner = [n.rsplit("!", 1)[-1] for n in names]
+        # The outermost archive only: what is bundled inside it is not what it is.
+        inner = [parts[-1] for parts in (n.split("!") for n in names) if len(parts) <= 2]
         if any(n in ("extension.vsixmanifest", "extension/package.json") for n in inner):
             return "openvsx"
         if "package/package.json" in inner:
             return "npm"
         if any(Verdict._PYPI.match(n) for n in inner):
             return "pypi"
-        for registry, layout in Verdict._REGISTRIES:
+        for ecosystem, layout in Verdict._ECOSYSTEMS:
             if any(layout.match(n) for n in inner):
-                return registry
+                return ecosystem
         if package.get("skill"):
             return "skill"
+        if any(
+            len(parts) == 2
+            and parts[0].endswith(".tgz")
+            and Verdict._NPM_NAMED_ROOT.match(parts[1])
+            for parts in (n.split("!") for n in names)
+        ):
+            return "npm"
+        if any(Verdict._ACTIONS.match(n) for n in inner):
+            return "actions"
         return Verdict.FALLBACK
 
     @staticmethod

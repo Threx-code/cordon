@@ -313,7 +313,7 @@ class VerdictTrain:
         package = (row.get("verdict") or {}).get("package") or {}
         if eco in ("mcp", "mcpv", "mcpc") or any(r.startswith("SUSPECT.MCP.") for r in rules):
             return "mcp"
-        if eco in ("npm", "pypi", "openvsx") or eco in {r for r, _ in Verdict._REGISTRIES}:
+        if eco in ("npm", "pypi", "openvsx") or eco in {r for r, _ in Verdict._ECOSYSTEMS} or eco == "actions":
             return eco
         if package.get("skill") or eco in ("msb", "asb", "skills", "skill"):
             return "skill"

@@ -184,6 +184,53 @@ class TestTheShippedVerdict:
         assert area("metadata.config", "mix.exs") == "hex"
         assert area("pubspec.yaml", "lib/acorn.dart") == "pub"
 
+    def test_every_project_ecosystem_has_a_line_of_its_own(self) -> None:
+        # The layouts as the benign corpus holds them (2026-10-19), one per ecosystem folder.
+        def area(*names: str) -> str:
+            return Verdict.area(list(names), {}, {}, {})
+
+        assert area("info/index.json", "info/paths.json") == "conda"
+        assert area("FILES.json", "MANIFEST.json", "roles/x/tasks/main.yml") == "galaxy"
+        assert area("image-config/environment.env", "etc/passwd") == "image"
+        assert area("x-1.0/x.podspec", "x-1.0/Sources/A.m") == "cocoapods"
+        assert area("x-0.1/x.cabal", "x-0.1/src/A.hs") == "hackage"
+        assert area("chart/Chart.yaml", "chart/values.yaml") == "helm"
+        assert area("recipes_x/conanfile.py", "recipes_x/conandata.yml") == "conan"
+        assert area("ports_x/portfile.cmake", "ports_x/vcpkg.json") == "vcpkg"
+        assert area("x-1.0/x.opam", "x-1.0/src/a.ml") == "opam"
+        assert area("Project.toml", "src/X.jl") == "julia"
+        assert area("x-HEAD/Package.swift", "x-HEAD/Sources/A.swift") == "swift"
+        assert area("x-1.0/MODULE.bazel", "x-1.0/BUILD.bazel") == "bazel"
+        assert area("x-HEAD/settings.gradle", "x-HEAD/app/build.gradle") == "gradle"
+        assert area("x-HEAD/flake.nix", "x-HEAD/flake.lock") == "nix"
+        assert area("tap/Formula/x.rb") == "homebrew"
+        assert area("module-abc/main.tf", "module-abc/variables.tf") == "terraform"
+        assert area("owner_repo/action.yml", "owner_repo/dist/index.js") == "actions"
+        assert area("owner_repo/.github/workflows/ci.yml") == "actions"
+        # Measured misses of the first draft, each from a real corpus layout:
+        assert area("tap/Casks/d/djv.rb") == "homebrew"
+        assert area("tap/Casks/font/font-3/font-3270.rb") == "homebrew"
+        assert area("sha256:" + "a" * 64, "manifest.json", "b" * 64 + ".tar.gz") == "image"
+        assert area("github.com/x/mol@v0.0.0-2016/mol.go") == "go"
+        assert area("App-HEAD/android/build.gradle", "App-HEAD/package.json") == "gradle"
+        assert area("META-INF/maven/org.webjars.npm/x/pom.xml") == "maven"
+        assert area("x-HEAD/Package.swift", "x-HEAD/x.podspec") == "swift"
+        assert area("bap-2.5.0/OMakeroot", "bap-2.5.0/lib/a.ml") == "opam"
+        assert area("t.tgz!aria-query/package.json", "t.tgz!aria-query/index.d.ts") == "npm"
+        assert area("aria-query/package.json", "aria-query/index.d.ts") == Verdict.FALLBACK
+        assert Verdict.area(["s/SKILL.md", "s/package.json"], {}, {"skill": 1.0}, {}) == "skill"
+
+    def test_a_bundled_archive_does_not_name_the_ecosystem(self) -> None:
+        # A Gradle repository carries gradle-wrapper.jar: its manifest is not a Maven release.
+        names = [
+            "r.tar.gz!r-HEAD/settings.gradle",
+            "r.tar.gz!r-HEAD/gradle/wrapper/gradle-wrapper.jar!META-INF/MANIFEST.MF",
+        ]
+        assert Verdict.area(names, {}, {}, {}) == "gradle"
+        assert (
+            Verdict.area(["x.jar!META-INF/MANIFEST.MF", "x.jar!a/B.class"], {}, {}, {}) == "maven"
+        )
+
     def test_a_repository_is_not_mistaken_for_a_release(self) -> None:
         def area(*names: str) -> str:
             return Verdict.area(list(names), {}, {}, {})

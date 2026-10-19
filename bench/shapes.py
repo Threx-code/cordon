@@ -52,14 +52,54 @@ CODE = (
     ".vbs",
     ".go",
     ".rs",
+    # Every ecosystem's source, so no language's code is counted as "no code" (2026-10-19).
+    ".java",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".groovy",
+    ".gradle",
+    ".cs",
+    ".fs",
+    ".vb",
+    ".swift",
+    ".m",
+    ".mm",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".lua",
+    ".pl",
+    ".pm",
+    ".r",
+    ".ex",
+    ".exs",
+    ".erl",
+    ".hs",
+    ".ml",
+    ".jl",
+    ".dart",
+    ".tf",
+    ".nix",
+    ".cmake",
+    ".psm1",
+    ".jsx",
+    ".tsx",
+    ".vue",
+    ".rake",
+    ".gemspec",
 )
 BINARY = (".exe", ".dll", ".so", ".dylib", ".node", ".bin", ".pyd", ".jar", ".wasm", ".msi", ".scr")
 NETWORK = re.compile(
     rb"https?://|\brequire\(['\"](https?|net|dns|child_process)['\"]\)|\bfetch\(|XMLHttpRequest|urllib"
+    rb"|Net::HTTP|HttpClient|WebClient|Invoke-WebRequest|URLConnection|net/http|\bcurl\b|\bwget\b"
     rb"|requests\.|socket\.|discord(app)?\.com/api/webhooks|ngrok|pipedream|burpcollaborator|oast\.|interact\.sh"
 )
 PROCESS = re.compile(
     rb"child_process|exec(Sync)?\(|spawn\(|subprocess|os\.system|eval\(|new Function|Function\(|exec\("
+    rb"|\bsystem\(|Runtime\.getRuntime|Process\.Start|exec\.Command|popen|Start-Process|IO\.popen"
 )
 NO_PAYLOAD = ("A ", "E ", "E2 ")
 """Shapes with nothing for content analysis to find: a registry's security placeholder, no code
