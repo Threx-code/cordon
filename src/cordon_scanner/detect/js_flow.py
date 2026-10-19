@@ -256,6 +256,28 @@ class JsFlow:
         except RecursionError:
             return []
 
+    @classmethod
+    def deferred_spans(cls, text: str) -> list[tuple[int, int]] | None:
+        """Character spans of the function bodies nothing at the file's top level reaches.
+
+        What runs when a file is loaded is its top level and every function that reaches: one
+        invoked where it stands (`(function(){ ... })()`, `!function(){ ... }()`, `.call`), one
+        handed to a call (`setTimeout(() => ...)`, `.then(...)`, `process.on(..., fn)`, since the
+        runtime calls it without the user asking), one that reached code calls or passes by name,
+        and the methods the language calls on its own (`constructor`, `then`, `toString`). What is
+        left is behind an export: it runs when the package's user calls it (review 98, 19 step 2).
+
+        Every approximation keeps code reached: names resolve by spelling, not scope, so a call to
+        any function of that name reaches every function of that name. None when the file is past
+        the analysis limit or did not tokenise; the caller then knows nothing was ruled out.
+        """
+        if len(text) > MAX_BYTES:
+            return None
+        try:
+            return _Analysis(text).deferred()
+        except RecursionError:
+            return None
+
 
 class _Analysis:
     def __init__(self, text: str) -> None:
@@ -887,6 +909,117 @@ class _Analysis:
         return (None, "unknown")
 
     # -- the fixpoint ----------------------------------------------------------------------------
+
+    #: Methods the language calls without a call written: `new X()` runs `constructor`, `await x`
+    #: runs `then`, string conversion runs `toString`, `valueOf`, `toJSON`. (Accessors, run by
+    #: reading a property, are told by the `get`/`set` before them, not by a name.)
+    _IMPLICIT: ClassVar[frozenset[str]] = frozenset(
+        {"constructor", "then", "toString", "valueOf", "toJSON", "toPrimitive"}
+    )
+    #: Rounds of the reach fixpoint; past it everything is taken as reached.
+    _REACH_ROUNDS: ClassVar[int] = 64
+
+    def deferred(self) -> list[tuple[int, int]]:
+        """See `JsFlow.deferred_spans`."""
+        self._find_functions()
+        self._scopes()
+        t, n = self.t, self.n
+        if not self.fns:
+            return []
+        head = {fid: tok for tok, fid in self.fn_at_token.items()}
+        # The bracket each token sits directly inside, to tell an argument list from a group.
+        opener = [-1] * n
+        stack: list[int] = []
+        for i, tok in enumerate(t):
+            opener[i] = stack[-1] if stack else -1
+            if tok.kind == "punct" and tok.value in _OPEN and self.match[i] > 0:
+                stack.append(i)
+            elif tok.kind == "punct" and tok.value in _CLOSE and stack and self.match[i] >= 0:
+                stack.pop()
+
+        def in_call_args(i: int) -> bool:
+            o = opener[i] if 0 <= i < n else -1
+            if o < 0 or not self.is_p(o, "("):
+                return False
+            before = o - 1
+            return before >= 0 and (
+                (t[before].kind == "name" and t[before].value not in _KEYWORDS - {"super"})
+                or self.is_p(before, ")")
+                or self.is_p(before, "]")
+            )
+
+        names: dict[int, str] = {}
+        own_name_token: dict[int, int] = {}
+        at_once: set[int] = set()
+        for fn in self.fns:
+            h = head.get(fn.fid)
+            if h is None:
+                at_once.add(fn.fid)
+                continue
+            if fn.name:
+                names[fn.fid] = fn.name
+                own_name_token[fn.fid] = h + 1 if self.is_name(h, "function") else h
+            else:
+                p = h - 1
+                if (self.is_p(p, "=") or self.is_p(p, ":")) and (
+                    self.is_name(p - 1) or (p - 1 >= 0 and t[p - 1].kind == "str")
+                ):
+                    names[fn.fid] = str(t[p - 1].value)
+                    own_name_token[fn.fid] = p - 1
+            after = fn.end if fn.expression_body else fn.end + 1
+            while self.is_p(after, ")"):
+                after += 1
+            first = h - 1 if self.is_name(h - 1, "async") else h
+            if (
+                self.is_p(after, "(")
+                or (
+                    self.is_p(after, ".")
+                    and self.is_name(after + 1)
+                    and t[after + 1].value in ("call", "apply")
+                )
+                or in_call_args(first)
+                or names.get(fn.fid) in _Analysis._IMPLICIT
+                or self.is_name(h - 1, "get")
+                or self.is_name(h - 1, "set")
+            ):
+                at_once.add(fn.fid)
+        # Every name a scope calls or hands on: `f(`, `f.call(`, or `f` as a call's argument.
+        own = set(own_name_token.values())
+        uses: dict[int, set[str]] = {}
+        for k in range(n):
+            if t[k].kind != "name" or k in own:
+                continue
+            if (
+                self.is_p(k + 1, "(")
+                or (
+                    self.is_p(k + 1, ".")
+                    and self.is_name(k + 2)
+                    and t[k + 2].value in ("call", "apply", "bind")
+                )
+                or ((self.is_p(k - 1, "(") or self.is_p(k - 1, ",")) and in_call_args(k))
+            ):
+                uses.setdefault(self.scope_of(k), set()).add(t[k].value)
+        reached = {0}
+        called = set(uses.get(0, ()))
+        for _ in range(_Analysis._REACH_ROUNDS):
+            grown = False
+            for fn in self.fns:
+                if fn.fid in reached or self.parent.get(fn.fid, 0) not in reached:
+                    continue
+                if fn.fid in at_once or names.get(fn.fid) in called:
+                    reached.add(fn.fid)
+                    called |= uses.get(fn.fid, set())
+                    grown = True
+            if not grown:
+                break
+        else:
+            return []
+        spans: list[tuple[int, int]] = []
+        for fn in self.fns:
+            if fn.fid in reached or fn.start >= n:
+                continue
+            spans.append((t[fn.start].start, t[min(max(fn.end - 1, fn.start), n - 1)].end))
+        return sorted(spans)
 
     def run(self) -> list[Flow]:
         self._find_functions()
