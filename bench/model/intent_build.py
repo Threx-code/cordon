@@ -103,7 +103,7 @@ class IntentBuild:
                     elif verdict.get("area") != "npm":
                         skipped["not npm (M3)"] += 1
                     elif not intent:
-                        skipped["no intent facts: scanned by older code (S3)"] += 1
+                        skipped["no intent block: not read as npm, or older code (S3)"] += 1
                     elif intent.get("facts_version") != IntentFacts.VERSION:
                         skipped["other facts version (S3)"] += 1
                     else:

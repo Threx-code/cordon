@@ -90,6 +90,27 @@ removes one the rules made, and the package verdict never takes it as evidence.
 Building the weights (`bench/model/intent_build.py`) reports aggregates only: rates, intervals and
 family counts. It writes nothing per sample.
 
+The shipped file (2026-10-19, scanner 15b212c, facts version 1) was built from npm half A only:
+7,695 benign packages, 961 popular-npm packages and 1,903 malware packages in 1,531 families
+(S5 family index), adjudication candidates left out.
+
+```
+  STUDY DATA (half A, cross-validated within it; half B is the test, scored once)
+  ────────────────────────────────────────────────────────────────────────────────
+  rows kept (M8: in >= 4 of 5 folds, held-out malware rate > benign)   129 of 138
+  line                                                                  33.35
+  held-out benign npm blocked          3 / 7,695   95% upper  0.115%    bar 0.5%
+  popular npm blocked                  0 / 961     95% upper  0.398%    sets the line
+  held-out malware blocked, alone      34.2% of packages  (31.8% - 36.6%)
+```
+
+Popular npm sets the line: one block in 961 would put its upper bound past 0.5%. The malware rate
+is the layer on its own; what it adds over the rules is measured by the A/B.
+
+Not read today: npm packages whose verdict area is `mcp` (MCP servers; 2.9% of the benign sample),
+and tarballs whose single top directory is not `package/` (0.8% of the benign sample), which the
+engine does not recognise as npm yet.
+
 ## What it does not claim
 
 It does not claim that no attack passes. It changes what passing requires: an effect that looks
