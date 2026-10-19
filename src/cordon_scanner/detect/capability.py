@@ -485,6 +485,7 @@ class CapabilityDetector(BaseDetector):
         if unit.language in ("javascript", "typescript"):
             hits.extend(self._js_received_and_run(content))
             hits.extend(self._js_decoded_program_run(content))
+            hits.extend(self._js_command_output_sent(content))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -3197,6 +3198,65 @@ class CapabilityDetector(BaseDetector):
                 CapabilityHit(
                     capability=Capability.DECODE,
                     rule_id="CAP.JS.DECODED_PROGRAM_RUN",
+                    byte_start=start,
+                    byte_end=start + 1,
+                    line=text.count("\n", 0, offset) + 1,
+                )
+            ]
+        return []
+
+    #: A command started for its output: the callback's stdout, or what `execSync` returns.
+    _JS_COMMAND_OUTPUT: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:(?<![\w$.])|\b(?:child_process|childProcess|cp)\s{0,4}\.\s{0,4})exec(?:File)?\s{0,4}\("
+        r"[^;]{0,600}?\(\s{0,4}[\w$]{1,40}\s{0,4},\s{0,4}(?P<cb>[\w$]{1,40})"
+        r"|\b(?:const|let|var)\s{1,4}(?P<sync>[\w$]{1,40})\s{0,4}=\s{0,4}(?:[\w$]{1,40}\s{0,4}\.\s{0,4})?"
+        r"exec(?:File)?Sync\s{0,4}\("
+    )
+
+    @classmethod
+    def _js_command_output_sent(cls, content: FileContent) -> list[CapabilityHit]:
+        """JavaScript that runs a command and puts what it printed into a request.
+
+        `exec(cmd, (e, stdout) => { const data = stdout || stderr; req.write(data) })` from a
+        preinstall hook: the `elf-stats-*` packages grep the machine and post the result (review
+        98, npm work half). Each half is ordinary -- a build runs commands, a client posts -- and
+        the flow between them is the act. Followed through one assignment, within 2,500
+        characters of the process start."""
+        text = content.text
+        # A bundle runs its tools' commands and calls its own APIs a line apart (a minified editor
+        # extension calling `gh` and GitHub's API matched); the payloads were written by hand.
+        if len(text) > 4_000_000 or "exec" not in text or cls._is_minified(content):
+            return []
+        for started in cls._JS_COMMAND_OUTPUT.finditer(text):
+            output = started["cb"] or started["sync"]
+            window = text[started.end() : started.end() + 2500]
+            names = {output}
+            for assigned in re.finditer(
+                r"\b(?:const|let|var)\s{1,4}([\w$]{1,40})\s{0,4}=\s{0,4}([^;\n]{1,200})", window
+            ):
+                if any(re.search(rf"\b{re.escape(n)}\b", assigned.group(2)) for n in names):
+                    names.add(assigned.group(1))
+            alternatives = "|".join(re.escape(n) for n in names)
+            # Into a request: the body of an `http(s).request` written in this window, a `body:` or
+            # a POST's data -- never a webview message or a process's output stream.
+            request = re.search(
+                r"\bhttps?\s{0,4}\.\s{0,4}request\s{0,4}\(|['\"`]https?://|\bhostname\s{0,4}:",
+                window,
+            )
+            sink = re.search(
+                rf"\.\s{{0,4}}(?:write|end)\s{{0,4}}\(\s{{0,4}}(?:JSON\.stringify\(\s{{0,4}})?(?:{alternatives})\b"
+                rf"|\bbody\s{{0,4}}:\s{{0,4}}(?:JSON\.stringify\(\s{{0,4}})?(?:{alternatives})\b"
+                rf"|\.\s{{0,4}}(?:post|put)\s{{0,4}}\([^,]{{1,300}},\s{{0,4}}(?:{alternatives})\b",
+                window,
+            )
+            if sink is None or request is None:
+                continue
+            offset = started.end() + sink.start()
+            start = len(text[:offset].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.FLOW,
+                    rule_id="CAP.JS.COMMAND_OUTPUT_SENT",
                     byte_start=start,
                     byte_end=start + 1,
                     line=text.count("\n", 0, offset) + 1,

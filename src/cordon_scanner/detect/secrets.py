@@ -2501,11 +2501,36 @@ class SourcePaths:
     @staticmethod
     def is_test_material(path: str) -> bool:
         """Whether a path is where a project keeps things its tests need."""
+        path = SourcePaths.inside_release(path)
         return (
             SourcePaths._names(path, TEST_MATERIAL_PATHS)
             or SourcePaths.names_test_directory(path)
             or SourcePaths.names_test_file(path)
         )
+
+    _ARCHIVE_SUFFIX = re.compile(
+        r"(?i)\.(?:tar\.gz|tgz|tar\.bz2|tar\.xz|tar|zip|whl|gem|crate|nupkg|jar|vsix)$"
+    )
+
+    @staticmethod
+    def inside_release(path: str) -> str:
+        """The path within the release a scanned archive holds, without the release's own name.
+
+        `chai-await-test.tgz!package/lib/caller.js` is `package/lib/caller.js`: a package's name is
+        what its publisher called it, not where it keeps its tests, and the word `test` in it had
+        made every file of `chai-await-test` -- its fetch-and-run loader included -- test material
+        (review 98). The root folder an sdist or gem names after its release goes too. A `test/`
+        directory a nested archive sits in still counts.
+        """
+        head, bang, rest = path.partition("!")
+        if not bang:
+            return path
+        directory, _, archive = head.rpartition("/")
+        stem = SourcePaths._ARCHIVE_SUFFIX.sub("", archive).lower()
+        first, slash, remainder = rest.partition("/")
+        if slash and stem and first.lower() == stem:
+            rest = remainder
+        return f"{directory}/{rest}" if directory else rest
 
     @staticmethod
     def is_test_material_here(path: str, ctx: ScanContext) -> bool:

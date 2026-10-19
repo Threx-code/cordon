@@ -462,6 +462,20 @@ JS_LOCAL_REFERENCE = re.compile(
 )
 """A relative module a script loads, or a sibling file it names beside `__dirname`."""
 
+JS_PATH_SEGMENTS = r"""((?:\s{0,4}['"`][\w@./-]{1,120}['"`]\s{0,4},?){1,8})"""
+JS_DIRECTORY_VARIABLE = re.compile(
+    r"""\b(?:const|let|var)\s{1,4}(?P<name>[\w$]{1,60})\s{0,4}=\s{0,4}path\s{0,4}\.\s{0,4}(?:join|resolve)"""
+    r"""\s{0,4}\(\s{0,4}__dirname\s{0,4},""" + JS_PATH_SEGMENTS + r"""\)"""
+)
+"""`const vendorDir = path.resolve(__dirname, "../../vendor/scrypt-js")`: a directory a script names."""
+
+JS_JOINED_PATH = re.compile(
+    r"""path\s{0,4}\.\s{0,4}(?:join|resolve)\s{0,4}\(\s{0,4}(?P<base>[\w$]{1,60})\s{0,4},"""
+    + JS_PATH_SEGMENTS
+    + r"""\)"""
+)
+"""`path.join(vendorDir, "version.js")`: a file under it (`bcryptance` 6.5.2, review 98)."""
+
 JS_CLOSURE_LIMIT = 500
 """Files followed from install-hook scripts, like the Python closure's bound."""
 
@@ -6713,8 +6727,24 @@ class Engine:
         while pending and len(found) < JS_CLOSURE_LIMIT:
             current = pending.pop()
             directory = current.rpartition("/")[0]
-            for match in JS_LOCAL_REFERENCE.finditer(sources[current]):
-                relative = match.group("rel") or match.group("sib")
+            text = sources[current]
+            relatives = [
+                match.group("rel") or match.group("sib")
+                for match in JS_LOCAL_REFERENCE.finditer(text)
+            ]
+            # A path built in steps from `__dirname`: a directory variable, then a file under it.
+            folders = {"__dirname": ""} | {
+                found_dir["name"]: "/".join(Engine._js_segments(found_dir.group(2)))
+                for found_dir in JS_DIRECTORY_VARIABLE.finditer(text)
+            }
+            # Only a path the script loads -- `require(...)` or `import(...)` of it, directly or
+            # through a variable holding it. A path it copies to or writes is not code it runs.
+            for joined in JS_JOINED_PATH.finditer(text):
+                if joined["base"] not in folders or not Engine._js_loaded(text, joined):
+                    continue
+                tail = "/".join(Engine._js_segments(joined.group(2)))
+                relatives.append(f"{folders[joined['base']]}/{tail}".lstrip("/"))
+            for relative in relatives:
                 stem = posixpath.normpath(f"{directory}/{relative}" if directory else relative)
                 for candidate in (
                     stem,
@@ -6728,6 +6758,27 @@ class Engine:
                         pending.append(candidate)
                         break
         return found
+
+    @staticmethod
+    def _js_loaded(text: str, joined: re.Match[str]) -> bool:
+        """Whether a joined path is loaded: `require(path.join(...))`, or a variable assigned it and
+        then required or imported."""
+        before = text[max(0, joined.start() - 40) : joined.start()]
+        if re.search(r"\b(?:require|import)\s{0,4}\(\s{0,4}$", before):
+            return True
+        assigned = re.search(r"\b(?:const|let|var)\s{1,4}([\w$]{1,60})\s{0,4}=\s{0,4}$", before)
+        if assigned is None:
+            return False
+        name = re.escape(assigned.group(1))
+        return (
+            re.search(rf"\b(?:require|import)\s{{0,4}}\(\s{{0,4}}{name}\s{{0,4}}\)", text)
+            is not None
+        )
+
+    @staticmethod
+    def _js_segments(arguments: str) -> list[str]:
+        """The string literals of a `path.join` argument list, in order."""
+        return re.findall(r"""['"`]([\w@./-]{1,200})['"`]""", arguments)
 
     @staticmethod
     def _hook_deferred_lines(

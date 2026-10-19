@@ -792,6 +792,60 @@ rules:
       all:
         - rule: CAP.JS.DECODED_PROGRAM_RUN
 
+  - id: MALWARE.EXFIL.COMMAND_OUTPUT.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: An install script runs a command and sends what it printed
+    message: >
+      At install time this script runs a command and puts its output in a request: a listing of
+      the machine, a search through its files, whatever the command was chosen to find. Install
+      scripts build and copy; none needs to report a command's output to anyone.
+    remediation: >
+      Do not install this package. Treat anything the command could read on machines that
+      installed it as exposed.
+    provenance:
+      kind: research
+      reference: >
+        The `elf-stats-*` npm packages: a preinstall `exec` whose stdout is the body of an HTTPS
+        POST (review 98, work half).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1041/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.JS.COMMAND_OUTPUT_SENT
+
+  - id: SUSPECT.EXFIL.COMMAND_OUTPUT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: A package's entry point runs a command and sends what it printed
+    message: >
+      Loading this package runs a command and puts its output in a request. Whatever imports the
+      package reports the command's output to whoever receives it.
+    remediation: >
+      Read what the command is and where its output goes; do not use the package until both are
+      accounted for.
+    provenance:
+      kind: research
+      reference: >
+        The `elf-stats-*` npm packages' flow, where it runs on import rather than install.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1041/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: CAP.JS.COMMAND_OUTPUT_SENT
+
   - id: SUSPECT.EXFIL.CALLBACK.001
     version: 1.0.0
     category: suspicious
