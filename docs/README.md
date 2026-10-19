@@ -50,6 +50,7 @@ Two sets, and they are read differently.
 | [09-INTEGRATIONS.md](09-INTEGRATIONS.md) | Pre-commit, GitHub Actions, GitLab, Jenkins, containers, org-wide policy |
 | [10-CONFIGURATION.md](10-CONFIGURATION.md) | `.cordon.yaml`, what fails a build, the noise ladder, exit codes |
 | [11-RATIONALE.md](11-RATIONALE.md) | What the other tools do, what they do not, and the gap this sits in |
+| [13-INTENT.md](13-INTENT.md) | When a package's effects are not explained by what it says it is, and how the weights behind that are measured |
 
 ## Tutorials
 

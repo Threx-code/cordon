@@ -1705,13 +1705,15 @@ class Engine:
             )
         )
 
+        labels: dict[str, Any] = {}
         graded, verdict = Engine._package_verdict(
             Engine._hardening_tier(
                 Engine._onto_manifest(Engine._test_identity_keys(list(findings), units), units),
                 self.config.policy,
             ),
             units,
-            {**self._capability_profile(units, ctx), **Engine._registry_facts(units)},
+            {**self._capability_profile(units, ctx, labels), **Engine._registry_facts(units)},
+            self._intent_observation(units, ctx, labels),
         )
         findings = tuple(graded)
         dependencies = self._annotated(dependencies, findings, ctx, units)
@@ -2184,13 +2186,15 @@ class Engine:
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
 
+        labels: dict[str, Any] = {}
         acc.findings[:], verdict = Engine._package_verdict(
             Engine._hardening_tier(
                 Engine._onto_manifest(Engine._test_identity_keys(acc.findings, units), units),
                 self.config.policy,
             ),
             units,
-            {**self._capability_profile(units, ctx), **Engine._registry_facts(units)},
+            {**self._capability_profile(units, ctx, labels), **Engine._registry_facts(units)},
+            self._intent_observation(units, ctx, labels),
         )
         dependencies = self._annotated(dependencies, acc.findings, ctx, units)
         result = ScanResult(
@@ -4147,7 +4151,54 @@ class Engine:
     #: on import are a handful in any real package; past this the rest are not read again.
     _PROFILE_FILES: ClassVar[int] = 50
 
-    def _capability_profile(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]:
+    @staticmethod
+    def _labelled_once(
+        detector: Any, unit: FileUnit, ctx: ScanContext, cache: dict[str, Any] | None
+    ) -> Any:
+        """`detector.labelled(unit, ctx)`, computed once per file for everything that asks."""
+        if cache is None:
+            return detector.labelled(unit, ctx)
+        if unit.path not in cache:
+            try:
+                cache[unit.path] = detector.labelled(unit, ctx)
+            except Exception as error:  # re-raised to each caller below
+                cache[unit.path] = error
+        held = cache[unit.path]
+        if isinstance(held, Exception):
+            raise held
+        return held
+
+    def _intent_observation(
+        self, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
+    ) -> Any:
+        """When each effect of the package runs, and what hides it (`core/intent.py`); None for a
+        package the intent layer does not read."""
+        from cordon_scanner.core.intent import IntentObserver
+        from cordon_scanner.detect.capability import CapabilityDetector
+        from cordon_scanner.detect.download_flow import DownloadFlow
+
+        detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
+        if detector is None or not IntentObserver.applies(ctx):
+            return None
+        files = [u for u in units if isinstance(u, FileUnit)]
+
+        def label(unit: FileUnit) -> list[tuple[str, int]]:
+            labelled = Engine._labelled_once(detector, unit, ctx, labels)
+            out = [(hit.capability.value, hit.byte_start) for hit in (labelled or ((),))[0]]
+            lines = DownloadFlow.runs_download(unit.content.text, unit.language)
+            if lines:
+                raw = unit.content.raw
+                starts = [0, *(i + 1 for i, b in enumerate(raw) if b == 10)]
+                out += [("runs_download", starts[min(n, len(starts)) - 1]) for n in lines]
+            return out
+
+        return IntentObserver.observe(
+            files, ctx, label, lambda seeds: Engine._hook_js_closure(files, seeds)
+        )
+
+    def _capability_profile(
+        self, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any] | None = None
+    ) -> dict[str, float]:
         """What the code that runs on its own can do: the capabilities of the files an install
         runs, of the files importing the package runs first, and of the scripts an agent runs.
 
@@ -4179,7 +4230,7 @@ class Engine:
                     break
                 read += 1
                 try:
-                    labelled = detector.labelled(unit, ctx)
+                    labelled = Engine._labelled_once(detector, unit, ctx, labels)
                 except Exception:  # noqa: S112 -- a profile is evidence, never a scan failure
                     continue
                 if labelled is not None:
@@ -4215,9 +4266,15 @@ class Engine:
 
     @staticmethod
     def _package_verdict(
-        findings: list[Finding], units: Sequence[FileUnit], profile: dict[str, float] | None = None
+        findings: list[Finding],
+        units: Sequence[FileUnit],
+        profile: dict[str, float] | None = None,
+        intent: Any = None,
     ) -> tuple[list[Finding], dict[str, Any]]:
-        """The package verdict over everything this scan found (`core/verdict.py`)."""
+        """The package verdict over everything this scan found (`core/verdict.py`), then the
+        intent layer over what the package's code does (`core/intent.py`)."""
+        from cordon_scanner.core.intent import RULE as INTENT_RULE
+        from cordon_scanner.core.intent import Intent
         from cordon_scanner.core.verdict import Verdict
 
         paths_sizes = [(u.path, u.content.size) for u in units]
@@ -4291,6 +4348,33 @@ class Engine:
                     detector="manifest",
                 )
             )
+        area = str(verdict.get("area", ""))
+        review = Intent.review(verdict.get("package", {}), area, intent)
+        if review is not None:
+            # After the verdict, so nothing here is held as a warning by it, and nothing it adds
+            # lowers or lifts a finding the rules made (E4). "unknown" -- a running file not
+            # read (E5) -- stays in the verdict with its cause: never a pass, and no rule of
+            # its own (one rule id, 19 step 0).
+            verdict["intent"] = review
+            if review.get("decision") == "block":
+                graded.append(
+                    replace(
+                        Engine._operational(
+                            path=".",
+                            rule_id=INTENT_RULE,
+                            message=Intent.message(review, area),
+                            remediation=(
+                                "Read each listed effect and check it against what the package "
+                                "says it is for. Do not install until each one is explained."
+                            ),
+                            category=Category.SUSPICIOUS,
+                            severity=Severity.HIGH,
+                        ),
+                        confidence=Confidence.MEDIUM,
+                        always_report=False,
+                        detector="intent",
+                    )
+                )
         return graded, verdict
 
     @staticmethod

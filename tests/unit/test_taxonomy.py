@@ -96,6 +96,9 @@ CLASSIFIED_BY_VERB_ALONE = frozenset(
         # The package verdict: about the whole package's combination of findings, whatever
         # domains they came from, so no one family names it.
         "SUSPECT.VERDICT.MODEL.001",
+        # The intent layer: about the whole package's effects against its stated purpose, read
+        # across every file and place it runs, so no one family names it either.
+        "SUSPECT.INTENT.UNEXPLAINED_EFFECT.001",
     }
 )
 

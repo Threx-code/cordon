@@ -1091,6 +1091,25 @@ class ManifestDetector(BaseDetector):
                 remediation="Read each finding listed. Do not install until explained.",
             ),
             DeclaredRule(
+                id="SUSPECT.INTENT.UNEXPLAINED_EFFECT.001",
+                title="The package's effects are not explained by what it says it is",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector="intent",
+                message=(
+                    "What the package's code does on the machine -- when it runs, what it reaches, "
+                    "what it hides -- is unexplained by its stated purpose and by its user asking "
+                    "for it: measured facts, each listed with its weight, score above the line "
+                    "set on benign packages of its ecosystem (`core/intent.py`)."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation=(
+                    "Read each listed effect and check it against what the package says it is "
+                    "for. Do not install until each one is explained."
+                ),
+            ),
+            DeclaredRule(
                 id="SUSPECT.MCP.BORROWED_NAME.001",
                 title="MCP server published under a service's name its code never mentions",
                 severity=Severity.HIGH,

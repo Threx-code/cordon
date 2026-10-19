@@ -107,6 +107,10 @@ class VerdictFeatures:
     def is_intel(rule: str) -> bool:
         return any(marker in rule for marker in VerdictFeatures.INTEL)
 
+    #: The intent layer's finding (`core/intent.py`) is added after the verdict and is never its
+    #: evidence: the two weigh some of the same facts, and one must not recount the other.
+    LATER_RULES: ClassVar[frozenset[str]] = frozenset({"SUSPECT.INTENT.UNEXPLAINED_EFFECT.001"})
+
     @staticmethod
     def is_code(rule: str) -> bool:
         return (
@@ -114,6 +118,7 @@ class VerdictFeatures:
             and not rule.startswith(_INFRA)
             and not VerdictFeatures.is_intel(rule)
             and rule != VerdictFeatures.OWN_RULE
+            and rule not in VerdictFeatures.LATER_RULES
         )
 
     @staticmethod
