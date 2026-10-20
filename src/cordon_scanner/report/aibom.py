@@ -25,8 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.core.walker import PathGlob, Walker
-from cordon_scanner.detect.agents import (
+from cordon_scanner.detect.agents.agents import (
     AGENT_ACTIONS,
     AGENT_SETTINGS_PATHS,
     INSTRUCTION_PATHS,
@@ -34,12 +33,13 @@ from cordon_scanner.detect.agents import (
     WORKFLOW_PATHS,
     McpConfigs,
 )
+from cordon_scanner.engine.walker import PathGlob, Walker
 from cordon_scanner.report.sbom import TOOL_NAME, SbomDocument
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.core.models import Dependency
+    from cordon_scanner.foundation.models import Dependency
 
 SPEC_VERSION: Final = "1.6"
 MAX_READ: Final = 1 << 20

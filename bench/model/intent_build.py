@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from cordon_scanner.core.intent import IntentFacts, IntentScore, IntentWeights
+from cordon_scanner.decide.intent import IntentFacts, IntentScore, IntentWeights
 
 
 @dataclass(frozen=True)

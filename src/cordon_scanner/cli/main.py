@@ -29,17 +29,17 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
-from cordon_scanner.core.audit import AuditLog
-from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
-from cordon_scanner.core.models import Confidence, Severity
+from cordon_scanner.engine.audit import AuditLog
+from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
+from cordon_scanner.foundation.models import Confidence, Severity
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from cordon_scanner.core.models import Finding, Rule, ScanResult
-    from cordon_scanner.core.progress import Progress
+    from cordon_scanner.engine.progress import Progress
+    from cordon_scanner.foundation.models import Finding, Rule, ScanResult
     from cordon_scanner.rules.loader import RulePack, RuleTestFailure
     from cordon_scanner.sources.base import FileSource
 
@@ -856,7 +856,7 @@ class CommandLine:
         from dataclasses import replace as _replace
 
         from cordon_scanner import Scanner
-        from cordon_scanner.core import release_diff
+        from cordon_scanner.detect.supply import release_diff
         from cordon_scanner.sources import previous as previous_release
 
         compare_with = getattr(args, "compare_with", None)
@@ -935,9 +935,9 @@ class CommandLine:
         """`--online` and a published npm tarball: does the registry describe this tarball?"""
         from dataclasses import replace as _replace
 
-        from cordon_scanner.core.manifest_confusion import ManifestConfusion
-        from cordon_scanner.core.policy import SuppressionMatcher
-        from cordon_scanner.intel.feed import FeedClient
+        from cordon_scanner.decide.policy import SuppressionMatcher
+        from cordon_scanner.detect.supply.manifest_confusion import ManifestConfusion
+        from cordon_scanner.intel.malware.feed import FeedClient
 
         if (
             not args.online
@@ -964,10 +964,10 @@ class CommandLine:
         asked for and did not get is coverage lost, never a clean result."""
         from dataclasses import replace as _replace
 
-        from cordon_scanner.core.engine import Engine
-        from cordon_scanner.core.policy import SuppressionMatcher
-        from cordon_scanner.detect.model import MALICIOUS_PACKAGE, UNAVAILABLE
-        from cordon_scanner.intel.feed import FeedClient
+        from cordon_scanner.decide.policy import SuppressionMatcher
+        from cordon_scanner.detect.agents.model import MALICIOUS_PACKAGE, UNAVAILABLE
+        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.intel.malware.feed import FeedClient
         from cordon_scanner.model.client import ModelClient, ModelError, ModelTargets
 
         spec = getattr(args, "model", None)
@@ -1045,8 +1045,8 @@ class CommandLine:
 
         if not getattr(args, "history", False) and not getattr(args, "verify_secrets", False):
             return result
-        from cordon_scanner.core.policy import SuppressionMatcher
-        from cordon_scanner.detect.secret_history import (
+        from cordon_scanner.decide.policy import SuppressionMatcher
+        from cordon_scanner.detect.secrets.secret_history import (
             HistorySecretScan,
             SecretLiveness,
             SecretValues,
@@ -1074,8 +1074,8 @@ class CommandLine:
     @classmethod
     def _scan_package(cls, args: argparse.Namespace) -> int:
         """`scan pkg:<type>/<name>@<version>`: fetch the published archive, verify it, scan it."""
-        from cordon_scanner.core.errors import SourceError
-        from cordon_scanner.intel.feed import FeedClient
+        from cordon_scanner.foundation.errors import SourceError
+        from cordon_scanner.intel.malware.feed import FeedClient
         from cordon_scanner.sources.package import PackageTarget, PackageTargetError
 
         try:
@@ -1111,10 +1111,10 @@ class CommandLine:
     @classmethod
     def cmd_scan(cls, args: argparse.Namespace) -> int:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import ConfigResolver
-        from cordon_scanner.core.models import RedactionMode
-        from cordon_scanner.core.policy import PolicyGate
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.engine.registry import Registry
+        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.models import RedactionMode
         from cordon_scanner.report.base import ReportOptions
         from cordon_scanner.sources.package import PackageTarget
 
@@ -1168,7 +1168,7 @@ class CommandLine:
         # `--offline` and CORDON_OFFLINE mean no network at all, the air-gapped mode: the intel
         # feed is not fetched either. Without them the scan still never sends anything about
         # the code; it only pulls the public, signed feed.
-        from cordon_scanner.intel.feed import FeedClient
+        from cordon_scanner.intel.malware.feed import FeedClient
 
         if args.offline or FeedClient.offline_requested():
             overrides["intel_feed"] = False
@@ -1183,7 +1183,7 @@ class CommandLine:
         if getattr(args, "yara", None):
             overrides["yara"] = args.yara
         if getattr(args, "registry_tokens", None):
-            from cordon_scanner.intel.private_registries import PrivateRegistries
+            from cordon_scanner.intel.registries.private_registries import PrivateRegistries
 
             try:
                 overrides["private_registries"] = tuple(
@@ -1265,8 +1265,8 @@ class CommandLine:
             # organisation that supplies its own is stating what it considers
             # authoritative, and silently merging a shipped list into it would
             # produce findings it did not choose to act on.
-            from cordon_scanner.detect.advisory import AdvisoryDetector
-            from cordon_scanner.intel.advisories import AdvisoryDatabase
+            from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+            from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
             database = AdvisoryDatabase.from_file(args.advisories)
             base = selected or Registry(allow_third_party=config.allow_plugins).detectors()
@@ -1313,7 +1313,7 @@ class CommandLine:
         if args.baseline:
             from dataclasses import replace as _replace
 
-            from cordon_scanner.core.policy import Baseline
+            from cordon_scanner.decide.policy import Baseline
 
             baseline = Baseline.from_file(args.baseline)
             applied = baseline.apply(result.findings)
@@ -1337,7 +1337,7 @@ class CommandLine:
         if getattr(args, "vex", None):
             from dataclasses import replace as _replace_vex
 
-            from cordon_scanner.core.vex import VexDocuments, VexError
+            from cordon_scanner.decide.vex import VexDocuments, VexError
 
             try:
                 statements = VexDocuments.load(args.vex)
@@ -1417,7 +1417,7 @@ class CommandLine:
     def _cloud_policy(cls, args: argparse.Namespace) -> tuple[Any, str | None]:
         """Fetch and verify the organisation's bundle; no bundle, no scan."""
         from cordon_scanner.cloud import CloudError, auth, policy
-        from cordon_scanner.intel.feed import FeedClient
+        from cordon_scanner.intel.malware.feed import FeedClient
 
         try:
             credentials = auth.CloudAuth.current(args.cloud_url)
@@ -1441,7 +1441,7 @@ class CommandLine:
     @staticmethod
     def _with_cloud_suppressions(config: Any, suppressions: tuple[Any, ...]) -> Any:
         """Add the organisation's approved suppressions, held to the same rules as any other."""
-        from cordon_scanner.core.config import ConfigParser
+        from cordon_scanner.foundation.config import ConfigParser
 
         problems = [
             f"{s.rule} at {s.path}: {problem}"
@@ -1535,8 +1535,8 @@ class CommandLine:
         """
         from dataclasses import replace as _replace
 
-        from cordon_scanner.core.models import RedactionMode
-        from cordon_scanner.core.redact import Redactor
+        from cordon_scanner.foundation.models import RedactionMode
+        from cordon_scanner.foundation.redact import Redactor
 
         snippet = finding.evidence.snippet
         if not snippet:
@@ -1570,7 +1570,7 @@ class CommandLine:
     @staticmethod
     def _baseline_notice(silenced: Sequence[Finding], path: Path) -> Finding:
         """One always-reported finding naming what the baseline is hiding."""
-        from cordon_scanner.core.models import (
+        from cordon_scanner.foundation.models import (
             Category,
             Confidence,
             Evidence,
@@ -1627,7 +1627,7 @@ class CommandLine:
         if not (args.staged or args.tracked or args.git_diff):
             return None
 
-        from cordon_scanner.core.errors import SourceError
+        from cordon_scanner.foundation.errors import SourceError
         from cordon_scanner.sources.git import GitIndexSource, GitPathSource, GitRepository
 
         flag = "--staged" if args.staged else "--tracked" if args.tracked else "--git-diff"
@@ -1742,7 +1742,7 @@ class CommandLine:
         ``--output`` remains as a shorthand for the single-format case, and is
         refused when it would be ambiguous.
         """
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
 
         registry = Registry()
         targets: list[tuple[str, str | None]] = []
@@ -1817,9 +1817,9 @@ class CommandLine:
 
     @classmethod
     def cmd_rules(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.core.config import ConfigResolver
-        from cordon_scanner.core.registry import Registry
         from cordon_scanner.detect.catalogue import RuleCatalogue
+        from cordon_scanner.engine.registry import Registry
+        from cordon_scanner.foundation.config import ConfigResolver
         from cordon_scanner.rules.loader import RuleLoader, RuleSet, RuleTester
 
         packs = RuleLoader.load_builtin()
@@ -1932,7 +1932,7 @@ class CommandLine:
 
     @classmethod
     def cmd_guard(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.core.guard import Guard
+        from cordon_scanner.engine.guard import Guard
 
         action = args.guard_command or "verify"
         root = Path(getattr(args, "path", "."))
@@ -2086,9 +2086,9 @@ class CommandLine:
         """
         import json as _json
 
-        from cordon_scanner.core.cache import ScanCache
-        from cordon_scanner.core.models import Repository, ScanResult, ScanStats
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.cache import ScanCache
+        from cordon_scanner.engine.registry import Registry
+        from cordon_scanner.foundation.models import Repository, ScanResult, ScanStats
         from cordon_scanner.report.base import ReportOptions
 
         if (args.report_command or "convert") != "convert":
@@ -2172,7 +2172,7 @@ class CommandLine:
         room to do exactly that, and the alternative is going back for another
         one. So there is no questionable: it verifies or it is refused.
         """
-        from cordon_scanner.core.bundle import Bundle
+        from cordon_scanner.engine.bundle import Bundle
 
         action = getattr(args, "bundle_command", None)
         if action is None:
@@ -2334,9 +2334,9 @@ class CommandLine:
     def _mcp_approve(cls, root: Path) -> int:
         """List every remote MCP server's tools and record their fingerprints. A later `scan
         --online` reports any tool added or changed since (`SUSPECT.MCP.TOOLS_CHANGED.001`)."""
-        from cordon_scanner.core.walker import PathGlob
-        from cordon_scanner.detect.agents import MCP_PATHS, McpConfigs
-        from cordon_scanner.intel.live_mcp import LiveMcp, LiveMcpError, McpApprovals
+        from cordon_scanner.detect.agents.agents import MCP_PATHS, McpConfigs
+        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.intel.store.live_mcp import LiveMcp, LiveMcpError, McpApprovals
 
         if not root.is_dir():
             raise CordonError(f"mcp-approve needs a repository directory: {root}")
@@ -2423,7 +2423,7 @@ class CommandLine:
         """
         import json as _json
 
-        from cordon_scanner.intel import feed
+        from cordon_scanner.intel.malware import feed
 
         action = getattr(args, "intel_command", None)
         if action not in ("status", "update", "acquire"):
@@ -2476,13 +2476,13 @@ class CommandLine:
         import json as _json
 
         from cordon_scanner.archive.safe import ArchiveReader
-        from cordon_scanner.core.content import FileContent
-        from cordon_scanner.core.engine import Engine
         from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.intel import feed
-        from cordon_scanner.intel.registry_client import RegistryError
-        from cordon_scanner.intel.registry_record import RegistryRecord
-        from cordon_scanner.intel.release_history import ReleaseHistory
+        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.intel.malware import feed
+        from cordon_scanner.intel.registries.registry_client import RegistryError
+        from cordon_scanner.intel.registries.registry_record import RegistryRecord
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
 
         if feed.FeedClient.offline_requested():
             raise ConfigError("CORDON_OFFLINE is set, so release history will not be fetched")
@@ -2573,15 +2573,15 @@ class CommandLine:
 
         import tempfile
 
-        from cordon_scanner.intel import osv_import
-        from cordon_scanner.intel.advisories import AdvisoryFiles
+        from cordon_scanner.intel.advisories import osv_import
+        from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
 
         # A signed bundle: fetch and verify a prebuilt database rather than
         # building one from OSV. The two share the same destination and the same
         # per-file digest manifest, so a later scan cannot tell which produced
         # the data -- only that it verified.
         if getattr(args, "bundle", None):
-            from cordon_scanner.intel import dbsync
+            from cordon_scanner.intel.store import dbsync
 
             destination = AdvisoryFiles.user_sync_dir()
             try:
@@ -2651,8 +2651,8 @@ class CommandLine:
         """Every NVD record, unfiltered, from NVD's own feeds, each checked against its published
         SHA-256 (`intel/nvd_import`); and, for a CVE NVD gives no range, the ranges its CVE List
         record states (`intel/cve_list`)."""
-        from cordon_scanner.intel import nvd_import
-        from cordon_scanner.intel.nvd import NvdData
+        from cordon_scanner.intel.advisories import nvd_import
+        from cordon_scanner.intel.advisories.nvd import NvdData
 
         print("syncing NVD's feeds...")
         try:
@@ -2683,9 +2683,9 @@ class CommandLine:
         A manifest that carries no name contributes nothing: the caller falls
         back to the directory, which is a guess clearly labelled as one.
         """
-        from cordon_scanner.core.content import FileContent
-        from cordon_scanner.core.limits import Limits
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.foundation.limits import Limits
 
         repository = getattr(result, "repository", None)
         projects = sorted(
@@ -2773,10 +2773,10 @@ class CommandLine:
                     "--vulnerabilities needs --format cyclonedx",
                     hint="SPDX 2.3 has no field for vulnerability status; use a VEX document beside it.",
                 )
-            from cordon_scanner.detect.advisory import AdvisoryDetector
+            from cordon_scanner.detect.supply.advisory import AdvisoryDetector
 
             detectors = (AdvisoryDetector(),)
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         config = Config.default()
         if getattr(args, "exclude", None):
@@ -2886,8 +2886,8 @@ class CommandLine:
         also be the command that absorbs them.
         """
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import ConfigResolver
-        from cordon_scanner.core.policy import Baseline
+        from cordon_scanner.decide.policy import Baseline
+        from cordon_scanner.foundation.config import ConfigResolver
 
         target = Path(args.target)
         if not target.exists():
@@ -2948,14 +2948,14 @@ class CommandLine:
 
     @classmethod
     def cmd_config(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.core.config import Config, ConfigResolver
+        from cordon_scanner.foundation.config import Config, ConfigResolver
 
         action = args.config_command or "validate"
 
         if action == "validate":
             config = Config.from_file(args.path) if args.path else Config.discover(".")
             if args.policy:
-                from cordon_scanner.core.config import ConfigResolver
+                from cordon_scanner.foundation.config import ConfigResolver
 
                 org, constraints = ConfigResolver.load_org_policy(args.policy)
                 config.clamped_by(org, constraints)
@@ -2963,8 +2963,8 @@ class CommandLine:
             return int(ExitCode.CLEAN)
 
         if action == "fetch-policy":
-            from cordon_scanner.core.cache import ScanCache
-            from cordon_scanner.core.distribution import PolicyDistribution
+            from cordon_scanner.engine.cache import ScanCache
+            from cordon_scanner.engine.distribution import PolicyDistribution
 
             if not PolicyDistribution.is_remote(args.url):
                 raise ConfigError(
@@ -2982,7 +2982,7 @@ class CommandLine:
             return int(ExitCode.CLEAN)
 
         if action == "policy-drift":
-            from cordon_scanner.core.distribution import PolicyDistribution
+            from cordon_scanner.engine.distribution import PolicyDistribution
 
             vendored = Path(args.vendored)
             if not vendored.is_file():
@@ -3032,7 +3032,7 @@ class CommandLine:
         from cordon_scanner.cli.incoming import IncomingCommand
         from cordon_scanner.cli.review import ReviewCommand
         from cordon_scanner.cli.suppressions import SuppressCommand
-        from cordon_scanner.core.netguard import NetworkGuard
+        from cordon_scanner.engine.netguard import NetworkGuard
 
         # Before anything can connect: with CORDON_PUBLIC_NETWORK_ONLY set, no name this process
         # resolves may lead inside the network (`core.netguard`).

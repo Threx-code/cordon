@@ -26,9 +26,9 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.core.config import ConfigResolver
-from cordon_scanner.core.distribution import MAX_POLICY_BYTES, PolicyDistribution
-from cordon_scanner.core.errors import ConfigError
+from cordon_scanner.engine.distribution import MAX_POLICY_BYTES, PolicyDistribution
+from cordon_scanner.foundation.config import ConfigResolver
+from cordon_scanner.foundation.errors import ConfigError
 
 POLICY = b"""
 enforce:
@@ -197,7 +197,7 @@ class TestItStillWorksAsACeiling:
         organisation forbids, and silently granting a weaker version would leave
         the operator believing the ceiling held.
         """
-        from cordon_scanner.core.errors import PolicyViolationError
+        from cordon_scanner.foundation.errors import PolicyViolationError
 
         root = tmp_path / "repo"
         root.mkdir()

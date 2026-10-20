@@ -4,7 +4,7 @@
 
 Generated, never hand-written: a fingerprint copied by hand is one typo from naming a key nobody
 holds, and a page that says a key is published when the build pins none is the overclaim this
-project's documents exist to avoid. `tests/unit/test_signing_keys.py` fails when the page and the
+project's documents exist to avoid. `tests/unit/intel/store/test_signing_keys.py` fails when the page and the
 pinned files disagree.
 """
 
@@ -25,8 +25,8 @@ class SigningKeysPage:
 
     @staticmethod
     def render() -> str:
-        from cordon_scanner.intel.dbsync import AdvisoryBundle
-        from cordon_scanner.intel.feed import Feed, FeedRoles
+        from cordon_scanner.intel.malware.feed import Feed, FeedRoles
+        from cordon_scanner.intel.store.dbsync import AdvisoryBundle
 
         lines = [
             "# Signing keys",

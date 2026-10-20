@@ -28,9 +28,9 @@ from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
-from cordon_scanner.core.atomic import AtomicFile
-from cordon_scanner.core.models import Suppression
-from cordon_scanner.intel import _ed25519
+from cordon_scanner.foundation.atomic import AtomicFile
+from cordon_scanner.foundation.models import Suppression
+from cordon_scanner.intel.provenance import _ed25519
 
 if TYPE_CHECKING:
     from cordon_scanner.cloud.auth import Credentials

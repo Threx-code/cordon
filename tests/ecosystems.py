@@ -8,7 +8,7 @@ stopped six ecosystems short of what the code registers.
 Generated for the same reason `tests/matrix.py` is. A hand-kept support table is
 a claim about coverage, and a claim about coverage that nothing checks is the
 failure this scanner exists to report in other people's pipelines.
-`tests/unit/test_ecosystem_matrix.py` fails when the file on disk disagrees.
+`tests/unit/ecosystems/test_ecosystem_matrix.py` fails when the file on disk disagrees.
 
 Run it after adding an ecosystem, a manifest shape or an advisory feed:
 
@@ -17,14 +17,14 @@ Run it after adding an ecosystem, a manifest shape or an advisory feed:
 
 from __future__ import annotations
 
-from cordon_scanner.detect.provenance import SUPPORTED_ECOSYSTEMS as PROVENANCE_ECOSYSTEMS
-from cordon_scanner.detect.registry import REGISTRY_ECOSYSTEMS
+from cordon_scanner.detect.supply.provenance import SUPPORTED_ECOSYSTEMS as PROVENANCE_ECOSYSTEMS
+from cordon_scanner.detect.supply.registry import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.intel.advisories import AdvisoryDatabase
-from cordon_scanner.intel.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
-from cordon_scanner.intel.popular import PackageIntel
-from cordon_scanner.intel.real import RealPackages
-from cordon_scanner.intel.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
+from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+from cordon_scanner.intel.advisories.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
+from cordon_scanner.intel.advisories.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
+from cordon_scanner.intel.registries.popular import PackageIntel
+from cordon_scanner.intel.registries.real import RealPackages
 
 HEADER = """# Ecosystems
 

@@ -94,7 +94,7 @@ class Agreement:
     @staticmethod
     def cordon(folder: Path) -> set[tuple[str, str]]:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         result = Scanner(
             Config.default().with_overrides(use_cache=False, offline=True), detectors=()

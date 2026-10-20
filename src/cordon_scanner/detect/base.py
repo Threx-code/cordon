@@ -24,8 +24,9 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.core.inventory import CheckLog
-from cordon_scanner.core.models import (
+from cordon_scanner.decide.scoring import RiskScorer, ScoringContext
+from cordon_scanner.engine.inventory import CheckLog
+from cordon_scanner.foundation.models import (
     Category,
     Confidence,
     Evidence,
@@ -37,14 +38,13 @@ from cordon_scanner.core.models import (
     RiskScore,
     Severity,
 )
-from cordon_scanner.core.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from cordon_scanner.core.config import Config
-    from cordon_scanner.core.content import FileContent
-    from cordon_scanner.core.models import Capability, Dependency, Repository, Rule
+    from cordon_scanner.foundation.config import Config
+    from cordon_scanner.foundation.content import FileContent
+    from cordon_scanner.foundation.models import Capability, Dependency, Repository, Rule
     from cordon_scanner.rules.loader import CompiledRule, RuleSet
 
 
@@ -468,7 +468,7 @@ class RuleSelector:
         across rules with otherwise-different `paths_include`/`paths_exclude`
         tuples.
         """
-        from cordon_scanner.core.walker import PathGlob
+        from cordon_scanner.engine.walker import PathGlob
 
         return PathGlob.matches(path, pattern)
 

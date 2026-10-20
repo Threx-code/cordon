@@ -1,0 +1,1595 @@
+"""Obfuscation detection.
+
+Obfuscation is not itself malicious, and this detector never claims it is. What
+it reports is that content was deliberately made unreadable, which is
+information regardless of intent: source code has no defensive reason to hide
+from the person reviewing it, and an author who wanted a reviewer not to
+understand something is worth a moment's attention.
+
+Four signals, each with a distinct false-positive profile, which is why they are
+separate rules rather than one score:
+
+**Escape runs.** Long sequences of ``\\xNN`` or ``\\uNNNN`` that spell ordinary
+ASCII. There is no reason to write a string that way except to keep it out of a
+search.
+
+**Bidirectional and invisible characters.** Source that renders differently from
+how it compiles. A reviewer approves what they see; the compiler acts on what is
+there.
+
+**Extreme line length.** A payload appended to a file is very often one long
+line, because that keeps it off-screen in a diff. This needs calibration against
+minified bundles, which are legitimately made of long lines, so entropy and file
+type both gate it.
+
+**Packer signatures.** Recognisable output from known obfuscators.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar
+
+from cordon_scanner.decide.scoring import ScoringContext
+from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
+from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets.secrets import (
+    FIXTURE_CEILING,
+    RULE_MATERIAL_CEILING,
+    SourcePaths,
+)
+from cordon_scanner.engine.walker import PathGlob
+from cordon_scanner.foundation import references
+from cordon_scanner.foundation.comments import SourceComments
+from cordon_scanner.foundation.models import (
+    Capability,
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Location,
+    RedactionMode,
+    Severity,
+)
+from cordon_scanner.foundation.redact import Redactor
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from cordon_scanner.detect.base import Unit
+    from cordon_scanner.foundation.content import FileContent
+
+# Bidirectional overrides and zero-width characters, as UTF-8 byte sequences.
+# Matched as bytes so no decoding is required and no encoding surprise applies.
+#
+# These are the "Trojan Source" family: text that renders in one order and
+# compiles in another, so a reviewer approves something different from what the
+# compiler sees.
+#
+# Restricted to characters that actually reorder rendering. Zero-width space,
+# non-joiner and joiner (U+200B-U+200D) were in this set and are not
+# directional: ZWNJ is mandatory in Persian, Arabic and Hindi orthography, ZWJ
+# is in every modern emoji sequence, and ZWSP is an ordinary line-break hint.
+# Left- and right-to-left *marks* (U+200E/U+200F) are out for the same reason --
+# they are ordinary in right-to-left text and override nothing. Including all
+# five reported ninety-five findings across Django's translation catalogues
+# alone, every one of them for text that is simply written correctly.
+DIRECTIONAL_CONTROL = re.compile(
+    # Embeddings, overrides and isolates: U+202A-U+202E and U+2066-U+2069.
+    # None of these has a use in source code.
+    rb"\xe2\x80[\xaa-\xae]"  # LRE, RLE, PDF, LRO, RLO
+    rb"|\xe2\x81[\xa6-\xa9]"  # LRI, RLI, FSI, PDI
+)
+"""The characters that actually REORDER text, which is what Trojan Source is."""
+
+NON_DIRECTIONAL_INVISIBLE = re.compile(
+    # A BOM anywhere but the start. The assertion has to be a lookbehind: as a
+    # lookahead placed after the bytes it is trivially true, because the
+    # position it tests is the one *after* the BOM. Written that way it
+    # excluded nothing, and every file a Windows editor saved with a byte-order
+    # mark was reported as a Trojan Source attack -- fourteen of them in
+    # PyYAML's own UTF-8 test corpus.
+    # A BOM INSIDE a token, not merely after the first byte. The lookbehind used to be
+    # "any preceding character", which caught every editor artefact: `actions/runner`
+    # carries `using System;\n\n` and then a BOM before `namespace`, in four files,
+    # because somebody's editor wrote one when the file was concatenated. That cannot
+    # reorder anything -- a BOM is zero-width and has no directional semantics, which is
+    # what separates it from the overrides above.
+    #
+    # A BOM between two non-space characters is a different matter: Grafana's Azure
+    # dashboards carry one inside a URL, nine times, where it makes two URLs that look
+    # identical different strings. That one is still reported.
+    #
+    # Nor straight after an opening quote, which is a string literal that BEGINS with a
+    # BOM -- code handling the thing rather than hiding behind it. TrafficMonitor writes
+    # `version_info.find(L"\ufeff<version>")` to strip one out of a downloaded file,
+    # which is the same reasoning `_is_lone_quoted_mark` already applies to a quoted
+    # override.
+    rb"(?<=[^\s\"'`])\xef\xbb\xbf"
+    rb"|\xef\xbf\xb9|\xef\xbf\xba|\xef\xbf\xbb"  # interlinear annotation marks
+)
+"""Invisible, and unable to reorder anything.
+
+Separated from the directional controls because the two are different findings with
+the same symptom. A zero-width no-break space cannot make source read one way and
+compile another -- the rule's own message, about review seeing something the compiler
+does not, is simply not true of it. What it can do is make two strings that render
+identically compare unequal, which is a bug and occasionally a trick, and which is
+worth reporting at a severity that does not stop a build.
+
+Measured: of the fourteen repositories this rule touched at HIGH with three findings or
+fewer, the non-directional half was every case where the character sat in code rather
+than in translated text -- `content.replace(/^\ufeff/, '')` in a markdown parser,
+`let s = "Hello\ufeffWorld"` in SwiftLint's own test samples for the rule that detects
+invisible characters, a table of JavaScript whitespace codepoints in a Rust comment,
+and one stray mark inside a URL literal in `hashicorp/vagrant`. The last of those is a
+real defect in that repository and is still reported; none of the four is Trojan Source.
+"""
+
+TAG_SMUGGLING_RULE = "SUSPECT.OBFUSCATION.TAG_SMUGGLING.001"
+"""Not ceilinged in documentation: a README is what an agent is told to read."""
+TAG_RUN = re.compile(rb"(?:\xf3\xa0[\x80\x81][\x80-\xbf]){4,}")
+"""Four or more Unicode Tag characters in a row (U+E0000 to U+E007F as UTF-8)."""
+
+BIDI_AND_INVISIBLE = re.compile(
+    DIRECTIONAL_CONTROL.pattern + rb"|" + NON_DIRECTIONAL_INVISIBLE.pattern
+)
+"""Either kind, for callers that only ask whether a file carries one at all."""
+
+#: Words a file uses when it is ABOUT bidirectional control characters.
+#:
+#: Bandit's Trojan Source plugin, a threat model, a security runbook, a test fixture
+#: with a name that says so. An attacker does not label the override -- it works
+#: because a reviewer cannot see it, and a comment announcing its presence defeats the
+#: technique entirely.
+SELF_DESCRIBING = re.compile(
+    rb"(?i)(?:trojan[\s_-]?source|bidirectional[\s_-]?(?:control|character|override)"
+    rb"|\bbidi\b|U\+202[A-E]|U\+206[6-9]|CWE-838"
+    rb"|right[\s_-]?to[\s_-]?left[\s_-]?override|left[\s_-]?to[\s_-]?right[\s_-]?override"
+    rb"|\bRLO\b|\bLRO\b|\bPDI\b|byte[\s_-]?order[\s_-]?mark|\bBOM_BYTE)"
+)
+
+
+#: Unicode ranges written right to left: Hebrew, Arabic, Syriac, Thaana, N'Ko,
+#: Samaritan, Mandaic, their presentation forms, and Adlam.
+RTL_RANGES = (
+    (0x0590, 0x08FF),
+    (0xFB1D, 0xFDFF),
+    (0xFE70, 0xFEFF),
+    (0x1E800, 0x1EFFF),
+)
+
+#: How far either side of the control to look for the text it is ordering.
+RTL_WINDOW = 24
+
+#: What share of a file's LETTERS must be right-to-left before the file is a
+#: right-to-left resource rather than code containing a stray character.
+#:
+#: Measured. Thunderbird's Persian Android resources are 25.2% -- a translation file
+#: caps somewhere near there, because the XML element and attribute names around the
+#: translated text are Latin. `dimagi/commcare-hq`'s 1.2MB webpack bundle is 0.01%,
+#: and this project's own source is 0.00%. Three orders of magnitude between the two,
+#: so the threshold is set well below the floor of a genuine translation rather than
+#: just above the noise: a source file with a handful of Arabic test strings in it
+#: does not become exempt, and a file that IS the translation does.
+RTL_RESOURCE_SHARE = 0.10
+
+#: Below this many letters a share means nothing, so the file is judged as code.
+RTL_RESOURCE_MIN_LETTERS = 200
+
+
+class ObfuscationText:
+    """Measurements of text that tell obfuscation from ordinary content."""
+
+    @staticmethod
+    def _is_rtl_resource(raw: bytes) -> bool:
+        """Whether this file is right-to-left text rather than code containing some.
+
+        `_orders_rtl_text` asks whether the control sits BESIDE right-to-left script, and
+        it is the right question almost everywhere. It cannot answer the case where the
+        string being ordered contains no script at all. Thunderbird's Persian resources
+        carry
+
+            <string name="message_view_single_attachment_summary">&lt;RLE&gt;&lt;RLM&gt;
+                <xliff:g id="name">%1$s</xliff:g> (<xliff:g id="size">%2$s</xliff:g>)</string>
+
+        -- a translated string whose entire content is two substituted placeholders, a
+        filename and a size. The embedding is there so that what gets substituted renders
+        the right way round inside a right-to-left interface, which is exactly what RLE is
+        for; there is no Persian within the window because there is no Persian in the
+        string. The lines above and below it are unmistakably Persian, and so is the file.
+
+        So the question is asked of the file as well. An override in a file that IS
+        right-to-left text is doing its documented job; an override in a file of code is
+        the attack, and Trojan Source needs the file to be code for the technique to have
+        a reviewer to mislead.
+
+        Deliberately a share of letters rather than a count, and deliberately not a path
+        test. `values-fa/` and `/locales/ar/` are the conventions of two ecosystems out of
+        many, and the content answers the question directly. See `RTL_RESOURCE_SHARE` for
+        why the threshold sits where it does, and note what this does NOT excuse: the
+        right-to-left OVERRIDE in a minified JavaScript bundle, which is 0.01%
+        right-to-left and stays a high-severity finding.
+        """
+        text = raw.decode("utf-8", "replace")
+        letters = [character for character in text if character.isalpha()]
+        if len(letters) < RTL_RESOURCE_MIN_LETTERS:
+            return False
+        right_to_left = sum(
+            1
+            for character in letters
+            if any(low <= ord(character) <= high for low, high in RTL_RANGES)
+        )
+        return right_to_left / len(letters) >= RTL_RESOURCE_SHARE
+
+    @staticmethod
+    def _orders_rtl_text(raw: bytes, start: int, end: int) -> bool:
+        """Whether the control character is next to right-to-left script.
+
+        This is the difference between the attack and the feature. Trojan Source works by
+        putting an override beside LATIN text, so that the identifiers a reviewer reads are
+        reordered from the ones the compiler sees. An override beside Arabic or Hebrew is
+        the override doing the job it was added to Unicode for.
+
+        `RikkaApps/Shizuku`, `tiann/KernelSU`, `MatsuriDayo/NekoBoxForAndroid`,
+        `getgrav/grav` and `briannesbitt/Carbon` each carry exactly one of these, in an
+        Arabic or Kurdish resource string, and Notepad++'s language table carries a POP
+        DIRECTIONAL FORMATTING after the word Kurdish writes its own name with. Five of
+        those are `values-ar/strings.xml`, which is where Android PUTS Arabic.
+
+        A window rather than the whole file, and both sides of it: an attack hides the
+        override in the middle of code, where the nearest characters are ASCII, and no
+        amount of translated text elsewhere in the file changes that.
+        """
+        window = raw[max(0, start - RTL_WINDOW) : end + RTL_WINDOW]
+        for char in window.decode("utf-8", errors="replace"):
+            point = ord(char)
+            if any(low <= point <= high for low, high in RTL_RANGES):
+                return True
+        return False
+
+    @staticmethod
+    def _is_lone_quoted_mark(raw: bytes, start: int, end: int) -> bool:
+        """Whether the match is the entire contents of a quoted literal.
+
+        `"\ufeff"` in a BOM-stripping parser, `'\u202e'` in a table of control characters.
+        One character between two MATCHING quotes is a codepoint being handled; an attack
+        needs the override to sit next to the code it reorders.
+        """
+        if start == 0:
+            return False
+        before = raw[start - 1 : start]
+        return before in (b'"', b"'", b"`") and before == raw[end : end + 1]
+
+    @staticmethod
+    def _longest_padding_run(text: str) -> int:
+        """The longest run of whitespace that follows something, in a line.
+
+        Leading indentation is skipped: it is whitespace at the start of a line,
+        which every formatter produces. What this counts is a gap in the middle,
+        which is how a payload is pushed off the right-hand edge.
+        """
+        longest = 0
+        run = 0
+        seen_content = False
+        for char in text:
+            if char.isspace():
+                if seen_content:
+                    run += 1
+                    longest = max(longest, run)
+            else:
+                seen_content = True
+                run = 0
+        return longest
+
+    @staticmethod
+    def _longest_unbroken_run(text: str) -> int:
+        """The longest run of non-whitespace characters in a line."""
+        longest = 0
+        run = 0
+        for char in text:
+            if char.isspace():
+                longest = max(longest, run)
+                run = 0
+            else:
+                run += 1
+        return max(longest, run)
+
+    @staticmethod
+    def _obfuscator_io(hit: _Hit) -> bool:
+        """Whether this is obfuscator.io's output, which no bundler produces.
+
+        A bundle in `dist/` is build output and its minified shape is ceilinged for that reason. The
+        hex identifiers and rotated string array of javascript-obfuscator are not minification: they
+        are someone choosing to hide the code, and in a published bundle that is how the September
+        2025 npm compromise of `@duckdb/duckdb-wasm` spliced a wallet drainer into `dist/*.worker.js`.
+        """
+        return hit.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" and "obfuscator.io" in hit.title
+
+
+ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
+
+ESCAPE_UNIT = re.compile(rb"\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}")
+"""One escaped byte. Counted file-wide when no single run is long enough."""
+
+CHAR_CODE_UNIT = re.compile(
+    rb"(?:String\.fromCharCode|chr)\s{0,4}\(\s{0,4}\d{1,6}(?:\s{0,4},\s{0,4}\d{1,6}){0,32}"
+)
+"""One `fromCharCode`/`chr` call with its arguments, of any length."""
+
+NUMERIC_ARG = re.compile(rb"\d{1,6}")
+"""One numeric argument inside a character-code call."""
+
+PRINTABLE_SHARE = 0.8
+"""Share of decoded characters that must be printable ASCII.
+
+A concealed string decodes to something a person would have typed -- a URL, a
+command, source. A legitimate byte table decodes to bytes nobody types. Eight in
+ten is loose enough for a payload with a few control characters in it and tight
+enough to leave `\x7fELF` and a confusables map alone."""
+
+CUMULATIVE_ENCODED_UNITS = 16
+"""File-wide count at which split encoding is reported.
+
+Twice the single-run threshold, so a file has to be doing substantially more
+than one borderline construct before this fires. A legitimate small byte table
+(`\x00\x01\x02`) stays well under; a payload divided to duck the per-run
+threshold does not, because the division does not reduce the total."""
+
+CHAR_CODE_RUN = re.compile(
+    rb"(?:String\.fromCharCode|chr)\s{0,4}\(\s{0,4}\d{1,6}(?:\s{0,4},\s{0,4}\d{1,6}){7,16}"
+)
+"""A long run of numeric character codes.
+
+Every repeat is bounded, including the whitespace runs. `\\s*` and `\\d+`
+inside `{7,}` is unbounded nesting -- the shape a rule pack is refused for --
+and eight codes is already decisive, so upper bounds cost nothing here."""
+
+#: Languages each packer signature can actually be the output of.
+#:
+#: Every shape below is JavaScript. Matching one in a file that cannot execute
+#: JavaScript is a category error, and it is the error that reported four HIGH
+#: findings across four repositories -- all of them on a shell script, and all of
+#: them on the same line of it.
+#:
+#: The file was `scripts/security/scan-malware.sh`, a list of quoted regexes a
+#: malware scanner greps for, with `# _$_1e42-style obfuscated identifiers` in a
+#: comment beside one of them. Cordon read the comment as the thing the comment
+#: describes. It is the canonical false positive for this rule class -- a security
+#: tool's own signature file -- and every scanner in this category hits it.
+#:
+#: Note what this does NOT do: it does not exempt the path, or the file, or
+#: anything named `scan-malware.sh`. A JavaScript payload appended to that same
+#: file would still be reported, because the gate is the language the signature
+#: belongs to and nothing about who owns the file.
+JAVASCRIPT_LANGUAGES = frozenset({"javascript", "typescript", "jsx", "tsx", "vue", "svelte"})
+
+#: (label, pattern, languages, minimum occurrences).
+#:
+#: The count matters for the two identifier schemes. `_0x4f2a` and `_$_1e42` are
+#: how an obfuscator NAMES things, so real output carries hundreds of them; one
+#: occurrence is a file talking about the scheme. The other three shapes are
+#: specific enough that one is the real thing -- nobody writes
+#: `eval(function(p,a,c,k,e` by accident -- so they keep a threshold of one.
+PACKERS: tuple[tuple[str, re.Pattern[bytes], frozenset[str], int], ...] = (
+    (
+        "Dean Edwards packer",
+        re.compile(rb"eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e"),
+        JAVASCRIPT_LANGUAGES,
+        1,
+    ),
+    ("obfuscator.io", re.compile(rb"_0x[0-9a-f]{4,6}\s*[,;=\[]"), JAVASCRIPT_LANGUAGES, 8),
+    # The same tool with identifiers renamed (`--identifier-names-generator mangled` or a
+    # dictionary): no `_0x` names left, but the string array still rotates itself into place with
+    # `arr['push'](arr['shift']())`, in brackets because the method names are strings it hides.
+    # Minifiers write `.push`; `1imit` and its siblings (review 98) are this, around an `eval` of a
+    # server's reply.
+    (
+        "obfuscator.io, identifiers renamed",
+        re.compile(
+            rb"\[\s*[\"']push[\"']\s*\]\s*\(\s*[\w$]+\s*\[\s*[\"']shift[\"']\s*\]\s*\(\s*\)\s*\)"
+        ),
+        JAVASCRIPT_LANGUAGES,
+        1,
+    ),
+    (
+        "hex identifier obfuscation",
+        re.compile(rb"\b_\$_[0-9a-fA-F]{3,}"),
+        JAVASCRIPT_LANGUAGES,
+        8,
+    ),
+    (
+        "JSFuck",
+        re.compile(rb"\[\]\[\s*[\"'@]?\s*(?:filter|constructor)"),
+        JAVASCRIPT_LANGUAGES,
+        1,
+    ),
+    (
+        "large encoded blob into a dynamic constructor",
+        re.compile(rb"(?:new\s+)?Function\s*\(\s*[\"'][A-Za-z0-9+/=]{200,}"),
+        JAVASCRIPT_LANGUAGES,
+        1,
+    ),
+)
+
+#: Languages whose long lines are prose rather than code. See `_long_lines`.
+#:
+#: Only Markdown is listed because only Markdown is identified: `.rst`, `.txt`,
+#: `.adoc` and `.tex` resolve to no language at all and are already covered by the
+#: `language is None` guard above it.
+PROSE_LANGUAGES = frozenset({"markdown"})
+
+# Minified output is legitimately long-lined, so length alone must not fire on
+# it. These paths are exempt from the length rule only; every other rule still
+# applies, because a payload committed inside a vendored bundle is exactly the
+# thing worth finding.
+MINIFIED_PATHS = (
+    "**/*.min.js",
+    "**/*.min.css",
+    "**/*.map",
+    "**/*.bundle.js",
+    # Generated and data formats that are one long line by construction. An SVG
+    # exported by a drawing tool is a single 18-kilobyte line; so is a lockfile
+    # hash table, a compiled translation catalogue and a test snapshot.
+    # Reporting line length on these produced four hundred and fifty-five
+    # findings across twenty-one real repositories, none of them about
+    # anything.
+    "**/*.svg",
+    "**/*.mo",
+    "**/*.po",
+    "**/*.snap",
+    "**/*.lock",
+    "**/*-lock.json",
+    # JSON is a data format. There is no reading of a long JSON line as source,
+    # because there is no reading of JSON as source: a blob in it needs a loader
+    # somewhere else, and that loader is what the other rules are for. Sigstore
+    # bundles, CycloneDX schemas and API-response fixtures are all one long
+    # value by construction.
+    "**/*.json",
+    # Workflow lockfiles, which are machine-written by construction.
+    "**/*.lock.yml",
+    "**/*.lock.yaml",
+    # Directories whose contents are not this project's source. Only *line
+    # length* is waived here -- a payload can hide in a vendored bundle, and
+    # every other rule still reads these files.
+    "**/vendor/**",
+    "**/node_modules/**",
+    "**/third_party/**",
+    "**/deps/**",
+    "**/dist/**",
+    # Build output committed to the tree. Next.js keeps rolled-up copies of its
+    # runtime dependencies under `compiled/`, which is what the name says.
+    "**/compiled/**",
+    # Test data. A fixture is a blob on purpose: a base64 source map, a captured
+    # API response, a wasm module a test loads. Only line length is waived --
+    # every other rule still reads them, which matters because a fixture
+    # directory is a plausible place to hide something.
+    "**/fixtures/**",
+    "**/testdata/**",
+    # Asset directories. Sphinx and Django both put bundled third-party
+    # JavaScript under `_static/`, frequently minified without the `.min`
+    # suffix that would otherwise identify it.
+    "**/_static/**",
+    "**/static/**",
+    "**/assets/**",
+    # Compiled output committed as a test fixture. React ships dozens under
+    # `__compiled__/`, which is exactly what the directory name says they are.
+    "**/__compiled__/**",
+)
+
+SOURCE_MAP_TRAILER = re.compile(
+    rb"(?://|/\*)# sourceMappingURL=[^\s]{1,300}\s{0,8}(?:\*/)?\s{0,8}$"
+)
+"""The comment a bundler appends to point a debugger at the original source."""
+
+GENERATED_MARKER = re.compile(
+    rb"(?i)(?:@generated|do not edit|code generated by|automatically generated"
+    rb"|autogenerated|auto-generated|this file (?:was|is) generated)"
+)
+"""A file saying, in its own header, that a program wrote it.
+
+Content rather than path, which is what makes it worth having: the convention
+is near-universal because every code-review tool reads it too, and it is
+correct in the directories no glob would have guessed. Line length in generated
+output is a property of the generator."""
+
+BUNDLER_PRELUDE = re.compile(
+    rb"var [\w$]{1,4}=Object\.create;var [\w$]{1,4}=Object\.defineProperty;"
+    rb"|__webpack_require__|webpackBootstrap|/\*{6}/ "
+)
+"""The opening a bundler writes, not a person: esbuild's `var X=Object.create;var k=
+Object.defineProperty;` helper prelude, and webpack's runtime. Read within
+`GENERATED_HEADER_BYTES`. Across 1,943 legitimate editor extensions this rule alone blocked 90, and
+the ones read were esbuild output in `out/` -- the folder TypeScript and esbuild write to; the three
+malicious extensions it was the only signal for were esbuild output too, with no payload on the
+line it reported."""
+
+GENERATED_HEADER_BYTES = 4096
+"""How far into a file to look for that. A marker further in than this is not a
+header, and scanning the whole file for one would mean any file that mentions
+the phrase is exempt."""
+
+
+TRANSLATION_PATHS = ("**/*.po", "**/*.mo", "**/*.pot", "**/LC_MESSAGES/**")
+"""Message catalogues, which hold display text rather than code."""
+
+CONCEALED_TEXT = re.compile(
+    r"(?i)[a-z][a-z0-9+.-]{1,9}://"
+    r"|\b(?:\d{1,3}\.){3}\d{1,3}\b"
+    r"|\b[a-z0-9-]{2,63}\.(?:com|net|org|io|xyz|ru|cn|top|info|biz|me|cc|tk|su|pw|online|site|app"
+    r"|dev|link|club|shop|live|sh|ws)\b"
+    r"|/bin/|/tmp/|/etc/|\.ssh|id_rsa|cmd\.exe|powershell"
+    r"|\b(?:require|child_process|eval|exec|execSync|spawn|Function|atob|btoa|Buffer|process|env"
+    r"|fromCharCode|https?|net|socket|fs|os|writeFile|readFile|unlink|import|__import__|subprocess"
+    r"|system|popen|getattr|setattr|globals|compile|marshal|base64|zlib|cookie|localStorage"
+    r"|XMLHttpRequest|fetch|WebSocket|token|password|passwd|wallet|discord|telegram|webhook|curl"
+    r"|wget|chmod|crontab|whoami|hostname|homedir|platform)\b"
+)
+"""What concealed text decodes to: an address, a path, a command, or the name of something that
+runs code, reaches the network or holds a secret. A run of escapes that decodes to none of these
+is data written as escapes -- curl's `"0123456789ABCDEF"`, a regular expression's
+`[\x21\x23-\x7e]`, libmagic's `\x00OpenTimestamps\x00`, TLS's `"DOWNGRD\x01"` -- and was the
+only code warning on 116 of 11,005 benign units rescanned, while what malware hides behind escapes
+is a module name, a host or a command (review 98)."""
+
+MIN_DISTINCT_ENCODED = 6
+"""How many distinct characters a run of escapes must decode to.
+
+Below this the escapes are a serialiser's output rather than something hidden:
+one repeated escape is a convention, and a payload is text."""
+
+
+LONG_LINE_THRESHOLD = 2000
+ENTROPY_THRESHOLD = 4.5
+UNBROKEN_RUN_THRESHOLD = 250
+"""How long a run of non-whitespace makes a long line a payload rather than text.
+
+A payload kept off-screen in a diff is usually one token: a base64 blob, a hex
+string, a packed function body. A long line made of ordinary short words
+separated by spaces is a DOCUMENT embedded in a string, and configuration
+formats are full of them -- a CloudFormation `DashboardBody` holding a JSON
+dashboard, an `Fn::Sub` holding a shell script, a Kubernetes CRD holding a
+paragraph of API documentation.
+
+Entropy cannot separate those, for the reason the prose exclusion below already
+records: mixed case and punctuation put any sentence over the floor. Measured
+against the infrastructure corpus, where five of seven findings were one of
+those three shapes: their longest unbroken runs were 24, 45, 45 and 171
+characters, and the one real finding -- a packed `eval(function(p,a,c,k,e,d)`
+loader -- was 3,195."""
+
+PADDING_RUN_THRESHOLD = 80
+"""How much consecutive whitespace inside a line means it was padded.
+
+The other way a payload is kept off-screen, and the one an unbroken-run test on
+its own misses. Measured against 1,000 real malicious npm and PyPI releases:
+two packages closed a statement with `});`, padded the line with about a
+hundred and fifty spaces, and put a scrambled loader after it -- `var
+mfa=ZML(mGB,cag ); mfa(9993)`. The payload is deliberately broken up with
+spaces, so its longest unbroken run was 206 and 224 characters and it read as
+prose to a length test.
+
+Nothing writes a hundred consecutive spaces in the middle of a line on purpose.
+An indented line is whitespace at the START, which is not this: the run has to
+come after something."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Hit:
+    rule_id: str
+    title: str
+    message: str
+    remediation: str
+    severity: Severity
+    confidence: Confidence
+    start: int
+    end: int
+    offscreen: bool = False
+    """Code placed after a run of padding, past the right edge of an editor."""
+
+
+MINIFIED_LINE_FOR_BIDI = 5_000
+"""A line this long is generated output, as the long-line rule reads it."""
+
+
+class ObfuscationDetector(BaseDetector):
+    """Reports content that was deliberately made unreadable."""
+
+    id = "obfuscation"
+    # 0.2.0: a file that names the attack it contains, or carries a lone quoted
+    # control character, reports it at LOW; and generated output is ceilinged.
+    # 0.5.0: a directional control in a file that is itself right-to-left text is
+    # ordering that text, even when the string it sits in holds only placeholders.
+    # 0.6.0: a third party's minified library is ceilinged like other material this
+    # repository did not write.
+    version = "0.6.0"
+    categories = frozenset({Category.SUSPICIOUS})
+    requires = DetectorRequirements(content=True)
+
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.BIDI.001",
+                title="Bidirectional or invisible Unicode in source",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                message=(
+                    "This file contains characters that change how text is displayed without "
+                    "changing what is compiled or interpreted. Source that reads one way to a "
+                    "reviewer and runs another way is the whole of the attack."
+                ),
+                references=(references.TROJAN_SOURCE, references.HOMOGLYPH),
+                remediation="Remove the control characters. Source should read as it runs.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",
+                title="Invisible text written in Unicode Tag characters",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                message=(
+                    "Text written in Unicode Tag characters is invisible to a reader and legible to "
+                    "a language model: the ASCII-smuggling form of prompt injection."
+                ),
+                references=(references.HOMOGLYPH,),
+                remediation="Remove the characters, and find out how they were introduced.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.PACKED.001",
+                title="Packer or minifier signature in hand-written source",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                message=(
+                    "A packer's output signature appears in a file that is not build output. "
+                    "Packing exists to make code unreadable until it runs, which in a source "
+                    "tree removes the review that source is there to receive."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Ship the readable source and generate the packed form at build time.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.ENCODED.001",
+                title="Large encoded blob embedded in source",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                message=(
+                    "A long encoded literal sits inside source. The bytes are not code until "
+                    "something decodes them, so they pass through review as a string and become "
+                    "whatever they are at runtime."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Store binary data as a file, not as a literal.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.LONGLINE.001",
+                title="Line far longer than any hand-written source",
+                severity=Severity.LOW,
+                confidence=Confidence.LOW,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                message=(
+                    "One line is longer than hand-written source runs to, in a file that does "
+                    "not look like build output. A payload appended to a source file is very "
+                    "often a single long line, because that keeps it off-screen in a diff."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Exclude generated bundles, or configure scan.minified.",
+            ),
+        )
+
+    def applicable(self, ctx: ScanContext) -> bool:
+        return True
+
+    def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
+        if not isinstance(unit, FileUnit):
+            return ()
+
+        content = unit.content
+        if content.is_binary:
+            return ()
+
+        hits: list[_Hit] = []
+        hits.extend(self._bidi(content, unit.language))
+        hits.extend(self._tag_smuggling(content))
+        hits.extend(self._escapes(content))
+        hits.extend(self._packers(content, unit.language))
+        long_lines = list(self._long_lines(content, ctx, unit.language))
+        # Padding is the stronger reading of the same line: a long line is often a bundle, code
+        # after six hundred spaces never is. When both fire the padded one is reported, so the
+        # entry-point and install grading see it (review 98: gluestack's `react-native-aria`
+        # releases appended their payload after 630 spaces in `lib/commonjs/index.js`, the
+        # package's `main`, and were reported LOW as a long line).
+        offscreen = list(self._offscreen_code(content, unit.language)) or list(
+            self._below_screen_code(content, unit.language)
+        )
+        hits.extend(offscreen or long_lines)
+
+        return [self._finding(hit, unit, ctx) for hit in hits]
+
+    #: Code after a gap of padding in the middle of a line: `import os` followed by two hundred
+    #: spaces and then the payload, which a reader's editor never shows without scrolling right.
+    #: Not a gap before a comment, and not a gap at the end of a line. A `;` after the gap is a
+    #: statement separator, which is how the samples carry on: `...;exec(...)`.
+    OFFSCREEN_CODE: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?m)\S[ \t]{200,4000}(?=[A-Za-z_$;(\[])(?!//|--)\S"
+    )
+
+    @staticmethod
+    def _inside_quotes(raw: bytes, offset: int) -> bool:
+        """Whether a quote is open on this line before `offset`: padding in a string literal is a
+        table or a message laid out in columns (curl's test strings, Prettier's lexer tables)."""
+        line = raw[raw.rfind(b"\n", 0, offset) + 1 : offset + 1]
+        line = re.sub(rb"\\.", b"", line)
+        return any(line.count(quote) % 2 for quote in (b'"', b"'", b"`"))
+
+    #: Code after hundreds of blank lines: the vertical form of the padding below, past the bottom
+    #: of the screen instead of its right edge.
+    BELOW_SCREEN_LINES: ClassVar[int] = 400
+
+    def _below_screen_code(self, content: FileContent, language: str | None) -> Iterable[_Hit]:
+        """Code placed after hundreds of empty lines, so a file opens on a screen of nothing and
+        reads as ending where its visible part ends (review 98: bs58lite's preinstall runs its
+        collector after 2,000 blank lines). Source languages only."""
+        if language is None or language in PROSE_LANGUAGES or content.truncated:
+            return
+        # A linear count of consecutive blank lines, then the first line with code on it.
+        raw = content.raw
+        blank, offset = 0, 0
+        found_at = -1
+        for line in raw.split(b"\n"):
+            if line.strip():
+                if blank >= self.BELOW_SCREEN_LINES:
+                    found_at = offset
+                    break
+                blank = 0
+            else:
+                blank += 1
+            offset += len(line) + 1
+        if found_at < 0:
+            return
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
+            title="Code pushed below the screen",
+            message=(
+                f"Line {content.line_of(found_at)} continues the file after {blank} empty "
+                "lines, so an editor shows the visible part and nothing of what follows. Blank lines "
+                "in that number have no use in code except keeping something out of a reviewer's sight."
+            ),
+            remediation="Read to the end of the file. Remove the padding, or the code after it.",
+            severity=Severity.LOW,
+            confidence=Confidence.HIGH,
+            start=found_at,
+            end=min(len(raw), found_at + 200),
+            offscreen=True,
+        )
+
+    def _offscreen_code(self, content: FileContent, language: str | None) -> Iterable[_Hit]:
+        """Code pushed past the right edge of the screen by padding, whatever its entropy.
+
+        The long-line rule wants the line to be high-entropy, because a long line of words is
+        text. Padding is the other half of its own premise -- "a payload is either one token or
+        pushed past the edge of the screen" -- and the pushed half needs no entropy: the Roblox
+        cookie stealers in malregistry and `spl-types` hide plain Python after hundreds of
+        spaces on an ordinary line (review 98). Source languages only; prose and data align
+        columns with spaces."""
+        if language is None or language in PROSE_LANGUAGES or content.truncated:
+            return
+        raw = content.raw
+        found = next(
+            (
+                m
+                for m in self.OFFSCREEN_CODE.finditer(raw)
+                if not ObfuscationDetector._inside_quotes(raw, m.start())
+            ),
+            None,
+        )
+        if found is None:
+            return
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
+            title="Code pushed past the edge of the screen",
+            message=(
+                f"Line {content.line_of(found.start())} continues with code after a run of "
+                f"{found.end() - found.start() - 2} blank characters, so an editor shows the "
+                f"start of the line and nothing of what follows it. Padding has no use in code "
+                f"except keeping something out of a reviewer's sight."
+            ),
+            remediation="Read the whole line. Remove the padding, or the code after it.",
+            severity=Severity.LOW,
+            confidence=Confidence.HIGH,
+            start=found.start(),
+            end=min(found.end(), found.start() + 200),
+            offscreen=True,
+        )
+
+    # -- Signals ---------------------------------------------------------
+
+    def _tag_smuggling(self, content: FileContent) -> Iterable[_Hit]:
+        """Text spelled in Unicode Tag characters, outside a flag emoji.
+
+        U+E0020 to U+E007E mirror printable ASCII and render as nothing, so a sentence written in
+        them is invisible to a reader and legible to a language model: "ignore previous
+        instructions" in a README the agent was told to read. Their one legitimate use is the
+        subdivision flags (🏴 followed by tags), which are excluded. Any file, any language --
+        agents read READMEs, docs and comments as readily as their own instruction files, which
+        the agent-chain detector already covers.
+        """
+        from cordon_scanner.detect.agents.agents import INSTRUCTION_PATHS, InstructionText
+
+        if b"\xf3\xa0" not in content.raw:
+            # The lead bytes of every Tag character, so `TAG_RUN` cannot match without them: the
+            # path globs and the search are skipped for the files that have none.
+            return
+        if any(PathGlob.matches(content.path.rpartition("!")[2], p) for p in INSTRUCTION_PATHS):
+            return
+        match = next(
+            (
+                m
+                for m in TAG_RUN.finditer(content.raw)
+                if not content.raw[max(0, m.start() - 4) : m.start()].endswith(b"\xf0\x9f\x8f\xb4")
+            ),
+            None,
+        )
+        if match is None:
+            return
+        hidden = InstructionText._decode_tags(match.group(0)).strip()[:120]
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",
+            title="Invisible text written in Unicode Tag characters",
+            message=(
+                "This file carries text in Unicode Tag characters, which render as nothing to a "
+                "person and read as ordinary text to a language model. Hidden here: "
+                f"{hidden!r}."
+            ),
+            remediation="Remove the characters, and find out how they were introduced.",
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            start=match.start(),
+            end=match.end(),
+        )
+
+    def _bidi(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
+        if content.raw.isascii():
+            # Every alternative of both patterns consumes a byte above 0x7F, so neither can match
+            # an ASCII file -- most files -- and the path globs and both searches are skipped.
+            return
+        # Translation catalogues are excluded. Trojan Source is about source
+        # that renders differently from how it compiles, and a `.po` or `.mo`
+        # for a right-to-left language legitimately embeds directional
+        # characters in the text it will display. That text is data shown to a
+        # user, not logic read by a reviewer, and Django ships hundreds of
+        # such files.
+        if any(PathGlob.matches(content.path, p) for p in TRANSLATION_PATHS):
+            return
+
+        # And so is anything that is not source, which is the same argument carried
+        # to its conclusion. Trojan Source works because a REVIEWER reads one thing
+        # and a COMPILER acts on another. A file nobody reviews as text cannot be
+        # attacked that way, so a directional codepoint in one is a byte sequence,
+        # not a deception.
+        #
+        # Measured across 535 repositories this rule produced 285 findings, and the
+        # files were: DuckDB's `.parquet` test data, Bevy's `.glb` models, Wails's
+        # compiled `Assets.car`, an After Effects `.aep`, an `.m4v`, a PhotoPrism
+        # `.xmp` sidecar, and TensorFlow's `icu_conversion_data.c.gz.afu` -- which is
+        # a character-encoding conversion table, a file whose entire purpose is to
+        # contain every codepoint there is.
+        #
+        # `language is None` is the same gate `_long_lines` already applies, on the
+        # same reasoning written there: a file with no identified language is data,
+        # and the rule's claim is about source.
+        if language is None:
+            return
+
+        # The directional half first, because it is the one the rule's message is
+        # about. A file carrying both is reported for the override.
+        match = DIRECTIONAL_CONTROL.search(content.raw)
+        directional = match is not None
+        if match is None:
+            match = NON_DIRECTIONAL_INVISIBLE.search(content.raw)
+        if match is None:
+            return
+
+        # A file that NAMES the attack it contains is documenting it.
+        #
+        # Bandit's `plugins/trojansource.py` is the plugin that detects Trojan Source,
+        # and its docstring shows the sample output - so the override characters are
+        # there, in prose, beside the words "trojansource", "bidirectional control
+        # character" and "CWE-838". Every scanner in this category hits this on its own
+        # corpus, and the same reasoning already exempts rule-definition files from the
+        # mining and credential-store indicators.
+        #
+        # An attacker does not label the override. That is the whole point of one: it
+        # works because a reviewer cannot see it, and a comment announcing its presence
+        # defeats the technique. So the marker is weak evidence for an attack and strong
+        # evidence for documentation - and this lowers the severity rather than
+        # suppressing, so a labelled override is still in the report.
+        #
+        # A byte-order mark inside a one-character string literal is the second case and
+        # the same argument. webpack's `WebManifestParser.js` strips a BOM before parsing
+        # JSON and writes the check as `if (source[0] === "\ufeff")` with the character
+        # itself. A BOM is invisible but not DIRECTIONAL: it cannot reorder anything,
+        # which is what this rule's message is about, and any parser that handles one has
+        # to name it.
+        #
+        # Both LOWER the severity rather than suppressing. The characters really are
+        # present, a reviewer may still want to know, and a label is weak evidence for an
+        # attack rather than proof against one -- so the finding stays in the report and
+        # stops failing a build.
+        documented = SELF_DESCRIBING.search(
+            content.raw
+        ) is not None or ObfuscationText._is_lone_quoted_mark(
+            content.raw, match.start(), match.end()
+        )
+
+        # The third case, and the one that separates the attack from the feature: an
+        # override beside right-to-left script is the override doing its documented
+        # job. See `_orders_rtl_text`.
+        ordering_text = directional and (
+            ObfuscationText._orders_rtl_text(content.raw, match.start(), match.end())
+            # Or the file itself is right-to-left text. See `_is_rtl_resource`, for the
+            # translated string whose whole content is two placeholders.
+            or ObfuscationText._is_rtl_resource(content.raw)
+        )
+
+        if not directional:
+            # A zero-width no-break space or an interlinear annotation mark. Reported,
+            # and not as Trojan Source: it cannot reorder anything, so the claim above
+            # -- that review sees one thing and the compiler another -- is not true of
+            # it. What it does is make two strings that render identically compare
+            # unequal, which is a defect and occasionally a trick. `hashicorp/vagrant`
+            # has one inside a download URL; `Fission-AI/OpenSpec` has one inside the
+            # regex that strips it.
+            yield _Hit(
+                rule_id="SUSPECT.OBFUSCATION.BIDI.001",
+                title="Invisible characters in source",
+                message=(
+                    "This file contains invisible characters that no reviewer can see "
+                    "and no compiler ignores. They cannot reorder the source, so this "
+                    "is not the Trojan Source attack; what they can do is make two "
+                    "strings that render identically compare as different, which is "
+                    "usually an editor artefact and occasionally deliberate."
+                ),
+                remediation=(
+                    "Remove the characters, or write them as explicit escapes so they "
+                    "are visible to the next reader."
+                ),
+                # Recorded: a defect it may be, a reordering it cannot be. In the long tail it
+                # was mostly a BOM in iconv-lite's generated tables, KaTeX, CSV readers that
+                # strip one, and bundles (review 98). Text hidden in invisible characters --
+                # variation selectors, tag characters -- is `CAP.INVISIBLE_SMUGGLING.001`'s.
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                start=match.start(),
+                end=match.end(),
+            )
+            return
+
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.BIDI.001",
+            title="Bidirectional or invisible characters in source",
+            message=(
+                "This file contains characters that change how text is displayed "
+                "without changing what it means to a compiler. Source that renders "
+                "differently from how it executes defeats review directly: the "
+                "reviewer approves what they see, and the compiler acts on what is "
+                "there."
+            )
+            + (
+                " The control sits beside right-to-left script, or in a file that is "
+                "itself right-to-left text, which is what it was added to Unicode for, "
+                "so this is most likely translated text rather than an attack and is "
+                "reported below its usual severity."
+                if ordering_text
+                else ""
+            ),
+            remediation=(
+                "Remove the control characters. If a right-to-left language is "
+                "genuinely required in a string, use explicit escapes so the "
+                "characters are visible in review."
+            ),
+            severity=(
+                Severity.INFO
+                if ObfuscationDetector._bundled_string(content, match.start())
+                else Severity.LOW
+                if documented or ordering_text
+                else Severity.HIGH
+            ),
+            confidence=Confidence.HIGH,
+            start=match.start(),
+            end=match.end(),
+        )
+
+    BUNDLE_DIRECTORIES: ClassVar[tuple[str, ...]] = ("/static/", "/dist/", "/vendor/", "/build/")
+
+    @staticmethod
+    def _bundled_string(content: FileContent, offset: int) -> bool:
+        """A bidi control inside a string literal of a bundled or minified file: display data a
+        library carries -- KaTeX's right-to-left handling in `streamlit/static/js/katex.*.js` --
+        not Trojan Source, which needs the control in a comment or between tokens of source
+        somebody reads (review 98, FP-7)."""
+        path = f"/{content.path.rpartition('!')[2]}"
+        bundled = content.longest_line > MINIFIED_LINE_FOR_BIDI or any(
+            directory in path for directory in ObfuscationDetector.BUNDLE_DIRECTORIES
+        )
+        if not bundled:
+            return False
+        raw = content.raw
+        line_start = raw.rfind(b"\n", 0, offset) + 1
+        before = raw[line_start:offset]
+        open_quote = None
+        index = 0
+        while index < len(before):
+            char = before[index : index + 1]
+            if char == b"\\":
+                index += 2
+                continue
+            if open_quote is None and char in (b'"', b"'", b"`"):
+                open_quote = char
+            elif char == open_quote:
+                open_quote = None
+            index += 1
+        return open_quote is not None
+
+    @staticmethod
+    def _decoded(raw: bytes, unit_pattern: re.Pattern[bytes]) -> str:
+        """What the escapes or character codes decode to, joined in order."""
+        values: list[int] = []
+        if unit_pattern is CHAR_CODE_UNIT:
+            for call in unit_pattern.finditer(raw):
+                values.extend(int(n) for n in NUMERIC_ARG.findall(call.group(0)))
+        else:
+            values.extend(int(escape.group(0)[2:], 16) for escape in unit_pattern.finditer(raw))
+        return "".join(chr(value) for value in values if 0 < value < 0x110000)
+
+    @staticmethod
+    def _encoded_units(raw: bytes, unit_pattern: re.Pattern[bytes]) -> tuple[int, int, int]:
+        """How many encoded characters the file holds, how many are text, and
+        how many distinct values they decode to.
+
+        Characters, not constructs. `fromCharCode(72,101,108,108)` twice is
+        eight encoded characters written as two calls, and counting the calls
+        would put it at two -- the same per-construct blindness the cumulative
+        count exists to remove, moved up one level.
+
+        The second number is how many of them decode to printable ASCII, which
+        is what separates a concealed string from a table of magic bytes.
+        """
+        values: list[int] = []
+        if unit_pattern is CHAR_CODE_UNIT:
+            for call in unit_pattern.finditer(raw):
+                values.extend(int(n) for n in NUMERIC_ARG.findall(call.group(0)))
+        else:
+            for escape in unit_pattern.finditer(raw):
+                text = escape.group(0)
+                try:
+                    values.append(int(text[2:], 16))
+                except ValueError:  # pragma: no cover - the pattern guarantees hex
+                    continue
+        printable = sum(1 for value in values if 0x20 <= value <= 0x7E)
+        return (len(values), printable, len(set(values)))
+
+    def _escapes(self, content: FileContent) -> Iterable[_Hit]:
+        for pattern, label, unit_pattern, needed in (
+            (ESCAPE_RUN, "escape sequences", ESCAPE_UNIT, (b"\\x", b"\\u")),
+            (CHAR_CODE_RUN, "character codes", CHAR_CODE_UNIT, (b"chr", b"fromCharCode")),
+        ):
+            if not any(literal in content.raw for literal in needed):
+                # What every match of both patterns contains. Without it the run finds nothing
+                # and the file-wide count is zero, under `CUMULATIVE_ENCODED_UNITS` -- the
+                # `continue` below, reached without two scans of the file.
+                continue
+            match = pattern.search(content.raw)
+            if match is None:
+                # Nothing crosses the single-construct threshold. Count across
+                # the whole file before concluding there is nothing here.
+                #
+                # The thresholds were per-construct, so splitting stayed under
+                # them: two `fromCharCode` calls of four arguments each, or a
+                # seven-escape run, produced nothing while a single eight did.
+                # An attacker reads the threshold off the rule and writes one
+                # fewer, which makes a per-construct count a number to duck
+                # rather than a measurement.
+                total, printable, distinct = self._encoded_units(content.raw, unit_pattern)
+                if total < CUMULATIVE_ENCODED_UNITS:
+                    continue
+                if distinct < MIN_DISTINCT_ENCODED:
+                    # An encoder's convention, not concealment. Go's
+                    # `encoding/json` writes `&`, `<` and `>` as `\u0026`,
+                    # `\u003c` and `\u003e` by default, so every JSON document
+                    # Go has ever written is a long run of escapes decoding to
+                    # three characters. Hidden text is text: a payload written
+                    # as escapes decodes to a URL or a command, and those have
+                    # variety. Grafana's dashboard fixtures produced forty-four
+                    # findings, all of them the ampersand in "Annotations &
+                    # Alerts".
+                    continue
+                # What the escapes decode to is the discriminator.
+                #
+                # A file-wide count alone flags this project's own
+                # `BINARY_MAGIC` table and its Unicode confusables map -- both
+                # long runs of escapes, both entirely legitimate, because a
+                # table of magic bytes is *supposed* to be arbitrary binary.
+                #
+                # Hidden text is not arbitrary. A payload written as escapes
+                # decodes to source or a URL or a command, which is printable
+                # ASCII; a byte table decodes to bytes nobody would type. That
+                # is the difference between concealment and data, and it is
+                # measurable rather than a matter of where the file lives.
+                if printable < total * PRINTABLE_SHARE:
+                    continue
+                if not CONCEALED_TEXT.search(self._decoded(content.raw, unit_pattern)):
+                    # Printable, and still not something anybody hides: a table of hex digits,
+                    # a regular expression's character range, a protocol constant
+                    # (`"DOWNGRD\x01"`), a file-format signature. See `CONCEALED_TEXT`.
+                    continue
+                first = unit_pattern.search(content.raw)
+                if first is None:  # pragma: no cover - findall implies a match
+                    continue
+                yield _Hit(
+                    rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
+                    title=f"String built from {label} spread across the file",
+                    message=(
+                        f"This file contains {total} {label} in total, split across "
+                        f"several places so that no single run is long. Splitting is "
+                        f"what makes the total worth reporting: the value still does "
+                        f"not appear in the file, and the division has no purpose "
+                        f"except that a per-construct threshold does not see it."
+                    ),
+                    remediation=(
+                        "Write the strings as text. If a value must not be readable "
+                        "in source, it is a secret and belongs in a secret store."
+                    ),
+                    severity=Severity.MEDIUM,
+                    confidence=Confidence.MEDIUM,
+                    start=first.start(),
+                    end=first.end(),
+                )
+                return
+
+            # The same discriminator the cumulative branch applies, and for the
+            # same reason. It was applied only there, so a single long run
+            # skipped it entirely -- and a Unicode codepoint table is exactly
+            # that: `ਰਲਲ਼...` in XRegExp's script ranges is four
+            # hundred escapes of Gurmukhi, which is data rather than a
+            # concealed string. Concealment decodes to text somebody typed.
+            run_total, run_printable, run_distinct = self._encoded_units(
+                match.group(0), unit_pattern
+            )
+            if run_printable < run_total * PRINTABLE_SHARE:
+                continue
+            if run_distinct < MIN_DISTINCT_ENCODED:
+                continue
+            if not CONCEALED_TEXT.search(self._decoded(match.group(0), unit_pattern)):
+                continue
+
+            yield _Hit(
+                rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
+                title=f"String built from a long run of {label}",
+                message=(
+                    f"A string here is written as a long run of {label} rather than "
+                    f"as text. That has no benefit for readability or correctness; "
+                    f"its only effect is that the resulting value does not appear in "
+                    f"the file and cannot be found by searching for it."
+                ),
+                remediation=(
+                    "Write the string as text. If the value must not be readable in "
+                    "source, it is a secret and belongs in a secret store."
+                ),
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                start=match.start(),
+                end=match.end(),
+            )
+            return  # one encoding finding per file is enough to make the point
+
+    @staticmethod
+    def _is_remark(
+        content: FileContent,
+        offset: int,
+        language: str | None,
+        spans: tuple[tuple[int, int], ...] | None = None,
+    ) -> bool:
+        """Whether this offset is inside a comment rather than in code.
+
+        Both forms: a line comment, and a `/* ... */` whose continuation lines are
+        indented prose rather than starting with `*`.
+
+        `spans` is the block-comment map, which `block_comment_spans` documents as
+        "a pass over the file, cached by the caller". This detector was not caching
+        it: it recomputed the map for every candidate match, and the map is a
+        character-by-character loop over the whole file. On the ten-megabyte payload
+        of the Shai-Hulud npm worm that is ten million iterations per match.
+        """
+        if spans is None:
+            spans = SourceComments.block_comment_spans(content.text, language)
+        if SourceComments.inside_spans(spans, offset):
+            return True
+        start = content.comment_column(content.line_of(offset), language)
+        return start is not None and content.column_of(offset) >= start
+
+    def _packers(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
+        # Computed once for the file, and only if a packer signature is actually
+        # present -- most files match none and never pay for it.
+        spans: tuple[tuple[int, int], ...] | None = None
+
+        for label, pattern, languages, minimum in PACKERS:
+            if language not in languages:
+                continue
+            # Bounded. The question is whether there are at least `minimum`
+            # occurrences and where the first one in real code is, and both answers
+            # are reachable from a prefix of the matches -- but this asked for all
+            # of them with `findall` and then walked the file a second time with
+            # `finditer`. An obfuscated file is exactly the case where that is
+            # ruinous: every identifier is a match, so a ten-megabyte file produced
+            # hundreds of thousands of them, twice.
+            #
+            # The cost was not theoretical. `bun_environment.js`, the payload the
+            # Shai-Hulud worm ships beside a `preinstall` hook, exhausted the
+            # five-second per-file budget here and the obfuscation detectors never
+            # ran on it -- so the worst npm compromise on record was reported as
+            # "this package has a preinstall script", the same finding `bcrypt`
+            # gets, and the evidence that would have separated them was the part
+            # that timed out. A limit that an attacker can reach by making the
+            # payload bigger is a limit that rewards making the payload bigger.
+            found: re.Match[bytes] | None = None
+            seen = 0
+            for match in pattern.finditer(content.raw):
+                seen += 1
+                if found is None and not self._is_remark(
+                    content,
+                    match.start(),
+                    language,
+                    spans
+                    if spans is not None
+                    else (spans := SourceComments.block_comment_spans(content.text, language)),
+                ):
+                    found = match
+                if seen >= minimum and found is not None:
+                    break
+            if seen < minimum or found is None:
+                continue
+            # The first occurrence that is actually code. `binary-husky/gpt_academic`
+            # keeps a Dean Edwards packer preamble in `themes/waifu_plugin/
+            # waifu-tips.js` behind a `//`, where a previous author left the packed form
+            # of a widget beside the readable one. The claim this rule makes is that
+            # obfuscated code cannot be reviewed; a commented-out blob is not code, and
+            # the readable version is right there.
+            #
+            # This detector was the only one with no comment test at all, so the
+            # signature matched wherever it appeared.
+            yield _Hit(
+                rule_id="SUSPECT.OBFUSCATION.PACKED.001",
+                title=f"Output of an obfuscator ({label})",
+                message=(
+                    f"This file matches the output shape of {label}. Obfuscated code "
+                    f"cannot be reviewed, so whatever it does is outside every "
+                    f"process that depends on reading it."
+                ),
+                remediation=(
+                    "Obtain the original source and review that. If the file is a "
+                    "vendored build artefact, build it from source that is reviewed."
+                ),
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                start=found.start(),
+                end=found.end(),
+            )
+            return
+
+    def _long_lines(
+        self, content: FileContent, ctx: ScanContext, language: str | None = None
+    ) -> Iterable[_Hit]:
+        """Report an extremely long line, with the minified case excluded.
+
+        Length alone is a weak signal and a strong irritant: minified bundles
+        are entirely made of long lines. So the rule applies to source-shaped
+        files only, and requires high entropy as well, since ordinary long lines
+        (a data table, a long string) are far more repetitive than a payload.
+        """
+        # `scan.minified` is added to the built-in list. The setting was
+        # parsed, validated, provenance-tracked, included in the config
+        # fingerprint and in `to_dict()`, and read nowhere -- so a user who
+        # configured `minified:` to silence long-line findings on their bundles
+        # got silence of a different kind.
+        # "Source-shaped" was the stated condition and was never checked. A
+        # file with no identified language is data -- a MaxMind database, an
+        # XML fixture, a text dump -- and a long line in data is what data
+        # looks like.
+        if language is None:
+            return
+        if language in PROSE_LANGUAGES:
+            # Prose is not source-shaped either, and the same argument covers it.
+            # The rule's whole reasoning is "a payload appended to a source file
+            # keeps itself off-screen in a diff" -- which needs the file to be
+            # something that runs. Nothing executes a Markdown document.
+            #
+            # A 3,333-character architecture table in `SYSTEM_DESIGN.md` was
+            # reported as a very long high-entropy line in a source file. It is a
+            # table. Mixed case, punctuation and pipe separators put any table row
+            # over the entropy floor, so tightening the floor would not have
+            # separated them and would have cost real detections elsewhere.
+            #
+            # Only the length rule is skipped. Bidi, escapes and the packer shapes
+            # still apply to prose, which is right: a Trojan Source override in a
+            # README is a live attack on whoever copies a command out of it.
+            return
+
+        patterns = (*MINIFIED_PATHS, *ctx.config.minified)
+        if any(PathGlob.matches(content.path, p) for p in patterns):
+            return
+        if content.truncated:
+            return  # the longest line cannot be known from a prefix
+        if BUNDLER_PRELUDE.search(content.raw[:GENERATED_HEADER_BYTES]) or (
+            SourcePaths.is_editor_extension(content.path) and "/out/" in content.path
+        ):
+            # Bundler output, by what it opens with or by where an extension's build writes it.
+            # A long line is what a bundle is made of; the other rules still read it.
+            return
+        if GENERATED_MARKER.search(content.raw[:GENERATED_HEADER_BYTES]):
+            # The file says it is generated. Line length in generated output is
+            # a property of the generator, and the convention for saying so is
+            # near-universal because every code-review tool reads it too.
+            return
+
+        if content.longest_line <= LONG_LINE_THRESHOLD:
+            return
+
+        index, length = self._longest_line_index(content)
+        if index is None:
+            return
+
+        text = content.line_text(index)
+        if Redactor.shannon_entropy(text[:4000]) < ENTROPY_THRESHOLD:
+            return
+        if (
+            ObfuscationText._longest_unbroken_run(text) < UNBROKEN_RUN_THRESHOLD
+            and ObfuscationText._longest_padding_run(text) < PADDING_RUN_THRESHOLD
+        ):
+            # Long, but made of words and not padded out. A payload is either
+            # one token or pushed past the edge of the screen; this is neither.
+            return
+        if "sourceMappingURL=data:" in text[:4000]:
+            # An inline source map. Every bundler that has ever emitted one
+            # wrote a single base64 line of exactly this shape, and it is a
+            # comment: nothing reads it but a debugger.
+            return
+
+        start = content.line_starts[index - 1]
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
+            title="Very long high-entropy line in a source file",
+            message=(
+                f"Line {index} is {length} characters of high-entropy content in a "
+                f"file that is not minified output. A payload appended to a source "
+                f"file is very often a single long line, because that keeps it "
+                f"off-screen in a diff and out of a reviewer's eye."
+            ),
+            remediation=(
+                "Read the line. If it is generated or vendored, move it into a "
+                "build artefact so it is not reviewed as source."
+            ),
+            # Recorded, not raised, unless an install hook runs the file (raised to HIGH below):
+            # a long line elsewhere is what minified and generated code is made of, and what
+            # decodes and runs a payload is reported by the rules that see it do so. At MEDIUM
+            # it was the only code warning on 4,841 of 234,509 benign units -- jQuery, Ace's
+            # `src-min-noconflict`, R vignettes -- and decided no block (review 98).
+            severity=Severity.LOW,
+            confidence=Confidence.MEDIUM,
+            start=start,
+            end=min(start + 200, len(content.raw)),
+        )
+
+    @staticmethod
+    def _longest_line_index(content: FileContent) -> tuple[int | None, int]:
+        longest = 0
+        index: int | None = None
+        starts = content.line_starts
+        for i, start in enumerate(starts, 1):
+            end = starts[i] if i < len(starts) else len(content.raw)
+            length = end - start
+            if length > longest:
+                longest, index = length, i
+        return index, longest
+
+    # -- Construction ----------------------------------------------------
+
+    DESCRIPTION_VALUE: ClassVar[re.Pattern[str]] = re.compile(
+        r"""(?:\b(?:long_)?description\s{0,4}=|["'](?:long_)?description["']\s{0,4}:)"""
+    )
+    """A package description's value, keyword or dict entry: the README a build tool inlined."""
+
+    #: What turns a long line in an install hook into a payload: it is run, or decoded to be run.
+    RUNS_LONG_LINE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:exec|eval|compile|b64decode|a85decode|b32decode|decompress|loads|unhexlify|fromhex|"
+        r"Function)\s*\("
+    )
+
+    @staticmethod
+    def _long_line_runs(content: FileContent, offset: int) -> bool:
+        """Whether a long line in an install hook is install-time payload, as against a README
+        inlined as `long_description` -- what a poetry-generated `setup.py` holds (review 98,
+        FP-5: pfzy, grpc-interceptor, InquirerPy).
+
+        Judged by excluding that one shape, not by requiring an `exec`: `mariabd`'s `setup.py`
+        writes a 2,263-character obfuscated browser extension to `%APPDATA%` with `.write()` and
+        points every browser shortcut at it, and a rule that escalated only executed or decoded
+        lines let it and seven other malregistry and DataDog payloads through (measured on the
+        v10 malware run). A description is prose for an index page; anything else that long in
+        code an installer runs is the payload until shown otherwise."""
+        text = content.text
+        start = text.rfind("\n", 0, offset) + 1
+        end = text.find("\n", offset)
+        line = text[start : len(text) if end == -1 else end]
+        if ObfuscationDetector.RUNS_LONG_LINE.search(line):
+            return True
+        return ObfuscationDetector.DESCRIPTION_VALUE.search(line) is None
+
+    @staticmethod
+    def _long_line_executed(content: FileContent, offset: int) -> bool:
+        text = content.text
+        start = text.rfind("\n", 0, offset) + 1
+        end = text.find("\n", offset)
+        line = text[start : len(text) if end == -1 else end]
+        return ObfuscationDetector.RUNS_LONG_LINE.search(line) is not None
+
+    def _finding(self, hit: _Hit, unit: FileUnit, ctx: ScanContext) -> Finding:
+        content = unit.content
+        # The same ceiling the secrets detector and the composites apply, and these
+        # rules need it for a reason of their own: a file that DETECTS an obfuscation
+        # technique has to contain the technique.
+        #
+        # Bandit's `plugins/trojansource.py` and `examples/trojansource.py` were both
+        # reported at HIGH for bidirectional characters in source. The first is the
+        # plugin that finds Trojan Source attacks; the second is the example it was
+        # written against. Every scanner in this category hits this on its own corpus
+        # and on every repository that vendors security rules, and telling those users
+        # their rule set is an attack is how a tool teaches people to ignore it.
+        #
+        # A ceiling rather than a path exemption: the characters really are there, and
+        # a real override smuggled into a fixture directory is still worth finding.
+        # What changes is whether it fails a build.
+        severity = hit.severity
+        if content.is_rule_material:
+            # Bandit's pair is the canonical case and is in this detector's own history:
+            # `plugins/trojansource.py` finds Trojan Source attacks and
+            # `examples/trojansource.py` is the example it matches. Any repository that
+            # vendors a rule set has the shape. See `core.samples`.
+            severity = min(severity, RULE_MATERIAL_CEILING)
+        elif (
+            SourcePaths.is_test_material_here(content.path, ctx)
+            or (SourcePaths.is_documentation(content.path) and hit.rule_id != TAG_SMUGGLING_RULE)
+            or (
+                SourcePaths.is_generated_artefact(content.path)
+                and not ObfuscationText._obfuscator_io(hit)
+            )
+            # Or somebody else wrote it. What prompted this is the packer rule,
+            # whose entire remaining volume is a third party's minified
+            # JavaScript: `octobercms/october` carries SyntaxHighlighter 3.0.83
+            # under `modules/system/assets/vendor/`, still wearing Alex
+            # Gorbatchev's copyright header, and `Qloapps/QloApps` has four jQuery
+            # plugins under `js/jquery/plugins/` with Andreas Eberhard's. The
+            # rule's claim stays true -- a packed file cannot be reviewed -- but
+            # its remediation, "obtain the original source and review that", is
+            # upstream's work. The capability detector has ceilinged vendored code
+            # for this reason since the twenty-third round; this detector was not
+            # asking.
+            #
+            # **This block is shared by every rule in this detector**, so the
+            # ceiling reaches the bidirectional and escape-run rules too, and that
+            # is deliberate rather than incidental: the three tests beside it
+            # already do the same, and a bidi override in a test fixture has been
+            # ceilinged since they were added. What it gives up, stated: a
+            # directional override smuggled into a checked-in dependency drops
+            # below the failure gate. Two things bound that. `node_modules` --
+            # where an installed compromise actually lands -- never reaches here,
+            # because the walker prunes it and reports the prune. And a `vendor/`
+            # tree is committed code, so the override arrives in a diff somebody
+            # can see, which is the condition Trojan Source needs to defeat and
+            # the reason it is a ceiling rather than an exemption.
+            or SourcePaths.is_vendored(content.path)
+            # A bidirectional mark in a bundle that names its source map: webpack and Vite
+            # output, where the mark sits in a library's Unicode tables (KaTeX's tokenizer
+            # ranges over U+202A) and the reviewable source is elsewhere. For this rule only --
+            # a trailer is one line anybody can append, and the packer rules must not trust it.
+            or (
+                hit.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"
+                and SOURCE_MAP_TRAILER.search(content.raw[-400:]) is not None
+            )
+        ):
+            severity = min(severity, FIXTURE_CEILING)
+        # Obfuscated code an install hook runs is never a build artefact somebody forgot to
+        # exclude: it executes on every install, unread. `sensitive-paths-focus` named its
+        # obfuscator.io payload `CHANGELOG.js` and ran it from `postinstall`.
+        if (
+            hit.rule_id
+            in (
+                "SUSPECT.OBFUSCATION.PACKED.001",
+                "SUSPECT.OBFUSCATION.ENCODED.001",
+                # A line of high-entropy text that is not minified output -- the rule excludes
+                # minification -- is a payload kept off the screen; in a `setup.py` it was 60 KB
+                # of base64 written out and run.
+                "SUSPECT.OBFUSCATION.LONGLINE.001",
+            )
+            and ctx.in_install_hook(content.path)
+            and severity < Severity.HIGH
+            and (
+                hit.rule_id != "SUSPECT.OBFUSCATION.LONGLINE.001"
+                or ObfuscationDetector._long_line_runs(content, hit.start)
+            )
+        ):
+            severity = Severity.HIGH
+        elif (
+            hit.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"
+            and (content.path in ctx.import_entry_paths or ctx.in_install_hook(content.path))
+            and severity < Severity.HIGH
+            and (
+                hit.offscreen
+                # A long executed line counts only in a Python entry point: a JavaScript `main` is
+                # very often a minified bundle whose long lines hold `Function(` and `eval(` by
+                # construction -- 48 benign npm packages' `index.js` were blocked by it (review 98).
+                or (
+                    unit.language == "python"
+                    and ObfuscationDetector._long_line_executed(content, hit.start)
+                )
+            )
+        ):
+            # A published package's entry point -- the `__init__.py` every `import` runs --
+            # holding a long high-entropy line that is itself executed or decoded: the payload
+            # runs for every consumer without any hook. Stricter than the install-hook case:
+            # entry points carry tables and data, so the line has to be what runs. The Roblox
+            # cookie stealers in malregistry hide behind exactly this (review 98).
+            severity = Severity.HIGH
+        return Finding(
+            rule_id=hit.rule_id,
+            category=Category.SUSPICIOUS,
+            severity=severity,
+            confidence=hit.confidence,
+            message=hit.message,
+            location=Location(
+                path=content.path,
+                line=content.line_of(hit.start),
+                column=content.column_of(hit.start),
+                byte_start=hit.start,
+                byte_end=hit.end,
+                project=unit.project,
+            ),
+            evidence=Redactor.build_evidence(content, hit.start, hit.end, RedactionMode.MASKED)
+            if hit.rule_id != "SUSPECT.OBFUSCATION.BIDI.001"
+            else Evidence(
+                # A bidi snippet would render in the report exactly as it renders
+                # in the editor, which is the problem being reported. Only the
+                # position and the hash are emitted.
+                kind=EvidenceKind.HASH,
+                match_hash=Evidence.hash_bytes(content.slice(hit.start, hit.end)),
+                redaction=RedactionMode.HASH_ONLY,
+                span=(hit.start, hit.end),
+            ),
+            remediation=hit.remediation,
+            explanation=Explanation(summary=hit.title, matched_rule=hit.rule_id),
+            risk=ctx.scorer.score(
+                hit.severity,
+                hit.confidence,
+                ScoringContext(
+                    in_install_hook=ctx.in_install_hook(content.path),
+                    is_obfuscated=True,
+                    capabilities=frozenset({Capability.DECODE}),
+                ),
+            ),
+            detector=self.id,
+            capabilities=(Capability.DECODE,),
+        )
+
+
+__all__ = ["ObfuscationDetector"]

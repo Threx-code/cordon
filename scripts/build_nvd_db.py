@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel import exploited, nvd_import  # noqa: E402
+from cordon_scanner.intel.advisories import exploited, nvd_import  # noqa: E402
 
 _HIGH_VALUE = frozenset({"high", "critical", ""})
 

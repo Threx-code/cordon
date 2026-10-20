@@ -29,10 +29,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.config import RestrictedYamlParser
-from cordon_scanner.core.errors import RulePackError, UnsafePatternError
-from cordon_scanner.core.literals import LiteralGate
-from cordon_scanner.core.models import (
+from cordon_scanner.foundation.config import RestrictedYamlParser
+from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
+from cordon_scanner.foundation.literals import LiteralGate
+from cordon_scanner.foundation.models import (
     Capability,
     Category,
     Confidence,
@@ -1245,7 +1245,7 @@ class RuleLoader:
         refusal this replaces gave: the cost of a rule that cannot fire is that
         it looks exactly like a rule that found nothing.
         """
-        from cordon_scanner.detect.astquery import AstQuery
+        from cordon_scanner.analysis.shared.astquery import AstQuery
 
         names = raw.get("calls")
         if not isinstance(names, list) or not names:
@@ -1348,8 +1348,8 @@ class RuleLoader:
         A rule that cannot be evaluated is a broken pack, and a broken pack
         should not load. Failing here names the rule instead.
         """
-        from cordon_scanner.core.errors import ConfigError
-        from cordon_scanner.core.walker import PathGlob
+        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.foundation.errors import ConfigError
 
         for key in ("include", "exclude"):
             for pattern in RuleLoader._str_tuple(paths.get(key)):
@@ -1530,7 +1530,7 @@ class RuleTester:
             # this kind claims -- that `f = os.system; f(x)` is the same call as
             # `os.system(x)`. A byte comparison here would pass on the first
             # spelling and prove nothing about the second.
-            from cordon_scanner.detect.ast_providers import AstProviders
+            from cordon_scanner.analysis.shared.ast_providers import AstProviders
 
             language = compiled.rule.languages[0] if compiled.rule.languages else "python"
             provider = AstProviders.ast_provider_for(language)

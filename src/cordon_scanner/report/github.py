@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.models import Category, Severity
+from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.report.base import BaseReporter, ReportOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import ScanResult
+    from cordon_scanner.foundation.models import ScanResult
 
 LEVEL = {
     Severity.CRITICAL: "error",

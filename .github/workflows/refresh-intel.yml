@@ -90,7 +90,7 @@ jobs:
         # The same assertions CI runs, before anything is proposed rather than
         # after. A source that starts serving an error page parses into entries
         # that look like package names, and the tests are what notice.
-        run: pytest -q tests/unit/test_package_intel.py
+        run: pytest -q tests/unit/intel/registries/test_package_intel.py
 
       - name: Confirm the allowlist did not swallow a known squat
         # The failure direction nobody would notice. A missing name costs a false
@@ -105,7 +105,7 @@ jobs:
           python - <<'PY'
           import sys
 
-          from cordon_scanner.intel.popular import PackageIntel
+          from cordon_scanner.intel.registries.popular import PackageIntel
 
           squats = [
               ("pypi", "tdqm", "tqdm"),

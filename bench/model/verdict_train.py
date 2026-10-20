@@ -47,10 +47,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from cordon_scanner.core.config import Config
-from cordon_scanner.core.models import Category, Confidence, Severity
-from cordon_scanner.core.taxonomy import Taxonomy
-from cordon_scanner.core.verdict import Verdict, VerdictFeatures, VerdictModel
+from cordon_scanner.decide.verdict import Verdict, VerdictFeatures, VerdictModel
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.models import Category, Confidence, Severity
+from cordon_scanner.foundation.taxonomy import Taxonomy
 
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
 #: the scan's own notes are not a malware verdict (review 98).

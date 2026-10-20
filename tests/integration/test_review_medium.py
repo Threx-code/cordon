@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config, ConfigResolver
-from cordon_scanner.core.content import FileContent
-from cordon_scanner.core.errors import ConfigError, CordonError
-from cordon_scanner.core.limits import Limits
-from cordon_scanner.core.walker import Walker
+from cordon_scanner.engine.walker import Walker
+from cordon_scanner.foundation.config import Config, ConfigResolver
+from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.errors import ConfigError, CordonError
+from cordon_scanner.foundation.limits import Limits
 from support import Support
 
 

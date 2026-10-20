@@ -548,8 +548,8 @@ class McpPoisoningBench:
     def findings(cls, target: Path) -> list[dict[str, Any]]:
         """Every LOW+ finding on a target: rule, severity, file, line, and whether it blocks."""
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
-        from cordon_scanner.core.policy import PolicyGate
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.foundation.config import Config
 
         overrides: dict[str, Any] = {"use_cache": False}
         # `--judge` (the operator's model, as `cordon-scanner --judge`): set once in the parent
@@ -582,7 +582,7 @@ class McpPoisoningBench:
     @classmethod
     def one(cls, row: dict[str, Any]) -> dict[str, Any]:
         """Scan one unit: the gate's verdict, and every LOW+ finding with where it is."""
-        from cordon_scanner.detect.agents import McpServerSource
+        from cordon_scanner.detect.agents.agents import McpServerSource
 
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="mcpbench-") as work:

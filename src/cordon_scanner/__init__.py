@@ -40,8 +40,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.config import Config, ConfigResolver, OrgConstraints, Policy
-from cordon_scanner.core.errors import (
+from cordon_scanner.decide.policy import Baseline, PolicyGate, Verdict
+from cordon_scanner.foundation.config import Config, ConfigResolver, OrgConstraints, Policy
+from cordon_scanner.foundation.errors import (
     ConfigError,
     CordonError,
     DetectorError,
@@ -52,8 +53,8 @@ from cordon_scanner.core.errors import (
     SourceError,
     UnsafePatternError,
 )
-from cordon_scanner.core.limits import Limits
-from cordon_scanner.core.models import (
+from cordon_scanner.foundation.limits import Limits
+from cordon_scanner.foundation.models import (
     Capability,
     Category,
     Confidence,
@@ -73,15 +74,14 @@ from cordon_scanner.core.models import (
     Severity,
     Suppression,
 )
-from cordon_scanner.core.policy import Baseline, PolicyGate, Verdict
 from cordon_scanner.version import RULEPACK_VERSION, SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from cordon_scanner.core.progress import Progress
     from cordon_scanner.detect.base import Detector
+    from cordon_scanner.engine.progress import Progress
     from cordon_scanner.sources.base import FileSource
 
 
@@ -101,8 +101,8 @@ class Scanner:
         source: FileSource | None = None,
         progress: Progress | None = None,
     ) -> None:
-        from cordon_scanner.core.engine import Engine
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.registry import Registry
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         self.config = config or Config.default()

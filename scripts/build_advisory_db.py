@@ -49,8 +49,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel import exploited, osv_import  # noqa: E402
-from cordon_scanner.intel.advisories import Advisory  # noqa: E402
+from cordon_scanner.intel.advisories import exploited, osv_import  # noqa: E402
+from cordon_scanner.intel.advisories.advisories import Advisory  # noqa: E402
 
 _HIGH_VALUE_SEVERITIES = frozenset({"high", "critical"})
 
@@ -172,7 +172,7 @@ class AdvisoryDatabaseBuild:
         total = sum(len(v) for v in per_ecosystem.values())
         from datetime import UTC, datetime
 
-        from cordon_scanner.intel.advisories import DatabaseMeta
+        from cordon_scanner.intel.advisories.advisories import DatabaseMeta
 
         result = osv_import.SyncResult(
             per_ecosystem=per_ecosystem,

@@ -23,13 +23,13 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.registry import Registry
+from cordon_scanner.engine.registry import Registry
 from support import requires_malicious_corpus
 
 CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 
 NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
-    # Requires a live registry. Exercised in tests/unit/test_registry_detector.py
+    # Requires a live registry. Exercised in tests/unit/intel/registries/test_registry_detector.py
     # against a substituted client, because a suite that reaches PyPI fails when
     # PyPI is slow.
     "registry",
@@ -50,13 +50,13 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # an exception that reports itself as coverage and fails in somebody else's
     # unrelated pull request.
     #
-    # `tests/unit/test_vcs.py` builds a real repository with `git init` and commits
+    # `tests/unit/detect/source/test_vcs.py` builds a real repository with `git init` and commits
     # into it, and covers both rules plus the unreadable-history case. That is the
     # deterministic version of what this was approximating.
     "vcs",
     # Requires a live registry AND the [attest] crypto stack: it fetches the
     # sigstore bundle a release advertises and verifies it. Exercised in
-    # tests/unit/test_provenance.py against a substituted registry and verifier,
+    # tests/unit/detect/supply/test_provenance.py against a substituted registry and verifier,
     # for the same reason the registry detector is -- a suite that reaches the
     # network and a trust root fails when either is slow or unreachable.
     "provenance",

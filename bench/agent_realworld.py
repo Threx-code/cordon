@@ -36,8 +36,8 @@ class RealWorldAgents:
     @staticmethod
     def scan(repository: str) -> tuple[str, list[list[str]]]:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
-        from cordon_scanner.core.policy import PolicyGate
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.foundation.config import Config
 
         config = Config.default().with_overrides(use_cache=False)
         report = Scanner(config).scan(Path(repository))

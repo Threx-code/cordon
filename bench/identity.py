@@ -64,7 +64,7 @@ class Identity:
 
     @staticmethod
     def run(osv_root: Path) -> dict:
-        from cordon_scanner.intel.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         db = AdvisoryDatabase.bundled()
         totals: Counter[str] = Counter()
@@ -76,7 +76,7 @@ class Identity:
                 package = affected.get("package") or {}
                 if not package:
                     # A repository record: no package, a GIT range naming the repository.
-                    from cordon_scanner.intel.osv_import import OsvImport
+                    from cordon_scanner.intel.advisories.osv_import import OsvImport
 
                     repos = [
                         OsvImport.repository_key(str(r.get("repo") or ""))

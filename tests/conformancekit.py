@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from cordon_scanner.core.datayaml import DataYaml
+from cordon_scanner.foundation.datayaml import DataYaml
 
 CASES = Path(__file__).parent / "conformance" / "cases"
 EXPECT = "expect.yaml"

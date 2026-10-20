@@ -139,7 +139,7 @@ class Check:
     @staticmethod
     def run(batch: list[tuple[str, str, str, str]]) -> tuple[str, int, list[dict[str, str]]]:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         ecosystem = batch[0][0]
         with tempfile.TemporaryDirectory() as directory:

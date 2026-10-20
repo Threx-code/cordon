@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.core.cache import ScanCache
+from cordon_scanner.engine.cache import ScanCache
 
 AMBIENT = ("CI", "CORDON_POLICY", "CORDON_CACHE_DIR", "XDG_CACHE_HOME")
 """Variables the tool reads that a developer's shell may also set.
@@ -51,7 +51,7 @@ class SharedFixtures:
         """Each test starts with no shared advisory database, as a new process does: one test
         patching or clearing the shipped records must not leave a database built from them for
         the next (`AdvisoryDatabase.bundled` keeps one per process)."""
-        from cordon_scanner.intel.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         AdvisoryDatabase.shared = None
 
@@ -59,7 +59,7 @@ class SharedFixtures:
     def _no_osv_refresh(self, monkeypatch) -> None:
         """A scan refreshes from OSV unless offline; a test must never reach the network. The
         variable reaches a scanner a test starts as a subprocess, which the attribute cannot."""
-        monkeypatch.setattr("cordon_scanner.intel.osv_delta.ENABLED", False)
+        monkeypatch.setattr("cordon_scanner.intel.advisories.osv_delta.ENABLED", False)
         monkeypatch.setenv("CORDON_NO_ADVISORY_REFRESH", "1")
 
     @pytest.fixture(autouse=True)
@@ -81,6 +81,6 @@ def hardening(monkeypatch: pytest.MonkeyPatch) -> None:
     The CI, container and infrastructure rules' own tests check what each rule reports; by
     default the engine records those domains at LOW (`Policy.hardening`), which is the tier's
     behaviour and has its own tests (`test_hardening_tier.py`)."""
-    from cordon_scanner.core.engine import Engine
+    from cordon_scanner.engine.engine import Engine
 
     monkeypatch.setattr(Engine, "_hardening_tier", staticmethod(lambda findings, policy: findings))

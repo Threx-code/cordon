@@ -16,8 +16,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from cordon_scanner.core.errors import CordonError, ExitCode
-from cordon_scanner.core.models import Dependency, Finding, ScanResult
+from cordon_scanner.foundation.errors import CordonError, ExitCode
+from cordon_scanner.foundation.models import Dependency, Finding, ScanResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +134,7 @@ class DepsCommand:
     @staticmethod
     def run(args: argparse.Namespace) -> int:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import ConfigResolver
+        from cordon_scanner.foundation.config import ConfigResolver
 
         target = Path(args.target)
         if not target.exists():

@@ -41,8 +41,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from mcp_poisoning import McpSafetyBench, McpTox
 
-from cordon_scanner.detect.agent_semantics import TRAILER
-from cordon_scanner.detect.agents import _MCP_SDK, _SERVER_SOURCE_SUFFIXES, McpServerSource
+from cordon_scanner.detect.agents.agent_semantics import TRAILER
+from cordon_scanner.detect.agents.agents import _MCP_SDK, _SERVER_SOURCE_SUFFIXES, McpServerSource
 
 MEMBER_LIMIT = 1_500_000
 

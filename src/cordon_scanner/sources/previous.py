@@ -89,7 +89,7 @@ class PreviousRelease:
     @staticmethod
     def _document(url: str) -> dict[str, Any]:
         """A registry document, through the bounded, redirect-free registry client."""
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         try:
             return RegistryClient._fetch(url)
@@ -103,7 +103,7 @@ class PreviousRelease:
         The packument chooses the URL, so it is untrusted: a tarball URL pointing anywhere else, or
         a redirect, would have the scanner fetch from a host the publisher picked.
         """
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         try:
             return RegistryClient._fetch_bytes(url, ecosystem)
@@ -182,8 +182,8 @@ class PreviousRelease:
         """Crates.io, RubyGems, NuGet, the Go proxy, Hex, pub and Maven Central: the release before
         this one by the ecosystem's version order, fetched and verified against the digest its
         registry publishes (`RegistryClient.package_archive`)."""
-        from cordon_scanner.intel.more_registries import MoreRegistries
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
         from cordon_scanner.sources.package import PackageTarget
 
         try:

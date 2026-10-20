@@ -11,17 +11,35 @@
 
 Cordon is built as **ports and adapters** (hexagonal architecture) around an immutable domain model.
 
-- The **domain** (`core/models.py`) depends on nothing. It defines findings,
+- The **domain** (`foundation/models.py`) depends on nothing. It defines findings,
   rules, dependencies, repositories and results, and imports no other Cordon
   module.
-- The **application core** (`core/engine.py`) orchestrates phases. It depends on
+- The **application core** (`engine/engine.py`) orchestrates phases. It depends on
   the domain and on a set of `Protocol` definitions, never on a concrete
   detector, reporter, ecosystem or source.
 - The **adapters** (`detect/`, `report/`, `ecosystems/`, `sources/`, `intel/`)
   implement those protocols and are discovered at runtime through entry points.
 
-The dependency rule is one-directional and enforced by a test: nothing in
-`core/` may import from `detect/`, `report/`, `ecosystems/` or `sources/`.
+The dependency rule is one-directional: a layer imports only the layers inside it.
+
+```
+          cli  report  mcp  cloud                 outermost: user-facing
+                    │
+                  engine                          running a scan
+                    │
+                  decide                          package-level decisions
+                    │
+       detect ── ecosystems ── intel ── images ── sources
+                    │
+                 analysis                         reading code: facts, never verdicts
+                    │
+                foundation                        shared types; imports nothing above
+```
+
+Every module's place, and every unit test's (`tests/unit/<place>/`), is listed in
+`tests/unit/package_layout.json`; `tests/unit/repository/test_package_layout.py` keeps the table
+complete and reports what does not yet follow the rule (imports that point outward today, the
+seven modules past 3,000 lines), the list that may only shrink.
 
 This is not architectural decoration. It buys four specific properties the
 product requires:
@@ -38,12 +56,12 @@ product requires:
 | Pattern | Where | Why here specifically |
 |---|---|---|
 | Dependency inversion via `Protocol` | detectors, reporters, ecosystems, sources, intel | Structural typing means a third-party plugin implements an interface without importing Cordon's base class, so plugins are not coupled to our release cycle. |
-| Plugin registry over entry points | `core/registry.py` | Built-in components register through the same mechanism third parties use. There is no privileged path, so a broken plugin system fails for us first. |
+| Plugin registry over entry points | `engine/registry.py` | Built-in components register through the same mechanism third parties use. There is no privileged path, so a broken plugin system fails for us first. |
 | Strategy | match kinds, reporters, sources | Adding an output format or a match type is a new class, not a branch in a growing conditional. |
-| Pipeline / phases | `core/engine.py` | Each phase has one input type and one output type, so a phase can be replaced, parallelised or cached in isolation. |
+| Pipeline / phases | `engine/engine.py` | Each phase has one input type and one output type, so a phase can be replaced, parallelised or cached in isolation. |
 | Immutable value objects | the whole domain | Safe to share across processes, impossible to mutate a result post hoc, and free hashability for deduplication. |
-| Specification | `core/policy.py` | Failure policy is a composable predicate over findings, so gate logic is testable without running a scan. |
-| Layered configuration with a ceiling | `core/config.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
+| Specification | `decide/policy.py` | Failure policy is a composable predicate over findings, so gate logic is testable without running a scan. |
+| Layered configuration with a ceiling | `foundation/config.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
 | Streaming iterators | sources, reporters | Bounds memory on inputs of unknown size, which is a security requirement, not just an efficiency one. |
 
 ---
@@ -54,7 +72,7 @@ Decisions, not preferences. Every later section is downstream of them.
 
 ### C1. The core has zero third-party runtime dependencies
 
-`cordon_scanner.core`, `cordon_scanner.detect`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
+`cordon_scanner.foundation`, `cordon_scanner.analysis`, `cordon_scanner.detect`, `cordon_scanner.decide`, `cordon_scanner.engine`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
 import nothing outside the standard library on a base install. Two runtime extras
 exist. `[ast-js]` adds the tree-sitter grammars for JavaScript and TypeScript so
 `kind: ast` rules resolve calls in those languages; without it those languages
@@ -95,7 +113,7 @@ the URL, verifies against it, and caches the result so later scans need none. A
 configuration file found inside the scanned repository cannot enable it, supply
 the URL, or supply the digest.
 
-The feed client is `intel/feed.py`; it makes no request until this build pins a
+The feed client is `intel/malware/feed.py`; it makes no request until this build pins a
 feed root key (`intel/data/feed-root.json`), and with one it is bounded to three
 seconds and never blocks a scan.
 
@@ -183,38 +201,48 @@ src/cordon_scanner/
   __init__.py             Public SDK surface. Everything else is internal.
   version.py              Engine, rule-pack and schema versions
 
-  core/                   Domain and application core. Imports no adapter.
+  foundation/             Shared types and utilities; imports nothing above it
     models.py             Findings, rules, dependencies, repositories, results
     errors.py             Typed errors mapped to exit codes
     config.py             Layered configuration with an enforced ceiling
-    policy.py             Thresholds, failure rules, suppressions, baselines
-    scoring.py            Explainable deterministic risk score
-    registry.py           Plugin discovery and registration
     limits.py             Resource governance
     content.py            Lazy file content: bytes, text, lines, hashes
+    redact.py             Evidence redaction
+    paths.py              Paths inside containers; the package's own data
+  analysis/               Reading code: facts, never verdicts
+    javascript/ python/ go/ dotnet/ jvm/ nix/ shared/
+  detect/                 Detectors: base.py (the contract), catalogue.py, then
+    code/ agents/ supply/ binary/ infra/ secrets/ source/
+  decide/                 Package-level decisions: verdict, intent, scoring, policy, vex
+  engine/                 Running a scan
+    engine.py             Phase orchestration
+    registry.py           Plugin discovery and registration
     walker.py             Traversal, ignore semantics, git awareness
     cache.py              Content-addressed incremental cache
-    dedup.py              Deduplication and correlation
-    redact.py             Evidence redaction
     audit.py              Structured audit log
-    engine.py             Phase orchestration
+  intel/                  Knowledge from outside the scanned content, offline-first
+    advisories/ malware/ registries/ provenance/ store/
 
   sources/                Adapters: directory, file, archive, git, package
-  detect/                 Detector adapters
   rules/                  Rule loading, validation, compilation, packs
   ecosystems/             Package-ecosystem adapters
   langs/                  Language identification data
   report/                 Output adapters
-  intel/                  Advisory and reputation providers, offline-first
   archive/                Hardened archive extraction
   cli/                    Argument parsing and command implementations
+
+tests/unit/               Mirrors src: tests/unit/<place>/test_<module>.py, plus
+                          repository/ (docs, release, layout), bench/, sandbox/
 ```
+
+Where each module and each unit test goes is `tests/unit/package_layout.json`; a new file adds
+its line there in the same commit.
 
 ---
 
 ## 4. Domain model
 
-Detailed in `core/models.py`. The load-bearing decisions:
+Detailed in `foundation/models.py`. The load-bearing decisions:
 
 ### 4.1 Five categories
 

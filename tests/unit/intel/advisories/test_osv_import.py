@@ -1,0 +1,614 @@
+"""Converting an OSV bulk-export record into `Advisory`, offline.
+
+The network-touching half (`_download`, `sync_ecosystem`, `sync_all` against
+the real OSV host) is exercised by `TestSyncAgainstOsv` below, marked
+`network` and deselected by default -- the same convention
+`test_review_advisories.py::TestAgainstOsv` already uses. Everything else here
+runs against synthetic OSV-shaped JSON, because the conversion logic is what
+this project controls and what a regression here would actually be in.
+"""
+
+from __future__ import annotations
+
+import gzip
+import json
+import os
+from pathlib import Path
+from typing import Any, ClassVar
+
+import pytest
+
+from cordon_scanner.intel.advisories import osv_import
+from cordon_scanner.intel.advisories.advisories import (
+    DIGESTS_NAME,
+    Advisory,
+    AdvisoryFiles,
+    DatabaseMeta,
+)
+
+
+class OsvImportHelpers:
+    """Helpers for test_osv_import.py."""
+
+    @staticmethod
+    def npm_record(**overrides: object) -> dict[str, object]:
+        record: dict[str, object] = {
+            "id": "GHSA-aaaa-bbbb-cccc",
+            "summary": "A worked example vulnerability.",
+            "affected": [
+                {
+                    "package": {"ecosystem": "npm", "name": "left-pad", "purl": "pkg:npm/left-pad"},
+                    "ranges": [
+                        {
+                            "type": "ECOSYSTEM",
+                            "events": [{"introduced": "0"}, {"fixed": "1.3.0"}],
+                        }
+                    ],
+                }
+            ],
+            "references": [
+                {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-aaaa-bbbb-cccc"}
+            ],
+            "database_specific": {"severity": "HIGH"},
+        }
+        record.update(overrides)
+        return record
+
+    @staticmethod
+    def _read_gzip(path: Path) -> str:
+        """One advisory set's JSON, as written -- compressed."""
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            return handle.read()
+
+    @staticmethod
+    def _rewrite_gzip(path: Path, text: str) -> None:
+        """Replace an advisory set's contents, keeping the on-disk shape."""
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            handle.write(text)
+
+    @staticmethod
+    def _meta() -> DatabaseMeta:
+        return DatabaseMeta(built_at="2026-01-01T00:00:00Z", sources=("osv:npm",), record_count=1)
+
+
+class TestRangeRecords:
+    @pytest.mark.conformance("x", "x.feeds")
+    def test_a_range_record_produces_a_range_advisory(self) -> None:
+        results = osv_import.OsvImport.advisories_from_osv_record(
+            "npm", OsvImportHelpers.npm_record()
+        )
+        assert len(results) == 1
+        advisory = results[0]
+        assert advisory.name == "left-pad"
+        assert advisory.is_range
+        assert advisory.introduced == "0"
+        assert advisory.fixed == "1.3.0"
+        assert not advisory.malicious
+        assert advisory.severity == "high"
+        assert advisory.identifier == "GHSA-aaaa-bbbb-cccc"
+        assert advisory.reference.startswith("https://")
+
+    def test_it_matches_a_version_inside_the_range(self) -> None:
+        (advisory,) = osv_import.OsvImport.advisories_from_osv_record(
+            "npm", OsvImportHelpers.npm_record()
+        )
+        assert advisory.affects("1.2.0")
+        assert not advisory.affects("1.3.0")
+        assert not advisory.affects("2.0.0")
+
+    def test_a_second_range_is_not_dropped(self) -> None:
+        """Real shape, not invented: PYSEC-2011-28 affects Django on
+        `[0, 1.1.3)` *and*, separately, `[1.2, 1.2.4)` -- two entries in one
+        `affected[].ranges` array, one fix branch per major line. An earlier
+        version of this parser took only the first `ECOSYSTEM` range per
+        `affected` entry, so `django==1.2.1` -- inside the second, dropped
+        range -- matched nothing at all. Found by re-fetching this exact
+        record from the live OSV export and comparing it against what the
+        parser produced.
+        """
+        record = {
+            "id": "PYSEC-2011-28",
+            "summary": "Django directory traversal.",
+            "affected": [
+                {
+                    "package": {"ecosystem": "PyPI", "name": "django"},
+                    "ranges": [
+                        {
+                            "type": "ECOSYSTEM",
+                            "events": [{"introduced": "0"}, {"fixed": "1.1.3"}],
+                        },
+                        {
+                            "type": "ECOSYSTEM",
+                            "events": [{"introduced": "1.2"}, {"fixed": "1.2.4"}],
+                        },
+                    ],
+                }
+            ],
+            "references": [{"type": "ADVISORY", "url": "https://osv.dev/vulnerability/x"}],
+        }
+        results = osv_import.OsvImport.advisories_from_osv_record("pypi", record)
+        assert len(results) == 2
+        assert any(a.affects("1.1.0") for a in results), "the first range was lost"
+        assert any(a.affects("1.2.1") for a in results), "the second range was lost"
+        assert not any(a.affects("1.1.3") for a in results)  # fixed, first branch
+        assert not any(a.affects("1.2.4") for a in results)  # fixed, second branch
+        assert all(a.identifier == "PYSEC-2011-28" for a in results)
+
+
+class TestEndOfLifeBranches:
+    """GHSA bounds an unfixed branch in `database_specific`, not in the OSV range."""
+
+    RECORD: ClassVar[dict[str, Any]] = {
+        "id": "GHSA-vqf5-2xx6-9wfm",
+        "summary": "GitHub PAT written to debug artifacts",
+        "database_specific": {"severity": "HIGH"},
+        "affected": [
+            {
+                "package": {"ecosystem": "GitHub Actions", "name": "github/codeql-action"},
+                "ranges": [
+                    {
+                        "type": "ECOSYSTEM",
+                        "events": [{"introduced": "3.26.11"}, {"fixed": "3.28.3"}],
+                    }
+                ],
+                "database_specific": {"last_known_affected_version_range": "<= 3.28.2"},
+            },
+            {
+                "package": {"ecosystem": "GitHub Actions", "name": "github/codeql-action"},
+                "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "2.26.11"}]}],
+                "database_specific": {"last_known_affected_version_range": "< 3.0.0"},
+            },
+        ],
+    }
+
+    def test_the_open_branch_is_closed_by_its_bound(self) -> None:
+        advisories = osv_import.OsvImport.advisories_from_osv_record("actions", self.RECORD)
+        assert any(a.affects("2.28.1") for a in advisories)
+        assert any(a.affects("3.27.0") for a in advisories)
+        assert not any(a.affects("3.28.3") for a in advisories)
+        assert not any(a.affects("4.33.0") for a in advisories), "4.x was never affected"
+
+    def test_an_inclusive_bound(self) -> None:
+        record = json.loads(json.dumps(self.RECORD))
+        record["affected"] = [record["affected"][1]]
+        record["affected"][0]["database_specific"] = {
+            "last_known_affected_version_range": "<= 2.30.0"
+        }
+        (advisory,) = osv_import.OsvImport.advisories_from_osv_record("actions", record)
+        assert advisory.affects("2.30.0")
+        assert not advisory.affects("2.30.1")
+
+    def test_a_closed_range_keeps_its_own_fix(self) -> None:
+        advisories = osv_import.OsvImport.advisories_from_osv_record("actions", self.RECORD)
+        assert any(a.fixed == "3.28.3" for a in advisories)
+
+
+class TestRepositoryRecords:
+    """OSV's GIT records name a repository, not a package."""
+
+    RECORD: ClassVar[dict[str, Any]] = {
+        "id": "MAL-2025-49377",
+        "summary": "Malicious code in github.com/boltdb-go/bolt (Git)",
+        "affected": [
+            {
+                "ranges": [
+                    {
+                        "type": "GIT",
+                        "repo": "https://github.com/boltdb-go/bolt.git",
+                        "events": [{"introduced": "0"}],
+                    }
+                ]
+            }
+        ],
+    }
+
+    def test_a_malicious_repository_is_keyed_host_owner_repo(self) -> None:
+        (advisory,) = osv_import.OsvImport.advisories_from_osv_record("git", self.RECORD)
+        assert advisory.name == "github.com/boltdb-go/bolt"
+        assert advisory.malicious
+        assert advisory.affects("0.0.0")
+
+    def test_a_commit_range_vulnerability_is_not_kept(self) -> None:
+        """OSS-Fuzz's GIT records are commit ranges in C and C++ projects; a dependency reference
+        names no commit to compare, so keeping them would match nothing or everything."""
+        record = json.loads(json.dumps(self.RECORD))
+        record["id"] = "OSV-2020-1"
+        assert osv_import.OsvImport.advisories_from_osv_record("git", record) == ()
+
+
+class TestExactVersionRecords:
+    def test_the_list_and_the_range_are_both_read(self) -> None:
+        """OSV's affected set is the union of the two, and the list alone is a snapshot."""
+        record = OsvImportHelpers.npm_record()
+        record["affected"][0]["versions"] = ["1.0.0", "1.1.0"]  # type: ignore[index]
+        advisories = osv_import.OsvImport.advisories_from_osv_record("npm", record)
+        assert any(a.versions == ("1.0.0", "1.1.0") for a in advisories)
+        assert any(a.is_range for a in advisories)
+
+    def test_an_open_range_covers_releases_after_the_list(self) -> None:
+        record = OsvImportHelpers.npm_record()
+        record["affected"][0]["versions"] = ["1.0.0"]  # type: ignore[index]
+        record["affected"][0]["ranges"] = [  # type: ignore[index]
+            {"type": "ECOSYSTEM", "events": [{"introduced": "0"}]}
+        ]
+        advisories = osv_import.OsvImport.advisories_from_osv_record("npm", record)
+        assert any(a.affects("9.0.0") for a in advisories)
+
+
+class TestMaliciousIdentifiers:
+    def test_a_mal_prefixed_id_is_reported_as_malicious(self) -> None:
+        record = OsvImportHelpers.npm_record(id="MAL-2024-1234")
+        record["affected"][0]["versions"] = ["6.6.6"]  # type: ignore[index]
+        advisories = osv_import.OsvImport.advisories_from_osv_record("npm", record)
+        assert advisories and all(a.malicious for a in advisories)
+
+    def test_a_ghsa_id_is_not_malicious(self) -> None:
+        (advisory,) = osv_import.OsvImport.advisories_from_osv_record(
+            "npm", OsvImportHelpers.npm_record()
+        )
+        assert not advisory.malicious
+
+
+class TestMultiPackageRecords:
+    def test_one_record_naming_two_packages_yields_two_advisories(self) -> None:
+        record = OsvImportHelpers.npm_record()
+        record["affected"].append(  # type: ignore[attr-defined]
+            {
+                "package": {"ecosystem": "npm", "name": "right-pad"},
+                "versions": ["2.0.0"],
+            }
+        )
+        results = osv_import.OsvImport.advisories_from_osv_record("npm", record)
+        assert {a.name for a in results} == {"left-pad", "right-pad"}
+
+
+class TestEcosystemFiltering:
+    def test_an_entry_for_a_different_ecosystem_is_skipped(self) -> None:
+        record = OsvImportHelpers.npm_record()
+        results = osv_import.OsvImport.advisories_from_osv_record("pypi", record)
+        assert results == ()
+
+    def test_gradle_has_no_direct_osv_mapping(self) -> None:
+        assert "gradle" not in osv_import.ECOSYSTEM_OSV_NAMES
+
+    def test_a_non_default_registry_suffix_still_matches(self) -> None:
+        """Real shape: 574 of 13,443 Packagist-shaped OSV entries (4.3%) use
+        `"Packagist:https://packages.drupal.org/8"`, not bare `"Packagist"`,
+        for packages published through Drupal's contrib-module registry.
+        Found by scanning a live OSV export for ecosystem strings a plain
+        equality check would silently reject."""
+        record = {
+            "id": "DRUPAL-CONTRIB-2019-019",
+            "summary": "Drupal module vulnerability.",
+            "affected": [
+                {
+                    "package": {
+                        "name": "drupal/jsonapi",
+                        "ecosystem": "Packagist:https://packages.drupal.org/8",
+                    },
+                    "versions": ["1.24.0"],
+                }
+            ],
+            "references": [{"type": "ADVISORY", "url": "https://osv.dev/vulnerability/x"}],
+        }
+        results = osv_import.OsvImport.advisories_from_osv_record("composer", record)
+        assert len(results) == 1
+        assert results[0].name == "drupal/jsonapi"
+
+    def test_a_suffix_without_the_colon_separator_does_not_falsely_match(self) -> None:
+        """`_same_osv_ecosystem` requires the `:` -- "PackagistFoo" is a
+        different, unrelated ecosystem string, not a suffixed variant."""
+        record = {
+            "id": "X-1",
+            "affected": [
+                {"package": {"name": "p", "ecosystem": "PackagistFoo"}, "versions": ["1.0.0"]}
+            ],
+        }
+        results = osv_import.OsvImport.advisories_from_osv_record("composer", record)
+        assert results == ()
+
+    def test_every_osv_backed_ecosystem_has_a_mapping(self) -> None:
+        """The mapping is the whole list of ecosystems a sync can ask OSV about.
+
+        Pinned rather than derived, because adding a feed is a deliberate act:
+        it changes what a release ships and what the coverage note claims. The
+        four ecosystems Cordon reads and OSV does not publish -- cocoapods,
+        conan, conda, bazel -- are absent by the same deliberateness, and
+        `OPERATIONAL.ADVISORY.NO_FEED.001` is what a scan of one says out loud.
+        """
+        expected = {
+            "npm",
+            "pypi",
+            "cargo",
+            "gomod",
+            "maven",
+            "nuget",
+            "composer",
+            "rubygems",
+            "pub",
+            "hex",
+            "cran",
+            "swift",
+            "vscode",
+            "actions",
+            "git",
+            "hackage",
+            "julia",
+            "opam",
+        }
+        assert set(osv_import.ECOSYSTEM_OSV_NAMES) == expected
+
+    def test_a_swift_advisory_is_named_the_way_a_lockfile_names_it(self) -> None:
+        """OSV identifies a Swift package by its clone URL and a
+        `Package.resolved` by its repository path. All 39 shipped Swift
+        advisories were keyed by the first and looked up by the second, so the
+        whole feed was unreachable.
+        """
+        from cordon_scanner.ecosystems.others import SwiftEcosystem
+        from cordon_scanner.ecosystems.swift import SwiftIdentity
+
+        for url, osv_name in (
+            ("https://github.com/apple/swift-nio.git", "github.com/apple/swift-nio"),
+            ("https://github.com/vapor/vapor", "github.com/vapor/vapor"),
+            ("git@github.com:grpc/grpc-swift.git", "github.com/grpc/grpc-swift"),
+        ):
+            identity = SwiftEcosystem().normalize_name(SwiftIdentity.of(url))
+            assert osv_import.OsvImport.package_name_for("swift", osv_name) == identity
+
+    def test_another_ecosystem_keeps_the_name_osv_published(self) -> None:
+        assert osv_import.OsvImport.package_name_for("npm", "@scope/pkg") == "@scope/pkg"
+        assert osv_import.OsvImport.package_name_for("pypi", "django") == "django"
+
+
+class TestMalformedRecords:
+    """Records arrive from a bulk export this project does not control."""
+
+    @pytest.mark.parametrize(
+        "record",
+        [
+            {},
+            {"id": ""},
+            {"id": "GHSA-x"},
+            {"id": "GHSA-x", "affected": "not-a-list"},
+            {"id": "GHSA-x", "affected": [{"package": "not-a-dict"}]},
+            {"id": "GHSA-x", "affected": [{"package": {"ecosystem": "npm"}}]},
+            {"id": "GHSA-x", "affected": [{"package": {"ecosystem": "npm", "name": ""}}]},
+            {
+                "id": "GHSA-x",
+                "affected": [{"package": {"ecosystem": "npm", "name": "p"}, "ranges": "bad"}],
+            },
+        ],
+    )
+    def test_never_raises_and_degrades_to_no_advisory(self, record: dict[str, object]) -> None:
+        results = osv_import.OsvImport.advisories_from_osv_record("npm", record)
+        assert results == ()
+
+
+class TestTheDataIsTamperEvident:
+    """`MALWARE.DEPENDENCY.KNOWN.001` is the only rule allowed to report
+    CONFIRMED confidence, and these files are all that back it. The rule pack
+    has a count floor against truncation; the data had nothing at all.
+
+    The attack this closes is not deletion of the database -- that is loud --
+    but the quiet removal of a single entry: delist the one npm package being
+    shipped that week, leave the other twenty-three thousand in place, and the
+    record count still reads healthy while the scan reports clean.
+    """
+
+    @staticmethod
+    def _written(tmp_path: Path, name: str = "left-pad") -> Path:
+        advisory = Advisory(
+            ecosystem="npm",
+            name=name,
+            versions=("1.0.0",),
+            malicious=True,
+            summary="s",
+            reference="https://example.invalid",
+            identifier="GHSA-x",
+            severity="critical",
+        )
+        result = osv_import.SyncResult(
+            per_ecosystem={"npm": (advisory,)}, meta=OsvImportHelpers._meta()
+        )
+        osv_import.OsvImport.write_output(result, tmp_path)
+        return tmp_path / "advisories-npm.json.gz"
+
+    def test_a_manifest_is_written_beside_the_data(self, tmp_path: Path) -> None:
+        self._written(tmp_path)
+        manifest = json.loads((tmp_path / DIGESTS_NAME).read_text(encoding="utf-8"))
+        assert "advisories-npm.json.gz" in manifest
+        assert "advisories-meta.json" in manifest
+        assert DIGESTS_NAME not in manifest
+
+    def test_untouched_data_verifies(self, tmp_path: Path) -> None:
+        self._written(tmp_path)
+        assert AdvisoryFiles.verify_data_dir(tmp_path) == ()
+
+    def test_delisting_one_entry_is_caught(self, tmp_path: Path) -> None:
+        path = self._written(tmp_path)
+        records = json.loads(OsvImportHelpers._read_gzip(path))
+        OsvImportHelpers._rewrite_gzip(
+            path, json.dumps([r for r in records if r["name"] != "left-pad"])
+        )
+        assert AdvisoryFiles.verify_data_dir(tmp_path) == ("advisories-npm.json.gz",)
+
+    def test_deleting_a_file_is_caught_too(self, tmp_path: Path) -> None:
+        """The cheapest way to water the database down, and the one a scheme
+        that hashed only the files still present would miss entirely."""
+        path = self._written(tmp_path)
+        path.unlink()
+        assert AdvisoryFiles.verify_data_dir(tmp_path) == ("advisories-npm.json.gz",)
+
+    def test_no_manifest_means_nothing_to_check(self, tmp_path: Path) -> None:
+        """A checkout that never ran the build script has neither, and that is
+        normal rather than a failure."""
+        OsvImportHelpers._rewrite_gzip(tmp_path / "advisories-npm.json.gz", "[]")
+        assert AdvisoryFiles.verify_data_dir(tmp_path) == ()
+
+    def test_a_refused_file_is_not_loaded_and_is_recorded(self, tmp_path: Path) -> None:
+        """Half-trusted advisory data is worse than none: the count still looks
+        healthy, so the absence reads as an absence of findings."""
+        path = self._written(tmp_path, name="evil-pkg")
+        path.write_text(json.dumps([]), encoding="utf-8")
+
+        recorded = json.loads((tmp_path / DIGESTS_NAME).read_text(encoding="utf-8"))
+        assert AdvisoryFiles.digest_of(path) != recorded["advisories-npm.json.gz"]
+        assert AdvisoryFiles.verify_data_dir(tmp_path) == ("advisories-npm.json.gz",)
+
+
+class TestWriteOutput:
+    def test_it_writes_one_file_per_ecosystem_plus_meta(self, tmp_path: Path) -> None:
+        advisory = Advisory(
+            ecosystem="npm",
+            name="left-pad",
+            versions=("1.0.0",),
+            malicious=False,
+            summary="s",
+            reference="https://example.invalid",
+            identifier="GHSA-x",
+            severity="high",
+        )
+        result = osv_import.SyncResult(
+            per_ecosystem={"npm": (advisory,)}, meta=OsvImportHelpers._meta()
+        )
+        osv_import.OsvImport.write_output(result, tmp_path)
+
+        npm_file = tmp_path / "advisories-npm.json.gz"
+        meta_file = tmp_path / "advisories-meta.json"
+        assert npm_file.exists()
+        assert meta_file.exists()
+
+        loaded = json.loads(OsvImportHelpers._read_gzip(npm_file))
+        assert loaded == [
+            {
+                "ecosystem": "npm",
+                "name": "left-pad",
+                "malicious": False,
+                "summary": "s",
+                "reference": "https://example.invalid",
+                "id": "GHSA-x",
+                "versions": ["1.0.0"],
+                "severity": "high",
+            }
+        ]
+
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        assert meta["record_count"] == 1
+        assert meta["sources"]
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_written_files_are_not_group_or_world_writable(self, tmp_path: Path) -> None:
+        """Not a secrecy requirement -- this is public OSV data -- but a
+        different local user on a shared machine must not be able to plant
+        or tamper with a file this project later reads back and trusts. Same
+        reasoning `ScanCache`'s own key file uses, applied here."""
+        import stat
+
+        advisory = Advisory(
+            ecosystem="npm",
+            name="left-pad",
+            versions=("1.0.0",),
+            identifier="GHSA-x",
+            reference="https://example.invalid",
+        )
+        result = osv_import.SyncResult(
+            per_ecosystem={"npm": (advisory,)}, meta=OsvImportHelpers._meta()
+        )
+        osv_import.OsvImport.write_output(result, tmp_path)
+
+        for path in (tmp_path / "advisories-npm.json.gz", tmp_path / "advisories-meta.json"):
+            mode = stat.S_IMODE(path.stat().st_mode)
+            assert not (mode & stat.S_IWGRP), f"{path} is group-writable: {oct(mode)}"
+            assert not (mode & stat.S_IWOTH), f"{path} is world-writable: {oct(mode)}"
+
+    def test_a_resync_overwrites_rather_than_failing_on_an_existing_file(
+        self, tmp_path: Path
+    ) -> None:
+        """Not `O_EXCL`: unlike the cache's MAC key, this file is meant to be
+        rewritten on every sync, not created once and kept forever."""
+        advisory = Advisory(
+            ecosystem="npm", name="left-pad", versions=("1.0.0",), reference="https://x.invalid"
+        )
+        result = osv_import.SyncResult(
+            per_ecosystem={"npm": (advisory,)}, meta=OsvImportHelpers._meta()
+        )
+        osv_import.OsvImport.write_output(result, tmp_path)
+        osv_import.OsvImport.write_output(result, tmp_path)  # must not raise
+        assert (tmp_path / "advisories-npm.json.gz").exists()
+
+    def test_the_filtered_flag_round_trips(self, tmp_path: Path) -> None:
+        from cordon_scanner.intel.advisories.advisories import DatabaseMeta
+
+        advisory = Advisory(
+            ecosystem="npm",
+            name="left-pad",
+            versions=("1.0.0",),
+            identifier="GHSA-x",
+            reference="https://example.invalid",
+        )
+        meta = DatabaseMeta(
+            built_at="2026-01-01T00:00:00Z", sources=("osv:npm",), record_count=1, filtered=True
+        )
+        result = osv_import.SyncResult(per_ecosystem={"npm": (advisory,)}, meta=meta)
+        osv_import.OsvImport.write_output(result, tmp_path)
+
+        raw = json.loads((tmp_path / "advisories-meta.json").read_text(encoding="utf-8"))
+        assert raw["filtered"] is True
+
+        from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
+
+        assert AdvisoryFiles._read_meta(tmp_path).filtered is True
+
+    def test_the_written_file_round_trips_through_from_file(self, tmp_path: Path) -> None:
+        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+
+        advisory = Advisory(
+            ecosystem="pypi",
+            name="example",
+            introduced="1.0.0",
+            fixed="2.0.0",
+            severity="moderate",
+            identifier="GHSA-y",
+            reference="https://example.invalid",
+        )
+        result = osv_import.SyncResult(
+            per_ecosystem={"pypi": (advisory,)}, meta=OsvImportHelpers._meta()
+        )
+        osv_import.OsvImport.write_output(result, tmp_path)
+
+        database = AdvisoryDatabase.from_file(tmp_path / "advisories-pypi.json.gz")
+        assert database.matching("pypi", "example", "1.5.0")
+        assert not database.matching("pypi", "example", "2.0.0")
+
+
+@pytest.mark.network
+class TestSyncAgainstOsv:
+    """The check the offline tests cannot make: does the real export still
+    have this shape. Deselected by default; run with `pytest -m network`."""
+
+    def test_a_small_ecosystem_downloads_and_parses(self, tmp_path: Path) -> None:
+        records = osv_import.OsvImport.sync_ecosystem("pub", tmp_dir=tmp_path)
+        assert isinstance(records, tuple)
+        # Pub is one of OSV's smaller exports but is not empty.
+        assert len(records) > 0
+        assert all(a.ecosystem == "pub" for a in records)
+
+
+class TestOsvImport:
+    """The tests of test_osv_import.py that stood alone."""
+
+    @pytest.mark.conformance("x", "x.feeds")
+    def test_a_withdrawn_record_is_not_imported(self) -> None:
+        from cordon_scanner.intel.advisories.osv_import import OsvImport
+
+        record = {
+            "id": "MAL-2026-4750",
+            "withdrawn": "2026-05-26T13:04:03Z",
+            "summary": "Malicious code in fastapi (PyPI)",
+            "affected": [
+                {"package": {"ecosystem": "PyPI", "name": "fastapi"}, "versions": ["0.136.3"]}
+            ],
+        }
+        assert OsvImport.advisories_from_osv_record("pypi", record) == ()
+        record.pop("withdrawn")
+        assert OsvImport.advisories_from_osv_record("pypi", record)

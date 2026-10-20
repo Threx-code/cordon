@@ -102,12 +102,12 @@ jobs:
         # The generated samples are the whole guard: a policy that stops
         # matching reports nothing and looks exactly like a clean scan. This is
         # the run that catches a provider renaming an attribute.
-        run: pytest -q tests/unit/test_iac_policies.py tests/unit/test_iac_integrity.py
+        run: pytest -q tests/unit/detect/infra/test_iac_policies.py tests/unit/detect/infra/test_iac_integrity.py
 
       - name: Regenerate the coverage matrix
         run: |
           PYTHONPATH=tests python tests/matrix.py > docs/05-COVERAGE-MATRIX.md
-          pytest -q tests/unit/test_coverage_matrix.py
+          pytest -q tests/unit/cli/test_coverage_matrix.py
 
       - name: Summarise the change for the reviewer
         run: |

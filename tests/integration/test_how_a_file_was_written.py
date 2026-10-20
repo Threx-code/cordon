@@ -27,7 +27,7 @@ import pathlib
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config
+from cordon_scanner.foundation.config import Config
 from support import CORPUS, requires_malicious_corpus
 
 #: How the same file looks when a different editor on a different platform saves it.

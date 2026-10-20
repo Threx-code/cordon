@@ -26,18 +26,18 @@ import posixpath
 import re
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
 
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
 
 
 VERSION_FIELDS = ("version", "version-semver", "version-date", "version-string")

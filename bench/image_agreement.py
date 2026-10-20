@@ -193,7 +193,7 @@ class Image:
     @staticmethod
     def cordon(tarball: Path) -> tuple[dict[str, set[str]], float]:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         started = time.perf_counter()
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tarball)

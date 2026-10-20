@@ -8,4 +8,4 @@ secret:
   ignored_paths:
     - "corpus/**"
     - "bench/agent_matrix.py"
-    - "tests/unit/test_review_defects.py"
+    - "tests/unit/detect/secrets/test_review_defects.py"

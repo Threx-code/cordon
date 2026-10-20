@@ -324,7 +324,7 @@ class TestHostileCoordinates:
             assert len(dependency["name"]) <= 256 and len(dependency.get("version") or "") <= 128
 
 
-from cordon_scanner.detect.registry import CONFUSABLE_ECOSYSTEMS, REGISTRY_ECOSYSTEMS  # noqa: E402
+from cordon_scanner.detect.supply.registry import CONFUSABLE_ECOSYSTEMS, REGISTRY_ECOSYSTEMS  # noqa: E402
 
 REGISTERED = [
     p for p in PROFILES if p.id in REGISTRY_ECOSYSTEMS and p.hash_of and p.registry_digests
@@ -338,7 +338,7 @@ class RegistryStub:
 
     @staticmethod
     def install(monkeypatch, answers: dict[str, Any]) -> list[tuple[str, str]]:
-        from cordon_scanner.intel import registry_client
+        from cordon_scanner.intel.registries import registry_client
 
         asked: list[tuple[str, str]] = []
 
@@ -368,7 +368,7 @@ class TestRegistryVerification:
 
     @pytest.mark.parametrize("profile", REGISTERED, ids=ids(REGISTERED))
     def test_outcomes_are_told_apart(self, profile, tmp_path, monkeypatch) -> None:
-        from cordon_scanner.intel.registry_client import PackageFacts, RegistryError
+        from cordon_scanner.intel.registries.registry_client import PackageFacts, RegistryError
 
         assert profile.hash_of is not None
         first, second, third = profile.names

@@ -1,0 +1,1708 @@
+"""Core domain model.
+
+This module is the centre of the architecture and it deliberately depends on
+nothing. It imports no Cordon module, performs no I/O, and knows nothing about
+detectors, rules, reporters or ecosystems. Everything else in the system depends
+inward on these types; nothing here depends outward.
+
+That direction is what makes the rest of the design possible. SARIF rendering,
+policy gates, suppression, deduplication, baselines, pull-request comments and
+risk scoring are each a pure function of the types defined here, which means each
+can be developed, tested and replaced independently, and two of them can never
+disagree about what a scan found.
+
+Invariants that hold for every type in this module:
+
+* **Immutable.** Frozen and slotted. A caller cannot mutate a result and
+  re-serialise it as though a scan produced it. This also makes every value
+  hashable and safe to pass between worker processes.
+* **Content-free by default.** A finding carries redacted evidence, never raw
+  source. See :class:`RedactionMode`.
+* **Deterministic.** No timestamps, no object identity, no reliance on dict
+  ordering in anything that reaches serialised output. Identical inputs must
+  produce byte-identical results, because baselines, incremental caching and
+  reproducible CI gates all depend on it.
+"""
+
+from __future__ import annotations
+
+import enum
+import hashlib
+import re
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from cordon_scanner.foundation.taxonomy import AttackCategory, Taxonomy, ThreatDomain
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping, Sequence
+
+
+# ---------------------------------------------------------------------------
+# Enumerations
+# ---------------------------------------------------------------------------
+
+
+class Category(enum.StrEnum):
+    """The kind of claim a finding makes.
+
+    Separating these is what keeps the tool usable. A published CVE in a test-only
+    dependency, an obfuscated blob appended to a build config, and an unpinned
+    version range are three different problems with three different owners and
+    three different urgencies. A scanner that reports them through one channel
+    gets a blanket exception added to it, and then it is protecting nothing.
+
+    ``OPERATIONAL`` is not decoration. A scan that timed out, or skipped files it
+    could not read, is neither clean nor compromised, and it must be able to say
+    so. Without this category a degraded scan has only two options, both wrong:
+    report success (a false negative that looks like a pass) or fail the build
+    (which trains people to ignore the tool when a runtime is briefly missing).
+    """
+
+    MALICIOUS = "malicious"
+    """Evidence of intent to harm. Known-bad package, credential exfiltration in
+    an install hook, command-and-control protocol."""
+
+    SUSPICIOUS = "suspicious"
+    """A capability with no legitimate explanation in this context. Obfuscation,
+    decode-then-execute, credential access combined with network egress."""
+
+    VULNERABLE = "vulnerable"
+    """A known weakness in something depended upon. CVE, GHSA, OSV."""
+
+    POLICY = "policy"
+    """An organisational rule rather than a security property. Missing lockfile,
+    unpinned dependency, expired suppression."""
+
+    OPERATIONAL = "operational"
+    """The scan itself was degraded. Limit reached, parser failed, optional
+    capability unavailable. Always reported, never silent."""
+
+
+class Severity(enum.IntEnum):
+    """Impact if the finding is real.
+
+    Deliberately independent of :class:`Confidence`. Fusing the two into a single
+    "priority" is the most common modelling error in this space, and it makes a
+    rule set unshippable: a dynamic-execution call is high impact and only
+    moderately indicative on its own, so a single axis forces the author to
+    choose between never firing and firing constantly. Two axes let the same rule
+    be reported loudly in an application and quietly in a bundler, without being
+    rewritten.
+
+    ``IntEnum`` so that thresholds are ordinary comparisons and the sort order is
+    the obvious one.
+    """
+
+    INFO = 0
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    CRITICAL = 4
+
+    @classmethod
+    def parse(cls, value: str | int | Severity) -> Severity:
+        if isinstance(value, Severity):
+            return value
+        if isinstance(value, int):
+            return cls(value)
+        try:
+            return cls[value.strip().upper()]
+        except KeyError:
+            valid = ", ".join(s.name.lower() for s in cls)
+            raise ValueError(f"unknown severity {value!r}; expected one of: {valid}") from None
+
+    def demote(self) -> Severity:
+        """One step down, and never below `INFO`.
+
+        For the case where a rule's shape is present and the control it asks for is
+        present too: a verified download is still a download, so the finding stays in
+        the report and stops failing a build. Clamped rather than wrapped, because
+        `Severity(INFO - 1)` raises and a report is not the place to find that out.
+        """
+        return Severity(max(Severity.INFO, self.value - 1))
+
+    def __str__(self) -> str:
+        return self.name.lower()
+
+
+class Confidence(enum.IntEnum):
+    """Probability that the finding is real.
+
+    ``HIGH`` carries a specific, enforced meaning: the rule was evaluated against
+    the benign corpus and matched nothing. A rule with a non-zero baseline cannot
+    declare it, and the rule loader refuses the pack if one tries. This turns
+    false-positive control from a review-time judgement into a load-time
+    invariant.
+
+    ``CONFIRMED`` is reserved for cryptographic identity: a known-bad artefact
+    hash, or an exact package-and-version match against the threat-intelligence
+    database. No heuristic ever reaches it.
+    """
+
+    LOW = 0
+    MEDIUM = 1
+    HIGH = 2
+    CONFIRMED = 3
+
+    @classmethod
+    def parse(cls, value: str | int | Confidence) -> Confidence:
+        if isinstance(value, Confidence):
+            return value
+        if isinstance(value, int):
+            return cls(value)
+        try:
+            return cls[value.strip().upper()]
+        except KeyError:
+            valid = ", ".join(c.name.lower() for c in cls)
+            raise ValueError(f"unknown confidence {value!r}; expected one of: {valid}") from None
+
+    def __str__(self) -> str:
+        return self.name.lower()
+
+
+class RedactionMode(enum.StrEnum):
+    """How much of a matched value may appear in output.
+
+    A scanner reports into CI logs, pull-request comments and SARIF files that
+    are frequently uploaded to third-party platforms. All three are more durable
+    and more widely readable than the repository itself.
+
+    The failure this prevents is specific: a rule fires *because* a line contains
+    a credential, and the tool then copies that line into every one of those
+    destinations. The tool that finds a leaked secret must not be the tool that
+    spreads it.
+    """
+
+    NONE = "none"
+    """Raw matched text. Requires an explicit flag and is refused outright for
+    secret-category rules."""
+
+    MASKED = "masked"
+    """Structure preserved, high-entropy runs masked. The default."""
+
+    HASH_ONLY = "hash_only"
+    """No snippet at all, only the match hash. Mandatory for secret rules."""
+
+
+class EvidenceKind(enum.StrEnum):
+    SNIPPET = "snippet"
+    HASH = "hash"
+    METADATA = "metadata"
+    GRAPH = "graph"
+
+
+class Scope(enum.StrEnum):
+    """Dependency scope. Drives the ``dev_only`` risk factor."""
+
+    RUNTIME = "runtime"
+    DEV = "dev"
+    BUILD = "build"
+    OPTIONAL = "optional"
+    PEER = "peer"
+    TEST = "test"
+    TOOL = "tool"
+    """A tool the build runs (Go `tool` directives, a Gradle or Maven plugin, a Cargo or
+    Terraform provider), not code linked into the product."""
+    PLATFORM = "platform"
+    """A requirement on the platform itself (`php`, `ext-json`, an SDK, a compiler), not a
+    package anyone downloads."""
+    UNKNOWN = "unknown"
+
+
+class MatchKind(enum.StrEnum):
+    """How a rule decides whether it applies. Selects the matching strategy."""
+
+    LITERAL = "literal"
+    REGEX = "regex"
+    ENTROPY = "entropy"
+    STRUCTURAL = "structural"
+    AST = "ast"
+    GRAPH = "graph"
+    COMPOSITE = "composite"
+
+
+class Capability(enum.StrEnum):
+    """Portable behavioural primitives.
+
+    This enum is the mechanism that makes the detection engine language-agnostic,
+    and it is the single most important abstraction in the system.
+
+    Signature-based detection does not generalise. A rule written against a
+    specific campaign's indicators stops working the moment the campaign changes
+    a string, and it never worked for any other language in the first place.
+
+    Capability-based detection does generalise, because the primitives are forced
+    by the objective rather than chosen by the attacker. To exfiltrate data, code
+    must read something sensitive and send it somewhere. To run a second stage,
+    it must decode a payload and execute it. Those requirements hold in every
+    language, and there are only a handful of them.
+
+    So each language plugin supplies patterns for these names, and composite rules
+    are written **once** against them. Adding a language means adding pattern data,
+    not rewriting the rule set: a new ecosystem inherits every behavioural rule the
+    moment its primitives are defined.
+
+    The set grows when a primitive turns out to have been standing in for a different
+    act, and five of the fifteen arrived that way -- `DECOMPRESS` out of `DECODE`,
+    `DESERIALIZE` out of `EXECUTE`, `WALLET` out of `MINE`, `DELAY` out of
+    `ANTI_ANALYSIS`, `RECONNAISSANCE` out of `CREDENTIAL`. Each was found by a composite whose own message claimed something
+    its capabilities could not support, and splitting the primitive is what this model
+    does instead of adding an exception to the rule that reads it.
+    """
+
+    DECODE = "decode"
+    """Turns encoded data back into code or commands."""
+
+    EXECUTE = "execute"
+    """Evaluates code from a string: `eval`, `exec`, a script engine, `sh -c`."""
+
+    DECOMPRESS = "decompress"
+    """Expands a compressed stream: gzip, deflate, zlib, brotli, an archive.
+
+    Separated from `DECODE` for the same reason `DESERIALIZE` is separated from
+    `EXECUTE`: a composite was reading two different acts as one. Compression is not
+    concealment. A gzip stream is how a release is shipped, not a way to hide code
+    from review -- nobody chooses it to evade a scanner, because every scanner can
+    read it and the ratio gives it away. What hides a payload is base64, hex or
+    exclusive-or in a source literal.
+
+    Measured: `SUSPECT.DECODE_EXEC.001` produced 184 findings across 38 repositories
+    that carried three or fewer, and the shape in every language was a self-updater or
+    a build tool -- unpack a release archive, run a binary. `lapce`, `schollz/croc`,
+    `DioxusLabs/dioxus` and `dotnet/maui` are all exactly that, and each was reported
+    as a second-stage loader.
+
+    It remains a layer where a layer is the claim: `SUSPECT.DECODE_CHAIN.001` is about
+    stacking encodings to defeat inspection, and base64 around a gzip blob is the
+    commonest stack there is.
+    """
+
+    DESERIALIZE = "deserialize"
+    """Turns a serialised byte stream back into live objects.
+
+    `pickle.loads`, `Marshal.load`, `unserialize`, `readObject`. Every one of these
+    is code execution by design -- the format names classes and calls their
+    constructors -- and for years this enum said so by listing them under `EXECUTE`.
+
+    They are separated because one composite could not survive the conflation.
+    `SUSPECT.DECODE_EXEC.001` asks for a decode and an execution in the same file and
+    says, in its own message, that the payload "is not present as code until runtime".
+    A deserializer paired with a decode is not two acts: base64 around a pickle is how
+    you keep a pickle in a text column, and it is the only way to do it. Django's
+    database cache backend, Celery's serialization helpers and scikit-learn's dataset
+    loader are all spelled exactly that way, and all three were reported at HIGH --
+    three of the most-installed Python packages there are.
+
+    What makes deserialization dangerous is the SOURCE of the bytes, which is why this
+    primitive still counts towards every composite where another capability supplies an
+    untrusted one. A pickle load applied to the body of an HTTP response is a dropper;
+    the same call applied to a row the application itself wrote is a cache.
+    """
+
+    SPAWN = "spawn"
+    """Starts a process or invokes a shell."""
+
+    CREDENTIAL = "credential"
+    """Reads environment variables, key material, or cloud and registry tokens."""
+
+    RECONNAISSANCE = "reconnaissance"
+    """Identifies the machine it is running on: hostname, user, working directory.
+
+    The fifth primitive to arrive by splitting one that stood in for a different
+    act, and the clearest case of the five. `socket.gethostname()`,
+    `getpass.getuser()`, `os.getcwd()` and `os.environ["COMPUTERNAME"]` are not
+    credentials -- nothing authenticates with a hostname -- so `CREDENTIAL` could
+    not be widened to hold them without diluting every composite that reads it.
+    Nor are they egress, or execution. They were simply unlabelled.
+
+    Measured against the ASE 2023 dataset of real malicious PyPI packages, this is
+    the shape of the install-time beacon, and it is written the same way every
+    time: `fuzywuzy` and `requesgs` read `os.environ['COMPUTERNAME']` and
+    concatenate it into a GET; `antchain-sdk-pcc` reads `socket.gethostname()`,
+    `os.getcwd()` and `getpass.getuser()` and passes them as `params`;
+    `bytedbackground` sends `socket.gethostname()`. Eleven of the forty-one
+    packages still missed after the encoded-command and decryption work were this,
+    and none of them produced a single finding, because reading the hostname was
+    not an act the model had a name for.
+
+    On its own it is close to meaningless -- half the diagnostics code ever written
+    reports a hostname -- which is why the composite that reads it requires an
+    install hook and egress as well. A build script has no reason to tell anybody
+    which machine it is building on."""
+
+    EGRESS = "egress"
+    """Opens an outbound network connection."""
+
+    PERSIST = "persist"
+    """Installs itself somewhere that survives a reboot or a new shell."""
+
+    DYNAMIC_DISPATCH = "dynamic_dispatch"
+    """Reaches a function by a name computed at runtime.
+
+    Emitted when reflective access -- `getattr`, `globals()[...]`,
+    `__import__` -- is used with an argument that could not be resolved
+    statically, into a namespace where that has no ordinary purpose.
+
+    It exists so that evading the name match costs something. An attacker who
+    writes `getattr(os, decode(blob))()` defeats every pattern that looks for
+    `os.system`, and the shape they are forced into is itself the evidence:
+    reflective dispatch on a computed name into `os` or `subprocess` has almost
+    no benign analogue, while `getattr(self, method_name)` on a plugin object
+    has plenty -- which is why the namespace is part of the condition.
+    """
+
+    FETCH_EXEC = "fetch_exec"
+    """Network output flows directly into an interpreter.
+
+    Distinct from `egress` plus `spawn`, and that distinction is the point.
+    Those two co-occurring describe an enormous amount of ordinary operations
+    code -- a deploy script that pushes and posts to Slack, a health check that
+    runs `systemctl` and pings a status page -- because nothing in the pair
+    requires the thing executed to be the thing fetched.
+
+    A pipe does require it. `curl ... | sh` is not two capabilities that happen
+    to share a file; it is one construct whose output is the other's input, and
+    that is the actual dropper shape rather than a proxy for it.
+    """
+
+    ANTI_ANALYSIS = "anti_analysis"
+    """Checks whether it is being observed, and can act on the answer.
+
+    Sandbox and virtual-machine probes, debugger checks, CI and hostname gating.
+    Individually each has a benign use: software legitimately behaves differently
+    in CI.
+
+    What has no benign use is the combination with a payload. Code that asks
+    "am I being watched?" and then decodes or reaches the network is describing
+    its own evasion, and the check is the part that cannot be explained away --
+    an ordinary program has no reason to care.
+    """
+
+    DELAY = "delay"
+    """Waits a long time, or schedules work far ahead.
+
+    Separated from `ANTI_ANALYSIS` for the fourth time the same mistake was found.
+    `SUSPECT.ANTI_ANALYSIS.001` is titled "Behaviour gated on whether it is being
+    observed", and a sleep gates nothing: it is not a check, and the answer to "am I
+    being watched?" is what every other member of that family produces.
+
+    Measured across two sampling passes, every delay-only finding was a wait:
+    `unsloth` hangs a thread with `while True: time.sleep(3600)` to keep a partial
+    download's handle open and prints a heartbeat with
+    `for _ in range(10000): time.sleep(300)`; `mongodb` keeps a cross-compilation
+    container alive with `while true; do sleep 3600; done`; `Azure/azure-cli` waits five
+    minutes between checks of a package repository. Four for four, and none of the
+    malicious corpus samples uses a sleep at all -- the one that gates on the analysis
+    environment tests `os.environ["CI"]`, the hostname and `sys.gettrace`.
+
+    So nothing consumes this yet, and `CAP.ANTI.DELAY.001` reports on its own at the
+    INFO severity it has always declared. A delay beside a payload is still visible in
+    the report; what it no longer does is make the payload a high-severity finding about
+    evasion, which is a claim the delay cannot support.
+    """
+
+    WALLET = "wallet"
+    """A cryptocurrency payout address.
+
+    Separated from `MINE` for the third time the same mistake was found: a primitive
+    was standing in for a different act. An address is a DESTINATION, not an activity.
+    `SUSPECT.CRYPTOMINER.001` says, in its own message, that the file "references a
+    mining pool protocol, a pool host or a miner binary" -- and a bare address is none
+    of those, while satisfying the rule on its own at HIGH.
+
+    What a bare address actually is: a donation button (`ScreenToGif`'s
+    `DonateSettings.xaml`, SmartTube's `donations.xml`), a wallet or a node's own source
+    (`bitcoin/bitcoin`, twice), or a base58-shaped run inside a large data file that
+    means nothing at all. The rule already carried a path exclusion for `FUNDING.json`
+    for exactly this reason, which was the shape of the problem showing through.
+
+    Cryptojacking carries a pool. `CAP.MINE.PROTOCOL.001` is the decisive evidence and
+    stratum exists for mining and nothing else; an address corroborates it and does not
+    replace it.
+    """
+
+    TARGETING = "targeting"
+    """Decides what to do from where the machine is: its timezone, locale or country.
+
+    Protestware and state-targeted payloads share one shape: a check of the region, then an
+    act reserved for machines that pass it. node-ipc asked a geolocation service for the
+    country and overwrote files for two of them; es5-ext and its successors read the
+    timezone. The check alone is ordinary in software that localises, which is why it is a
+    primitive and not a finding: it matters beside a destructive or executing act.
+    """
+
+    DESTROY = "destroy"
+    """Deletes or wipes data wholesale: a recursive delete, a disk overwritten, a filesystem made.
+
+    A cleanup script deletes recursively too, so this is a primitive: what makes it a finding is
+    what it is aimed at, or what decided to run it.
+    """
+
+    AGENT = "agent"
+    """Starts the machine's AI coding agent with its permission checks switched off.
+
+    `claude --dangerously-skip-permissions`, `q --trust-all-tools`, `gemini --yolo`: the agent then
+    reads, runs and deletes whatever its prompt says, with nobody asked. Two incidents made this a
+    primitive. The Nx "s1ngularity" release (August 2025) ran every agent it found that way to
+    inventory secrets and wallets; the compromised Amazon Q extension 1.84.0 (July 2025) ran `q`
+    that way with a prompt to wipe the home directory and the AWS account. Neither needs code of
+    its own to do harm: the agent is the payload, and the prompt is the program.
+
+    An orchestrator that drives agents on purpose does the same thing, which is why this is a
+    primitive: what makes it a finding is the instruction it carries, or what decided to run it.
+    """
+
+    FLOW = "flow"
+    """A value followed from where it is read to where it leaves (`detect/js_flow.py`).
+
+    Not a primitive of its own but evidence of how two primitives connect, kept apart for the same
+    reason as the splits above: tagged `egress`, a followed flow also satisfied every composite
+    that asks only for a network call somewhere in the file, and turned bundled editor extensions
+    into install-time spelled-code findings (review 98, about twenty Open VSX agents). Only the
+    composites written for flows read it.
+    """
+
+    MINE = "mine"
+    """Consumes compute for a cryptocurrency.
+
+    Unlike the other primitives this is closer to a signature than a
+    capability -- mining is identifiable by its pools, protocols and wallet
+    formats rather than by a language operation. It is modelled as a capability
+    anyway so that it composes with the rest: mining inside an install hook is
+    a different finding from mining in an application, and the existing context
+    machinery already knows how to say that.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Location and evidence
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Location:
+    """Where a finding is.
+
+    Carries a line and column pair for humans and SARIF regions, and a byte span
+    for exact evidence extraction. Both are needed: line numbers are what a
+    developer navigates by, byte offsets are what survive a re-render.
+
+    ``symbol`` is populated only when an abstract syntax tree is available. It is
+    what allows a finding's identity to survive a function being moved within a
+    file.
+    """
+
+    path: str
+    """Repository-relative, forward-slashed, normalised. Never absolute, so that
+    results are comparable across machines and safe to publish."""
+
+    line: int | None = None
+    """1-indexed."""
+
+    column: int | None = None
+    """1-indexed."""
+
+    end_line: int | None = None
+    end_column: int | None = None
+
+    byte_start: int | None = None
+    byte_end: int | None = None
+
+    symbol: str | None = None
+    """Enclosing function or class, when known."""
+
+    project: str | None = None
+    """Which project within a monorepo this path belongs to."""
+
+    package: str | None = None
+    """Package URL, when the finding concerns a dependency rather than a file."""
+
+    def __str__(self) -> str:
+        base = self.package or self.path
+        if self.line is None:
+            return base
+        if self.column is None:
+            return f"{base}:{self.line}"
+        return f"{base}:{self.line}:{self.column}"
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"path": self.path}
+        for name in (
+            "line",
+            "column",
+            "end_line",
+            "end_column",
+            "byte_start",
+            "byte_end",
+            "symbol",
+            "project",
+            "package",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                out[name] = value
+        return out
+
+
+@dataclass(frozen=True, slots=True)
+class Evidence:
+    """What was matched, in a form that is safe to transport.
+
+    ``match_hash`` is always present and is the SHA-256 of the raw matched bytes.
+    It is what makes two scans comparable and what lets a responder confirm that
+    today's finding is the same artefact as last week's, without the tool ever
+    moving the value itself. Under ``HASH_ONLY`` it is the only thing emitted,
+    and it is still sufficient for correlation.
+    """
+
+    kind: EvidenceKind
+    match_hash: str
+    redaction: RedactionMode
+    snippet: str | None = None
+    span: tuple[int, int] | None = None
+    metadata: tuple[tuple[str, str], ...] = ()
+    """Sorted key/value pairs. A tuple rather than a mapping so the value stays
+    hashable and its serialisation order is fixed."""
+
+    @staticmethod
+    def hash_bytes(raw: bytes) -> str:
+        return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def secret_hash(raw: bytes) -> str:
+        """A credential's evidence hash, keyed per install so a published hash cannot be checked
+        against guesses. See `core.evidence_key`."""
+        from cordon_scanner.foundation.evidence_key import EvidenceKey
+
+        return EvidenceKey.digest(raw)
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "kind": str(self.kind),
+            "match_hash": self.match_hash,
+            "redaction": str(self.redaction),
+        }
+        if self.snippet is not None:
+            out["snippet"] = self.snippet
+        if self.span is not None:
+            out["span"] = list(self.span)
+        if self.metadata:
+            out["metadata"] = dict(self.metadata)
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Risk scoring
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RiskFactor:
+    """One term in a risk score, carrying the reason it applied.
+
+    Every factor explains itself. A score a user cannot reconstruct by hand is a
+    score they will not trust, and a score they do not trust is one they will
+    configure away. The explanation is therefore part of the value, not
+    presentation logic that a different reporter might omit.
+    """
+
+    name: str
+    points: int
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "points": self.points, "reason": self.reason}
+
+
+@dataclass(frozen=True, slots=True)
+class RiskScore:
+    """A deterministic, explainable score from 0 to 100.
+
+    Not a model, and deliberately so. It is a declared sum of integer factors
+    over a severity base scaled by a confidence weight, then clamped. Integer
+    arithmetic throughout, because a float accumulated in traversal order is not
+    reproducible across parallel workers, and reproducibility is what makes
+    baselines and cache reuse safe.
+    """
+
+    value: int
+    base: int
+    confidence_multiplier: float
+    factors: tuple[RiskFactor, ...] = ()
+
+    def explain(self) -> Iterator[str]:
+        """Yield the derivation, line by line, in the order it was computed."""
+        scaled = int(self.base * self.confidence_multiplier)
+        yield f"base {self.base} x {self.confidence_multiplier:.2f} confidence = {scaled}"
+        for factor in self.factors:
+            sign = "+" if factor.points >= 0 else ""
+            yield f"{factor.name} {sign}{factor.points} ({factor.reason})"
+        yield f"total (clamped 0-100) = {self.value}"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "value": self.value,
+            "base": self.base,
+            "confidence_multiplier": self.confidence_multiplier,
+            "factors": [f.to_dict() for f in self.factors],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Explanation:
+    """Why this finding exists, in the reviewer's terms.
+
+    Separate from ``message`` because they answer different questions. The
+    message states what is wrong; the explanation states what the scanner
+    observed and what it inferred from it. The second is what somebody triaging a
+    suspected false positive actually needs, and burying it in prose makes it
+    unavailable to any consumer that is not a human reading a terminal.
+    """
+
+    summary: str
+    matched_rule: str
+    contributing: tuple[str, ...] = ()
+    """Fingerprints of the findings that fed a composite rule."""
+    escalations: tuple[str, ...] = ()
+    """Context-driven escalations, such as execution during install."""
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"summary": self.summary, "matched_rule": self.matched_rule}
+        if self.contributing:
+            out["contributing"] = list(self.contributing)
+        if self.escalations:
+            out["escalations"] = list(self.escalations)
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Suppression
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Suppression:
+    """A recorded, expiring decision to accept a specific finding.
+
+    The shape is chosen carefully. A suppression names **a rule and a path
+    together**, never one alone. A rule-only suppression disables a detection
+    everywhere, including in the file where it would have mattered. A path-only
+    suppression -- the familiar directory exclusion -- exempts that location from
+    every rule, and vendored or generated directories are precisely where a
+    payload prefers to sit. The pair exempts one known-good combination and
+    leaves everything else about that file still covered.
+
+    ``justification``, ``approved_by`` and ``expires`` exist because a
+    suppression is a security decision, and a security decision with no author,
+    no reason and no end date outlives everyone who understood it. Expiry forces
+    the question to be asked again while somebody still remembers the answer.
+    """
+
+    rule: str
+    path: str
+    justification: str
+    expires: str
+    """ISO date, required. An expired suppression stops suppressing and emits a
+    POLICY finding, so it fails loudly rather than persisting unnoticed."""
+    approved_by: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out = {
+            "rule": self.rule,
+            "path": self.path,
+            "justification": self.justification,
+            "expires": self.expires,
+        }
+        if self.approved_by:
+            out["approved_by"] = self.approved_by
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Finding
+# ---------------------------------------------------------------------------
+
+_WHITESPACE = re.compile(r"\s+")
+
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    """A single claim made by a detector. The unit of everything downstream."""
+
+    FILE_HASH_KEY: ClassVar[str] = "file_sha256"
+    """Metadata key holding the hash of the file a finding came from.
+
+    Recorded so that two findings can be told apart by the bytes they came out of
+    rather than by the bytes they matched. `Engine._collapse_repeats` is the only
+    reader, and the distinction matters: every 2048-bit RSA key begins with the same
+    twelve characters, so the matched value cannot tell one committed key from
+    another."""
+
+    rule_id: str
+    category: Category
+    severity: Severity
+    confidence: Confidence
+    message: str
+    location: Location
+    evidence: Evidence
+    remediation: str
+    explanation: Explanation
+    risk: RiskScore
+    detector: str
+    rule_version: str = "0.0.0"
+    rulepack: str = "cordon-builtin"
+    references: tuple[str, ...] = ()
+    related: tuple[str, ...] = ()
+    occurrences: int = 1
+    suppressed: Suppression | None = None
+    capabilities: tuple[Capability, ...] = ()
+
+    threat_domain: ThreatDomain | None = None
+    """Where in the supply chain this finding lives.
+
+    Derived from the rule id when not supplied, so no detector can emit an
+    unclassified finding by forgetting an argument. See `core/taxonomy.py` for
+    why that derivation is the default rather than a per-call-site field."""
+
+    attack_category: AttackCategory | None = None
+    """What is being attempted. Derived the same way, and kept separate from
+    the domain because typosquatting and dependency confusion share a domain
+    and are different attacks."""
+
+    always_report: bool = False
+    """Whether a reporting threshold may hide this finding.
+
+    True only for findings that describe the scan rather than the code: a
+    detector that failed, a file that could not be read, a configuration that
+    excluded everything. Hiding one of those behind a severity threshold turns
+    "we did not look" into "we looked and found nothing", which is the single
+    failure this project exists to prevent -- and it would be reachable by one
+    line in a configuration file that the scan target itself supplies.
+
+    A field rather than a rule-id prefix so it survives a rule being renamed,
+    and so a reporter or a filter cannot get the test subtly wrong.
+    """
+
+    degrades_coverage: bool = False
+    """Whether producing this finding means the scan examined less than it should.
+
+    Set by a detector that reached a limit of its own -- a query ceiling, a time
+    budget, an unreachable service -- and read by the engine, which clears
+    `ScanResult.complete`. The engine can see that a file was unreadable or that
+    a walk was cut short, and it cannot see that a detector asked about two
+    hundred of two hundred and fifty dependencies and gave up on the rest.
+
+    Without this the registry detector reported that packages had gone unchecked
+    while the result still said `complete: true`, so `--fail-on-incomplete`
+    passed a scan whose entire network layer had failed.
+    """
+
+    fingerprint: str = field(default="", compare=False)
+
+    def __post_init__(self) -> None:
+        # Derived rather than supplied, so it can never disagree with the finding
+        # it identifies. object.__setattr__ is the standard escape hatch for
+        # computed fields on a frozen dataclass.
+        if not self.fingerprint:
+            object.__setattr__(self, "fingerprint", self.compute_fingerprint())
+        if self.threat_domain is None:
+            object.__setattr__(self, "threat_domain", Taxonomy.domain_of(self.rule_id))
+        if self.attack_category is None:
+            object.__setattr__(self, "attack_category", Taxonomy.category_of(self.rule_id))
+
+    def compute_fingerprint(self) -> str:
+        """A stable identity that survives reformatting and code movement.
+
+        Four separate features depend on this field: deduplication, baseline
+        comparison, suppression matching, and SARIF ``partialFingerprints``,
+        which is what stops a code-scanning platform raising a fresh alert for
+        every existing finding each time a file is reformatted.
+
+        Line and column are deliberately excluded. Including position is the
+        common mistake, and it is fatal to adoption: adding an import at the top
+        of a file shifts every line below it, every alert in that file re-fires
+        as new, and people learn to dismiss the tool in bulk.
+
+        The inputs are the rule, the path, the enclosing symbol when known, and
+        the matched text with whitespace runs collapsed. Identifiers are
+        preserved, because a renamed variable genuinely is a different match.
+        """
+        normalized_match = ""
+        if self.rule_id.startswith("SECRET."):
+            # Not the value, in any form. A fingerprint is published (SARIF partialFingerprints,
+            # baselines, uploads) and rule, path and symbol are known to anyone who can read the
+            # report, so a fingerprint over the value's hash is a guessing oracle for the value.
+            # Two credentials of one kind in one file share a fingerprint and are reported once,
+            # with the occurrence count.
+            normalized_match = ""
+        elif self.evidence.snippet:
+            normalized_match = _WHITESPACE.sub(" ", self.evidence.snippet).strip()
+        elif self.evidence.match_hash:
+            normalized_match = self.evidence.match_hash
+
+        parts = (
+            self.rule_id,
+            self.location.package or self.location.path,
+            self.location.symbol or "",
+            normalized_match,
+        )
+        digest = hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()
+        return digest[:16]
+
+    @property
+    def is_suppressed(self) -> bool:
+        return self.suppressed is not None
+
+    def with_suppression(self, suppression: Suppression) -> Finding:
+        """Return a suppressed copy.
+
+        Suppressed findings are marked, never dropped. They remain in the JSON
+        and SARIF output because an auditor's first question is what the tool was
+        told to ignore, and that must be answerable from a report alone rather
+        than by reading every repository's configuration.
+        """
+        return replace(self, suppressed=suppression)
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "rule_id": self.rule_id,
+            "category": str(self.category),
+            "severity": str(self.severity),
+            "confidence": str(self.confidence),
+            "message": self.message,
+            "location": self.location.to_dict(),
+            "evidence": self.evidence.to_dict(),
+            "remediation": self.remediation,
+            "explanation": self.explanation.to_dict(),
+            "risk": self.risk.to_dict(),
+            "fingerprint": self.fingerprint,
+            "detector": self.detector,
+            "rule_version": self.rule_version,
+            "rulepack": self.rulepack,
+            # Always emitted, never conditionally. A consumer filtering by
+            # threat class must be able to rely on the field being present:
+            # an absent key and an unclassified finding are indistinguishable
+            # to a filter, and one of them is a hole.
+            "threat_domain": str(self.threat_domain.value if self.threat_domain else "unspecified"),
+            "attack_category": str(
+                self.attack_category.value if self.attack_category else "unspecified"
+            ),
+        }
+        if self.references:
+            out["references"] = list(self.references)
+        if self.related:
+            out["related"] = list(self.related)
+        if self.capabilities:
+            out["capabilities"] = [str(c) for c in self.capabilities]
+        if self.occurrences != 1:
+            out["occurrences"] = self.occurrences
+        if self.suppressed is not None:
+            out["suppressed"] = self.suppressed.to_dict()
+        if self.always_report:
+            out["always_report"] = True
+        return out
+
+    def sort_key(self) -> tuple[Any, ...]:
+        """Total ordering for deterministic output.
+
+        Severity descending, then risk descending, then path, line, rule and
+        fingerprint ascending. Never completion order, which varies with worker
+        scheduling and would make output non-reproducible.
+        """
+        return (
+            -int(self.severity),
+            -self.risk.value,
+            self.location.path,
+            self.location.line or 0,
+            self.rule_id,
+            self.fingerprint,
+        )
+
+    # ---------------------------------------------------------------------------
+    # Rules
+    # ---------------------------------------------------------------------------
+
+    def with_file_hash(self, sha256: str) -> Finding:
+        """A copy of this finding recording the hash of the file it came from.
+
+        Applied once per file by whichever scan path produced the finding -- the serial
+        one in the engine and the worker in `ParallelScanner`, which is why it lives
+        here rather than in either. A finding about the repository or about a dependency
+        has no file and is returned unchanged.
+        """
+        if any(key == Finding.FILE_HASH_KEY for key, _ in self.evidence.metadata):
+            return self
+        return replace(
+            self,
+            evidence=replace(
+                self.evidence,
+                metadata=(*self.evidence.metadata, (Finding.FILE_HASH_KEY, sha256)),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RuleProvenance:
+    """Where a rule came from, and how protected it is.
+
+    Mandatory for ``category: malicious``.
+
+    Rules derived from a real incident are qualitatively different from rules
+    derived from reasoning: they are the only ones known to have matched
+    something that actually arrived. They are also the easiest to lose, because
+    they often look arbitrary out of context -- an opaque string constant with no
+    obvious meaning is exactly what a well-intentioned cleanup deletes, and a
+    refactor that reorganises a rule set can drop one while the diff appears to
+    show nothing but an improvement.
+
+    Marking provenance as ``incident`` makes such a rule structurally protected:
+    ``cordon rules diff`` fails when one is removed or weakened without an
+    explicit review trailer on the commit.
+    """
+
+    kind: str
+    """incident | research | advisory | community | synthetic"""
+    reference: str = ""
+    note: str = ""
+
+    @property
+    def protected(self) -> bool:
+        return self.kind == "incident"
+
+    def to_dict(self) -> dict[str, Any]:
+        out = {"kind": self.kind}
+        if self.reference:
+            out["reference"] = self.reference
+        if self.note:
+            out["note"] = self.note
+        return out
+
+
+@dataclass(frozen=True, slots=True)
+class RuleTests:
+    """Samples proving a rule fires, and samples proving it does not overfire.
+
+    Mandatory. A pack containing a rule without at least one positive and one
+    negative case fails to load.
+
+    This is not process ceremony. Detection rules fail silently by nature: a path
+    filter that no longer matches, a pattern invalidated by a syntax change, an
+    escaping error introduced during a refactor. The rule stops matching
+    anything, the scan still exits successfully, and nothing anywhere reports a
+    problem. The gate looks green precisely because the check is broken.
+
+    Executable samples turn that silent failure into a load-time error.
+    """
+
+    positive: tuple[str, ...] = ()
+    negative: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Rule:
+    """A loaded, validated detection rule.
+
+    Rules are data, not code. They are authored in YAML, versioned independently
+    of the engine, signed as a pack, and reviewable by a security team without
+    reading Python. That separation is what lets detection content ship on its
+    own cadence and be approved by the people qualified to approve it.
+    """
+
+    id: str
+    category: Category
+    severity: Severity
+    confidence: Confidence
+    title: str
+    message: str
+    remediation: str
+    match_kind: MatchKind
+    version: str = "0.0.0"
+    rulepack: str = "cordon-builtin"
+    languages: tuple[str, ...] = ()
+    ecosystems: tuple[str, ...] = ()
+    paths_include: tuple[str, ...] = ()
+    paths_exclude: tuple[str, ...] = ()
+    evidence_policy: RedactionMode = RedactionMode.MASKED
+    capability: Capability | None = None
+    provenance: RuleProvenance | None = None
+    tests: RuleTests = field(default_factory=RuleTests)
+    references: tuple[str, ...] = ()
+    enabled: bool = True
+    baseline_hits: int = 0
+    """Matches recorded against the benign corpus. A rule with a non-zero
+    baseline may not declare ``confidence: high``; the loader enforces it."""
+
+    raw: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    """The rule's source mapping, retained for pattern compilation and for
+    ``cordon rules show``."""
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "id": self.id,
+            "version": self.version,
+            "rulepack": self.rulepack,
+            "category": str(self.category),
+            "severity": str(self.severity),
+            "confidence": str(self.confidence),
+            "title": self.title,
+            "message": self.message,
+            "remediation": self.remediation,
+            "match_kind": str(self.match_kind),
+        }
+        if self.languages:
+            out["languages"] = list(self.languages)
+        if self.ecosystems:
+            out["ecosystems"] = list(self.ecosystems)
+        if self.capability:
+            out["capability"] = str(self.capability)
+        if self.provenance:
+            out["provenance"] = self.provenance.to_dict()
+        if self.references:
+            out["references"] = list(self.references)
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Repository inventory
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class LanguageStat:
+    language: str
+    files: int
+    bytes: int
+    share: float
+    evidence: tuple[str, ...] = ()
+    """What led to this conclusion. Inventory that cannot explain itself cannot
+    be debugged when it is wrong."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "language": self.language,
+            "files": self.files,
+            "bytes": self.bytes,
+            "share": round(self.share, 4),
+            "evidence": list(self.evidence),
+        }
+
+
+CONSUMER_TIME_HOOKS = frozenset({"preinstall", "install", "postinstall"})
+"""Lifecycle names a package manager runs when the package is installed AS A DEPENDENCY.
+
+These run on every machine that ever installs the package, transitively, as the user,
+with no review in between. `postinstall` is the npm attack shape."""
+
+AUTHOR_TIME_HOOKS = frozenset(
+    {
+        "prepare",
+        "prepublish",
+        "prepack",
+        "prepublishonly",
+        "postpack",
+        "postpublish",
+        "dependencies",
+    }
+)
+"""Lifecycle names that run on the AUTHOR's machine rather than on a consumer's.
+
+npm has documented the difference since version 7. `prepare` runs on a local install in
+the package's own directory and before `npm pack`; the publish hooks run only while
+publishing. None of them fires for a package installed from a registry tarball, which is
+how every transitive dependency arrives. `postpack` runs beside `prepack`, `postpublish` after a
+publish, and `dependencies` when the author's own `node_modules` changes; graded as consumer
+hooks, `postpack` scripts were what blocked two benign MCP servers (review 98).
+
+Read in two places, and the second one took a further pass to find. The manifest detector
+grades `SUSPECT.INSTALL.SCRIPT.001` by it; the engine excludes the SCRIPT THESE NAME from
+`install_hook_paths`, because marking the target file install-time is what put
+`MALWARE.ANTI_ANALYSIS.001` at critical on `n8n`'s three-line `scripts/prepare.mjs` --
+the file the anti-analysis composite's own comment cites as the false positive it was
+corrected for.
+
+What this gives up is the git-dependency case: `prepare` does run for a dependency
+installed from a git URL. That risk is reported by the rule that is actually about it --
+`SUSPECT.DEPENDENCY.SOURCE.001`, a dependency from a non-registry source -- rather than
+by treating every author-time script in every repository as install-time code."""
+
+INSTALL_TIME_HOOKS = CONSUMER_TIME_HOOKS | AUTHOR_TIME_HOOKS
+"""Every lifecycle name that runs without anybody asking for it."""
+
+
+@dataclass(frozen=True, slots=True)
+class Hook:
+    """A path that executes during install, build, or a version-control action.
+
+    First-class in the inventory because execution context is the largest single
+    risk multiplier in the scoring model.
+
+    The same capability pair means different things in different places. Reading
+    an environment variable and making an HTTP request is what an application
+    does all day. The identical pair inside a package's install hook is a
+    credential harvester, because that code runs unprompted, as the developer,
+    with the developer's full environment, before any test, review, container
+    boundary or network policy has had a chance to apply.
+
+    Identifying these paths up front is therefore not a convenience. It is what
+    lets the same rule be quiet in application code and decisive where it counts.
+    """
+
+    kind: str
+    """postinstall | preinstall | prepare | build | githook | ci | make | startup (a `.pth` file)"""
+    path: str
+    name: str
+    command: str = ""
+    ecosystem: str | None = None
+
+    @property
+    def action_step(self) -> bool:
+        """A published GitHub action's composite step: CI code on its consumers' runners, read in
+        CI context and never as an install hook or a lifecycle script (review 98)."""
+        return self.ecosystem == "actions" and self.name.startswith("steps-")
+
+    def to_dict(self) -> dict[str, Any]:
+        out = {"kind": self.kind, "path": self.path, "name": self.name}
+        if self.command:
+            out["command"] = self.command
+        if self.ecosystem:
+            out["ecosystem"] = self.ecosystem
+        return out
+
+
+@dataclass(frozen=True, slots=True)
+class Project:
+    """A subtree with its own manifest.
+
+    A monorepo is N projects, not one repository with a mixed file list. Modelling
+    it that way is what makes detector selection correct: a Python service and a
+    TypeScript front end in the same tree get different detectors, different
+    ecosystem parsers and different language rules, scoped to their own subtree.
+
+    Without this, a polyglot repository gets the union of every rule applied to
+    every file, which produces both false positives (JavaScript rules firing on
+    Python strings) and false negatives (a rule disabled because it was noisy
+    somewhere unrelated).
+    """
+
+    path: str
+    ecosystem: str | None = None
+    manifests: tuple[str, ...] = ()
+    lockfiles: tuple[str, ...] = ()
+    languages: tuple[str, ...] = ()
+    framework: str | None = None
+    name: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"path": self.path}
+        for key in ("name", "ecosystem", "framework"):
+            value = getattr(self, key)
+            if value:
+                out[key] = value
+        for key in ("manifests", "lockfiles", "languages"):
+            value = getattr(self, key)
+            if value:
+                out[key] = list(value)
+        return out
+
+
+@dataclass(frozen=True, slots=True)
+class Repository:
+    """What the scan target actually is.
+
+    Produced by the inventory phase and consumed by every detector's
+    applicability check, which is what makes scanner selection automatic rather
+    than configured. A user should not have to declare that their repository
+    contains Terraform; the tool should observe it and act accordingly.
+    """
+
+    root: str
+    """Absolute path to the scan target.
+
+    Serialised as its basename. `Location.path` promises results are "safe to
+    publish", and the absolute root is what makes them not: in CI it exposes
+    runner directory layouts, internal project names and sometimes usernames,
+    into artefacts routinely uploaded to third parties and attached to pull
+    requests. The name of the thing scanned is the part that carries meaning
+    across machines."""
+
+    is_git: bool = False
+
+    scanned_repository_root: bool = False
+    """Whether the scan target IS the repository root, not a directory inside one.
+
+    `is_git` answers "is there a repository above this", which is a different
+    question and was being used for this one. Scanning
+    `corpus/malicious/acme-telemetry` from inside a checkout reports `is_git` true,
+    because a repository is above it -- so a check that read `is_git` as "this is
+    the project being developed here" treated every downloaded package, extracted
+    archive and audited subdirectory inside any checkout as first-party code.
+
+    Kept out of `to_dict` deliberately. It is an input to severity, not a fact
+    about the code that a consumer of the report needs; `root` and `revision`
+    already say what was scanned.
+    """
+
+    revision: str | None = None
+    remote: str | None = None
+    branch: str | None = None
+    languages: tuple[LanguageStat, ...] = ()
+    projects: tuple[Project, ...] = ()
+    ecosystems: tuple[str, ...] = ()
+    ci_systems: tuple[str, ...] = ()
+    build_systems: tuple[str, ...] = ()
+    containers: tuple[str, ...] = ()
+    iac: tuple[str, ...] = ()
+    hooks: tuple[Hook, ...] = ()
+    file_count: int = 0
+    total_bytes: int = 0
+
+    @property
+    def public_root(self) -> str:
+        """The scan target's name, without the path that led to it."""
+        cleaned = self.root.replace("\\", "/").rstrip("/")
+        return cleaned.rpartition("/")[2] or cleaned or "."
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "root": self.public_root,
+            "is_git": self.is_git,
+            "revision": self.revision,
+            "remote": self.remote,
+            "branch": self.branch,
+            "languages": [x.to_dict() for x in self.languages],
+            "projects": [p.to_dict() for p in self.projects],
+            "ecosystems": list(self.ecosystems),
+            "ci_systems": list(self.ci_systems),
+            "build_systems": list(self.build_systems),
+            "containers": list(self.containers),
+            "iac": list(self.iac),
+            "hooks": [h.to_dict() for h in self.hooks],
+            "file_count": self.file_count,
+            "total_bytes": self.total_bytes,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Dependency:
+    """One node in the resolved dependency graph.
+
+    Built by parsing the lockfile, never by invoking the package manager and
+    never by resolving over the network. Running the ecosystem's own resolver to
+    learn the graph would mean executing untrusted tooling against
+    attacker-controlled metadata, inside the tool whose entire purpose is to
+    avoid exactly that. It would also make results non-reproducible, since a
+    resolver consults a live registry.
+
+    ``integrity`` is the lockfile's own hash for the artefact. Comparing it
+    against a baseline enables one of the highest-signal checks available: an
+    integrity hash that changed while the version did not means the registry
+    content was replaced under a name that had already been reviewed.
+    """
+
+    purl: str
+    """Package URL. The cross-ecosystem identity, so findings, intelligence and
+    advisories can be correlated without per-ecosystem special cases."""
+
+    ecosystem: str
+    name: str
+    version: str | None = None
+    direct: bool = False
+
+    local: bool = False
+    """This dependency is the project's own code: a workspace member, a path
+    dependency, a linked package. It has no registry hash because the bytes are in
+    the repository and are reviewed as source. Carried from `LockEntry.local`, where
+    the reasoning is written down."""
+
+    depth: int = 0
+    scope: Scope = Scope.RUNTIME
+    resolved_from: str | None = None
+    integrity: str | None = None
+    parents: tuple[str, ...] = ()
+    declared_spec: str | None = None
+    project: str | None = None
+
+    repository: str | None = None
+    """The source repository this package claims, as its manifest records it.
+
+    Carried so it can be compared with what the registry says the artefact was
+    built from. The two disagreeing is the shape of a package that points
+    reviewers at code it was not built from: reading the linked repository
+    proves nothing about what was published, and the link is the thing most
+    people check."""
+
+    declared_in: str | None = None
+    """The lockfile that resolved this dependency.
+
+    Findings about a dependency had `Location(path=dep.project or "")`, and for
+    a single-project repository `project` is None -- so every typosquat,
+    integrity and source finding carried an empty `artifactLocation.uri` in
+    SARIF. GitHub code scanning cannot anchor an alert to an empty URI, so the
+    whole dependency layer was invisible in the integration that is the
+    product's main CI story."""
+
+    license: str | None = None
+    """As the resolving lockfile declares it, verbatim. `None` means the
+    format this dependency was resolved from does not carry license data
+    offline, not that the dependency has no license -- `detect/license.py`
+    is the only reader, and it treats the two identically (nothing to
+    report) rather than guessing at the difference."""
+
+    platform: tuple[str, ...] = ()
+    """The conditions under which this dependency applies, as the file wrote them: an
+    environment marker (`sys_platform == "win32"`), npm's `os`/`cpu`, a Cargo `cfg(...)` target,
+    a .NET target framework, a Gem platform. Empty means unconditional or not recorded."""
+
+    manifest_path: str | None = None
+    """The manifest that declared it, when it is direct and a manifest beside the lockfile names
+    it. `declared_in` is the file that resolved it; the two are different questions."""
+    manifest_line: int | None = None
+    lockfile_line: int | None = None
+
+    dependency_path: tuple[str, ...] = ()
+    """One chain of package names from a direct dependency down to this one: how it arrived."""
+
+    advisory_status: str = "not_checked"
+    malware_status: str = "not_checked"
+    integrity_status: str = "not_checked"
+    provenance_status: str = "not_checked"
+    licence_status: str = "not_checked"
+    """What each check concluded, never one boolean. "No vulnerability found" and "the check
+    did not run" are different answers; see `core/inventory.py` for every value and its meaning."""
+
+    finding_ids: tuple[str, ...] = ()
+    """Fingerprints of the findings about this dependency."""
+
+    resolution_note: str | None = None
+    """Why it is unresolved, when the parser or engine knows better than the generic reason."""
+
+    resolved_by: str | None = None
+    """What fixed the version when it was not the dependency's own file: `the constraints file
+    constraints.txt` for a range a pip `-c` pin resolves."""
+
+    alias: str | None = None
+    """The name the project declared it under, when that is not the package's own."""
+
+    bundled: bool = False
+    """It arrives inside another package's archive and is verified by that archive's hash. See
+    `LockEntry.bundled`."""
+
+    signatures: tuple[str, ...] = ()
+    """Detached signatures recorded with the installed package, over `signed`. See
+    `LockEntry.signatures`. Not in any report: the provenance detector verifies them."""
+
+    signed: bytes | None = field(default=None, repr=False)
+    """The bytes `signatures` cover. See `LockEntry.signed`."""
+
+    signature_sources: tuple[str, ...] = ()
+    """Where the declaration says its signatures are. See `DeclaredDependency.signature_sources`."""
+
+    extras: tuple[str, ...] = ()
+    """Optional features requested (`requests[socks]`, Cargo features). See
+    `DeclaredDependency.extras`."""
+
+    editable: bool = False
+    """Installed in place from a working tree (`pip install -e`)."""
+
+    exclusions: tuple[str, ...] = ()
+    """Transitive dependencies the declaration excludes (Maven `<exclusions>`)."""
+
+    forced_by: str | None = None
+    """The override that pins this version across the tree (npm `overrides`, Yarn `resolutions`,
+    pnpm `pnpm.overrides`, Composer and Cargo equivalents), as `<spec> in <file>`. An upgrade
+    anywhere else does not move it; the override must change."""
+
+    deprecated: str | None = None
+    """What the lockfile records about the package's maintenance, when it does: Composer writes
+    `"abandoned": "symfony/mailer"` for a package its maintainer abandoned. Offline evidence the
+    registry check would otherwise need the network for."""
+
+    def _resolved_by_lockfile(self) -> bool:
+        """Whether `declared_in` is a lockfile (it may also be the manifest: a pinned
+        `requirements.txt` is both)."""
+        if not self.declared_in:
+            return False
+        if self.declared_in != self.manifest_path:
+            return True
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return (
+            EcosystemRegistry.lockfile_ecosystem(self.declared_in) is not None
+            and self.version is not None
+        )
+
+    @property
+    def namespace(self) -> str | None:
+        from cordon_scanner.engine.inventory import DependencyIdentity
+
+        # A Homebrew formula from a named tap is recorded by its own name, its tap the namespace
+        # its full name (`user/repo/name`, kept as the alias) carries.
+        name = self.alias if self.ecosystem == "homebrew" and self.alias else self.name
+        return DependencyIdentity.namespace(self.ecosystem, name)
+
+    @property
+    def source(self) -> tuple[str, str | None]:
+        """`(source_type, source_url)`; the URL never carries credentials."""
+        from cordon_scanner.engine.inventory import DependencySource
+
+        return DependencySource.classify(self)
+
+    @property
+    def resolution(self) -> tuple[str, str]:
+        """`(resolution_status, reason)`."""
+        from cordon_scanner.engine.inventory import DependencyResolution
+
+        return DependencyResolution.status(self)
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "purl": self.purl,
+            "ecosystem": self.ecosystem,
+            "name": self.name,
+            "direct": self.direct,
+            "depth": self.depth,
+            "scope": str(self.scope),
+        }
+        for key in (
+            "version",
+            "resolved_from",
+            "integrity",
+            "declared_spec",
+            "project",
+            "declared_in",
+            "license",
+        ):
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = value
+        if self.parents:
+            out["parents"] = list(self.parents)
+        source_type, source_url = self.source
+        status, reason = self.resolution
+        # The shared dependency record: the same keys for every ecosystem.
+        out["record"] = {
+            "ecosystem": self.ecosystem,
+            "name": self.name,
+            "declared_name": self.alias or self.name,
+            "namespace": self.namespace,
+            "version_constraint": self.declared_spec,
+            "resolved_version": (self.version or None)
+            if status in ("resolved", "partially_resolved")
+            else None,
+            "resolution_status": status,
+            "resolution_reason": reason,
+            "source_type": source_type,
+            "source_url": source_url,
+            "integrity": self.integrity,
+            "direct": self.direct,
+            "dependency_path": list(self.dependency_path or (self.name,)),
+            "dependency_type": str(self.scope),
+            "platform_constraints": list(self.platform),
+            "manifest_location": (
+                {"path": self.manifest_path, "line": self.manifest_line}
+                if self.manifest_path
+                else None
+            ),
+            "lockfile_location": (
+                {"path": self.declared_in, "line": self.lockfile_line}
+                if self._resolved_by_lockfile()
+                else None
+            ),
+            "advisory_status": self.advisory_status,
+            "malware_status": self.malware_status,
+            "integrity_status": self.integrity_status,
+            "provenance_status": self.provenance_status,
+            "licence_status": self.licence_status,
+            "findings": list(self.finding_ids),
+            "overridden_by": self.forced_by,
+            "deprecated": self.deprecated,
+            "extras": list(self.extras),
+            "editable": self.editable,
+            "exclusions": list(self.exclusions),
+        }
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Scan result
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ScanStats:
+    files_scanned: int = 0
+    files_skipped: int = 0
+    bytes_scanned: int = 0
+    dependencies: int = 0
+    rules_evaluated: int = 0
+    duration_ms: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    archives_expanded: int = 0
+    """Archives inside a directory scan that were opened and their members scanned."""
+    archive_members: int = 0
+    archive_ms: int = 0
+    """Wall time spent expanding archives, so the cost of opening them is visible."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "archives_expanded": self.archives_expanded,
+            "archive_members": self.archive_members,
+            "archive_ms": self.archive_ms,
+            "files_scanned": self.files_scanned,
+            "files_skipped": self.files_skipped,
+            "bytes_scanned": self.bytes_scanned,
+            "dependencies": self.dependencies,
+            "rules_evaluated": self.rules_evaluated,
+            "duration_ms": self.duration_ms,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ScanResult:
+    """Everything a scan produced. The aggregate root of the domain.
+
+    ``complete`` is the field a pipeline must be able to see. A scan that hit its
+    timeout, or skipped files it could not read, is not a clean scan, and
+    reporting it as one is a false negative dressed as a pass. Making
+    completeness an explicit property with its own exit code lets a release
+    pipeline demand a full scan while a pre-commit hook tolerates a partial one.
+
+    ``rulepack_hash`` and ``config_hash`` make a result self-describing: months
+    later it is still possible to say exactly which rules and which settings
+    produced it, which is what auditability actually requires.
+    """
+
+    findings: tuple[Finding, ...] = ()
+    repository: Repository | None = None
+    dependencies: tuple[Dependency, ...] = ()
+    stats: ScanStats = field(default_factory=ScanStats)
+    complete: bool = True
+    content_complete: bool = True
+    """Every file's content was read (review 98, REC-5). `complete` is this AND `advisory_complete`,
+    kept for every pipeline that already reads it."""
+    advisory_complete: bool = True
+    """Every dependency was checked against an advisory or registry source and the intel was
+    current. Its absence is reported; it is no reason to call a package's content unread."""
+    schema_version: int = 1
+    engine_version: str = "0.0.0"
+    rulepack_version: str = "0.0.0"
+    rulepack_hash: str = ""
+    config_hash: str = ""
+    intel: dict[str, Any] | None = None
+    """How current the threat intel behind this scan was: its source, age and feed serial.
+    See `intel/feed.IntelStatus`. None for a result built outside a scan."""
+    sources: tuple[tuple[str, str, str], ...] = ()
+    """`(file, ecosystem, source)` for every package source a project configures -- a pip index,
+    a Cargo registry or source replacement, a Composer repository, a NuGet feed -- with any
+    credentials removed. Where resolution looks is what dependency confusion turns on."""
+    image: dict[str, Any] | None = None
+    """The scanned image's identity (`images.oci.ImageIdentity`): its ID and manifest digest, the
+    names it was saved under, its layers, its platform and the base image its labels name."""
+    target_kind: str = "source"
+    """What was scanned: ``source`` (a directory or repository), ``image`` (a container image
+    archive, read layer by layer), ``package`` (a published package's distribution archive),
+    ``archive`` (any other archive), ``sbom`` (a bill of materials it was given) or ``host`` (an
+    installed system, `scan --host`). Sent with an upload so the console can tell them apart."""
+    verdict: dict[str, Any] | None = None
+    """The package verdict (`core/verdict.py`): the features it read and, with a model shipped, its
+    score and thresholds."""
+
+    @property
+    def active(self) -> tuple[Finding, ...]:
+        """Findings that are not suppressed. What a policy gate evaluates."""
+        return tuple(f for f in self.findings if not f.is_suppressed)
+
+    @property
+    def suppressed(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.is_suppressed)
+
+    def by_severity(self) -> dict[Severity, int]:
+        counts = dict.fromkeys(Severity, 0)
+        for finding in self.active:
+            counts[finding.severity] += 1
+        return counts
+
+    def by_category(self) -> dict[Category, int]:
+        counts = dict.fromkeys(Category, 0)
+        for finding in self.active:
+            counts[finding.category] += 1
+        return counts
+
+    def filter(
+        self,
+        *,
+        min_severity: Severity | None = None,
+        min_confidence: Confidence | None = None,
+        categories: Sequence[Category] | None = None,
+    ) -> ScanResult:
+        selected = [
+            f
+            for f in self.findings
+            if (min_severity is None or f.severity >= min_severity)
+            and (min_confidence is None or f.confidence >= min_confidence)
+            and (categories is None or f.category in categories)
+        ]
+        return replace(self, findings=tuple(selected))
+
+    def sorted(self) -> ScanResult:
+        return replace(self, findings=tuple(sorted(self.findings, key=Finding.sort_key)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return (
+            {
+                "schema_version": self.schema_version,
+                "engine_version": self.engine_version,
+                "rulepack_version": self.rulepack_version,
+                "rulepack_hash": self.rulepack_hash,
+                "config_hash": self.config_hash,
+                "complete": self.complete,
+                "content_complete": self.content_complete,
+                "advisory_complete": self.advisory_complete,
+                "intel": self.intel,
+                "stats": self.stats.to_dict(),
+                "repository": self.repository.to_dict() if self.repository else None,
+                "dependencies": [d.to_dict() for d in self.dependencies],
+                "sources": [{"path": p, "ecosystem": e, "source": s} for p, e, s in self.sources],
+                "findings": [f.to_dict() for f in self.findings],
+            }
+            | ({"image": self.image} if self.image is not None else {})
+            | ({"verdict": self.verdict} if self.verdict is not None else {})
+        )
+
+
+__all__ = [
+    "Capability",
+    "Category",
+    "Confidence",
+    "Dependency",
+    "Evidence",
+    "EvidenceKind",
+    "Explanation",
+    "Finding",
+    "Hook",
+    "LanguageStat",
+    "Location",
+    "MatchKind",
+    "Project",
+    "RedactionMode",
+    "Repository",
+    "RiskFactor",
+    "RiskScore",
+    "Rule",
+    "RuleProvenance",
+    "RuleTests",
+    "ScanResult",
+    "ScanStats",
+    "Scope",
+    "Severity",
+    "Suppression",
+]

@@ -357,7 +357,7 @@ class Environment:
 
     @classmethod
     def _intel(cls) -> tuple[str, str]:
-        from cordon_scanner.intel import feed
+        from cordon_scanner.intel.malware import feed
 
         status = feed.FeedClient.status(use_feed=False, max_age=None)
         source = "bundled" if status.source == "package" else status.source
@@ -367,8 +367,8 @@ class Environment:
         return f"{source} · {age}", "ok"
 
     def _policy(self) -> tuple[str, str]:
-        from cordon_scanner.core.config import CONFIG_FILENAMES, Config
-        from cordon_scanner.core.errors import CordonError
+        from cordon_scanner.foundation.config import CONFIG_FILENAMES, Config
+        from cordon_scanner.foundation.errors import CordonError
 
         name = next((n for n in CONFIG_FILENAMES if (self.cwd / n).is_file()), None)
         if name is None:
@@ -408,7 +408,7 @@ class Environment:
 
     @staticmethod
     def _runs_cordon(text: str) -> bool:
-        from cordon_scanner.core.guard import SHIM_MARKER
+        from cordon_scanner.engine.guard import SHIM_MARKER
 
         return SHIM_MARKER in text or "cordon-scanner" in text or "cordon-scan" in text
 
@@ -799,7 +799,7 @@ class HelpCommand:
 
     @staticmethod
     def run(args: argparse.Namespace, *, parser: ColourArgumentParser) -> int:
-        from cordon_scanner.core.errors import ExitCode
+        from cordon_scanner.foundation.errors import ExitCode
 
         topic: list[str] = list(getattr(args, "topic", None) or [])
         current = parser

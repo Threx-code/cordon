@@ -16,12 +16,12 @@ import re
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config
-from cordon_scanner.core.errors import ConfigError
-from cordon_scanner.core.models import Category, Confidence
-from cordon_scanner.core.registry import Registry
-from cordon_scanner.detect.advisory import AdvisoryDetector
-from cordon_scanner.intel.advisories import BUNDLED, Advisory, AdvisoryDatabase
+from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+from cordon_scanner.engine.registry import Registry
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.errors import ConfigError
+from cordon_scanner.foundation.models import Category, Confidence
+from cordon_scanner.intel.advisories.advisories import BUNDLED, Advisory, AdvisoryDatabase
 
 
 class ReviewAdvisoriesHelpers:
@@ -59,7 +59,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
 
     def test_every_record_names_a_reference(self) -> None:
         """So a reader can check it rather than trust it."""
-        from cordon_scanner.intel.advisories import BUNDLED
+        from cordon_scanner.intel.advisories.advisories import BUNDLED
 
         for advisory in BUNDLED:
             assert advisory.reference.startswith("http"), advisory.name
@@ -86,7 +86,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
         a "duplicate" of its Maven sibling, so a Gradle project matched
         nothing at all. Regression for that.
         """
-        import cordon_scanner.intel.advisories as advisories_module
+        import cordon_scanner.intel.advisories.advisories as advisories_module
 
         record = {
             "name": "org.example:lib",
@@ -113,7 +113,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
         (ecosystem, identifier) kept whichever arrived first and the other two
         matched nothing.
         """
-        import cordon_scanner.intel.advisories as advisories_module
+        import cordon_scanner.intel.advisories.advisories as advisories_module
 
         def record(name: str) -> dict[str, object]:
             return {
@@ -139,7 +139,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
         several records sharing an identifier. Each describes a different window,
         so dropping the later ones loses the versions they name.
         """
-        import cordon_scanner.intel.advisories as advisories_module
+        import cordon_scanner.intel.advisories.advisories as advisories_module
 
         def window(introduced: str, fixed: str) -> dict[str, object]:
             return {
@@ -198,8 +198,8 @@ class TestKnownMaliciousDependency(ReviewAdvisoriesFixtures):
         assert finding.category is Category.MALICIOUS
 
     def test_it_fails_the_build(self, project) -> None:
-        from cordon_scanner.core.errors import ExitCode
-        from cordon_scanner.core.policy import PolicyGate
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.foundation.errors import ExitCode
 
         (project / "package-lock.json").write_text(
             ReviewAdvisoriesHelpers.lockfile(

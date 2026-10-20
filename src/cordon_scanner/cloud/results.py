@@ -29,7 +29,7 @@ from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
     from cordon_scanner.cloud.auth import Credentials
-    from cordon_scanner.core.models import ScanResult
+    from cordon_scanner.foundation.models import ScanResult
 
 STATEMENT_TYPE: Final = "https://in-toto.io/Statement/v1"
 PREDICATE_TYPE: Final = "https://cordon.dev/attestations/scan-results/v1"

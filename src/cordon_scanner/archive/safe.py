@@ -34,8 +34,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, cast
 
-from cordon_scanner.core.errors import ArchiveError
-from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -890,7 +890,7 @@ class _BudgetedStream:
 
             return zstandard.ZstdDecompressor().stream_reader(raw)
         except ImportError:
-            from cordon_scanner.intel.zstd import Zstd
+            from cordon_scanner.intel.store.zstd import Zstd
 
             return Zstd.Reader(raw.getvalue(), limit)
 

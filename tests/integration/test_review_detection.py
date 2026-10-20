@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config
+from cordon_scanner.foundation.config import Config
 
 PRIVILEGED_POD = """apiVersion: v1
 kind: Pod
@@ -220,12 +220,12 @@ class TestH10UnquotedSecrets:
 
     def test_an_entry_point_declaration_is_not_a_credential(self, tmp_path) -> None:
         """This project's own pyproject.toml declares
-        `secrets = "cordon_scanner.detect.secrets:SecretDetector"` -- a name containing
+        `secrets = "cordon_scanner.detect.secrets.secrets:SecretDetector"` -- a name containing
         `secret`, a 36-character quoted value, high entropy, three character
         classes, and not a credential."""
         (tmp_path / "pyproject.toml").write_text(
             '[project.entry-points."cordon_scanner.detectors"]\n'
-            'secrets = "cordon_scanner.detect.secrets:SecretDetector"\n',
+            'secrets = "cordon_scanner.detect.secrets.secrets:SecretDetector"\n',
             encoding="utf-8",
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDetectionHelpers.rule_ids(tmp_path)
@@ -256,7 +256,7 @@ class TestReportedLocationsAreExact:
 
     def scan(self, root):
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         return Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
 

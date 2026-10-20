@@ -23,8 +23,8 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config, RestrictedYamlParser
-from cordon_scanner.core.models import Category, Severity
+from cordon_scanner.foundation.config import Config, RestrictedYamlParser
+from cordon_scanner.foundation.models import Category, Severity
 from support import requires_corpus, requires_malicious_corpus
 
 pytestmark = requires_corpus
@@ -367,11 +367,11 @@ class TestSelfScan(CorpusFixtures):
             and f.location.path != "bench/agent_matrix.py"
             # The tool-call guard's tests are the calls it must refuse -- a cron write, an
             # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
-            and f.location.path != "tests/unit/test_tool_call_guard.py"
-            and f.location.path != "tests/unit/test_pattern_literals.py"
+            and f.location.path != "tests/unit/guard/test_tool_call_guard.py"
+            and f.location.path != "tests/unit/foundation/test_pattern_literals.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
-            and f.location.path != "tests/unit/test_recovered_misses.py"
-            and f.location.path != "tests/unit/test_agents.py"
+            and f.location.path != "tests/unit/detect/code/test_recovered_misses.py"
+            and f.location.path != "tests/unit/detect/agents/test_agents.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/skills_measure.py"
@@ -458,11 +458,11 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
 
     @staticmethod
     def _declared() -> dict[str, object]:
-        from cordon_scanner.detect.advisory import AdvisoryDetector
-        from cordon_scanner.detect.binary import BinaryDetector
-        from cordon_scanner.detect.dependency import DependencyDetector
-        from cordon_scanner.detect.lockfile import LockfileDetector
-        from cordon_scanner.detect.manifest import ManifestDetector
+        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+        from cordon_scanner.detect.supply.dependency import DependencyDetector
+        from cordon_scanner.detect.supply.lockfile import LockfileDetector
+        from cordon_scanner.detect.supply.manifest import ManifestDetector
 
         declared: dict[str, object] = {}
         for detector in (
@@ -480,7 +480,7 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
         from pathlib import Path
 
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         declared = self._declared()
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
@@ -495,7 +495,7 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
 
     def test_the_two_that_diverged_are_where_they_were_put(self) -> None:
         declared = self._declared()
-        from cordon_scanner.core.models import Severity
+        from cordon_scanner.foundation.models import Severity
 
         assert declared["POLICY.LOCKFILE.INTEGRITY.001"] == Severity.MEDIUM
         assert declared["SUSPECT.INSTALL.SCRIPT.001"] == Severity.HIGH

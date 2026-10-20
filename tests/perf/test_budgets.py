@@ -50,7 +50,7 @@ class BudgetsHelpers:
         So the ceiling is multiplied when the tier is present, rather than the
         published number being raised to cover an extra most installs do not have.
         """
-        from cordon_scanner.detect.ast_providers import AstProviders
+        from cordon_scanner.analysis.shared.ast_providers import AstProviders
 
         return AstProviders.ast_provider_for("javascript") is not None
 

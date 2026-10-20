@@ -13,8 +13,8 @@ from __future__ import annotations
 import json
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config
-from cordon_scanner.core.models import Category
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.models import Category
 
 
 class LicenseDetectorHelpers:
@@ -133,8 +133,8 @@ class TestPermissiveAndUnknownLicenses:
 
 class TestTaxonomy:
     def test_both_rules_are_classified_under_the_dependency_domain(self) -> None:
-        from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
-        from cordon_scanner.detect.license import COPYLEFT_RULE, WEAK_COPYLEFT_RULE
+        from cordon_scanner.detect.supply.license import COPYLEFT_RULE, WEAK_COPYLEFT_RULE
+        from cordon_scanner.foundation.taxonomy import Taxonomy, ThreatDomain
 
         assert Taxonomy.domain_of(COPYLEFT_RULE) is ThreatDomain.DEPENDENCY
         assert Taxonomy.domain_of(WEAK_COPYLEFT_RULE) is ThreatDomain.DEPENDENCY

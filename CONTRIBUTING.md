@@ -31,6 +31,27 @@ should say what it prevents and what it costs.
 
 **Coverage at or above 85 percent**, which CI enforces.
 
+## Where code goes
+
+```
+  src/cordon_scanner/
+    foundation/   shared types and utilities -- imports nothing above it
+    analysis/     reading code, per language -- facts, never verdicts
+    detect/       detectors, per area: code agents supply binary infra secrets source
+    decide/       package-level decisions: verdict, intent, scoring, policy, vex
+    engine/       running a scan
+    intel/        knowledge from outside the content: advisories malware registries
+                  provenance store
+    ecosystems/ sources/ images/ rules/ report/ cli/ ...   one purpose each
+
+  tests/unit/<place>/test_<module>.py     beside where the module lives
+  tests/unit/repository/ bench/ sandbox/  tests of the repository, the bench, the sandbox
+```
+
+A layer imports only the layers inside it (`docs/01-ARCHITECTURE.md`). Every module and every
+unit test has one line in `tests/unit/package_layout.json`; add yours in the same commit, and
+`tests/unit/repository/test_package_layout.py` fails until you do.
+
 ## Adding a detection rule
 
 Rules live in `src/cordon_scanner/rules/builtin/` as YAML and are data, not code:

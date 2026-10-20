@@ -67,7 +67,7 @@ jobs:
         run: python3 scripts/build_advisory_db.py
 
       - name: Check the result is still well formed
-        run: pytest -q tests/unit/test_osv_import.py tests/integration/test_review_advisories.py
+        run: pytest -q tests/unit/intel/advisories/test_osv_import.py tests/integration/test_review_advisories.py
 
       - name: Confirm a known incident is still reachable
         # The failure direction nobody would notice: a refresh that silently
@@ -79,7 +79,7 @@ jobs:
           python - <<'PY'
           import sys
 
-          from cordon_scanner.intel.advisories import AdvisoryDatabase
+          from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
           db = AdvisoryDatabase.bundled()
           if not db.matching("npm", "event-stream", "3.3.6"):

@@ -8,7 +8,7 @@ unreleased engine code. A breaking change is a new version (`v2`) served alongsi
 | K1 | Scan results and the finding fingerprint | `cordon-findings-v1.schema.json` | `cordon scan --format json` writes it |
 | K2 | Signed results upload | `cordon-upload-v1.schema.json` | `cordon scan --upload` sends it |
 | K3 | Organisation policy bundle | `cordon-policy-bundle-v1.schema.json` | `cordon scan --cloud-policy` verifies and applies it |
-| K4 | Intel feed | `src/cordon_scanner/intel/feed.py` (`cordon-feed/1`) | the scan verifies and applies it |
+| K4 | Intel feed | `src/cordon_scanner/intel/malware/feed.py` (`cordon-feed/1`) | the scan verifies and applies it |
 | K5 | Events and webhooks | `cordon-event-v1.schema.json` | `cordon scan --notify webhook` sends it |
 | K6 | Runner job protocol | this file, below | `cordon runner` leases, runs and reports jobs |
 | K7 | Sign-in and token exchange | this file, below | `cordon login`, and CI uploads |

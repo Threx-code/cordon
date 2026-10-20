@@ -39,7 +39,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from cordon_scanner.core.models import Finding, ScanResult, Severity
+from cordon_scanner.foundation.models import Finding, ScanResult, Severity
 from cordon_scanner.version import __version__
 
 CHANNELS: Final = ("webhook", "slack", "teams")

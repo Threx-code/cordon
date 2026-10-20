@@ -18,7 +18,7 @@
   per family: the share of the real samples showing it that Cordon blocks
 ```
 
-A row is a claim; real samples are its proof. `tests/unit/test_attack_coverage.py` fails when a
+A row is a claim; real samples are its proof. `tests/unit/bench/test_attack_coverage.py` fails when a
 catalogue id has no verdict, or an `outside` row gives no recorded reason.
 """
 

@@ -25,15 +25,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from cordon_scanner.core.content import FileContent
+from cordon_scanner.foundation.content import FileContent
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from cordon_scanner.core.content import Skipped
-    from cordon_scanner.core.limits import Limits
-    from cordon_scanner.core.walker import WalkEntry, Walker
+    from cordon_scanner.engine.walker import WalkEntry, Walker
+    from cordon_scanner.foundation.content import Skipped
+    from cordon_scanner.foundation.limits import Limits
 
 
 @runtime_checkable

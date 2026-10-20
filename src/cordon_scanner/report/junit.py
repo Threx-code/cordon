@@ -17,13 +17,13 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape, quoteattr
 
-from cordon_scanner.core.models import Category
+from cordon_scanner.foundation.models import Category
 from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding, ScanResult
 
 
 class JunitReporter(BaseReporter):

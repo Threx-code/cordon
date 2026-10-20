@@ -33,8 +33,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
-from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
-from cordon_scanner.core.models import Dependency, Severity
+from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
+from cordon_scanner.foundation.models import Dependency, Severity
 
 #: Files read from the base revision: at most this many, each at most this size.
 MAX_BASE_FILES = 2_000
@@ -134,7 +134,7 @@ class GraphDiff:
     def graph(target: Path) -> tuple[Dependency, ...]:
         """The resolved graph only: lockfiles and manifests read, no detector run."""
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         return (
             Scanner(Config.default().with_overrides(use_cache=False), detectors=())
@@ -145,7 +145,7 @@ class GraphDiff:
     @staticmethod
     def diff(old: tuple[Dependency, ...], new: tuple[Dependency, ...]) -> list[PackageChange]:
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
-        from cordon_scanner.intel.versions import Versions
+        from cordon_scanner.intel.advisories.versions import Versions
 
         def index(graph: tuple[Dependency, ...]) -> dict[tuple[str, str], tuple[set[str], bool]]:
             out: dict[tuple[str, str], tuple[set[str], bool]] = {}
@@ -197,7 +197,7 @@ class ChangeReview:
 
     @staticmethod
     def advisories(changes: list[PackageChange]) -> None:
-        from cordon_scanner.intel.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         database = AdvisoryDatabase.bundled()
         for change in changes:
@@ -230,9 +230,9 @@ class ChangeReview:
         import sys
 
         from cordon_scanner import Scanner
-        from cordon_scanner.core import release_diff
-        from cordon_scanner.core.config import Config
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.detect.supply import release_diff
+        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         candidates = [c for c in changes if c.new is not None]
         candidates.sort(key=lambda c: (not c.direct, c.kind != "added"))

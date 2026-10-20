@@ -24,10 +24,10 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.cache import KEY_NAME, ScanCache
-from cordon_scanner.core.config import Config, ConfigResolver
-from cordon_scanner.core.errors import ConfigError
-from cordon_scanner.core.models import Severity
+from cordon_scanner.engine.cache import KEY_NAME, ScanCache
+from cordon_scanner.foundation.config import Config, ConfigResolver
+from cordon_scanner.foundation.errors import ConfigError
+from cordon_scanner.foundation.models import Severity
 
 PAYLOAD_JSON = (
     '{"name":"x","version":"1.0.0","scripts":'
@@ -103,7 +103,7 @@ class TestC1GateCannotBeEmptiedByTheTarget:
         (root / "cordon.yaml").write_text(
             "version: 1\npolicy:\n  fail_on: [low]\n", encoding="utf-8"
         )
-        from cordon_scanner.core.models import Category
+        from cordon_scanner.foundation.models import Category
 
         config = ConfigResolver.resolve(root=root)
         assert Category.MALICIOUS in config.policy.fail_on_categories
@@ -223,13 +223,13 @@ class TestC3PluginTrustIsAnchoredOnLocation:
     def test_the_built_ins_still_load(self) -> None:
         """A location check that rejects everything would be a working fix and a
         broken product."""
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
 
         detectors = Registry().detectors()
         assert {d.id for d in detectors} >= {"capability", "manifest", "secrets"}
 
     def test_trust_is_not_decided_by_metadata_alone(self) -> None:
-        from cordon_scanner.core.registry import DISTRIBUTION, Registry
+        from cordon_scanner.engine.registry import DISTRIBUTION, Registry
 
         class Claim:
             name = "evilmod"

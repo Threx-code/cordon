@@ -206,7 +206,7 @@ class Parity:
         report.add(Static.workflows_parse())
         report.add(Static.dockerfile_inputs())
         tutorials = Shell.run(
-            "pytest -q -p no:cacheprovider tests/unit/test_tutorial_reference.py",
+            "pytest -q -p no:cacheprovider tests/unit/repository/test_tutorial_reference.py",
             env={"HOME": "/home/runner", "APPDATA": "C:\\Users\\runner\\AppData\\Roaming"},
         )
         tutorials.name = "generated tutorials, rendered under a runner's environment"

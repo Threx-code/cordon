@@ -5,7 +5,7 @@ into a private temporary directory and scanned offline. The verdict is therefore
 project would get -- malicious releases, known vulnerabilities, typosquats, documented AI
 hallucinations, manifest checks -- from the same detectors, not from a second implementation that
 could drift from them. Each form below was checked against a real affected release in each
-ecosystem (`tests/unit/test_mcp_packages.py`).
+ecosystem (`tests/unit/mcp/test_mcp_packages.py`).
 
 An install command (`npm install a b@2`, `pip install -r x`, `cargo add c`) is split into the
 packages it names, with what cannot be checked by name said rather than skipped: a URL, a git

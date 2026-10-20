@@ -523,7 +523,7 @@ class Server:
             print(f"cordon-scanner mcp: {exc}", file=sys.stderr)
             return 3
         if not args.allow_private_network:
-            from cordon_scanner.core.netguard import NetworkGuard
+            from cordon_scanner.engine.netguard import NetworkGuard
 
             # This process fetches too (an extension by id, following the registry's redirects):
             # the same rule as the scans it runs.

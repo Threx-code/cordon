@@ -16,8 +16,7 @@ import tomllib
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.models import Hook, Scope
-from cordon_scanner.core.pysyntax import PythonSyntax
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -25,9 +24,10 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
 
 # PEP 508: strip the version specifier, extras and environment marker from a
 # requirement to recover the bare name.

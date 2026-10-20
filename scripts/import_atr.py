@@ -58,7 +58,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from cordon_scanner.intel import atr
+from cordon_scanner.intel.malware import atr
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"

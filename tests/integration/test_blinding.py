@@ -27,10 +27,10 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config, ConfigResolver, OrgConstraints, Policy
-from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
-from cordon_scanner.core.models import Category, Confidence, Severity
-from cordon_scanner.core.policy import PolicyGate
+from cordon_scanner.decide.policy import PolicyGate
+from cordon_scanner.foundation.config import Config, ConfigResolver, OrgConstraints, Policy
+from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
+from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 # A suppression must expire within the tool's own ceiling, which applies whether
 # or not an organisation policy is configured.
@@ -366,7 +366,7 @@ class TestUnknownDetectorName:
     off all scanning while the pipeline stayed green."""
 
     def test_an_unknown_name_is_an_error(self, tmp_path) -> None:
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
 
         with pytest.raises(ConfigError) as exc:
             Registry().detectors(only=["secrest"])
@@ -375,14 +375,14 @@ class TestUnknownDetectorName:
     def test_the_error_lists_the_real_names(self, tmp_path) -> None:
         """Without this the fix converts a silent failure into a loud one that
         still does not say what to type."""
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
 
         with pytest.raises(ConfigError) as exc:
             Registry().detectors(only=["secrest"])
         assert "secrets" in (exc.value.hint or "")
 
     def test_a_correct_name_still_selects_it(self, tmp_path) -> None:
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
 
         loaded = Registry().detectors(only=["secrets"])
         assert [d.id for d in loaded] == ["secrets"]
@@ -390,7 +390,7 @@ class TestUnknownDetectorName:
     def test_one_bad_name_among_good_ones_is_still_an_error(self) -> None:
         """Otherwise the failure is worse than the original: it looks like it
         worked, and one check is missing."""
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
 
         with pytest.raises(ConfigError):
             Registry().detectors(only=["secrets", "capability", "typo"])
@@ -527,7 +527,7 @@ class TestNarrowedSourcesReportEmptySelection:
     traversal: the pipeline scanned nothing and reported success."""
 
     def test_a_source_that_selects_nothing_is_reported(self, tmp_path) -> None:
-        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.engine.engine import Engine
         from cordon_scanner.sources.git import GitPathSource
 
         root = tmp_path / "r"
@@ -545,7 +545,7 @@ class TestNarrowedSourcesReportEmptySelection:
         """A pre-commit hook fires on every commit, including ones that stage
         nothing. Failing there teaches people to pass --no-verify, which turns
         off every check rather than this one."""
-        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.engine.engine import Engine
         from cordon_scanner.sources.git import GitIndexSource, GitRepository
 
         root = tmp_path / "r"
@@ -563,7 +563,7 @@ class TestNarrowedSourcesReportEmptySelection:
 
     def test_it_is_still_reported_even_as_a_note(self, tmp_path) -> None:
         """Lowering the severity must not become hiding it."""
-        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.engine.engine import Engine
         from cordon_scanner.sources.git import GitIndexSource, GitRepository
 
         root = tmp_path / "r"

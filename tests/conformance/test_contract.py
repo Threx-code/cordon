@@ -33,8 +33,8 @@ class Proofs:
         """Whether `path` is a file of the kind a contract's representative name stands for:
         `app.csproj` is any project file the ecosystem's `**/*.csproj` glob matches, and the
         real file is `src/App/App.csproj`."""
-        from cordon_scanner.core.walker import PathGlob
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.engine.walker import PathGlob
 
         implementation = EcosystemRegistry.get(ecosystem)
         if implementation is None:

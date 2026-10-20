@@ -119,7 +119,7 @@ class TestFlagsExist(GitModesFixtures):
         string in another module, and nothing checked that the command it builds
         is one the CLI accepts.
         """
-        from cordon_scanner.core.guard import HOOK_COMMANDS
+        from cordon_scanner.engine.guard import HOOK_COMMANDS
 
         for command in HOOK_COMMANDS.values():
             args = command.split()
@@ -227,8 +227,8 @@ class TestSourceContract(GitModesFixtures):
 
     def test_the_engine_honours_the_refusal(self, tmp_path) -> None:
         """The property is only worth anything if the engine reads it."""
-        from cordon_scanner.core.config import Config
-        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.foundation.config import Config
 
         engine = Engine(Config.default(), source=GitIndexSource(GitRepository(tmp_path), []))
         assert engine.source.parallel_safe is False
@@ -238,9 +238,9 @@ class TestSourceContract(GitModesFixtures):
     ) -> None:
         """Falling back would reopen the bypass for any path an attacker can
         make unreadable from the index."""
-        from cordon_scanner.core.content import Skipped
-        from cordon_scanner.core.limits import DEFAULT_LIMITS
-        from cordon_scanner.core.walker import WalkEntry
+        from cordon_scanner.engine.walker import WalkEntry
+        from cordon_scanner.foundation.content import Skipped
+        from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
         source = GitIndexSource(GitRepository(repository), ["missing.js"])
         entry = WalkEntry(repository / "app.js", "missing.js", 10)

@@ -16,7 +16,7 @@ import re
 from functools import lru_cache
 from typing import Any, ClassVar
 
-from cordon_scanner.core.paths import ContainerPaths
+from cordon_scanner.foundation.paths import ContainerPaths
 
 
 # Extension to language. Ordered pairs rather than a mapping because some

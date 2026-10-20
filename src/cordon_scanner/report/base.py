@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import ScanResult
+    from cordon_scanner.foundation.models import ScanResult
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,10 +14,10 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.cache import ScanCache
-from cordon_scanner.core.config import Config
-from cordon_scanner.core.content import FileContent
-from cordon_scanner.core.errors import UnsafePatternError
+from cordon_scanner.engine.cache import ScanCache
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.errors import UnsafePatternError
 from cordon_scanner.rules.loader import PatternCompiler
 from support import requires_malicious_corpus
 
@@ -231,7 +231,7 @@ class TestC05PatternValidation:
         assert sum(len(p.rules) for p in packs) > 40
 
     def test_a_pathological_pattern_cannot_be_reached_through_a_pack(self, tmp_path) -> None:
-        from cordon_scanner.core.errors import CordonError
+        from cordon_scanner.foundation.errors import CordonError
         from cordon_scanner.rules.loader import RuleLoader
 
         pack = tmp_path / "evil.yaml"
@@ -262,7 +262,7 @@ class TestC05PerFileTimeout:
 
     def test_the_limit_is_read_by_the_engine(self) -> None:
         source = (
-            Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "core" / "engine.py"
+            Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "engine" / "engine.py"
         ).read_text(encoding="utf-8")
         assert "per_file_timeout" in source
 
@@ -348,7 +348,7 @@ class TestC06CacheAuthentication:
         import os
         import stat
 
-        from cordon_scanner.core.cache import ScanCache
+        from cordon_scanner.engine.cache import ScanCache
 
         self.warm(tmp_path)
         key = ScanCache.key_dir() / ".cordon-cache-key"
@@ -374,7 +374,7 @@ class TestC06CacheAuthentication:
         attacker chose. The entries must become misses, not clean results."""
         import secrets as secrets_module
 
-        from cordon_scanner.core.cache import KEY_NAME, ScanCache
+        from cordon_scanner.engine.cache import KEY_NAME, ScanCache
 
         repo, cache, cfg = self.warm(tmp_path)
         for entry in cache.rglob("*.json"):
@@ -435,7 +435,7 @@ class TestH13EvidenceCacheLeak:
         first = Scanner(warm).scan(repo).findings
         assert any(f.evidence.snippet for f in first)
 
-        from cordon_scanner.core.models import RedactionMode
+        from cordon_scanner.foundation.models import RedactionMode
 
         strict = warm.with_overrides(evidence=RedactionMode.HASH_ONLY)
         second = Scanner(strict).scan(repo).findings
@@ -445,7 +445,7 @@ class TestH13EvidenceCacheLeak:
             assert finding.evidence.redaction is RedactionMode.HASH_ONLY
 
     def test_the_evidence_mode_is_part_of_the_fingerprint(self) -> None:
-        from cordon_scanner.core.models import RedactionMode
+        from cordon_scanner.foundation.models import RedactionMode
 
         base = Config.default()
         strict = base.with_overrides(evidence=RedactionMode.HASH_ONLY)

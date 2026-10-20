@@ -1,0 +1,76 @@
+"""The filter that decides what ships in the wheel versus what a sync fetches.
+
+`scripts/build_advisory_db.py --full` bypasses this; the default does not,
+and the default is what every release actually bundles. Loaded via
+`importlib.util` rather than imported normally, the same way
+`test_package_intel.py` loads `refresh_package_intel.py` -- it is a script,
+not a package module.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+
+from cordon_scanner.intel.advisories.advisories import Advisory
+from support import ROOT as REPO
+
+
+class BuildAdvisoryDbHelpers:
+    """Helpers for test_build_advisory_db.py."""
+
+    @staticmethod
+    def _script():
+        root = REPO
+        spec = importlib.util.spec_from_file_location(
+            "build_advisory_db", root / "scripts" / "build_advisory_db.py"
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+
+class TestIsHighValue:
+    def test_a_critical_vulnerability_is_kept(self) -> None:
+        script = BuildAdvisoryDbHelpers._script()
+        advisory = Advisory(
+            ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="critical"
+        )
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)
+
+    def test_a_high_vulnerability_is_kept(self) -> None:
+        script = BuildAdvisoryDbHelpers._script()
+        advisory = Advisory(
+            ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="high"
+        )
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)
+
+    def test_a_medium_vulnerability_is_dropped(self) -> None:
+        script = BuildAdvisoryDbHelpers._script()
+        advisory = Advisory(
+            ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="medium"
+        )
+        assert not script.AdvisoryDatabaseBuild._is_high_value(advisory)
+
+    def test_a_low_vulnerability_is_dropped(self) -> None:
+        script = BuildAdvisoryDbHelpers._script()
+        advisory = Advisory(
+            ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="low"
+        )
+        assert not script.AdvisoryDatabaseBuild._is_high_value(advisory)
+
+    def test_an_unrated_vulnerability_is_kept(self) -> None:
+        """The detector reports an unrated record at HIGH (`Advisory.severity`: unrated is not
+        the same claim as low), so the bundle keeps it. Dropping it here left every Hackage
+        advisory, which HSEC publishes unrated, and some 8,900 PyPI ones out of the offline data
+        while a synced database reported them."""
+        script = BuildAdvisoryDbHelpers._script()
+        advisory = Advisory(ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0")
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)
+
+    def test_a_malicious_entry_is_kept_regardless_of_severity(self) -> None:
+        script = BuildAdvisoryDbHelpers._script()
+        advisory = Advisory(
+            ecosystem="npm", name="x", versions=("6.6.6",), malicious=True, severity=""
+        )
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)

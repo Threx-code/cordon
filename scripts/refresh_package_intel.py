@@ -639,7 +639,7 @@ class PackageIntelRefresh:
         question is whether this name looks like a slip of something better known.
         """
         sys.path.insert(0, str(ROOT / "src"))
-        from cordon_scanner.detect.dependency import DependencyDetector
+        from cordon_scanner.detect.supply.dependency import DependencyDetector
 
         refused_kinds = {"transposition", "doubled", "homoglyph"}
         by_downloads = sorted(ranked, key=lambda pair: -pair[1])

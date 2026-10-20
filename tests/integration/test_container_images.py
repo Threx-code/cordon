@@ -106,7 +106,7 @@ class TestLimitsStillApply(ContainerImagesFixtures):
         it is said out loud instead of silently truncating the scan."""
         from dataclasses import replace
 
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config import Config
 
         path = tmp_path / "deep.tar"
         inner = ContainerImagesHelpers.layer({"app/main.py": PAYLOAD})

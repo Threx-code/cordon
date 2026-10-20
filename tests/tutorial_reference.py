@@ -3,7 +3,7 @@
 The other tutorials are written by hand, one use case each. These two are the reference beside
 them, and a reference kept by hand drifts: an ecosystem is added and its section never written, a
 flag is renamed and the tutorial keeps the old one. So both are rendered from the registry and the
-argument parser, and `tests/unit/test_tutorial_reference.py` fails when the files disagree.
+argument parser, and `tests/unit/repository/test_tutorial_reference.py` fails when the files disagree.
 
     python tests/tutorial_reference.py ecosystems > tutorials/25-every-ecosystem.md
     python tests/tutorial_reference.py commands > tutorials/26-every-command.md
@@ -21,11 +21,11 @@ import textwrap
 from typing import ClassVar
 from unittest import mock
 
-from cordon_scanner.detect.provenance import SUPPORTED_ECOSYSTEMS as PROVENANCE_ECOSYSTEMS
-from cordon_scanner.detect.registry import REGISTRY_ECOSYSTEMS
+from cordon_scanner.detect.supply.provenance import SUPPORTED_ECOSYSTEMS as PROVENANCE_ECOSYSTEMS
+from cordon_scanner.detect.supply.registry import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.intel.advisories import AdvisoryDatabase
-from cordon_scanner.intel.popular import PackageIntel
+from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+from cordon_scanner.intel.registries.popular import PackageIntel
 from cordon_scanner.sources.package import PackageTarget
 from cordon_scanner.version import __version__
 
@@ -457,7 +457,7 @@ class AgentTutorial:
         from pathlib import Path
 
         from cordon_scanner.cloud.device import DeviceInventory
-        from cordon_scanner.detect import agents
+        from cordon_scanner.detect.agents import agents
 
         rules = sorted(agents.RULES.values(), key=lambda r: r.rule_id)
         rule_rows = [
@@ -609,8 +609,8 @@ class RuleTutorial:
 
     @staticmethod
     def declared() -> list[tuple[str, str, str, str]]:
-        from cordon_scanner.core.registry import Registry
         from cordon_scanner.detect.catalogue import RuleCatalogue
+        from cordon_scanner.engine.registry import Registry
         from cordon_scanner.rules.loader import RuleLoader
 
         found: dict[str, tuple[str, str, str, str]] = {}
@@ -675,7 +675,7 @@ rule's own samples.
     @staticmethod
     def atr() -> list[str]:
         """The Agent Threat Rules Cordon carries, by the catalogue's own categories."""
-        from cordon_scanner.intel.atr import AtrEngine, RuleLinks
+        from cordon_scanner.intel.malware.atr import AtrEngine, RuleLinks
 
         catalogue = AtrEngine.catalogue()
         by_category: dict[str, list] = {}

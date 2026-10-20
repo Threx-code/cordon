@@ -32,7 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel.dbsync import BUNDLE_NAME, SIGNATURE_NAME, AdvisoryBundle  # noqa: E402
+from cordon_scanner.intel.store.dbsync import BUNDLE_NAME, SIGNATURE_NAME, AdvisoryBundle  # noqa: E402
 
 
 class AdvisoryBundleSigning:

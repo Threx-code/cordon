@@ -1,0 +1,679 @@
+"""Verifies the build provenance a dependency advertises.
+
+The registry detector reports whether a release *carries* an attestation. This
+one asks whether that attestation is real: it fetches the sigstore bundle the
+registry points at, verifies it against the digest the lockfile pinned, and
+requires the signing certificate's identity to match the source repository the
+package declares. The two together are what a stolen-token attack cannot fake --
+the malicious upload still names the honest repository, but it was not built by
+that repository's workflow and cannot produce a certificate that says it was.
+
+The heavy verification is delegated to `intel.attest` (the `[attest]` extra). A
+release that cannot be verified -- the extra is absent, the digest is not
+pinned, the registry serves no usable bundle, or the declared repository is on a
+forge the identity policy does not cover -- is reported as unverified, never as
+a failure and never silently: "we did not check" and "we checked and it failed"
+are opposite facts, and only the second is a finding to act on.
+
+Network, so it runs only when the scan is taken online, exactly like the
+registry detector it complements.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from cordon_scanner.decide.scoring import ScoringContext
+from cordon_scanner.detect.base import (
+    BaseDetector,
+    DetectorRequirements,
+    GraphUnit,
+    ScanContext,
+)
+from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.supply.registry import NETWORK_CAVEAT, RegistryEvidence
+from cordon_scanner.foundation import references
+from cordon_scanner.foundation.models import (
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Location,
+    RedactionMode,
+    Scope,
+    Severity,
+)
+from cordon_scanner.intel.provenance import attest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from cordon_scanner.detect.base import Unit
+    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.intel.provenance.openpgp import Keyring
+
+INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
+UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
+UNCHECKED_RULE = "OPERATIONAL.PROVENANCE.NOT_CHECKED.001"
+UNSIGNED_IMAGE_RULE = "POLICY.CONTAINER.UNSIGNED_IMAGE.001"
+
+#: Ecosystems whose attestation format this can fetch and convert. Others carry
+#: no publish-time attestation to verify yet, so the detector stays silent for
+#: them rather than reporting an absence that means nothing.
+SUPPORTED_ECOSYSTEMS = frozenset(
+    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel", "helm", "ansible"}
+)
+
+_GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
+
+
+class ProvenanceDetector(BaseDetector):
+    """Verifies, rather than merely observes, a dependency's attestation."""
+
+    id = "provenance"
+    version = "0.1.0"
+    categories = frozenset({Category.VULNERABLE, Category.POLICY, Category.OPERATIONAL})
+    requires = DetectorRequirements(content=False, dependencies=True, network=True)
+
+    def applicable(self, ctx: ScanContext) -> bool:
+        return bool(ctx.dependencies) and not ctx.offline
+
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (
+            DeclaredRule(
+                id=INVALID_RULE,
+                title="Dependency's build attestation fails verification",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.HIGH,
+                category=Category.VULNERABLE,
+                detector=ProvenanceDetector.id,
+                message=(
+                    "The package's provenance does not verify. What it asserts about where it "
+                    "was built and from what source is, on the evidence, untrue."
+                ),
+                references=(references.SLSA_PROVENANCE, references.SIGSTORE),
+                remediation=(
+                    "Do not install. The attestation does not verify against the "
+                    "pinned artefact, or it was signed by an identity other than "
+                    "the repository the package claims -- which is what a build "
+                    "published from a stolen token looks like."
+                ),
+            ),
+            DeclaredRule(
+                id=UNVERIFIED_RULE,
+                title="Dependency advertises an attestation that could not be verified",
+                severity=Severity.LOW,
+                confidence=Confidence.MEDIUM,
+                category=Category.POLICY,
+                detector=ProvenanceDetector.id,
+                message=(
+                    "The package claims build provenance and the claim could not be confirmed. "
+                    "An unverifiable attestation is weaker than none, because it reads as a "
+                    "guarantee to anything that does not check it."
+                ),
+                references=(references.SLSA_PROVENANCE, references.SIGSTORE),
+                remediation=(
+                    "Install the [attest] extra and pin the dependency's digest so "
+                    "the attestation can be checked, or accept that its provenance "
+                    "is asserted rather than proven."
+                ),
+            ),
+            DeclaredRule(
+                id=UNCHECKED_RULE,
+                title="Build provenance was not checked for part of the graph",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.OPERATIONAL,
+                detector=ProvenanceDetector.id,
+                message=(
+                    "Provenance could not be checked for some of the dependency graph, so the "
+                    "absence of a provenance finding there means nothing was asked rather than "
+                    "that the answer was good."
+                ),
+                references=(references.SLSA_PROVENANCE,),
+                remediation=(
+                    "Raise --timeout, or narrow the scan so the budget covers the "
+                    "graph. A package whose provenance nobody looked at has not been "
+                    "shown to have any."
+                ),
+            ),
+            DeclaredRule(
+                id=UNSIGNED_IMAGE_RULE,
+                title="An image this project runs carries no signature or build attestation",
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector=ProvenanceDetector.id,
+                message=(
+                    "The registry serves no Sigstore signature or attestation for an image the "
+                    "project runs -- the final stage's base, a Compose service or a Kubernetes "
+                    "workload -- so nothing ties the bytes to the build that made them. A build "
+                    "stage's image is not reported: it is not what ships."
+                ),
+                references=(references.SIGSTORE, references.SLSA_PROVENANCE),
+                remediation=(
+                    "Prefer an image its publisher signs (Docker Official Images, Chainguard, "
+                    "distroless and most vendor images do), pinned by digest; for your own, sign "
+                    "and attest at build time (cosign, docker buildx --provenance)."
+                ),
+            ),
+        )
+
+    def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
+        if ctx.offline or not isinstance(unit, GraphUnit):
+            return ()
+
+        # Bounded the same way the registry detector is, and for a sharper
+        # reason: verifying one dependency costs a packument, an attestation
+        # fetch and a trust-root check, so an unbounded pass over a large
+        # lockfile is the slowest thing the scanner can be asked to do. Direct
+        # dependencies first, so a truncated pass spends the budget where
+        # provenance is most likely to be claimed.
+        from cordon_scanner.detect.supply.registry import MAX_QUERIES, RegistryDetector
+        from cordon_scanner.ecosystems.image import ImageEcosystem
+
+        candidates = [
+            d
+            for d in RegistryDetector._order(unit.dependencies)
+            if d.ecosystem in SUPPORTED_ECOSYSTEMS
+            # The project's own code has no registry and no attestation to ask about.
+            and not d.local
+            # An image pinned by digest alone is asked about by that digest; what a Dockerfile
+            # `ADD`s from a URL is no registry's.
+            # A Brewfile names a formula without a version: its bottles are the current version's.
+            and (d.version or (d.ecosystem == "image" and d.integrity) or d.ecosystem == "homebrew")
+            and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
+            # Maven signs each file: a classifier jar or a WAR has its own bundle, and the
+            # registry's is the plain jar's. Comparing the plain jar's signature with a
+            # classified artefact's checksum would call an honest signature a forgery.
+            and not (d.ecosystem in ("maven", "gradle") and "?" in d.purl)
+            # A Bazel module is attested in the Bazel Central Registry: one from another registry,
+            # or a Maven artefact a Bazel extension installs, is not asked there.
+            and not (d.ecosystem == "bazel" and (d.resolved_from or d.local or ":" in d.name))
+            # A Helm chart is asked of the repository it came from: over HTTPS or OCI, not one
+            # named only (`@name`) or the project's own (`file://`).
+            and not (
+                d.ecosystem == "helm"
+                and not (d.resolved_from or "").startswith(("https://", "oci://"))
+            )
+        ]
+        findings: list[Finding] = []
+        for index, dependency in enumerate(candidates[:MAX_QUERIES]):
+            if ctx.out_of_time():
+                findings.append(
+                    self._not_checked(
+                        ctx,
+                        len(candidates) - index,
+                        len(candidates),
+                        "the scan's time budget ran out",
+                    )
+                )
+                return findings
+            findings.extend(self._verify(dependency, ctx))
+
+        if len(candidates) > MAX_QUERIES:
+            findings.append(
+                self._not_checked(
+                    ctx,
+                    len(candidates) - MAX_QUERIES,
+                    len(candidates),
+                    f"they are past the {MAX_QUERIES}-query ceiling for one scan",
+                )
+            )
+        return findings
+
+    def _not_checked(self, ctx: ScanContext, skipped: int, total: int, why: str) -> Finding:
+        """Report the dependencies whose provenance was never looked at."""
+        return self._finding(
+            UNCHECKED_RULE,
+            ctx,
+            dependency=None,
+            detail=(
+                f"{skipped} of {total} package(s) had their build provenance left "
+                f"unchecked because {why}. Provenance was not verified for them, "
+                f"which is not the same as their provenance being sound."
+            ),
+            degrades_coverage=True,
+        )
+
+    def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        if dependency.ecosystem == "homebrew":
+            yield from self._verify_homebrew(dependency, ctx)
+            return
+        if dependency.ecosystem == "bazel":
+            yield from self._verify_bazel(dependency, ctx)
+            return
+        if dependency.ecosystem == "helm":
+            yield from self._verify_helm(dependency, ctx)
+            return
+        if dependency.ecosystem == "ansible":
+            yield from self._verify_ansible(dependency, ctx)
+            return
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+
+        asked = dependency.version or (
+            dependency.integrity if dependency.ecosystem == "image" else None
+        )
+        try:
+            observed = RegistryClient.facts(dependency.ecosystem, dependency.name, asked)
+        except RegistryError:
+            # The registry detector already reports the unreachable case. A
+            # second finding here would only double the noise for one outage.
+            return
+        if not observed.attested:
+            # No attestation to verify. Its absence, where siblings have one, is
+            # the registry detector's SUSPECT.PACKAGE.PROVENANCE finding.
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+            # An image is different: a publisher signs every image or none, so there are no
+            # siblings to compare with, and an image the project RUNS with nothing tying it to a
+            # build is the M4 gap itself. A build stage's image never ships, and is left alone.
+            if dependency.ecosystem == "image" and dependency.scope is Scope.RUNTIME:
+                yield self._finding(
+                    UNSIGNED_IMAGE_RULE,
+                    ctx,
+                    dependency=dependency,
+                    detail=(
+                        f"{dependency.name}"
+                        + (f":{dependency.version}" if dependency.version else "")
+                        + " is run by this project and its registry serves no signature or build "
+                        "attestation for it."
+                    ),
+                )
+            return
+
+        digest = attest.AttestationDocuments.parse_integrity(dependency.integrity)
+        if digest is None:
+            # Two different situations, and telling a reader the wrong one sends
+            # them to fix the wrong thing: a lockfile with no hash at all needs
+            # one added, while a lockfile whose hash is not an artefact digest
+            # (Yarn Berry records a cache checksum) has nothing to add.
+            why = (
+                "no artefact digest is pinned for it"
+                if not (dependency.integrity or "").strip()
+                else "the hash recorded for it is not an artefact digest"
+            )
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=(
+                    f"{dependency.name}@{dependency.version} advertises a build attestation, "
+                    f"but {why}, so there is nothing to bind the attestation to"
+                ),
+            )
+            return
+
+        # The file the project pinned: a release attests each of its files on its own (PyPI).
+        payload = RegistryClient.attestation_payload(
+            dependency.ecosystem,
+            dependency.name,
+            asked,
+            digest[1] if digest[0] == "sha256" else None,
+        )
+        bundles = attest.AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
+        if not bundles:
+            reason = (
+                "the [attest] extra is not installed"
+                if not attest.SigstoreVerification.available()
+                else "the registry served no verifiable attestation bundle"
+            )
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=(
+                    f"{dependency.name}@{dependency.version} advertises a build attestation "
+                    f"that could not be verified: {reason}"
+                ),
+            )
+            return
+
+        source = self._source_identity(observed.repository)
+        algorithm, digest_hex = digest
+
+        # Every bundle is tried before anything is reported. A registry serves
+        # several -- npm publishes the SLSA provenance and its own publish
+        # attestation, in two bundle media types -- and one that this verifier's
+        # sigstore version cannot read is one fewer answer, not a rejection.
+        # Stopping at the first failure let an unreadable bundle decide the
+        # verdict for a package whose next bundle verified.
+        results = [
+            attest.SigstoreVerification.verify(
+                bundle,
+                digest_hex=digest_hex,
+                algorithm=algorithm,
+                source_repo=source,
+                offline=False,
+            )
+            for bundle in bundles
+        ]
+        renamed = self._renamed(source, results)
+        if renamed is not None:
+            # The declared repository was renamed: verified against the name GitHub gives the
+            # same repository now (`intel/github_repository`).
+            results = [
+                attest.SigstoreVerification.verify(
+                    bundle,
+                    digest_hex=digest_hex,
+                    algorithm=algorithm,
+                    source_repo=renamed,
+                    offline=False,
+                )
+                for bundle in bundles
+            ]
+        if any(r.outcome is attest.Outcome.VERIFIED for r in results):
+            # The clean case: no finding, and the record says so.
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+            return
+
+        # A rejection outranks an inability to check: one bundle that verified
+        # cryptographically and then failed on identity or subject is the
+        # actionable fact, whatever the others could not answer.
+        last = next(
+            (r for r in results if r.outcome is attest.Outcome.INVALID),
+            results[-1] if results else None,
+        )
+
+        if last is not None and last.outcome is attest.Outcome.INVALID:
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=(
+                    f"the build attestation for {dependency.name}@{dependency.version} "
+                    f"did not verify: {last.detail}"
+                ),
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=(
+                    f"the build attestation for {dependency.name}@{dependency.version} "
+                    f"could not be verified: {last.detail if last else 'no result'}"
+                ),
+            )
+
+    def _verify_homebrew(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """Each bottle against its own GitHub build attestation (`intel/homebrew_provenance`)."""
+        from cordon_scanner.intel.provenance.homebrew_provenance import HomebrewProvenance
+
+        if not attest.SigstoreVerification.available():
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"{dependency.name}'s bottles were not verified: the [attest] extra is not installed",
+            )
+            return
+        check = HomebrewProvenance.check(dependency.name, dependency.version)
+        label = f"{dependency.name}" + (f"@{check.version}" if check.version else "")
+        if check.outcome == "verified":
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+        elif check.outcome == "absent":
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the build attestation for {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the build attestation for {label} could not be verified: {check.detail}",
+            )
+
+    def _keyring_for(self, ctx: ScanContext) -> Keyring:
+        """The operator's OpenPGP keyring (`--keyring`), read once per scan rather than once per
+        package, and again when a file changes: a detector outlives one scan in a server."""
+        from cordon_scanner.intel.provenance.openpgp import OpenPgp
+
+        paths = ctx.config.keyrings
+        stamp = tuple((p, self._modified(p)) for p in paths)
+        cached = getattr(self, "_keyring", None)
+        if cached is None or cached[0] != stamp:
+            cached = (stamp, OpenPgp.load(paths))
+            self._keyring = cached
+        return cached[1]
+
+    def _verify_ansible(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A collection's signatures, as `ansible-galaxy` checks them (`intel/ansible_signatures`):
+        those its install recorded, over the MANIFEST.json in the tree; else Galaxy's and the
+        requirement's own, over the artifact Galaxy serves."""
+        from cordon_scanner.intel.provenance.ansible_signatures import (
+            AnsibleSignatures,
+            CollectionCheck,
+        )
+        from cordon_scanner.intel.provenance.openpgp import OpenPgp
+
+        if not OpenPgp.available():
+            return
+        if dependency.signatures and dependency.signed is not None:
+            check = AnsibleSignatures.installed(
+                dependency.name,
+                dependency.version or "",
+                dependency.signed,
+                dependency.signatures,
+                self._keyring_for(ctx),
+            )
+        elif dependency.version and dependency.resolved_from is None:
+            # From galaxy.ansible.com, at one version. A git or archive URL carries no signature
+            # Galaxy serves, and a private server's API is the organisation's.
+            check = AnsibleSignatures.remote(
+                dependency.name,
+                dependency.version,
+                dependency.signature_sources,
+                self._keyring_for(ctx),
+            )
+        elif dependency.signature_sources:
+            check = CollectionCheck(
+                "unverifiable",
+                f"its artifact is not on galaxy.ansible.com ({dependency.resolved_from or 'no exact version'}), "
+                "so the MANIFEST.json its signatures cover could not be fetched",
+            )
+        else:
+            return
+        label = f"{dependency.name}@{dependency.version}"
+        if check.outcome in ("verified", "absent"):
+            ctx.checks.record(dependency.purl, "provenance", check.outcome)
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"collection {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the signatures of collection {label} could not be verified: {check.detail}",
+            )
+
+    def _verify_helm(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A chart's provenance file against the operator's keyring (`intel/helm_provenance`)."""
+        from cordon_scanner.intel.provenance.helm_provenance import HelmProvenance
+        from cordon_scanner.intel.provenance.openpgp import OpenPgp
+
+        if not OpenPgp.available():
+            # Without the extra nothing is fetched: whether the chart is signed is not known.
+            return
+        check = HelmProvenance.check(
+            dependency.name,
+            dependency.version or "",
+            dependency.resolved_from,
+            dependency.integrity,
+            self._keyring_for(ctx),
+        )
+        label = f"{dependency.name}@{dependency.version}"
+        if check.outcome == "verified":
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+        elif check.outcome == "absent":
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"chart {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the provenance of chart {label} could not be verified: {check.detail}",
+            )
+
+    @staticmethod
+    def _modified(path: str) -> float:
+        try:
+            return Path(path).expanduser().stat().st_mtime
+        except OSError:
+            return -1.0
+
+    def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A BCR module's attestations against what the lock pinned (`intel/bazel_provenance`)."""
+        from cordon_scanner.intel.provenance.bazel_provenance import BazelProvenance
+
+        label = f"{dependency.name}@{dependency.version}"
+        if not attest.SigstoreVerification.available():
+            # Without the extra nothing is fetched: whether the module is attested at all is
+            # not known, so nothing is claimed about it either way.
+            return
+        check = BazelProvenance.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        if check.outcome == "verified":
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+        elif check.outcome == "absent":
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the build attestation for {label} did not verify: {check.detail}",
+            )
+        else:
+            reason = (
+                "no sha256 is pinned for it, so there is nothing to bind the attestation to"
+                if check.outcome == "unpinned"
+                else check.detail
+            )
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"{label} is attested in the Bazel Central Registry, but could not be verified: {reason}",
+            )
+
+    @staticmethod
+    def _renamed(
+        source: tuple[str, str, str] | None, results: list[attest.Result]
+    ) -> tuple[str, str, str] | None:
+        """The declared GitHub repository under its current name, where a bundle was refused only
+        because the certificate names the repository differently and GitHub resolves the declared
+        one to another name (filelock declares `tox-dev/py-filelock`, renamed `tox-dev/filelock`)."""
+        if source is None or source[0] != "github.com":
+            return None
+        if any(r.outcome is attest.Outcome.VERIFIED for r in results) or not any(
+            r.outcome is attest.Outcome.INVALID
+            and "GitHubWorkflowRepository does not match" in r.detail
+            for r in results
+        ):
+            return None
+        from cordon_scanner.intel.provenance.github_repository import GitHubRepository
+
+        current = GitHubRepository.current(source[1], source[2])
+        if current is None or f"{current[0]}/{current[1]}".lower() == (
+            f"{source[1]}/{source[2]}".lower()
+        ):
+            return None
+        return ("github.com", current[0], current[1])
+
+    @staticmethod
+    def _source_identity(repository: str | None) -> tuple[str, str, str] | None:
+        """The declared source repo as `(forge, owner, name)`, GitHub case kept.
+
+        `repository_identity` lowercases for its own comparison, but the OIDC
+        `repository` claim on the signing certificate keeps the repository's
+        stored case, so an exact identity match must too. Recover the original
+        case from the raw URL where the forge is GitHub, which is the only forge
+        the identity policy covers.
+        """
+        identity = RegistryEvidence.repository_identity(repository)
+        if identity is None or identity[0] != "github.com":
+            return None
+        match = _GITHUB_OWNER_REPO.search(repository or "")
+        if not match:
+            return identity
+        owner, name = match.group(1), match.group(2)
+        if name.endswith(".git"):
+            name = name[:-4]
+        return ("github.com", owner, name)
+
+    def _finding(
+        self,
+        rule_id: str,
+        ctx: ScanContext,
+        *,
+        dependency: Dependency | None,
+        detail: str,
+        degrades_coverage: bool = False,
+    ) -> Finding:
+        declared = next(r for r in self.declared_rules() if r.id == rule_id)
+        path = (dependency.declared_in or dependency.project or "") if dependency else ""
+        return Finding(
+            rule_id=rule_id,
+            category=declared.category,
+            severity=declared.severity,
+            confidence=declared.confidence,
+            message=detail,
+            location=Location(path=path, line=1),
+            evidence=Evidence(
+                kind=EvidenceKind.HASH,
+                match_hash=Evidence.hash_bytes(detail.encode("utf-8")),
+                redaction=RedactionMode.HASH_ONLY,
+                metadata=(("source", "registry"),),
+            ),
+            remediation=declared.remediation,
+            explanation=Explanation(
+                summary=detail,
+                matched_rule=rule_id,
+                escalations=(NETWORK_CAVEAT,),
+            ),
+            risk=ctx.scorer.score(
+                declared.severity,
+                declared.confidence,
+                ScoringContext(in_install_hook=False, capabilities=frozenset()),
+            ),
+            detector=self.id,
+            always_report=declared.category is Category.OPERATIONAL,
+            degrades_coverage=degrades_coverage,
+        )
+
+
+__all__ = [
+    "INVALID_RULE",
+    "SUPPORTED_ECOSYSTEMS",
+    "UNCHECKED_RULE",
+    "UNVERIFIED_RULE",
+    "ProvenanceDetector",
+]

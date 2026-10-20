@@ -3,7 +3,7 @@
 A hand-kept coverage matrix drifts, and a drifted one is worse than none: it
 reports coverage that is not there, which is the same failure this project is
 organised against in the scanner itself. So the document is generated, and
-`tests/unit/test_coverage_matrix.py` fails when the file on disk disagrees with
+`tests/unit/cli/test_coverage_matrix.py` fails when the file on disk disagrees with
 what this produces.
 
 Run it after adding a rule:
@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from cordon_scanner.core.registry import Registry
-from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
 from cordon_scanner.detect.catalogue import RuleCatalogue
+from cordon_scanner.engine.registry import Registry
+from cordon_scanner.foundation.taxonomy import Taxonomy, ThreatDomain
 from cordon_scanner.rules.loader import RuleLoader
 
 DOMAIN_ORDER: tuple[tuple[ThreatDomain, str, str], ...] = (
@@ -45,7 +45,7 @@ What Cordon detects, by threat domain, with the rule that implements each check.
 **Generated from the shipped rules, not written alongside them.** A hand-kept
 matrix drifts, and a drifted matrix is worse than none: it reports coverage that
 is not there, which is the same failure mode as a scan reporting clean on a file
-it never read. `tests/unit/test_coverage_matrix.py` regenerates this content and
+it never read. `tests/unit/cli/test_coverage_matrix.py` regenerates this content and
 fails if it disagrees with what the tool actually ships, so a new rule that is
 absent here fails the build.
 
@@ -172,7 +172,7 @@ class CoverageMatrix:
         and the provenance, which are what a reader actually wants from them, fit in
         a paragraph.
         """
-        from cordon_scanner.detect.iac_policies import GeneratedPolicies
+        from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
 
         return {policy.id for policy in GeneratedPolicies.generated_policies()}
 
@@ -227,7 +227,7 @@ class CoverageMatrix:
         """The generated infrastructure policies, by family, with their provenance."""
         from collections import Counter
 
-        from cordon_scanner.detect.iac_policies import GeneratedPolicies
+        from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
 
         policies = GeneratedPolicies.generated_policies()
         if not policies:

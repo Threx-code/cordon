@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from cordon_scanner.archive.safe import ArchiveReader
-from cordon_scanner.core.trees import Trees
+from cordon_scanner.foundation.trees import Trees
 
 
 class PackageTargetError(ValueError):
@@ -144,7 +144,7 @@ class PackageTarget:
     @contextmanager
     def fetched(self) -> Iterator[Path]:
         """The verified archive on disk in a private directory for the length of the block."""
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         if self.ecosystem == "image":
             with self._pulled_image() as pulled:
@@ -170,7 +170,7 @@ class PackageTarget:
     def _pulled_image(self) -> Iterator[Path]:
         """The image as an OCI layout archive, every blob checked against its digest."""
         from cordon_scanner.ecosystems.image import ImageReference
-        from cordon_scanner.intel.registry_image import RegistryImage, RegistryImageError
+        from cordon_scanner.intel.registries.registry_image import RegistryImage, RegistryImageError
 
         reference = ImageReference.parse(self.name)
         if reference is None:

@@ -1,0 +1,190 @@
+"""Where code goes: the layout of `src/cordon_scanner` and its unit tests (reviews
+20-PACKAGE-STRUCTURE.md).
+
+`tests/unit/package_layout.json` names every module's place, and every unit test's: a test lives
+in `tests/unit/<place>/`, mirroring the module it tests, or in `repository/`, `bench/` or
+`sandbox/` when it tests those rather than a module. Adding a module or a test is one line
+there, in the same commit, so a reviewer sees where it went.
+
+Enforced: the table covers every module and test and is consistent. Reported, not yet failed
+(`PYTHONPATH=src:tests python tests/unit/repository/test_package_layout.py`): what is not where
+the table puts it, directories past their size, modules past their length and imports that
+point outward.
+"""
+
+from __future__ import annotations
+
+import ast
+import collections
+import json
+from typing import Any, ClassVar
+
+from support import ROOT as REPO
+
+ROOT = REPO / "src" / "cordon_scanner"
+TABLE = REPO / "tests" / "unit" / "package_layout.json"
+
+
+class Layout:
+    #: Inner to outer: a module may import its own layer and the ones before it.
+    LAYERS: ClassVar[dict[str, int]] = {
+        "version": 0,
+        "foundation": 0,
+        "analysis": 1,
+        "detect": 2,
+        "ecosystems": 2,
+        "intel": 2,
+        "images": 2,
+        "sources": 2,
+        "archive": 2,
+        "langs": 2,
+        "rules": 2,
+        "formats": 2,
+        "decide": 3,
+        "engine": 4,
+        "judge": 5,
+        "model": 5,
+        "guard": 5,
+        "notify": 5,
+        "cli": 5,
+        "report": 5,
+        "mcp": 5,
+        "cloud": 5,
+        "__main__": 6,
+    }
+    #: Places only tests have: the repository itself, the bench harness, the sandbox package.
+    TEST_PLACES: ClassVar[frozenset[str]] = frozenset({"repository", "bench", "sandbox"})
+    MAX_MODULES: ClassVar[int] = 25
+    MAX_LINES: ClassVar[int] = 3_000
+
+    @staticmethod
+    def data() -> dict[str, Any]:
+        return json.loads(TABLE.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def modules() -> list[str]:
+        """Every module under src/cordon_scanner, as a path without `.py` (packages' `__init__`
+        files go with their directory; a moved module's shim at its old path is not one)."""
+        shims = Layout.data().get("shims", {})
+        return sorted(
+            m
+            for p in ROOT.rglob("*.py")
+            if "__pycache__" not in p.parts
+            and p.name != "__init__.py"
+            and (m := p.relative_to(ROOT).with_suffix("").as_posix()) not in shims
+        )
+
+    @staticmethod
+    def tests() -> dict[str, str]:
+        """Every unit test file: its name -> the directory under tests/unit/ it is in now."""
+        unit = REPO / "tests" / "unit"
+        return {
+            p.name: p.parent.relative_to(unit).as_posix().removeprefix(".")
+            for p in sorted(unit.rglob("test_*.py"))
+            if "__pycache__" not in p.parts and "data" not in p.relative_to(unit).parts
+        }
+
+    @classmethod
+    def place(cls, module: str, table: dict[str, str]) -> str:
+        return table.get(module, module).split("/")[0]
+
+    @classmethod
+    def report(cls) -> dict[str, Any]:
+        table = cls.data()["modules"]
+        here = cls.modules()
+        to_move = sorted(m for m in here if table.get(m, m) != m)
+        sizes = collections.Counter(m.rsplit("/", 1)[0] if "/" in m else "." for m in here)
+        long = {
+            m: n
+            for m in here
+            if (n := len((ROOT / f"{m}.py").read_text(encoding="utf-8").splitlines()))
+            > cls.MAX_LINES
+        }
+        outward = collections.Counter()
+        for m in here:
+            src = cls.place(m, table)
+            tree = ast.parse((ROOT / f"{m}.py").read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                names: list[str] = []
+                if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                    names = [node.module]
+                elif isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                for name in names:
+                    if not name.startswith("cordon_scanner."):
+                        continue
+                    dep = name.removeprefix("cordon_scanner.").replace(".", "/")
+                    dst = cls.place(dep, table)
+                    if cls.LAYERS.get(dst, 0) > cls.LAYERS.get(src, 0):
+                        outward[f"{src} -> {dst}"] += 1
+        placed = cls.data().get("tests", {})
+        tests_away = sum(1 for name, at in cls.tests().items() if placed.get(name, at) != at)
+        return {
+            "modules": len(here),
+            "not_yet_in_place": len(to_move),
+            "tests": len(cls.tests()),
+            "tests_not_yet_in_place": tests_away,
+            "directories_over_size": {
+                d: n for d, n in sorted(sizes.items()) if n > cls.MAX_MODULES
+            },
+            "modules_over_length": dict(sorted(long.items())),
+            "imports_pointing_outward": dict(sorted(outward.items())),
+        }
+
+
+class TestTable:
+    def test_every_module_has_a_place(self) -> None:
+        table = Layout.data()["modules"]
+        missing = sorted(set(Layout.modules()) - set(table))
+        assert not missing, f"add these to {TABLE.name}: {missing}"
+
+    def test_no_entry_for_a_module_that_does_not_exist(self) -> None:
+        table = Layout.data()["modules"]
+        gone = sorted(set(table) - set(Layout.modules()))
+        assert not gone, f"remove these from {TABLE.name}: {gone}"
+
+    def test_no_two_modules_share_a_place(self) -> None:
+        table = Layout.data()["modules"]
+        shared = [t for t, n in collections.Counter(table.values()).items() if n > 1]
+        assert not shared, shared
+
+    def test_every_place_is_in_a_known_layer(self) -> None:
+        table = Layout.data()["modules"]
+        unknown = sorted({t.split("/")[0] for t in table.values()} - set(Layout.LAYERS))
+        assert not unknown, f"give these a layer in Layout.LAYERS: {unknown}"
+
+    def test_every_shim_is_only_a_shim_to_a_module_that_exists(self) -> None:
+        data = Layout.data()
+        for old, shim in data.get("shims", {}).items():
+            assert shim["to"] in data["modules"], old
+            text = (ROOT / f"{old}.py").read_text(encoding="utf-8")
+            target = "cordon_scanner." + shim["to"].replace("/", ".")
+            assert "sys.modules[__name__] = _module" in text and target in text, old
+
+    def test_every_test_has_a_place_in_a_known_layer(self) -> None:
+        placed = Layout.data()["tests"]
+        missing = sorted(set(Layout.tests()) - set(placed))
+        assert not missing, f"add these to the tests of {TABLE.name}: {missing}"
+        assert not sorted(set(placed) - set(Layout.tests())), "tests in the table that are gone"
+        unknown = sorted(
+            {p.split("/")[0] for p in placed.values() if p}
+            - set(Layout.LAYERS)
+            - Layout.TEST_PLACES
+        )
+        assert not unknown, unknown
+
+    def test_test_names_stay_unique(self) -> None:
+        # Unit tests are not packages: pytest imports each by its file name.
+        unit = REPO / "tests" / "unit"
+        names = collections.Counter(
+            p.name for p in unit.rglob("test_*.py") if "__pycache__" not in p.parts
+        )
+        assert not [n for n, c in names.items() if c > 1]
+
+    def test_the_report_runs(self) -> None:
+        report = Layout.report()
+        assert report["modules"] == len(Layout.data()["modules"])
+
+
+if __name__ == "__main__":
+    print(json.dumps(Layout.report(), indent=1))

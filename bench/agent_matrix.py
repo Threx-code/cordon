@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config
+from cordon_scanner.foundation.config import Config
 
 HOST = "x.invalid"
 

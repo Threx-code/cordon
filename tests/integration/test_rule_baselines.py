@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.core.models import MatchKind
+from cordon_scanner.foundation.models import MatchKind
 from cordon_scanner.rules.loader import RuleLoader, RuleTester
 from support import requires_corpus
 

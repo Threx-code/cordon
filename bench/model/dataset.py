@@ -87,7 +87,7 @@ class Dataset:
 
     @staticmethod
     def legitimate(data: Path, random_root: Path) -> list[dict[str, str | int]]:
-        from cordon_scanner.intel.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         database = AdvisoryDatabase.bundled()
         rows: list[dict[str, str | int]] = []

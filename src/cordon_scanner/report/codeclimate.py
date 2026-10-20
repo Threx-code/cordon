@@ -24,13 +24,13 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.models import Category, Severity
+from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.report.base import BaseReporter
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding, ScanResult
     from cordon_scanner.report.base import ReportOptions
 
 #: Code Climate's five words, which are all GitLab renders.

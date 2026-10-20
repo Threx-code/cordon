@@ -290,7 +290,7 @@ URL in a configuration, an image's registry, a chart repository. Scanning
 untrusted content online could then be steered at a cloud metadata endpoint or
 an internal service. With `CORDON_PUBLIC_NETWORK_ONLY=1` every name the process
 resolves is filtered to globally routable addresses at `socket.getaddrinfo`
-(`core/netguard.py`): a name that resolves only to private, loopback,
+(`engine/netguard.py`): a name that resolves only to private, loopback,
 link-local, carrier-grade NAT, reserved or multicast addresses is refused, and
 because the connection uses an address the filter returned, a name that
 resolves publicly for one lookup and privately for the next (DNS rebinding) has

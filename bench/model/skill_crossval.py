@@ -27,7 +27,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from cordon_scanner.detect.mcp_model import BUCKETS, SKILL_MODEL
+from cordon_scanner.detect.agents.mcp_model import BUCKETS, SKILL_MODEL
 
 
 class SkillCrossVal:

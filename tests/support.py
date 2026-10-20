@@ -69,7 +69,7 @@ class Support:
         care about. Overriding what a test is actually about keeps the point of
         that test visible instead of buried in scaffolding.
         """
-        from cordon_scanner.core.models import (
+        from cordon_scanner.foundation.models import (
             Category,
             Confidence,
             Evidence,
@@ -145,7 +145,7 @@ class SealedSync:
     def seal(directory: Path) -> None:
         import json
 
-        from cordon_scanner.intel.advisories import DIGESTS_NAME, AdvisoryFiles
+        from cordon_scanner.intel.advisories.advisories import DIGESTS_NAME, AdvisoryFiles
 
         digests = {
             path.name: AdvisoryFiles.digest_of(path)

@@ -15,9 +15,9 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config, ConfigResolver, RestrictedYamlParser
-from cordon_scanner.core.errors import ConfigError
-from cordon_scanner.core.walker import PathGlob
+from cordon_scanner.engine.walker import PathGlob
+from cordon_scanner.foundation.config import Config, ConfigResolver, RestrictedYamlParser
+from cordon_scanner.foundation.errors import ConfigError
 
 PAYLOAD = 'eval(atob("cGF5bG9hZA=="))\n'
 
@@ -208,7 +208,7 @@ class TestH4ArchiveLimitsBindBeforeAllocation:
 
     def test_the_entry_limit_binds_during_iteration(self, tmp_path: Path) -> None:
         from cordon_scanner.archive.safe import ArchiveReader
-        from cordon_scanner.core.limits import DEFAULT_LIMITS
+        from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
         data = self.bomb(tmp_path).read_bytes()
         result = ArchiveReader.extract(data, path="bomb.tar.gz", limits=DEFAULT_LIMITS)
@@ -371,19 +371,19 @@ class TestInstallHookImportClosure:
         """An import that resolves to nothing in this scan is a third-party
         package, and a payload inside it is not this repository's file to
         judge."""
-        from cordon_scanner.core.closure import ImportClosure
+        from cordon_scanner.engine.closure import ImportClosure
 
         sources = {"setup.py": "import requests\nimport helper\n", "helper.py": "x = 1\n"}
         assert ImportClosure.resolve(["setup.py"], sources) == {"helper.py"}
 
     def test_a_cycle_terminates(self, tmp_path: Path) -> None:
         """The graph is attacker-supplied, so it may be circular."""
-        from cordon_scanner.core.closure import ImportClosure
+        from cordon_scanner.engine.closure import ImportClosure
 
         sources = {"setup.py": "import a\n", "a.py": "import b\n", "b.py": "import a\n"}
         assert ImportClosure.resolve(["setup.py"], sources) == {"a.py", "b.py"}
 
     def test_an_unparseable_hook_yields_nothing_rather_than_raising(self) -> None:
-        from cordon_scanner.core.closure import ImportClosure
+        from cordon_scanner.engine.closure import ImportClosure
 
         assert ImportClosure.imported_by("def (:\n", "setup.py") == []

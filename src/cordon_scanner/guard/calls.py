@@ -446,9 +446,9 @@ class ToolCallGuard:
 
     @classmethod
     def _value(cls, path: str, key: str, value: str) -> Iterator[GuardFinding]:
-        from cordon_scanner.detect.agent_config import CommandClassifier
-        from cordon_scanner.intel.atr import AtrEngine
-        from cordon_scanner.intel.hosts import Destinations
+        from cordon_scanner.detect.agents.agent_config import CommandClassifier
+        from cordon_scanner.intel.malware.atr import AtrEngine
+        from cordon_scanner.intel.malware.hosts import Destinations
 
         for view, text in ValueViews.of(value):
             verdict = CommandClassifier.classify(text)

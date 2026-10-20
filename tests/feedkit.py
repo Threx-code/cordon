@@ -15,8 +15,8 @@ import tarfile
 from dataclasses import dataclass, field
 from typing import Any
 
-from cordon_scanner.intel import _ed25519 as ed
-from cordon_scanner.intel.feed import SPEC, FeedError, FeedRoles
+from cordon_scanner.intel.malware.feed import SPEC, FeedError, FeedRoles
+from cordon_scanner.intel.provenance import _ed25519 as ed
 
 FAR = "2099-01-01T00:00:00Z"
 NOW = 1_800_000_000.0
@@ -228,7 +228,7 @@ class SignedFeed:
         return body
 
     def client(self, **overrides: Any):
-        from cordon_scanner.intel.feed import Feed
+        from cordon_scanner.intel.malware.feed import Feed
 
         options = {
             "base_url": "https://feed.test/v1",

@@ -40,7 +40,7 @@ class McpModelTrainer:
         import numpy as np
         from scipy.sparse import csr_matrix, vstack
 
-        from cordon_scanner.detect import mcp_model
+        from cordon_scanner.detect.agents import mcp_model
 
         model = mcp_model.SKILL_MODEL if McpModelTrainer.KIND == "skill" else mcp_model.MCP_MODEL
         # In chunks, as float32 arrays: half a million rows of n-gram features held as Python

@@ -36,7 +36,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
-from cordon_scanner.core.evidence_key import EvidenceKey
+from cordon_scanner.foundation.evidence_key import EvidenceKey
 from cordon_scanner.version import __version__
 
 SCHEMA: Final = "cordon.device-inventory/v1"
@@ -170,7 +170,7 @@ class DeviceInventory:
 
     @staticmethod
     def _mcp_entries(tool: str, logical: str, servers: Any) -> list[dict[str, Any]]:
-        from cordon_scanner.detect.agents import McpConfigs
+        from cordon_scanner.detect.agents.agents import McpConfigs
 
         entries: list[dict[str, Any]] = []
         for name, server in servers.items() if isinstance(servers, dict) else ():
@@ -292,8 +292,8 @@ class DeviceInventory:
     def extension_findings(installed: list[dict[str, str]]) -> list[dict[str, Any]]:
         """Each installed extension judged as a repository's recommendation is: OSV's malicious
         extension records (by version), Microsoft's removals, and look-alikes of popular ones."""
-        from cordon_scanner.detect.agents import ExtensionNames, ExtensionVerdicts
-        from cordon_scanner.intel import datafile
+        from cordon_scanner.detect.agents.agents import ExtensionNames, ExtensionVerdicts
+        from cordon_scanner.intel.store import datafile
 
         intel = datafile.IntelDataFile.newest("vscode-extensions.json")
         removed = intel.get("removed") or {}
@@ -360,10 +360,10 @@ class DeviceInventory:
     @staticmethod
     def collect(home: Path | None = None) -> dict[str, Any]:
         """The payload: device, inventory and findings. Nothing else leaves the machine."""
-        from cordon_scanner.core.config import Config
-        from cordon_scanner.core.content import FileContent
-        from cordon_scanner.detect.agents import AgentChainDetector
+        from cordon_scanner.detect.agents.agents import AgentChainDetector
         from cordon_scanner.detect.base import FileUnit, ScanContext
+        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.rules.loader import RuleSet
 
         home = home or Path.home()

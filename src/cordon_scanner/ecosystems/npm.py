@@ -14,7 +14,6 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -22,9 +21,10 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
 
 SCOPE_FIELDS = {
     "dependencies": Scope.RUNTIME,
@@ -664,7 +664,7 @@ class PnpmLock:
         dropped, and the project's whole dependency tree with it. Each document is read, and the
         ones whose importers declare dependencies are merged; the environment is the tool that
         installs, not a dependency of the project."""
-        from cordon_scanner.core.datayaml import DataYaml
+        from cordon_scanner.foundation.datayaml import DataYaml
 
         pieces = [p for p in cls.DOCUMENT_BREAK.split(content.text) if p.strip()]
         if len(pieces) <= 1:
@@ -692,7 +692,7 @@ class PnpmLock:
 
     @classmethod
     def parse(cls, content: FileContent, ecosystem: str) -> LockGraph:
-        from cordon_scanner.core.datayaml import DataYamlError
+        from cordon_scanner.foundation.datayaml import DataYamlError
 
         try:
             data = cls._project_document(content)
@@ -1021,7 +1021,7 @@ class YarnLock:
 
     @classmethod
     def _berry(cls, content: FileContent, ecosystem: str) -> LockGraph:
-        from cordon_scanner.core.datayaml import DataYaml, DataYamlError
+        from cordon_scanner.foundation.datayaml import DataYaml, DataYamlError
 
         try:
             data = DataYaml.load(content.text, source=content.path)

@@ -28,8 +28,6 @@ import tomllib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.models import Hook, Scope
-from cordon_scanner.core.safexml import SafeXml, SafeXmlError
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -37,11 +35,13 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.models import Hook, Scope
+from cordon_scanner.foundation.safexml import SafeXml, SafeXmlError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
 
 
 @dataclass

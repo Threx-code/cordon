@@ -277,7 +277,7 @@ class AtrBench:
         global _SCANNER
         if _SCANNER is None:
             from cordon_scanner import Scanner
-            from cordon_scanner.core.config import Config
+            from cordon_scanner.foundation.config import Config
 
             _SCANNER = Scanner(Config.default().with_overrides(use_cache=False))
         with tempfile.TemporaryDirectory(prefix="atr-") as work:
@@ -287,7 +287,7 @@ class AtrBench:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(body, encoding="utf-8", errors="surrogatepass")
             report = _SCANNER.scan(root)
-        from cordon_scanner.core.policy import PolicyGate
+        from cordon_scanner.decide.policy import PolicyGate
 
         policy = _SCANNER.config.policy
         # `/BLOCK` marks what the default gate fails on -- severity AND confidence, as the CLI decides.

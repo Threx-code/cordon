@@ -525,7 +525,7 @@ jobs:
       - name: Take the notes from the release page
         # docs/releases/<version>.md is the release written for a reader: the
         # same ASCII-diagram form as the READMEs, linking the full CHANGELOG
-        # section for every change. tests/unit/test_release_notes.py holds CI
+        # section for every change. tests/unit/repository/test_release_notes.py holds CI
         # to it existing for the version being cut, so a missing page fails a
         # pull request, not a release.
         run: |

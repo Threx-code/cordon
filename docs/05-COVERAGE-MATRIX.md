@@ -5,7 +5,7 @@ What Cordon detects, by threat domain, with the rule that implements each check.
 **Generated from the shipped rules, not written alongside them.** A hand-kept
 matrix drifts, and a drifted matrix is worse than none: it reports coverage that
 is not there, which is the same failure mode as a scan reporting clean on a file
-it never read. `tests/unit/test_coverage_matrix.py` regenerates this content and
+it never read. `tests/unit/cli/test_coverage_matrix.py` regenerates this content and
 fails if it disagrees with what the tool actually ships, so a new rule that is
 absent here fails the build.
 

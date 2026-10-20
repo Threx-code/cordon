@@ -10,14 +10,14 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.errors import ExitCode
+from cordon_scanner.foundation.errors import ExitCode
 from cordon_scanner.version import PROGRAM
 
 if TYPE_CHECKING:
     import argparse
 
-    from cordon_scanner.core.config import Config
-    from cordon_scanner.core.incoming import IncomingCheck
+    from cordon_scanner.engine.incoming import IncomingCheck
+    from cordon_scanner.foundation.config import Config
 
 FAIL_ON_HELP = (
     "also block on findings at or above this severity (default: critical; anything "
@@ -74,8 +74,8 @@ class IncomingCommand:
 
     @staticmethod
     def _config(args: argparse.Namespace) -> Config:
-        from cordon_scanner.core.config import Config
-        from cordon_scanner.core.incoming import Incoming
+        from cordon_scanner.engine.incoming import Incoming
+        from cordon_scanner.foundation.config import Config
 
         base = Config.from_file(args.config) if getattr(args, "config", None) else None
         return Incoming.config(base, getattr(args, "fail_on", None))
@@ -101,7 +101,7 @@ class IncomingCommand:
 
     @classmethod
     def run_clone(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.core.incoming import Incoming
+        from cordon_scanner.engine.incoming import Incoming
 
         directory = Path(args.directory or Incoming.default_directory(args.url))
         check = Incoming.clone(args.url, directory, cls._config(args), branch=args.branch)
@@ -120,7 +120,7 @@ class IncomingCommand:
 
     @classmethod
     def run_pull(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.core.incoming import Incoming
+        from cordon_scanner.engine.incoming import Incoming
 
         root = Path(args.path).resolve()
         check, outcome = Incoming.pull(
@@ -144,7 +144,7 @@ class IncomingCommand:
         Always exits 0. Git ignores a post-checkout or post-merge hook's status, and the undo has
         already happened by the time this returns; the message is what the developer needs.
         """
-        from cordon_scanner.core.incoming import Incoming
+        from cordon_scanner.engine.incoming import Incoming
         from cordon_scanner.sources.git import GitRepository
 
         info = GitRepository.discover(Path.cwd())

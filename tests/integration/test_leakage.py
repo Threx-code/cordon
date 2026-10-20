@@ -2,7 +2,7 @@
 
 A finding travels further than the file it came from: into CI logs, into
 pull-request comments, into SARIF uploaded to a third party. The redactor
-governs *evidence*, and it is tested hard in `tests/unit/test_redact.py`. This
+governs *evidence*, and it is tested hard in `tests/unit/foundation/test_redact.py`. This
 file is about everything that is not evidence.
 
 Package coordinates, parse-error text and detector-failure messages are all
@@ -170,8 +170,8 @@ class TestRequirementsParsing(LeakageFixtures):
     """The specific over-read, at the parser rather than the model."""
 
     def parse(self, body: str) -> tuple[tuple[str, str], ...]:
-        from cordon_scanner.core.content import FileContent
         from cordon_scanner.ecosystems.pypi import PypiEcosystem
+        from cordon_scanner.foundation.content import FileContent
 
         graph = PypiEcosystem().parse_lockfile(
             FileContent.from_bytes("requirements.txt", body.encode())
@@ -183,8 +183,8 @@ class TestRequirementsParsing(LeakageFixtures):
 
     def test_a_continuation_hash_is_still_read(self) -> None:
         """The multi-line form is the common one and must keep working."""
-        from cordon_scanner.core.content import FileContent
         from cordon_scanner.ecosystems.pypi import PypiEcosystem
+        from cordon_scanner.foundation.content import FileContent
 
         graph = PypiEcosystem().parse_lockfile(
             FileContent.from_bytes(

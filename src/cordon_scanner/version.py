@@ -16,7 +16,7 @@ why they are not one number:
     ``properties.rulepack``, the markdown report and the audit record all print
     -- is read from those packs. The two disagreed for a release: this said
     0.2.0 while every pack said 0.1.0 and nothing read this at all.
-    ``tests/unit/test_rules.py`` now asserts they agree.
+    ``tests/unit/rules/test_rules.py`` now asserts they agree.
 
 ``SCHEMA_VERSION``
     The JSON result format. Consumers pin against this. It changes only on a

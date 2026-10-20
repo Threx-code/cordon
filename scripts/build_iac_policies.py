@@ -1217,7 +1217,7 @@ class IacPolicyBuild:
         # resource rather than a template, and several of them say something the
         # schema cannot (an alternative spelling, a mitigating block).
         sys.path.insert(0, str(ROOT / "src"))
-        from cordon_scanner.detect.iac_policies import CURATED
+        from cordon_scanner.detect.infra.iac_policies import CURATED
 
         covered = IacPolicyBuild._covered(CURATED)
         policies, meta = IacPolicyBuild.generate(schema, {policy.id for policy in CURATED}, covered)

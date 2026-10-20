@@ -31,15 +31,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.core.content import FileContent, Skipped, SkipReason
-from cordon_scanner.core.errors import SourceError
-from cordon_scanner.core.walker import WalkEntry
+from cordon_scanner.engine.walker import WalkEntry
+from cordon_scanner.foundation.content import FileContent, Skipped, SkipReason
+from cordon_scanner.foundation.errors import SourceError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-    from cordon_scanner.core.limits import Limits
-    from cordon_scanner.core.walker import WalkEntry, Walker
+    from cordon_scanner.engine.walker import WalkEntry, Walker
+    from cordon_scanner.foundation.limits import Limits
 
 GIT_TIMEOUT = 30.0
 

@@ -34,7 +34,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
-from cordon_scanner.core.trees import Trees
+from cordon_scanner.foundation.trees import Trees
 from cordon_scanner.version import PROGRAM
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
@@ -368,8 +368,8 @@ class CloudRunner:
             )
         from cordon_scanner import Scanner
         from cordon_scanner.cloud import auth, results
-        from cordon_scanner.core.config import ConfigResolver
-        from cordon_scanner.core.policy import PolicyGate
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.foundation.config import ConfigResolver
 
         fetch: dict[str, Callable[..., Path]] = {
             "git": CloudRunner.fetch_git,

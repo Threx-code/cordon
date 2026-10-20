@@ -10,7 +10,7 @@ screen.
 
 ## Start from the exit code
 
-Every run ends in one of five exit codes, and they never change meaning (`core/errors.py`).
+Every run ends in one of five exit codes, and they never change meaning (`foundation/errors.py`).
 The code says which part of this tutorial you need.
 
 ```

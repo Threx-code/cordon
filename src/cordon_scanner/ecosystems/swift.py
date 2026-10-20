@@ -21,7 +21,6 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -29,9 +28,10 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
 
 
 class SwiftIdentity:

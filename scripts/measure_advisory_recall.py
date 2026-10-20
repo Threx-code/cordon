@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tempfile
 
-from cordon_scanner.intel.advisories import AdvisoryDatabase
+from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
 SAMPLE = 120  # per ecosystem, capped so the run stays bounded
 

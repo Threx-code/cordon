@@ -29,15 +29,15 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.models import Category, Severity
-from cordon_scanner.core.scoring import RiskScorer
+from cordon_scanner.decide.scoring import RiskScorer
+from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.report.base import BaseReporter, ReportOptions
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding, ScanResult
 
 SARIF_VERSION = "2.1.0"
 SARIF_SCHEMA = (

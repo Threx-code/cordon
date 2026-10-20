@@ -27,18 +27,18 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from cordon_scanner.core.models import Hook, Scope
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
 
 
 HUB_HOSTS = frozenset(
@@ -978,7 +978,7 @@ class Kubernetes:
     def documents(text: str) -> list[dict[str, Any]]:
         """Each `---`-separated document that is a Kubernetes object. A Helm template (`{{ }}`)
         is not YAML until it is rendered, and is skipped rather than misread."""
-        from cordon_scanner.core.datayaml import DataYaml, DataYamlError
+        from cordon_scanner.foundation.datayaml import DataYaml, DataYamlError
 
         found: list[dict[str, Any]] = []
         for chunk in Kubernetes.DOCUMENT_BREAK.split(text)[: Kubernetes.MAX_DOCUMENTS]:

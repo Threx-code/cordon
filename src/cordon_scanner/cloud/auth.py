@@ -27,7 +27,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
-from cordon_scanner.core.atomic import AtomicFile
+from cordon_scanner.foundation.atomic import AtomicFile
 from cordon_scanner.version import PROGRAM
 
 CLIENT_ID: Final = "cordon-cli"

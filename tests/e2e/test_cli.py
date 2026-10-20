@@ -19,7 +19,7 @@ from xml.etree import ElementTree
 import pytest
 
 from cordon_scanner.cli.main import CommandLine
-from cordon_scanner.core.errors import ExitCode
+from cordon_scanner.foundation.errors import ExitCode
 
 
 class CliFixtures:

@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
-from cordon_scanner.core.errors import SourceError
+from cordon_scanner.foundation.errors import SourceError
 from cordon_scanner.sources.git import HARDENING, GitRepository
 
 MAX_BLOBS = 50_000

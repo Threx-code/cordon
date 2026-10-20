@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cli.main import CommandLine
-from cordon_scanner.core.policy import Baseline
+from cordon_scanner.decide.policy import Baseline
 
 LEGACY = "const p = atob(B);\neval(p);\n"
 MALWARE = (

@@ -99,7 +99,7 @@ class KeyCeremony:
 
     def run(self) -> dict[str, object]:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-        from cordon_scanner.intel.feed import SPEC, FeedRoles
+        from cordon_scanner.intel.malware.feed import SPEC, FeedRoles
 
         private, public = self._prepare()
         keys: dict[str, dict[str, str]] = {}
@@ -154,8 +154,8 @@ class KeyCeremony:
         root_document: dict[str, object], advisory_key: dict[str, str], advisory_seed: bytes
     ) -> None:
         """Check the output with the package's own verify-only code before anything is reported."""
-        from cordon_scanner.intel import _ed25519
-        from cordon_scanner.intel.feed import FeedRoles
+        from cordon_scanner.intel.malware.feed import FeedRoles
+        from cordon_scanner.intel.provenance import _ed25519
 
         signed = root_document["signed"]
         if not isinstance(signed, dict):
@@ -168,7 +168,7 @@ class KeyCeremony:
 
     @staticmethod
     def fingerprints(root_document: dict[str, object], advisory_key: dict[str, str]) -> list[str]:
-        from cordon_scanner.intel.feed import FeedRoles
+        from cordon_scanner.intel.malware.feed import FeedRoles
 
         signed = root_document["signed"]
         if not isinstance(signed, dict):

@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.core.models import Dependency
+    from cordon_scanner.foundation.models import Dependency
 
 SPEC_VERSION_CYCLONEDX = "1.5"
 SPEC_VERSION_SPDX = "SPDX-2.3"
@@ -97,7 +97,7 @@ class SbomDocument:
         version pin. The data is already parsed from the lockfile; this is what puts
         it in the document.
         """
-        from cordon_scanner.detect.registry import RegistryEvidence
+        from cordon_scanner.detect.supply.registry import RegistryEvidence
 
         parsed = RegistryEvidence._canonical_digest(dependency.integrity)
         if parsed is None:

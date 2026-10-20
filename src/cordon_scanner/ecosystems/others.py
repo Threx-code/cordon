@@ -17,9 +17,6 @@ import re
 import tomllib
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.models import Hook, Scope
-from cordon_scanner.core.safexml import Element, SafeXml, SafeXmlError
-
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
 # Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
 from cordon_scanner.ecosystems.actions import GitHubActionsEcosystem
@@ -42,11 +39,13 @@ from cordon_scanner.ecosystems.nuget import NuGetEcosystem
 from cordon_scanner.ecosystems.pub import PubEcosystem
 from cordon_scanner.ecosystems.rubygems import RubyGemsEcosystem
 from cordon_scanner.ecosystems.swift import SwiftEcosystem
+from cordon_scanner.foundation.models import Hook, Scope
+from cordon_scanner.foundation.safexml import Element, SafeXml, SafeXmlError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
 
 
 # ---------------------------------------------------------------------------

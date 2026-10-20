@@ -486,7 +486,7 @@ class ImageLayers:
             return stream
         except ImportError:
             pass
-        from cordon_scanner.intel.zstd import Zstd
+        from cordon_scanner.intel.store.zstd import Zstd
 
         blob = raw.read(ImageLayers.MAX_ZSTD_LAYER + 1)
         if len(blob) > ImageLayers.MAX_ZSTD_LAYER:
