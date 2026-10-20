@@ -125,6 +125,52 @@ class TestTheFormatIsRecognised:
         assert Engine._distribution_format(units) == ""
 
 
+class TestNpmUnderAnotherRoot:
+    """npm installs a tarball by stripping its first path component, whatever it is, so `pkg/`
+    or the package's own name is as much an npm package as `package/` (review 98 #18): renaming
+    the folder switched every npm install-time reading off."""
+
+    @staticmethod
+    def units(archive: str, manifest: str | None, *others: str) -> list[SimpleNamespace]:
+        files = [SimpleNamespace(path=f"{archive}!{m}") for m in others]
+        if manifest is not None:
+            root = others[0].split("/", 1)[0] if others else "pkg"
+            files.append(
+                SimpleNamespace(
+                    path=f"{archive}!{root}/package.json", content=SimpleNamespace(text=manifest)
+                )
+            )
+        return files
+
+    MANIFEST = '{"name": "a", "version": "1.0.0"}'
+
+    @pytest.mark.parametrize("root", ["pkg", "left-pad", "a-1.0.0"])
+    def test_one_folder_with_a_manifest_is_npm(self, root: str) -> None:
+        units = self.units("a-1.0.0.tgz", self.MANIFEST, f"{root}/index.js")
+        assert Engine._distribution_format(units) == "npm"
+
+    def test_package_is_still_npm(self) -> None:
+        units = self.units("a-1.0.0.tgz", self.MANIFEST, "package/index.js")
+        assert Engine._distribution_format(units) == "npm"
+
+    @pytest.mark.parametrize(
+        ("archive", "manifest", "others"),
+        [
+            # A repository snapshot with a file beside its folder.
+            ("repo.tar.gz", MANIFEST, ("repo/index.js", "README.md")),
+            # Two folders at the top.
+            ("repo.tar.gz", MANIFEST, ("repo/index.js", "other/x.js")),
+            # A package.json that names no version: a project, not a release.
+            ("repo.tar.gz", '{"name": "a"}', ("repo/index.js",)),
+            ("repo.tar.gz", "not json", ("repo/index.js",)),
+            # Not a gzipped tar: npm does not install those.
+            ("repo.zip", MANIFEST, ("repo/index.js",)),
+        ],
+    )
+    def test_anything_else_is_not(self, archive, manifest, others) -> None:
+        assert Engine._distribution_format(self.units(archive, manifest, *others)) == ""
+
+
 class TestALockfileInAPublishedCrate:
     def test_is_its_maintainers_environment(self, tmp_path) -> None:
         crate = PackageFormatHelpers.archive(

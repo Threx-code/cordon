@@ -135,6 +135,7 @@
   "engine/inventory": "engine/inventory",
   "engine/local_seal": "engine/local_seal",
   "engine/netguard": "engine/netguard",
+  "engine/package_format": "engine/package_format",
   "engine/parallel": "engine/parallel",
   "engine/progress": "engine/progress",
   "engine/reachability": "engine/reachability",
@@ -538,7 +539,7 @@
    "detect/agents/agents": 4687,
    "detect/code/capability": 5180,
    "detect/secrets/secrets": 5147,
-   "engine/engine": 7930,
+   "engine/engine": 7873,
    "intel/advisories/upstream_advisories": 3918,
    "intel/registries/real": 3511
   },

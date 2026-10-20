@@ -51,6 +51,7 @@ from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, Lock
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.cache import CacheKey, ScanCache
 from cordon_scanner.engine.entries import PackageEntries
+from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner, WorkItem
 from cordon_scanner.engine.progress import NullProgress, Progress
 from cordon_scanner.engine.walker import (
@@ -438,9 +439,6 @@ DROP_POINT_SECRETS = frozenset(
 package that is how stolen data leaves (`@0xme5war/apicli` 2.0.0 is blocked by its Telegram bot
 token alone), not a key its publisher leaked, so it keeps its grade. 13 of 139,000 real npm and
 PyPI packages are blocked by one of these alone (review 98)."""
-
-GO_MODULE_ROOT = re.compile(r"[^@!]{1,1024}@v\d[^/@!]{0,128}/")
-"""A module proxy zip's first level: every file sits under `<module path>@<version>/`."""
 
 SHIPPED_DOCUMENTS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".odt")
 """Documents in a published package: pypdf ships sample forms for its own tests. Installing the
@@ -5074,63 +5072,8 @@ class Engine:
 
     @staticmethod
     def _distribution_format(units: list[FileUnit]) -> str:
-        """Which published-package format the archive is, or "" when it is not one.
-
-        Recognised by the metadata file each format's own packaging tool writes, at the
-        archive's first level only. That level matters: a repository snapshot that vendors a
-        package tarball is still a repository, and its own lockfiles are still the project's.
-        Formats whose archives have the same shape as a repository snapshot (pub, Packagist,
-        Helm, Terraform modules) are not recognised, because nothing tells them apart.
-        """
-        top: set[str] = set()
-        for unit in units:
-            _, sep, member = unit.path.partition("!")
-            if sep and "!" not in member:
-                top.add(member)
-        roots: dict[str, set[str]] = {}
-        for member in top:
-            directory, sep, leaf = member.partition("/")
-            if sep and "/" not in leaf:
-                roots.setdefault(directory, set()).add(leaf)
-        for directory, leaves in roots.items():
-            if "PKG-INFO" in leaves or (directory.endswith(".dist-info") and "METADATA" in leaves):
-                return "pypi"
-            if directory == "package" and "package.json" in leaves:
-                return "npm"
-            if "Cargo.toml.orig" in leaves:
-                return "cargo"
-            if "DESCRIPTION" in leaves and "MD5" in leaves:
-                return "cran"
-            if any(
-                leaf.endswith(".cabal")
-                and re.fullmatch(rf"{re.escape(leaf[:-6])}-\d[\d.]*", directory)
-                for leaf in leaves
-            ):
-                return "hackage"
-        if "metadata.gz" in top:
-            return "rubygems"
-        if "[Content_Types].xml" in top and any(
-            m.endswith(".nuspec") and "/" not in m for m in top
-        ):
-            return "nuget"
-        if "metadata.config" in top and "CHECKSUM" in top:
-            return "hex"
-        if "META-INF/MANIFEST.MF" in top:
-            return "maven"
-        if "info/index.json" in top:
-            return "conda"
-        # A `.conda` package: a zip of `metadata.json` and two zstd tarballs, its `info/` inside
-        # `info-*.tar.zst` -- the same package as the `.tar.bz2`, one level further down.
-        if "metadata.json" in top and any(
-            re.search(r"![^!/]*info-[^!/]*\.tar\.zst!info/index\.json$", unit.path)
-            for unit in units
-        ):
-            return "conda"
-        if "MANIFEST.json" in top and "FILES.json" in top:
-            return "galaxy"
-        if any(GO_MODULE_ROOT.match(m) for m in top):
-            return "gomod"
-        return ""
+        """Which published-package format the archive is (`engine/package_format.py`)."""
+        return PackageFormat.of(units)
 
     def _image_inventory(self, data: bytes, acc: _Accumulator) -> Any:
         """The OS packages of a container image tarball, or None when the archive is not one.
