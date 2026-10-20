@@ -290,6 +290,11 @@ class ImportCapabilities:
             cls.BINDING_LIBRARIES.match(lib.rsplit("/", 1)[-1]) for lib in table.libraries
         ) or any(cls.BINDING_SYMBOLS.match(sym) for sym in table.symbols)
 
+    #: Anti-debugging imports every Windows program's C runtime brings with it.
+    RUNTIME_ANTIDEBUG: ClassVar[frozenset[str]] = frozenset(
+        {"IsDebuggerPresent", "OutputDebugStringA"}
+    )
+
     @staticmethod
     def verdicts(profile: ImportProfile) -> list[tuple[str, str]]:
         """`(rule id, detail)` for each combination worth reporting."""
@@ -310,9 +315,14 @@ class ImportCapabilities:
         if profile.has("keylog", "network"):
             out.append(("SUSPECT.BINARY.KEYLOGGER.001", f"imports {named('keylog', 'network')}"))
         # Not network + execute + registry: that is every installer. Downloading a file and
-        # running it, or doing both while checking for a debugger, is what a dropper does.
-        if profile.has("download_execute", "execute") or profile.has(
-            "network", "execute", "antidebug"
+        # running it, or doing both while checking for a debugger, is what a dropper does --
+        # a check the program makes itself. `IsDebuggerPresent` and `OutputDebugStringA` alone are
+        # the C runtime's: MSVC's, mingw's and Rust's startup code imports them into every
+        # Windows program (review 98 P2: adb.exe, fastboot.exe and a Rust CLI, each a network
+        # tool that starts processes, were blocked as implants on those two alone).
+        deliberate = set(caps.get("antidebug", ())) - ImportCapabilities.RUNTIME_ANTIDEBUG
+        if profile.has("download_execute", "execute") or (
+            profile.has("network", "execute") and deliberate
         ):
             out.append(
                 (

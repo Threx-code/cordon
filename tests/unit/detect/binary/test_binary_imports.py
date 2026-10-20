@@ -236,8 +236,40 @@ class TestVerdicts:
 
     def test_networking_and_execution_with_anti_debugging_is(self) -> None:
         assert "SUSPECT.BINARY.IMPLANT.001" in self.rules(
-            ["socket", "connect", "execve", "IsDebuggerPresent", *[f"f{i}" for i in range(20)]]
+            [
+                "socket",
+                "connect",
+                "execve",
+                "CheckRemoteDebuggerPresent",
+                *[f"f{i}" for i in range(20)],
+            ]
         )
+        assert "SUSPECT.BINARY.IMPLANT.001" in self.rules(
+            [
+                "socket",
+                "connect",
+                "CreateProcessW",
+                "IsDebuggerPresent",
+                "NtQueryInformationProcess",
+                *[f"f{i}" for i in range(20)],
+            ]
+        )
+
+    def test_the_c_runtimes_own_debugger_imports_are_not_anti_debugging(self) -> None:
+        # adb.exe's table, abridged: a network tool that starts processes, with the two calls
+        # MSVC's startup code imports into every program (review 98 P2).
+        adb = [
+            "WSAStartup",
+            "socket",
+            "connect",
+            "getaddrinfo",
+            "send",
+            "CreateProcessW",
+            "IsDebuggerPresent",
+            "OutputDebugStringA",
+            *[f"f{i}" for i in range(20)],
+        ]
+        assert "SUSPECT.BINARY.IMPLANT.001" not in self.rules(adb)
 
     def test_a_table_that_imports_only_the_loader_hides_its_imports(self) -> None:
         assert self.rules(["LoadLibraryA", "GetProcAddress", "ExitProcess"]) == [
