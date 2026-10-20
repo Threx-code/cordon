@@ -43,6 +43,7 @@ from cordon_scanner.foundation.models import Capability
 from cordon_scanner.intel.malware.hosts import Destinations
 
 if TYPE_CHECKING:
+    from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.detect.code.capability import CapabilityHit
 
 #: Hosts that serve release artefacts and nothing else an install script would fetch from them.
@@ -313,6 +314,71 @@ class VerifiedDownload:
         return "github.com" in code and cls._downloads_only_releases(
             code, language, declared_repository
         )
+
+    #: A whole package name among a registry URL's literal parts, and an `@scope/` prefix: the host,
+    #: `/-/`, `-` and `.tgz` pieces are neither, so they can never match a declared name.
+    PACKAGE_NAME: ClassVar[re.Pattern[str]] = re.compile(r"(?:@[a-z0-9][\w.-]*/)?[a-z0-9][\w.-]*")
+    SCOPE: ClassVar[re.Pattern[str]] = re.compile(r"@[a-z0-9][\w.-]*/")
+
+    @classmethod
+    def package_install(
+        cls,
+        text: str,
+        language: str | None,
+        hits: Sequence[CapabilityHit],
+        repository: str | None,
+        ctx: ScanContext,
+    ) -> bool:
+        """A download of the package's own release (`own_release`), or of a package its manifest
+        declares, from the registry (`registry_install`)."""
+        return cls.own_release(text, language, hits, repository) or cls.registry_install(
+            text, language, hits, ctx.declared_dependencies
+        )
+
+    @classmethod
+    def registry_install(
+        cls,
+        text: str,
+        language: str | None,
+        hits: Sequence[CapabilityHit],
+        declared: frozenset[str],
+    ) -> bool:
+        """Every request the file makes is a registry tarball of a package its own manifest
+        declares, or a redirect one of those gave (`JsFlow.requests`).
+
+        esbuild's `install.js` fetches `registry.npmjs.org/@esbuild/<platform>/-/<platform>-<v>.tgz`,
+        reads the binary out of it and runs it once to check its version: what npm does with the
+        `optionalDependencies` it declares, done by hand when they were skipped (review 98 P2:
+        esbuild and napi-postinstall were the popular-npm dropper blocks). Only a declared package:
+        a tarball the manifest does not name is the registry used as a CDN, and a helper whose
+        package name arrives as an argument (napi-postinstall's own library) names none. What the
+        dependency is, is that package's own scan's question (review 98 P3: payload in a
+        dependency). 0 of 1,923 npm study-half malware make a registry tarball request at all.
+        """
+        if (
+            not declared
+            or language not in ("javascript", "typescript")
+            or len(text) > cls.MAX_CHARS
+        ):
+            return False
+        if any(
+            hit.capability in DISQUALIFYING_CAPABILITIES
+            or hit.rule_id in UNVERIFIABLE_RUNS
+            or hit.rule_id.startswith("INTEL.")
+            for hit in hits
+        ):
+            return False
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+
+        requests = JsFlow.requests(text)
+        if not any(r.kind == "registry" for r in requests) or any(
+            r.kind not in ("registry", "redirect") for r in requests
+        ):
+            return False
+        parts = {part for r in requests for part in r.parts}
+        names = {p for p in parts if cls.PACKAGE_NAME.fullmatch(p)}
+        scopes = {p for p in parts if cls.SCOPE.fullmatch(p)}
+        return bool(names & declared) or any(n.startswith(s) for n in declared for s in scopes)
 
     # -- source -----------------------------------------------------------------------------------
 

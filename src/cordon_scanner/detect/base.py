@@ -95,6 +95,9 @@ class ScanContext:
     library_entry_paths: frozenset[str] = frozenset()
     """`import_entry_paths` without `bin`: the files that run whenever another program loads the
     package (npm `main`, `exports`), not when a person runs its command."""
+    declared_dependencies: frozenset[str] = frozenset()
+    """The runtime dependencies a published package's manifest declares, by name (npm
+    `dependencies` and `optionalDependencies`): what installing it installs beside it."""
     install_entry_paths: frozenset[str] = frozenset()
     """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
     -- as distinct from the modules they import, which `install_hook_paths` also holds. A

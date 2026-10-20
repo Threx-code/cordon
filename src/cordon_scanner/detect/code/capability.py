@@ -1655,8 +1655,8 @@ class CapabilityDetector(BaseDetector):
             # a release on github.com is the package's only if its owner and repository match.
             # Hosts with no owner in the path (the npm registries, nodejs.org) do not need it.
             ctx.package_repository or None,
-        ) or VerifiedDownload.own_release(
-            unit.content.text, unit.language, file_hits, ctx.package_repository or None
+        ) or VerifiedDownload.package_install(
+            unit.content.text, unit.language, file_hits, ctx.package_repository or None, ctx
         )
 
     #: Who this machine is, in shell: a command's output or the variable the shell fills in.

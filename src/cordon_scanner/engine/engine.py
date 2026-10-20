@@ -2019,6 +2019,7 @@ class Engine:
             distribution=early_format,
             import_entry_paths=PackageEntries.of(units, early_format),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
+            declared_dependencies=Engine._declared_dependencies(units, early_format),
             package_repository=Engine._package_repository(units, early_format),
         )
         ctx = Engine._lifted_inherit(ctx)
@@ -4862,8 +4863,7 @@ class Engine:
 
     @staticmethod
     def _declared_dependencies(units: Sequence[FileUnit], distribution: str) -> frozenset[str]:
-        """The runtime dependencies a published release declares: npm's `dependencies` and
-        `optionalDependencies`, a Python distribution's `Requires-Dist` outside any extra."""
+        """A release's runtime dependencies: npm's (optional ones too), PyPI's `Requires-Dist`."""
         if distribution == "npm":
             manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
             try:

@@ -288,3 +288,116 @@ class TestPython:
     def test_md5_is_not_a_verification(self) -> None:
         text = self.SETUP.replace("hashlib.sha256", "hashlib.md5")
         assert not VerifiedDownload.verified(text, "python", "setup.py", [], frozenset(), None)
+
+
+#: esbuild's `install.js`, reduced: the platform package's tarball from the registry, the binary read
+#: out of it, written beside the script, run once for its version (review 98 P2). Inert text.
+REGISTRY_INSTALL = """const fs = require("fs");
+const path = require("path");
+const zlib = require("zlib");
+const https = require("https");
+const child_process = require("child_process");
+const VERSION = "1.2.3";
+const pkg = "@example/linux-x64";
+function fetch(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location)
+        return fetch(res.headers.location).then(resolve, reject);
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+    }).on("error", reject);
+  });
+}
+function extract(buffer) {
+  buffer = zlib.unzipSync(buffer);
+  return buffer.subarray(512);
+}
+async function install() {
+  const url = `https://registry.npmjs.org/${pkg}/-/${pkg.replace("@example/", "")}-${VERSION}.tgz`;
+  const bin = path.join(__dirname, "tool");
+  fs.writeFileSync(bin, extract(await fetch(url)), { mode: 0o755 });
+  child_process.execFileSync(bin, ["--version"]);
+}
+install();
+"""
+
+
+class TestRegistryInstall:
+    """A file whose every request is a registry tarball of a package the manifest declares installs
+    that package as npm would: lowered like a verified release, never cleared."""
+
+    @staticmethod
+    def scan(tmp_path: Path, script: str, declared: dict[str, str]) -> list[tuple[str, Severity]]:
+        manifest = {
+            "name": "example-tool",
+            "version": "1.2.3",
+            "scripts": {"postinstall": "node install.js"},
+            "optionalDependencies": declared,
+        }
+        members = {
+            "package/package.json": json.dumps(manifest).encode(),
+            "package/install.js": script.encode(),
+        }
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, data in members.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "example-tool-1.2.3.tgz"
+        target.write_bytes(buffer.getvalue())
+        return [
+            (f.rule_id, f.severity)
+            for f in Scanner().scan(target).findings
+            if f.rule_id in ("MALWARE.DROPPER.001", "SUSPECT.DROPPER.001")
+        ]
+
+    @staticmethod
+    def blocked(found: list[tuple[str, Severity]]) -> bool:
+        return any(rule == "MALWARE.DROPPER.001" or sev >= Severity.HIGH for rule, sev in found)
+
+    def test_a_declared_platform_package_is_lowered_and_still_reported(
+        self, tmp_path: Path
+    ) -> None:
+        found = self.scan(tmp_path, REGISTRY_INSTALL, {"@example/linux-x64": "1.2.3"})
+        assert found
+        assert not self.blocked(found)
+
+    def test_a_tarball_the_manifest_does_not_declare_keeps_the_block(self, tmp_path: Path) -> None:
+        # The registry used as a CDN: any published package's tarball, fetched and run.
+        found = self.scan(tmp_path, REGISTRY_INSTALL, {"@other/linux-x64": "1.2.3"})
+        assert self.blocked(found)
+
+    def test_one_request_elsewhere_keeps_the_block(self, tmp_path: Path) -> None:
+        script = REGISTRY_INSTALL.replace(
+            "install();\n", 'https.get("https://example.invalid/x");\ninstall();\n'
+        )
+        found = self.scan(tmp_path, script, {"@example/linux-x64": "1.2.3"})
+        assert self.blocked(found)
+
+    def test_matched_by_name_or_by_the_scope_the_template_names(self) -> None:
+        declared = frozenset({"@example/linux-x64"})
+        assert VerifiedDownload.registry_install(REGISTRY_INSTALL, "javascript", [], declared)
+        assert not VerifiedDownload.registry_install(
+            REGISTRY_INSTALL, "javascript", [], frozenset()
+        )
+        assert not VerifiedDownload.registry_install(
+            REGISTRY_INSTALL, "javascript", [], frozenset({"example-unrelated"})
+        )
+
+    def test_the_url_pieces_never_match_a_declared_name(self) -> None:
+        # The template's literal parts include '', '-', '.tgz', '/-/' and the host: none is a
+        # package name or a scope, so a declared dependency the URL does not name stays blocked.
+        unscoped = REGISTRY_INSTALL.replace('"@example/linux-x64"', '"tool-linux-x64"').replace(
+            'pkg.replace("@example/", "")', "pkg"
+        )
+        assert not VerifiedDownload.registry_install(
+            unscoped, "javascript", [], frozenset({"left-pad"})
+        )
+        # And a name that reaches the URL only through a variable is no literal part of it: the
+        # match fails closed, and the block stays.
+        assert not VerifiedDownload.registry_install(
+            unscoped, "javascript", [], frozenset({"tool-linux-x64"})
+        )
