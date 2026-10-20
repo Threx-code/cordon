@@ -306,6 +306,7 @@
   "test_code_carried_as_data.py": "detect/agents",
   "test_comments.py": "foundation",
   "test_commercial_bench.py": "bench",
+  "test_composite_package_paths.py": "detect/code",
   "test_composite_scope.py": "engine",
   "test_conda_archives.py": "sources",
   "test_config.py": "foundation",

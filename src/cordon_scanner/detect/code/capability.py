@@ -1054,11 +1054,10 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _flow_in_shipped_code(rule_id: str, content: FileContent, ctx: ScanContext) -> bool:
         """A followed flow in the code a published npm package runs: its library entry points (`main`,
-        `exports`) and what its install hooks load. There `dist/` and the minified bundle
-        are not build output beside the code -- they are the code (review 98, 17-PROOF-REVIEW:
-        the generated-output and minified ceilings lowered 21 study-half misses' flow findings).
-        Proximity findings keep the ceilings: a bundle holds a module loader's decoder and
-        evaluator by construction."""
+        `exports`) and what its install hooks load. There `dist/` and the minified bundle are not
+        build output beside the code -- they are the code (review 98, 17-PROOF-REVIEW: the
+        generated-output and minified ceilings lowered 21 study-half misses' flow findings).
+        Proximity findings keep the ceilings: a bundle holds a loader's decoder and evaluator."""
         return (
             rule_id in CapabilityDetector.FLOW_EVIDENCE_RULES
             and ctx.package_distribution
@@ -4275,7 +4274,8 @@ class CapabilityDetector(BaseDetector):
         if "path_glob" in term and path is not None:
             from cordon_scanner.engine.walker import PathGlob
 
-            return PathGlob.matches(path, str(term["path_glob"]))
+            entry = getattr(self, "_in_entry", False) or getattr(self, "_in_import_entry", False)
+            return not entry and PathGlob.in_package(path, str(term["path_glob"]))
 
         # Execution context as a first-class term.
         #

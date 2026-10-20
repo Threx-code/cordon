@@ -855,6 +855,23 @@ class PathGlob:
         return GlobMatcher(pattern)
 
     @classmethod
+    def in_package(cls, path: str, pattern: str) -> bool:
+        """Match a file where it sits in its package rather than in the scan.
+
+        A tarball member `x.tgz!package/tests/a.js` is `tests/a.js` to a rule exempting
+        `tests/**`: matched as the archive holds it, and without the one folder an archive packs
+        its package under (`package/`, `name-1.0/`). Root-anchored globs matched no archive
+        member before (review 98 P2: 37 of them in composites.yaml). The composite evaluator
+        never applies one to a hook's own script or the package's entry point, whatever its
+        directory: there an exemption would be a place to hide.
+        """
+        _, sep, member = path.rpartition("!")
+        if not sep:
+            return cls.matches(path, pattern)
+        _, slash, inner = member.partition("/")
+        return cls.matches(member, pattern) or bool(slash and inner and cls.matches(inner, pattern))
+
+    @classmethod
     def matches(cls, path: str, pattern: str) -> bool:
         """Match a repository-relative path against an ignore pattern."""
         if pattern.endswith("/"):

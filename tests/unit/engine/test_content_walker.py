@@ -228,6 +228,24 @@ class TestPathMatching(ContentWalkerFixtures):
         assert PathGlob.matches("ab.py", "a?.py")
         assert not PathGlob.matches("a/b.py", "a?b.py")
 
+    @pytest.mark.parametrize(
+        ("path", "pattern", "expected"),
+        [
+            # Matched where the file sits in its package (review 98 P2).
+            ("x.tgz!package/tests/a.js", "tests/**", True),
+            ("x.tar.gz!name-1.0/tests/test_a.py", "tests/**", True),
+            ("x.tgz!tests/a.js", "tests/**", True),
+            ("x.tgz!package/lib/tests.js", "tests/**", False),
+            ("x.tgz!package/src/tests/a.js", "tests/**", False),
+            ("x.tgz!package/a.test.js", "**/*.test.*", True),
+            # A plain path is matched as before.
+            ("tests/a.js", "tests/**", True),
+            ("src/tests/a.js", "tests/**", False),
+        ],
+    )
+    def test_matching_inside_a_package(self, path: str, pattern: str, expected: bool) -> None:
+        assert PathGlob.in_package(path, pattern) is expected
+
     def test_character_class(self) -> None:
         assert PathGlob.matches("a1.py", "a[0-9].py")
         assert not PathGlob.matches("ax.py", "a[0-9].py")
