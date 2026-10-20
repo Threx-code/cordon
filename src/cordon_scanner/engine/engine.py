@@ -6809,7 +6809,7 @@ class Engine:
             for unit in units
             if unit.path.endswith((".js", ".cjs", ".mjs")) and not unit.content.is_binary
         }
-        pending = [path for path in hooks if path in sources]
+        pending = sorted(path for path in hooks if path in sources)  # a set: fixed order (#23)
         found: set[str] = set()
         while pending and len(found) < JS_CLOSURE_LIMIT:
             current = pending.pop()

@@ -293,6 +293,7 @@
   "test_ci_templates.py": "repository",
   "test_clamav.py": "detect/binary",
   "test_class_based_architecture.py": "repository",
+  "test_closure_order.py": "engine",
   "test_cloud.py": "cloud",
   "test_cmake_fetch.py": "foundation",
   "test_cocoapods_trunk.py": "ecosystems",
