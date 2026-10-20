@@ -257,6 +257,9 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("MALWARE.EXFIL.", ThreatDomain.EXFILTRATION),
     ("SUSPECT.INSTALL.", ThreatDomain.MALWARE),
     ("MALWARE.PROTESTWARE.", ThreatDomain.MALWARE),
+    # A messaging account made to follow a channel; an app showing users a page its server picks.
+    ("MALWARE.ACCOUNT.", ThreatDomain.MALWARE),
+    ("MALWARE.MOBILE.", ThreatDomain.MALWARE),
     ("SUSPECT.TARGETED_PAYLOAD.", ThreatDomain.MALWARE),
     ("SUSPECT.DESTROY.", ThreatDomain.MALWARE),
     ("MALWARE.INSTALL.", ThreatDomain.MALWARE),
@@ -336,6 +339,8 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("POLICY.DEPENDENCY.", AttackCategory.POLICY),
     ("SUSPECT.INSTALL.", AttackCategory.INSTALL_HOOK),
     ("MALWARE.PROTESTWARE.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.ACCOUNT.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.MOBILE.", AttackCategory.MALICIOUS_CODE),
     ("SUSPECT.TARGETED_PAYLOAD.", AttackCategory.MALICIOUS_CODE),
     ("SUSPECT.DESTROY.", AttackCategory.MALICIOUS_CODE),
     ("MALWARE.INSTALL.", AttackCategory.INSTALL_HOOK),

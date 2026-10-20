@@ -92,6 +92,9 @@ class ScanContext:
     """A published package's own entry points -- npm `main`, `bin` and `exports` targets, a
     wheel's or sdist's top-level `__init__.py` -- whose top level runs on `require()`, `import`
     or the command. Code there runs on every consumer without a hook (review 98, REC-2)."""
+    library_entry_paths: frozenset[str] = frozenset()
+    """`import_entry_paths` without `bin`: the files that run whenever another program loads the
+    package (npm `main`, `exports`), not when a person runs its command."""
     install_entry_paths: frozenset[str] = frozenset()
     """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
     -- as distinct from the modules they import, which `install_hook_paths` also holds. A

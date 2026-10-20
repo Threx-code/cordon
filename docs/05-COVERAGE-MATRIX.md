@@ -236,6 +236,7 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `MALWARE.ACCOUNT.CHANNEL_FOLLOW.001` | critical | `composites` | malicious_code |
 | `MALWARE.ANTI_ANALYSIS.001` | critical | `composites` | malicious_code |
 | `MALWARE.CLAMAV.SIGNATURE.001` | critical | `clamav` | malicious_code |
 | `MALWARE.CRYPTOMINER.001` | critical | `composites` | cryptomining |
@@ -254,6 +255,7 @@ rather than a document.
 | `MALWARE.INSTALL.SHELL_EVASION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | `composites` | install_hook |
+| `MALWARE.MOBILE.ATTRIBUTION_CLOAK.001` | critical | `composites` | malicious_code |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
 | `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
@@ -387,6 +389,7 @@ rather than a document.
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | `composites` | exfiltration |
@@ -402,6 +405,7 @@ rather than a document.
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | `composites` | exfiltration |
@@ -712,6 +716,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.AGENT.AUTORUN.001` | critical | `agents` | dropper |
+| `MALWARE.AGENT.CONFIG_PLANTED.001` | critical | `composites` | malicious_code |
 | `MALWARE.AGENT.HIJACK.001` | critical | `composites` | malicious_code |
 | `MALWARE.AGENT.HOOK_EXFIL.001` | critical | `agents` | exfiltration |
 | `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | `agents` | dropper |

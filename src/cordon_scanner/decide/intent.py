@@ -374,7 +374,7 @@ class IntentObserver:
     def entries(units: Sequence[FileUnit]) -> tuple[set[str], set[str]]:
         """`(imported, commands)`: the files `require()` loads first -- npm's `main` (or
         `index.js`) and `exports` targets -- and the files npm links as commands, which run when
-        the user runs the command. `Engine._import_entries` holds both as one set."""
+        the user runs the command. `PackageEntries.of` holds both as one set."""
         manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
         if manifest is None:
             return set(), set()

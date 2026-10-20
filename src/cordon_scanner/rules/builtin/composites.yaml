@@ -1369,7 +1369,7 @@ rules:
       whole environment, or who and where this machine is -- reaches a request bound for an
       address that exists to collect data from other people's code: a webhook catcher, a chat
       bot API, a tunnel, a paste site, or a bare IP address. Followed through bindings, helper
-      functions and callbacks (`detect/js_flow.py`), so it holds however far apart the read and
+      functions and callbacks (`analysis/javascript/js_flow.py`), so it holds however far apart the read and
       the send are written.
     remediation: >
       Do not install or run it. Treat what the code could read as sent: rotate those credentials,
@@ -1410,7 +1410,7 @@ rules:
       The contents of a credential store -- an SSH key, cloud or registry credentials, a
       browser's saved logins -- reach a request. No library needs to send them: a client
       authenticates with a token it was given, not with the file that holds the user's others.
-      Followed through bindings, helper functions and callbacks (`detect/js_flow.py`).
+      Followed through bindings, helper functions and callbacks (`analysis/javascript/js_flow.py`).
     remediation: >
       Do not install or run it. Rotate the credentials and move funds from any wallet whose key
       was on the machine.
@@ -1427,6 +1427,197 @@ rules:
       any:
         - rule: CAP.JS.FLOW.SECRET_FILE_SENT.FIXED
         - rule: CAP.JS.FLOW.SECRET_FILE_SENT.UNKNOWN
+
+  - id: SUSPECT.EXFIL.FLOW_IDENTITY.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Sends who and where this machine is
+    message: >
+      The machine's host name, user name or network interfaces reach what a request, a connection
+      or a DNS lookup sends, to whatever host the file builds. Followed through bindings, helper
+      functions, class methods, callbacks and compiled module wrappers (`analysis/javascript/js_flow.py`), so
+      it holds however the read and the send are written. A library has no need to report the
+      machine it runs on; a dependency-confusion probe and a stealer's first message do exactly
+      this.
+    remediation: >
+      Read where the identity goes. Do not install the package unless that reporting is
+      documented and opt-in.
+    references:
+      - https://attack.mitre.org/techniques/T1082/
+    provenance:
+      kind: research
+      reference: >
+        Review 98 (17-PROOF-REVIEW): identity -> request/connection/dns at an unknown or fixed
+        host in 1 of 3,584 benign npm units (an MCP server's telemetry); in 16 code-bearing npm
+        malware of the bulk-2 study half that no other rule blocked.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.FIXED
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.UNKNOWN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
+  - id: MALWARE.EXFIL.FLOW_RAW_CHANNEL.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Sends what a command printed, or the user's files, over a channel of its own
+    message: >
+      What a command printed, a file from the home directory or a credential store reaches a raw
+      socket or the name of a DNS lookup. Libraries talk to their services over HTTP; a socket or
+      a DNS name carrying the output of `whoami`, a listing, or a key file is a payload reporting
+      what it found. Followed through bindings, helper functions, callbacks and compiled module
+      wrappers (`analysis/javascript/js_flow.py`).
+    remediation: >
+      Do not install or run it. Treat whatever the command or the files could reveal on machines
+      that ran it as exposed, and rotate those credentials.
+    references:
+      - https://attack.mitre.org/techniques/T1048/
+    provenance:
+      kind: research
+      reference: >
+        Review 98 (17-PROOF-REVIEW): 0 of 3,584 benign npm units; command output over a socket in
+        26 code-bearing npm malware of the bulk-2 study half that no other rule blocked.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.DROP
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.IP
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.FIXED
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.UNKNOWN
+        - rule: CAP.JS.FLOW.HOME_FILE_RAW.DROP
+        - rule: CAP.JS.FLOW.HOME_FILE_RAW.IP
+        - rule: CAP.JS.FLOW.HOME_FILE_RAW.FIXED
+        - rule: CAP.JS.FLOW.HOME_FILE_RAW.UNKNOWN
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.DROP
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.IP
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.FIXED
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.UNKNOWN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
+  - id: MALWARE.AGENT.CONFIG_PLANTED.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Installing the package plants an AI agent's configuration in your project
+    message: >
+      At install time this package copies files into the project that is installing it, and it
+      ships an AI coding agent's configuration -- an MCP server list, a CLAUDE.md or AGENTS.md
+      system prompt, agent settings or hooks. The next agent session opened in that project loads
+      them without asking: a server of the publisher's choosing, instructions the user never
+      wrote. Installing a dependency does not need to write anything into the project around it.
+    remediation: >
+      Do not install the package. Remove any `.mcp.json`, `CLAUDE.md`, `.claude/` or `.cursor/`
+      files it added to the project, and check which MCP servers your agent now starts.
+    references:
+      - https://attack.mitre.org/techniques/T1546/
+    provenance:
+      kind: research
+      reference: >
+        The 2026 `0x2ai-demo*` npm packages: a postinstall `cpSync(payload, INIT_CWD)` that drops
+        `.mcp.json`, `CLAUDE.md` and `.claude/settings.json` into the installing project (review 98,
+        17-PROOF-REVIEW).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - context: install_hook
+        - rule: CAP.JS.AGENT_CONFIG_PLANTED
+
+  - id: MALWARE.MOBILE.ATTRIBUTION_CLOAK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A component sends the app's install attribution and shows a server-chosen page
+    message: >
+      This component reads the app's install-attribution data (which campaign brought each user)
+      and renders a page whose address is a variable in a WebView -- the cloaking shape of fake
+      React Native packages: the attribution goes to the publisher, a remote setting picks the
+      page, and the WebView stays hidden until the server sends one, so app review sees an
+      ordinary screen and users see whatever the server chooses.
+    remediation: >
+      Remove the package from the app. Check what the app's WebViews loaded, and which servers
+      received its attribution data.
+    references:
+      - https://attack.mitre.org/techniques/T1406/
+    provenance:
+      kind: research
+      reference: >
+        The 2026 `sproger` npm campaign (37 React Native packages, two attacker domains). Review 98
+        (17-PROOF-REVIEW): 18 study-half misses with no other finding; on 92,999 benign npm units
+        only a package of the same campaign.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.ATTRIBUTION_CLOAK
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
+  - id: MALWARE.ACCOUNT.CHANNEL_FOLLOW.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A WhatsApp library subscribes every account that connects to the publisher's channel
+    message: >
+      A WhatsApp Channel id is written into the library's own socket or utility code, or beside a
+      follow call. Every account that signs in through this package is made to follow that
+      channel without being asked: the publisher's audience is built from other people's
+      accounts. The genuine library defines a follow call and never names a channel.
+    remediation: >
+      Do not use this package; use the upstream library. Review which channels the accounts that
+      used it now follow, and unfollow the ones you did not choose.
+    references:
+      - https://attack.mitre.org/techniques/T1098/
+    provenance:
+      kind: research
+      reference: >
+        The 2026 family of Baileys forks (100+ on npm) that inject a covert `w:mex` FOLLOW on
+        connect. Review 98 (17-PROOF-REVIEW): 22 of 479 code-bearing misses of the bulk-2 study
+        half; in 92,999 benign npm units only forks with the same added files.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.WHATSAPP_CHANNEL_FOLLOW
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
 
   - id: SUSPECT.DESTROY.HOME_OR_ROOT.001
     version: 1.0.0
@@ -1969,7 +2160,7 @@ rules:
       Code that runs when the package is installed -- or, for an editor extension, when the
       editor starts it -- executes the body of a network response: through eval, new Function,
       the vm module or a child process. Followed from the request to the execution through
-      callbacks, promise chains and helper functions (`detect/js_flow.py`). What runs is whatever
+      callbacks, promise chains and helper functions (`analysis/javascript/js_flow.py`). What runs is whatever
       the server chose at that moment, on every machine that installs it.
     remediation: >
       Do not install it. Treat any machine that did as having run code from that server.
@@ -2001,7 +2192,7 @@ rules:
     message: >
       The body of a network response reaches eval, new Function, the vm module or a child
       process, followed from the request to the execution through bindings, destructuring,
-      promise chains and helper functions (`detect/js_flow.py`). Outside an install hook it runs
+      promise chains and helper functions (`analysis/javascript/js_flow.py`). Outside an install hook it runs
       when the code is loaded or called -- a library's exported function that fetches a command
       and executes it does so in every application that calls it, with that application's
       permissions.

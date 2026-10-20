@@ -467,6 +467,11 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._js_downloaded_and_run(content, unit.language))
         hits.extend(self._js_wallet_secret_sent(content, unit.language))
         hits.extend(self._js_flows(content, unit.language))
+        from cordon_scanner.detect.code.js_campaigns import JsCampaigns
+
+        hits.extend(JsCampaigns.channel_follow(content, unit.language))
+        hits.extend(JsCampaigns.plants_agent_config(ctx, content, unit.language))
+        hits.extend(JsCampaigns.attribution_cloak(content, unit.language))
         computed = self._js_computed_require(content, unit.language)
         hits.extend(computed)
         if computed and not self._bundled(content):
@@ -480,8 +485,10 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._credential_sweep(matched_content))
         hits.extend(self._browser_secrets_decrypted(matched_content))
         if unit.language == "go":
-            hits.extend(self._go_ci_environment_write(matched_content))
-            hits.extend(self._go_received_and_run(content))
+            from cordon_scanner.detect.code.go_runs import GoRuns
+
+            hits.extend(GoRuns.ci_environment_write(matched_content))
+            hits.extend(GoRuns.received_and_run(content))
         if unit.language in ("javascript", "typescript"):
             from cordon_scanner.detect.code.js_runs import JsRuns
 
@@ -1032,6 +1039,34 @@ class CapabilityDetector(BaseDetector):
     which writes a base64 script to disk and runs it with bash, and the tooling ceiling held it
     at MEDIUM (review 98).
     """
+
+    #: Findings whose evidence is a value followed from where it is read to where it goes
+    #: (`analysis/javascript/js_flow.py`), not two patterns near each other: a server's reply reaching an
+    #: evaluator, the machine's identity or a credential file reaching a request.
+    FLOW_EVIDENCE_RULES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "SUSPECT.DROPPER.REMOTE_CODE.001",
+            "SUSPECT.EXFIL.FLOW_IDENTITY.001",
+            "SUSPECT.EXFIL.FLOW_SECRET.001",
+        }
+    )
+
+    @staticmethod
+    def _flow_in_shipped_code(rule_id: str, content: FileContent, ctx: ScanContext) -> bool:
+        """A followed flow in the code a published npm package runs: its library entry points (`main`,
+        `exports`) and what its install hooks load. There `dist/` and the minified bundle
+        are not build output beside the code -- they are the code (review 98, 17-PROOF-REVIEW:
+        the generated-output and minified ceilings lowered 21 study-half misses' flow findings).
+        Proximity findings keep the ceilings: a bundle holds a module loader's decoder and
+        evaluator by construction."""
+        return (
+            rule_id in CapabilityDetector.FLOW_EVIDENCE_RULES
+            and ctx.package_distribution
+            and ctx.distribution == "npm"
+            # Not a `bin` target alone: a CLI that fetches and runs its plugins or its update runs
+            # when a person runs it (review 98: both benign blocks were `bin` tools).
+            and (content.path in ctx.library_entry_paths or ctx.in_install_hook(content.path))
+        )
 
     @staticmethod
     def _shipped_output(path: str, ctx: ScanContext) -> bool:
@@ -2864,6 +2899,18 @@ class CapabilityDetector(BaseDetector):
             frozenset({"request", "connection", "dns"}),
         ),
         ("network_response", "CAP.JS.FLOW.REMOTE_CODE", frozenset({"execute", "process"})),
+        # Sent over a raw socket or inside a DNS name rather than a request: what a command
+        # printed, a home-directory file, a credential store. A client library speaks HTTP to its
+        # service; a channel of its own is how a payload reports what it found.
+        (
+            "command_output",
+            "CAP.JS.FLOW.COMMAND_OUTPUT_RAW",
+            # Not `dns`: a lookup of the host a command printed (`npm config get registry`, the
+            # connectivity check in `next`) uses the output as the destination, not as data.
+            frozenset({"connection"}),
+        ),
+        ("home_file", "CAP.JS.FLOW.HOME_FILE_RAW", frozenset({"connection", "dns"})),
+        ("secret_file", "CAP.JS.FLOW.SECRET_FILE_RAW", frozenset({"connection", "dns"})),
     )
 
     #: Where one service keeps its credentials on disk, by service. A tool reads its own; a
@@ -2917,14 +2964,6 @@ class CapabilityDetector(BaseDetector):
                 line=text.count("\n", 0, first) + 1,
             )
         ]
-
-    _GO_CONNECTION: ClassVar[re.Pattern[str]] = re.compile(
-        r"\b(?P<conn>[A-Za-z_]\w{0,40})\s*,\s*[A-Za-z_]\w{0,40}\s*:?=\s*"
-        r"(?:[A-Za-z_][\w.]{0,60}\.)?(?:Dial(?:Timeout|Context|TCP|UDP)?|Accept)\s*\("
-    )
-    _GO_EXEC: ClassVar[re.Pattern[str]] = re.compile(
-        r"\bexec\.Command(?:Context)?\s*\(\s*(?P<first>[^,)\s]+)"
-    )
 
     _DETECTION_RULES: ClassVar[re.Pattern[str]] = re.compile(
         r"(?m)^[ \t]{0,8}tests:[ \t]*\n[ \t]{0,12}positive:[ \t]*$"
@@ -3039,102 +3078,6 @@ class CapabilityDetector(BaseDetector):
         commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
         hits.extend(self._embedded_capabilities(ctx, view, commands))
         return hits, candidates
-
-    @classmethod
-    def _go_received_and_run(cls, content: FileContent) -> list[CapabilityHit]:
-        """A Go function that runs what arrives on a network connection it opened.
-
-        `conn := Dial(...)`, a line read from `conn`, split into arguments, `exec.Command(args[0],
-        args[1:]...)` and the output written back to `conn`: the command channel of
-        `boltdb-go/bolt` 1.3.1, served from the Go module mirror for three years (review 98).
-        Recorded at the process start as `fetch_exec`: what runs is whatever the other end sent.
-        One function at a time; the first argument to `exec.Command` must not be a literal."""
-        text = content.text
-        if "exec.Command" not in text or ("Dial" not in text and "Accept" not in text):
-            return []
-        for found in cls._GO_FUNC.finditer(text):
-            depth, index = 1, found.end()
-            limit = min(len(text), index + 200_000)
-            while index < limit and depth:
-                depth += text[index] == "{"
-                depth -= text[index] == "}"
-                index += 1
-            body = text[found.end() : index]
-            for connection in cls._GO_CONNECTION.finditer(body):
-                conn = re.escape(connection["conn"])
-                after = body[connection.end() :]
-                reads = re.search(
-                    rf"(?:\b{conn}\s*\.\s*Read\w*\(|\(\s*{conn}\s*\)\s*\.\s*(?:ReadString|ReadLine|ReadBytes|Scan|Decode)\b|NewScanner\(\s*{conn}\s*\))",
-                    after,
-                )
-                if reads is None:
-                    continue
-                for run in cls._GO_EXEC.finditer(after, reads.start()):
-                    if run["first"].startswith(('"', "`")):
-                        continue
-                    offset = found.end() + connection.end() + run.start()
-                    start = len(text[:offset].encode("utf-8"))
-                    # The connection it reads from is the egress: `d.Dial` on a `net.Dialer` value
-                    # is a connection whatever the variable is called.
-                    dialled = found.end() + connection.start()
-                    egress = len(text[:dialled].encode("utf-8"))
-                    return [
-                        CapabilityHit(
-                            capability=Capability.EGRESS,
-                            rule_id="CAP.GO.RECEIVED_RUN",
-                            byte_start=egress,
-                            byte_end=egress + 1,
-                            line=text.count("\n", 0, dialled) + 1,
-                        ),
-                        CapabilityHit(
-                            capability=Capability.FETCH_EXEC,
-                            rule_id="CAP.GO.RECEIVED_RUN",
-                            byte_start=start,
-                            byte_end=start + 1,
-                            line=text.count("\n", 0, offset) + 1,
-                        ),
-                    ]
-        return []
-
-    #: The CI job's environment and PATH files: what a step writes there, every later step runs with.
-    _CI_ENV_FILE: ClassVar[re.Pattern[str]] = re.compile(r"\bGITHUB_(?:ENV|PATH)\b")
-    _GO_FILE_WRITE: ClassVar[re.Pattern[str]] = re.compile(
-        r"\bos\.(?:OpenFile\([^\n]{0,200}O_(?:APPEND|WRONLY|RDWR)|WriteFile\(|Create\()"
-    )
-
-    @classmethod
-    def _go_ci_environment_write(cls, content: FileContent) -> list[CapabilityHit]:
-        """A Go package that, when imported, writes the CI job's environment or PATH file.
-
-        Every later step of the job runs with what is written there: a proxy pointed at the
-        attacker, a PATH entry ahead of the real `go`. The 2025 `BufferZoneCorp/*` modules did it
-        from `init()`, the name split as `_env("GITHUB_", "ENV")` (resolved by
-        `detect/go_eval.py`), and stripped `go.sum` lines so the next download is not checked
-        (review 98). Only from the load path -- `init()` or a package-level initialiser -- where
-        nothing in the importing program asked for it; a GitHub Action written in Go writes the
-        file from `main`, which is what an action is for."""
-        text = content.text
-        if cls._CI_ENV_FILE.search(text) is None:
-            return []
-        writes = list(cls._GO_FILE_WRITE.finditer(text))
-        if not writes:
-            return []
-        candidates = []
-        for write in writes:
-            start = len(text[: write.start()].encode("utf-8"))
-            candidates.append(
-                CapabilityHit(
-                    capability=Capability.PERSIST,
-                    rule_id="CAP.GO.CI_ENV_WRITE",
-                    byte_start=start,
-                    byte_end=start + 1,
-                    line=text.count("\n", 0, write.start()) + 1,
-                )
-            )
-        on_load = [
-            hit for hit in candidates if cls._in_go_load_path(content, [hit], (Capability.PERSIST,))
-        ]
-        return on_load[:1]
 
     #: A string literal in a compiled assembly that is a command line, handed to the shell rules.
     _DOTNET_COMMAND: ClassVar[re.Pattern[str]] = re.compile(
@@ -3279,6 +3222,13 @@ class CapabilityDetector(BaseDetector):
                 else text
             )
             flows = JsFlow.flows(view)
+            if view is not text:
+                # The folded view writes a concatenation with an unknown part as a string with a
+                # hole (`"https://h/" + q` -> `"https://h/_"`), so the value `q` carried is gone
+                # from it. The view finds what folding reveals; the text as written keeps every
+                # binding. Both are read (review 98, 17-PROOF-REVIEW).
+                seen = {(f.line, f.sink, f.sources) for f in flows}
+                flows += [f for f in JsFlow.flows(text) if (f.line, f.sink, f.sources) not in seen]
         except (IndexError, KeyError, ValueError, TypeError, RecursionError):
             return []  # read as written: every other rule still applies
         starts = [0]
@@ -5050,6 +5000,7 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "a source map, which is never run"
             elif (
                 SourcePaths.is_generated_artefact(content.path)
+                and not CapabilityDetector._flow_in_shipped_code(compiled.rule.id, content, ctx)
                 and not CapabilityDetector._runs_a_downloaded_file(hits)
                 and not CapabilityDetector._evaluates_a_literal_payload(content)
                 and not CapabilityDetector._turns_an_agent_on_the_user(hits)
@@ -5074,6 +5025,7 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "vendored third-party code"
             elif (
                 CapabilityDetector._is_minified(content)
+                and not CapabilityDetector._flow_in_shipped_code(compiled.rule.id, content, ctx)
                 and not CapabilityDetector._runs_a_downloaded_file(hits)
                 and not CapabilityDetector._evaluates_a_literal_payload(content)
                 and not CapabilityDetector._turns_an_agent_on_the_user(hits)

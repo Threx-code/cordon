@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-**61 secret rules and 24 exfiltration rules**: the part of the rule pack where
+**61 secret rules and 26 exfiltration rules**: the part of the rule pack where
 the tool that finds the problem must not become the problem.
 
 ```
@@ -115,7 +115,7 @@ something live, all of them are in git history and in every clone.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The 24 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
+The 26 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
 install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 
 | rule | the channel |
@@ -129,6 +129,8 @@ install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | a wallet's mnemonic, seed or private key in a request to a fixed outside address |
 | `*.EXFIL.BEACON.001` | hostname/user/cwd reported to the publisher |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` / `SUSPECT.EXFIL.CALLBACK.001` | a call to an interaction or canary host |
+| `SUSPECT.EXFIL.FLOW_IDENTITY.001` | the host name, user name or network interfaces followed into a request, connection or DNS lookup |
+| `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | a home-directory file or credential store (or what a command printed) followed onto a raw socket or into a DNS name |
 
 ## A deleted key is not a removed key
 

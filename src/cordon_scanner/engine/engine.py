@@ -50,6 +50,7 @@ from cordon_scanner.detect.supply.composer_plugins import ComposerPluginHooks
 from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.cache import CacheKey, ScanCache
+from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner, WorkItem
 from cordon_scanner.engine.progress import NullProgress, Progress
 from cordon_scanner.engine.walker import (
@@ -2018,7 +2019,8 @@ class Engine:
             # typosquat grading asks which format it is.
             package_distribution=bool(early_format := self._distribution_format(units)),
             distribution=early_format,
-            import_entry_paths=Engine._import_entries(units, early_format),
+            import_entry_paths=PackageEntries.of(units, early_format),
+            library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
             package_repository=Engine._package_repository(units, early_format),
         )
         ctx = Engine._lifted_inherit(ctx)
@@ -5059,65 +5061,6 @@ class Engine:
         return repository.strip() if isinstance(repository, str) else ""
 
     @staticmethod
-    def _import_entries(units: list[FileUnit], distribution: str) -> frozenset[str]:
-        """The files of a published package that run when it is used rather than installed: npm's
-        `main` (or `index.js`), `bin` and `exports` targets; a wheel's or sdist's top-level
-        `__init__.py`. Their module top level runs on `require()`, `import` or the command, on
-        every consumer, with no hook in the manifest (review 98, REC-2)."""
-        members: dict[str, str] = {}
-        for unit in units:
-            _, sep, member = unit.path.partition("!")
-            if sep and "!" not in member:
-                members[member] = unit.path
-        found: set[str] = set()
-        if distribution == "npm":
-            manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
-            try:
-                document = json.loads(manifest.content.text) if manifest is not None else {}
-            except ValueError:
-                document = {}
-            if not isinstance(document, dict):
-                document = {}
-            targets: list[str] = [document.get("main") or "index.js"]
-
-            def strings(value: object) -> None:
-                if isinstance(value, str):
-                    targets.append(value)
-                elif isinstance(value, dict):
-                    for nested in value.values():
-                        strings(nested)
-                elif isinstance(value, list):
-                    for nested in value:
-                        strings(nested)
-
-            strings(document.get("bin"))
-            strings(document.get("exports"))
-            for target in targets:
-                if not isinstance(target, str) or "*" in target:
-                    continue
-                base = "package/" + target.strip().removeprefix("./").rstrip("/")
-                for candidate in (base, f"{base}.js", f"{base}/index.js"):
-                    if candidate in members:
-                        found.add(members[candidate])
-                        break
-        elif distribution == "pypi":
-            for member, path in members.items():
-                parts = member.split("/")
-                if parts[-1] != "__init__.py" or any(
-                    part in ("tests", "test", "docs", "examples") for part in parts
-                ):
-                    continue
-                # A wheel's `pkg/__init__.py`, an sdist's `name-1.0/pkg/__init__.py` or
-                # `name-1.0/src/pkg/__init__.py`: the package itself, not a subpackage.
-                if (
-                    len(parts) == 2
-                    or (len(parts) == 3 and "-" in parts[0])
-                    or (len(parts) == 4 and parts[1] == "src")
-                ):
-                    found.add(path)
-        return frozenset(found)
-
-    @staticmethod
     def _history_distribution(units: list[FileUnit]) -> str:
         """The format release history knows this archive as: a published package's, or Open VSX
         for an editor extension (`.vsix`), which is not otherwise graded as a package."""
@@ -7050,6 +6993,7 @@ class Engine:
             consumer_install_paths=grown(ctx.consumer_install_paths),
             agent_run_paths=grown(ctx.agent_run_paths),
             import_entry_paths=grown(ctx.import_entry_paths),
+            library_entry_paths=grown(ctx.library_entry_paths),
         )
 
     #: Form findings the recovered text repeats, because it keeps the obfuscator's variable names.

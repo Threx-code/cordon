@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,456 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,461 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -17,13 +17,22 @@ rule's own samples.
 ```
 
 
+## Account
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.ACCOUNT.CHANNEL_FOLLOW.001` | critical | A WhatsApp library subscribes every account that connects to the publisher's channel |
+
 ## AI agents
 
-48 rules.
+49 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.AGENT.AUTORUN.001` | critical | A command an editor or agent runs on its own attacks the machine |
+| `MALWARE.AGENT.CONFIG_PLANTED.001` | critical | Installing the package plants an AI agent's configuration in your project |
 | `MALWARE.AGENT.HIJACK.001` | critical | Turns the machine's AI agent against it |
 | `MALWARE.AGENT.HOOK_EXFIL.001` | critical | An agent hook that sends credentials away or opens a remote shell |
 | `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | An agent hook that fetches and executes remote code |
@@ -563,7 +572,7 @@ rule's own samples.
 
 ## Exfiltration
 
-24 rules.
+26 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -573,6 +582,7 @@ rule's own samples.
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | Install script resolves a fixed host name |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
+| `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | Sends what a command printed, or the user's files, over a channel of its own |
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
@@ -588,6 +598,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.DNS.001` | high | Credential access and a hostname assembled for resolution |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | Credential or machine identity, and a request to a drop point |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
+| `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | Sends who and where this machine is |
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | Sends a credential file off the machine |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
@@ -1597,6 +1608,14 @@ rule's own samples.
 | `SUSPECT.MEDIA.APPENDED_PAYLOAD.001` | high | An image has an archive, executable or script appended after its end |
 | `SUSPECT.MEDIA.OPAQUE_TRAILER.001` | medium | A file carries a large, near-random block after its end |
 | `SUSPECT.MEDIA.TRAILING_DATA.001` | low | An image has data after its end |
+
+## Mobile
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.MOBILE.ATTRIBUTION_CLOAK.001` | critical | A component sends the app's install attribution and shows a server-chosen page |
 
 ## Model
 
