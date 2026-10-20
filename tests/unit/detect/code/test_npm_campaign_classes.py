@@ -7,8 +7,6 @@ and each comes with the ordinary code of the same shape that must stay quiet.
 
 from __future__ import annotations
 
-import pytest
-
 from cordon_scanner.foundation.models import Severity
 from unit.foundation.test_npm_work_half_classes import Npm
 
@@ -159,11 +157,6 @@ class TestFlowRawChannel:
         )
         assert Npm.findings(pkg).get(self.RULE) == Severity.CRITICAL
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="JsFlow reads a socket's `.write` as a request, not a connection (D1, review 98 P1); "
-        "remove this mark when it is read as a connection",
-    )
     def test_a_home_directory_key_written_to_a_raw_socket(self, tmp_path) -> None:
         code = (
             "const fs = require('fs');\nconst os = require('os');\nconst net = require('net');\n"

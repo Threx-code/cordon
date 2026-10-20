@@ -165,6 +165,9 @@ _CONNECTION_OPEN: Final = frozenset(
     {"request", "get", "connect", "createConnection", "createSocket"}
 )
 _CONNECTION_SEND: Final = frozenset({"write", "end", "send"})
+#: Sockets below HTTP: what is written to one goes out as it is, to whatever listens -- the
+#: `connection` sink the raw-channel rules read, where an HTTP request is a `request`.
+_RAW_SOCKET_MODULES: Final = frozenset({"net", "tls", "dgram"})
 _PROCESS_CALL: Final = frozenset(
     {"exec", "execSync", "spawn", "spawnSync", "execFile", "execFileSync", "fork"}
 )
@@ -303,6 +306,7 @@ class _Analysis:
         self.vars: dict[tuple[int, str], set[Label]] = {}
         self.aliases: dict[str, str] = {}  # local name -> "module" or "module.member"
         self.connections: set[tuple[int, str]] = set()  # names bound to an open connection
+        self.raw_connections: set[tuple[int, str]] = set()  # ... to a raw socket among them
         self.flows: dict[tuple[int, str], Flow] = {}
         self.fn_by_name: dict[tuple[int, str], int] = {}
         self.fn_at_token: dict[int, int] = {}
@@ -950,7 +954,7 @@ class _Analysis:
             and last in _CONNECTION_SEND
             and self.resolve(root, scope) in self.connections
         ):
-            return "request"
+            return "connection" if self.resolve(root, scope) in self.raw_connections else "request"
         if (
             len(parts) == 1
             and last in _CONNECTION_SEND
@@ -960,7 +964,10 @@ class _Analysis:
             and self.is_name(self.match[k - 2] - 1)
             and self._sink_kind(self.match[k - 2] - 1, scope) == "connection"
         ):
-            return "request"  # `https.request(opts).end(body)`: sent on the request just opened
+            # `https.request(opts).end(body)`: sent on the request just opened; on a raw socket
+            # (`net.connect(...).write(x)`), sent down the socket.
+            opened = self._chain(self.match[k - 2] - 1)[0]
+            return "connection" if opened[0] in _RAW_SOCKET_MODULES else "request"
         if parts[:2] == ["navigator", "sendBeacon"] or (
             root in ("$", "jQuery") and last in ("ajax", "post", "get")
         ):
@@ -1138,6 +1145,8 @@ class _Analysis:
                     self.fns[fid - 1].name = self.fns[fid - 1].name or targets[0][1]
                 if self._opens_connection(s, e):
                     self.connections.add(targets[0])
+                if self._opens_raw(s, e):
+                    self.raw_connections.add(targets[0])
         calls = [
             k
             for k in range(self.n - 1)
@@ -1203,7 +1212,21 @@ class _Analysis:
             raise _OverBudget
         return True
 
+    def _opens_raw(self, s: int, e: int) -> bool:
+        """Whether the value bound from [s, e) is a raw socket: `net.connect(...)`,
+        `tls.connect(...)`, `dgram.createSocket(...)`, `new net.Socket()`."""
+        for k in range(s, min(e, s + 40)):
+            if self.t[k].kind == "name" and self.is_p(k + 1, "("):
+                parts = self._chain(k)[0]
+                if parts[0] in _RAW_SOCKET_MODULES and (
+                    parts[-1] in _CONNECTION_OPEN or parts[-1] == "Socket"
+                ):
+                    return True
+        return False
+
     def _opens_connection(self, s: int, e: int) -> bool:
+        if self._opens_raw(s, e):
+            return True
         for k in range(s, min(e, s + 40)):
             if self.t[k].kind == "name" and self.is_p(k + 1, "("):
                 kind = self._sink_kind(k, self.scope_of(k))

