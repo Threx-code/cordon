@@ -36,12 +36,20 @@ rules:
       kind: regex
       patterns:
         - '\batob\s*\('
-        - 'Buffer\s*\.\s*from\s*\([^)]{0,200}?["'']base64["'']'
+        # Hex as well as base64: an install script that reads a hex string from a file it ships and
+        # runs it decoded is the `kp-admin` / `ks-radar` preinstall family (review 98, npm bulk
+        # set), and nothing here read hex as a decode.
+        # Not when only the size is taken: `Buffer.from(v, "base64").length` checks a value's
+        # length and runs nothing (review 98 after4 A/B: a terminal server's input check).
+        - 'Buffer\s*\.\s*from\s*\([^)]{0,200}?["''](?:base64|base64url|hex)["''](?!\s{0,4}\)\s{0,4}\.\s{0,4}(?:length|byteLength)\b)'
         - 'decodeURIComponent\s*\(\s*escape\s*\('
         - 'from\s*\(\s*["'']hex["'']\s*\)'
         # A hand-written hex decoder: two characters at a time through parseInt(..., 16). How a
         # payload fetched as an innocent-looking "version_hash" becomes a command line.
         - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}parseInt\s{0,4}\([^\n]{0,80}?,\s{0,4}16\s{0,4}\)\s{0,4}\)'
+        # The same decoder spread over the pairs: `String.fromCharCode(...s.match(/../g).map(h =>
+        # parseInt(h, 16)))`.
+        - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}\.\.\.[^\n]{0,200}?parseInt\s{0,4}\([^\n]{0,40}?,\s{0,4}16\s{0,4}\)'
         # SYMMETRIC DECRYPTION, a decode with a key (as in the Python primitive). An install
         # script that decrypts a file shipped beside it, runs the plaintext and deletes it hides
         # the program from anyone reading the package -- the key is in the script, the program
@@ -52,11 +60,16 @@ rules:
         - "const raw = atob(payload);"
         - "var dc = cr.createDecipheriv(alg, k, iv);"
         - "const buf = Buffer.from(data, 'base64');"
+        - "const cmd = Buffer.from(hexCommand, 'hex').toString();"
+        - "String.fromCharCode(...s.match(/../g).map(h => parseInt(h, 16)));"
         - "const s = decodeURIComponent(escape(x));"
         - "for (let n = 0; n < e.length; n += 2) t += String.fromCharCode(parseInt(e.slice(n, n + 2), 16));"
       negative:
         - "const s = decodeURIComponent(location.search);"
         - "const buf = Buffer.from('plain text');"
+        - 'return Buffer.from(value, "base64").length;'
+        - "const digest = hash.digest('hex');"
+        - "const s = buf.toString('hex');"
 
   - id: CAP.JS.CHARCODE_STRING.001
     version: 1.0.0
@@ -208,9 +221,28 @@ rules:
         # Require hooks (ts-node, pirates) call it too, which is why this is a capability and
         # not a finding.
         - '\._compile\s*\(\s*[A-Za-z_$][\w$]{0,40}\s*,'
+        # The same loader reached through the prototype: `Module.prototype._compile.call(m, s, f)`.
+        - '\bprototype\s{0,4}\.\s{0,4}_compile\s{0,4}\.\s{0,4}(?:call|apply)\s{0,4}\('
+        # The rest of the ways JavaScript runs a string (review 98, spelling matrix): `Function`
+        # called without `new` (it is the same constructor), indirect eval `(0, eval)(s)`, eval
+        # and Function looked up on the global object by name, and a `vm.Script` compiled by hand.
+        # Not `Function("return this")()`: the global-object polyfill every bundler emits, which
+        # runs one fixed statement (a skill package's bundle blocked on it, review 98 after4 A/B);
+        # nor `Function("binder", "return function (" + ...)`, the `function-bind` shim bundled
+        # into extensions, which builds a wrapper of fixed text around its arguments' arity.
+        - '(?<![\w$.])Function\s{0,4}\(\s{0,4}(?!["''`]\s{0,4}return\s{1,4}this\s{0,4}["''`]\s{0,4}\)|["''`]binder["''`]\s{0,4},)[\w$"''`]'
+        - '\(\s{0,4}0\s{0,4},\s{0,4}eval\s{0,4}\)\s{0,4}\('
+        - '\b(?:globalThis|global|window|self)\s{0,4}\[\s{0,4}["''`](?:eval|Function)["''`]\s{0,4}\]\s{0,4}\('
+        - '\bnew\s{1,4}\(?\s{0,4}(?:vm|require\s{0,4}\(\s{0,4}["''](?:node:)?vm["'']\s{0,4}\))\s{0,4}\.\s{0,4}Script\s{0,4}\)?\s{0,4}\('
     tests:
       positive:
         - "eval(decoded);"
+        - "Function(src)();"
+        - "(0, eval)(src);"
+        - "globalThis['eval'](src);"
+        - "new vm.Script(src).runInThisContext();"
+        - "new (require('vm').Script)(src).runInThisContext();"
+        - "require('module').prototype._compile.call(m, src, f);"
         - "m._compile(code, 'db-session.js');"
         - "const fn = new Function('a', 'return a');"
         - "const handler = new Function.constructor('require', response);"
@@ -218,6 +250,11 @@ rules:
       negative:
         - "// eval is not used here"
         - "const evaluate = (x) => x * 2;"
+        - "if (typeof cb === 'function') isFunction(cb);"
+        - "var g = Function('return this')();"
+        - "var root = Function(\"return this\")();"
+        - 'b = Function("binder", "return function (" + a.join(",") + "){ return binder.apply(this,arguments); }")(f);'
+        - "const t: Function = () => {};"
 
   # ---------------------------------------------------------------------
   # A PROCESS LEFT RUNNING AFTER ITS PARENT EXITS
@@ -374,10 +411,25 @@ rules:
         # the capability is still found when the call is written `childProc.exec(...)`.
         - '(?<![.\w$])(?:exec|spawn)\s{0,4}\('
         - '\b(?:child_process|childProcess|child|cp|cproc|proc|subprocess|shell)\s{0,4}\.\s{0,4}(?:exec|spawn)\s{0,4}\('
+        # The module imported under any name, then a method that starts a process.
+        - 'import\s{1,4}(?:[\w$]{1,40}|\*\s{0,4}as\s{1,4}[\w$]{1,40})\s{0,4}from\s{0,4}["''](?:node:)?child_process["''][\s\S]{0,4000}?\.\s{0,4}(?:exec|spawn|execFile|fork)(?:Sync)?\s{0,4}\('
+        # A call destructured under another name: `const { execSync: run } = require(
+        # 'child_process')`. Renaming the call is the one reason to write it so; the declaration is
+        # matched because the call site, `run(c)`, says nothing (review 98, spelling matrix). The
+        # rule loader allows no backreference, so the call is not tied to the name.
+        - '\{[^}]{0,200}\b(?:exec|spawn|execFile|fork)(?:Sync)?\s{0,4}:\s{0,4}[A-Za-z_$][\w$]{0,40}[^}]{0,200}\}\s{0,4}(?:=\s{0,4}(?:require\s{0,4}\(|(?:await\s{1,4})?import\s{0,4}\()|from)\s{0,4}["''](?:node:)?child_process["'']'
+        # The module named in a constant, to be required by it: `const m = 'child_process'`.
+        - '\b(?:const|let|var)\s{1,4}[A-Za-z_$][\w$]{0,40}\s{0,4}=\s{0,4}["''](?:node:)?child_process["'']\s{0,4}[;,\n]'
+        # Node's internal binding, beneath the module: `process.binding('spawn_sync').spawn(o)`.
+        - '\bprocess\s{0,4}\.\s{0,4}(?:binding|_linkedBinding)\s{0,4}\(\s{0,4}["''](?:spawn_sync|process_wrap)["'']'
     tests:
       positive:
         - "require('child_process').exec(cmd);"
+        - "const { execSync: run } = require('child_process');\nrun(cmd);"
+        - "const m = 'child_process';\nrequire(m).exec(cmd);"
+        - "process.binding('spawn_sync').spawn(opts);"
         - "require('child_process')[\"spawn\"](\"x\", [p]);"
+        - "import * as runner from 'node:child_process';\nrunner.execSync(cmd);"
         - "execSync('npm run build');"
         - "exec('rm -rf /tmp/x');"
         - "child_process.exec(cmd);"
@@ -452,10 +504,22 @@ rules:
         - '\.npmrc\b'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud|\.kube/config'
+        # The same stores as Node usually names them, one segment per argument:
+        # `path.join(os.homedir(), '.docker', 'config.json')` never writes `.docker/config.json`
+        # (review 98, spelling matrix). Registry and cluster tokens, the GitHub CLI's token file,
+        # the cloud CLIs' credentials and the desktop wallets.
+        - '["''`]\.(?:docker["''`]\s{0,4},\s{0,4}["''`]config\.json|kube["''`]\s{0,4},\s{0,4}["''`]config|aws["''`]\s{0,4},\s{0,4}["''`](?:credentials|config)|azure["''`]\s{0,4},\s{0,4}["''`]accessTokens\.json)["''`]'
+        - '["''`]gh["''`]\s{0,4},\s{0,4}["''`]hosts\.yml["''`]|\bgh/hosts\.yml\b|\.git-credentials\b'
+        - '["''`]\.config["''`]\s{0,4},\s{0,4}["''`]gcloud["''`]'
+        - '["''`]Exodus["''`]\s{0,4},\s{0,4}["''`]exodus\.wallet["''`]|\bExodus/exodus\.wallet\b|\bwallet\.dat\b|\bkeystore/UTC--'
         - '\bprocess\s*\.\s*env\s*\.\s*(?:NPM_TOKEN|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY)'
     tests:
       positive:
         - "const all = JSON.stringify(process.env);"
+        - "fs.readFileSync(path.join(os.homedir(), '.docker', 'config.json'));"
+        - "fs.readFileSync(path.join(home, '.kube', 'config'));"
+        - "fs.readFileSync(path.join(home, '.config', 'gh', 'hosts.yml'));"
+        - "fs.readdirSync(path.join(appdata, 'Exodus', 'exodus.wallet'));"
         - "const keys = Object.keys(process.env);"
         - "fs.readFileSync(os.homedir() + '/.npmrc');"
         - "for (var k in process.env) { dump[k] = process.env[k]; }"
@@ -465,6 +529,8 @@ rules:
         - "fs.readFileSync(`/proc/${pid}/environ`, 'utf8');"
       negative:
         - "const env = { ...process.env, npm_config_global: void 0 };"
+        - "const dockerfile = path.join(root, '.docker', 'Dockerfile');"
+        - "const cfg = path.join(root, '.config', 'myapp.json');"
         - "const port = process.env.PORT || 3000;"
         - "if (process.env.NODE_ENV === 'production') {}"
         - "inspectOpts=Object.keys(process.env).filter(r=>/^debug_/i.test(r))"
@@ -582,6 +648,12 @@ rules:
         # The call named as data and looked up: `[["userInfo", "username"], ["hostname"]]` walked
         # with `reduce` over the `os` module, so no `.hostname(` is written (review 98: report.js).
         - 'require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)[\s\S]{0,4000}?["''](?:userInfo|hostname|networkInterfaces)["'']'
+        # The same as ES imports: `import os from 'os'` under any name, then `.hostname()`; or the
+        # calls imported by name.
+        - 'import\s{1,4}(?:[\w$]{1,40}|\*\s{0,4}as\s{1,4}[\w$]{1,40})\s{0,4}from\s{0,4}["''](?:node:)?os["''][\s\S]{0,4000}?\.\s{0,4}(?:hostname|userInfo|networkInterfaces)\s{0,4}\(\s{0,4}\)'
+        # Imported by name, only once called: a module that imports `hostname` to type a value
+        # or pass it on reads nothing (review 98 after4 A/B).
+        - 'import\s{0,4}\{[^}]{0,120}\b(?:hostname|userInfo|networkInterfaces)\b[^}]{0,120}\}\s{0,4}from\s{0,4}["''](?:node:)?os["''][\s\S]{0,4000}?(?<![\w$.])(?:hostname|userInfo|networkInterfaces)\s{0,4}\('
         # `os.platform()`, `os.arch()` and `process.cwd()` are deliberately absent.
         # Every bundler, test runner and postinstall build step in the ecosystem
         # calls them, and they say what kind of machine this is rather than which
@@ -593,11 +665,14 @@ rules:
         - "const name = process.env.COMPUTERNAME;"
         - "const o = require('os');\nconst d = { h: o.hostname(), u: o.userInfo().username };"
         - "const { hostname, userInfo } = require('os');"
+        - "import sys from 'node:os';\nconst who = sys.userInfo().username;"
+        - "import { hostname, homedir } from 'os';\nconst h = hostname();"
       negative:
         - "const p = os.platform();"
         - "const o = require('os');\nconst a = o.arch();"
         - "const u = new URL(x);\nconst h = u.hostname;"
         - "const cwd = process.cwd();"
+        - "import { hostname } from 'node:os';\nexport const label = { hostname };"
         - "const node = process.env.NODE_ENV;"
 
   - id: CAP.JS.EGRESS.001
@@ -625,6 +700,15 @@ rules:
         - '\bnew\s+XMLHttpRequest\s*\('
         - '\bnavigator\s*\.\s*sendBeacon\s*\('
         - '\brequire\s*\(\s*["''](?:node:)?https?["'']\s*\)'
+        # The same module as an ES import: `import https from 'https'`, `import * as http from
+        # 'node:http'`, `import { request } from 'https'`, or `await import('https')`. An
+        # install-time credential sweep that imported https this way had no network half to
+        # pair with (review 98, npm bulk set: stitch-design). Only with a request made: a file
+        # that imports http to call `createServer` listens and sends nothing (review 98 after4
+        # A/B: two CLIs serving a local page).
+        - 'import\s{1,4}(?:[\w$]{1,40}|\*\s{0,4}as\s{1,4}[\w$]{1,40})\s{0,4}from\s{0,4}["''](?:node:)?https?["''][\s\S]{0,4000}?\.\s{0,4}(?:request|get)\s{0,4}\('
+        - 'import\s{0,4}\{[^}]{0,200}\b(?:request|get|Agent)\b[^}]{0,200}\}\s{0,4}from\s{0,4}["''](?:node:)?https?["'']'
+        - '\bimport\s{0,4}\(\s{0,4}["''](?:node:)?https?["'']\s{0,4}\)'
         # The same module through another name for `require`: `const _req = module.require;
         # _req('http')`, which `ts-browser-webpack` uses so no `require('http')` appears. A bare
         # call -- not a method, so `url.startsWith('http')` is not one.
@@ -634,10 +718,23 @@ rules:
         - '(?:require\s{0,4}\(|from)\s{0,4}["''](?:request|got|needle|superagent|node-fetch|undici|phin|bent|cross-fetch|isomorphic-fetch|axios)["'']'
         - '\bnet\s*\.\s*(?:connect|createConnection)\s*\('
         - '\bnew\s{1,4}(?:net\s{0,4}\.\s{0,4})?Socket\s{0,4}\('
+        # The raw-socket modules every other way they are written (review 98, spelling matrix):
+        # required inline, `tls` and UDP `dgram` alongside `net`, and their calls imported by name.
+        - '\bnew\s{0,4}\(\s{0,4}require\s{0,4}\(\s{0,4}["''](?:node:)?net["'']\s{0,4}\)\s{0,4}\.\s{0,4}Socket\s{0,4}\)'
+        - '\brequire\s{0,4}\(\s{0,4}["''](?:node:)?(?:net|tls|dgram)["'']\s{0,4}\)\s{0,4}\.\s{0,4}(?:connect|createConnection|createSocket)\s{0,4}\('
+        - '\b(?:tls|dgram)\s{0,4}\.\s{0,4}(?:connect|createSocket)\s{0,4}\('
+        # Imported by name, only once a socket is made: `Socket` imported as a type is not one
+        # (review 98 after4 A/B).
+        - '\{[^}]{0,200}\b(?:connect|createConnection|createSocket|Socket)\b[^}]{0,200}\}\s{0,4}(?:=\s{0,4}require\s{0,4}\(|from)\s{0,4}["''](?:node:)?(?:net|tls|dgram)["''][\s\S]{0,4000}?(?:(?<![\w$.])(?:connect|createConnection|createSocket)\s{0,4}\(|\bnew\s{1,4}Socket\s{0,4}\()'
+        # The `dns` calls destructured or imported by name: `const { lookup } = require('dns')`.
+        - '\{[^}]{0,200}\b(?:lookup|resolve\w{0,8})\b[^}]{0,200}\}\s{0,4}(?:=\s{0,4}require\s{0,4}\(|from)\s{0,4}["''](?:node:)?dns(?:/promises)?["'']'
         # A name resolved is a packet sent: `dns.lookup(<data>.collector.example)` carries
         # whatever it was built from in the name itself, and a lookup of a fixed name tells its
         # owner the code ran. Install-time beacons do both (review 98: test_send.js, pre-install.js).
         - '\bdns\s{0,4}\.\s{0,4}(?:promises\s{0,4}\.\s{0,4})?(?:lookup|resolve\w{0,8})\s{0,4}\('
+        # The same with the module required inline: `require('dns').resolve(<label>.collector)`
+        # (review 98, npm bulk set: a preinstall dependency-confusion probe).
+        - 'require\s{0,4}\(\s{0,4}["''](?:node:)?dns["'']\s{0,4}\)\s{0,4}\.\s{0,4}(?:promises\s{0,4}\.\s{0,4})?(?:lookup|resolve\w{0,8})\s{0,4}\('
         # A download written as a command line in a string the code runs.
         - '["''`]\s{0,8}(?:curl|wget)(?:\.exe)?\s[^\n]{0,200}?https?://'
     tests:
@@ -648,8 +745,21 @@ rules:
         - "const http = require('https');"
         - "const http = require('node:http');"
         - "const _req = module.require; const http = _req('http');"
+        - "import https from 'https';\nhttps.request(opts, cb);"
+        - "import * as http from 'node:http';\nhttp.get(url);"
+        - "import { request } from 'https';"
+        - "const https = await import('node:https');"
+        - "require('dns').resolve(label + '.collector.example', () => {});"
+        - "const { lookup } = require('dns');\nlookup(h, cb);"
+        - "require('tls').connect(443, h);"
+        - "require('dgram').createSocket('udp4');"
+        - "import { createConnection } from 'net';\ncreateConnection(port, host);"
+        - "new (require('net').Socket)();"
       negative:
         - "const data = await loadFromCache(key);"
+        - "import { createServer } from 'node:http';\ncreateServer(app).listen(port);"
+        - "import http from 'node:http';\nhttp.createServer(app).listen(port);"
+        - "import { Socket } from 'node:net';\nexport function peer(s: Socket) { return s.remoteAddress; }"
         - "if (url.startsWith('http')) { open(url); }"
         - "// fetch the record from the database"
 

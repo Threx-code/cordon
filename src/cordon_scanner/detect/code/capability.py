@@ -483,9 +483,11 @@ class CapabilityDetector(BaseDetector):
             hits.extend(self._go_ci_environment_write(matched_content))
             hits.extend(self._go_received_and_run(content))
         if unit.language in ("javascript", "typescript"):
-            hits.extend(self._js_received_and_run(content))
-            hits.extend(self._js_decoded_program_run(content))
-            hits.extend(self._js_command_output_sent(content))
+            from cordon_scanner.detect.code.js_runs import JsRuns
+
+            hits.extend(JsRuns.received_and_run(content))
+            hits.extend(JsRuns.decoded_program_run(content))
+            hits.extend(JsRuns.command_output_sent(content, ctx))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -2491,7 +2493,7 @@ class CapabilityDetector(BaseDetector):
         than a line of code, and it is not taken here.
         """
         if unit.language in ("javascript", "typescript"):
-            return self._javascript_secret_flow(content), []
+            return self._javascript_secret_flow(content, ctx), []
         if unit.language != "python":
             return [], []
 
@@ -2549,9 +2551,12 @@ class CapabilityDetector(BaseDetector):
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
         )
 
-    def _javascript_secret_flow(self, content: FileContent) -> list[CapabilityHit]:
+    def _javascript_secret_flow(
+        self, content: FileContent, ctx: ScanContext | None = None
+    ) -> list[CapabilityHit]:
         """`FLOW.JS.SECRET_SENT`: a named credential in a request to a host outside its home.
         See `detect/secretflow.py`."""
+        from cordon_scanner.detect.code.js_runs import JsRuns
         from cordon_scanner.detect.code.secretflow import JavaScriptFlow, JavaScriptLeak
 
         text = content.text
@@ -2568,7 +2573,9 @@ class CapabilityDetector(BaseDetector):
                 Capability.RECONNAISSANCE if kind == "identity" else Capability.CREDENTIAL,
                 "FLOW.JS.IDENTITY_SENT" if kind == "identity" else "FLOW.JS.ENVIRONMENT_SENT",
             )
-            for offset, kind in JavaScriptLeak.findings(text)
+            for offset, kind in JavaScriptLeak.findings(
+                text, install=JsRuns.npm_lifecycle_code(content, ctx)
+            )
         ]
         hits: list[CapabilityHit] = []
         for offset, capability, rule_id in sends:
@@ -3087,181 +3094,6 @@ class CapabilityDetector(BaseDetector):
                             line=text.count("\n", 0, offset) + 1,
                         ),
                     ]
-        return []
-
-    #: A connection JavaScript opens or accepts: a raw or TLS socket, a WebSocket, a socket.io client.
-    _JS_CONNECTION: ClassVar[re.Pattern[str]] = re.compile(
-        r"\bnew\s{1,4}(?:net\s{0,4}\.\s{0,4})?Socket\s{0,4}\(|\b(?:net|tls)\s{0,4}\.\s{0,4}"
-        r"(?:connect|createConnection|createServer)\s{0,4}\(|\bnew\s{1,4}WebSocket\s{0,4}\(|\bio\s{0,4}\(\s{0,4}['\"`]"
-    )
-    #: What arrives on it, handed to a callback: `.on('data', (d) => ...)`, `.on('message', ...)`.
-    _JS_RECEIVED: ClassVar[re.Pattern[str]] = re.compile(
-        r"\.\s{0,4}on\s{0,4}\(\s{0,4}['\"](?:data|message|command|cmd|exec|run)['\"]\s{0,4},\s{0,4}"
-        r"(?:async\s{1,4})?(?:function\s{0,4}\w{0,40}\s{0,4})?\(?\s{0,4}(?P<arg>[A-Za-z_$][\w$]{0,40})"
-    )
-
-    @classmethod
-    def _js_received_and_run(cls, content: FileContent) -> list[CapabilityHit]:
-        """JavaScript that runs, as a command, what arrives on a connection it opened.
-
-        `client.on('data', (data) => exec(data.toString(), ...))` with the output written back:
-        a reverse shell that names no shell, so the stdio-joining rule never sees it (review 98,
-        `@ibm-org/custom-greeting` 1.0.1; 1.0.0 piped a named shell and was caught). The
-        JavaScript twin of `_go_received_and_run`: the process start's first argument must be
-        built from the received value, within the handler, and nothing else. Recorded at the
-        process start as `fetch_exec`, and the connection as the egress."""
-        text = content.text
-        connection = cls._JS_CONNECTION.search(text) if len(text) <= 4_000_000 else None
-        if connection is None:
-            return []
-        for received in cls._JS_RECEIVED.finditer(text):
-            arg = re.escape(received["arg"])
-            handler = text[received.end() : received.end() + 1500]
-            run = re.search(
-                # Called bare or on a child-process module: `re.exec(chunk)` is a regular expression.
-                rf"(?:(?<![\w$.])|\b(?:child_process|childProcess|cp|proc|shell)\s{{0,4}}\.\s{{0,4}})"
-                rf"(?:exec|execSync|spawn|spawnSync|execFile|execFileSync|eval)\s{{0,4}}\(\s{{0,4}}"
-                rf"(?:(?:String|Buffer\.from|JSON\.parse)\s{{0,4}}\(\s{{0,4}})?`?(?:\$\{{\s{{0,4}})?{arg}\b",
-                handler,
-            )
-            if run is None:
-                continue
-            offset = received.end() + run.start()
-            start = len(text[:offset].encode("utf-8"))
-            egress = len(text[: connection.start()].encode("utf-8"))
-            return [
-                CapabilityHit(
-                    capability=Capability.EGRESS,
-                    rule_id="CAP.JS.RECEIVED_RUN",
-                    byte_start=egress,
-                    byte_end=egress + 1,
-                    line=text.count("\n", 0, connection.start()) + 1,
-                ),
-                CapabilityHit(
-                    capability=Capability.FETCH_EXEC,
-                    rule_id="CAP.JS.RECEIVED_RUN",
-                    byte_start=start,
-                    byte_end=start + 1,
-                    line=text.count("\n", 0, offset) + 1,
-                ),
-            ]
-        return []
-
-    #: Bytes turned into something else by a key: an XOR loop over a buffer, a cipher, base64.
-    #: Decompression is not one -- a binary installer inflates a release, makes it executable and
-    #: starts it, which is its job.
-    _JS_BYTES_TRANSFORMED: ClassVar[re.Pattern[str]] = re.compile(
-        r"\b[\w$]{1,40}\s{0,4}\[\s{0,4}[\w$]{1,40}\s{0,4}\]\s{0,4}\^=|\bcreateDecipher(?:iv)?\s{0,4}\("
-    )
-    #: Read from a file: what the transform works on is something the package carries.
-    _JS_READS_FILE: ClassVar[re.Pattern[str]] = re.compile(r"\breadFile(?:Sync)?\s{0,4}\(")
-    #: Written to disk.
-    _JS_WRITES_FILE: ClassVar[re.Pattern[str]] = re.compile(
-        r"\b(?:writeFile(?:Sync)?|createWriteStream)\s{0,4}\("
-    )
-    #: What is written is a program: executable mode, an executable's own magic checked, or a
-    #: program's file name.
-    _JS_PROGRAM_WRITTEN: ClassVar[re.Pattern[str]] = re.compile(
-        r"\bmode\s{0,4}:\s{0,4}0o?7[0-7]{2}\b|\bchmod(?:Sync)?\s{0,4}\(|0x4[dD]\b[^\n]{0,80}0x5[aA]\b"
-        r"|['\"]MZ['\"]|0x7[fF]\b[^\n]{0,40}0x45\b[^\n]{0,40}0x4[cC]\b"
-        r"|\.(?:exe|dll|scr|bat|cmd|ps1|vbs|hta)['\"`]"
-    )
-    _JS_STARTS_PROCESS: ClassVar[re.Pattern[str]] = re.compile(
-        r"\b(?:exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s{0,4}\("
-    )
-
-    @classmethod
-    def _js_decoded_program_run(cls, content: FileContent) -> list[CapabilityHit]:
-        """JavaScript that turns a file it carries into a program, writes it and starts it.
-
-        A data file shipped beside the code, XOR-decrypted byte by byte, checked for `MZ`, written
-        with mode 0755 and run hidden, from a function the module calls on load: the clone of
-        winston published as `@winstan/binston` (review 98, npm work half); the same with a cipher
-        in `@builderius/sense-ai`. In order -- a file read, its bytes XOR-ed or deciphered, written
-        as a program, started -- within 3,000 characters. Base64 and decompression are not the
-        transform: across 98,499 benign units they were bundles and installers doing their job."""
-        text = content.text
-        if len(text) > 4_000_000 or not cls._JS_READS_FILE.search(text):
-            return []
-        for found in cls._JS_BYTES_TRANSFORMED.finditer(text):
-            read = cls._JS_READS_FILE.search(text, max(0, found.start() - 1500), found.start())
-            window = text[found.start() : found.start() + 3000]
-            write = cls._JS_WRITES_FILE.search(window)
-            if read is None or write is None or not cls._JS_PROGRAM_WRITTEN.search(window):
-                continue
-            run = cls._JS_STARTS_PROCESS.search(window, write.end())
-            if run is None:
-                continue
-            offset = found.start() + run.start()
-            start = len(text[:offset].encode("utf-8"))
-            return [
-                CapabilityHit(
-                    capability=Capability.DECODE,
-                    rule_id="CAP.JS.DECODED_PROGRAM_RUN",
-                    byte_start=start,
-                    byte_end=start + 1,
-                    line=text.count("\n", 0, offset) + 1,
-                )
-            ]
-        return []
-
-    #: A command started for its output: the callback's stdout, or what `execSync` returns.
-    _JS_COMMAND_OUTPUT: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?:(?<![\w$.])|\b(?:child_process|childProcess|cp)\s{0,4}\.\s{0,4})exec(?:File)?\s{0,4}\("
-        r"[^;]{0,600}?\(\s{0,4}[\w$]{1,40}\s{0,4},\s{0,4}(?P<cb>[\w$]{1,40})"
-        r"|\b(?:const|let|var)\s{1,4}(?P<sync>[\w$]{1,40})\s{0,4}=\s{0,4}(?:[\w$]{1,40}\s{0,4}\.\s{0,4})?"
-        r"exec(?:File)?Sync\s{0,4}\("
-    )
-
-    @classmethod
-    def _js_command_output_sent(cls, content: FileContent) -> list[CapabilityHit]:
-        """JavaScript that runs a command and puts what it printed into a request.
-
-        `exec(cmd, (e, stdout) => { const data = stdout || stderr; req.write(data) })` from a
-        preinstall hook: the `elf-stats-*` packages grep the machine and post the result (review
-        98, npm work half). Each half is ordinary -- a build runs commands, a client posts -- and
-        the flow between them is the act. Followed through one assignment, within 2,500
-        characters of the process start."""
-        text = content.text
-        # A bundle runs its tools' commands and calls its own APIs a line apart (a minified editor
-        # extension calling `gh` and GitHub's API matched); the payloads were written by hand.
-        if len(text) > 4_000_000 or "exec" not in text or cls._is_minified(content):
-            return []
-        for started in cls._JS_COMMAND_OUTPUT.finditer(text):
-            output = started["cb"] or started["sync"]
-            window = text[started.end() : started.end() + 2500]
-            names = {output}
-            for assigned in re.finditer(
-                r"\b(?:const|let|var)\s{1,4}([\w$]{1,40})\s{0,4}=\s{0,4}([^;\n]{1,200})", window
-            ):
-                if any(re.search(rf"\b{re.escape(n)}\b", assigned.group(2)) for n in names):
-                    names.add(assigned.group(1))
-            alternatives = "|".join(re.escape(n) for n in names)
-            # Into a request: the body of an `http(s).request` written in this window, a `body:` or
-            # a POST's data -- never a webview message or a process's output stream.
-            request = re.search(
-                r"\bhttps?\s{0,4}\.\s{0,4}request\s{0,4}\(|['\"`]https?://|\bhostname\s{0,4}:",
-                window,
-            )
-            sink = re.search(
-                rf"\.\s{{0,4}}(?:write|end)\s{{0,4}}\(\s{{0,4}}(?:JSON\.stringify\(\s{{0,4}})?(?:{alternatives})\b"
-                rf"|\bbody\s{{0,4}}:\s{{0,4}}(?:JSON\.stringify\(\s{{0,4}})?(?:{alternatives})\b"
-                rf"|\.\s{{0,4}}(?:post|put)\s{{0,4}}\([^,]{{1,300}},\s{{0,4}}(?:{alternatives})\b",
-                window,
-            )
-            if sink is None or request is None:
-                continue
-            offset = started.end() + sink.start()
-            start = len(text[:offset].encode("utf-8"))
-            return [
-                CapabilityHit(
-                    capability=Capability.FLOW,
-                    rule_id="CAP.JS.COMMAND_OUTPUT_SENT",
-                    byte_start=start,
-                    byte_end=start + 1,
-                    line=text.count("\n", 0, offset) + 1,
-                )
-            ]
         return []
 
     #: The CI job's environment and PATH files: what a step writes there, every later step runs with.

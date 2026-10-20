@@ -371,6 +371,9 @@ class TestSelfScan(CorpusFixtures):
             and f.location.path != "tests/unit/foundation/test_pattern_literals.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
             and f.location.path != "tests/unit/detect/code/test_recovered_misses.py"
+            # The spelling matrix lists every way JavaScript writes a capability primitive -- a
+            # spawn, a beacon, a persistence write -- each a rule's test positive, by construction.
+            and f.location.path != "tests/unit/detect/code/test_js_spelling_matrix.py"
             and f.location.path != "tests/unit/detect/agents/test_agents.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.

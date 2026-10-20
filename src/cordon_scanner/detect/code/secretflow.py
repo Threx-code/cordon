@@ -298,6 +298,40 @@ class JavaScriptLeak:
     """
 
     _IDENTITY = re.compile(r"""\bos\s*\.\s*(?:hostname|userInfo|networkInterfaces)\s*\(""")
+    #: The calls themselves, for a file that names the `os` module another way.
+    _IDENTITY_CALLS: Final = r"(?:hostname|userInfo|networkInterfaces)"
+    #: `os` under another name, in the raw text: `const o = require("os")`, `import o from "os"`,
+    #: `import * as o from "node:os"`.
+    _OS_NAME = re.compile(
+        r"""(?:(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\s*\(\s*["'](?:node:)?os["']\s*\)"""
+        r"""|import\s+(?:\*\s*as\s+)?([A-Za-z_$][\w$]*)\s+from\s*["'](?:node:)?os["'])"""
+    )
+    #: The calls imported by name: `const { hostname } = require("os")`, `import { userInfo } from "os"`.
+    _OS_CALLS = re.compile(
+        r"""\{[^}]{0,200}\b(?:hostname|userInfo|networkInterfaces)\b[^}]{0,200}\}\s*(?:=\s*require\s*\(\s*|from\s*)["'](?:node:)?os["']"""
+    )
+    #: A process run for who and where this machine is: its output IS the identity. Read on the raw
+    #: text, because the command is a string literal (review 98, npm bulk set: `css-*-polyfill`
+    #: ran `whoami`, `uname`, the interfaces and `/etc/hosts` and sent them with the hostname).
+    _IDENTITY_COMMAND = re.compile(
+        r"""\b(?:exec|execSync|execFileSync|spawnSync)\s*\(\s*["'`]\s*(?:whoami|hostname|id|uname|ifconfig|ipconfig|systeminfo|scutil\s|net\s+user|cat\s+/etc/(?:passwd|hosts|hostname))\b"""
+    )
+    #: The environment values that say who is installing: the user and machine everywhere, and in
+    #: CI the repository, its organisation and who triggered the run, under each provider's name.
+    #: A dependency-confusion probe sends exactly these (review 98, npm bulk set:
+    #: `screenpipe-mcp-http`, `GITHUB_REPOSITORY` / `_OWNER` / `GITHUB_WORKFLOW` posted and resolved
+    #: as a DNS label from a postinstall). Read on the raw text: `process.env["X"]` hides the key in
+    #: a string that blanking removes.
+    _IDENTITY_ENV = re.compile(
+        r"""\bprocess\s*\.\s*env\s*(?:\.\s*|\[\s*["'`])(?:USER|USERNAME|LOGNAME|HOSTNAME|COMPUTERNAME"""
+        r"""|USERDOMAIN|USERPROFILE|HOME|INIT_CWD|GITHUB_REPOSITORY(?:_OWNER)?|GITHUB_ACTOR"""
+        r"""|GITHUB_WORKFLOW|CI_PROJECT_(?:PATH|NAMESPACE|URL)|CI_SERVER_HOST|BUILD_REPOSITORY_(?:NAME|URI)"""
+        r"""|SYSTEM_(?:TEAMPROJECT|COLLECTIONURI)|BITBUCKET_(?:REPO_FULL_NAME|WORKSPACE)"""
+        r"""|CIRCLE_(?:PROJECT_REPONAME|PROJECT_USERNAME|REPOSITORY_URL)|TRAVIS_REPO_SLUG"""
+        r"""|BUILDKITE_(?:REPO|ORGANIZATION_SLUG)|JENKINS_URL|JOB_URL)\b"""
+    )
+    #: A plain assignment to a name declared earlier: `site = require("os").hostname()`.
+    _ASSIGN = re.compile(r"""(?<![\w$.=!<>+\-*/%&|^])([A-Za-z_$][\w$]*)\s*=(?![=>])\s*""")
     #: The whole environment as a VALUE: not one key (`process.env.PATH`, `process.env[k]`), not a
     #: truthiness check (`process.env && ...`), not a comparison, and not its names alone
     #: (`Object.keys(process.env)`).
@@ -432,15 +466,48 @@ class JavaScriptLeak:
         return "".join(out)
 
     @staticmethod
-    def _kinds(fragment: str, tainted: dict[str, list[tuple[int, set[str]]]], at: int) -> set[str]:
+    def _identity_in(text: str) -> re.Pattern[str]:
+        """The identity sources of this file, read on blanked text: `os.hostname()`, the module
+        under the names this file gives it, `require("").hostname()` (the module named in a string
+        that blanking removed), and the calls imported by name."""
+        calls = JavaScriptLeak._IDENTITY_CALLS
+        names = {"os"} | {
+            name
+            for match in JavaScriptLeak._OS_NAME.finditer(text)
+            for name in match.groups()
+            if name
+        }
+        alternatives = [
+            rf"""(?<![\w$])(?:{"|".join(re.escape(n) for n in sorted(names))})\s*\.\s*{calls}\s*\(""",
+            rf"""\brequire\s*\(\s*""\s*\)\s*\.\s*{calls}\s*\(""",
+        ]
+        if JavaScriptLeak._OS_CALLS.search(text):
+            alternatives.append(rf"""(?<![\w$.]){calls}\s*\(""")
+        return re.compile("|".join(alternatives))
+
+    @staticmethod
+    def _kinds(
+        fragment: str,
+        tainted: dict[str, list[tuple[int, set[str]]]],
+        at: int,
+        identity: re.Pattern[str] | None = None,
+        install: bool = False,
+    ) -> set[str]:
         """What `fragment`, found at offset `at`, carries: a source in it, or a name bound to one
-        within `LOCALITY` before it."""
+        within `LOCALITY` before it. The environment's names for who is installing count only in
+        install code (`install`): a CI tool puts `CIRCLE_PROJECT_REPONAME` in its CI provider's
+        API URL by design (review 98: six benign blocks for one catch, in a postinstall)."""
+        raw = fragment
         fragment = JavaScriptLeak._without_functions(fragment)
         # Names and sources are read with string literals blanked; a template's `${...}` is code
         # and stays.
         fragment = JavaScriptLeak._blank_strings(fragment)
         kinds: set[str] = set()
-        if JavaScriptLeak._IDENTITY.search(fragment):
+        if (
+            (identity or JavaScriptLeak._IDENTITY).search(fragment)
+            or JavaScriptLeak._IDENTITY_COMMAND.search(raw)
+            or (install and JavaScriptLeak._IDENTITY_ENV.search(raw))
+        ):
             kinds.add("identity")
         if JavaScriptLeak._WHOLE_ENV.search(fragment):
             kinds.add("environment")
@@ -451,19 +518,48 @@ class JavaScriptLeak:
         return kinds
 
     @staticmethod
-    def findings(text: str) -> list[tuple[int, str]]:
-        """`(offset of the sending call, "identity" or "environment")` for each leak."""
-        if not (JavaScriptLeak._IDENTITY.search(text) or JavaScriptLeak._WHOLE_ENV.search(text)):
+    def findings(text: str, install: bool = False) -> list[tuple[int, str]]:
+        """`(offset of the sending call, "identity" or "environment")` for each leak. `install`:
+        the file runs at install time (`_kinds`)."""
+        identity = JavaScriptLeak._identity_in(text)
+        if not (
+            identity.search(JavaScriptLeak._blank_strings(text))
+            or JavaScriptLeak._IDENTITY_COMMAND.search(text)
+            or (install and JavaScriptLeak._IDENTITY_ENV.search(text))
+            or JavaScriptLeak._WHOLE_ENV.search(text)
+        ):
             return []
         tainted: dict[str, list[tuple[int, set[str]]]] = {}
+        bindings = sorted(
+            [*JavaScriptLeak._BIND.finditer(text), *JavaScriptLeak._ASSIGN.finditer(text)],
+            key=lambda m: m.start(),
+        )
         for _ in range(2):  # a second pass lets a binding taint through one earlier binding
-            for match in JavaScriptLeak._BIND.finditer(text):
+            for match in bindings:
                 if JavaScriptLeak._BINDS_CODE.match(text, match.end()):
                     continue
-                if JavaScriptLeak._LOSES_TAINT.match(text, match.end()):
-                    continue
                 statement = JavaScriptLeak._statement(text, match.end())
-                kinds = JavaScriptLeak._kinds(statement, tainted, match.start())
+                # A plain assignment carries only a source written in it: `site =
+                # require("os").hostname()`. Followed through names and the whole environment it
+                # tainted a CLI's every reassigned option (review 98: 18 benign blocks).
+                if match.re is JavaScriptLeak._ASSIGN:
+                    blank = JavaScriptLeak._blank_strings(statement)
+                    if not (
+                        identity.search(blank) or JavaScriptLeak._IDENTITY_COMMAND.search(statement)
+                    ):
+                        continue
+                    if (match.start(), {"identity"}) not in tainted.get(match.group(1), []):
+                        tainted.setdefault(match.group(1), []).append((match.start(), {"identity"}))
+                    continue
+                # A process's output is not what it was given -- unless the process was run to
+                # say who this machine is.
+                if (
+                    JavaScriptLeak._LOSES_TAINT.match(text, match.end())
+                    and not JavaScriptLeak._IDENTITY_COMMAND.search(statement)
+                    and not identity.search(JavaScriptLeak._blank_strings(statement))
+                ):
+                    continue
+                kinds = JavaScriptLeak._kinds(statement, tainted, match.start(), identity, install)
                 if kinds and (match.start(), kinds) not in tainted.get(match.group(1), []):
                     tainted.setdefault(match.group(1), []).append((match.start(), kinds))
         modules = JavaScriptLeak._MODULES
@@ -483,7 +579,9 @@ class JavaScriptLeak:
             arguments = JavaScriptFlow._arguments(text, call.end() - 1)
             found += [
                 (call.start(), kind)
-                for kind in sorted(JavaScriptLeak._kinds(arguments, tainted, call.start()))
+                for kind in sorted(
+                    JavaScriptLeak._kinds(arguments, tainted, call.start(), identity, install)
+                )
             ]
         for send in JavaScriptLeak._SEND.finditer(text):
             if send.group(1) not in connections:
@@ -491,6 +589,121 @@ class JavaScriptLeak:
             arguments = JavaScriptFlow._arguments(text, send.end() - 1)
             found += [
                 (send.start(), kind)
-                for kind in sorted(JavaScriptLeak._kinds(arguments, tainted, send.start()))
+                for kind in sorted(
+                    JavaScriptLeak._kinds(arguments, tainted, send.start(), identity, install)
+                )
             ]
         return found
+
+
+class JavaScriptCommandFlow:
+    """What a command printed, reaching a request: `out.push(sh("uname -a"))` ... `https.get({path:
+    "/c?d=" + Buffer.from(out.join()).toString("base64")})`.
+
+    Each half is ordinary -- a build runs commands, a client calls its API -- and the flow between
+    them is the act: the install hook that runs commands and ships their output (review 98, npm bulk
+    set: `@years19/n8n-nodes-utils-helper-*`, a helper `sh()` around `execSync`, the outputs in an
+    array, the array base64'd into a request path). Sources: a `child_process` call that returns
+    output, directly or through a helper function whose body returns one. Taint follows a binding,
+    a plain assignment and an array `push`, within `JavaScriptLeak.LOCALITY` characters. Sinks: the
+    arguments of a request call (`JavaScriptFlow._CALL`) -- URL, path, options or body -- or
+    `.write`/`.end`/`.send` on a request object.
+    """
+
+    _EXEC = r"""(?:exec|execSync|execFileSync|spawnSync)\s*\("""
+    _HELPER = re.compile(
+        r"""\bfunction\s+([A-Za-z_$][\w$]*)\s*\([^()]{0,200}\)\s*\{"""
+        r"""|\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\b[^(]{0,40})?\([^()]{0,200}\)\s*(?:=>)?\s*\{?"""
+    )
+    _RETURNS_EXEC = re.compile(r"""(?:\breturn\b|=>)[^;{}]{0,200}?\b""" + _EXEC)
+    _PUSH = re.compile(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\s*\.\s*(?:push|unshift|concat)\s*\(""")
+    _REQUEST_OBJECT = re.compile(
+        r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:https?|http2)\s*\.\s*request\s*\("""
+    )
+    _SEND = re.compile(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\s*\.\s*(?:write|end|send)\s*\(""")
+
+    @staticmethod
+    def _body(text: str, brace: int) -> str:
+        depth, index = 0, brace
+        end = min(len(text), brace + JavaScriptLeak.MAX_STATEMENT)
+        while index < end:
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        return text[brace:index]
+
+    @staticmethod
+    def source(text: str) -> re.Pattern[str]:
+        """Calls that return what a command printed, in this file."""
+        helpers = set()
+        for match in JavaScriptCommandFlow._HELPER.finditer(text):
+            name = match.group(1) or match.group(2)
+            head_end = match.end()
+            body = (
+                JavaScriptCommandFlow._body(text, head_end - 1)
+                if text[head_end - 1 : head_end] == "{"
+                else JavaScriptLeak._statement(text, head_end)
+            )
+            if JavaScriptCommandFlow._RETURNS_EXEC.search(body) or (
+                text[head_end - 1 : head_end] != "{"
+                and re.match(
+                    r"\s*(?:(?:[\w$]+|require\s*\([^()]{0,80}\))\s*\.\s*)*"
+                    + JavaScriptCommandFlow._EXEC,
+                    body,
+                )
+            ):
+                helpers.add(name)
+        names = "|".join(re.escape(h) for h in sorted(helpers))
+        exec_call = r"""\b(?:[\w$]{1,40}\s*\.\s*)?""" + JavaScriptCommandFlow._EXEC
+        return re.compile(rf"""{exec_call}|(?<![\w$.])(?:{names})\s*\(""" if names else exec_call)
+
+    @staticmethod
+    def findings(text: str) -> list[int]:
+        """Offsets of the request calls that carry a command's output."""
+        if not re.search(JavaScriptCommandFlow._EXEC, text):
+            return []
+        source = JavaScriptCommandFlow.source(text)
+        tainted: dict[str, list[int]] = {}
+
+        def carries(fragment: str, at: int) -> bool:
+            fragment = JavaScriptLeak._blank_strings(JavaScriptLeak._without_functions(fragment))
+            if source.search(fragment):
+                return True
+            return any(
+                at - JavaScriptLeak.LOCALITY <= offset < at
+                for word in set(JavaScriptLeak._NAME.findall(fragment)) & set(tainted)
+                for offset in tainted[word]
+            )
+
+        bindings = sorted(
+            [*JavaScriptLeak._BIND.finditer(text), *JavaScriptLeak._ASSIGN.finditer(text)],
+            key=lambda m: m.start(),
+        )
+        for _ in range(2):
+            for match in bindings:
+                if JavaScriptLeak._BINDS_CODE.match(text, match.end()):
+                    continue
+                statement = JavaScriptLeak._statement(text, match.end())
+                if carries(statement, match.start()):
+                    tainted.setdefault(match.group(1), []).append(match.start())
+            for match in JavaScriptCommandFlow._PUSH.finditer(text):
+                arguments = JavaScriptFlow._arguments(text, match.end() - 1)
+                if carries(arguments, match.start()):
+                    tainted.setdefault(match.group(1), []).append(match.start())
+        found = [
+            call.start()
+            for call in JavaScriptFlow._CALL.finditer(text)
+            if carries(JavaScriptFlow._arguments(text, call.end() - 1), call.start())
+        ]
+        requests = {m.group(1) for m in JavaScriptCommandFlow._REQUEST_OBJECT.finditer(text)}
+        found += [
+            send.start()
+            for send in JavaScriptCommandFlow._SEND.finditer(text)
+            if send.group(1) in requests
+            and carries(JavaScriptFlow._arguments(text, send.end() - 1), send.start())
+        ]
+        return sorted(found)
