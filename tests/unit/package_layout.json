@@ -325,6 +325,7 @@
   "test_datayaml.py": "foundation",
   "test_dbsync.py": "intel/store",
   "test_deobfuscation.py": "analysis/shared",
+  "test_dependency_confusion.py": "detect/supply",
   "test_dependency_domain2.py": "detect/supply",
   "test_dependency_review.py": "intel/registries",
   "test_detectors.py": "analysis/shared",

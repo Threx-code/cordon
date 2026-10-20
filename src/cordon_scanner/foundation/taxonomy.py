@@ -342,6 +342,7 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("POLICY.LOCKFILE.", AttackCategory.INTEGRITY),
     ("POLICY.CONTAINER.", AttackCategory.MISCONFIGURATION),
     ("POLICY.DEPENDENCY.", AttackCategory.POLICY),
+    ("SUSPECT.INSTALL.DEPENDENCY_CONFUSION.", AttackCategory.DEPENDENCY_CONFUSION),
     ("SUSPECT.INSTALL.", AttackCategory.INSTALL_HOOK),
     ("MALWARE.PROTESTWARE.", AttackCategory.MALICIOUS_CODE),
     ("MALWARE.ACCOUNT.", AttackCategory.MALICIOUS_CODE),

@@ -64,6 +64,7 @@ RAW_IP_HOST = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,45}\]")
 SOURCE_PRIORITY_RULE = "SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001"
 WRAPPER_RULE = "POLICY.BUILD.WRAPPER_UNVERIFIED.001"
 CLEARTEXT_SOURCE_RULE = "POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001"
+CONFUSION_RULE = "SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001"
 _FULL_COMMIT = re.compile(r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})(?![0-9a-fA-F])")
 
 
@@ -1420,6 +1421,26 @@ class ManifestDetector(BaseDetector):
                 references=(references.NPM_LIFECYCLE,),
                 remediation="Read the script. Install hooks run before any review or test.",
             ),
+            DeclaredRule(
+                id=CONFUSION_RULE,
+                title="A version made to win resolution runs code on install",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "This package's version is engineered to win a version resolution -- 99 or "
+                    "above, or all nines -- it runs a script of its own on install, and it has "
+                    "next to no other code. That is the shape of dependency confusion: a public "
+                    "package named like a private one, published so an installer prefers it, "
+                    "whose only purpose is the code its install hook runs."
+                ),
+                references=(references.NPM_LIFECYCLE,),
+                remediation=(
+                    "Do not install it. If the name is your organisation's, scope your registry "
+                    "so the private package can never be resolved from the public one."
+                ),
+            ),
         )
 
     def applicable(self, ctx: ScanContext) -> bool:
@@ -1461,6 +1482,7 @@ class ManifestDetector(BaseDetector):
 
         findings: list[Finding] = []
         findings.extend(self._lifecycle_findings(manifest, unit, ctx))
+        findings.extend(self._confusion_findings(manifest, unit, ctx))
         findings.extend(self._source_findings(manifest, unit, ctx))
         findings.extend(self._own_name_findings(manifest, unit, ctx, ecosystem_id))
         findings.extend(name_risk)
@@ -1610,6 +1632,75 @@ class ManifestDetector(BaseDetector):
             detail=f"{manifest.name} ~ {target}",
             capabilities=[],
             reasons=[f"one edit from {target}"],
+        )
+
+    # -- Dependency confusion --------------------------------------------
+
+    #: A version that wins semver resolution over any real release: major 99 or above, or every
+    #: component all nines (`9.9.9`, `99.99.99`). What winning resolution is for is the attack.
+    _WINNING_VERSION = re.compile(r"^(?:(?:\d{3,}|99)\.|9+(?:\.9+){1,3}(?:[-+].*)?$)")
+    _CODE_SUFFIXES = (".js", ".cjs", ".mjs", ".ts")
+
+    def _confusion_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """An npm package whose version is engineered to win resolution, whose install hook runs a
+        script that is not a build step, and which has at most one other code file.
+
+        The three together are the dependency-confusion foothold, and none of them alone is: big
+        versions, install hooks and tiny packages are each ordinary. Measured on the npm study half
+        (review 98): the shape is 246 of 1,923 malicious units, 3 of them caught by nothing else, and
+        0 of 11,255 benign npm units across the random, popular and ecosystem corpora."""
+        version = (manifest.version or "").strip()
+        if manifest.ecosystem != "npm" or not self._WINNING_VERSION.match(version):
+            return
+        if SourcePaths.is_editor_extension(unit.path):
+            return
+        scripts, declared = ManifestScripts.npm_scripts(unit)
+        running = [
+            hook
+            for hook in manifest.hooks
+            if hook.command
+            and hook.name.lower() in ("preinstall", "install", "postinstall")
+            and not ManifestScripts._prints_only(hook.command)
+            and not ManifestScripts._is_safe_lifecycle(hook.command, scripts, declared)
+        ]
+        if not running:
+            return
+        root = unit.path.rpartition("/")[0]
+        prefix = f"{root}/" if root else ""
+        others = [
+            path
+            for path in ctx.tree_paths
+            if path.startswith(prefix)
+            and "/node_modules/" not in path[len(prefix) - 1 :]
+            and path.endswith(self._CODE_SUFFIXES)
+            and not path.endswith(".d.ts")
+            and path not in ctx.install_hook_paths
+        ]
+        if len(others) > 1:
+            return
+        hook = running[0]
+        yield self._finding(
+            rule_id=CONFUSION_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            title="A version made to win resolution runs code on install",
+            message=(
+                f"{manifest.name or 'This package'} is version {version}, a version made to win "
+                f"resolution, and its {hook.name} script runs {hook.command[:120]!r} with "
+                f"{len(others)} other code file(s) in the package: the dependency-confusion shape."
+            ),
+            remediation=(
+                "Do not install it. If the name is your organisation's, scope your registry so the "
+                "private package can never be resolved from the public one."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=hook.name,
+            capabilities=[],
+            reasons=[f"version {version}", f"{hook.name} runs a non-build script", "no other code"],
         )
 
     # -- Lifecycle scripts -----------------------------------------------
