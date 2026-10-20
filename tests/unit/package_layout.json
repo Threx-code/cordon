@@ -538,7 +538,7 @@
   "long_modules": {
    "cli/main": 3131,
    "detect/agents/agents": 4687,
-   "detect/code/capability": 5180,
+   "detect/code/capability": 5165,
    "detect/secrets/secrets": 5147,
    "engine/engine": 7873,
    "intel/advisories/upstream_advisories": 3918,

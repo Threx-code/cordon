@@ -171,6 +171,27 @@ _RAW_SOCKET_MODULES: Final = frozenset({"net", "tls", "dgram"})
 #: A host on this machine, as a socket's own argument: `net.createConnection(port, "127.0.0.1")`
 #: (a browser's DevTools port) reaches nothing outside it.
 _LOOPBACK: Final = re.compile(r"(?:localhost|127(?:\.\d{1,3}){3}|::1|\[::1\])\Z", re.I)
+#: The runtime's own objects: a member stored into one is not a value the file built
+#: (`_Analysis._assign_base`). `window`, `globalThis` and `module` are not among them -- a file
+#: keeps its own values there.
+_HOST_OBJECTS: Final = frozenset(
+    {"process", "console", "Math", "JSON", "Reflect", "Symbol", "Promise", "Number", "String"}
+    | {"Boolean", "Date", "Error", "Buffer", "Intl"}
+)
+#: A command that hands its operand to the desktop's handler for it -- a URL to the browser
+#: (`_Analysis._opener`). `open -a <browser>` too, but not with a terminal or a script runner
+#: named: `open -a Terminal x.command` runs it.
+_OPENER: Final = re.compile(
+    r"\s*(?:open(?!\s+-[ab]\s+\"?(?:Terminal|iTerm|Script\s?Editor|Automator|Warp|Alacritty"
+    r"|kitty|Hyper|Ghostty|osascript)\b)|xdg-open|gio\s+open|wslview|sensible-browser|x-www-browser"
+    r'|start\s+""|cmd(?:\.exe)?\s+/c\s+start\s+""|rundll32(?:\.exe)?\s+url\.dll,FileProtocolHandler'
+    r"|explorer(?:\.exe)?)(?:\s|\"|$)",
+    re.I,
+)
+#: Keywords only in context, ordinary names as a method's own name (`_Analysis._find_functions`).
+_CONTEXTUAL: Final = frozenset({"get", "set", "of", "from", "as", "async", "static"})
+#: TypeScript's member and parameter-property modifiers (`private async load(): Promise<void>`).
+_TS_MODIFIERS: Final = frozenset({"private", "public", "protected", "override", "readonly"})
 #: Options naming where a connection goes rather than what it sends (`_Analysis._sent`).
 _DESTINATION_KEYS: Final = frozenset({"host", "hostname", "localAddress", "port"})
 _PROCESS_CALL: Final = frozenset(
@@ -207,7 +228,7 @@ class Flow:
     """One source kind's value reaching a sink."""
 
     sources: frozenset[str]
-    sink: str  # request | connection | dns | process
+    sink: str  # request | connection | dns | process | open | execute
     host: str | None
     destination: str  # drop | ip | fixed | unknown
     line: int
@@ -221,6 +242,10 @@ class _Fn:
     end: int  # one past its last token
     expression_body: bool
     name: str | None = None
+    #: An arrow function: its `this` is the enclosing function's.
+    arrow: bool = False
+    #: A method written in a class body (`load() {...}`): its `this` is that class's instance.
+    method: bool = False
     ret: set[object] = field(default_factory=set)
     #: ("P" | "R", parameter index) -> sinks it reaches: the parameter itself, or a file read at it.
     sinks: dict[tuple[str, int], set[tuple[str, str | None, str, int]]] = field(
@@ -313,6 +338,7 @@ class _Analysis:
         self.connections: set[tuple[int, str]] = set()  # names bound to an open connection
         self.raw_connections: set[tuple[int, str]] = set()  # ... to a raw socket among them
         self.bound: dict[tuple[int, str], list[tuple[int, int]]] = {}  # name -> what it is bound to
+        self.instance_of: dict[tuple[int, str], int] = {}  # name bound to `new C()` -> C
         self.flows: dict[tuple[int, str], Flow] = {}
         self.fn_by_name: dict[tuple[int, str], int] = {}
         self.fn_at_token: dict[int, int] = {}
@@ -444,10 +470,54 @@ class _Analysis:
             elif tok.kind == "punct" and tok.value == "=" and depth == 0:
                 k = self.expr_end(k + 1)
                 continue
-            elif tok.kind == "name" and tok.value not in _KEYWORDS and not self.is_p(k + 1, ":"):
+            elif tok.kind == "punct" and tok.value == ":" and depth == 0:
+                # A TypeScript parameter type (`p: Record<string, any>`): no names in it. Read as
+                # names, `any` became a parameter and every later one moved along.
+                k = self._type_end(k + 1, close, (",", "="))
+                continue
+            elif (
+                tok.kind == "name"
+                and tok.value not in _KEYWORDS
+                and not (depth == 0 and tok.value in _TS_MODIFIERS and self.is_name(k + 1))
+                and (depth == 0 or not self.is_p(k + 1, ":"))
+            ):
                 names.append(tok.value)
             k += 1
         return names
+
+    def _type_end(self, k: int, stop: int, ends: tuple[str, ...]) -> int:
+        """Where a TypeScript type starting at `k` ends: the first of `ends` outside its brackets
+        and angle brackets, or `stop`. An object type before a body (`): { a: T } {`) is part of
+        the type."""
+        angle = 0
+        while k < stop:
+            tok = self.t[k]
+            if tok.kind == "punct":
+                v = str(tok.value)
+                if v == "<":
+                    angle += 1
+                elif v in (">", ">>", ">>>"):
+                    angle = max(0, angle - len(v))
+                elif (
+                    angle == 0
+                    and v in ends
+                    and not (v == "{" and self.match[k] > 0 and self.is_p(self.match[k] + 1, "{"))
+                ):
+                    return k
+                elif v in _OPEN and self.match[k] > 0:
+                    k = self.match[k] + 1
+                    continue
+            k += 1
+        return stop
+
+    def _past_return_type(self, close: int) -> int:
+        """The token after the parameter list closing at `close`, past a TypeScript return type
+        (`): Promise<string> {`, `): void =>`): where the body or the `=>` is."""
+        if not self.is_p(close + 1, ":"):
+            return close + 1
+        stop = min(self.n, close + 80)
+        end = self._type_end(close + 2, stop, ("{", "=>", ";"))
+        return end if end < stop and not self.is_p(end, ";") else close + 1
 
     def _find_functions(self) -> None:
         t, n = self.t, self.n
@@ -461,9 +531,11 @@ class _Analysis:
                 name = None
                 if self.is_name(k):
                     name, k = t[k].value, k + 1
-                if self.is_p(k, "(") and self.match[k] > 0 and self.is_p(self.match[k] + 1, "{"):
-                    body = self.match[k] + 1
-                    if self.match[body] > 0:
+                if self.is_p(k, "<"):  # `function f<T>(...)`
+                    k = self._type_end(k, min(n, k + 40), ("(",))
+                if self.is_p(k, "(") and self.match[k] > 0:
+                    body = self._past_return_type(self.match[k])
+                    if self.is_p(body, "{") and self.match[body] > 0:
                         fn = _Fn(
                             len(self.fns) + 1,
                             self._params(k),
@@ -475,6 +547,12 @@ class _Analysis:
                         self.fn_at_token[i] = fn.fid
             elif tok.kind == "punct" and tok.value == "=>":
                 p = i - 1
+                if not self.is_p(p, ")"):
+                    # `(a: T): Promise<R> => ...`: back past the return type to the parameters.
+                    for j in range(i - 2, max(i - 60, 0), -1):
+                        if self.is_p(j, ")") and self._past_return_type(j) == i:
+                            p = j
+                            break
                 if self.is_p(p, ")") and self.match[p] >= 0:
                     params = self._params(self.match[p])
                     head = self.match[p]
@@ -485,16 +563,20 @@ class _Analysis:
                 if self.is_name(head - 1, "async"):
                     head -= 1
                 if self.is_p(i + 1, "{") and self.match[i + 1] > 0:
-                    fn = _Fn(len(self.fns) + 1, params, i + 2, self.match[i + 1], False)
+                    fn = _Fn(len(self.fns) + 1, params, i + 2, self.match[i + 1], False, arrow=True)
                 else:
-                    fn = _Fn(len(self.fns) + 1, params, i + 1, self.expr_end(i + 1), True)
+                    fn = _Fn(
+                        len(self.fns) + 1, params, i + 1, self.expr_end(i + 1), True, arrow=True
+                    )
                 self.fn_at_token[head] = fn.fid
             elif (
                 tok.kind == "name"
-                and tok.value not in _KEYWORDS
+                # A method may be named `get`, `set` or `from` (`set(key, value) {`): those are
+                # keywords only before another name.
+                and (tok.value not in _KEYWORDS or tok.value in _CONTEXTUAL)
                 and self.is_p(i + 1, "(")
                 and self.match[i + 1] > 0
-                and self.is_p(self.match[i + 1] + 1, "{")
+                and self.is_p(self._past_return_type(self.match[i + 1]), "{")
                 and (
                     i == 0
                     or (t[i - 1].kind == "punct" and t[i - 1].value in ("{", "}", ",", ";", "*"))
@@ -502,9 +584,10 @@ class _Analysis:
                     or self.is_name(i - 1, "static")
                     or self.is_name(i - 1, "get")
                     or self.is_name(i - 1, "set")
+                    or (t[i - 1].kind == "name" and t[i - 1].value in _TS_MODIFIERS)
                 )
             ):
-                body = self.match[i + 1] + 1
+                body = self._past_return_type(self.match[i + 1])
                 if self.match[body] > 0:
                     fn = _Fn(
                         len(self.fns) + 1,
@@ -513,6 +596,7 @@ class _Analysis:
                         self.match[body],
                         False,
                         tok.value,
+                        method=True,
                     )
                     self.fn_at_token[i] = fn.fid
             if fn is not None:
@@ -534,7 +618,74 @@ class _Analysis:
     def scope_of(self, i: int) -> int:
         return self.scope_at[i] if 0 <= i < self.n else 0
 
+    def _classes(self) -> None:
+        """Each token's innermost class body (`class_at`, 0 for none) and the scope each class
+        body sits in."""
+        self.class_at = [0] * self.n
+        self.class_scope: dict[int, int] = {}
+        self.class_by_name: dict[str, int] = {}
+        spans: list[tuple[int, int]] = []
+        for i in range(self.n):
+            if not self.is_name(i, "class") or self.is_p(i - 1, "."):
+                continue
+            # `class Client`, or `var Client = class {...}` as bundlers write it.
+            if self.is_name(i + 1) and self.t[i + 1].value != "extends":
+                named: str | None = str(self.t[i + 1].value)
+            elif self.is_p(i - 1, "=") and self.is_name(i - 2):
+                named = str(self.t[i - 2].value)
+            else:
+                named = None
+            k = i + 1
+            while k < min(self.n, i + 200) and not self.is_p(k, "{"):
+                if (
+                    self.t[k].kind == "punct"
+                    and self.t[k].value in ("(", "[")
+                    and self.match[k] > 0
+                ):
+                    k = self.match[k]
+                elif self.t[k].kind == "punct" and self.t[k].value in (";", ")", "}", "=>"):
+                    break
+                k += 1
+            if self.is_p(k, "{") and self.match[k] > 0:
+                spans.append((k, self.match[k]))
+                if named:
+                    self.class_by_name.setdefault(named, len(spans))
+        for c, (open_i, close) in sorted(
+            enumerate(spans, 1), key=lambda item: item[1][0] - item[1][1]
+        ):  # widest first, so an inner class wins
+            self.class_scope[c] = self.scope_at[open_i]
+            for k in range(open_i + 1, close):
+                self.class_at[k] = c
+
+    def this_of(self, scope: int) -> tuple[int, str]:
+        """Whose `this` a function sees: in a class's method, or any function inside one, that
+        class's instance (`(-class, "this")`); anywhere else the one file-wide `this` as before,
+        so prototype-style code (`C.prototype.m = function () { this.x }`) still shares its
+        fields. Any function inside, not only an arrow: compiled async methods run their body in
+        `__awaiter(this, ..., function* () {...})`, whose `this` is the method's. One file-wide
+        `this` for classes let a response one class stored reach every other class in a bundle
+        (review 98 P1 A/B)."""
+        s, seen = scope, 0
+        while s and seen < 200:
+            fn = self.fns[s - 1]
+            if fn.method:
+                c = self.class_at[fn.start] if fn.start < self.n else 0
+                if c and self.class_scope.get(c) == self.parent.get(s, 0):
+                    return (-c, "this")
+            s, seen = self.parent.get(s, 0), seen + 1
+        return (0, "this")
+
+    def method_of(self, name: str, scope: int) -> int | None:
+        """The function `this.name(...)` calls: the method of the caller's own class when it has
+        one, otherwise the file-wide lookup."""
+        owner = self.this_of(scope)
+        if owner[0] < 0:
+            return self.fn_by_name.get((owner[0], name))
+        return self.fn_by_name.get(self.resolve(name, scope))
+
     def resolve(self, name: str, scope: int) -> tuple[int, str]:
+        if name == "this":
+            return self.this_of(scope)
         s = scope
         seen = 0
         while s and seen < 200:
@@ -573,6 +724,8 @@ class _Analysis:
                     else:
                         break
                     self.declared.setdefault(scope, set()).update(targets)
+                    if self.is_p(k, ":"):  # `const t: string = ...`: past the TypeScript type
+                        k = self._type_end(k + 1, min(self.n, k + 80), ("=", ",", ";"))
                     if self.is_p(k, "=") or (self.is_name(k, "of") or self.is_name(k, "in")):
                         end = self.expr_end(k + 1)
                         out.append(([(scope, x) for x in targets], k + 1, end))
@@ -594,7 +747,11 @@ class _Analysis:
         return out
 
     def _assign_base(self, k: int) -> str | None:
-        """The name at the root of an assignment target ending at token `k`: `a`, `a.b.c`, `a[x]`."""
+        """The name at the root of an assignment target ending at token `k`: `a`, `a.b.c`, `a[x]`.
+        None for a member of the runtime's own objects: `process.exitCode = ok ? 0 : 1` stores
+        nothing the file reads back as `process.platform`, and taking `process` as the store let
+        one response reach every child process the file starts (review 98 P1 A/B)."""
+        end = k
         while k >= 0:
             tok = self.t[k]
             if tok.kind == "punct" and tok.value == "]" and self.match[k] >= 0:
@@ -604,6 +761,8 @@ class _Analysis:
                 if self.is_p(k - 1, "."):
                     k -= 2
                     continue
+                if k != end and tok.value in _HOST_OBJECTS:
+                    return None
                 return None if tok.value in _KEYWORDS and tok.value != "this" else tok.value
             return None
         return None
@@ -698,7 +857,14 @@ class _Analysis:
             parts.append(str(self.t[self.match[k - 2] + 1].value).removeprefix("node:"))
             k = self.match[k - 2] - 1
         parts.reverse()
-        if parts and parts[0] in self.aliases:
+        # A property of something that is not a name (`/re/.exec(line)`, `f().exec(x)`) is not
+        # the import of that name: `exec` destructured from child_process made every regex's
+        # `.exec` a command run.
+        if (
+            parts
+            and parts[0] in self.aliases
+            and not (self.is_p(k - 1, ".") or self.is_p(k - 1, "?."))
+        ):
             parts = (
                 self.aliases[parts[0]].split(".", 1)[:1]
                 + (
@@ -762,7 +928,12 @@ class _Analysis:
                         self.fact[k] = ("src", "home_path")
                     elif v in ("HOME", "USERPROFILE") and self.is_name(k - 2, "env"):
                         self.fact[k] = ("src", "home_path")
-                    elif v in _FS_READ and self.is_p(k + 1, "(") and self.match[k + 1] > 0:
+                    elif (
+                        v in _FS_READ
+                        and self.is_p(k + 1, "(")
+                        and self.match[k + 1] > 0
+                        and not self._opened_to_write(k)
+                    ):
                         self.fact[k] = ("read", self.match[k + 1])
                     elif (
                         v in ("readText", "read")
@@ -812,9 +983,22 @@ class _Analysis:
             return ("src", "identity")
         if module == "os" and member == "homedir":
             return ("src", "home_path")
-        if module in ("fs", "fs/promises") and member in _FS_READ:
+        if module in ("fs", "fs/promises") and member in _FS_READ and not self._opened_to_write(k):
             return ("read", self.match[k + 1])
         return None
+
+    def _opened_to_write(self, k: int) -> bool:
+        """`openSync(log, "a")`: a descriptor to write a log through is no read of the file. Only
+        `openSync` takes a mode; a read is one without it or with an `r` mode."""
+        if str(self.t[k].value) != "openSync" and not str(
+            self.aliases.get(str(self.t[k].value), "")
+        ).endswith(".openSync"):
+            return False
+        args = self._split_args(k + 1)
+        if len(args) < 2:
+            return False
+        mode = self.t[args[1][0]]
+        return mode.kind == "str" and not str(mode.value).startswith("r")
 
     def _compile(
         self, a: int, b: int, scope: int
@@ -849,9 +1033,17 @@ class _Analysis:
                 elif what == "read":
                     reads.append((k, int(v)))  # type: ignore[call-overload]
                     k = int(v)  # type: ignore[call-overload]
+                elif what == "call" and v == "Promise" and self.is_name(k - 1, "new"):
+                    refs.append(_Analysis.promise_key(k))  # what its executor resolves it with
+                    k = max(k, self.match[k + 1])
                 else:
                     resolved = self.resolve(str(v), scope)
-                    target = self.fn_by_name.get(resolved) if what == "call" else None
+                    if what != "call":
+                        target = None
+                    elif self.is_p(k - 1, ".") and self.is_name(k - 2, "this"):
+                        target = self.method_of(str(v), scope)
+                    else:
+                        target = self.fn_by_name.get(resolved)
                     if target is not None:
                         calls.append((k, target))
                         k = self.match[k + 1]
@@ -1051,6 +1243,7 @@ class _Analysis:
         """See `JsFlow.deferred_spans`."""
         self._find_functions()
         self._scopes()
+        self._classes()
         t, n = self.t, self.n
         if not self.fns:
             return []
@@ -1152,6 +1345,7 @@ class _Analysis:
     def run(self) -> list[Flow]:
         self._find_functions()
         self._scopes()
+        self._classes()
         self._modules()
         self._facts()
         bindings = self._bindings()
@@ -1163,8 +1357,15 @@ class _Analysis:
                 self.fn_by_name.setdefault(
                     self.resolve(fn.name, self.parent.get(fn.fid, 0)), fn.fid
                 )
+                owner = self.this_of(fn.fid) if fn.method else (0, "")
+                if owner[0] < 0:
+                    self.fn_by_name.setdefault((owner[0], fn.name), fn.fid)
+        self._promises()
         for targets, s, e in bindings:
             if e - s >= 1 and len(targets) == 1:
+                if self.is_name(s, "new") and str(self.t[s + 1].value) in self.class_by_name:
+                    # `const r = new Runner()`: which class's fields `r.set(x)` stores into.
+                    self.instance_of[targets[0]] = self.class_by_name[str(self.t[s + 1].value)]
                 fid = self.fn_at_token.get(s) or (
                     self.fn_at_token.get(s + 1) if self.is_name(s, "async") else None
                 )
@@ -1283,7 +1484,12 @@ class _Analysis:
                 base = self._assign_base(args[0][1] - 1)
                 rest = args[1:]
             else:
-                base = parts[0] if parts[0] not in self.aliases else None
+                # Not a module, nor the runtime's own objects: `Buffer.concat(chunks)` stores nothing.
+                base = (
+                    parts[0]
+                    if parts[0] not in self.aliases and parts[0] not in _HOST_OBJECTS
+                    else None
+                )
                 rest = args
             if base:
                 value = set().union(*(self.taint(s, e, scope) for s, e in rest)) if rest else set()
@@ -1318,11 +1524,12 @@ class _Analysis:
                 for p in fn.params:
                     changed |= self._grow(self.vars.setdefault((fid, p), set()), given)
         # A known function: its sinks apply to the arguments given here.
-        target = (
-            self.fn_by_name.get(self.resolve(name, scope))
-            if len(parts) == 1 or (len(parts) == 2 and parts[0] == "this")
-            else None
-        )
+        if len(parts) == 2 and parts[0] == "this":
+            target = self.method_of(name, scope)
+        elif len(parts) == 1:
+            target = self.fn_by_name.get(self.resolve(name, scope))
+        else:
+            target = None
         if target is not None:
             fn = self.fns[target - 1]
             for (how, idx), sinks in list(fn.sinks.items()):
@@ -1333,8 +1540,35 @@ class _Analysis:
                     value = JsFlow.read_of(value)
                 for sink, host, dest, line in sinks:
                     changed |= self._record(value, sink, host, dest, line, scope)
+        if len(parts) == 1 and args:
+            settles = self.resolvers.get(self.resolve(name, scope))
+            if settles is not None:
+                # `resolve(Buffer.concat(chunks))` in a promise's executor: the promise's value.
+                value = self.taint(args[0][0], args[0][1], scope)
+                changed |= self._grow(self.vars.setdefault(settles, set()), value)
+            elif self.is_name(k - 1, "new") and name in self.class_by_name:
+                c = self.class_by_name[name]
+                changed |= self._store_fields(
+                    c, self.fn_by_name.get((-c, "constructor")), args, scope
+                )
+        elif len(parts) == 2 and args:
+            # `r.set(t)` on `r = new Runner()`, or `this.set(t)` inside Runner: Runner's `set`
+            # takes `t` into its fields. Only a receiver whose class is known: a method name
+            # alone (`send`, `write`) is in every class of a bundle.
+            owner = (
+                -self.this_of(scope)[0]
+                if parts[0] == "this"
+                else self.instance_of.get(self.resolve(parts[0], scope), 0)
+            )
+            if owner > 0:
+                method = self.fn_by_name.get((-owner, name))
+                changed |= self._store_fields(owner, method, args, scope)
         # A sink.
         kind = self._sink_kind(k, scope)
+        if kind == "process" and args and self._opener(*args[0], scope):
+            # The desktop opening what it is given -- a sign-in link the server sent, in the
+            # browser -- runs none of it: an `open` sink, which only the send rules read.
+            kind = "open"
         if kind is not None and args:
             # Opening a connection sends its options (host, path, headers); the body follows
             # through `.write`/`.end` on the bound name.
@@ -1382,6 +1616,37 @@ class _Analysis:
                 out |= self.taint(s, e, scope)
         return out
 
+    def _opener(self, a: int, b: int, scope: int, follow: bool = True) -> bool:
+        """Whether the command [a, b) only opens its operand in the desktop's handler: `open`,
+        `xdg-open`, `start ""`, `rundll32 url.dll,FileProtocolHandler`, in every branch of a
+        platform choice (`darwin ? \\`open "${u}"\\` : ...`), written in place or bound to the
+        name passed. Operands compared against (`=== "darwin"`) are not commands. `open -a App`
+        runs the app, so it is not one."""
+        if follow and b == a + 1 and self.is_name(a):
+            rhs = self.bound.get(self.resolve(str(self.t[a].value), scope))
+            return bool(rhs) and all(
+                self._opener(s, e, self.scope_of(s), follow=False) for s, e in rhs or ()
+            )
+        heads: list[str] = []
+        for i in range(a, b):
+            tok = self.t[i]
+            if tok.kind != "str":
+                continue
+            before, after = (
+                self.t[i - 1] if i > 0 else None,
+                self.t[i + 1] if i + 1 < self.n else None,
+            )
+            if any(
+                x is not None and x.kind == "punct" and x.value in ("===", "!==", "==", "!=")
+                for x in (before, after)
+            ):
+                continue
+            if i == a or (
+                before is not None and before.kind == "punct" and before.value in ("(", "?", ":")
+            ):
+                heads.append(str(tok.value))
+        return bool(heads) and all(_OPENER.match(h) for h in heads)
+
     #: Calls that pick out a value without joining anything to it (`_as_it_stands`).
     _PICKS: ClassVar[frozenset[str]] = frozenset(
         {"keys", "values", "entries", "find", "filter", "flat", "at"}
@@ -1427,15 +1692,54 @@ class _Analysis:
                 return False
         return True
 
+    @staticmethod
+    def promise_key(k: int) -> tuple[int, str]:
+        """The value of the `new Promise(...)` at token `k`, as a name no scope declares."""
+        return (-1_000_000 - k, "Promise")
+
+    def _promises(self) -> None:
+        """`resolvers`: an executor's first parameter -> the promise it settles."""
+        self.resolvers: dict[tuple[int, str], tuple[int, str]] = {}
+        for k in range(1, self.n - 2):
+            if self.is_name(k, "Promise") and self.is_name(k - 1, "new") and self.is_p(k + 1, "("):
+                s = k + 2
+                fid = self.fn_at_token.get(s) or (
+                    self.fn_at_token.get(s + 1) if self.is_name(s, "async") else None
+                )
+                if fid is not None and self.fns[fid - 1].params:
+                    self.resolvers[(fid, self.fns[fid - 1].params[0])] = _Analysis.promise_key(k)
+
+    def _store_fields(
+        self, c: int, method: int | None, args: list[tuple[int, int]], scope: int
+    ) -> bool:
+        """`new C(a, b)` or `obj.m(a, b)`: the fields C's constructor (or method `m`) set from its
+        parameters get `a` and `b`. One instance per class, as one `this` per class is."""
+        instance = self.vars.get((-c, "this"))
+        if method is None or not instance:
+            return False
+        value: set[Label] = set()
+        for label in list(instance):
+            if isinstance(label, tuple) and label[1] == method and label[2] < len(args):
+                s, e = args[label[2]]
+                got = self.taint(s, e, scope)
+                value |= JsFlow.read_of(got) if label[0] == "R" else got
+        return self._grow(instance, value)
+
     def _receiver_taint(self, first: int, k: int, scope: int) -> set[Label]:
         """The taint of what a method is called on: `read(p)` in `read(p).then(...)`, `x` in `x.on(...)`."""
         end = first  # tokens before the dotted callee
         parts_end = k - 1  # the `.` before the method
         start = first
-        if self.is_p(start - 1, ")") and self.match[start - 1] >= 0:
+        # Back over the whole call chain: `fetch(u).then(r => r.text())` is the receiver of a
+        # second `.then`, and what the server sent flows down it.
+        while self.is_p(start - 1, ")") and self.match[start - 1] >= 0:
             start = self.match[start - 1]
-            if self.is_name(start - 1):
-                _, start = self._chain(start - 1)
+            if not self.is_name(start - 1):
+                break
+            _, start = self._chain(start - 1)
+            if not (self.is_p(start - 1, ".") and self.is_p(start - 2, ")")):
+                break
+            start -= 1
         del end
         return self.taint(start, max(parts_end, start), scope)
 

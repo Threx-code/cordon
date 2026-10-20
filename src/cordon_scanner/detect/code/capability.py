@@ -2873,31 +2873,16 @@ class CapabilityDetector(BaseDetector):
         r"\beval\s*\(|\bFunction\s*\(|\bvm\b|child_process|\bexec(?:Sync)?\s*\(|\bspawn"
     )
     #: The flows reported, by source kind, and the sinks at which each is one. A secret leaves
-    #: through a request, a connection, a lookup or a child process (`curl -d @~/.ssh/id_rsa`);
-    #: the environment or the host name handed to a child process stays on this machine; what a
-    #: server sent is judged where it is executed.
+    #: through a request, a connection, a lookup, a child process (`curl -d @~/.ssh/id_rsa`) or a
+    #: link opened; the environment or the host name handed to a child process stays here; what a
+    #: server sent is judged where it is executed, which an `open` (a browser) is not.
+    _JS_SENDS: ClassVar[frozenset[str]] = frozenset({"request", "connection", "dns", "open"})
     _JS_FLOW_RULES: ClassVar[tuple[tuple[str, str, frozenset[str]], ...]] = (
-        (
-            "secret_file",
-            "CAP.JS.FLOW.SECRET_FILE_SENT",
-            frozenset({"request", "connection", "dns", "process"}),
-        ),
-        (
-            "wallet_key",
-            "CAP.JS.FLOW.WALLET_KEY_SENT",
-            frozenset({"request", "connection", "dns", "process"}),
-        ),
-        (
-            "home_file",
-            "CAP.JS.FLOW.HOME_FILE_SENT",
-            frozenset({"request", "connection", "dns", "process"}),
-        ),
-        ("identity", "CAP.JS.FLOW.IDENTITY_SENT", frozenset({"request", "connection", "dns"})),
-        (
-            "environment",
-            "CAP.JS.FLOW.ENVIRONMENT_SENT",
-            frozenset({"request", "connection", "dns"}),
-        ),
+        ("secret_file", "CAP.JS.FLOW.SECRET_FILE_SENT", _JS_SENDS | {"process"}),
+        ("wallet_key", "CAP.JS.FLOW.WALLET_KEY_SENT", _JS_SENDS | {"process"}),
+        ("home_file", "CAP.JS.FLOW.HOME_FILE_SENT", _JS_SENDS | {"process"}),
+        ("identity", "CAP.JS.FLOW.IDENTITY_SENT", _JS_SENDS),
+        ("environment", "CAP.JS.FLOW.ENVIRONMENT_SENT", _JS_SENDS),
         ("network_response", "CAP.JS.FLOW.REMOTE_CODE", frozenset({"execute", "process"})),
         # Sent over a raw socket or inside a DNS name rather than a request: what a command
         # printed, a home-directory file, a credential store. A client library speaks HTTP to its

