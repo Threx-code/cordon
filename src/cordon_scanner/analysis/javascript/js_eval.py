@@ -28,6 +28,8 @@ from typing import Any, ClassVar, Final
 
 MAX_STEPS: Final = 40_000
 MAX_STRING: Final = 20_000
+#: Template literals nested inside `${}` deeper than this are read as code (see `tokens`).
+MAX_TEMPLATE_DEPTH: Final = 16
 MAX_REGEX: Final = 2_000
 MAX_DEPTH: Final = 60
 MAX_TEXT: Final = 600_000
@@ -115,9 +117,15 @@ class JsEval:
     # -- tokens ----------------------------------------------------------------------------------
 
     @staticmethod
-    def tokens(text: str) -> list[Tok]:
+    def tokens(text: str, templates: bool = False, depth: int = 0) -> list[Tok]:
         """Tokens by a linear scan: no pattern runs over a string's body, so no input can make the
-        tokenizer backtrack."""
+        tokenizer backtrack.
+
+        With `templates`, an interpolated template literal is given as the expression it is:
+        `` `a${x}b` `` reads `( "a" + ( x ) + "b" )`, so its text stays a string and only what is
+        inside `${}` is read as code. Without it, the whole literal is read as code (the
+        evaluator's view). Templates nested deeper than `MAX_TEMPLATE_DEPTH` are read that way
+        too, so no nesting can exhaust the stack."""
         out: list[Tok] = []
         pos, n = 0, len(text)
         while pos < n:
@@ -160,7 +168,12 @@ class JsEval:
                         out.append(Tok("longstr", "", pos, j + 1))  # too long to evaluate
                     pos = j + 1
                 elif c == "`":
-                    pos += 1  # an interpolated template: read what is inside as code
+                    end = (
+                        JsEval._template(text, pos, out, depth)
+                        if templates and depth < MAX_TEMPLATE_DEPTH
+                        else -1
+                    )
+                    pos = end if end > 0 else pos + 1  # else: read what is inside as code
                 else:
                     pos = max(j, pos + 1)  # unterminated on its line: what it held is not code
                 continue
@@ -247,6 +260,74 @@ class JsEval:
                 while j < n and (text[j].isalpha()):
                     j += 1
                 return j
+            j += 1
+        return -1
+
+    @staticmethod
+    def _template(text: str, pos: int, out: list[Tok], depth: int) -> int:
+        """Tokens of the interpolated template opening at `pos` (see `tokens`), appended to `out`;
+        one past its closing backtick, or -1 (nothing appended) if it does not close."""
+        n, j, start = len(text), pos + 1, pos + 1
+        got: list[Tok] = [Tok("punct", "(", pos, pos + 1)]
+        while j < n:
+            c = text[j]
+            if c == "\\":
+                j += 2
+                continue
+            if c == "`" or text.startswith("${", j):
+                if j > start:
+                    if len(got) > 1:
+                        got.append(Tok("punct", "+", start, start))
+                    got.append(Tok("str", JsEval._unquote("`" + text[start:j] + "`"), start, j))
+                if c == "`":
+                    got.append(Tok("punct", ")", j, j + 1))
+                    out.extend(got)
+                    return j + 1
+                close = JsEval._interpolation_end(text, j + 2, depth)
+                if close < 0:
+                    return -1
+                if len(got) > 1:
+                    got.append(Tok("punct", "+", j, j))
+                got.append(Tok("punct", "(", j, j + 2))
+                got.extend(
+                    Tok(t.kind, t.value, t.start + j + 2, t.end + j + 2)
+                    for t in JsEval.tokens(text[j + 2 : close], True, depth + 1)
+                )
+                got.append(Tok("punct", ")", close, close + 1))
+                j = start = close + 1
+                continue
+            j += 1
+        return -1
+
+    @staticmethod
+    def _interpolation_end(text: str, pos: int, depth: int) -> int:
+        """The `}` closing the `${` whose body starts at `pos`, past strings and nested templates
+        inside it; -1 if there is none."""
+        braces, j, n = 0, pos, len(text)
+        while j < n:
+            c = text[j]
+            if c in "\"'`":
+                k = j + 1
+                while k < n and text[k] != c and (c == "`" or text[k] != "\n"):
+                    if text[k] == "\\":
+                        k += 2
+                    elif c == "`" and text.startswith("${", k):
+                        if depth >= MAX_TEMPLATE_DEPTH:
+                            return -1
+                        inner = JsEval._interpolation_end(text, k + 2, depth + 1)
+                        if inner < 0:
+                            return -1
+                        k = inner + 1
+                    else:
+                        k += 1
+                j = k + 1
+                continue
+            if c == "{":
+                braces += 1
+            elif c == "}":
+                if braces == 0:
+                    return j
+                braces -= 1
             j += 1
         return -1
 

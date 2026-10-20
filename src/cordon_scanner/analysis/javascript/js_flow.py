@@ -171,6 +171,16 @@ _PROCESS_CALL: Final = frozenset(
 _DNS_CALL: Final = frozenset(
     {"lookup", "resolve", "resolve4", "resolve6", "resolveTxt", "resolveAny", "resolveCname"}
 )
+#: What TypeScript, Babel and esbuild wrap a `require` in when they compile an `import`.
+_IMPORT_HELPERS: Final = frozenset(
+    {
+        "__importDefault",
+        "__importStar",
+        "__toESM",
+        "_interopRequireDefault",
+        "_interopRequireWildcard",
+    }
+)
 _STORE_METHODS: Final = frozenset({"push", "unshift", "set", "append", "add", "concat"})
 _VM_RUN: Final = frozenset(
     {"runInContext", "runInNewContext", "runInThisContext", "compileFunction"}
@@ -282,7 +292,7 @@ class JsFlow:
 class _Analysis:
     def __init__(self, text: str) -> None:
         self.text = text
-        self.t: list[Tok] = JsEval.tokens(text)
+        self.t: list[Tok] = _Analysis._uncomma(JsEval.tokens(text, templates=True))
         self.n = len(self.t)
         self.newlines = [i for i, c in enumerate(text) if c == "\n"]
         self.match = self._brackets()
@@ -315,6 +325,35 @@ class _Analysis:
         ] = {}
 
     # -- structure -------------------------------------------------------------------------------
+
+    @staticmethod
+    def _uncomma(t: list[Tok]) -> list[Tok]:
+        """`(0, os_1.hostname)(...)` -- how TypeScript and Babel call an imported function -- read
+        as the call it is, `os_1.hostname(...)`: the parenthesis, `0` and comma are dropped."""
+        drop: set[int] = set()
+        for i in range(len(t) - 4):
+            if not (
+                t[i].kind == "punct"
+                and t[i].value == "("
+                and t[i + 1].kind == "num"
+                and t[i + 1].value == 0
+                and t[i + 2].kind == "punct"
+                and t[i + 2].value == ","
+                and t[i + 3].kind == "name"
+            ):
+                continue
+            k = i + 3
+            while k + 2 < len(t) and t[k + 1].value == "." and t[k + 2].kind == "name":
+                k += 2
+            if (
+                k + 2 < len(t)
+                and t[k + 1].kind == "punct"
+                and t[k + 1].value == ")"
+                and t[k + 2].kind == "punct"
+                and t[k + 2].value == "("
+            ):
+                drop.update((i, i + 1, i + 2, k + 1))
+        return [tok for i, tok in enumerate(t) if i not in drop] if drop else t
 
     def _brackets(self) -> list[int]:
         match = [-1] * self.n
@@ -571,6 +610,8 @@ class _Analysis:
             ):
                 module = str(t[i + 2].value).removeprefix("node:")
                 k = i - 1
+                if self.is_p(k, "(") and self.is_name(k - 1) and t[k - 1].value in _IMPORT_HELPERS:
+                    k -= 2  # `os_1 = __importDefault(require("os"))`: the helper hands it back
                 member = None
                 if self.is_p(i + 4, ".") and self.is_name(i + 5):
                     member = t[i + 5].value
@@ -601,6 +642,20 @@ class _Analysis:
                     for m in range(i + 1, k):
                         if self.is_p(m, "{") and self.match[m] > 0:
                             self._destructured(m, self.match[m], module)
+        # `const api = axios.create({...})`, `got.extend(...)`: an instance sends as the module does.
+        for i in range(2, self.n - 3):
+            if (
+                self.is_p(i - 1, "=")
+                and self.is_name(i - 2)
+                and self.is_name(i)
+                and self.is_p(i + 1, ".")
+                and self.is_name(i + 2)
+                and t[i + 2].value in ("create", "extend")
+                and self.is_p(i + 3, "(")
+            ):
+                root = self.aliases.get(str(t[i].value), str(t[i].value)).split(".")[0]
+                if root in _REQUEST_MODULES:
+                    self.aliases[str(t[i - 2].value)] = root
 
     def _destructured(self, open_i: int, close_i: int, module: str) -> None:
         t = self.t
@@ -643,6 +698,8 @@ class _Analysis:
                 )
                 + parts[1:]
             )
+        if len(parts) > 2 and parts[1] == "default":
+            del parts[1]  # `os_1.default.hostname`: a module's default export is the module
         return parts, k
 
     # -- taint ------------------------------------------------------------------------------------
@@ -703,8 +760,25 @@ class _Analysis:
                         and str(t[k - 2].value) in ("clipboard", "clipboardy")
                     ):
                         self.fact[k] = ("src", "clipboard")
+                    elif (
+                        self.is_name(k - 2, "this")
+                        and self.is_p(k + 1, "(")
+                        and self.match[k + 1] > 0
+                    ):
+                        self.fact[k] = ("call", v)  # a method of the same class
                 elif v in _BROWSER and v != "cookie" and self.is_p(k + 1, "."):
                     self.fact[k] = ("src", "browser")
+                elif (
+                    v in self.aliases
+                    and self.is_p(k + 1, "(")
+                    and self.match[k + 1] > 0
+                    and self._bound_source(k)
+                ):
+                    # `const {hostname} = require("os")`, `import {readFileSync} from "fs"`: the
+                    # member called by the name it was bound to.
+                    self.fact[k] = self._bound_source(k)
+                elif v == "this" and self.is_p(k + 1, "."):
+                    self.fact[k] = ("ref", "this")  # `this.key = v` taints the instance
                 elif v not in _KEYWORDS and not (
                     self.is_p(k + 1, ":") and (self.is_p(k - 1, "{") or self.is_p(k - 1, ","))
                 ):
@@ -719,6 +793,18 @@ class _Analysis:
                         self.fact[k] = ("call", v)
                     else:
                         self.fact[k] = ("ref", v)
+
+    def _bound_source(self, k: int) -> tuple[str, object] | None:
+        """What a call by a bound member name at `k` contributes, as `_facts` gives it for the
+        same member called on its module."""
+        module, _, member = self.aliases[str(self.t[k].value)].partition(".")
+        if module == "os" and member in _IDENTITY:
+            return ("src", "identity")
+        if module == "os" and member == "homedir":
+            return ("src", "home_path")
+        if module in ("fs", "fs/promises") and member in _FS_READ:
+            return ("read", self.match[k + 1])
+        return None
 
     def _compile(
         self, a: int, b: int, scope: int
@@ -865,6 +951,16 @@ class _Analysis:
             and self.resolve(root, scope) in self.connections
         ):
             return "request"
+        if (
+            len(parts) == 1
+            and last in _CONNECTION_SEND
+            and self.is_p(k - 1, ".")
+            and self.is_p(k - 2, ")")
+            and self.match[k - 2] > 0
+            and self.is_name(self.match[k - 2] - 1)
+            and self._sink_kind(self.match[k - 2] - 1, scope) == "connection"
+        ):
+            return "request"  # `https.request(opts).end(body)`: sent on the request just opened
         if parts[:2] == ["navigator", "sendBeacon"] or (
             root in ("$", "jQuery") and last in ("ajax", "post", "get")
         ):
@@ -1173,7 +1269,11 @@ class _Analysis:
                 for p in fn.params:
                     changed |= self._grow(self.vars.setdefault((fid, p), set()), given)
         # A known function: its sinks apply to the arguments given here.
-        target = self.fn_by_name.get(self.resolve(name, scope)) if len(parts) == 1 else None
+        target = (
+            self.fn_by_name.get(self.resolve(name, scope))
+            if len(parts) == 1 or (len(parts) == 2 and parts[0] == "this")
+            else None
+        )
         if target is not None:
             fn = self.fns[target - 1]
             for (how, idx), sinks in list(fn.sinks.items()):
