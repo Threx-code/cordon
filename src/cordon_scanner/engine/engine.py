@@ -2015,7 +2015,7 @@ class Engine:
             image=image if image is not None else ctx.image,
             # And so can a published package's: its `build/` and `bin/` are what runs, and the
             # typosquat grading asks which format it is.
-            package_distribution=bool(early_format := self._distribution_format(units)),
+            package_distribution=bool(early_format := PackageFormat.of(units)),
             distribution=early_format,
             import_entry_paths=PackageEntries.of(units, early_format),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
@@ -2123,13 +2123,16 @@ class Engine:
         dependencies = self._build_graph(units, acc)
         if image is not None:
             self._report_image_contents(image, acc)
-        package = self._distribution_format(units)
+        package = PackageFormat.of(units)
         target_kind = "image" if image is not None else "package" if package else "archive"
         if package:
             # A consumer's installer resolves from the package's declared metadata, never from a
             # lockfile shipped inside it: those pins are the maintainers' own environment. The
             # exception is a file that installer reads and obeys (`HONOURED_PINS`): what it pins
-            # is what installing the package brings in.
+            # is what installing the package brings in. An archive that may be a repository
+            # snapshot instead is graded both ways (`PackageFormat.union`, review 98 #18).
+            both = PackageFormat.renamed_npm(units)
+            repository = self._person_run_ceiling(list(acc.findings), units, ctx) if both else []
             ctx = replace(ctx, package_distribution=True, distribution=package)
             acc.add(self._young_dependency_introduced(units, package, ctx))
             acc.findings[:] = self._impersonator_runs_downloads(
@@ -2147,10 +2150,12 @@ class Engine:
                     self.config.policy.advisory_domains,
                 )
             )
+            acc.findings[:] = PackageFormat.union(acc.findings, repository)
             honoured = HONOURED_PINS.get(package)
             dependencies = tuple(
                 replace(d, scope=Scope.DEV)
-                if d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
+                if not both
+                and d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
                 and not (honoured and honoured.search(d.declared_in or ""))
                 else d
                 for d in dependencies
@@ -5062,18 +5067,13 @@ class Engine:
     def _history_distribution(units: list[FileUnit]) -> str:
         """The format release history knows this archive as: a published package's, or Open VSX
         for an editor extension (`.vsix`), which is not otherwise graded as a package."""
-        package = Engine._distribution_format(units)
+        package = PackageFormat.of(units)
         if package:
             return package
         tops = {u.path.partition("!")[2] for u in units if u.path.count("!") == 1}
         if "extension.vsixmanifest" in tops and "extension/package.json" in tops:
             return "openvsx"
         return ""
-
-    @staticmethod
-    def _distribution_format(units: list[FileUnit]) -> str:
-        """Which published-package format the archive is (`engine/package_format.py`)."""
-        return PackageFormat.of(units)
 
     def _image_inventory(self, data: bytes, acc: _Accumulator) -> Any:
         """The OS packages of a container image tarball, or None when the archive is not one.

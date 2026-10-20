@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit
+    from cordon_scanner.foundation.models import Finding
 
 GO_MODULE_ROOT: Final = re.compile(r"[^@!]{1,1024}@v\d[^/@!]{0,128}/")
 """A module proxy zip's first level: every file sits under `<module path>@<version>/`."""
@@ -29,16 +30,7 @@ class PackageFormat:
         Helm, Terraform modules) are not recognised, because nothing tells them apart.
         """
 
-        top: set[str] = set()
-        for unit in units:
-            _, sep, member = unit.path.partition("!")
-            if sep and "!" not in member:
-                top.add(member)
-        roots: dict[str, set[str]] = {}
-        for member in top:
-            directory, sep, leaf = member.partition("/")
-            if sep and "/" not in leaf:
-                roots.setdefault(directory, set()).add(leaf)
+        top, roots = PackageFormat._levels(units)
         for directory, leaves in roots.items():
             if "PKG-INFO" in leaves or (directory.endswith(".dist-info") and "METADATA" in leaves):
                 return "pypi"
@@ -78,6 +70,55 @@ class PackageFormat:
         if any(GO_MODULE_ROOT.match(m) for m in top):
             return "gomod"
         return "npm" if PackageFormat.npm_under_another_root(units, top, roots) else ""
+
+    @staticmethod
+    def _levels(units: list[FileUnit]) -> tuple[set[str], dict[str, set[str]]]:
+        """The archive's first-level members, and the files directly inside each first-level
+        directory."""
+        top: set[str] = set()
+        for unit in units:
+            _, sep, member = unit.path.partition("!")
+            if sep and "!" not in member:
+                top.add(member)
+        roots: dict[str, set[str]] = {}
+        for member in top:
+            directory, sep, leaf = member.partition("/")
+            if sep and "/" not in leaf:
+                roots.setdefault(directory, set()).add(leaf)
+        return top, roots
+
+    @staticmethod
+    def renamed_npm(units: list[FileUnit]) -> bool:
+        """Whether the archive is npm only by `npm_under_another_root`. A repository snapshot of a
+        project with a package.json at its root has the same shape (GitHub's codeload tarballs:
+        23 gradle, nix, opam and swift repositories in the #18 A/B), so it is read both ways
+        (`union`)."""
+        return (
+            PackageFormat.of(units) == "npm"
+            and "package/package.json" not in (PackageFormat._levels(units)[0])
+        )
+
+    @staticmethod
+    def union(package: list[Finding], repository: list[Finding]) -> list[Finding]:
+        """Both readings of an archive that may be either (`renamed_npm`): every finding either
+        reading reports, each at the higher of its two grades. A repository snapshot then loses
+        nothing to npm's install-time reading of it, and renaming a package's folder gains an
+        attacker nothing either way. Findings are paired by rule and location, which the
+        ceilings never change."""
+        if not repository:
+            return package
+        graded: dict[tuple[str, object], list[Finding]] = {}
+        for finding in repository:
+            graded.setdefault((finding.rule_id, finding.location), []).append(finding)
+        out: list[Finding] = []
+        for finding in package:
+            same = graded.get((finding.rule_id, finding.location))
+            other = same.pop(0) if same else None
+            out.append(
+                other if other is not None and other.severity > finding.severity else finding
+            )
+        out.extend(f for rest in graded.values() for f in rest)
+        return out
 
     @staticmethod
     def npm_under_another_root(

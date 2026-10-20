@@ -20,6 +20,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.detect.supply.advisory import EXPLOITED_RULE, VULNERABLE_RULE, AdvisoryDetector
 from cordon_scanner.engine.engine import HONOURED_PINS, Engine
+from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
@@ -99,7 +100,7 @@ class TestTheFormatIsRecognised:
         ],
     )
     def test_by_the_metadata_its_packaging_tool_writes(self, expected, members) -> None:
-        assert Engine._distribution_format(PackageFormatHelpers.units(*members)) == expected
+        assert PackageFormat.of(PackageFormatHelpers.units(*members)) == expected
 
     @pytest.mark.parametrize(
         "members",
@@ -114,7 +115,7 @@ class TestTheFormatIsRecognised:
         ],
     )
     def test_a_repository_snapshot_is_not_one(self, members) -> None:
-        assert Engine._distribution_format(PackageFormatHelpers.units(*members)) == ""
+        assert PackageFormat.of(PackageFormatHelpers.units(*members)) == ""
 
     def test_a_repository_that_vendors_a_package_is_still_a_repository(self) -> None:
         units = [
@@ -122,7 +123,7 @@ class TestTheFormatIsRecognised:
             SimpleNamespace(path="repo.tar.gz!repo/vendor/dep-1.0.0.tgz!package/package.json"),
             SimpleNamespace(path="repo.tar.gz!repo/vendor/x-1.0.crate!x-1.0/Cargo.toml.orig"),
         ]
-        assert Engine._distribution_format(units) == ""
+        assert PackageFormat.of(units) == ""
 
 
 class TestNpmUnderAnotherRoot:
@@ -147,11 +148,11 @@ class TestNpmUnderAnotherRoot:
     @pytest.mark.parametrize("root", ["pkg", "left-pad", "a-1.0.0"])
     def test_one_folder_with_a_manifest_is_npm(self, root: str) -> None:
         units = self.units("a-1.0.0.tgz", self.MANIFEST, f"{root}/index.js")
-        assert Engine._distribution_format(units) == "npm"
+        assert PackageFormat.of(units) == "npm"
 
     def test_package_is_still_npm(self) -> None:
         units = self.units("a-1.0.0.tgz", self.MANIFEST, "package/index.js")
-        assert Engine._distribution_format(units) == "npm"
+        assert PackageFormat.of(units) == "npm"
 
     @pytest.mark.parametrize(
         ("archive", "manifest", "others"),
@@ -168,7 +169,60 @@ class TestNpmUnderAnotherRoot:
         ],
     )
     def test_anything_else_is_not(self, archive, manifest, others) -> None:
-        assert Engine._distribution_format(self.units(archive, manifest, *others)) == ""
+        assert PackageFormat.of(self.units(archive, manifest, *others)) == ""
+
+    def test_only_another_root_is_read_both_ways(self) -> None:
+        assert PackageFormat.renamed_npm(self.units("a.tgz", self.MANIFEST, "pkg/index.js"))
+        assert not PackageFormat.renamed_npm(self.units("a.tgz", self.MANIFEST, "package/index.js"))
+
+    def test_a_repository_snapshot_keeps_its_lockfile_rating(self, tmp_path) -> None:
+        # GitHub's tarball of a repository with a package.json at its root has an npm tarball's
+        # shape; its lockfile is the project's, as it was before #18.
+        tarball = PackageFormatHelpers.archive(
+            tmp_path,
+            "app-HEAD.tar.gz",
+            {
+                "app-main/package.json": '{"name":"app","version":"1.0.0"}',
+                "app-main/package-lock.json": ExploitedHelpers._lockfile("left-pad", "1.0.0"),
+            },
+        )
+        result = PackageFormatHelpers.scan(tarball, ExploitedHelpers._advisory(severity="critical"))
+        [finding] = [f for f in result.findings if f.rule_id == VULNERABLE_RULE]
+        assert finding.severity is Severity.CRITICAL
+
+
+class TestBothReadings:
+    """`PackageFormat.union`: each finding at the higher of its package and repository grades."""
+
+    @pytest.fixture
+    def finding(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"app","version":"1.0.0"}', encoding="utf-8")
+        (tmp_path / "package-lock.json").write_text(
+            ExploitedHelpers._lockfile("left-pad", "1.0.0"), encoding="utf-8"
+        )
+        result = PackageFormatHelpers.scan(
+            tmp_path, ExploitedHelpers._advisory(severity="critical")
+        )
+        [finding] = [f for f in result.findings if f.rule_id == VULNERABLE_RULE]
+        return finding
+
+    def test_the_higher_grade_is_kept(self, finding) -> None:
+        lowered = replace(finding, severity=Severity.MEDIUM, message="lowered")
+        [out] = PackageFormat.union([lowered], [finding])
+        assert out.severity is finding.severity
+        assert out.message == finding.message
+        [out] = PackageFormat.union([finding], [lowered])
+        assert out.severity is finding.severity
+
+    def test_a_finding_either_reading_dropped_is_kept(self, finding) -> None:
+        other = replace(finding, rule_id="SUSPECT.CI.FETCH_EXEC.001")
+        assert PackageFormat.union([finding], [other]) == [finding, other]
+        assert PackageFormat.union([finding], []) == [finding]
+
+    def test_repeats_pair_one_to_one(self, finding) -> None:
+        lowered = replace(finding, severity=Severity.MEDIUM)
+        out = PackageFormat.union([lowered, lowered], [finding])
+        assert [f.severity for f in out] == [finding.severity, Severity.MEDIUM]
 
 
 class TestALockfileInAPublishedCrate:
