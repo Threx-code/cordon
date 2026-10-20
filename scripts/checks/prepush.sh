@@ -23,7 +23,7 @@ command -v docker >/dev/null 2>&1 || { echo "prepush: Docker is required" >&2; e
 tag="cordon-prepush:$(git -C "$root" hash-object pyproject.toml | cut -c1-12)"
 if ! docker image inspect "$tag" >/dev/null 2>&1; then
     echo "prepush: building $tag (once per dependency change)"
-    docker build -q -t "$tag" -f "$root/scripts/prepush/Dockerfile" "$root" >/dev/null
+    docker build -q -t "$tag" -f "$root/scripts/checks/prepush/Dockerfile" "$root" >/dev/null
     # The image for the previous dependency set is now unused.
     docker images --format '{{.Repository}}:{{.Tag}}' | grep '^cordon-prepush:' | grep -v "^$tag$" \
         | xargs -r docker rmi >/dev/null 2>&1 || true
