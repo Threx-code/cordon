@@ -134,6 +134,7 @@ rather than a document.
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | `manifest` | malicious_code |
 | `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
+| `MALWARE.RECIPE.KNOWN.001` | critical | `recipe-digest` | malicious_code |
 | `POLICY.DEPENDENCY.ABANDONED.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001` | medium | `manifest` | policy |
 | `POLICY.DEPENDENCY.DEPRECATED.001` | medium | `registry` | policy |
@@ -167,6 +168,7 @@ rather than a document.
 | `SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001` | high | `lockfile` | integrity |
 | `SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001` | high | `lockfile` | integrity |
 | `SUSPECT.LOCKFILE.SOURCE.001` | medium | `lockfile` | integrity |
+| `SUSPECT.RECIPE.PROVISIONAL.001` | high | `recipe-digest` | policy |
 | `SUSPECT.TYPOSQUAT.PACKAGE_NAME.001` | high | `manifest` | typosquat |
 | `VULNERABLE.DEPENDENCY.EXPLOITED.001` | critical | `advisory` | vulnerability |
 | `VULNERABLE.DEPENDENCY.KNOWN.001` | high | `advisory` | vulnerability |
@@ -259,7 +261,6 @@ rather than a document.
 | `MALWARE.MOBILE.ATTRIBUTION_CLOAK.001` | critical | `composites` | malicious_code |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
 | `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
-| `MALWARE.RECIPE.KNOWN.001` | critical | `recipe-digest` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.002` | critical | `composites` | malicious_code |
 | `MALWARE.YARA.MATCH.001` | critical | `yara` | malicious_code |
@@ -292,7 +293,6 @@ rather than a document.
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | `composites` | malicious_code |
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | `composites` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
-| `SUSPECT.RECIPE.PROVISIONAL.001` | high | `recipe-digest` | malicious_code |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |

@@ -29,10 +29,6 @@ from support import requires_malicious_corpus
 CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 
 NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
-    # Requires a live registry. Exercised in tests/unit/intel/registries/test_registry_detector.py
-    # against a substituted client, because a suite that reaches PyPI fails when
-    # PyPI is slow.
-    "registry",
     # Requires an advisory database, which is supplied by the operator rather
     # than committed. Exercised in the advisory unit tests.
     "advisory",
@@ -90,7 +86,8 @@ class TestEveryDetectorRuns(DetectorLivenessFixtures):
         registered = {d.id for d in detectors}
         # A detector that declares it needs the network cannot run on an offline corpus by
         # construction; each is exercised against a substituted client in its unit tests
-        # (`registry`, `provenance`, `mcp-packages` in test_agents.py).
+        # (`registry` in tests/unit/intel/registries/test_registry_detector.py, `provenance`,
+        # `mcp-packages` in test_agents.py).
         networked = {d.id for d in detectors if d.requires.network}
         # Likewise a detector the operator must switch on and point at a service (ClamAV).
         operator_enabled = {d.id for d in detectors if getattr(d, "operator_enabled", False)}
