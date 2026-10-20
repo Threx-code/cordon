@@ -148,6 +148,9 @@ class LongtailScan:
                     # Where in the file: what region-level analyses (a release diff, a shared
                     # idiom) compare. Appended, so every reader of the first five keeps working.
                     (f.get("location") or {}).get("line"),
+                    # Which detector made it: what tells a content block from an intel one
+                    # (`bench/tools/content.py`). Appended, like the line.
+                    f.get("detector"),
                 ]
                 for f in rep.get("findings", [])
             ]

@@ -131,12 +131,42 @@ class TimeSplit:
                     str(f.get("confidence")),
                     str(f.get("category")),
                     "",
+                    "",
+                    # Which detector made it: what tells a content block from an intel one.
+                    str(f.get("detector", "")),
                 ]
                 for f in report.get("findings", [])
             ]
         except (ValueError, TypeError, AttributeError):
             pass
         return {"sample": relative, "level": Levels.of(code, findings), "findings": findings}
+
+    @staticmethod
+    def summary(listing: dict[str, object], rows: list[dict[str, object]]) -> dict[str, object]:
+        """The recalls over the scanned rows (each row's `level` from `Levels.of`)."""
+        seen = Counter(str(r["level"]) for r in rows)
+        answered = len(rows) - seen["error"]
+        # A release the shipped advisories already name is intel, not content: it counts only in
+        # the recall with intel, and so does a block intel alone made (`bench/tools/content.py`).
+        # Content recall is a lower bound -- a known release whose content would also have been
+        # blocked is not credited to content. Both recalls are over EVERY sample: a scan that
+        # failed or timed out is a sample not caught, so errors can only lower them. The
+        # `*_answered` figures, which leave failed scans out, are kept beside them, labelled.
+        caught = seen["blocked"] + seen["known"] + seen["intel"]
+        total = len(rows)
+        return {
+            "frozen": listing["frozen"],
+            "head": listing["head"],
+            "samples": total,
+            "levels": dict(seen),
+            "errors": seen["error"],
+            "content_recall": round(seen["blocked"] / max(total, 1), 4),
+            "content_recall_95": list(Wilson.interval(seen["blocked"], total)),
+            "recall_with_intel": round(caught / max(total, 1), 4),
+            "content_recall_answered": round(seen["blocked"] / max(answered, 1), 4),
+            "recall_with_intel_answered": round(caught / max(answered, 1), 4),
+            "enough_for_a_98_claim": total >= 650,
+        }
 
     @classmethod
     def scan(cls, root: Path, out: Path, workers: int) -> dict[str, object]:
@@ -148,22 +178,7 @@ class TimeSplit:
         # holds the GIL, so nine threads unpacked one sample at a time and left one scan running.
         with ProcessPoolExecutor(workers) as pool:
             rows = list(pool.map(partial(cls.scan_one, root, empty=empty), samples))
-        seen = Counter(str(r["level"]) for r in rows)
-        answered = len(rows) - seen["error"]
-        # A release the shipped advisories already name is intel, not content: it counts only in
-        # the recall with intel. Content recall is a lower bound -- a known release whose content
-        # would also have been blocked is not credited to content.
-        caught = seen["blocked"] + seen["known"]
-        summary = {
-            "frozen": listing["frozen"],
-            "head": listing["head"],
-            "samples": len(rows),
-            "levels": dict(seen),
-            "content_recall": round(seen["blocked"] / max(answered, 1), 4),
-            "content_recall_95": list(Wilson.interval(seen["blocked"], answered)),
-            "recall_with_intel": round(caught / max(answered, 1), 4),
-            "enough_for_a_98_claim": answered >= 650,
-        }
+        summary = cls.summary(listing, rows)
         out.mkdir(parents=True, exist_ok=True)
         (out / "timesplit.json").write_text(
             json.dumps({"summary": summary, "rows": rows}, indent=1), encoding="utf-8"

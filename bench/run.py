@@ -45,9 +45,10 @@ class Verdict:
     detail: str = ""
     seconds: float = 0.0
     level: str = ""
-    """Cordon only: known, blocked, warned, noted, clean or error (`Levels.of`)."""
+    """Cordon only: known, intel, blocked, warned, noted, clean or error (`Levels.of`)."""
     findings: list[list[str]] = field(default_factory=list)
-    """Cordon only: `[rule_id, severity, confidence, category, path]` per finding, blocked or not.
+    """Cordon only: `[rule_id, severity, confidence, category, path, line, detector]` per
+    finding, blocked or not.
     Severity is decided in context, so the rule id alone cannot say whether a user saw a warning."""
 
 
@@ -64,7 +65,21 @@ class Levels:
             # Any known-malicious intel match (the release, a dependency, an extension) makes it
             # known: in a benign draw that is a true positive and the long tail's base rate.
             known = any(f[0].startswith("MALWARE.") and ".KNOWN" in f[0] for f in findings)
-            return "known" if known else "blocked"
+            if known:
+                return "known"
+            # A block counts as content only when a finding the gate failed on came from
+            # the package's own bytes (`bench/tools/content.py`); a block made by intel
+            # alone -- a feed, a registry record, a known-sample signature -- is `intel`.
+            # Rows recorded without a detector (older runs) are read as before.
+            if findings and all(len(f) > 6 and f[6] for f in findings):
+                from content import Content
+
+                if not any(
+                    Content.fails(f[0], f[1], f[2], f[3]) and Content.is_content(f[0], f[6])
+                    for f in findings
+                ):
+                    return "intel"
+            return "blocked"
         top = max(
             (
                 Levels.ORDER.index(f[1])
@@ -114,17 +129,19 @@ class SuiteResult:
             }
             for tool, counts in sorted(by_tool.items())
         }
-        identity_only = sum(
-            1 for v in self.verdicts if v.tool == "cordon" and v.detail == "identity-only"
-        )
-        if identity_only and "cordon" in rates:
+        if "cordon" in rates:
+            # Content recall: blocks a finding from the package's own bytes made (`Levels.of`
+            # "blocked"); a known-release match or an intel-only block never counts. Over EVERY
+            # sample: a scan that failed is a sample not caught, so errors can only lower it.
+            # `rate_answered` leaves the failed scans out, labelled, beside it.
             counts = by_tool["cordon"]
-            content = counts["blocked"] - identity_only
+            content = sum(1 for v in self.verdicts if v.tool == "cordon" and v.level == "blocked")
             rates["cordon, content only"] = {
                 "total": counts["total"],
                 "blocked": content,
                 "error": counts["error"],
-                "rate": round(content / max(counts["total"] - counts["error"], 1), 4),
+                "rate": round(content / max(counts["total"], 1), 4),
+                "rate_answered": round(content / max(counts["total"] - counts["error"], 1), 4),
             }
         # What a user saw, for a benign suite: not blocked, and not even warned, each with its
         # interval. A malicious suite reads the same table the other way round.
@@ -135,11 +152,14 @@ class SuiteResult:
             seen = Counter(v.level for v in levelled)
             # Known malware is left out of the benign rates: it is a correct block, not noise.
             total = len(levelled) - seen["known"]
-            not_blocked = total - seen["blocked"]
+            # Every block a user sees is noise in a benign draw, whatever made it: an intel-only
+            # block counts against the rate exactly as a content one does.
+            not_blocked = total - seen["blocked"] - seen["intel"]
             no_warning = not_blocked - seen["warned"]
             rates["cordon, levels"] = {
                 **{
-                    level: seen[level] for level in ("known", "blocked", "warned", "noted", "clean")
+                    level: seen[level]
+                    for level in ("known", "intel", "blocked", "warned", "noted", "clean")
                 },
                 "total": total,
                 "not_blocked": round(not_blocked / max(total, 1), 4),
@@ -215,6 +235,9 @@ class Harness:
                     str(f.get("confidence", "")),
                     str(f.get("category", "")),
                     str((f.get("location") or {}).get("path") or "").split("!", 1)[-1][-160:],
+                    str((f.get("location") or {}).get("line") or ""),
+                    # Which detector made it: what tells a content block from an intel one.
+                    str(f.get("detector", "")),
                 ]
                 for f in report.get("findings", [])
             ]

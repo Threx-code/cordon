@@ -279,6 +279,7 @@
   "test_beacon_identity_flow.py": "detect/code",
   "test_bench_as_published.py": "bench",
   "test_bench_budgets.py": "bench",
+  "test_bench_content.py": "bench",
   "test_bench_imports.py": "bench",
   "test_bench_levels.py": "bench",
   "test_bench_longtail_levels.py": "bench",
