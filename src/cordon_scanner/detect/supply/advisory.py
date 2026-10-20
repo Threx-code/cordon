@@ -334,7 +334,7 @@ class AdvisoryDetector(BaseDetector):
                 continue
             reported: set[str] = set()
             for advisory in (
-                *self._database.matching(dependency.ecosystem, dependency.name, dependency.version),
+                *self._own_records(dependency),
                 *(upstream.advisories.get(dependency.purl, ()) if upstream is not None else ()),
             ):
                 # One record can match through its version list and its range both.
@@ -368,6 +368,48 @@ class AdvisoryDetector(BaseDetector):
             if dependency.version is None and dependency.declared_spec:
                 findings.extend(self._admitted_malware(dependency, ctx))
         return findings
+
+    def _own_records(self, dependency: Dependency) -> tuple[Advisory, ...]:
+        """The records about this dependency by its own name: by version, and for an image pinned by
+        digest by that digest too (an image record lists its digest among its versions). A Helm chart
+        record that names its repositories holds only for a chart from one of them."""
+        found = self._database.matching(dependency.ecosystem, dependency.name, dependency.version)
+        pin = dependency.integrity or ""
+        if (
+            dependency.ecosystem == "image"
+            and pin.startswith("sha256:")
+            and pin != dependency.version
+        ):
+            found = (
+                *found,
+                *(
+                    a
+                    for a in self._database.matching("image", dependency.name, pin)
+                    if a not in found
+                ),
+            )
+        if dependency.ecosystem == "helm":
+            source = AdvisoryDetector._repository_key(
+                dependency.resolved_from or dependency.source[1] or ""
+            )
+            found = tuple(
+                a
+                for a in found
+                if not a.repositories
+                or (
+                    source
+                    and source in {AdvisoryDetector._repository_key(r) for r in a.repositories}
+                )
+            )
+        return found
+
+    @staticmethod
+    def _repository_key(location: str) -> str:
+        """A chart repository as written in any of its spellings, compared without scheme or slash."""
+        text = location.strip().lower()
+        for scheme in ("https://", "http://", "oci://"):
+            text = text.removeprefix(scheme)
+        return text.rstrip("/")
 
     def _repository_matches(self, dependency: Dependency) -> tuple[str, list[Advisory]] | None:
         """Malicious-repository records for code this dependency fetches straight from a repository.

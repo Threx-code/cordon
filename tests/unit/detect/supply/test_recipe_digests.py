@@ -114,3 +114,35 @@ class TestRecipeDigests(RecipeFixtures):
     )
     def test_which_files_are_recipes(self, path, ecosystem) -> None:
         assert RecipeDigests.ecosystem_of(path) == ecosystem
+
+
+class TestMcpBundles(RecipeFixtures):
+    """An MCP bundle (`.mcpb`, a zip of a server's code) is matched by its exact bytes, as the
+    backend analysed it from the MCP registry."""
+
+    @staticmethod
+    def bundle(root: Path) -> bytes:
+        import io
+        import zipfile
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("manifest.json", '{"name": "server", "version": "1.2.0"}')
+            archive.writestr("server/index.js", "module.exports = {};\n")
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "server.mcpb").write_bytes(buffer.getvalue())
+        return buffer.getvalue()
+
+    def test_the_condemned_bundle_bytes_block(self, tmp_path) -> None:
+        data = self.bundle(tmp_path / "p")
+        record = RecipeKit.record(
+            hashlib.sha256(data).hexdigest(), ecosystem="mcp", id="CORDON-MCP-0123456789ABCDEF0123"
+        )
+        self.feed(advisories={"mcp": {"upsert": [record], "withdraw": []}})
+        assert KNOWN_RULE in RecipeKit.rules(tmp_path / "p")
+
+    def test_any_other_bundle_does_not(self, tmp_path) -> None:
+        self.bundle(tmp_path / "p")
+        record = RecipeKit.record("0" * 64, ecosystem="mcp", id="CORDON-MCP-0123456789ABCDEF0123")
+        self.feed(advisories={"mcp": {"upsert": [record], "withdraw": []}})
+        assert KNOWN_RULE not in RecipeKit.rules(tmp_path / "p")

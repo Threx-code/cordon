@@ -53,6 +53,9 @@ class RecipeDigests:
         "conan": re.compile(r"(?:^|/)conanfile\.py$"),
         "vcpkg": re.compile(r"(?:^|/)ports/[^/]+/(?:portfile\.cmake|vcpkg\.json)$"),
         "nix": re.compile(r"\.nix$"),
+        # An MCP bundle: a zip of a server's code, installed by an MCP client from the URL the MCP
+        # registry names (`mcpb`). Matched by its bytes, as the backend analysed it.
+        "mcp": re.compile(r"\.mcpb$"),
     }
 
     @staticmethod
@@ -129,7 +132,12 @@ class RecipeDigestDetector(BaseDetector):
             return ()
         content = unit.content
         ecosystem = RecipeDigests.ecosystem_of(content.path)
-        if ecosystem is None or content.is_binary or len(content.raw) > MAX_BYTES:
+        if ecosystem is None or content.truncated:
+            return ()
+        # A recipe is text; an MCP bundle is a zip, matched by its bytes whole or not at all.
+        if ecosystem == "mcp" and len(content.raw) != content.size:
+            return ()
+        if ecosystem != "mcp" and (content.is_binary or len(content.raw) > MAX_BYTES):
             return ()
         if ecosystem not in self._indexes:
             try:

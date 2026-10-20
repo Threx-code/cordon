@@ -344,6 +344,14 @@ ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "conan",
     "vcpkg",
     "nix",
+    # The watch-list registries and MCP (cordon-backend task 22), from the feed alone: a Terraform
+    # module and an image by name and exact version (an image's digest is one of its versions), a Helm
+    # chart by name and version only from a repository the record names, and an MCP bundle by its
+    # digest (`recipe_digests`).
+    "helm",
+    "terraform",
+    "image",
+    "mcp",
 )
 
 
@@ -384,6 +392,11 @@ class Advisory:
     `"0"` for "no lower bound") up to `fixed` (exclusive) or through
     `last_affected` (inclusive). Only consulted when `versions` is empty --
     see `affects`."""
+
+    repositories: tuple[str, ...] = ()
+    """For a Helm chart, every spelling of the chart repository the record is about (its URL, its
+    OCI location, `registry:<name>`): a chart is named by its chart name alone, and two repositories'
+    `redis` are different code, so the record matches a dependency only from one of these."""
 
     matched_through: str = ""
     """How a record not about the package itself was matched to it (`intel/
@@ -491,6 +504,9 @@ class ShippedAdvisories:
             introduced=(str(raw["introduced"]) if raw.get("introduced") else None),
             fixed=(str(raw["fixed"]) if raw.get("fixed") else None),
             last_affected=(str(raw["last_affected"]) if raw.get("last_affected") else None),
+            repositories=tuple(str(r) for r in repositories_raw)
+            if isinstance(repositories_raw := raw.get("repositories"), list)
+            else (),
         )
 
     @staticmethod

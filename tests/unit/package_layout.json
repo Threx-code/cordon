@@ -534,6 +534,7 @@
   "test_vex_input.py": "report",
   "test_written_then_run.py": "detect/code",
   "test_vscode_extension.py": "repository",
+  "test_watchlist_advisories.py": "detect/supply",
   "test_windows.py": "foundation",
   "test_workload_images.py": "ecosystems",
   "test_yara_pack.py": "detect/binary",
