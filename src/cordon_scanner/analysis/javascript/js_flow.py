@@ -238,6 +238,9 @@ _ARCHIVE_ADD_PATH: Final = frozenset(
 )
 #: Adds whose argument is already the CONTENT (`jszip.file(name, readFileSync(p))`): arg 2.
 _ARCHIVE_ADD_CONTENT: Final = frozenset({"file"})
+#: Writing a response to one of these puts code a server chose on disk; the path written to then
+#: carries `network_response`, so running it later is the dropper the REMOTE_CODE rule reads.
+_FS_WRITE: Final = frozenset({"writeFile", "writeFileSync", "appendFile", "appendFileSync"})
 _VM_RUN: Final = frozenset(
     {"runInContext", "runInNewContext", "runInThisContext", "compileFunction"}
 )
@@ -1277,6 +1280,11 @@ class _Analysis:
         if len(parts) == 1:
             if last == "eval" or (last == "Function" and not self.is_p(k - 1, ".")):
                 return "execute"
+            if last == "require" and not self.is_p(k - 1, "."):
+                # `require(p)` runs p's top level: a response written to disk and required back is
+                # run. `execute` reaches only the REMOTE_CODE rule, so a plain `require("pkg")`
+                # (a literal, no response taint) raises nothing.
+                return "execute"
             if last in ("fetch", "$fetch") or root in _REQUEST_MODULES:
                 return "request"
             if self.is_name(k - 1, "new") and last in ("WebSocket", "EventSource"):
@@ -1660,6 +1668,20 @@ class _Analysis:
             elif name in _ARCHIVE_ADD_PATH:  # the archiver reads the path: its contents go in
                 added = set().union(*(JsFlow.read_of(self.taint(s, e, scope)) for s, e in args))
                 changed |= self._grow(self.vars.setdefault(av, set()), added)
+        # A response written to a file to be run from disk: the file now holds code a server
+        # chose, so the path it was written to carries `network_response`. Running that path
+        # (`exec(p)`, `require(p)`) is the dropper the REMOTE_CODE rule reads; `network_response`
+        # reaches no send-sink, so the path is only ever judged where it runs. A verified
+        # own-release download is lowered in grading (review 98 round 2 B).
+        if (
+            name in _FS_WRITE
+            and len(args) >= 2
+            and "network_response" in self.taint(*args[1], scope)
+        ):
+            s0, e0 = args[0]
+            if e0 - s0 == 1 and self.t[s0].kind == "name":
+                written = self.resolve(str(self.t[s0].value), scope)
+                changed |= self._grow(self.vars.setdefault(written, set()), {"network_response"})
         # Callbacks get what the call works on: its receiver and its other arguments.
         candidates = [
             (i, self.fn_at_token.get(s) or self.fn_at_token.get(s + 1))

@@ -527,6 +527,7 @@
   "test_versions.py": "intel/advisories",
   "test_vex_csaf.py": "decide",
   "test_vex_input.py": "report",
+  "test_written_then_run.py": "detect/code",
   "test_vscode_extension.py": "repository",
   "test_windows.py": "foundation",
   "test_workload_images.py": "ecosystems",
@@ -540,7 +541,7 @@
   "long_modules": {
    "cli/main": 3131,
    "detect/agents/agents": 4687,
-   "detect/code/capability": 5165,
+   "detect/code/capability": 5170,
    "detect/secrets/secrets": 5147,
    "engine/engine": 7873,
    "intel/advisories/upstream_advisories": 3918,

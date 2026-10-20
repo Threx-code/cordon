@@ -1594,6 +1594,11 @@ class CapabilityDetector(BaseDetector):
         ]
 
     DROPPER_RULE = "SUSPECT.DROPPER.001"
+    #: The flow dropper (a response reaching execute/process, including written to disk then run --
+    #: review 98 round 2 B). Lowered like DROPPER_RULE when the download is a verified own release,
+    #: so a sha256-checked self-update stays below the gate; kept out of VERIFIABLE_DROPPERS so the
+    #: no-download-run escalations do not apply to it.
+    REMOTE_CODE_RULE = "SUSPECT.DROPPER.REMOTE_CODE.001"
 
     #: Rules whose act is destroying data. They keep their severity in build tooling: a recipe
     #: runs unattended on every machine that builds, so "written to be read" does not hold.
@@ -4600,9 +4605,9 @@ class CapabilityDetector(BaseDetector):
         # A prebuilt binary from the package's own release, checked against a digest it ships
         # before anything runs (review 98, FP-2: `@ohos-ports/larksuite-cli`). Read over the whole
         # file's hits, not this window's: a credential read anywhere in it keeps the dropper.
-        verified = rule.id in self.VERIFIABLE_DROPPERS and self._verified_release_download(
-            unit, ctx, hits if file_hits is None else file_hits
-        )
+        verified = (
+            rule.id in self.VERIFIABLE_DROPPERS or rule.id == self.REMOTE_CODE_RULE
+        ) and self._verified_release_download(unit, ctx, hits if file_hits is None else file_hits)
 
         mode = Redactor.effective_mode(rule.evidence_policy, ctx.config.evidence)
         evidence = Redactor.build_evidence(content, anchor.byte_start, anchor.byte_end, mode)
@@ -5020,7 +5025,7 @@ class CapabilityDetector(BaseDetector):
                 # matters most here: a long encoded payload is itself what makes a hand-written
                 # file look minified (`eval(atob('...'))` in `tailwind-animation-effect`).
                 ceilinged = "minified output"
-            elif verified and compiled.rule.id == self.DROPPER_RULE:
+            elif verified and compiled.rule.id in (self.DROPPER_RULE, self.REMOTE_CODE_RULE):
                 ceilinged = CapabilityDetector.VERIFIED_DOWNLOAD_REASON
                 ceiling = Severity.MEDIUM
             elif (
