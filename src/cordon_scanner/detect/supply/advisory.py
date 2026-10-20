@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -59,6 +59,10 @@ TEST_FIXTURE_SEGMENTS = frozenset(
 
 MALICIOUS_RULE = "MALWARE.DEPENDENCY.KNOWN.001"
 PLACEHOLDER_RULE = "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
+PROVISIONAL_RULE = "SUSPECT.DEPENDENCY.PROVISIONAL.001"
+"""This exact version is HELD FOR REVIEW by Cordon's feed: one signal flagged it minutes ago, and a
+second signal or a person has not yet confirmed or cleared it (`FeedStore.read_provisional`).
+Suspicious, not malicious -- nothing has confirmed it -- and HIGH, so the default gate pauses it."""
 
 SECURITY_PLACEHOLDER = re.compile(r"^\d+\.\d+\.\d+-security$")
 """npm's tombstone for a package name its security team took over.
@@ -88,6 +92,9 @@ DATABASE_SCOPE_RULE = "OPERATIONAL.ADVISORY.DATABASE_SCOPE"
 TAMPERED_RULE = "OPERATIONAL.ADVISORY.TAMPERED"
 NO_FEED_RULE = "OPERATIONAL.ADVISORY.NO_FEED.001"
 
+#: The feed files some ecosystems share (`advisories._SHARED_DATA`): gradle reads maven's.
+_SHARED_DATA_KEYS = {"gradle": "maven"}
+
 _SEVERITY_MAP = {
     "low": Severity.LOW,
     "moderate": Severity.MEDIUM,
@@ -109,7 +116,7 @@ class AdvisoryDetector(BaseDetector):
 
     id = "advisory"
     version = "0.1.0"
-    categories = frozenset({Category.MALICIOUS, Category.VULNERABLE})
+    categories = frozenset({Category.MALICIOUS, Category.VULNERABLE, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=False, dependencies=True)
 
     def __init__(self, database: AdvisoryDatabase | None = None) -> None:
@@ -120,6 +127,8 @@ class AdvisoryDetector(BaseDetector):
         # project argues against everywhere else.
         self._database = AdvisoryDatabase.bundled() if database is None else database
         self._advice: dict[tuple[str | None, str, str | None], str] = {}
+        #: The feed's provisional verdicts per ecosystem, read on first use (`_provisional`).
+        self._provisional_cache: dict[str, list[dict[str, Any]]] = {}
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -141,6 +150,25 @@ class AdvisoryDetector(BaseDetector):
                 remediation=(
                     "Remove the version and treat every machine that installed it as compromised."
                 ),
+            ),
+            DeclaredRule(
+                id=PROVISIONAL_RULE,
+                title="Dependency version is held for review",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=AdvisoryDetector.id,
+                message=(
+                    "Cordon's feed holds this exact version for review: it was flagged as "
+                    "malicious by one signal and a second signal or a person has not yet "
+                    "confirmed or cleared it. Installs of it are paused until they do. Other "
+                    "versions of the package are not affected."
+                ),
+                remediation=(
+                    "Pin the previous version until the hold is decided, usually within the hour; "
+                    "the hold lifts by itself if the verdict is cleared."
+                ),
+                references=(references.OSV,),
             ),
             DeclaredRule(
                 id=PLACEHOLDER_RULE,
@@ -314,6 +342,9 @@ class AdvisoryDetector(BaseDetector):
                     continue
                 reported.add(advisory.identifier)
                 findings.append(self._finding(dependency, advisory, ctx))
+            held = self._provisional_hold(dependency, findings, ctx)
+            if held is not None:
+                findings.append(held)
             repository = self._repository_matches(dependency)
             if repository and not any(
                 f.rule_id == MALICIOUS_RULE and f.location.package == dependency.purl
@@ -716,6 +747,77 @@ class AdvisoryDetector(BaseDetector):
                 f"package, so the first safe release is not stated here."
             )
         return generic
+
+    def _provisional_hold(
+        self, dependency: Dependency, findings: list[Finding], ctx: ScanContext
+    ) -> Finding | None:
+        """A pause on this exact version, if Cordon's feed holds it for review and nothing has
+        already condemned it. Matched by name and exact version only, never by name alone."""
+        if dependency.version is None or any(
+            f.rule_id == MALICIOUS_RULE and f.location.package == dependency.purl for f in findings
+        ):
+            return None
+        record = next(
+            (
+                r
+                for r in self._provisional(dependency.ecosystem)
+                if str(r.get("name", "")).lower() == dependency.name.lower()
+                and dependency.version in {str(v) for v in r.get("versions") or ()}
+            ),
+            None,
+        )
+        if record is None:
+            return None
+        identifier = str(record.get("id", ""))
+        return Finding(
+            rule_id=PROVISIONAL_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            message=(
+                f"{dependency.name} {dependency.version} is held for review by Cordon's feed "
+                f"({identifier}): one signal flagged this exact version as malicious and it is paused "
+                f"until a second signal or a person confirms or clears it. "
+                f"{str(record.get('summary', ''))[:300]}"
+            ).strip(),
+            remediation=(
+                f"Keep the previous version of {dependency.name} until the hold is decided; it lifts "
+                f"by itself if the verdict is cleared."
+            ),
+            location=Location(
+                path=dependency.declared_in or dependency.project or ".",
+                package=dependency.purl,
+                project=dependency.project,
+            ),
+            evidence=Evidence(
+                kind=EvidenceKind.GRAPH,
+                match_hash=Evidence.hash_bytes(
+                    f"{PROVISIONAL_RULE}:{dependency.purl}:{identifier}".encode()
+                ),
+                redaction=RedactionMode.NONE,
+            ),
+            explanation=Explanation(
+                summary=f"{dependency.name} {dependency.version} is held for review",
+                matched_rule=PROVISIONAL_RULE,
+            ),
+            risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
+            detector=self.id,
+            references=(references.OSV,),
+        )
+
+    def _provisional(self, ecosystem: str) -> list[dict[str, Any]]:
+        """The feed's provisional verdicts for one ecosystem, read once per detector."""
+        cache = self._provisional_cache
+        if ecosystem not in cache:
+            from cordon_scanner.intel.malware.feed import FeedStore
+
+            try:
+                cache[ecosystem] = FeedStore.read_provisional(
+                    _SHARED_DATA_KEYS.get(ecosystem, ecosystem)
+                )
+            except (OSError, ValueError):
+                cache[ecosystem] = []
+        return cache[ecosystem]
 
     def _placeholder_finding(
         self, dependency: Dependency, advisory: Advisory, ctx: ScanContext

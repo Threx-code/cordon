@@ -350,6 +350,7 @@
   "test_extension_mentions.py": "foundation",
   "test_feed.py": "intel/malware",
   "test_feed_delta_is_bounded.py": "intel/malware",
+  "test_feed_provisional.py": "intel/malware",
   "test_finding_locations.py": "foundation",
   "test_fixer.py": "cloud",
   "test_formats.py": "detect/binary",
