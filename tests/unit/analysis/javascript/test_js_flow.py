@@ -489,6 +489,55 @@ class TestOpeners:
         assert "open" in sinks["CAP.JS.FLOW.ENVIRONMENT_SENT"]
 
 
+class TestRequests:
+    """`JsFlow.requests`: each request by the URL reaching it. A package installing its own
+    platform binary from the registry (esbuild's install.js) makes registry requests only; one
+    request anywhere else, or a package name a response chose, is `other`."""
+
+    HELPER = (
+        'const https = require("https");\n'
+        "function fetch(url) { return new Promise((resolve, reject) => {\n"
+        "  https.get(url, res => {\n"
+        "    if (res.statusCode === 302) return fetch(res.headers.location).then(resolve, reject);\n"
+        '    const c = []; res.on("data", d => c.push(d));\n'
+        '    res.on("end", () => resolve(Buffer.concat(c))); }); }); }\n'
+    )
+    TEMPLATE = (
+        "function download(pkg) {\n"
+        '  return fetch(`https://registry.npmjs.org/${pkg}/-/${pkg.replace("@x/", "")}-1.0.0.tgz`);\n'
+        "}\n"
+    )
+
+    @staticmethod
+    def kinds(text: str) -> list[str]:
+        return [r.kind for r in JsFlow.requests(text)]
+
+    def test_a_registry_install_through_helpers(self) -> None:
+        text = self.HELPER + self.TEMPLATE + 'download("@x/" + process.platform);\n'
+        requests = JsFlow.requests(text)
+        assert {r.kind for r in requests} == {"registry"}
+        assert "@x/" in requests[0].parts
+
+    def test_a_request_anywhere_else_is_other(self) -> None:
+        text = self.HELPER + self.TEMPLATE + 'download("@x/a");\nfetch("https://h.invalid/p");\n'
+        assert "other" in self.kinds(text)
+
+    def test_a_package_a_response_named_is_other(self) -> None:
+        text = (
+            self.HELPER
+            + self.TEMPLATE
+            + 'async function go() { download(await fetch("https://h.invalid/name")); }\n'
+        )
+        assert "registry" not in self.kinds(text)
+
+    def test_a_helper_nothing_here_calls_is_other(self) -> None:
+        assert "other" in self.kinds(self.HELPER + "module.exports = fetch;\n")
+
+    def test_a_literal_registry_url(self) -> None:
+        text = 'require("https").get("https://registry.npmjs.org/@x/a/-/a-1.0.0.tgz", r => {});\n'
+        assert self.kinds(text) == ["registry"]
+
+
 class TestBounds:
     def test_a_large_generated_file_finishes(self) -> None:
         text = "".join(f"function f{i}(a) {{ return g{i}(a) + {i}; }}\n" for i in range(20_000))

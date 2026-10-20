@@ -190,6 +190,10 @@ _OPENER: Final = re.compile(
 )
 #: Keywords only in context, ordinary names as a method's own name (`_Analysis._find_functions`).
 _CONTEXTUAL: Final = frozenset({"get", "set", "of", "from", "as", "async", "static"})
+#: The public npm registries' own hosts, at the start of a URL (`_Analysis._registry_template`).
+_REGISTRY_URL: Final = re.compile(
+    r"https?://(?:registry\.npmjs\.org|registry\.yarnpkg\.com|registry\.npmmirror\.com)/"
+)
 #: TypeScript's member and parameter-property modifiers (`private async load(): Promise<void>`).
 _TS_MODIFIERS: Final = frozenset({"private", "public", "protected", "override", "readonly"})
 #: Options naming where a connection goes rather than what it sends (`_Analysis._sent`).
@@ -232,6 +236,20 @@ class Flow:
     host: str | None
     destination: str  # drop | ip | fixed | unknown
     line: int
+
+
+@dataclass(frozen=True)
+class Request:
+    """One request a file makes, by the URL that reaches it (`JsFlow.requests`)."""
+
+    line: int
+    #: registry: a registry tarball URL (`registry.npmjs.org/<pkg>/-/<name>-<ver>.tgz`); redirect:
+    #: a URL a response gave (a `Location` header); other: anything else, a literal host included.
+    #: A helper's parameter is resolved through every call of the helper in the file.
+    kind: str
+    #: The literal parts of the file's registry tarball URLs (`@esbuild/` in
+    #: `${pkg.replace("@esbuild/", "")}`), for matching against the package's own manifest.
+    parts: tuple[str, ...] = ()
 
 
 @dataclass
@@ -300,6 +318,21 @@ class JsFlow:
             return []
 
     @classmethod
+    def requests(cls, text: str) -> list[Request]:
+        """Every request the file makes, classed by the URL reaching it. A file whose every
+        request is a registry tarball (or a redirect one gave) installs packages from the
+        registry; one `other` request means it fetches from somewhere else too. Which packages
+        the tarballs are is for the caller to check against the manifest (`Request.parts`)."""
+        if len(text) > MAX_BYTES:
+            return []
+        try:
+            analysis = _Analysis(text)
+            analysis.run()
+            return analysis.requests()
+        except (RecursionError, _OverBudget):
+            return []
+
+    @classmethod
     def deferred_spans(cls, text: str) -> list[tuple[int, int]] | None:
         """Character spans of the function bodies nothing at the file's top level reaches.
 
@@ -339,6 +372,7 @@ class _Analysis:
         self.raw_connections: set[tuple[int, str]] = set()  # ... to a raw socket among them
         self.bound: dict[tuple[int, str], list[tuple[int, int]]] = {}  # name -> what it is bound to
         self.instance_of: dict[tuple[int, str], int] = {}  # name bound to `new C()` -> C
+        self.registry_parts: set[str] = set()  # literal parts of registry tarball URLs
         self.flows: dict[tuple[int, str], Flow] = {}
         self.fn_by_name: dict[tuple[int, str], int] = {}
         self.fn_at_token: dict[int, int] = {}
@@ -850,7 +884,7 @@ class _Analysis:
         if (
             self.is_p(k - 1, ".")
             and self.is_p(k - 2, ")")
-            and self.match[k - 2] >= 3
+            and self.match[k - 2] >= 1  # `require(` may open the file
             and self.is_name(self.match[k - 2] - 1, "require")
             and self.t[self.match[k - 2] + 1].kind == "str"
         ):
@@ -895,6 +929,9 @@ class _Analysis:
                     "USERPROFILE",
                 ):
                     self.fact[k] = ("src", "home_path")
+                elif _REGISTRY_URL.match(str(tok.value)) and self._registry_template(k):
+                    # Not a source a rule reads: what tells a registry install's request apart.
+                    self.fact[k] = ("src", "registry_url")
             elif tok.kind == "name":
                 v = str(tok.value)
                 if self.is_p(k - 1, ".") or self.is_p(k - 1, "?."):
@@ -1646,6 +1683,143 @@ class _Analysis:
             ):
                 heads.append(str(tok.value))
         return bool(heads) and all(_OPENER.match(h) for h in heads)
+
+    def _registry_template(self, k: int) -> bool:
+        """Whether the registry host at string `k` begins a package tarball URL: `/-/` and `.tgz`
+        further along the same template or concatenation. Its literal parts are kept
+        (`registry_parts`)."""
+        end = self.match[k - 1] if self.is_p(k - 1, "(") and self.match[k - 1] > k else -1
+        if end < 0:
+            end = self.expr_end(k)
+        parts = [
+            str(self.t[i].value) for i in range(k, min(end, k + 60)) if self.t[i].kind == "str"
+        ]
+        if any("/-/" in p for p in parts) and any(".tgz" in p for p in parts):
+            self.registry_parts.update(parts)
+            return True
+        return False
+
+    def requests(self) -> list[Request]:
+        """See `JsFlow.requests`."""
+        out: list[Request] = []
+        parts = tuple(sorted(self.registry_parts))
+        for k in range(self.n - 1):
+            if not self._called(k):
+                continue
+            scope = self.scope_of(k)
+            if self._sink_kind(k, scope) != "request":
+                continue
+            args = self._args(k + 1)
+            kind = self._url_kind(args[0], scope, k, 0) if args else "other"
+            out.append(Request(self.line(k), kind, parts if kind == "registry" else ()))
+        return out
+
+    def _called(self, k: int) -> bool:
+        """Whether name token `k` is called here, not declared (`function fetch(url) {`, a
+        method's head)."""
+        return (
+            self.t[k].kind == "name"
+            and self.is_p(k + 1, "(")
+            and self.match[k + 1] > 0
+            and not self.is_name(k - 1, "function")
+            and k not in self.fn_at_token
+        )
+
+    def _call_sites(self, fid: int) -> list[int]:
+        """The name tokens calling the named function `fid` in the file."""
+        fn = self.fns[fid - 1]
+        return [
+            j
+            for j in range(self.n - 1)
+            if fn.name
+            and str(self.t[j].value) == fn.name
+            and self._called(j)
+            and self.fn_by_name.get(self.resolve(fn.name, self.scope_of(j))) == fid
+        ]
+
+    def _named_params(
+        self, taint: set[Label], resolving: frozenset[tuple[str, int, int]]
+    ) -> set[tuple[str, int, int]]:
+        """The parameters of named functions in `taint`, less those being resolved: what the
+        function's callers pass. A callback's (`res` in `https.get(u, res => ...)`) are the
+        library's to fill."""
+        return {
+            (x[0], x[1], x[2])
+            for x in taint
+            if isinstance(x, tuple)
+            and x[0] == "P"
+            and self.fns[x[1] - 1].name
+            and (x[0], x[1], x[2]) not in resolving
+        }
+
+    def _chosen_here(
+        self,
+        params: set[tuple[str, int, int]],
+        depth: int,
+        resolving: frozenset[tuple[str, int, int]],
+    ) -> bool:
+        """Whether every caller in the file passes these parameters a value no response chose:
+        a literal, a lookup table, the package's own metadata. No caller seen is not."""
+        if depth >= 3:
+            return False
+        for p in params:
+            _, fid, idx = p
+            sites = self._call_sites(fid)
+            if not sites:
+                return False
+            for j in sites:
+                a = self._args(j + 1)
+                if idx >= len(a):
+                    continue
+                taint = self.taint(a[idx][0], a[idx][1], self.scope_of(j))
+                if "network_response" in taint:
+                    return False
+                inner = self._named_params(taint, resolving | {p})
+                if inner and not self._chosen_here(inner, depth + 1, resolving | {p}):
+                    return False
+        return True
+
+    def _url_kind(
+        self,
+        arg: tuple[int, int],
+        scope: int,
+        call: int,
+        depth: int,
+        resolving: frozenset[tuple[str, int, int]] = frozenset(),
+    ) -> str:
+        """`registry`, `redirect` or `other` for the URL argument `arg` of the request at `call`:
+        a helper's parameter is what every call of the helper in the file passes it, and a
+        helper nothing in the file calls is `other` (its callers are not seen). A parameter
+        already being resolved (a helper following its own redirect) adds nothing."""
+        taint = self.taint(arg[0], arg[1], scope)
+        concrete = {x for x in taint if isinstance(x, str)}
+        params = self._named_params(taint, resolving)
+        if "registry_url" in concrete:
+            # Only the template and what fills it -- the package's own name and version, from its
+            # callers in the file: a package name a response chose is not the manifest's.
+            if concrete != {"registry_url"}:
+                return "other"
+            return "registry" if self._chosen_here(params, depth, resolving) else "other"
+        if concrete - {"network_response"} or depth >= 3:
+            return "other"
+        if not params:
+            # `fetch(res.headers.location)`: a redirect; nothing at all is a literal URL's call.
+            return "redirect" if concrete else "other"
+        kinds: set[str] = {"redirect"} if concrete else set()
+        for _, fid, idx in params:
+            sites = [j for j in self._call_sites(fid) if j != call]
+            if not sites:
+                return "other"
+            for j in sites:
+                a = self._args(j + 1)
+                kinds.add(
+                    self._url_kind(a[idx], self.scope_of(j), j, depth + 1, resolving | params)
+                    if idx < len(a)
+                    else "other"
+                )
+        if "other" in kinds:
+            return "other"
+        return "registry" if "registry" in kinds else "redirect"
 
     #: Calls that pick out a value without joining anything to it (`_as_it_stands`).
     _PICKS: ClassVar[frozenset[str]] = frozenset(
