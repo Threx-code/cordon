@@ -141,6 +141,18 @@ class VerdictFeatures:
                 return place
         return "code"
 
+    #: Findings that mark where the scan could NOT read the code -- the analysis-COVERAGE axis
+    #: (review 98 P8 (b)). They are counted even though they are not code findings: a verdict made
+    #: over low coverage is "unknown", and an "unknown" on a bar-1 sample is a miss, not a catch.
+    #: (failed deobfuscation and unresolved dynamic require/import are added when their detectors
+    #: report a finding; minified-byte concentration is already `pkg:max_code_share`/`pkg:has_map`.)
+    COVERAGE_RULES: ClassVar[dict[str, str]] = {
+        "OPERATIONAL.FILE.TRUNCATED": "capped",
+        "OPERATIONAL.FILE.TIMEOUT": "capped",
+        "SUSPECT.INSTALL.UNEXAMINED.001": "unexamined",
+        "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001": "native_run",
+    }
+
     @staticmethod
     def evidence(
         findings: Iterable[tuple[str, int, int, str, str]], package: dict[str, float]
@@ -149,10 +161,14 @@ class VerdictFeatures:
 
         For each rule, rule family, place and category: the strongest severity and how many times.
         Every one only rises with another or a stronger finding, which is what lets the trees be
-        monotone in them. Then the package facts that are not cosmetic.
+        monotone in them. Then the package facts that are not cosmetic, and the coverage axis.
         """
         out: dict[str, float] = {}
         for rule, severity, confidence, category, path in findings:
+            cover = VerdictFeatures.COVERAGE_RULES.get(rule)
+            if cover is not None:
+                out[f"cov:{cover}"] = out.get(f"cov:{cover}", 0.0) + 1.0
+                out["cov"] = out.get("cov", 0.0) + 1.0
             if not VerdictFeatures.is_code(rule):
                 continue
             family = ".".join(rule.split(".")[:2])

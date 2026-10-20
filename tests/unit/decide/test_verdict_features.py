@@ -144,6 +144,27 @@ class TestTheShippedVerdict:
         assert all(two[k] >= v for k, v in one.items())
         assert two["w:skilltext"] == 3.0
 
+    def test_low_coverage_findings_feed_the_coverage_axis(self) -> None:
+        # P8 (b): where the scan could not read the code, so a verdict over it is "unknown".
+        found = VerdictFeatures.evidence(
+            [
+                ("OPERATIONAL.FILE.TRUNCATED", 0, 3, "operational", "package/big.min.js"),
+                ("SUSPECT.INSTALL.UNEXAMINED.001", 2, 2, "suspicious", "package/install.js"),
+                ("SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001", 3, 3, "suspicious", "pkg/x.py"),
+            ],
+            {},
+        )
+        assert found["cov:capped"] == 1.0
+        assert found["cov:unexamined"] == 1.0
+        assert found["cov:native_run"] == 1.0
+        assert found["cov"] == 3.0
+
+    def test_an_ordinary_code_finding_adds_no_coverage(self) -> None:
+        found = VerdictFeatures.evidence(
+            [("SUSPECT.EXFIL.FLOW_IDENTITY.001", 3, 2, "suspicious", "a.js")], {}
+        )
+        assert "cov" not in found
+
     def test_intel_secrets_and_its_own_finding_are_not_evidence(self) -> None:
         found = VerdictFeatures.evidence(
             [
