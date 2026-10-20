@@ -11,8 +11,8 @@
                        at all, or the overall no-warning rate falls below the recorded one
 ```
 
-    python3 bench/budgets.py derive bench/longtail/summary.json
-    python3 bench/budgets.py check  bench/longtail/subset-summary.json
+    python3 bench/suites/budgets.py derive bench/longtail/summary.json
+    python3 bench/suites/budgets.py check  bench/longtail/subset-summary.json
 
 A budget is a ceiling measured on real packages, not a target: a rule that needs more room is a
 rule that got noisier, and that is the regression this exists to stop.
@@ -25,7 +25,7 @@ import json
 import sys
 from pathlib import Path
 
-BUDGETS = Path(__file__).resolve().parent / "budgets.json"
+BUDGETS = Path(__file__).resolve().parents[1] / "budgets.json"
 PER = 10_000
 SLACK = 1.25
 """Room for sampling noise when a subset is checked against budgets set on the full corpus: a

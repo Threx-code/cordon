@@ -25,7 +25,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-sys.path.insert(0, "/bench")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from run import Harness
 
 _UA = {"User-Agent": "cordon-release-diff-study"}

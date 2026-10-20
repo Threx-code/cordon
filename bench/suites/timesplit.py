@@ -45,7 +45,9 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from run import Harness, Levels, Wilson
 

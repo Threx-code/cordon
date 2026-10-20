@@ -7,5 +7,5 @@ version: 2
 secret:
   ignored_paths:
     - "corpus/**"
-    - "bench/agent_matrix.py"
+    - "bench/suites/agent_matrix.py"
     - "tests/unit/detect/secrets/test_review_defects.py"

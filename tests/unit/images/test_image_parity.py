@@ -1,4 +1,4 @@
-"""What an image holds that Syft found and Cordon did not, read now (bench/image_agreement.py):
+"""What an image holds that Syft found and Cordon did not, read now (bench/tools/image_agreement.py):
 installed R packages, PECL extensions, Composer's install record, programs copied in without a
 package database, a Go toolchain's own programs, and Maven groups for jars with no metadata."""
 

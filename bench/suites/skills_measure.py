@@ -8,7 +8,7 @@
                                                 │       │
                                                 └── scan ──┴──► blocked share of the DEMONSTRABLY
                                                                  malicious, per half
-  real public skills (bench/fetch_skills.py) ───── scan ───────► false-block share, per half
+  real public skills (bench/tools/fetch_skills.py) ───── scan ───────► false-block share, per half
 ```
 
 Every split is by a hash of the name, fixed before any rule was written against it:
@@ -58,7 +58,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from fetch_agent_configs import AgentConfigCorpus
 from run import Harness

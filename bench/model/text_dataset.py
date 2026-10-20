@@ -28,7 +28,9 @@ from pathlib import Path
 
 import yaml
 
-sys.path.insert(0, "/bench")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fetch_agent_configs import AgentConfigCorpus
 from run import Harness
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """False alarms on real agent configuration: the held-out half of the real-world corpus.
 
-Scans each repository's committed agent files (collected by `bench/fetch_agent_configs.py`) and
+Scans each repository's committed agent files (collected by `bench/tools/fetch_agent_configs.py`) and
 reports how many repositories Cordon warns on (MEDIUM or above) and blocks (the default gate) with an
 agent or MCP rule, and which rules. Only the `evaluate` half is scanned: the `calibrate` half graded
 the Agent Threat Rules for instruction files, so measuring on it would grade the tool by its own
 answer key.
 
-    python bench/agent_realworld.py --corpus corpus-dir [--json out.json]
+    python bench/suites/agent_realworld.py --corpus corpus-dir [--json out.json]
 
 These repositories are popular public projects, not a labelled benign set: a finding here is a
 false alarm only when reading it shows the configuration is ordinary. Committed auto-approve
@@ -23,7 +23,9 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from fetch_agent_configs import AgentConfigCorpus
 

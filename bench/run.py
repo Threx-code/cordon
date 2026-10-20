@@ -704,7 +704,9 @@ class Harness:
         import os
         import sys
 
-        sys.path.insert(0, str(Path(__file__).parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "suites"))
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
         from commercial import Commercial, SnykCli, SocketApi
 
         status = Commercial.availability()

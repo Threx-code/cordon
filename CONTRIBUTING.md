@@ -50,7 +50,30 @@ should say what it prevents and what it costs.
 
 A layer imports only the layers inside it (`docs/01-ARCHITECTURE.md`). Every module and every
 unit test has one line in `tests/unit/package_layout.json`; add yours in the same commit, and
-`tests/unit/repository/test_package_layout.py` fails until you do.
+`tests/unit/repository/test_package_layout.py` fails until you do. The same test, part of every
+gate and of CI, holds the rest of the arrangement:
+
+```
+  rule                                        fails when
+  ──────────────────────────────────────────  ─────────────────────────────────────────────────
+  every file has its place                    a module or unit test is not where the table says
+  every top-level package has a layer         a new package or module appears in src/ unplaced
+  no loose files                              a file at the top of src/cordon_scanner, detect/,
+                                              intel/, tests/, scripts/ or bench/ beyond the few
+                                              that belong there
+  at most 25 modules a directory              a directory grows past it
+  at most 3,000 lines a module                a module passes it (the seven longer today are
+                                              frozen at their length and may only shrink)
+  imports point inward                        a NEW outward import (today's are frozen; each
+                                              one removed comes off the list)
+  no paths counted from a file's position     a new `__file__`: data is found with PackagePaths
+                                              (foundation/paths.py), the repository from
+                                              support.ROOT in tests
+  the repository root stays as it is          a new tracked entry at the top of the repository
+```
+
+The frozen lists live in `package_layout.json` under `frozen`. Shrinking one is a one-line edit
+there; the test also fails when an entry no longer applies, so the lists stay exact.
 
 ## Adding a detection rule
 

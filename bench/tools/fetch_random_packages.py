@@ -8,7 +8,7 @@ random two-letter queries -- and downloads each one's latest release archive wit
 digest. Never installed, never run. Anything Cordon's known-malicious records name is dropped by
 the dataset builder, not here.
 
-    python bench/fetch_random_packages.py --out corpus-dir --npm 10000 --pypi 5000 --seed 20261011
+    python bench/tools/fetch_random_packages.py --out corpus-dir --npm 10000 --pypi 5000 --seed 20261011
 
 Run inside a container with network.
 """

@@ -24,7 +24,7 @@ the others through there was 265 benign skills flagged instead of 1, with no rec
 Planting an MCP-traffic rule's text only in a CLAUDE.md would test it where its authors say it
 must not run.
 
-    python bench/atr_bench.py --atr /path/to/agent-threat-rules [--json out.json] [--workers 6]
+    python bench/suites/atr_bench.py --atr /path/to/agent-threat-rules [--json out.json] [--workers 6]
 
 A planted attack is DETECTED when the scan reports something at MEDIUM or above that the same
 carrier holding harmless text does not; a planted benign text is CLEAN when it adds nothing at

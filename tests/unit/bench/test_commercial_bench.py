@@ -1,4 +1,4 @@
-"""G7: the Socket and Snyk adapters in bench/commercial.py, with fake transports.
+"""G7: the Socket and Snyk adapters in bench/tools/commercial.py, with fake transports.
 
 What matters is that every input gets an answer or is recorded as unanswered, that a missing key
 is reported rather than dropped, and that the reading of each tool's output is the stated one.
@@ -21,7 +21,7 @@ class BenchKit:
     @staticmethod
     def module():
         spec = importlib.util.spec_from_file_location(
-            "bench_commercial", ROOT / "bench/commercial.py"
+            "bench_commercial", ROOT / "bench/tools/commercial.py"
         )
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)

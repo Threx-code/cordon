@@ -7,7 +7,7 @@ is the legitimate side of the extension measurement: what a model and the rules 
 is split by a hash of the extension's identifier, as the other corpora are, so half calibrates and
 half is held out.
 
-    python bench/fetch_extensions.py --out corpus-dir --count 2000
+    python bench/tools/fetch_extensions.py --out corpus-dir --count 2000
 
 Run inside a container with network.
 """

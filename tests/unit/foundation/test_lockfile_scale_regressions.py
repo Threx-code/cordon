@@ -1,5 +1,5 @@
 """Lockfile readings the comparison with Trivy over 1,796 real lockfiles found wrong
-(`bench/parse_agreement.py`), each with its probe."""
+(`bench/tools/parse_agreement.py`), each with its probe."""
 
 from __future__ import annotations
 

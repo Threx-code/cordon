@@ -227,7 +227,7 @@ class BenchmarkData:
             lockfiles.mkdir(exist_ok=True)
             fetched = 0
             for repo, path in json.loads(
-                (Path(__file__).parent / "lockfiles.json").read_text(encoding="utf-8")
+                (Path(__file__).resolve().parents[1] / "lockfiles.json").read_text(encoding="utf-8")
             ):
                 # One directory per lockfile, under its own file name: every tool finds it by name.
                 target = (

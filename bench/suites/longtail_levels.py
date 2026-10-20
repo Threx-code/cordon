@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Turn data/scans.jsonl into the benign-noise tables: per ecosystem, per rule, per path context.
 
-    python3 bench/longtail_levels.py bench/longtail > bench/longtail/summary.json
-    python3 bench/longtail_levels.py bench/longtail --split work      # tune on this half
-    python3 bench/longtail_levels.py bench/longtail --split holdout   # publish this half
-    python3 bench/longtail_levels.py bench/longtail --strict          # exit 1 if integrity fails
+    python3 bench/suites/longtail_levels.py bench/longtail > bench/longtail/summary.json
+    python3 bench/suites/longtail_levels.py bench/longtail --split work      # tune on this half
+    python3 bench/suites/longtail_levels.py bench/longtail --split holdout   # publish this half
+    python3 bench/suites/longtail_levels.py bench/longtail --strict          # exit 1 if integrity fails
 
 Split (fixed and published, so no package can be moved between halves): sha256 of
 "<ecosystem>:<lower-cased name>"; first byte even -> work, odd -> holdout. Packages read by hand

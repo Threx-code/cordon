@@ -12,7 +12,7 @@
         └── block     the technique alone is an attack          (families that block it)
         │
         ▼
-  bench/guarddog_tags.py   real published malware, tagged by family by an independent scanner
+  bench/tools/guarddog_tags.py   real published malware, tagged by family by an independent scanner
         │                  (GuardDog) -- never by Cordon, never by samples written here
         ▼
   per family: the share of the real samples showing it that Cordon blocks

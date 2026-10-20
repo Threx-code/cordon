@@ -1,4 +1,4 @@
-"""What the 200-image comparison with Syft found Cordon did not read (`bench/image_agreement.py`).
+"""What the 200-image comparison with Syft found Cordon did not read (`bench/tools/image_agreement.py`).
 
 * Wolfi and Chainguard keep apk's database at `usr/lib/apk/db/installed`; Cordon read none of
   their packages, then content-scanned the Go toolchain those packages install as if the image's

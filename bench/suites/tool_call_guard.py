@@ -1,7 +1,7 @@
 """The tool-call guard (`cordon_scanner.judge.calls`) on AgentDefense's tool calls.
 
     docker run --rm --network none -v cordon-bench-public:/p:ro -v "$PWD:/w:ro" -w /w \\
-      -e PYTHONPATH=/w/src python:3.12-slim python bench/tool_call_guard.py /p/agentdefense
+      -e PYTHONPATH=/w/src python:3.12-slim python bench/suites/tool_call_guard.py /p/agentdefense
 
 Three sets, reported apart because they test different things:
 

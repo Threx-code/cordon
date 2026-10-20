@@ -211,10 +211,10 @@ text for the rest. Off by default. It only adds findings; every rule still runs.
 | Judge | Measured | What leaves the machine |
 |---|---|---|
 | `cordon-cloud` | Not yet: the hosted endpoint ships with Cordon Cloud | Agent-facing text only |
-| `anthropic`, `openai:` a current hosted model | Not by this project: run `bench/judge_bench.py` against it | Agent-facing text only, to that provider |
+| `anthropic`, `openai:` a current hosted model | Not by this project: run `bench/suites/judge_bench.py` against it | Agent-facing text only, to that provider |
 | `ollama:` qwen2.5 7B, on CPU | 70 of 100 new ATR attack wordings; 22 of 22 realistic benign configs clean; 11 of 75 of ATR's hardest benign texts flagged | Nothing |
 
-Measure the model you choose with `bench/judge_bench.py` before `--judge-blocks` gates on it.
+Measure the model you choose with `bench/suites/judge_bench.py` before `--judge-blocks` gates on it.
 
 `cordon-cloud` answers only for organisations whose administrator has turned on the hosted judge
 (Settings, AI). Until they do, the hosted judge refuses every request before reading its text,

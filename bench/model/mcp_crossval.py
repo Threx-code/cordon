@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Held-out recall of the MCP description model, by MCP-SafetyBench domain and by dataset.
 
-`bench/mcp_model_train.py` reports a held-out rate on a hash split, and MCP-SafetyBench builds
+`bench/model/mcp_model_train.py` reports a held-out rate on a hash split, and MCP-SafetyBench builds
 every attack from its own servers' descriptions: a task family's attacks share that family's
 vocabulary (ticker, Yahoo Finance, geocode). A hash split puts the same family on both sides, so
 the model can score the family's words rather than the attack's. Measured that way, the shipped

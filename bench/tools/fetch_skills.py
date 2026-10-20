@@ -8,8 +8,8 @@ split by a hash of the repository name, as `fetch_agent_configs.py` splits its o
 calibrate against, the other held out to measure false alarms on, so the number reported was not
 used to tune anything.
 
-    python bench/fetch_skills.py --out corpus-dir
-    python bench/fetch_skills.py --out corpus-dir --half evaluate     # list that half
+    python bench/tools/fetch_skills.py --out corpus-dir
+    python bench/tools/fetch_skills.py --out corpus-dir --half evaluate     # list that half
 
 Run inside a container with network. `GITHUB_TOKEN`, when set, raises the search API's limit.
 """
@@ -28,7 +28,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from fetch_agent_configs import AgentConfigCorpus
 

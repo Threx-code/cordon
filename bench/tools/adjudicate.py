@@ -7,7 +7,7 @@ escaped so nothing in a package can rewrite the reviewer's terminal.
 Record each reading as one line of `adjudication.jsonl`: {"file", "rules", "verdict": "TP"|"FP",
 "class", "reason", "reviewer"}. Two different reviewers per block; a third on disagreement.
 
-    python3 bench/adjudicate.py tally bench/longtail/adjudication.jsonl
+    python3 bench/tools/adjudicate.py tally bench/longtail/adjudication.jsonl
 
     docker run --rm -v "$PWD:/r:ro" python:3.12-slim \
       python -I /r/bench/adjudicate.py show /r/bench/longtail npm/<file> [npm/<file> ...]
@@ -70,7 +70,9 @@ class Adjudicate:
     def holdout_refused(manifest: dict, files: list[str]) -> list[str]:
         """Files in the holdout half. Reading one while rules are being tuned leaks it into the
         tuning, so `show` refuses them unless the reading is the release-time adjudication."""
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        sys.path[:0] = [
+            str(Path(__file__).resolve().parents[2] / d) for d in ("", "suites", "tools")
+        ]
         from longtail_levels import Split
 
         return [
@@ -158,7 +160,9 @@ class Adjudicate:
         settled blocks only, with its interval -- an unsettled block is not quietly counted."""
         from collections import defaultdict
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        sys.path[:0] = [
+            str(Path(__file__).resolve().parents[2] / d) for d in ("", "suites", "tools")
+        ]
         from run import Wilson
 
         readings: dict[str, dict[str, str]] = defaultdict(dict)

@@ -17,7 +17,10 @@ from __future__ import annotations
 import ast
 import collections
 import json
+import subprocess
 from typing import Any, ClassVar
+
+import pytest
 
 from support import ROOT as REPO
 
@@ -36,15 +39,11 @@ class Layout:
         "intel": 2,
         "images": 2,
         "sources": 2,
-        "archive": 2,
-        "langs": 2,
         "rules": 2,
-        "formats": 2,
         "decide": 3,
         "engine": 4,
         "judge": 5,
         "model": 5,
-        "guard": 5,
         "notify": 5,
         "cli": 5,
         "report": 5,
@@ -184,6 +183,150 @@ class TestTable:
     def test_the_report_runs(self) -> None:
         report = Layout.report()
         assert report["modules"] == len(Layout.data()["modules"])
+
+
+class Structure:
+    """What the repository holds where, measured now: the same reading every check uses."""
+
+    #: The files a directory may hold at its top; everything else lives in a subdirectory.
+    TOP_FILES: ClassVar[dict[str, frozenset[str]]] = {
+        "src/cordon_scanner": frozenset(
+            {"__init__.py", "__main__.py", "notify.py", "version.py", "py.typed"}
+        ),
+        "src/cordon_scanner/detect": frozenset({"__init__.py", "base.py", "catalogue.py"}),
+        "src/cordon_scanner/intel": frozenset({"__init__.py"}),
+        "tests": frozenset({"conftest.py", "support.py"}),
+        "tests/unit": frozenset({"package_layout.json"}),
+        "scripts": frozenset(),
+        "bench": frozenset(
+            {
+                "run.py",
+                "Dockerfile",
+                "Dockerfile.images",
+                "README.md",
+                "agent-suite.json",
+                "lockfiles.json",
+            }
+        ),
+    }
+
+    @staticmethod
+    def frozen() -> dict[str, Any]:
+        return Layout.data()["frozen"]
+
+    @staticmethod
+    def imports(module: str) -> list[str]:
+        """The cordon_scanner modules a module imports, as paths (`engine/engine`)."""
+        tree = ast.parse((ROOT / f"{module}.py").read_text(encoding="utf-8"))
+        out = []
+        for node in ast.walk(tree):
+            names: list[str] = []
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                names = [node.module]
+            elif isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            out += [
+                n.removeprefix("cordon_scanner.").replace(".", "/")
+                for n in names
+                if n.startswith("cordon_scanner.")
+            ]
+        return out
+
+    @classmethod
+    def outward(cls) -> set[str]:
+        """`module -> imported` for every import that reaches a layer outside the module's own."""
+        out = set()
+        for m in Layout.modules():
+            src = Layout.LAYERS.get(m.split("/")[0], 0)
+            for dep in cls.imports(m):
+                if Layout.LAYERS.get(dep.split("/")[0], 0) > src:
+                    out.add(f"{m} -> {dep}")
+        return out
+
+    @staticmethod
+    def lengths() -> dict[str, int]:
+        return {
+            m: len((ROOT / f"{m}.py").read_text(encoding="utf-8").splitlines())
+            for m in Layout.modules()
+        }
+
+    @staticmethod
+    def file_relative() -> set[str]:
+        """Source files that locate something from their own position (`__file__`)."""
+        out = set()
+        for folder in ("src", "tests", "scripts"):
+            for p in (REPO / folder).rglob("*.py"):
+                rel = p.relative_to(REPO).as_posix()
+                if "__pycache__" in p.parts or rel.startswith("tests/conformance/cases/"):
+                    continue
+                tree = ast.parse(p.read_text(encoding="utf-8"))
+                if any(isinstance(n, ast.Name) and n.id == "__file__" for n in ast.walk(tree)):
+                    out.add(rel)
+        return out
+
+
+class TestStructure:
+    """The rules that keep the repository arranged (reviews 20-PACKAGE-STRUCTURE.md). Each list
+    under `frozen` in package_layout.json may only shrink: a check fails when something is added
+    to what it freezes, and when an entry no longer applies, so the lists stay exact."""
+
+    def test_every_module_and_test_is_where_the_table_puts_it(self) -> None:
+        report = Layout.report()
+        assert report["not_yet_in_place"] == 0
+        assert report["tests_not_yet_in_place"] == 0
+
+    def test_every_top_level_package_has_a_layer(self) -> None:
+        packages = {p.name for p in ROOT.iterdir() if p.is_dir() and p.name != "__pycache__"}
+        modules = {p.stem for p in ROOT.glob("*.py") if p.stem != "__init__"}
+        assert not sorted((packages | modules) - set(Layout.LAYERS)), "give it a layer, or a home"
+
+    def test_no_directory_holds_more_than_25_modules(self) -> None:
+        sizes = collections.Counter(m.rsplit("/", 1)[0] for m in Layout.modules() if "/" in m)
+        assert not {d: n for d, n in sizes.items() if n > Layout.MAX_MODULES}
+
+    def test_no_loose_files(self) -> None:
+        for folder, allowed in Structure.TOP_FILES.items():
+            here = {
+                p.name
+                for p in (REPO / folder).iterdir()
+                if p.is_file() and p.name not in (".DS_Store",)
+            }
+            assert not sorted(here - allowed), f"{folder}: put these in a subdirectory"
+
+    def test_no_module_grows_past_its_length(self) -> None:
+        frozen = Structure.frozen()["long_modules"]
+        for module, lines in Structure.lengths().items():
+            limit = frozen.get(module, Layout.MAX_LINES)
+            assert lines <= limit, f"{module}: {lines} lines, at most {limit}; split it"
+        for module, limit in frozen.items():
+            assert Structure.lengths().get(module, 0) > Layout.MAX_LINES, (
+                f"{module} is back under {Layout.MAX_LINES} lines: remove it from frozen"
+            )
+            assert Structure.lengths()[module] <= limit
+
+    def test_no_new_outward_import(self) -> None:
+        frozen = set(Structure.frozen()["outward_imports"])
+        now = Structure.outward()
+        assert not sorted(now - frozen), "an import that points outward: invert it, or move it"
+        assert not sorted(frozen - now), "these are gone: remove them from frozen"
+
+    def test_no_new_path_found_from_a_file_s_own_position(self) -> None:
+        # Data is found from the package (foundation/paths.py), tests find the repository from
+        # support.ROOT: a file that counts directories from itself breaks when it moves.
+        frozen = set(Structure.frozen()["file_relative_paths"])
+        now = Structure.file_relative()
+        assert not sorted(now - frozen), "use PackagePaths or support.ROOT"
+        assert not sorted(frozen - now), "these are gone: remove them from frozen"
+
+    def test_the_repository_root_holds_only_what_it_should(self) -> None:
+        if not (REPO / ".git").exists():
+            pytest.skip("not a git checkout")
+        tracked = subprocess.run(
+            ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True
+        ).stdout.split()
+        top = {f.split("/")[0] for f in tracked}
+        allowed = set(Structure.frozen()["repository_root"])
+        assert not sorted(top - allowed), "a new entry at the repository root: give it a home"
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ Written as batches of up to 2,000 distinct names, one project each, scanned acro
 The result -- per ecosystem, and each miss with its reason -- goes to
 bench/results/malicious-records.json. Run inside Docker only, from the package directory:
 
-    python bench/malicious_records.py
+    python bench/suites/malicious_records.py
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import ClassVar
 
-PACKAGE = Path(__file__).resolve().parents[1]
+PACKAGE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PACKAGE))
 DATA = PACKAGE / "src/cordon_scanner/intel/data"
 RESULT = PACKAGE / "bench/results/malicious-records.json"

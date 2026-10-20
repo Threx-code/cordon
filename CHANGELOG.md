@@ -67,6 +67,10 @@ test or conformance case that fails on the old code.
 
 ### Fixed
 
+- **The wheel shipped without two files the scanner loads.** An install from PyPI had no built-in
+  YARA pack (`rules/yara/`), so `--yara builtin` found nothing to load, and no bundled EPSS scores
+  (`intel/data/epss.csv.gz`). Both are packaged now, and a test fails when any data file in the
+  package is not declared for the wheel. A source checkout was never affected.
 - **Scans that refused a whole file** now read it, each found in a real repository:
   - YAML block scalars (`|`, `>`) lost relative indentation, empty lines, comment-looking lines
     and chomping, and a `[` inside one refused the file; multi-line quoted strings, flow

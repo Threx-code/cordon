@@ -4,13 +4,13 @@
 Three measurements, each on text nothing in Cordon was tuned on:
 
 1. The agent matrix's instruction texts -- every distinct attack and benign body, including both
-   held-out wording sets (`bench/agent_matrix.py`).
+   held-out wording sets (`bench/suites/agent_matrix.py`).
 2. ATR's held-out rule families: attacks and benign twins of the rules whose id hashes into the
    held-out 30% (the split `scripts/build/import_atr.py` documents), sampled with a fixed seed.
-3. A fresh real-world corpus (`bench/fetch_agent_configs.py --fresh`): every committed instruction
+3. A fresh real-world corpus (`bench/tools/fetch_agent_configs.py --fresh`): every committed instruction
    file, judged whole -- the false-alarm rate on real projects.
 
-    python bench/judge_bench.py --judge ollama:qwen2.5:7b --atr ATR --corpus FRESH --cache DIR
+    python bench/suites/judge_bench.py --judge ollama:qwen2.5:7b --atr ATR --corpus FRESH --cache DIR
 
 Verdicts are cached, so a stopped run resumes. A text counts as flagged when the judge calls it
 malicious with evidence that is in the text -- what `--judge` reports at MEDIUM.
@@ -28,7 +28,9 @@ from typing import Any
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import agent_matrix as matrix
 from fetch_agent_configs import INSTRUCTION_FILES

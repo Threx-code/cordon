@@ -30,7 +30,7 @@ Needs PyYAML, which the scanner itself does not. What it does to each rule:
    sample whatever its field, so a rule is charged with any benign text it would flag anywhere.
 
 6. With `--instruction-corpus`, measures each rule again over real instruction files -- the
-   calibration half of `bench/fetch_agent_configs.py`'s corpus -- and records that rate too. An
+   calibration half of `bench/tools/fetch_agent_configs.py`'s corpus -- and records that rate too. An
    instruction file is written to the agent by design and is full of commands, so a rule can be
    clean on ATR's corpus and still flag ordinary CLAUDE.md files; in instruction files a rule
    counts only when it is production-grade by this measurement as well.
@@ -282,7 +282,9 @@ class AtrImport:
     @staticmethod
     def instruction_samples(corpus: Path) -> list[str]:
         """The calibration half's instruction files, as text."""
-        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))
+        sys.path[:0] = [
+            str(Path(__file__).resolve().parents[2] / "bench" / d) for d in ("", "suites", "tools")
+        ]
         from fetch_agent_configs import INSTRUCTION_FILES, AgentConfigCorpus
 
         samples = []
@@ -327,7 +329,7 @@ class AtrImport:
         parser.add_argument(
             "--instruction-corpus",
             type=Path,
-            help="bench/fetch_agent_configs.py output; its calibration half grades rules in instruction files",
+            help="bench/tools/fetch_agent_configs.py output; its calibration half grades rules in instruction files",
         )
         parser.add_argument(
             "--supplement",

@@ -28,7 +28,7 @@ what its repository does not contain -- the comparison covers what both read.
     sh bench/tool_reference/run.sh
     sh bench/tool_reference/sandbox.sh homebrew conan hackage
     docker run --rm -v cordon-tool-agreement:/data <an image with cordon-scanner installed> \
-        python bench/tool_agreement.py compare --data /data/tool-agreement --results <dir>
+        python bench/tools/tool_agreement.py compare --data /data/tool-agreement --results <dir>
 """
 
 from __future__ import annotations

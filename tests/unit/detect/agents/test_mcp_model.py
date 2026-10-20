@@ -1,6 +1,6 @@
 """The shipped MCP tool-description model loads, is calibrated, and is quiet on plain tools.
 
-Its recall is measured by `bench/mcp_poisoning.py` and `bench/mcp_model_train.py` on attack
+Its recall is measured by `bench/suites/mcp_poisoning.py` and `bench/model/mcp_model_train.py` on attack
 datasets, not asserted here with invented attacks.
 """
 

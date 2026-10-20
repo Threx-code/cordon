@@ -59,7 +59,7 @@ class Coordinate:
     # Past every real coordinate: npm allows a 214-character name, and a prerelease tag can run to
     # seventy characters and more. Bounds shorter than that cut a published malicious release's
     # name or version before it was looked up -- 2 of the 249,646 known-malicious records were
-    # missed that way (`bench/malicious_records.py`) -- which hands an attacker an evasion: pad the
+    # missed that way (`bench/suites/malicious_records.py`) -- which hands an attacker an evasion: pad the
     # version, and the lookup is of a release that never existed.
     MAX_NAME = 256
     MAX_VERSION = 128

@@ -1,7 +1,7 @@
 """The tool-call guard (`cordon_scanner.judge.calls`): one call's arguments read in every spelling.
 
 Inert strings throughout: reserved hosts (`example.invalid`, 203.0.113.0/24), and commands only
-ever compared, never run. Measured on AgentDefense in `bench/tool_call_guard.py`.
+ever compared, never run. Measured on AgentDefense in `bench/suites/tool_call_guard.py`.
 """
 
 from __future__ import annotations

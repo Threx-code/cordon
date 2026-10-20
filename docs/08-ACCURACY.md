@@ -39,7 +39,7 @@ number was written down.
 
 ### Every known-malicious record
 
-`bench/malicious_records.py` plants each malicious-package record in the bundled intel as
+`bench/suites/malicious_records.py` plants each malicious-package record in the bundled intel as
 a pinned dependency in its ecosystem's own lockfile shape, scans it, and checks the record
 is reported. 249,646 records, 287,899 checks (a record naming several versions is checked
 once per version), **none missed**.
@@ -64,8 +64,8 @@ bounds were raised and the run repeated.
 
 ### What real lockfiles contain, against Trivy
 
-`bench/fetch_lockfiles.py` takes the lockfiles of the most-downloaded projects on 14
-registries (1,796 fetched; 1,687 that both tools read), and `bench/parse_agreement.py`
+`bench/tools/fetch_lockfiles.py` takes the lockfiles of the most-downloaded projects on 14
+registries (1,796 fetched; 1,687 that both tools read), and `bench/tools/parse_agreement.py`
 compares the packages Cordon and Trivy each read from them, offline.
 
 ```
@@ -93,7 +93,7 @@ compares the packages Cordon and Trivy each read from them, offline.
 
 Normalised before comparing: the development dependencies both tools can report, the
 package managers' own entries (bundler, CocoaPods, Go's stdlib), and the project's own
-packages. The figures are left raw beyond that, and `bench/parse_gaps.py` sorts every
+packages. The figures are left raw beyond that, and `bench/tools/parse_gaps.py` sorts every
 remaining difference by cause, each checked against the lockfile itself:
 
 | Cause | Packages |
@@ -117,7 +117,7 @@ modules to go.sum, and a lone go.sum.
 
 Trivy reads none of Terraform, Helm, Julia, opam, Bazel, Nix, Ansible, vcpkg, Conan, conda,
 Homebrew or GitHub Actions workflows, and its CRAN and Hackage coverage gave 5 and 2 lockfiles.
-So `bench/tool_agreement.py` compares each with the reader that ecosystem treats as authoritative,
+So `bench/tools/tool_agreement.py` compares each with the reader that ecosystem treats as authoritative,
 on up to 30 real repositories apiece: the most-downloaded packages' repositories where a registry
 lists them, GitHub search where it does not (flakes, dotfiles, collections, C++ and Haskell
 projects, renv projects). Every tool runs in its own image (`bench/tool_reference/run.sh`).
@@ -238,7 +238,7 @@ What stays unchecked, by kind:
 
 ### What container images contain, against Syft
 
-`bench/image_agreement.py` saves each of 182 public images (175 read by both tools; 7 could not
+`bench/tools/image_agreement.py` saves each of 182 public images (175 read by both tools; 7 could not
 be pulled through the registry mirrors) and compares the packages Cordon and Syft 1.18.1 each
 inventory, by normalised package URL.
 
@@ -384,15 +384,15 @@ different route.
 **AI agents.**
 
 ```
-   ATR test cases, each on its rule's scan path        bench/atr_bench.py
+   ATR test cases, each on its rule's scan path        bench/suites/atr_bench.py
      attacks ............ 3,933 / 4,026   97.7%
      evasions ...........   209 /   289   72.3%   regex ceiling: what --judge is for
      benign left clean .. 4,038 / 4,364   92.5%   ATR's near-misses: a floor
 
-   real repositories never used for tuning          bench/agent_realworld.py
+   real repositories never used for tuning          bench/suites/agent_realworld.py
      372 repositories ── 10.5% warned ── 1.1% blocked, every block read and correct
 
-   the judge, per model                             bench/judge_bench.py
+   the judge, per model                             bench/suites/judge_bench.py
 ```
 
 ```

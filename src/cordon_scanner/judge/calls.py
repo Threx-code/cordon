@@ -22,7 +22,7 @@ The checks, each a class of attack a tool call carries and none a guess at inten
   `trust_remote_code`, `no_guardrails`);
 * a count or depth no real call needs, and a fork bomb.
 
-Measured on AgentDefense's tool calls (`bench/tool_call_guard.py`): see `docs/08-ACCURACY.md`.
+Measured on AgentDefense's tool calls (`bench/suites/tool_call_guard.py`): see `docs/08-ACCURACY.md`.
 """
 
 from __future__ import annotations

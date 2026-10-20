@@ -6,9 +6,9 @@ each instruction-file attack in each of the instruction locations, each MCP laun
 dialect, each hook command in each hook file -- with a benign counterpart for every location, and
 scans each case on its own:
 
-    python bench/agent_matrix.py                  # summary, per family and per location
-    python bench/agent_matrix.py --misses         # every case that was not answered correctly
-    python bench/agent_matrix.py --json out.json
+    python bench/suites/agent_matrix.py                  # summary, per family and per location
+    python bench/suites/agent_matrix.py --misses         # every case that was not answered correctly
+    python bench/suites/agent_matrix.py --json out.json
 
 Every attack is inert. Hosts are `.invalid`, which never resolves; commands are shell text that
 is read and never run. A case is DETECTED when the scan reports anything at MEDIUM or above, and
@@ -728,7 +728,7 @@ APPROVAL_BENIGN: list[tuple[str, dict[str, str]]] = [
 
 # -- Everything else an agent reads or runs -------------------------------------------------
 
-_CORPUS = Path(__file__).resolve().parent.parent / "corpus" / "malicious"
+_CORPUS = Path(__file__).resolve().parents[2] / "corpus" / "malicious"
 
 
 _POISON = (

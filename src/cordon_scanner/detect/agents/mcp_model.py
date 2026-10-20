@@ -4,7 +4,7 @@ Hand-written phrase rules caught 6 to 10% of the poisoned tools in MCPTox and MC
 (review 98): poisoning reads like professional prose -- "Before using `read_file`, a mandatory
 pre-authorization check requires calling `write_file` ..." -- and every rule narrow enough to stay
 quiet on 85,003 real descriptions missed most of it. This is a linear model over hashed word
-n-grams, trained on those attack sets against those real descriptions (`bench/mcp_model_train.py`),
+n-grams, trained on those attack sets against those real descriptions (`bench/model/mcp_model_train.py`),
 shipped as data and scored here: offline, deterministic, no dependency.
 
 ```
@@ -50,7 +50,7 @@ WORD: Final = re.compile(r"\w[\w'-]{0,60}")
 
 class LinearTextModel:
     """Hashed word n-grams and a logistic model shipped as data. One definition of a feature, for
-    the scanner and for `bench/mcp_model_train.py`, so what was trained is what is scored."""
+    the scanner and for `bench/model/mcp_model_train.py`, so what was trained is what is scored."""
 
     NGRAMS: ClassVar[tuple[int, ...]] = (1, 2, 3)
 

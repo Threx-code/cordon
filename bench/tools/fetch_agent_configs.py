@@ -8,8 +8,8 @@ how noisy each Agent Threat Rule is on real instruction files (`scripts/build/im
 --instruction-corpus`), the other half is held out to measure false alarms, so the number reported
 was not used to tune anything.
 
-    python bench/fetch_agent_configs.py --out corpus-dir
-    python bench/fetch_agent_configs.py --out corpus-dir --half calibrate   # print that half
+    python bench/tools/fetch_agent_configs.py --out corpus-dir
+    python bench/tools/fetch_agent_configs.py --out corpus-dir --half calibrate   # print that half
 
 Unauthenticated: the GitHub search API allows ten requests a minute, which this paces to.
 """

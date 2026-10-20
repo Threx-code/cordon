@@ -24,6 +24,8 @@ from pathlib import Path
 
 from support import ROOT as REPO
 
+sys.path.insert(0, str(REPO / "bench" / "tools"))
+sys.path.insert(0, str(REPO / "bench" / "suites"))
 sys.path.insert(0, str(REPO / "bench"))
 
 from mcp_poisoning import (
