@@ -1,6 +1,6 @@
 # Keyless result signing for Cordon Cloud uploads: sigstore and everything it needs, every file
 # pinned by hash, for `pip install --require-hashes --no-deps`. The scanner itself needs none of it;
-# a template installs this only when it uploads. Regenerate with scripts/lock_attest_requirements.py
+# a template installs this only when it uploads. Regenerate with scripts/release/lock_attest_requirements.py
 # (in a python:3.12-slim container) when the `attest` extra's sigstore range moves.
 annotated-types==0.8.0 \
     --hash=sha256:13b2beaad985e05e2d6407ee4c4f35590b11f8d693a258a561055cac8f64cab7 \

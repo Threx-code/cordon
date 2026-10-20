@@ -15,7 +15,7 @@ import re
 
 import pytest
 
-from matrix import CoverageMatrix
+from kits.matrix import CoverageMatrix
 from support import ROOT as REPO
 
 MATRIX = REPO / "docs" / "05-COVERAGE-MATRIX.md"
@@ -26,7 +26,7 @@ class TestTheMatrixIsCurrent:
     def test_it_matches_what_the_tool_ships(self) -> None:
         assert MATRIX.read_text(encoding="utf-8") == CoverageMatrix.render(), (
             "docs/05-COVERAGE-MATRIX.md is out of date. Regenerate it:\n"
-            "    python tests/matrix.py > docs/05-COVERAGE-MATRIX.md"
+            "    python tests/kits/matrix.py > docs/05-COVERAGE-MATRIX.md"
         )
 
     def test_every_shipped_rule_appears(self) -> None:
@@ -63,7 +63,7 @@ class TestTheMatrixIsCurrent:
         # and that is a different program. The guard is the same either way: a
         # documented invocation has to be runnable, so the release scripts'
         # own options count as known.
-        for script in sorted((MATRIX.parents[1] / "scripts").glob("*.py")):
+        for script in sorted((MATRIX.parents[1] / "scripts").rglob("*.py")):
             known.update(
                 re.findall(
                     r"add_argument\(\s*\"(--[a-z][a-z-]+)\"", script.read_text(encoding="utf-8")

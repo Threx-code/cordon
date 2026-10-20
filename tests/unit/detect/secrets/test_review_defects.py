@@ -3708,7 +3708,7 @@ class TestAWorkspaceMemberHasNothingToHash:
 
     @staticmethod
     def graph(raw: bytes):
-        from cordon_scanner.ecosystems.npm import NpmEcosystem
+        from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         return NpmEcosystem().parse_lockfile(
@@ -11238,7 +11238,7 @@ class TestAFileThatIsRightToLeftText:
 
     @staticmethod
     def _is_resource(text: str) -> bool:
-        from cordon_scanner.analysis.shared.obfuscation import ObfuscationText
+        from cordon_scanner.detect.code.obfuscation import ObfuscationText
 
         return ObfuscationText._is_rtl_resource(text.encode())
 
@@ -13113,7 +13113,7 @@ class TestRegistryAdvisoriesAreAboutRegistryPackages:
         return any(a.malicious for a in AdvisoryDatabase.bundled().matching("npm", name, version))
 
     def _graph(self, name: str, text: str):
-        from cordon_scanner.ecosystems.npm import NpmEcosystem
+        from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         return NpmEcosystem().parse_lockfile(FileContent.from_bytes(name, text.encode()))
@@ -13486,7 +13486,7 @@ class TestBeaconsOutsideAHook:
 
 class TestAnAliasedInstallCommandIsAnOverride:
     def test_the_alias_resolves(self) -> None:
-        from cordon_scanner.ecosystems.pypi import PypiEcosystem
+        from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         source = (
@@ -13654,7 +13654,7 @@ class TestAnInlineRequireRunsTheFile:
 
 class TestScopedPackagesInAYarnLockfile:
     def _entries(self, text: str):
-        from cordon_scanner.ecosystems.npm import NpmEcosystem
+        from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         graph = NpmEcosystem().parse_lockfile(FileContent.from_bytes("yarn.lock", text.encode()))

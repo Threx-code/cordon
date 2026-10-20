@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from ecosystems import EcosystemsPage
+from kits.ecosystems import EcosystemsPage
 from support import ROOT as REPO
 
 DOCUMENT = REPO / "docs" / "07-ECOSYSTEMS.md"
@@ -23,7 +23,7 @@ class TestTheEcosystemTableIsCurrent:
     def test_it_matches_what_the_tool_ships(self) -> None:
         assert DOCUMENT.read_text(encoding="utf-8") == EcosystemsPage.render(), (
             "docs/07-ECOSYSTEMS.md is out of date. Regenerate it:\n"
-            "    python tests/ecosystems.py > docs/07-ECOSYSTEMS.md"
+            "    python tests/kits/ecosystems.py > docs/07-ECOSYSTEMS.md"
         )
 
     def test_every_registered_ecosystem_appears(self) -> None:

@@ -6,7 +6,7 @@ Three measurements, each on text nothing in Cordon was tuned on:
 1. The agent matrix's instruction texts -- every distinct attack and benign body, including both
    held-out wording sets (`bench/agent_matrix.py`).
 2. ATR's held-out rule families: attacks and benign twins of the rules whose id hashes into the
-   held-out 30% (the split `scripts/import_atr.py` documents), sampled with a fixed seed.
+   held-out 30% (the split `scripts/build/import_atr.py` documents), sampled with a fixed seed.
 3. A fresh real-world corpus (`bench/fetch_agent_configs.py --fresh`): every committed instruction
    file, judged whole -- the false-alarm rate on real projects.
 

@@ -618,7 +618,7 @@ class TestDocumentationIsPinnedToThisVersion:
 
         root = REPO
         result = subprocess.run(
-            [sys.executable, str(root / "scripts" / "pin_doc_links.py"), "--check"],
+            [sys.executable, str(root / "scripts" / "release" / "pin_doc_links.py"), "--check"],
             capture_output=True,
             text=True,
             check=False,

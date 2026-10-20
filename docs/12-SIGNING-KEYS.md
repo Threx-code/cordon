@@ -1,7 +1,7 @@
 # Signing keys
 
 Every key that signs something a Cordon client trusts, and how to check it. Generated from the
-keys pinned in this build by `python tests/signing_keys.py`; a test fails if this page and the
+keys pinned in this build by `python tests/kits/signing_keys.py`; a test fails if this page and the
 pinned files disagree.
 
 ## Release artefacts: Sigstore, no long-lived key
@@ -23,7 +23,7 @@ gh attestation verify cordon_scanner-<version>-py3-none-any.whl --repo Threx-cod
 ## Intel feed root
 
 **Not pinned in this build.** The feed root is created at the key ceremony
-(`scripts/key_ceremony.py`) and committed as `src/cordon_scanner/intel/data/feed-root.json`.
+(`scripts/release/key_ceremony.py`) and committed as `src/cordon_scanner/intel/data/feed-root.json`.
 Until then the feed is off: a scan makes no request and uses the installed advisory database.
 
 ## Advisory database bundle

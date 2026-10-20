@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.ecosystems.npm import NpmEcosystem
 from cordon_scanner.ecosystems.others import (
     CargoEcosystem,
     CocoaPodsEcosystem,
@@ -25,7 +24,8 @@ from cordon_scanner.ecosystems.others import (
     PubEcosystem,
     RubyGemsEcosystem,
 )
-from cordon_scanner.ecosystems.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
+from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
 

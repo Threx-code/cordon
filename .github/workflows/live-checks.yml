@@ -59,7 +59,7 @@ jobs:
         id: run
         run: |
           set +e
-          python scripts/live_checks.py
+          python scripts/measure/live_checks.py
           code=$?
           set -e
           echo "exit=${code}" >> "$GITHUB_STEP_SUMMARY"

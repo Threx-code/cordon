@@ -23,9 +23,9 @@ documented safe spelling is worse than no rule.
 - [ ] `ruff check src/ tests/` and `ruff format --check src/ tests/` pass
 - [ ] `mypy src/cordon_scanner` passes
 - [ ] `cordon-scanner rules test` passes, if a rule or sample changed
-- [ ] `scripts/preflight.sh` if the change touches parsing, limits or output
+- [ ] `scripts/checks/preflight.sh` if the change touches parsing, limits or output
 
-`scripts/preflight.sh` runs the suite the way CI does, including the lint job,
+`scripts/checks/preflight.sh` runs the suite the way CI does, including the lint job,
 in a clean export on three Python versions. It exists because a push that
 passed locally still went red.
 

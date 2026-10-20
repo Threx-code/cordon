@@ -1584,7 +1584,7 @@ class HomebrewBottles:
     def source(text: str, how: str) -> Upstream | Unnamed:
         """A formula's stable source, read by Cordon's formula reader; a git source's `tag:` and
         `revision:` from the same statement."""
-        from cordon_scanner.ecosystems.homebrew import Formula
+        from cordon_scanner.ecosystems.packages.homebrew import Formula
         from cordon_scanner.foundation.content import FileContent
 
         manifest = Formula.parse(FileContent.from_bytes("Formula/x.rb", text.encode()), "homebrew")

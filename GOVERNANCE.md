@@ -34,7 +34,7 @@ on the pull request.
 Disagreements are resolved by evidence rather than by seniority. If two people
 disagree about whether a rule is too noisy, the answer is a measurement over
 real repositories, not a longer argument. The project ships
-`scripts/measure_noise.py` and a corpus list so that anybody can produce one.
+`scripts/measure/measure_noise.py` and a corpus list so that anybody can produce one.
 
 ## What needs more than a review
 

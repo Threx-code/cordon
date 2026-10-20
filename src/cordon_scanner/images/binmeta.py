@@ -555,7 +555,7 @@ class KnownGroups:
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def _curated() -> dict[str, str]:
-        """Syft's artifact-to-group map (`scripts/syft_java_groups.py`; NOTICE has the source)."""
+        """Syft's artifact-to-group map (`scripts/build/syft_java_groups.py`; NOTICE has the source)."""
         path = Path(__file__).parent / "data" / "java-groups.json"
         try:
             groups = json.loads(path.read_text(encoding="utf-8")).get("groups", {})

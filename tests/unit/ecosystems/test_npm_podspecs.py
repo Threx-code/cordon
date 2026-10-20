@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from cordon_scanner.ecosystems.cocoapods import CocoaPodsEcosystem
+from cordon_scanner.ecosystems.packages.cocoapods import CocoaPodsEcosystem
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.intel.advisories.upstream_advisories import NpmPodspec, Unnamed, Upstream
 

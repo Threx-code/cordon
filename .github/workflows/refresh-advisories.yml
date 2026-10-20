@@ -64,7 +64,7 @@ jobs:
         # partial run never produces a diff that looks like six ecosystems
         # losing their advisories.
         timeout-minutes: 20
-        run: python3 scripts/build_advisory_db.py
+        run: python3 scripts/build/build_advisory_db.py
 
       - name: Check the result is still well formed
         run: pytest -q tests/unit/intel/advisories/test_osv_import.py tests/integration/test_review_advisories.py
@@ -151,7 +151,7 @@ jobs:
           # This asks the narrower question the reviewer actually cares about:
           # did the data move, and if not, is the recorded date stale enough to
           # be worth refreshing on its own.
-          verdict=$(python3 scripts/refresh_movement.py \
+          verdict=$(python3 scripts/refresh/refresh_movement.py \
             --data 'src/cordon_scanner/intel/data/advisories-*.json.gz' \
             --stamp src/cordon_scanner/intel/data/advisories-meta.json \
             --confirm-after-days 30)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.ecosystems.homebrew import Brewfile, Formula, Ruby
+from cordon_scanner.ecosystems.packages.homebrew import Brewfile, Formula, Ruby
 from cordon_scanner.foundation.content import FileContent
 
 

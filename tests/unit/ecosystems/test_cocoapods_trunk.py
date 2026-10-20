@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.ecosystems.cocoapods import PodfileLock
+from cordon_scanner.ecosystems.packages.cocoapods import PodfileLock
 
 
 class TestTrunk:

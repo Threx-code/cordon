@@ -2112,7 +2112,7 @@ _COCOAPODS: Final = frozenset(
 #: registry ranks all fall back here, and falling back to nothing would mean
 #: falling back to the forty-name list this module was written to replace.
 #: Hex (Elixir and Erlang). Curated: hex.pm publishes download counts but
-#: no ranked export `scripts/refresh_package_intel.py` can read, so this is the
+#: no ranked export `scripts/refresh/refresh_package_intel.py` can read, so this is the
 #: allowlist until one exists.
 _HEX: Final = frozenset(
     {
@@ -3412,12 +3412,12 @@ _CURATED: Final[dict[str, frozenset[str]]] = {
     "nuget": _NUGET,
     # Curated only. The CocoaPods Specs repository is the whole registry with no
     # download statistics and no popularity ordering, so there is nothing for
-    # `scripts/refresh_package_intel.py` to rank by. It was the last supported
+    # `scripts/refresh/refresh_package_intel.py` to rank by. It was the last supported
     # ecosystem with no allowlist of any kind, which meant every real pod within one
     # edit of a popular name was reportable as a squat of it.
     "cocoapods": _COCOAPODS,
     # Curated for the same reason CocoaPods is: none of these registries
-    # publishes a ranked export for `scripts/refresh_package_intel.py` to read.
+    # publishes a ranked export for `scripts/refresh/refresh_package_intel.py` to read.
     # An ecosystem with no allowlist reports every real package within a
     # plausible keyboard slip of a popular name as a squat of it, so every
     # ecosystem the registry knows has one.
@@ -3465,7 +3465,7 @@ class RealPackages:
         Read once per ecosystem per process, lazily. A scan that touches no npm
         project never opens the npm file.
 
-        Missing is normal and is not an error: `scripts/refresh_package_intel.py` has
+        Missing is normal and is not an error: `scripts/refresh/refresh_package_intel.py` has
         not been run in this checkout, or the sdist did not ship the directory. The
         curated set below carries it.
         """

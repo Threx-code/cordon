@@ -2562,7 +2562,7 @@ class GeneratedPolicies:
         """Whether a file agrees with the manifest shipped beside it.
 
         An absent manifest is not a failure: a checkout that has never run
-        `scripts/build_iac_policies.py` has neither the data nor the manifest. A
+        `scripts/build/build_iac_policies.py` has neither the data nor the manifest. A
         manifest that disagrees is something to say out loud -- half a policy set is
         worse than none, because the count still looks healthy.
         """
@@ -2589,7 +2589,7 @@ class GeneratedPolicies:
         no infrastructure in it constructs none of them.
 
         Missing is normal rather than an error: a checkout where
-        `scripts/build_iac_policies.py` has not run has the curated table and says
+        `scripts/build/build_iac_policies.py` has not run has the curated table and says
         so through `generated_meta()`.
         """
         path = DATA_DIR / GENERATED_NAME

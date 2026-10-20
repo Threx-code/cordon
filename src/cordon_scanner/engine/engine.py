@@ -35,7 +35,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
-from cordon_scanner.archive.safe import ArchiveReader, Rejection
+from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.decide.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.decide.scoring import RiskScorer
 from cordon_scanner.detect.agents.agent_judge import JudgeGate
@@ -84,8 +84,8 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.windows import WindowPass
-from cordon_scanner.langs.registry import LanguageRegistry
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
+from cordon_scanner.sources.archive import ArchiveReader, Rejection
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.version import SCHEMA_VERSION, __version__
 
@@ -5592,7 +5592,7 @@ class Engine:
         identity = inventory.identity
         base: tuple[Dependency, ...] = ()
         if identity.base_name:
-            from cordon_scanner.ecosystems.image import ImageReference
+            from cordon_scanner.ecosystems.infra.image import ImageReference
 
             reference = ImageReference.parse(identity.base_name)
             if reference is not None:
@@ -5792,7 +5792,7 @@ class Engine:
         # one repository that each require the same module each depend on it, and each needs
         # its own fix -- one record for both left the second service's use out of the inventory.
         # Within a project, one record however many times the lockfile lists it.
-        from cordon_scanner.ecosystems.npm import LockScopes
+        from cordon_scanner.ecosystems.packages.npm import LockScopes
 
         unique: dict[tuple[str | None, str], Dependency] = {}
         for dependency in collected:
@@ -6158,7 +6158,7 @@ class Engine:
         runner read as runtime. With the direct dependencies' scopes known from the manifest,
         a transitive one reached only through dev dependencies is dev, only through optional
         ones optional -- npm's own rule for its `dev` and `optional` flags."""
-        from cordon_scanner.ecosystems.npm import LockScopes
+        from cordon_scanner.ecosystems.packages.npm import LockScopes
 
         groups: dict[tuple[str | None, str], list[Dependency]] = {}
         for dependency in collected:
@@ -6880,7 +6880,7 @@ class Engine:
         `core.reachability.CallReachability` for what is and is not treated as
         reachable, and why every approximation there keeps the finding.
         """
-        from cordon_scanner.ecosystems.homebrew import NotRunAtInstall
+        from cordon_scanner.ecosystems.packages.homebrew import NotRunAtInstall
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
         from cordon_scanner.engine.reachability import CallReachability
 

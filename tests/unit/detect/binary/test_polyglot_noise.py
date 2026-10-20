@@ -13,7 +13,7 @@ from pathlib import Path
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary.binary import BinaryDetector
 from cordon_scanner.foundation.config import Config
-from imagekit import DEBIAN_RELEASE, ImageKit
+from kits.imagekit import DEBIAN_RELEASE, ImageKit
 
 RULE = "SUSPECT.POLYGLOT.MISMATCH.001"
 

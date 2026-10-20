@@ -71,5 +71,5 @@ saying otherwise was worse than the gap itself.
 `docs/12-SIGNING-KEYS.md` lists every key that signs something a Cordon client trusts, with
 its fingerprint, and the Sigstore identity that signs each release. It is generated from the
 keys pinned in the build, so it never names a key the build does not carry; where a key is not
-yet pinned it says so. `scripts/key_ceremony.py` creates the keys offline, outside any git
+yet pinned it says so. `scripts/release/key_ceremony.py` creates the keys offline, outside any git
 working tree, and verifies its output with the client's own verifier before it finishes.

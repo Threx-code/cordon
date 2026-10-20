@@ -175,7 +175,7 @@ class ProvenanceDetector(BaseDetector):
         # dependencies first, so a truncated pass spends the budget where
         # provenance is most likely to be claimed.
         from cordon_scanner.detect.supply.registry import MAX_QUERIES, RegistryDetector
-        from cordon_scanner.ecosystems.image import ImageEcosystem
+        from cordon_scanner.ecosystems.infra.image import ImageEcosystem
 
         candidates = [
             d

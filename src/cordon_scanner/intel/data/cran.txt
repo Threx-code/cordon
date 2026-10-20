@@ -1,5 +1,5 @@
 # Established cran package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only cran
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only cran
 # Source:    https://cran.r-project.org/src/contrib/PACKAGES (names), https://cranlogs.r-pkg.org/downloads/total/last-month/ (last month's downloads)
 # Threshold: 1,000 downloads
 # Fetched:   25,326 candidates, 3,807 kept

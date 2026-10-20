@@ -36,7 +36,7 @@ Two sources, merged by `AdvisoryDatabase.bundled()`:
   incidents, each checked against the OSV API and written with a real summary
   a reader can act on without following the link.
 - `intel/data/advisories-<ecosystem>.json`: a much larger set built from OSV's
-  own bulk per-ecosystem export by `scripts/build_advisory_db.py`, refreshed on
+  own bulk per-ecosystem export by `scripts/build/build_advisory_db.py`, refreshed on
   a schedule (see `.github/workflows/refresh-advisories.yml`) the same way
   `intel/data/*.txt`'s popular-package allowlists already are. Bundled with the
   release, not fetched at scan time -- a scan must still work offline. Missing
@@ -76,7 +76,7 @@ permitted to report `Confidence.CONFIRMED`, and it -- along with
 `RuleLoader.load_builtin` guards the rule pack against truncation with a count
 floor; nothing guarded the data at all. A compromised refresh job, a
 compromised maintainer account, or a bad dependency of
-`scripts/build_advisory_db.py` could delist one npm package -- the one being
+`scripts/build/build_advisory_db.py` could delist one npm package -- the one being
 shipped that week -- and the scan would report a clean result with the count
 still in the tens of thousands.
 
@@ -102,7 +102,7 @@ class AdvisoryFiles:
         """The digests recorded for this root, or empty when there is no manifest.
 
         Empty is not a failure. A checkout that has never run
-        `scripts/build_advisory_db.py` has neither data nor manifest, and the sdist
+        `scripts/build/build_advisory_db.py` has neither data nor manifest, and the sdist
         may ship neither -- so an absent manifest means "nothing to check against",
         while a present one that disagrees means something to say out loud.
         """
@@ -448,7 +448,7 @@ class DatabaseMeta:
     record_count: int = 0
     filtered: bool = False
     """Whether this build kept only malicious entries and high/critical
-    vulnerabilities (`scripts/build_advisory_db.py`'s default, to bound the
+    vulnerabilities (`scripts/build/build_advisory_db.py`'s default, to bound the
     wheel's size) rather than everything OSV reported. A user reading a
     coverage note that says "27,000 records" needs to know that number is a
     deliberate cut, not the whole of what exists -- `AdvisoryDetector`'s
@@ -487,7 +487,7 @@ class ShippedAdvisories:
         """One ecosystem's generated advisory file, parsed, or an empty list.
 
         Missing or malformed is normal rather than an error:
-        `scripts/build_advisory_db.py` has not been run in this checkout, or the
+        `scripts/build/build_advisory_db.py` has not been run in this checkout, or the
         sdist did not ship the directory, and `BUNDLED` carries coverage on its own
         either way.
         """

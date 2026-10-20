@@ -34,7 +34,7 @@ from support import requires_workflows
 
 ROOT = REPO
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
-GENERATOR = ROOT / "scripts" / "generate_sbom.py"
+GENERATOR = ROOT / "scripts" / "build" / "generate_sbom.py"
 
 
 class TestTheSdistCanVerifyItself:
@@ -43,7 +43,7 @@ class TestTheSdistCanVerifyItself:
     MANIFEST.in exists on the argument that "without the tests, nobody
     downstream can verify that the copy they were handed behaves the way the
     project claims". That argument only holds if what the tests *need* is
-    shipped too: six tests here exercise `scripts/generate_sbom.py`, which was
+    shipped too: six tests here exercise `scripts/build/generate_sbom.py`, which was
     not listed, so an sdist consumer got six errors about a missing file rather
     than a verification.
 

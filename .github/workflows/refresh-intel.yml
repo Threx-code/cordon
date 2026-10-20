@@ -84,7 +84,7 @@ jobs:
         # pub.dev's thousand pages and 5 for RubyGems', plus up to four minutes
         # of backoff on any page the host still refuses -- with room over.
         timeout-minutes: 75
-        run: python3 scripts/refresh_package_intel.py
+        run: python3 scripts/refresh/refresh_package_intel.py
 
       - name: Check the result is still well formed
         # The same assertions CI runs, before anything is proposed rather than
@@ -177,7 +177,7 @@ jobs:
           # The generated ecosystem table carries the per-ecosystem
           # allowlist counts, so it moves with the lists or the suite
           # fails on the next push with nothing to do with this refresh.
-          PYTHONPATH=src:tests python tests/ecosystems.py > docs/07-ECOSYSTEMS.md
+          PYTHONPATH=src:tests python tests/kits/ecosystems.py > docs/07-ECOSYSTEMS.md
           git add -- src/cordon_scanner/intel/data/*.txt docs/07-ECOSYSTEMS.md
           # `git diff --cached --quiet` cannot answer this. Each allowlist header records the date it was fetched, so the index
           # always differs and the guard never fires -- which is how a no-op
@@ -185,7 +185,7 @@ jobs:
           # This asks the narrower question the reviewer actually cares about:
           # did the data move, and if not, is the recorded date stale enough to
           # be worth refreshing on its own.
-          verdict=$(python3 scripts/refresh_movement.py \
+          verdict=$(python3 scripts/refresh/refresh_movement.py \
             --data 'src/cordon_scanner/intel/data/*.txt' \
                    'docs/07-ECOSYSTEMS.md' \
             --ignore-line '^# Refreshed:')

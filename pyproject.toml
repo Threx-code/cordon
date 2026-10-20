@@ -8,38 +8,81 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cordon-scanner"
 dynamic = ["version"]
-description = "Language-agnostic software supply-chain security scanner. Detects malicious packages, suspicious install-time behaviour, secrets and dependency risk across any ecosystem."
+description = "Software supply-chain and AI-agent security scanner. Detects malicious packages, suspicious install-time behaviour, poisoned agent skills and MCP servers, secrets, vulnerable dependencies, container and infrastructure-as-code risk, across ecosystems, offline."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [
     { name = "Oluwatosin Amokeodo", email = "oluwatosin.amokeodo@gmail.com" },
 ]
+maintainers = [
+    { name = "Oluwatosin Amokeodo", email = "oluwatosin.amokeodo@gmail.com" },
+]
 keywords = [
     "security",
     "supply-chain",
+    "supply-chain-security",
+    "software-supply-chain",
     "malware",
+    "malware-detection",
+    "malicious-packages",
     "sast",
+    "sca",
+    "software-composition-analysis",
     "sarif",
     "dependency-scanning",
+    "dependency-confusion",
+    "typosquatting",
+    "vulnerability-scanner",
+    "cve",
+    "osv",
     "sbom",
+    "cyclonedx",
+    "spdx",
+    "vex",
+    "slsa",
+    "sigstore",
+    "provenance",
+    "secrets",
+    "secret-scanning",
     "static-analysis",
+    "yara",
+    "npm",
+    "pypi",
+    "github-actions",
+    "container-security",
+    "infrastructure-as-code",
+    "terraform",
+    "kubernetes",
+    "mcp",
+    "ai-agents",
+    "agent-security",
+    "pre-commit",
+    "ci-cd",
     "devsecops",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
     "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Software Distribution",
     "Typing :: Typed",
 ]
 requires-python = ">=3.11"
@@ -145,7 +188,7 @@ manifest = "cordon_scanner.detect.supply.manifest:ManifestDetector"
 mcp-live = "cordon_scanner.detect.agents.live_mcp:LiveMcpDetector"
 mcp-packages = "cordon_scanner.detect.agents.agents:McpPackageDetector"
 model = "cordon_scanner.detect.agents.model:ModelDetector"
-obfuscation = "cordon_scanner.analysis.shared.obfuscation:ObfuscationDetector"
+obfuscation = "cordon_scanner.detect.code.obfuscation:ObfuscationDetector"
 os-packages = "cordon_scanner.detect.supply.ospackages:OsPackageDetector"
 package-policy = "cordon_scanner.detect.supply.package_policy:PackagePolicyDetector"
 provenance = "cordon_scanner.detect.supply.provenance:ProvenanceDetector"
@@ -171,6 +214,10 @@ Documentation = "https://github.com/Threx-code/cordon#readme"
 Repository = "https://github.com/Threx-code/cordon.git"
 "Bug Tracker" = "https://github.com/Threx-code/cordon/issues"
 Changelog = "https://github.com/Threx-code/cordon/blob/main/CHANGELOG.md"
+Releases = "https://github.com/Threx-code/cordon/releases"
+Security = "https://github.com/Threx-code/cordon/blob/main/SECURITY.md"
+Tutorials = "https://github.com/Threx-code/cordon/tree/main/tutorials"
+Architecture = "https://github.com/Threx-code/cordon/blob/main/docs/01-ARCHITECTURE.md"
 
 [tool.setuptools.dynamic]
 version = { attr = "cordon_scanner.version.__version__" }
@@ -183,7 +230,11 @@ include = ["cordon_scanner*", "cordon_sandbox*"]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
 "cordon_scanner.rules.builtin" = ["*.yaml"]
-# Syft's artifact-to-group map for jars named only by their file (scripts/syft_java_groups.py).
+# The built-in YARA pack (`--yara builtin`, detect/binary/yara_rules.py) and the records of where
+# its rules came from and how they measured. Missing from the wheel before 2026-10-20: an install
+# from PyPI had no pack to load.
+"cordon_scanner.rules" = ["yara/*.yar", "yara/*.json"]
+# Syft's artifact-to-group map for jars named only by their file (scripts/build/syft_java_groups.py).
 "cordon_scanner.images" = ["data/*.json"]
 # The detection model's feature patterns (`cordon_scanner.model`).
 "cordon_scanner.model" = ["data/*.json"]
@@ -194,14 +245,14 @@ include = ["cordon_scanner*", "cordon_sandbox*"]
 # well as in MANIFEST.in because the two govern different artefacts: MANIFEST.in
 # the sdist, this the wheel.
 #
-# `*.json.gz` is the OSV-derived advisory database (scripts/build_advisory_db.py)
+# `*.json.gz` is the OSV-derived advisory database (scripts/build/build_advisory_db.py)
 # and `*.json` its build-metadata and digest sidecars. A wheel without them
 # falls back to the small hand-curated `BUNDLED` set in `intel/advisories.py`
 # -- again not a crash, but the difference between real vulnerability coverage
 # and nine records. The advisory sets are compressed because they are the
 # largest thing in the wheel and they are JSON; the sidecars are not, because
 # they are read to decide whether the sets can be trusted at all.
-"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz"]
+"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz"]
 # The schema-generated infrastructure policies and the sidecar recording which
 # provider versions produced them. A wheel without them is the curated table
 # alone, which is a working scanner with a fifth of the coverage -- so the

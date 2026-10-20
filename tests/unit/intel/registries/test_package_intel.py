@@ -2,7 +2,7 @@
 
 This file decides what the typosquat rule stays quiet about, which makes it the
 one piece of bundled data whose contents can remove a detection. It is generated
-from seven registries by `scripts/refresh_package_intel.py` and is fifty thousand
+from seven registries by `scripts/refresh/refresh_package_intel.py` and is fifty thousand
 lines long, so nobody is going to read it; these are the properties a reviewer
 would check if they could.
 
@@ -196,7 +196,7 @@ class TestPackaging:
         if not pyproject.exists():
             pytest.skip("pyproject.toml is not shipped in the sdist")
         text = pyproject.read_text(encoding="utf-8")
-        assert '"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz"]' in text
+        assert '"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz"]' in text
 
     def test_the_sdist_declares_the_data(self) -> None:
         manifest = self.ROOT / "MANIFEST.in"
@@ -252,7 +252,7 @@ class TestTheRefreshCannotBeKilledMidWrite:
 
         root = REPO
         spec = importlib.util.spec_from_file_location(
-            "refresh_package_intel", root / "scripts" / "refresh_package_intel.py"
+            "refresh_package_intel", root / "scripts" / "refresh" / "refresh_package_intel.py"
         )
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
@@ -331,7 +331,7 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
 
         root = REPO
         spec = importlib.util.spec_from_file_location(
-            "refresh_package_intel", root / "scripts" / "refresh_package_intel.py"
+            "refresh_package_intel", root / "scripts" / "refresh" / "refresh_package_intel.py"
         )
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)

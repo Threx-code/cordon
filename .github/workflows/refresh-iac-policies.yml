@@ -93,7 +93,7 @@ jobs:
 
       - name: Regenerate the policies
         run: |
-          python scripts/build_iac_policies.py \
+          python scripts/build/build_iac_policies.py \
             --schema /tmp/schema/schema.json \
             --cfn-spec /tmp/schema/cfn-spec.json \
             --versions /tmp/schema/versions.json
@@ -106,7 +106,7 @@ jobs:
 
       - name: Regenerate the coverage matrix
         run: |
-          PYTHONPATH=tests python tests/matrix.py > docs/05-COVERAGE-MATRIX.md
+          PYTHONPATH=tests python tests/kits/matrix.py > docs/05-COVERAGE-MATRIX.md
           pytest -q tests/unit/cli/test_coverage_matrix.py
 
       - name: Summarise the change for the reviewer
@@ -178,7 +178,7 @@ jobs:
           # This asks the narrower question the reviewer actually cares about:
           # did the data move, and if not, is the recorded date stale enough to
           # be worth refreshing on its own.
-          verdict=$(python3 scripts/refresh_movement.py \
+          verdict=$(python3 scripts/refresh/refresh_movement.py \
             --data 'src/cordon_scanner/detect/data/iac-policies.json.gz' \
                    'docs/05-COVERAGE-MATRIX.md' \
             --stamp src/cordon_scanner/detect/data/iac-policies-meta.json \

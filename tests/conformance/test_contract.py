@@ -13,13 +13,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from conformancekit import ConformanceCase
 from cordon_scanner.ecosystems.contract import (
     CONTRACTS,
     CROSS_CUTTING,
     REQUIRED_COVERAGE,
     UNIVERSAL,
 )
+from kits.conformancekit import ConformanceCase
 
 TESTS = Path(__file__).resolve().parents[1]
 #: Proven for an ecosystem by every one of its valid cases passing through `test_cases.py`.

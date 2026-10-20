@@ -13,9 +13,9 @@ import re
 
 import pytest
 
-from conformancekit import ConformanceCase, ConformanceCheck, ConformanceRun
 from cordon_scanner.ecosystems.contract import RECORD_FIELDS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from kits.conformancekit import ConformanceCase, ConformanceCheck, ConformanceRun
 
 CASES = ConformanceCase.all()
 VALID = [

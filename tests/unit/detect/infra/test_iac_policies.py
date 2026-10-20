@@ -56,7 +56,7 @@ class TestEveryPolicy:
 
 
 class TestTheGeneratedHalf:
-    """Built from the provider schemas by `scripts/build_iac_policies.py`.
+    """Built from the provider schemas by `scripts/build/build_iac_policies.py`.
 
     The point of generating them is that the resource list is a fact rather than
     a memory: a policy naming an attribute the provider does not have can never

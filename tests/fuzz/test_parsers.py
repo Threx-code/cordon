@@ -215,7 +215,7 @@ class TestFormatReaders:
     def _seeds() -> list[tuple[str, bytes]]:
         import pickle
 
-        from formatkit import FormatKit
+        from kits.formatkit import FormatKit
 
         return [
             ("model.pkl", pickle.dumps({"weights": [1.0, 2.0]}, protocol=4)),
@@ -256,7 +256,7 @@ class TestFormatReaders:
         ),
     )
     def test_a_mutated_file_raises_only_format_error(self, seed: int, cut: int, flips) -> None:
-        from cordon_scanner.formats import FormatError, documents, media, pickles
+        from cordon_scanner.analysis.formats import FormatError, documents, media, pickles
 
         name, raw = self._seeds()[seed]
         mutated = bytearray(raw)

@@ -20,7 +20,7 @@ generator both exist.
 
 Not byte-deterministic the way a scan result is (`core/engine.py`'s C5): a
 timestamp and a fresh serial number/document namespace are part of both
-formats' own specifications, the same way `scripts/generate_sbom.py` -- this
+formats' own specifications, the same way `scripts/build/generate_sbom.py` -- this
 project's own release SBOM generator -- already includes them. The dependency
 data itself is unchanged between two runs over identical input; only the
 document's own identity fields differ, which is what those fields are for.

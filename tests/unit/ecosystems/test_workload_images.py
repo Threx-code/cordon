@@ -17,7 +17,7 @@ from test_provenance import ProvenanceFixtures, ProvenanceHelpers
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.supply.provenance import UNSIGNED_IMAGE_RULE
-from cordon_scanner.ecosystems.image import ImageEcosystem
+from cordon_scanner.ecosystems.infra.image import ImageEcosystem
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope

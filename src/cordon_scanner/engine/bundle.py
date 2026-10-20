@@ -41,8 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cordon_scanner.archive.safe import ArchiveReader
 from cordon_scanner.foundation.errors import ArchiveError, ConfigError
+from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:

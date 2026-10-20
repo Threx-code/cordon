@@ -65,7 +65,7 @@ Compared by digest; nothing is fetched. Exit 1 when the copy differs.
 
 Repositories pin the scanner exactly: the Action by commit, pip by version and hash,
 pre-commit by rev, the runner image by digest. That is right, and it means a fix needs
-the same four edits everywhere. `scripts/bump_cordon_pins.py` makes them, and only them:
+the same four edits everywhere. `scripts/release/bump_cordon_pins.py` makes them, and only them:
 
 ```
    uses: <owner>/cordon/action@<40 hex>  # vX.Y.Z    ─►  the release's commit and tag

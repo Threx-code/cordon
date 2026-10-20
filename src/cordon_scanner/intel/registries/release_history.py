@@ -186,7 +186,7 @@ class ReleaseHistory:
     @classmethod
     def fingerprint(cls, data: bytes, filename: str, version: str) -> dict[str, str]:
         """Every file of a published archive, keyed by `key`, hashed. Read in memory."""
-        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.sources.archive import ArchiveReader
 
         out: dict[str, str] = {}
         for member_path, member in ArchiveReader.walk_archive(data, path=filename):
@@ -197,10 +197,10 @@ class ReleaseHistory:
     def obfuscated(cls, data: bytes, filename: str, version: str) -> tuple[str, ...]:
         """The archive's files with an obfuscator's output shape, keyed by `key`. Matched, never
         decoded: the same signatures `SUSPECT.OBFUSCATION.PACKED.001` reports."""
-        from cordon_scanner.analysis.shared.obfuscation import ObfuscationDetector
-        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
+        from cordon_scanner.detect.code.obfuscation import ObfuscationDetector
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.langs.registry import LanguageRegistry
+        from cordon_scanner.sources.archive import ArchiveReader
 
         detector = ObfuscationDetector()
         out: list[str] = []
@@ -217,10 +217,10 @@ class ReleaseHistory:
     def declared(data: bytes, filename: str, ecosystem: str) -> frozenset[str]:
         """The runtime dependencies a published archive declares, read the way the scan reads
         them (`Engine._declared_dependencies`)."""
-        from cordon_scanner.archive.safe import ArchiveReader
         from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.engine.engine import Engine
         from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.sources.archive import ArchiveReader
 
         units = [
             FileUnit(content=FileContent.from_bytes(member, payload))

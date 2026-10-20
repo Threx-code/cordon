@@ -4,7 +4,7 @@
 Lists the most-starred public repositories under agent-related GitHub topics, then fetches, as
 text, the agent files each one commits -- instruction files, MCP configurations, agent settings.
 Nothing fetched is run. The corpus is split by a hash of the repository name: one half calibrates
-how noisy each Agent Threat Rule is on real instruction files (`scripts/import_atr.py
+how noisy each Agent Threat Rule is on real instruction files (`scripts/build/import_atr.py
 --instruction-corpus`), the other half is held out to measure false alarms, so the number reported
 was not used to tune anything.
 

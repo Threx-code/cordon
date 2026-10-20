@@ -63,7 +63,7 @@ order cannot rot.
 
 Two of these are produced from the code and checked against it on every push:
 
-- **docs/05-COVERAGE-MATRIX.md** comes from `tests/matrix.py`, which asks the
+- **docs/05-COVERAGE-MATRIX.md** comes from `tests/kits/matrix.py`, which asks the
   installed engine what rules it has. A rule that ships and is missing from the
   matrix fails the suite.
 - **docs/07-ECOSYSTEMS.md** comes from the ecosystem registry, for the same
@@ -74,7 +74,7 @@ Editing either by hand is a mistake the next CI run will correct.
 
 ## The claims in the README are measured
 
-`scripts/measure_noise.py` runs the scanner over the repository list in
+`scripts/measure/measure_noise.py` runs the scanner over the repository list in
 `scripts/data/measurement-corpus.json` and reports what it found. The numbers in
 the README's accuracy table come from that script and from public corpora of
 real malicious packages; the method for each is stated beside the number.

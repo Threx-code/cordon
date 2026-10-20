@@ -74,7 +74,7 @@ drawn from the same recordings. It is an SVG, not a GIF — text, so it can be r
 diff before it is trusted, and a tool that flags committed binaries should not ship one
 to advertise itself. The single, static capture is
 [docs/assets/demo.svg](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/demo.svg)
-(`python scripts/render_demo.py`); the animation is redrawn from the site's sessions by
+(`python scripts/build/render_demo.py`); the animation is redrawn from the site's sessions by
 `scripts/readme-terminal/render.mjs` in the frontend repository.
 
 ```

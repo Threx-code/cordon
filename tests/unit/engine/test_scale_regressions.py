@@ -19,13 +19,13 @@ import time
 
 import pytest
 
-from conformancebuilders import Pkg, Writers
 from cordon_scanner import Scanner
+from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.images.binmeta import StreamedBinary
-from cordon_scanner.langs.registry import LanguageRegistry
-from imagekit import ImageKit
+from kits.conformancebuilders import Pkg, Writers
+from kits.imagekit import ImageKit
 
 
 class ScaleHelpers:

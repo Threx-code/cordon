@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from conformancebuilders import MARKER, PROFILES, EcosystemProfile, Pkg, Profiles
-from conformancekit import ConformanceCase, ConformanceRun
+from kits.conformancebuilders import MARKER, PROFILES, EcosystemProfile, Pkg, Profiles
+from kits.conformancekit import ConformanceCase, ConformanceRun
 
 
 class Universal:

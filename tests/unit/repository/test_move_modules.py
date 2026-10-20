@@ -1,4 +1,4 @@
-"""The move tool (`scripts/move_modules.py`): references follow a module, nothing else changes."""
+"""The move tool (`scripts/checks/move_modules.py`): references follow a module, nothing else changes."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from support import ROOT as REPO
 
-SCRIPT = REPO / "scripts" / "move_modules.py"
+SCRIPT = REPO / "scripts" / "checks" / "move_modules.py"
 _spec = importlib.util.spec_from_file_location("move_modules", SCRIPT)
 assert _spec is not None and _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
@@ -40,6 +40,14 @@ class TestRewrite:
             "    from cordon_scanner.foundation import models\n"
             "    from cordon_scanner.engine import engine\n"
             "    from cordon_scanner.core import cache\n"
+        )
+
+    def test_a_name_from_a_moved_package_init_goes_with_the_package(self) -> None:
+        # `formats/` moved whole: `FormatError` lives in its __init__, `documents` is a module.
+        moves = {"formats": "analysis/formats", "formats/documents": "analysis/formats/documents"}
+        text = "from cordon_scanner.formats import FormatError, documents\n"
+        assert Moves.rewrite_python(text, moves) == (
+            "from cordon_scanner.analysis.formats import FormatError, documents\n"
         )
 
     def test_a_patch_target_string_follows(self) -> None:

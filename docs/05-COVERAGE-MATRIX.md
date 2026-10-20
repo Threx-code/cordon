@@ -12,7 +12,7 @@ absent here fails the build.
 Regenerate after adding a rule:
 
 ```bash
-python tests/matrix.py > docs/05-COVERAGE-MATRIX.md
+python tests/kits/matrix.py > docs/05-COVERAGE-MATRIX.md
 ```
 
 ## How to read it
@@ -836,7 +836,7 @@ Regenerate after a provider release:
 
 ```bash
 terraform providers schema -json > schema.json
-python scripts/build_iac_policies.py --schema schema.json \
+python scripts/build/build_iac_policies.py --schema schema.json \
     --cfn-spec CloudFormationResourceSpecification.json --versions versions.json
 ```
 

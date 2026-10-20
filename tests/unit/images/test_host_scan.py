@@ -15,7 +15,7 @@ import json
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.images.host import HostFilesystem
-from imagekit import ImageKit
+from kits.imagekit import ImageKit
 
 
 class HostHelpers:

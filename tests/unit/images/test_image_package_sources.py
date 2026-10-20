@@ -25,7 +25,7 @@ from cordon_scanner.images import oci
 from cordon_scanner.images.binmeta import BinaryMetadata
 from cordon_scanner.images.langpkgs import LanguagePackages
 from cordon_scanner.images.packages import PackageDatabases
-from imagekit import ImageKit
+from kits.imagekit import ImageKit
 
 PACMAN_DESC = b"""%NAME%
 acl

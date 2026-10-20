@@ -2,7 +2,7 @@
 #
 # Each targets a shape ATR's published evasion cases show its own rules missing: the same
 # instruction in another language, a keyword split by stray spaces, a persona whose whole content
-# is "no restrictions". `scripts/import_atr.py --supplement` runs them through exactly what an ATR
+# is "no restrictions". `scripts/build/import_atr.py --supplement` runs them through exactly what an ATR
 # rule goes through -- the backtracking screen, their own test cases, and the measured match rate
 # over ATR's 13,000-sample benign corpus and over real instruction files -- and the scan grades a
 # match by that measurement. A rule that proves noisy is demoted, not shipped as an alarm.

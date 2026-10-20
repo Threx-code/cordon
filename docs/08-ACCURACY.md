@@ -8,7 +8,7 @@ would flatter the answer.
 ## Accuracy, measured
 
 Every number is measured against real code and re-run for the release. The
-noise corpus and its driver ship here (`scripts/measure_noise.py`, over the
+noise corpus and its driver ship here (`scripts/measure/measure_noise.py`, over the
 repository list in `scripts/data/measurement-corpus.json`), so anyone can
 reproduce that row. The two malicious corpora are public datasets rather than
 files in this repository: the methodology is in

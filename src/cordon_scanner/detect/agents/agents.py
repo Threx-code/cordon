@@ -4315,8 +4315,8 @@ class McpServerSource:
     def _archive_sources(
         filename: str, data: bytes, max_files: int, max_bytes: int
     ) -> Iterator[tuple[str, str]]:
-        from cordon_scanner.archive.safe import ArchiveReader
         from cordon_scanner.foundation.errors import ArchiveError
+        from cordon_scanner.sources.archive import ArchiveReader
 
         count = 0
         with contextlib.suppress(ArchiveError, ValueError, OSError):

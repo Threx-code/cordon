@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.ecosystems.base import Coordinate
-from cordon_scanner.ecosystems.nix import Fetchers
+from cordon_scanner.ecosystems.packages.nix import Fetchers
 
 NIX32_SHA256 = "0" * 52
 BASE64_SHA256 = "A" * 43 + "="

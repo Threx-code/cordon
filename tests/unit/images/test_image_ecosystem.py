@@ -10,7 +10,7 @@ import tarfile
 
 import pytest
 
-from cordon_scanner.ecosystems.image import (
+from cordon_scanner.ecosystems.infra.image import (
     Compose,
     Dockerfile,
     ImageEcosystem,
@@ -21,7 +21,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Dependency, Scope
 from cordon_scanner.images.oci import ImageIdentity, ImageLayers
 from cordon_scanner.images.packages import OsPackage, PackageDatabases, PackageGraph
-from imagekit import ImageKit
+from kits.imagekit import ImageKit
 
 
 class ImageHelpers:

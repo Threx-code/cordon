@@ -457,7 +457,7 @@ class ParallelScanner:
         the same scan would produce different findings depending on how many
         files it happened to contain.
         """
-        from cordon_scanner.langs.registry import LanguageRegistry
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
 
         return LanguageRegistry.of_file(relative, content)
 

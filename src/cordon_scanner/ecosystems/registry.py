@@ -12,8 +12,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.base import Ecosystem
-from cordon_scanner.ecosystems.infra import INFRA_ECOSYSTEMS
-from cordon_scanner.ecosystems.npm import NpmEcosystem
+from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
     CargoEcosystem,
@@ -32,7 +31,8 @@ from cordon_scanner.ecosystems.others import (
     RubyGemsEcosystem,
     SwiftEcosystem,
 )
-from cordon_scanner.ecosystems.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
+from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
 from cordon_scanner.engine.walker import PathGlob
 from cordon_scanner.foundation.paths import ContainerPaths
 

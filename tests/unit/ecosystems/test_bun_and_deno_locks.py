@@ -7,7 +7,7 @@ read says so rather than returning an empty graph that looks like a project with
 
 from __future__ import annotations
 
-from cordon_scanner.ecosystems.npm import BunLock, NpmEcosystem
+from cordon_scanner.ecosystems.packages.npm import BunLock, NpmEcosystem
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.limits import Limits

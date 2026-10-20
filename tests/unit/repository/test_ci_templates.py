@@ -46,7 +46,7 @@ class TestEveryTemplate:
         import importlib.util
 
         spec = importlib.util.spec_from_file_location(
-            "pin", ROOT / "scripts" / "pin_action_requirements.py"
+            "pin", ROOT / "scripts" / "release" / "pin_action_requirements.py"
         )
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)

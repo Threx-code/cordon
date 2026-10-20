@@ -170,7 +170,7 @@ class TestRequirementsParsing(LeakageFixtures):
     """The specific over-read, at the parser rather than the model."""
 
     def parse(self, body: str) -> tuple[tuple[str, str], ...]:
-        from cordon_scanner.ecosystems.pypi import PypiEcosystem
+        from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         graph = PypiEcosystem().parse_lockfile(
@@ -183,7 +183,7 @@ class TestRequirementsParsing(LeakageFixtures):
 
     def test_a_continuation_hash_is_still_read(self) -> None:
         """The multi-line form is the common one and must keep working."""
-        from cordon_scanner.ecosystems.pypi import PypiEcosystem
+        from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         graph = PypiEcosystem().parse_lockfile(

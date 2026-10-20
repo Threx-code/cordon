@@ -491,9 +491,9 @@ class ManifestScripts:
     @staticmethod
     def _capable(path: str, source: str, ctx: ScanContext) -> bool:
         """Whether the capability rules label anything in a hook's inline program."""
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
         from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.langs.registry import LanguageRegistry
 
         if not ManifestScripts._loads_only_what_was_read(path, source, ctx):
             return True
@@ -2134,7 +2134,7 @@ class ManifestDetector(BaseDetector):
         elif basename == "requirements.yaml":
             # An apiVersion v1 chart's dependencies: Helm's `dependencies:` key, where Ansible's
             # file of the same name holds `roles:` and `collections:`.
-            from cordon_scanner.ecosystems.helm import ChartFile
+            from cordon_scanner.ecosystems.infra.helm import ChartFile
             from cordon_scanner.foundation.datayaml import DataYaml
 
             try:

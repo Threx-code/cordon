@@ -19,7 +19,7 @@ import pytest
 
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cloud import CloudEndpoint, CloudError, auth, policy, results
-from feedkit import FeedKit
+from kits.feedkit import FeedKit
 from support import Support
 
 API = "https://api.cordon.test"

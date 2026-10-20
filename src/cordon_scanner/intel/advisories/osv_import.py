@@ -4,7 +4,7 @@ Not run at scan time and not run at package build time -- both would violate
 C1/C2 (zero runtime dependencies, no network unless asked). This module is
 invoked from two places, both explicit and both operator-initiated:
 
-- `scripts/build_advisory_db.py`, from `.github/workflows/refresh-advisories.yml`
+- `scripts/build/build_advisory_db.py`, from `.github/workflows/refresh-advisories.yml`
   (a scheduled job, mirroring the existing `refresh-intel.yml` pattern: fetch,
   validate, open a pull request, never push directly).
 - `cordon-scanner advisories sync`, for an operator who wants current data
@@ -769,7 +769,7 @@ class OsvImport:
         output_dir.mkdir(parents=True, exist_ok=True)
         with contextlib.suppress(OSError):
             # Best-effort: `output_dir` is sometimes a CI build directory (from
-            # `scripts/build_advisory_db.py`) where this is harmless, and
+            # `scripts/build/build_advisory_db.py`) where this is harmless, and
             # sometimes the user's persistent cache (from `advisories sync`)
             # where it is the point -- see `_write_text_0600`. Never fatal:
             # failing to tighten a permission is not a reason to fail a sync.

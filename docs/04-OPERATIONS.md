@@ -416,7 +416,7 @@ build  ->  pin from the built artefacts  ->  publish those same artefacts
        ->  confirm the index serves what was uploaded
 ```
 
-`scripts/pin_action_requirements.py --from-dist dist` takes the digests from the
+`scripts/release/pin_action_requirements.py --from-dist dist` takes the digests from the
 files that are about to be uploaded, so the pin is correct by construction and
 depends on no build being byte-reproducible. After publication,
 `--from-pypi --check` reads the digests back from the index and fails if they

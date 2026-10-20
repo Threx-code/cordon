@@ -1,5 +1,5 @@
 # Established nuget package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only nuget
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only nuget
 # Source:    https://azuresearch-usnc.nuget.org/query
 # Threshold: 50,000 downloads
 # Fetched:   4,000 candidates, 4,000 kept

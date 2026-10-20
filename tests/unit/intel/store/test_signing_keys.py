@@ -36,11 +36,11 @@ class CeremonyKit:
 
     @classmethod
     def ceremony(cls):
-        return cls.module("key_ceremony", ROOT / "scripts/key_ceremony.py").KeyCeremony
+        return cls.module("key_ceremony", ROOT / "scripts/release/key_ceremony.py").KeyCeremony
 
     @classmethod
     def page(cls):
-        return cls.module("signing_keys", ROOT / "tests/signing_keys.py").SigningKeysPage
+        return cls.module("signing_keys", ROOT / "tests/kits/signing_keys.py").SigningKeysPage
 
 
 class CeremonyFixtures:
@@ -153,7 +153,7 @@ class TestTheCeremony(CeremonyFixtures):
     def test_the_command_line_prints_fingerprints_and_never_a_seed(self, tmp_path) -> None:
         out = tmp_path / "cli"
         completed = subprocess.run(
-            [sys.executable, str(ROOT / "scripts/key_ceremony.py"), "--out", str(out)],
+            [sys.executable, str(ROOT / "scripts/release/key_ceremony.py"), "--out", str(out)],
             capture_output=True,
             text=True,
             check=True,
@@ -169,7 +169,7 @@ class TestThePublishedPage(CeremonyFixtures):
             encoding="utf-8"
         ) == CeremonyKit.page().render(), (
             "docs/12-SIGNING-KEYS.md is out of date. Regenerate it:\n"
-            "    python tests/signing_keys.py > docs/12-SIGNING-KEYS.md"
+            "    python tests/kits/signing_keys.py > docs/12-SIGNING-KEYS.md"
         )
 
     def test_with_nothing_pinned_the_page_says_so(self, monkeypatch, tmp_path) -> None:

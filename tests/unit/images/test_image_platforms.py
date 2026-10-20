@@ -15,7 +15,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.images.oci import ImageLayers
-from imagekit import ImageKit
+from kits.imagekit import ImageKit
 
 
 class Layers:

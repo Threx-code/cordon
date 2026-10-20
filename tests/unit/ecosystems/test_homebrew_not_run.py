@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.ecosystems.homebrew import NotRunAtInstall
+from cordon_scanner.ecosystems.packages.homebrew import NotRunAtInstall
 from cordon_scanner.foundation.config import Config
 
 #: Shaped on homebrew-core's `liquidprompt.rb`: the caveats tell the user what to add to a profile.

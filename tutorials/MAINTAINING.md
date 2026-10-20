@@ -21,10 +21,10 @@ release tag, so editing a tutorial here is the only edit there is.
 ```
    01 to 24    written by hand: one use case each, diagram first
    25 to 28    GENERATED from the code: never edit them by hand
-                 25  every ecosystem         python tests/tutorial_reference.py ecosystems
-                 26  every command           python tests/tutorial_reference.py commands
-                 27  every agent location    python tests/tutorial_reference.py agents
-                 28  every rule              python tests/tutorial_reference.py rules
+                 25  every ecosystem         python tests/kits/tutorial_reference.py ecosystems
+                 26  every command           python tests/kits/tutorial_reference.py commands
+                 27  every agent location    python tests/kits/tutorial_reference.py agents
+                 28  every rule              python tests/kits/tutorial_reference.py rules
 ```
 
 `tests/unit/repository/test_tutorial_reference.py` fails when a generated tutorial disagrees with the
@@ -32,13 +32,13 @@ code: add an ecosystem, a flag, an agent path or a rule, and the test tells you 
 to regenerate, with the command. Regenerate inside the project's container:
 
 ```bash
-python tests/tutorial_reference.py ecosystems > tutorials/25-every-ecosystem.md
-python tests/tutorial_reference.py commands   > tutorials/26-every-command.md
-python tests/tutorial_reference.py agents     > tutorials/27-every-agent-location.md
-python tests/tutorial_reference.py rules      > tutorials/28-every-rule.md
+python tests/kits/tutorial_reference.py ecosystems > tutorials/25-every-ecosystem.md
+python tests/kits/tutorial_reference.py commands   > tutorials/26-every-command.md
+python tests/kits/tutorial_reference.py agents     > tutorials/27-every-agent-location.md
+python tests/kits/tutorial_reference.py rules      > tutorials/28-every-rule.md
 ```
 
-A new ecosystem also needs its display name in `NAMES` in `tests/tutorial_reference.py`;
+A new ecosystem also needs its display name in `NAMES` in `tests/kits/tutorial_reference.py`;
 the generator stops and says so if it is missing.
 
 ## Adding a hand-written tutorial

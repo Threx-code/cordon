@@ -25,9 +25,9 @@ class TestSelfScanScope:
             ".github/workflows/ci.yml": (ROOT / ".github" / "workflows" / "ci.yml").read_text(
                 encoding="utf-8"
             ),
-            "scripts/live_checks.py": (ROOT / "scripts" / "live_checks.py").read_text(
-                encoding="utf-8"
-            ),
+            "scripts/measure/live_checks.py": (
+                ROOT / "scripts" / "measure" / "live_checks.py"
+            ).read_text(encoding="utf-8"),
         }
         missing = [
             f"{place} does not exclude {pattern}"

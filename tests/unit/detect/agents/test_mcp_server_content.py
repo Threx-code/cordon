@@ -126,7 +126,7 @@ class TestPublishedActions:
         assert not {r for r in found if r.startswith("MALWARE.INSTALL.")}
 
     def test_run_blocks_are_read_from_a_composite_action(self):
-        from cordon_scanner.ecosystems.actions import ActionsFile
+        from cordon_scanner.ecosystems.infra.actions import ActionsFile
 
         text = (
             "runs:\n  using: composite\n  steps:\n"

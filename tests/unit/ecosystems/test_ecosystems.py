@@ -19,7 +19,6 @@ from typing import ClassVar
 import pytest
 
 from cordon_scanner.detect.supply.dependency import DependencyDetector
-from cordon_scanner.ecosystems.npm import NpmEcosystem
 from cordon_scanner.ecosystems.others import (
     CargoEcosystem,
     ComposerEcosystem,
@@ -28,7 +27,8 @@ from cordon_scanner.ecosystems.others import (
     NuGetEcosystem,
     RubyGemsEcosystem,
 )
-from cordon_scanner.ecosystems.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
+from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
@@ -558,7 +558,7 @@ class TestATopLevelThatIsNotAnObject:
 
     def test_a_real_manifest_still_parses(self) -> None:
         """The guard must not reject what it was added to protect."""
-        from cordon_scanner.ecosystems.npm import NpmEcosystem
+        from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes(

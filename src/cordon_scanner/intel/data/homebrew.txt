@@ -1,5 +1,5 @@
 # Established homebrew package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only homebrew
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only homebrew
 # Source:    https://formulae.brew.sh/api/analytics/install/365d.json, https://formulae.brew.sh/api/analytics/cask-install/365d.json
 # Threshold: 1,000 downloads
 # Fetched:   18,425 candidates, 4,574 kept

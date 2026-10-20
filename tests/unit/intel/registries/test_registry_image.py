@@ -18,7 +18,7 @@ import pytest
 from cordon_scanner.images.oci import ImageLayers
 from cordon_scanner.intel.registries import registry_image
 from cordon_scanner.intel.registries.registry_image import RegistryImage, RegistryImageError
-from imagekit import ImageKit
+from kits.imagekit import ImageKit
 
 
 class Digest:

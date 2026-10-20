@@ -8,7 +8,7 @@ columns are read from the data and detectors that actually ship.
 Regenerate after adding an ecosystem or a feed:
 
 ```bash
-python tests/ecosystems.py > docs/07-ECOSYSTEMS.md
+python tests/kits/ecosystems.py > docs/07-ECOSYSTEMS.md
 ```
 
 ## How to read the columns

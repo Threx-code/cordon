@@ -92,20 +92,20 @@ scan:  ## Cordon scans Cordon
 
 check: lint types test scan  ## Everything CI checks, in CI's order
 
-prepush:  ## What CI will say about HEAD, in Docker, on CI's terms (scripts/prepush.sh)
-	@sh scripts/prepush.sh
+prepush:  ## What CI will say about HEAD, in Docker, on CI's terms (scripts/checks/prepush.sh)
+	@sh scripts/checks/prepush.sh
 
 prepush-quick:  ## The same without the suite, perf and fuzz
-	@sh scripts/prepush.sh --quick
+	@sh scripts/checks/prepush.sh --quick
 
 hooks:  ## Run `make prepush` before every push (CORDON_PREPUSH=--quick for the short form)
-	@git config core.hooksPath .githooks && echo "pre-push hook: .githooks/pre-push -> scripts/prepush.sh"
+	@git config core.hooksPath .githooks && echo "pre-push hook: .githooks/pre-push -> scripts/checks/prepush.sh"
 
 # -- Generated artefacts ---------------------------------------------------
 
 matrix:  ## Regenerate the generated docs (coverage matrix, ecosystem table)
-	$(PY) tests/matrix.py > docs/05-COVERAGE-MATRIX.md
-	PYTHONPATH=tests $(PY) tests/ecosystems.py > docs/07-ECOSYSTEMS.md
+	$(PY) tests/kits/matrix.py > docs/05-COVERAGE-MATRIX.md
+	PYTHONPATH=tests $(PY) tests/kits/ecosystems.py > docs/07-ECOSYSTEMS.md
 
 demo: DEMO := corpus/malicious/compromised-npm-package
 demo:  ## Regenerate the README image from a real scan
@@ -185,7 +185,7 @@ live:  ## The checks that need a live registry (network; not part of `check`)
 	@# registry is slow. These need egress, so they are their own target and
 	@# their own workflow -- and `preflight` requires them, because the defects
 	@# they catch are the ones that reach users.
-	$(PY) scripts/live_checks.py
+	$(PY) scripts/measure/live_checks.py
 
 preflight: check live verify  ## Everything the release will do, before tagging
 

@@ -138,7 +138,7 @@ class GitHistory:
         if len(removed) > self.max_blobs:
             self.coverage.skipped_over_ceiling = len(removed) - self.max_blobs
             removed = removed[: self.max_blobs]
-        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.sources.archive import ArchiveReader
 
         sizes = getattr(self, "_sizes", {})
         wanted = []

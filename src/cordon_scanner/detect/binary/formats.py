@@ -4,7 +4,7 @@ Source scanners read text, and these arrive as binaries: a model checkpoint in a
 `.docm` in a docs folder, a PNG logo in a package. Each carries a way to execute on open -- a
 pickle names callables for `pickle.load` to call, a document names a macro or a remote template,
 an image hides a payload after its end marker -- that no text rule sees. The readers in
-`cordon_scanner.formats` parse each format by structure without loading, rendering or running it.
+`cordon_scanner.analysis.formats` parse each format by structure without loading, rendering or running it.
 
 A file whose header says it is one of these formats and whose body cannot be read is reported as
 not examined (`OPERATIONAL.FORMAT.UNREADABLE`, which marks the scan incomplete), never as clean.
@@ -16,11 +16,11 @@ import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.analysis.formats import FormatError, documents, media, pickles
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.secrets import SourcePaths
-from cordon_scanner.formats import FormatError, documents, media, pickles
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import (
     Category,

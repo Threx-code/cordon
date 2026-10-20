@@ -1,4 +1,4 @@
-"""`scripts/portability.py`: each check catches the code that actually broke another platform.
+"""`scripts/checks/portability.py`: each check catches the code that actually broke another platform.
 
 Every snippet below is the shape of a line that passed locally and failed on a CI runner on
 8 October 2026. A check that stops catching its own incident is worse than none, since the
@@ -15,7 +15,9 @@ import pytest
 from support import ROOT as REPO
 
 ROOT = REPO
-_spec = importlib.util.spec_from_file_location("portability", ROOT / "scripts" / "portability.py")
+_spec = importlib.util.spec_from_file_location(
+    "portability", ROOT / "scripts" / "checks" / "portability.py"
+)
 assert _spec is not None and _spec.loader is not None
 portability = importlib.util.module_from_spec(_spec)
 # Registered first: a dataclass looks its module up in `sys.modules` while it is being built.

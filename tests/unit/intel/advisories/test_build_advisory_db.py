@@ -1,6 +1,6 @@
 """The filter that decides what ships in the wheel versus what a sync fetches.
 
-`scripts/build_advisory_db.py --full` bypasses this; the default does not,
+`scripts/build/build_advisory_db.py --full` bypasses this; the default does not,
 and the default is what every release actually bundles. Loaded via
 `importlib.util` rather than imported normally, the same way
 `test_package_intel.py` loads `refresh_package_intel.py` -- it is a script,
@@ -22,7 +22,7 @@ class BuildAdvisoryDbHelpers:
     def _script():
         root = REPO
         spec = importlib.util.spec_from_file_location(
-            "build_advisory_db", root / "scripts" / "build_advisory_db.py"
+            "build_advisory_db", root / "scripts" / "build" / "build_advisory_db.py"
         )
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)

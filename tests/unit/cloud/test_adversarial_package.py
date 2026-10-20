@@ -20,12 +20,12 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.archive.safe import ArchiveReader, Rejection
 from cordon_scanner.engine.local_seal import LocalSeal
 from cordon_scanner.foundation.config import Config, ConfigResolver
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.foundation.models import Evidence, RedactionMode
+from cordon_scanner.sources.archive import ArchiveReader, Rejection
 
 
 class AdversarialKit:

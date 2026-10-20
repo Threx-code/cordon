@@ -678,7 +678,11 @@ class RegistryDetector(BaseDetector):
                 and d.ecosystem != RUNTIME_ECOSYSTEM
             }
         )
-        from cordon_scanner.ecosystems.image import ImageEcosystem, ImageReference, PublicRegistries
+        from cordon_scanner.ecosystems.infra.image import (
+            ImageEcosystem,
+            ImageReference,
+            PublicRegistries,
+        )
         from cordon_scanner.intel.registries.private_registries import (
             PrivateRegistries,
             PrivateRegistry,

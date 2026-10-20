@@ -345,7 +345,7 @@ class TestEcosystemFiltering:
         whole feed was unreachable.
         """
         from cordon_scanner.ecosystems.others import SwiftEcosystem
-        from cordon_scanner.ecosystems.swift import SwiftIdentity
+        from cordon_scanner.ecosystems.packages.swift import SwiftIdentity
 
         for url, osv_name in (
             ("https://github.com/apple/swift-nio.git", "github.com/apple/swift-nio"),

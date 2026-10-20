@@ -14,7 +14,7 @@ import zlib
 
 from cordon_scanner.images import oci
 from cordon_scanner.images.binmeta import GO_MAGIC, BinaryMetadata, BinaryStrings
-from imagekit import DEBIAN_RELEASE, ImageKit
+from kits.imagekit import DEBIAN_RELEASE, ImageKit
 
 
 class BinaryFixtures:

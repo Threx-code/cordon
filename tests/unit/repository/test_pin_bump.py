@@ -1,4 +1,4 @@
-"""`scripts/bump_cordon_pins.py`: every pin of Cordon moved to one release (advanced gap E4)."""
+"""`scripts/release/bump_cordon_pins.py`: every pin of Cordon moved to one release (advanced gap E4)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from support import ROOT as REPO
 
 ROOT = REPO
 _spec = importlib.util.spec_from_file_location(
-    "bump_cordon_pins", ROOT / "scripts" / "bump_cordon_pins.py"
+    "bump_cordon_pins", ROOT / "scripts" / "release" / "bump_cordon_pins.py"
 )
 assert _spec is not None and _spec.loader is not None
 bump_module = importlib.util.module_from_spec(_spec)

@@ -1,6 +1,6 @@
 """Building `nvd-cves.json.gz` and `nvd-cpe.json.gz` (read by `intel/nvd`) from NVD's own bulk feeds.
 
-Not run at scan time. Called by `scripts/build_nvd_db.py` on the advisory refresh schedule, and by
+Not run at scan time. Called by `scripts/build/build_nvd_db.py` on the advisory refresh schedule, and by
 `cordon-scanner advisories sync`, the same two callers `intel/osv_import` has.
 
 NVD publishes, per year, every CVE as JSON (`nvdcve-2.0-<year>.json.gz`) beside a `.meta` file

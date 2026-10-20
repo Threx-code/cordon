@@ -17,9 +17,6 @@ import re
 import tomllib
 from typing import TYPE_CHECKING, Any, ClassVar
 
-# Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
-# Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
-from cordon_scanner.ecosystems.actions import GitHubActionsEcosystem
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -27,18 +24,22 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.bazel import BazelEcosystem
-from cordon_scanner.ecosystems.cocoapods import CocoaPodsEcosystem
-from cordon_scanner.ecosystems.composer import ComposerEcosystem
-from cordon_scanner.ecosystems.conan import ConanEcosystem
-from cordon_scanner.ecosystems.conda import CondaEcosystem
-from cordon_scanner.ecosystems.cran import CranEcosystem
-from cordon_scanner.ecosystems.gradle import GradleEcosystem
-from cordon_scanner.ecosystems.hex import HexEcosystem
-from cordon_scanner.ecosystems.nuget import NuGetEcosystem
-from cordon_scanner.ecosystems.pub import PubEcosystem
-from cordon_scanner.ecosystems.rubygems import RubyGemsEcosystem
-from cordon_scanner.ecosystems.swift import SwiftEcosystem
+
+# Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
+# Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
+from cordon_scanner.ecosystems.infra.actions import GitHubActionsEcosystem
+from cordon_scanner.ecosystems.infra.bazel import BazelEcosystem
+from cordon_scanner.ecosystems.packages.cocoapods import CocoaPodsEcosystem
+from cordon_scanner.ecosystems.packages.composer import ComposerEcosystem
+from cordon_scanner.ecosystems.packages.conan import ConanEcosystem
+from cordon_scanner.ecosystems.packages.conda import CondaEcosystem
+from cordon_scanner.ecosystems.packages.cran import CranEcosystem
+from cordon_scanner.ecosystems.packages.gradle import GradleEcosystem
+from cordon_scanner.ecosystems.packages.hex import HexEcosystem
+from cordon_scanner.ecosystems.packages.nuget import NuGetEcosystem
+from cordon_scanner.ecosystems.packages.pub import PubEcosystem
+from cordon_scanner.ecosystems.packages.rubygems import RubyGemsEcosystem
+from cordon_scanner.ecosystems.packages.swift import SwiftEcosystem
 from cordon_scanner.foundation.models import Hook, Scope
 from cordon_scanner.foundation.safexml import Element, SafeXml, SafeXmlError
 

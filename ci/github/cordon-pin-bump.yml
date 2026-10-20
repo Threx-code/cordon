@@ -4,7 +4,7 @@
 # Weekly (and on demand) it reads Cordon's latest release, and for every repository in the
 # organisation that pins Cordon -- the Action by commit, pip by version and hash, pre-commit by rev,
 # the runner image by digest -- moves every pin to that release with
-# scripts/bump_cordon_pins.py and opens one pull request carrying the release notes. A repository
+# scripts/release/bump_cordon_pins.py and opens one pull request carrying the release notes. A repository
 # already on the release, or with the bump already open, is left alone.
 #
 #   ORG               the organisation to sweep (repository variable)

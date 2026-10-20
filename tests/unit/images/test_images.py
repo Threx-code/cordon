@@ -11,7 +11,7 @@ from cordon_scanner.foundation.config import Config
 from cordon_scanner.images import oci, osv
 from cordon_scanner.images import packages as pkgdb
 from cordon_scanner.intel.advisories import exploited
-from imagekit import ALPINE_RELEASE, DEBIAN_RELEASE, ROCKY_RELEASE, ImageKit
+from kits.imagekit import ALPINE_RELEASE, DEBIAN_RELEASE, ROCKY_RELEASE, ImageKit
 from support import ROOT as REPO
 from support import Support
 

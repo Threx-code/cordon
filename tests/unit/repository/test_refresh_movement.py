@@ -25,7 +25,7 @@ import pytest
 
 from support import ROOT as REPO
 
-SCRIPT = REPO / "scripts" / "refresh_movement.py"
+SCRIPT = REPO / "scripts" / "refresh" / "refresh_movement.py"
 
 
 class RefreshMovementHelpers:

@@ -1,4 +1,4 @@
-"""The tool-call guard (`cordon_scanner.guard`) on AgentDefense's tool calls.
+"""The tool-call guard (`cordon_scanner.judge.calls`) on AgentDefense's tool calls.
 
     docker run --rm --network none -v cordon-bench-public:/p:ro -v "$PWD:/w:ro" -w /w \\
       -e PYTHONPATH=/w/src python:3.12-slim python bench/tool_call_guard.py /p/agentdefense
@@ -21,7 +21,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from cordon_scanner.guard import ToolCallGuard
+from cordon_scanner.judge.calls import ToolCallGuard
 
 
 class AgentDefenseCalls:

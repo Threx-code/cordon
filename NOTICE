@@ -30,7 +30,7 @@ Syft
 
 src/cordon_scanner/images/data/java-groups.json is derived from Syft
 (https://github.com/anchore/syft), Copyright Anchore, Inc., by
-scripts/syft_java_groups.py: the map from Java artifact names to the Maven groups
+scripts/build/syft_java_groups.py: the map from Java artifact names to the Maven groups
 that publish them (cpegenerate.DefaultArtifactIDToGroupID). The version it was
 built from is recorded in the file. It is used under the Apache License,
 Version 2.0, the licence above.
@@ -40,7 +40,7 @@ Agent Threat Rules
 
 src/cordon_scanner/intel/data/atr-rules.json.gz is derived from the Agent
 Threat Rules catalogue (https://github.com/Agent-Threat-Rule/agent-threat-rules)
-by scripts/import_atr.py: its rule identifiers, titles, categories, severities
+by scripts/build/import_atr.py: its rule identifiers, titles, categories, severities
 and detection patterns, translated to Python's regular-expression dialect. The
 commit it was built from is recorded in the file. It is used under the
 following licence:

@@ -19,9 +19,9 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.formats import FormatError, documents, media, ole, pickles
+from cordon_scanner.analysis.formats import FormatError, documents, media, ole, pickles
 from cordon_scanner.foundation.config import Config
-from formatkit import FormatKit, Reduces
+from kits.formatkit import FormatKit, Reduces
 
 
 class FormatsHelpers:

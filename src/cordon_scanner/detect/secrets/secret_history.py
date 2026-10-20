@@ -109,9 +109,9 @@ class HistorySecretScan:
         self.blob_contents: dict[tuple[str, str], bytes] = {}
 
     def run(self) -> list[Finding]:
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
         from cordon_scanner.detect.base import FileUnit, ScanContext
         from cordon_scanner.detect.secrets.secrets import SecretDetector
-        from cordon_scanner.langs.registry import LanguageRegistry
         from cordon_scanner.sources.git import GitRepository
         from cordon_scanner.sources.history import GitHistory
 
@@ -185,8 +185,8 @@ class HistorySecretScan:
         dump, a compiled file, a keystore -- as its printable strings: a credential in a committed
         `.sqlite` or `.pyc` is the same credential.
         """
-        from cordon_scanner.archive.safe import ArchiveReader
         from cordon_scanner.images.binmeta import BinaryStrings
+        from cordon_scanner.sources.archive import ArchiveReader
 
         def as_text(name: str, payload: bytes) -> list[tuple[str, bytes, bool]]:
             if name.lower().endswith(self.MEDIA):

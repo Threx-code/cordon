@@ -85,7 +85,7 @@ have can never fire -- it looks exactly like a clean scan.
                                             attribute and its type
    a control table                      ->  what deletion_protection means,
                                             and why its absence matters
-   scripts/build_iac_policies.py        ->  one policy per resource that
+   scripts/build/build_iac_policies.py        ->  one policy per resource that
                                             actually has the attribute
 ```
 

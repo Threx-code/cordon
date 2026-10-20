@@ -133,7 +133,7 @@ class TestNpmDirectness(GitlabAndVexFixtures):
     direct decides whether it can ever lower anything."""
 
     def test_the_root_entry_decides(self, tmp_path) -> None:
-        from cordon_scanner.ecosystems.npm import NpmEcosystem
+        from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.foundation.limits import Limits
 
@@ -152,7 +152,7 @@ class TestNpmDirectness(GitlabAndVexFixtures):
     def test_a_lockfile_with_no_root_lists_falls_back_to_depth(self, tmp_path) -> None:
         """A partial lockfile states nothing about what the project asked for,
         and the hoisting heuristic is all the format supports."""
-        from cordon_scanner.ecosystems.npm import NpmEcosystem
+        from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.foundation.limits import Limits
 

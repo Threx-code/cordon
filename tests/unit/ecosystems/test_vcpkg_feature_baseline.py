@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from cordon_scanner.ecosystems.vcpkg import VcpkgEcosystem
+from cordon_scanner.ecosystems.packages.vcpkg import VcpkgEcosystem
 from cordon_scanner.foundation.content import FileContent
 
 BASELINE = "e6e4bc74aaf5c63dfc358810594f662f7e9bc4d4"

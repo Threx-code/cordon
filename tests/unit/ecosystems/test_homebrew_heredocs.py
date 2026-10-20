@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.ecosystems.homebrew import Formula, Ruby
+from cordon_scanner.ecosystems.packages.homebrew import Formula, Ruby
 from cordon_scanner.foundation.content import FileContent
 
 FORMULA = """class PythonAT313 < Formula

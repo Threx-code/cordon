@@ -344,7 +344,7 @@ class MoreRegistries:
 
     @staticmethod
     def _image_location(name: str) -> str:
-        from cordon_scanner.ecosystems.image import ImageReference, PublicRegistries
+        from cordon_scanner.ecosystems.infra.image import ImageReference, PublicRegistries
 
         reference = ImageReference.parse(name)
         if (
@@ -1182,7 +1182,7 @@ class MoreRegistries:
         checksums (what dune's lock records), dev-repo, and the `deprecated` / `avoid-version`
         flags its maintainers set. A version that is not there is checked against the package's
         page on opam.ocaml.org, so a removed version is told apart from an unknown package."""
-        from cordon_scanner.ecosystems.opam import OpamDocument, OpamError
+        from cordon_scanner.ecosystems.packages.opam import OpamDocument, OpamError
         from cordon_scanner.foundation.content import FileContent
 
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_+\-]{0,127}", name):

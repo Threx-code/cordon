@@ -2475,7 +2475,6 @@ class CommandLine:
         """
         import json as _json
 
-        from cordon_scanner.archive.safe import ArchiveReader
         from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.engine.engine import Engine
         from cordon_scanner.foundation.content import FileContent
@@ -2483,6 +2482,7 @@ class CommandLine:
         from cordon_scanner.intel.registries.registry_client import RegistryError
         from cordon_scanner.intel.registries.registry_record import RegistryRecord
         from cordon_scanner.intel.registries.release_history import ReleaseHistory
+        from cordon_scanner.sources.archive import ArchiveReader
 
         if feed.FeedClient.offline_requested():
             raise ConfigError("CORDON_OFFLINE is set, so release history will not be fetched")

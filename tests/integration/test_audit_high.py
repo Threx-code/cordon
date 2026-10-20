@@ -207,8 +207,8 @@ class TestH4ArchiveLimitsBindBeforeAllocation:
         return out
 
     def test_the_entry_limit_binds_during_iteration(self, tmp_path: Path) -> None:
-        from cordon_scanner.archive.safe import ArchiveReader
         from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+        from cordon_scanner.sources.archive import ArchiveReader
 
         data = self.bomb(tmp_path).read_bytes()
         result = ArchiveReader.extract(data, path="bomb.tar.gz", limits=DEFAULT_LIMITS)

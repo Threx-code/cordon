@@ -21,8 +21,8 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.analysis.shared.obfuscation import BIDI_AND_INVISIBLE
 from cordon_scanner.detect.binary.binary import _COMMAND
+from cordon_scanner.detect.code.obfuscation import BIDI_AND_INVISIBLE
 from cordon_scanner.detect.secrets.secrets import NOT_A_SECRET, PLACEHOLDER
 from cordon_scanner.foundation.models import Category, Severity
 from support import Support
@@ -275,7 +275,7 @@ class TestAScanMustNotCrash:
         "token", ["src/", "/", "", "   ", "packages/next/", "//", "a/b/", "\t"]
     )
     def test_a_token_with_nothing_after_the_slash_is_not_an_interpreter(self, token: str) -> None:
-        from cordon_scanner.langs.registry import LanguageRegistry
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
 
         assert LanguageRegistry.language_from_interpreter(token) is None
 
@@ -288,7 +288,7 @@ class TestAScanMustNotCrash:
         ],
     )
     def test_a_real_shebang_still_resolves(self, shebang: str, language: str) -> None:
-        from cordon_scanner.langs.registry import LanguageRegistry
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
 
         assert LanguageRegistry.language_from_interpreter(shebang) == language
 
