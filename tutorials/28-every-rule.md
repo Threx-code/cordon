@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,463 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,465 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -1694,6 +1694,15 @@ rule's own samples.
 | `POLICY.PROVENANCE.UNVERIFIED.001` | low | Dependency advertises an attestation that could not be verified |
 | `SUSPECT.PROVENANCE.MISMATCH.001` | critical | Lockfile hash disagrees with the registry |
 | `VULNERABLE.PROVENANCE.INVALID.001` | critical | Dependency's build attestation fails verification |
+
+## Recipe
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.RECIPE.KNOWN.001` | critical | Recipe is a known-malicious release |
+| `SUSPECT.RECIPE.PROVISIONAL.001` | high | Recipe is held for review |
 
 ## Registry
 

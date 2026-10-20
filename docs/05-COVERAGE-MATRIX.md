@@ -259,6 +259,7 @@ rather than a document.
 | `MALWARE.MOBILE.ATTRIBUTION_CLOAK.001` | critical | `composites` | malicious_code |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
 | `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
+| `MALWARE.RECIPE.KNOWN.001` | critical | `recipe-digest` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.002` | critical | `composites` | malicious_code |
 | `MALWARE.YARA.MATCH.001` | critical | `yara` | malicious_code |
@@ -291,6 +292,7 @@ rather than a document.
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | `composites` | malicious_code |
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | `composites` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
+| `SUSPECT.RECIPE.PROVISIONAL.001` | high | `recipe-digest` | malicious_code |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |

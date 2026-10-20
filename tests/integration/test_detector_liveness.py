@@ -36,6 +36,9 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # Requires an advisory database, which is supplied by the operator rather
     # than committed. Exercised in the advisory unit tests.
     "advisory",
+    # Requires the feed's condemned recipe digests, which arrive with the feed rather than being
+    # committed. Exercised in tests/unit/detect/supply/test_recipe_digests.py.
+    "recipe-digest",
     # Requires a git repository with specific recent history, which a corpus of
     # plain directories cannot be: a nested `.git` is not something this repository
     # can commit.

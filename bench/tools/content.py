@@ -62,6 +62,8 @@ INTEL_DETECTORS = frozenset(
         "package-policy",
         "policy",
         "provenance",
+        # Matches recipe files against the feed's condemned digests: known samples.
+        "recipe-digest",
         "registry",
         "registry-review",
         "release-history",

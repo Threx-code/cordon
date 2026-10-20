@@ -333,6 +333,17 @@ ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "hackage",
     "julia",
     "opam",
+    # Followed by Cordon's registry watchers (cordon-backend), matched from the feed alone: conda and
+    # cocoapods and bazel by name and exact version, the recipe registries (homebrew, conan, vcpkg,
+    # nix) by the recipe file's digest (`detect/supply/recipe_digests`). Galaxy is `ansible` here.
+    "conda",
+    "ansible",
+    "cocoapods",
+    "bazel",
+    "homebrew",
+    "conan",
+    "vcpkg",
+    "nix",
 )
 
 

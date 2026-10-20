@@ -222,6 +222,9 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("POLICY.DOCKERFILE.", ThreatDomain.CONTAINER),
     ("SUSPECT.DEPENDENCY.", ThreatDomain.DEPENDENCY),
     ("MALWARE.DEPENDENCY.", ThreatDomain.DEPENDENCY),
+    # A build recipe (homebrew, conan, vcpkg, nix) the feed condemned, matched by its bytes.
+    ("SUSPECT.RECIPE.", ThreatDomain.DEPENDENCY),
+    ("MALWARE.RECIPE.", ThreatDomain.DEPENDENCY),
     ("MALWARE.PACKAGE.", ThreatDomain.DEPENDENCY),
     ("SUSPECT.LOCKFILE.", ThreatDomain.DEPENDENCY),
     ("POLICY.LOCKFILE.", ThreatDomain.DEPENDENCY),
@@ -332,6 +335,8 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("SUSPECT.DEPENDENCY.UNVETTED.", AttackCategory.TYPOSQUAT),
     ("SUSPECT.DEPENDENCY.", AttackCategory.POLICY),
     ("MALWARE.DEPENDENCY.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.RECIPE.", AttackCategory.POLICY),
+    ("MALWARE.RECIPE.", AttackCategory.MALICIOUS_CODE),
     ("MALWARE.PACKAGE.", AttackCategory.MALICIOUS_CODE),
     ("SUSPECT.LOCKFILE.", AttackCategory.INTEGRITY),
     ("POLICY.LOCKFILE.", AttackCategory.INTEGRITY),
