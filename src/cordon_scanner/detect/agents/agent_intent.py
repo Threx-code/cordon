@@ -231,10 +231,10 @@ _SENDS_BODY: Final = re.compile(
     re.IGNORECASE,
 )
 
-# The second definition of the name wins at import, so the host checks at the two `.match(host)` calls
-# read this URL pattern, which no bare host matches (review 98, 2026-10-20): fixed separately, with
-# its own A/B, since this commit changes no behaviour.
-_LOCAL_HOST: Final = re.compile(  # type: ignore[misc]
+#: A URL on this machine, anywhere in a request (`_LOCAL_HOST` is the bare host, for hosts already
+#: taken out of one). Once also named `_LOCAL_HOST`, which replaced the host pattern at import and
+#: left the host checks seeing every local host as off the machine (review 98, 2026-10-20).
+_LOCAL_URL: Final = re.compile(
     r"(?i)https?://(?:localhost|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0)\b"
 )
 
@@ -445,7 +445,7 @@ class InstructionIntent:
             if harvest is None or _SENDS_BODY.search(body) is None:
                 continue
             hosts = [m.group(0) for m in _HOST.finditer(body)]
-            if hosts and all(_LOCAL_HOST.match(h) for h in hosts):
+            if hosts and all(_LOCAL_URL.match(h) for h in hosts):
                 continue
             found.append(
                 Intent("secret-harvest", harvest.group(0)[:240], body_start + harvest.start())
@@ -479,7 +479,7 @@ class InstructionIntent:
                     for h in hosts
                     if not any(h == home or h.endswith("." + home) for home in homes)
                 ]
-                if outside and not _LOCAL_HOST.search(request) and _TOKEN_IN_BODY.search(request):
+                if outside and not _LOCAL_URL.search(request) and _TOKEN_IN_BODY.search(request):
                     found.append(Intent("credential-elsewhere", printed.group(0), printed.start()))
                     break
         return found

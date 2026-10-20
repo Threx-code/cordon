@@ -407,6 +407,7 @@
   "test_model_client.py": "model",
   "test_model_features.py": "model",
   "test_models.py": "foundation",
+  "test_module_names.py": "repository",
   "test_more_registries.py": "intel/registries",
   "test_move_modules.py": "repository",
   "test_name_risk.py": "detect/supply",
