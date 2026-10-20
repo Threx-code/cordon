@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,461 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,462 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -513,11 +513,12 @@ rule's own samples.
 
 ## Destroy
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | Deletes the home directory or the filesystem root |
+| `SUSPECT.DESTROY.SYSTEM_DISK.001` | high | Writes to the system disk itself |
 
 ## Dockerfiles
 

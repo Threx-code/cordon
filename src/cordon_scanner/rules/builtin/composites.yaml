@@ -1661,6 +1661,40 @@ rules:
   # ---------------------------------------------------------------------
   # Anti-analysis
   # ---------------------------------------------------------------------
+
+  - id: SUSPECT.DESTROY.SYSTEM_DISK.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Writes to the system disk itself
+    message: >
+      This file opens the machine's first disk as a raw device and writes to it: the boot
+      record, the partition table and everything under them. No build, test or install step
+      does; a disk wiper does exactly this.
+    remediation: >
+      Do not run it. If it ran, treat the machine's data as destroyed and restore from backup.
+    references:
+      - https://attack.mitre.org/techniques/T1561/
+    provenance:
+      kind: research
+      reference: >
+        Review 98 P3 census: a raw-disk wiper among the npm study-half content misses; the
+        primitive hits 1 of 1,923 study-half malware and 0 of 17,868 benign units (P4 #5).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.DESTROY.SYSTEM_DISK.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/test/**"
+        - path_glob: "**/*_test.*"
   - id: SUSPECT.ANTI_ANALYSIS.001
     version: 1.0.0
     category: suspicious

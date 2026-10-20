@@ -264,6 +264,7 @@ rather than a document.
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
 | `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | `composites` | malicious_code |
+| `SUSPECT.DESTROY.SYSTEM_DISK.001` | high | `composites` | malicious_code |
 | `SUSPECT.DOCUMENT.AUTO_EXEC.001` | high | `formats` | malicious_code |
 | `SUSPECT.DOCUMENT.DDE.001` | high | `formats` | malicious_code |
 | `SUSPECT.DOCUMENT.MACRO.001` | medium | `formats` | malicious_code |

