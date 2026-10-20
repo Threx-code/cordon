@@ -50,9 +50,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "suites"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "suites"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from public_skills import PublicSkills
 

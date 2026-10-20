@@ -71,7 +71,7 @@ class Adjudicate:
         """Files in the holdout half. Reading one while rules are being tuned leaks it into the
         tuning, so `show` refuses them unless the reading is the release-time adjudication."""
         sys.path[:0] = [
-            str(Path(__file__).resolve().parents[2] / d) for d in ("", "suites", "tools")
+            str(Path(__file__).resolve().parents[1] / d) for d in ("", "suites", "tools")
         ]
         from longtail_levels import Split
 
@@ -161,7 +161,7 @@ class Adjudicate:
         from collections import defaultdict
 
         sys.path[:0] = [
-            str(Path(__file__).resolve().parents[2] / d) for d in ("", "suites", "tools")
+            str(Path(__file__).resolve().parents[1] / d) for d in ("", "suites", "tools")
         ]
         from run import Wilson
 
