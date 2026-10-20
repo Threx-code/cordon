@@ -149,12 +149,18 @@ jobs:
       # package managers, each holding the shape its case proves is reported (a git source, an
       # install script); tests/conformance/test_cases.py asserts exactly those findings.
       - run: |
+          # Unit tests hold attack-shaped fixtures and fixture archives by design (a cron-persistence
+          # payload, a conda recipe in a .tar.zst), and the model's data is data like detect/ and
+          # intel/'s: scanned as code they read as findings and an incomplete record. The shipped
+          # code, the scripts and the integration tests stay in.
           cordon-scanner scan . \
             --exclude 'corpus/**' \
             --exclude 'bench/**' \
             --exclude 'tests/conformance/cases/**' \
             --exclude '**/intel/data/**' \
             --exclude '**/detect/data/**' \
+            --exclude '**/model/data/**' \
+            --exclude 'tests/unit/**' \
             --exclude 'build/**' \
             --exclude 'dist/**' \
             --fail-on medium \
@@ -231,7 +237,7 @@ jobs:
           cordon-scanner inventory --format json . > cordon-reports/inventory.json
           # Cordon's own components: not the fixtures, the corpus or the benchmarks, which hold
           # deliberately broken and malicious files and would mark the record incomplete.
-          skip=(--exclude 'tests/conformance/cases/**' --exclude 'corpus/**' --exclude 'bench/**')
+          skip=(--exclude 'tests/conformance/cases/**' --exclude 'tests/unit/**' --exclude 'corpus/**' --exclude 'bench/**')
           cordon-scanner deps --format json "${skip[@]}" . > cordon-reports/deps.json
           cordon-scanner sbom generate --ai --name cordon-scanner "${skip[@]}" \
             -o cordon-reports/aibom.cdx.json .

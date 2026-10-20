@@ -5,10 +5,10 @@
 # same commit, and no self-hosted check can prevent that. What this file
 # guarantees is that such a change cannot be silent: it must appear as a
 # diff. Code-owner rules on this path are what put a human on that diff.
-883217a9177c07463c226f3a9df538954e2806b9e8943354b5c741a8492a82f4  .github/workflows/ci.yml
-ed4cb2b07c5f73b2e79a8c877ae417211d1cbca45313b5b609722483bc1ccbdf  .github/workflows/refresh-advisories.yml
-5573931782fe1434c904eafc10ecdbea57b9b6f443b70e100a14bd2394a8e362  .github/workflows/refresh-iac-policies.yml
-cf52f25f801f85f5009d10feb8ef8acd574d9376a4a56c2dd9ba38289f95189c  .github/workflows/refresh-intel.yml
-73a65c10c8190b1c1d4806d949f588ee8726a36b2b304aa2ddc468b0aa771190  .github/workflows/release.yml
-6da3f199618f0265ba618e56f61a082888eef051cba1a81ce757601af8e14f61  .github/workflows/verify-refresh.yml
-3f7d486163dc6f3d21ebbece6513483c3965f294af70c3c4cc7545fd4c55faa8  cordon-history-baseline.json
+b89f4b1a1eddae70e0d02170d8ffafff932e19c949fd3eec0572cb94461cd8a8  .github/workflows/ci.yml
+cdd558fa2fdd859543d2c0e6a7207df6cefedaee794e3d4ae94e2262871f98e5  .github/workflows/refresh-advisories.yml
+1f6a364a3eb35927aba90b29917f9e57a8554fc5574103cc444e0fde81252519  .github/workflows/refresh-iac-policies.yml
+d400f39b2ce5266f09f68d2de9b78477c70ce67211325c27e61de13df872731a  .github/workflows/refresh-intel.yml
+02b7c989ba422c82e727641cba48ecdeaa4fee0e027b4a10dfff35658deea56d  .github/workflows/release.yml
+3fb78c694f2444babd21eaa2201b645285dce3e5d89dc30f17e88b45faf61cc8  .github/workflows/verify-refresh.yml
+5f7c9a5df0decccabf4e682859b78e73b2f99a485dc63b235b98c1ac8cd0bc50  cordon-history-baseline.json

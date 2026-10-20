@@ -268,6 +268,16 @@ class LiveChecks:
                 # self-scan already excludes them.
                 "--exclude",
                 "tests/conformance/cases/**",
+                # Unit tests and the model's data, as `ci.yml`'s self-scan excludes them: fixtures
+                # shaped like attacks by design, and data rather than code.
+                "--exclude",
+                "tests/unit/**",
+                "--exclude",
+                "**/model/data/**",
+                "--exclude",
+                "**/intel/data/**",
+                "--exclude",
+                "**/detect/data/**",
                 "--exclude",
                 "build/**",
                 "--exclude",
