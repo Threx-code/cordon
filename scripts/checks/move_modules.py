@@ -30,6 +30,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 PACKAGE = "cordon_scanner"
 LAYOUT = Path("tests/unit/package_layout.json")
@@ -56,7 +57,7 @@ class Moves:
         return f"{PACKAGE}.{path.replace('/', '.')}"
 
     @staticmethod
-    def plan(layout: dict, place: str) -> dict[str, str]:
+    def plan(layout: dict[str, Any], place: str) -> dict[str, str]:
         """old -> new (paths without `.py`) for the modules whose place starts with `place`."""
         return {
             old: new
@@ -194,7 +195,7 @@ class Moves:
         return changed
 
     @staticmethod
-    def test_plan(layout: dict, place: str, root: Path) -> dict[str, str]:
+    def test_plan(layout: dict[str, Any], place: str, root: Path) -> dict[str, str]:
         """test file name -> its directory under tests/unit/, for the tests of `place` not yet
         there."""
         unit = root / "tests" / "unit"
@@ -236,8 +237,9 @@ class Moves:
         unit = root / "tests" / "unit"
         for name, at in sorted(tests.items()):
             (unit / at).mkdir(parents=True, exist_ok=True)
-            tracked = subprocess.run(  # noqa: S603, S607 - a fixed git query
-                ["git", "ls-files", "--error-unmatch", str(unit / name)],
+            query = ["git", "ls-files", "--error-unmatch", str(unit / name)]
+            tracked = subprocess.run(  # noqa: S603 - a fixed git query
+                query,
                 cwd=root,
                 capture_output=True,
                 check=False,

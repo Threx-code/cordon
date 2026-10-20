@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel.advisories import exploited, nvd_import  # noqa: E402
+from cordon_scanner.intel.advisories import exploited, nvd, nvd_import  # noqa: E402
 
 _HIGH_VALUE = frozenset({"high", "critical", ""})
 
@@ -82,7 +82,7 @@ class NvdDatabaseBuild:
         if args.check:
             return 0
         nvd_import.NvdImport.write(output, built, filtered=not args.full, seal=False)
-        print(f"wrote {nvd_import.CVES_NAME} and {nvd_import.CPE_NAME} to {output}")
+        print(f"wrote {nvd.CVES_NAME} and {nvd.CPE_NAME} to {output}")
         return 0
 
 

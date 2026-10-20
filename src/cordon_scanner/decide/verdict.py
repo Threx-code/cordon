@@ -627,7 +627,8 @@ class Verdict:
             ),
             package,
         )
-        if reviewed:
+        # `reviewed` holds only with a registry section; said again so the type is known here.
+        if reviewed and registry is not None:
             summary.update(
                 registry_score=round(VerdictModel.score(registry, features), 4),
                 registry_block=float(registry["areas"][area]),

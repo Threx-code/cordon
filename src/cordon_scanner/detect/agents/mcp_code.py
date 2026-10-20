@@ -69,7 +69,7 @@ class McpCode:
         return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
 
     @classmethod
-    def _sink_args(cls, call: ast.Call) -> list[ast.AST] | None:
+    def _sink_args(cls, call: ast.Call) -> list[ast.expr] | None:
         """The arguments of a call that runs its input, or None when it is no such call."""
         func = call.func
         if isinstance(func, ast.Name) and func.id in cls.EVALS:
@@ -114,13 +114,17 @@ class McpCode:
         return tainted
 
     @classmethod
-    def _runs_input(cls, function, wrappers: set[str]) -> ast.AST | None:
+    def _runs_input(
+        cls, function: ast.FunctionDef | ast.AsyncFunctionDef, wrappers: set[str]
+    ) -> ast.AST | None:
         """The first call in `function` that runs something derived from its parameters."""
         calls = cls._run_calls(function, wrappers)
         return calls[0] if calls else None
 
     @classmethod
-    def _run_calls(cls, function, wrappers: set[str]) -> list[ast.AST]:
+    def _run_calls(
+        cls, function: ast.FunctionDef | ast.AsyncFunctionDef, wrappers: set[str]
+    ) -> list[ast.AST]:
         """Every call in `function` that runs something derived from its parameters."""
         tainted = cls._tainted(function)
         if not tainted:
@@ -137,11 +141,16 @@ class McpCode:
         return out
 
     @staticmethod
-    def _is_tool(function) -> bool:
+    def _is_tool(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         return any(_TOOL_DECORATOR.search(ast.unparse(d)) for d in function.decorator_list)
 
     @classmethod
-    def triggered(cls, function, call: ast.AST, constants: frozenset[str] = frozenset()) -> bool:
+    def triggered(
+        cls,
+        function: ast.FunctionDef | ast.AsyncFunctionDef,
+        call: ast.AST,
+        constants: frozenset[str] = frozenset(),
+    ) -> bool:
         """Whether `call` runs only behind a secret: inside an `if` that compares an argument with
         a literal -- `x.startswith("EXEC://")`, `x == "admin_2026"`, `"://" in x`. A bug runs the
         input whatever it is; a backdoor waits for the word only its author knows."""
@@ -253,7 +262,9 @@ class McpCode:
         return False
 
     @classmethod
-    def _writes_hidden(cls, function, tainted: set[str]) -> bool:
+    def _writes_hidden(
+        cls, function: ast.FunctionDef | ast.AsyncFunctionDef, tainted: set[str]
+    ) -> bool:
         """Whether `function` writes something derived from `tainted` names to a dotfile."""
         handles: set[str] = set()
         for node in ast.walk(function):
@@ -348,7 +359,9 @@ class McpCode:
     _HOST: ClassVar[re.Pattern[str]] = re.compile(r"^(?:https?|wss?)://([^/:?#\s]{1,253})", re.I)
 
     @classmethod
-    def _sends(cls, function, constants: dict[str, str]) -> list[tuple[ast.Call, str | None]]:
+    def _sends(
+        cls, function: ast.FunctionDef | ast.AsyncFunctionDef, constants: dict[str, str]
+    ) -> list[tuple[ast.Call, str | None]]:
         """Each request the function makes, with the host its URL names when that is written out."""
         out: list[tuple[ast.Call, str | None]] = []
         for node in ast.walk(function):
@@ -418,7 +431,9 @@ class McpCode:
             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         }
 
-        def tainted_hosts(function, depth: int = 0) -> set[str | None]:
+        def tainted_hosts(
+            function: ast.FunctionDef | ast.AsyncFunctionDef, depth: int = 0
+        ) -> set[str | None]:
             tainted = cls._tainted(function)
             hosts: set[str | None] = set()
             for call, host in cls._sends(function, constants):

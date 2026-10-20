@@ -66,6 +66,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
@@ -247,7 +248,7 @@ class PackageIntelRefresh:
         rows = payload.get("rows") or payload.get("data") or []
         out = [
             (str(row["project"]), int(row["download_count"]))
-            for row in rows
+            for row in cast("list[Any]", rows)
             if isinstance(row, dict) and row.get("project")
         ]
         return out, source
@@ -307,7 +308,9 @@ class PackageIntelRefresh:
             if not items:
                 break
             out.extend(
-                (str(c["name"]), int(c.get("downloads") or 0)) for c in items if c.get("name")
+                (str(c["name"]), int(c.get("downloads") or 0))
+                for c in cast("list[Any]", items)
+                if c.get("name")
             )
         return out, source
 
@@ -327,7 +330,9 @@ class PackageIntelRefresh:
             if not items:
                 break
             out.extend(
-                (str(p["id"]), int(p.get("totalDownloads") or 0)) for p in items if p.get("id")
+                (str(p["id"]), int(p.get("totalDownloads") or 0))
+                for p in cast("list[Any]", items)
+                if p.get("id")
             )
         return out, source
 
@@ -344,7 +349,9 @@ class PackageIntelRefresh:
             if not items:
                 break
             out.extend(
-                (str(p["name"]), int(p.get("downloads") or 0)) for p in items if p.get("name")
+                (str(p["name"]), int(p.get("downloads") or 0))
+                for p in cast("list[Any]", items)
+                if p.get("name")
             )
         return out, source
 
@@ -441,7 +448,7 @@ class PackageIntelRefresh:
         out: dict[str, int] = {}
         for url, key in sources:
             payload = PackageIntelRefresh.as_object(PackageIntelRefresh.fetch_json(url), url)
-            for item in payload.get("items") or []:
+            for item in cast("list[Any]", payload.get("items") or []):
                 if not isinstance(item, dict) or not item.get(key):
                     continue
                 # A tap-qualified name (`user/tap/name`) is that tap's, not core's.

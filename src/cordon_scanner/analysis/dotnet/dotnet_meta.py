@@ -50,10 +50,12 @@ class _Bytes:
         self.data = data
 
     def u16(self, offset: int) -> int:
-        return struct.unpack_from("<H", self.data, offset)[0]
+        value: int = struct.unpack_from("<H", self.data, offset)[0]
+        return value
 
     def u32(self, offset: int) -> int:
-        return struct.unpack_from("<I", self.data, offset)[0]
+        value: int = struct.unpack_from("<I", self.data, offset)[0]
+        return value
 
 
 class DotNetMetadata:

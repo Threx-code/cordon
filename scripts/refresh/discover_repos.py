@@ -37,6 +37,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "scripts" / "data" / "measurement-corpus.json"
@@ -91,7 +92,7 @@ class RepoDiscovery:
     @staticmethod
     def search(
         language: str, minimum_stars: int, *, pages: int, token: str | None, pause: float
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """One language's most-starred repositories.
 
         Paged to the API's hard thousand-result ceiling. A 403 here is the rate limit
@@ -99,7 +100,7 @@ class RepoDiscovery:
         minute, which is why `--token` exists and why the pause between pages is
         generous by default.
         """
-        collected: list[dict] = []
+        collected: list[dict[str, Any]] = []
         for page in range(1, pages + 1):
             query = urllib.parse.urlencode(
                 {
@@ -158,7 +159,7 @@ class RepoDiscovery:
             else LANGUAGES
         )
 
-        corpus: list[dict] = []
+        corpus: list[dict[str, Any]] = []
         seen: set[str] = set()
         for language, minimum in wanted.items():
             pages = max(1, -(-args.per_language // 100))

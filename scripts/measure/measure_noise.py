@@ -54,6 +54,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -249,7 +250,7 @@ class NoiseMeasurement:
         )
 
     @staticmethod
-    def scan(path: Path, *, timeout: int) -> dict | None:
+    def scan(path: Path, *, timeout: int) -> dict[str, Any] | None:
         """Run the scanner from this checkout, not from whatever is installed."""
         environment = {
             "PYTHONPATH": str(ROOT / "src"),
@@ -297,7 +298,7 @@ class NoiseMeasurement:
         # ExitCode.FINDINGS is 1 and CLEAN is 0. 4 is INCOMPLETE, which is reported
         # separately and is not the gate tripping.
         report["fails_gate"] = completed.returncode == 1
-        return report
+        return cast("dict[str, Any]", report)
 
     @staticmethod
     def measure(
@@ -306,9 +307,9 @@ class NoiseMeasurement:
         clone_timeout: int,
         scan_timeout: int,
         checkpoint: Path | None = None,
-        done: dict | None = None,
-    ) -> dict:
-        results: dict[str, dict] = dict(done or {})
+        done: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        results: dict[str, dict[str, Any]] = dict[str, Any](done or {})
         for index, target in enumerate(targets, start=1):
             print(f"[{index}/{len(targets)}] {target.name} ({target.language})", flush=True)
             with tempfile.TemporaryDirectory(prefix=f"noise-{target.name}-") as workspace:
@@ -397,7 +398,7 @@ class NoiseMeasurement:
         return results
 
     @staticmethod
-    def summarise(results: dict) -> None:
+    def summarise(results: dict[str, Any]) -> None:
         scanned = {k: v for k, v in results.items() if "error" not in v}
         failed = {k: v for k, v in results.items() if "error" in v}
 
@@ -480,7 +481,7 @@ class NoiseMeasurement:
         ]
 
     @staticmethod
-    def load_checkpoint(path: Path) -> dict:
+    def load_checkpoint(path: Path) -> dict[str, Any]:
         """Results already recorded, so a long run can be resumed.
 
         Fourteen hundred repositories is hours of cloning. Without this, one dropped
@@ -490,7 +491,7 @@ class NoiseMeasurement:
         if not path.exists():
             return {}
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            return cast("dict[str, Any]", json.loads(path.read_text(encoding="utf-8")))
         except json.JSONDecodeError:
             return {}
 
@@ -557,7 +558,7 @@ class NoiseMeasurement:
             print("git is not on PATH", file=sys.stderr)
             return 2
 
-        done: dict = {}
+        done: dict[str, Any] = {}
         if args.resume and args.report:
             done = NoiseMeasurement.load_checkpoint(args.report)
             before = len(targets)

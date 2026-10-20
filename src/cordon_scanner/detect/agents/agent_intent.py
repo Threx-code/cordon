@@ -231,7 +231,10 @@ _SENDS_BODY: Final = re.compile(
     re.IGNORECASE,
 )
 
-_LOCAL_HOST: Final = re.compile(
+# The second definition of the name wins at import, so the host checks at the two `.match(host)` calls
+# read this URL pattern, which no bare host matches (review 98, 2026-10-20): fixed separately, with
+# its own A/B, since this commit changes no behaviour.
+_LOCAL_HOST: Final = re.compile(  # type: ignore[misc]
     r"(?i)https?://(?:localhost|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0)\b"
 )
 

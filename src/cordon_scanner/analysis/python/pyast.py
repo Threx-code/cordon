@@ -772,7 +772,7 @@ class PythonAnalyzer:
                 first = getattr(pattern, "lineno", None)
                 last = getattr(pattern, "end_lineno", None) or first
                 if first is not None:
-                    lines.update(range(first, last + 1))
+                    lines.update(range(first, (last or first) + 1))
         return frozenset(lines)
 
     #: Calls that show text to a person: what a shell profile line is in them is advice.
@@ -794,7 +794,7 @@ class PythonAnalyzer:
             first = getattr(node, "lineno", None)
             last = getattr(node, "end_lineno", None) or first
             if first is not None:
-                lines.update(range(first, last + 1))
+                lines.update(range(first, (last or first) + 1))
 
         for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Call):
@@ -1765,7 +1765,7 @@ class PythonAnalyzer:
         if not functions:
             return
 
-        def params(function) -> list[str]:
+        def params(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
             return [a.arg for a in (*function.args.posonlyargs, *function.args.args)]
 
         fetchers: set[str] = set()
@@ -1893,10 +1893,10 @@ class PythonAnalyzer:
             for node in ast.walk(scope):
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
                     continue
-                index = runners.get(node.func.id)
-                if index is None or len(node.args) <= index:
+                argument = runners.get(node.func.id)
+                if argument is None or len(node.args) <= argument:
                     continue
-                if self._file_key(node.args[index]) in downloaded:
+                if self._file_key(node.args[argument]) in downloaded:
                     self._record(
                         Capability.FETCH_EXEC,
                         node,
@@ -2095,9 +2095,9 @@ class PythonAnalyzer:
             if sent:
                 senders[function.name] = (params, sent)
 
-        found: list[tuple[ast.Call, str]] = []
+        sends: list[tuple[ast.Call, str]] = []
         if not senders:
-            return found
+            return sends
         for call in PythonSyntax.of(tree, ast.Call):
             func = call.func
             name = (
@@ -2120,8 +2120,8 @@ class PythonAnalyzer:
                 if index + offset < len(params)
             ] + [(k.arg, k.value) for k in call.keywords if k.arg]
             if any(param in sent and holds(value) for param, value in handed):
-                found.append((call, name))
-        return found
+                sends.append((call, name))
+        return sends
 
     def _identity_sent(self, tree: ast.AST) -> None:
         """The machine's identity, in the arguments of a request.

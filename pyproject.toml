@@ -312,10 +312,16 @@ known-first-party = ["cordon_scanner"]
 python_version = "3.11"
 strict = true
 warn_unreachable = true
-files = ["src/cordon_scanner"]
+# The scanner, the sandbox and the maintainers' scripts, all strict: a release or refresh script that
+# fails on a type is as broken as the code it builds.
+files = ["src/cordon_scanner", "src/cordon_sandbox", "scripts"]
+mypy_path = "src"
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["tree_sitter.*", "tree_sitter_languages.*"]
+# yaml: CI tooling only. fetch_agent_configs: a bench module scripts/build/import_atr.py puts on the
+# path at run time.
+module = ["tree_sitter.*", "tree_sitter_languages.*", "yaml", "fetch_agent_configs"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

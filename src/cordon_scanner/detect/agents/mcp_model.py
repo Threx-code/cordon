@@ -86,7 +86,7 @@ class LinearTextModel:
         """The shipped weights, or None when they are absent (a source checkout without data)."""
         try:
             with gzip.open(self.path, "rt", encoding="utf-8") as handle:
-                data = json.load(handle)
+                data: dict[str, Any] = json.load(handle)
         except OSError:
             return None
         data["weights"] = {int(k): float(v) for k, v in data["weights"].items()}

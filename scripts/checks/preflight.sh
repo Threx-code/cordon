@@ -71,9 +71,9 @@ if docker run --rm -v "$WORK:/src:ro" python:3.12-slim bash -c '
       set -e
       mkdir -p /w && cp -a /src/. /w/ && cd /w
       pip install --quiet -e ".[dev]" >/dev/null
-      ruff check src/ tests/
-      ruff format --check src/ tests/
-      mypy src/cordon_scanner
+      ruff check src/ tests/ scripts/ bench/
+      ruff format --check src/ tests/ scripts/
+      mypy
     '; then
   echo "    lint OK"
 else

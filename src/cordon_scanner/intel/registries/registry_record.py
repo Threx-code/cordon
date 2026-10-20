@@ -99,6 +99,11 @@ class RegistryRecord:
         return moment.replace(tzinfo=None) if moment.tzinfo else moment
 
     @staticmethod
+    def _mapping(value: Any) -> dict[str, Any]:
+        """A registry document's object, or an empty one when it is anything else."""
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
     def _iso(moment: datetime | None) -> str:
         return moment.isoformat(timespec="seconds") if moment else ""
 
@@ -117,8 +122,8 @@ class RegistryRecord:
     def from_npm(cls, document: dict[str, Any], version: str) -> RegistryRecord | None:
         """The record from an npm packument, as of `version`'s publish time."""
         name = str(document.get("name") or "")
-        versions = document.get("versions") if isinstance(document.get("versions"), dict) else {}
-        raw_times = document.get("time") if isinstance(document.get("time"), dict) else {}
+        versions = RegistryRecord._mapping(document.get("versions"))
+        raw_times = RegistryRecord._mapping(document.get("time"))
         times = {
             str(v): when
             for v, value in raw_times.items()
@@ -127,9 +132,9 @@ class RegistryRecord:
         released, earlier = cls._history(times, version)
         if not name or released is None:
             return None
-        this = versions.get(version) if isinstance(versions.get(version), dict) else {}
+        this = RegistryRecord._mapping(versions.get(version))
         previous = earlier[-1][1] if earlier else ""
-        before = versions.get(previous) if isinstance(versions.get(previous), dict) else {}
+        before = RegistryRecord._mapping(versions.get(previous))
 
         def publisher(meta: Any) -> str:
             user = meta.get("_npmUser") if isinstance(meta, dict) else None
@@ -182,9 +187,9 @@ class RegistryRecord:
     @classmethod
     def from_pypi(cls, document: dict[str, Any], version: str) -> RegistryRecord | None:
         """The record from PyPI's JSON API, as of `version`'s first upload."""
-        info = document.get("info") if isinstance(document.get("info"), dict) else {}
+        info = RegistryRecord._mapping(document.get("info"))
         name = str(info.get("name") or "")
-        releases = document.get("releases") if isinstance(document.get("releases"), dict) else {}
+        releases = RegistryRecord._mapping(document.get("releases"))
         times: dict[str, datetime] = {}
         for release, files in releases.items():
             for upload in files if isinstance(files, list) else ():
@@ -207,8 +212,9 @@ class RegistryRecord:
         released, earlier = cls._history(times, version)
         if not name or released is None:
             return None
-        ownership = document.get("ownership") if isinstance(document.get("ownership"), dict) else {}
-        roles = ownership.get("roles") if isinstance(ownership.get("roles"), list) else []
+        ownership = RegistryRecord._mapping(document.get("ownership"))
+        raw_roles = ownership.get("roles")
+        roles: list[Any] = raw_roles if isinstance(raw_roles, list) else []
         project_urls = info.get("project_urls")
         # The JSON document describes the newest release; what it says about this one is only
         # trustworthy when it IS this one.
@@ -301,13 +307,12 @@ class RegistryRecord:
         if not isinstance(data, dict) or data.pop("store_version", None) != STORE_VERSION:
             return None
         try:
-            return cls(
-                **{
-                    key: tuple(value) if isinstance(value, list) else value
-                    for key, value in data.items()
-                    if key in cls.__dataclass_fields__
-                }
-            )
+            fields: dict[str, Any] = {
+                key: tuple(value) if isinstance(value, list) else value
+                for key, value in data.items()
+                if key in cls.__dataclass_fields__
+            }
+            return cls(**fields)
         except TypeError:
             return None
 

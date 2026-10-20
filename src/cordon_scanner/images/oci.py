@@ -892,7 +892,7 @@ class PrefixedReader:
 
     def __init__(self, head: bytes, handle: Any) -> None:
         self._head = head
-        self._handle = handle
+        self._handle: IO[bytes] = handle
 
     def read(self, n: int = -1) -> bytes:
         if not self._head:

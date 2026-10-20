@@ -3681,8 +3681,8 @@ class CapabilityDetector(BaseDetector):
             decoder = match.group("decoder")
             if cls._JS_LOADER_HELPER.search(decoder):
                 continue
-            calls = len(re.findall(rf"(?<![\w$.]){re.escape(decoder)}\s{{0,4}}\(", text))
-            if calls < cls._JS_DECODER_CALLS:
+            uses = len(re.findall(rf"(?<![\w$.]){re.escape(decoder)}\s{{0,4}}\(", text))
+            if uses < cls._JS_DECODER_CALLS:
                 continue
             start = len(text[: match.start()].encode("utf-8"))
             return [

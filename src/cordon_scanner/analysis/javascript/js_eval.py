@@ -256,9 +256,10 @@ class JsEval:
         if "\\" not in body:
             return body
         try:
-            return json.loads(
+            decoded: str = json.loads(
                 '"' + body.replace('"', '\\"').replace("\\'", "'").replace("\\`", "`") + '"'
             )
+            return decoded
         except (ValueError, json.JSONDecodeError):
             return re.sub(r"\\x([0-9a-fA-F]{2})", lambda x: chr(int(x.group(1), 16)), body)
 
@@ -419,6 +420,7 @@ class _Evaluator:
         toks = self.toks
         if k >= len(toks):
             return None
+        params: list[Any] | None
         if toks[k].kind == "name" and k + 1 < len(toks) and toks[k + 1].value == "=>":
             params, j = [toks[k].value], k + 2
         elif toks[k].value == "(":
@@ -829,19 +831,19 @@ class _Evaluator:
             return list(reversed(items))
         if name == "map" and args and isinstance(args[0], Fn):
             fn = args[0]
-            out = []
+            mapped = []
             for item in items[:20_000]:
                 if not self._tick():
                     return UNKNOWN
                 if fn.kind == "charcodes":
-                    out.append(self._charcodes(item))
+                    mapped.append(self._charcodes(item))
                     continue
                 sub = _Evaluator(fn.body, self.text, self.env, self.fns, self.aliases, self.steps)
                 v, _ = sub._expr(0, depth + 1, dict(zip(fn.params, [item], strict=False)))
                 self.steps = sub.steps
                 self.decoded = self.decoded or sub.decoded
-                out.append(v)
-            return out
+                mapped.append(v)
+            return mapped
         if name == "concat":
             return items + [x for a in args for x in (a if isinstance(a, list) else [a])]
         if name == "slice":

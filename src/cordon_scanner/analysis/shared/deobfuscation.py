@@ -21,11 +21,12 @@ it is, and its finding keeps its grade.
 from __future__ import annotations
 
 import base64
+import binascii
 import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import ClassVar, Final
+from typing import Any, ClassVar, Final, cast
 
 MAX_TEXT: Final = 4 << 20
 MAX_ARRAY: Final = 200_000
@@ -234,7 +235,7 @@ class Checksum:
             raise ValueError("trailing tokens")
         return result
 
-    def _peek(self) -> tuple[str, object] | None:
+    def _peek(self) -> tuple[str, Any] | None:
         return self.tokens[self._at] if self._at < len(self.tokens) else None
 
     def _sum(self) -> float:
@@ -277,9 +278,9 @@ class Checksum:
         self._at += 1
         kind, value = token
         if kind == "num":
-            return value  # type: ignore[return-value]
+            return cast(float, value)
         if kind == "call":
-            fn, args = value  # type: ignore[misc]
+            fn, args = value
             return self.parse_int(self._lookup(fn, args) or "")
         if value == "(":
             inner = self._sum()
@@ -565,7 +566,7 @@ class ObfuscatorIo:
         body = raw.translate(table).rstrip("=")
         try:
             return base64.b64decode(body + "=" * (-len(body) % 4))
-        except (ValueError, base64.binascii.Error):
+        except (ValueError, binascii.Error):
             return None
 
     @classmethod

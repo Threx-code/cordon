@@ -26,6 +26,7 @@ import re
 import sys
 import urllib.request
 from pathlib import Path
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
@@ -50,7 +51,7 @@ class ExtensionIntelRefresh:
     def _get(url: str) -> bytes:
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-intel-refresh"})  # noqa: S310 - fixed https URLs
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
-            return response.read()
+            return cast(bytes, response.read())
 
     @staticmethod
     def removed() -> dict[str, dict[str, str]]:

@@ -15,7 +15,7 @@ party being judged.
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, RepositoryUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -62,14 +62,14 @@ class JudgeGate:
     AGENT_RULES: ClassVar[tuple[str, ...]] = ("SUSPECT.AGENT.", "SUSPECT.MCP.", "MALWARE.AGENT.")
 
     @staticmethod
-    def last(detectors: list) -> list:
+    def last(detectors: list[Any]) -> list[Any]:
         """The detectors with the judge moved to the end, so it can see what the rest found."""
         return [d for d in detectors if getattr(d, "id", "") != JudgeGate.ID] + [
             d for d in detectors if getattr(d, "id", "") == JudgeGate.ID
         ]
 
     @staticmethod
-    def wants(findings: list) -> bool:
+    def wants(findings: list[Any]) -> bool:
         """Whether a file's findings put its agent-facing text in the grey band."""
         agent = [f for f in findings if f.rule_id.startswith(JudgeGate.AGENT_RULES)]
         if any(f.severity >= Severity.HIGH for f in agent):

@@ -314,7 +314,8 @@ class PackageIdentities:
             return None
         if not isinstance(data, dict) or not isinstance(data.get("name"), str):
             return None
-        scripts = data.get("scripts") if isinstance(data.get("scripts"), dict) else {}
+        raw_scripts = data.get("scripts")
+        scripts: dict[str, object] = raw_scripts if isinstance(raw_scripts, dict) else {}
         hooks = tuple(
             (key, value)
             for key, value in sorted(scripts.items())

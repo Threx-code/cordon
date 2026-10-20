@@ -75,9 +75,9 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
-      - run: ruff check src/ tests/
-      - run: ruff format --check src/ tests/
-      - run: mypy src/cordon_scanner
+      - run: ruff check src/ tests/ scripts/ bench/
+      - run: ruff format --check src/ tests/ scripts/
+      - run: mypy
 
   rules:
     name: rule self-tests

@@ -142,7 +142,7 @@ for (eco, _), advs in db._by_key.items():
         by_eco[eco].append((a.name, version))
 
 print(f"{'ecosystem':11} {'pinned':>7} {'reported':>9} {'rate':>7}   manifest")
-rows = {}
+rows: dict[str, tuple[int, int, float | None]] = {}
 for eco in sorted(by_eco):
     # One version per NAME: a manifest keys packages by name, so pinning the
     # same package at three versions writes one entry and measures nothing.

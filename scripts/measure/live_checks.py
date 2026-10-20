@@ -40,7 +40,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -99,7 +99,7 @@ class LiveChecks:
         if not proc.stdout.strip():
             raise CannotRun(f"scan produced no output: {proc.stderr.strip()[:400]}")
         try:
-            return json.loads(proc.stdout)
+            return cast("dict[str, Any]", json.loads(proc.stdout))
         except json.JSONDecodeError as exc:
             raise CannotRun(f"scan output was not JSON: {exc}") from exc
 

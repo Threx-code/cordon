@@ -30,6 +30,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 import yaml
 
@@ -108,11 +109,14 @@ class Workflow:
     EXPRESSION = re.compile(r"\$\{\{.*?\}\}")
 
     @staticmethod
-    def jobs() -> dict[str, dict]:
-        return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    def jobs() -> dict[str, dict[str, Any]]:
+        return cast(
+            "dict[str, dict[str, Any]]",
+            yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"],
+        )
 
     @staticmethod
-    def steps(job: dict) -> list[tuple[str, dict[str, str], list[str]]]:
+    def steps(job: dict[str, Any]) -> list[tuple[str, dict[str, str], list[str]]]:
         """`(command, env, adaptations)` for each step that runs something here."""
         out = []
         for step in job.get("steps", []):

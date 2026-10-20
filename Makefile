@@ -43,11 +43,11 @@ fmt:  ## Format
 # it runs on three operating systems and this runs on one.
 
 lint:  ## ruff check and format --check
-	$(PY) -m ruff check src/ tests/
-	$(PY) -m ruff format --check src/ tests/
+	$(PY) -m ruff check src/ tests/ scripts/ bench/
+	$(PY) -m ruff format --check src/ tests/ scripts/
 
-types:  ## mypy, strict
-	$(PY) -m mypy src/$(PKG)
+types:  ## mypy, strict: the scanner, the sandbox and scripts/ (pyproject [tool.mypy] files)
+	$(PY) -m mypy
 
 test:  ## The suite, across every core
 	@# `-n auto` is not a convenience. Serial, coverage-instrumented, this suite is

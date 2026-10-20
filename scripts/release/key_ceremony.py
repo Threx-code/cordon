@@ -33,6 +33,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import cast
 
 ROLE_LIFETIME_DAYS = 365
 
@@ -133,7 +134,7 @@ class KeyCeremony:
         signatures = [
             {"keyid": keyid, "sig": self._sign(seed, message)} for keyid, seed in root_seeds
         ]
-        root_document = {"signed": signed, "signatures": signatures}
+        root_document: dict[str, object] = {"signed": signed, "signatures": signatures}
 
         seed, advisory_key = self._key()
         self._write_private(private / "advisories.seed", seed)
@@ -193,7 +194,7 @@ class Main:
         args = parser.parse_args(argv)
         result = KeyCeremony(args.out, root_keys=args.root_keys, threshold=args.threshold).run()
         print("Keys generated and verified. Fingerprints (public; publish these):\n")
-        for line in result["fingerprints"]:  # type: ignore[union-attr]
+        for line in cast("list[str]", result["fingerprints"]):
             print(f"  {line}")
         print(
             f"\nNext:\n  1. Move {args.out / 'private'}/root-*.seed to separate offline storage.\n"

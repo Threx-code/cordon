@@ -791,7 +791,8 @@ class BinaryDetector(BaseDetector):
         member = path.partition("!")[2]
         if "!strings-" in member:
             return b""  # a later part of the strings: nothing about the format to judge
-        return ctx.image.as_strings.get(member)
+        strings: bytes | None = ctx.image.as_strings.get(member)
+        return strings
 
     @staticmethod
     def _looks_binary(raw: bytes) -> bool:

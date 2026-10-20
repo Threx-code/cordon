@@ -114,8 +114,9 @@ class Visitor(ast.NodeVisitor):
     @staticmethod
     def _binary_mode(node: ast.Call, position: int) -> bool:
         mode = None
-        if len(node.args) > position and isinstance(node.args[position], ast.Constant):
-            mode = node.args[position].value
+        given = node.args[position] if len(node.args) > position else None
+        if isinstance(given, ast.Constant):
+            mode = given.value
         for keyword in node.keywords:
             if keyword.arg == "mode" and isinstance(keyword.value, ast.Constant):
                 mode = keyword.value.value

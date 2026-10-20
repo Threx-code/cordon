@@ -337,8 +337,8 @@ class GoEval:
         # Every decoder call, wherever it sits (`_readFile(_xd(_fAws))` in a map literal): the
         # value it returns, beside it.
         offsets = [0]
-        for line in text.split("\n"):
-            offsets.append(offsets[-1] + len(line) + 1)
+        for row in text.split("\n"):
+            offsets.append(offsets[-1] + len(row) + 1)
         for call in _DECODE_CALL.finditer(text):
             value = strings.get(call.group(0))
             if value is None:

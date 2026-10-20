@@ -1142,14 +1142,14 @@ class _Analysis:
                 rest = args
             if base:
                 value = set().union(*(self.taint(s, e, scope) for s, e in rest)) if rest else set()
-                target = self.resolve(base, scope)
-                changed |= self._grow(self.vars.setdefault(target, set()), value)
+                receiver = self.resolve(base, scope)
+                changed |= self._grow(self.vars.setdefault(receiver, set()), value)
         # Callbacks get what the call works on: its receiver and its other arguments.
-        callbacks = [
+        candidates = [
             (i, self.fn_at_token.get(s) or self.fn_at_token.get(s + 1))
             for i, (s, _) in enumerate(args)
         ]
-        callbacks = [(i, fid) for i, fid in callbacks if fid]
+        callbacks = [(i, fid) for i, fid in candidates if fid]
         if callbacks:
             given: set[Label] = set()
             if self.is_p(first - 1, ".") and self.is_p(first - 2, ")"):

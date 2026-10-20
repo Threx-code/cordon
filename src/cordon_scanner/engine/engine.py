@@ -4791,14 +4791,14 @@ class Engine:
                 return None
             if not isinstance(document, dict):
                 return None
-            publisher, name, version = (
+            publisher, extension, release = (
                 document.get("publisher"),
                 document.get("name"),
                 document.get("version"),
             )
-            if all(isinstance(v, str) and v for v in (publisher, name, version)):
+            if all(isinstance(v, str) and v for v in (publisher, extension, release)):
                 # As published: the API redirects any other spelling to this one.
-                return "openvsx", f"{publisher}.{name}", str(version)
+                return "openvsx", f"{publisher}.{extension}", str(release)
             return None
         pattern = Engine._HISTORY_MANIFESTS.get(distribution)
         if pattern is None:
@@ -4823,32 +4823,32 @@ class Engine:
             if distribution in ("maven", "gradle"):
                 group = re.search(r"(?m)^groupId=(\S+)", text)
                 artifact = re.search(r"(?m)^artifactId=(\S+)", text)
-                version = re.search(r"(?m)^version=(\S+)", text)
-                if group and artifact and version:
+                said = re.search(r"(?m)^version=(\S+)", text)
+                if group and artifact and said:
                     # A shaded jar carries the poms of what it bundles, and may not carry its
                     # own: only a pom whose artifact the jar was published as names it.
                     archive = unit.path.split("!", 1)[0]
-                    if f"{artifact.group(1)}-{version.group(1)}" in archive:
+                    if f"{artifact.group(1)}-{said.group(1)}" in archive:
                         return (
                             distribution,
                             f"{group.group(1)}:{artifact.group(1)}",
-                            version.group(1),
+                            said.group(1),
                         )
             elif distribution == "hex":
-                name = re.search(r'\{<<"name">>,\s*<<"([^"]+)">>\}', text)
-                version = re.search(r'\{<<"version">>,\s*<<"([^"]+)">>\}', text)
-                if name and version:
-                    return "hex", name.group(1), version.group(1)
+                named = re.search(r'\{<<"name">>,\s*<<"([^"]+)">>\}', text)
+                said = re.search(r'\{<<"version">>,\s*<<"([^"]+)">>\}', text)
+                if named and said:
+                    return "hex", named.group(1), said.group(1)
             elif distribution == "pub":
-                name = re.search(r"(?m)^name:\s*['\"]?([\w-]+)", text)
-                version = re.search(r"(?m)^version:\s*['\"]?([\w.+-]+)", text)
-                if name and version:
-                    return "pub", name.group(1), version.group(1)
+                named = re.search(r"(?m)^name:\s*['\"]?([\w-]+)", text)
+                said = re.search(r"(?m)^version:\s*['\"]?([\w.+-]+)", text)
+                if named and said:
+                    return "pub", named.group(1), said.group(1)
             elif distribution == "rubygems":
-                name = re.search(r"(?m)^name:\s*(\S+)", text)
-                version = re.search(r"(?m)^\s+version:\s*['\"]?([\w.+-]+)", text)
-                if name and version:
-                    return "rubygems", name.group(1), version.group(1)
+                named = re.search(r"(?m)^name:\s*(\S+)", text)
+                said = re.search(r"(?m)^\s+version:\s*['\"]?([\w.+-]+)", text)
+                if named and said:
+                    return "rubygems", named.group(1), said.group(1)
         return None
 
     _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
@@ -6776,7 +6776,7 @@ class Engine:
         return collected
 
     @staticmethod
-    def _hook_import_closure(units: list[FileUnit], hooks: set[str]) -> set[str]:
+    def _hook_import_closure(units: Sequence[FileUnit], hooks: set[str]) -> set[str]:
         """First-party Python files reachable by import from an install hook.
 
         Read, never executed. Only files present in this scan are followed: a
@@ -6796,7 +6796,7 @@ class Engine:
         return ImportClosure.resolve(hooks, sources)
 
     @staticmethod
-    def _hook_js_closure(units: list[FileUnit], hooks: set[str]) -> set[str]:
+    def _hook_js_closure(units: Sequence[FileUnit], hooks: set[str]) -> set[str]:
         """First-party JavaScript files an install-hook script loads or runs.
 
         `require("./lib/x")`, `import ... from "./x.js"`, `import("./x")`, and a sibling named as

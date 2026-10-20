@@ -2047,7 +2047,7 @@ class AgentChainDetector(BaseDetector):
             # use the tool -- and on MCP-SafetyBench none of 146 blocks needed them alone.
             unconfirmed = limits is not None and not learned and reason is None
             if reason is not None or learned:
-                blocking = reason is not None or (limits is not None and score >= limits[0])
+                blocking = reason is not None or (limits is not None and score >= limits[0])  # type: ignore[operator]  # learned implies a score
                 why = (
                     f" It {reason}."
                     if reason is not None
