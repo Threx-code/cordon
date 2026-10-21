@@ -182,6 +182,7 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `SUSPECT.CAMPAIGN.SIBLING.001` | high | `campaign-sibling` | malicious_code |
 | `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | `manifest` | integrity |
 | `SUSPECT.PACKAGE.NAME_RISK.001` | high | `manifest` | integrity |
 | `SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001` | high | `advisory` | integrity |

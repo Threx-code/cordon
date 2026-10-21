@@ -20,6 +20,7 @@
   "advisories-vscode.json.gz": "77b3da821643cf217a29db3b3116e994a8a105d847bebcb355f2278499121b56",
   "agent-actions.json": "1b7fa28472f94ae2df689353a2142bddfd4cf76a2dca4047384a7a619a460ddb",
   "atr-rules.json.gz": "9e3357121663607d66b18c8204f4af38b6b7cf7e2fe25cdb911af5b088a922f6",
+  "campaign-fingerprints.json.gz": "309595f5d262d48aa51c4d7d9d16858ae3b2f1715fa81a8ad8a35f3471a0e27e",
   "epss.csv.gz": "5872dbab98529ce54bd042e62c8efbb8ee25aca1ddaf4e9af41d951e5b9791d5",
   "exploited.json": "d4d2a9e5000e6c5dd32d67b569eb53527edc1c18e05a6cfb713208d3c0073997",
   "hallucinated.json": "e1cea9331154285762e493a62266e273c4fca39249c893c358e1a803556249be",

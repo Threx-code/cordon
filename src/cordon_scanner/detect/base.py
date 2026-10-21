@@ -71,6 +71,11 @@ class DetectorRequirements:
     """Needs network access. Such a detector is skipped entirely when the scan is
     offline, which is the default."""
 
+    condemned: bool = False
+    """Matches what Cordon's feed has already condemned -- a recipe's digest, a campaign's
+    fingerprints -- and finds nothing else. It cannot be shown to fire on a corpus without that
+    corpus holding a condemned release, so its unit tests exercise it against a substituted index."""
+
 
 @dataclass(frozen=True, slots=True)
 class ScanContext:

@@ -50,6 +50,8 @@ INTEL_DETECTORS = frozenset(
     {
         "advisory",
         "attestation",
+        # Matches a package's campaign fingerprints against releases already condemned: known samples.
+        "campaign-sibling",
         # Its signature database is largely known samples' signatures and hashes: known malware.
         "clamav",
         "dependency",

@@ -32,9 +32,6 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # Requires an advisory database, which is supplied by the operator rather
     # than committed. Exercised in the advisory unit tests.
     "advisory",
-    # Requires the feed's condemned recipe digests, which arrive with the feed rather than being
-    # committed. Exercised in tests/unit/detect/supply/test_recipe_digests.py.
-    "recipe-digest",
     # Requires a git repository with specific recent history, which a corpus of
     # plain directories cannot be: a nested `.git` is not something this repository
     # can commit.
@@ -91,7 +88,19 @@ class TestEveryDetectorRuns(DetectorLivenessFixtures):
         networked = {d.id for d in detectors if d.requires.network}
         # Likewise a detector the operator must switch on and point at a service (ClamAV).
         operator_enabled = {d.id for d in detectors if getattr(d, "operator_enabled", False)}
-        expected = registered - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD - networked - operator_enabled
+        # And a detector that only matches what the feed already condemned (`requires.condemned`):
+        # the corpus would have to hold a condemned release, or a new variant of a real campaign
+        # written for it, which this project never does. Each is exercised against a substituted
+        # index (`recipe-digest` in test_recipe_digests.py, `campaign-sibling` in
+        # test_campaign_sibling.py).
+        condemned = {d.id for d in detectors if d.requires.condemned}
+        expected = (
+            registered
+            - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD
+            - networked
+            - operator_enabled
+            - condemned
+        )
         silent = sorted(d for d in expected if not findings_by_detector.get(d))
         assert not silent, (
             f"these detectors ship and never fire on the corpus: {silent}. "

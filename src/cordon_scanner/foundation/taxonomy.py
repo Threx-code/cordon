@@ -233,6 +233,8 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("POLICY.PACKAGE.", ThreatDomain.DEPENDENCY),
     ("SUSPECT.TYPOSQUAT.", ThreatDomain.DEPENDENCY),
     ("SUSPECT.PACKAGE.", ThreatDomain.REGISTRY),
+    # A published package that is one campaign with releases the feed condemned (`campaign.py`).
+    ("SUSPECT.CAMPAIGN.", ThreatDomain.REGISTRY),
     ("OPERATIONAL.REGISTRY.", ThreatDomain.SCANNER),
     ("SUSPECT.BUILD.", ThreatDomain.BUILD),
     ("MALWARE.BUILD.", ThreatDomain.BUILD),
@@ -338,6 +340,7 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("SUSPECT.RECIPE.", AttackCategory.POLICY),
     ("MALWARE.RECIPE.", AttackCategory.MALICIOUS_CODE),
     ("MALWARE.PACKAGE.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.CAMPAIGN.", AttackCategory.MALICIOUS_CODE),
     ("SUSPECT.LOCKFILE.", AttackCategory.INTEGRITY),
     ("POLICY.LOCKFILE.", AttackCategory.INTEGRITY),
     ("POLICY.CONTAINER.", AttackCategory.MISCONFIGURATION),

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,468 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,469 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -153,6 +153,14 @@ rule's own samples.
 | `SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001` | medium | CMake fetches a URL with nothing verifying what it downloaded |
 | `SUSPECT.BUILD.MAKE_FETCH_EXEC.001` | high | Makefile recipe fetches and executes remote content |
 | `SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001` | high | MSBuild target fetches and executes remote content |
+
+## Campaign
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.CAMPAIGN.SIBLING.001` | high | Package is a variant of a condemned campaign |
 
 ## CI/CD pipelines
 

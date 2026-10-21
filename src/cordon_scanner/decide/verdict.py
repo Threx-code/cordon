@@ -100,9 +100,11 @@ class VerdictFeatures:
     OWN_RULE: ClassVar[str] = "SUSPECT.VERDICT.MODEL.001"
 
     #: Findings that are intelligence about a named package, not a reading of its content: a
-    #: known-malicious release, an extension Microsoft removed from its Marketplace. They always
-    #: stand, and they are never the model's evidence -- the verdict is about content.
-    INTEL: ClassVar[tuple[str, ...]] = (".KNOWN", ".EXTENSION.REMOVED.")
+    #: known-malicious release, an extension Microsoft removed from its Marketplace, a variant of a
+    #: campaign the feed already condemned (`detect/supply/campaign_sibling.py`: a match against
+    #: what was condemned before, not this package's code). They always stand, and they are never
+    #: the model's evidence -- the verdict is about content.
+    INTEL: ClassVar[tuple[str, ...]] = (".KNOWN", ".EXTENSION.REMOVED.", ".CAMPAIGN.SIBLING.")
 
     @staticmethod
     def is_intel(rule: str) -> bool:

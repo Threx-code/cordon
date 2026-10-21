@@ -87,7 +87,7 @@ class RecipeDigestDetector(BaseDetector):
     id = "recipe-digest"
     version = "0.1.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
-    requires = DetectorRequirements(content=True)
+    requires = DetectorRequirements(content=True, condemned=True)
 
     def __init__(self) -> None:
         self._indexes: dict[str, dict[str, tuple[dict[str, Any], bool]]] = {}
