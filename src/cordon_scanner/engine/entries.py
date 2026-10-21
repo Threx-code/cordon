@@ -74,5 +74,21 @@ class PackageEntries:
                     found.add(path)
         return frozenset(found)
 
+    @staticmethod
+    def repository(units: list[FileUnit], distribution: str) -> str:
+        """The published npm package's own `repository` URL, or "": a string, or an object's
+        `url`, as `package.json` declares it (review 98, FP-2)."""
+        if distribution != "npm":
+            return ""
+        manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
+        try:
+            document = json.loads(manifest.content.text) if manifest is not None else {}
+        except ValueError:
+            return ""
+        repository = document.get("repository") if isinstance(document, dict) else None
+        if isinstance(repository, dict):
+            repository = repository.get("url")
+        return repository.strip() if isinstance(repository, str) else ""
+
 
 __all__ = ["PackageEntries"]

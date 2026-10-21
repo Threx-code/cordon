@@ -93,6 +93,9 @@ class ScanContext:
     wheel's or sdist's top-level `__init__.py` -- whose top level runs on `require()`, `import`
     or the command. Code there runs on every consumer without a hook (review 98, REC-2)."""
     library_entry_paths: frozenset[str] = frozenset()
+    library_closure_paths: frozenset[str] = frozenset()
+    """First-party JavaScript files a published package's library entry points (`main`, `exports`)
+    load, transitively: code that runs on a consumer's `require()` without being an entry itself."""
     """`import_entry_paths` without `bin`: the files that run whenever another program loads the
     package (npm `main`, `exports`), not when a person runs its command."""
     declared_dependencies: frozenset[str] = frozenset()

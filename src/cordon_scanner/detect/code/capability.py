@@ -48,6 +48,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.code.addresses import PublicAddress
 from cordon_scanner.detect.code.decode_run import DecodeRun
+from cordon_scanner.detect.code.publish_reach import PublishReach
 from cordon_scanner.detect.code.store_flow import StoreFlow
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
 from cordon_scanner.detect.secrets.secrets import (
@@ -5021,6 +5022,8 @@ class CapabilityDetector(BaseDetector):
                 # matters most here: a long encoded payload is itself what makes a hand-written
                 # file look minified (`eval(atob('...'))` in `tailwind-animation-effect`).
                 ceilinged = "minified output"
+            elif PublishReach.unreached(compiled.rule.id, content.path, ctx):
+                ceilinged, ceiling = PublishReach.REASON, Severity.MEDIUM
             elif verified and compiled.rule.id in (self.DROPPER_RULE, self.REMOTE_CODE_RULE):
                 ceilinged = CapabilityDetector.VERIFIED_DOWNLOAD_REASON
                 ceiling = Severity.MEDIUM
@@ -5086,7 +5089,7 @@ class CapabilityDetector(BaseDetector):
                 + (
                     ""
                     if ceilinged in CapabilityDetector.ON_REQUEST_REASONS
-                    or ceilinged == "the tool's own official installer"
+                    or ceilinged in ("the tool's own official installer", PublishReach.REASON)
                     or ceilinged == CapabilityDetector.VERIFIED_DOWNLOAD_REASON
                     else ", where a pattern like this is usually written to be read rather than run"
                 )

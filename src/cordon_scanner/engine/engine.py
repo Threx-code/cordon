@@ -2019,8 +2019,13 @@ class Engine:
             distribution=early_format,
             import_entry_paths=PackageEntries.of(units, early_format),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
+            library_closure_paths=frozenset(
+                Engine._hook_js_closure(
+                    units, set(PackageEntries.of(units, early_format, with_bin=False))
+                )
+            ),
             declared_dependencies=Engine._declared_dependencies(units, early_format),
-            package_repository=Engine._package_repository(units, early_format),
+            package_repository=PackageEntries.repository(units, early_format),
         )
         ctx = Engine._lifted_inherit(ctx)
 
@@ -5048,22 +5053,6 @@ class Engine:
         return out
 
     @staticmethod
-    def _package_repository(units: list[FileUnit], distribution: str) -> str:
-        """The published npm package's own `repository` URL, or "": a string, or an object's
-        `url`, as `package.json` declares it (review 98, FP-2)."""
-        if distribution != "npm":
-            return ""
-        manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
-        try:
-            document = json.loads(manifest.content.text) if manifest is not None else {}
-        except ValueError:
-            return ""
-        repository = document.get("repository") if isinstance(document, dict) else None
-        if isinstance(repository, dict):
-            repository = repository.get("url")
-        return repository.strip() if isinstance(repository, str) else ""
-
-    @staticmethod
     def _history_distribution(units: list[FileUnit]) -> str:
         """The format release history knows this archive as: a published package's, or Open VSX
         for an editor extension (`.vsix`), which is not otherwise graded as a package."""
@@ -6937,6 +6926,7 @@ class Engine:
             agent_run_paths=grown(ctx.agent_run_paths),
             import_entry_paths=grown(ctx.import_entry_paths),
             library_entry_paths=grown(ctx.library_entry_paths),
+            library_closure_paths=grown(ctx.library_closure_paths),
         )
 
     #: Form findings the recovered text repeats, because it keeps the obfuscator's variable names.
