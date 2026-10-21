@@ -284,6 +284,7 @@ rather than a document.
 | `SUSPECT.FILE.DISGUISED_PROGRAM.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | `manifest` | dependency_confusion |
+| `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | `obfuscated-hook` | obfuscation |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |

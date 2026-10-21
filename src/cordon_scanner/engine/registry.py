@@ -69,6 +69,7 @@ BUILTIN_DETECTORS = (
     "mcp-live",
     "mcp-packages",
     "model",
+    "obfuscated-hook",
     "obfuscation",
     "os-packages",
     "provenance",
@@ -101,6 +102,7 @@ DETECTOR_RUN_ORDER = (
     "formats",
     "iac",
     "obfuscation",
+    "obfuscated-hook",
     # Tier 3: the full sweeps -- hundreds of patterns, and an AST pass.
     "secrets",
     "capability",

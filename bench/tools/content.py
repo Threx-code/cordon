@@ -34,6 +34,7 @@ CONTENT_DETECTORS = frozenset(
         "manifest",
         "mcp-packages",
         "model",
+        "obfuscated-hook",
         "obfuscation",
         "secrets",
         "vcs",

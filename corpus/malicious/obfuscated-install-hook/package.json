@@ -1,0 +1,7 @@
+{
+  "name": "obfuscated-install-hook",
+  "version": "1.0.0",
+  "scripts": {
+    "postinstall": "node index.js"
+  }
+}
