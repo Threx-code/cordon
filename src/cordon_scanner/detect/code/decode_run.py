@@ -75,11 +75,18 @@ class DecodeRun:
         if not any(r in cls.COMPOSITES for r in rule_ids):
             return frozenset()
         content = unit.content
-        safe_js: frozenset[int] = frozenset()
-        if unit.language in cls._JS and not bundled:
+        safe_spawn: frozenset[int] = frozenset()
+        if not bundled and unit.language in cls._JS:
             from cordon_scanner.analysis.javascript.js_flow import JsFlow
 
-            safe_js = JsFlow.safe_spawn_lines(content.text)
+            safe_spawn = JsFlow.safe_spawn_lines(content.text)
+        elif not bundled and unit.language == "python":
+            # The Python analogue: a spawn whose command folds from literals and interpreter
+            # constants only (`os.system(f"{sys.executable} -m pip install …")`) cannot be running
+            # the file's decoded bytes, which go to `write_bytes`/a data URI (review 98 media skills).
+            from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+            safe_spawn = PythonAnalyzer.safe_spawn_lines(content.text)
         written = cls._written_literal_paths(content) if hits else frozenset()
         fixed: set[int] = set()
         for h in hits:
@@ -89,7 +96,7 @@ class DecodeRun:
                 )
                 if not any(p in text for p in written) and not cls._DECODE_CALL.search(text):
                     fixed.add(h.line)
-        return safe_js | fixed
+        return safe_spawn | fixed
 
     @classmethod
     def hits_for(

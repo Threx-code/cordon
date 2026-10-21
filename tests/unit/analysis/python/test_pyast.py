@@ -570,3 +570,48 @@ class TestModelLoadingSwitches:
     )
     def test_a_safe_load_is_not(self, source: str) -> None:
         assert not any(d.startswith("unsafe model option") for d in self.details(source))
+
+
+class TestSafeSpawnLines:
+    """`safe_spawn_lines`: a spawn or execute whose command is source-free (literals plus
+    interpreter constants like `sys.executable`) cannot be running a decoded value, so `DecodeRun`
+    drops it from a decode-run pairing. The cases mirror review 98's media skills -- an interpreter
+    bootstrap beside an unrelated decode-to-a-file -- against a real dropper that runs a decoded
+    blob. Fail-closed: a decode in the argv, a variable that held a decode, or an unresolved name
+    keeps the line out."""
+
+    @staticmethod
+    def _safe(source: str) -> frozenset[int]:
+        return PythonAnalyzer.safe_spawn_lines(source)
+
+    def test_an_interpreter_bootstrap_is_source_free(self) -> None:
+        source = "import os, sys\nos." + SYSTEM + '(f"{sys.executable} -m pip install requests")\n'
+        assert self._safe(source) == {2}
+
+    def test_a_literal_argv_with_the_interpreter_is_source_free(self) -> None:
+        source = (
+            "import subprocess, sys\nsubprocess." + RUN + "([sys.executable, '-m', 'pip', 'x'])\n"
+        )
+        assert self._safe(source) == {2}
+
+    def test_a_decoded_blob_run_is_not(self) -> None:
+        source = "import base64\n" + EXECUTE + "(base64." + DECODE + '("Zm9v"))\n'
+        assert self._safe(source) == frozenset()
+
+    def test_a_command_variable_from_a_decode_is_not(self) -> None:
+        source = (
+            "import subprocess, base64\ncmd = base64."
+            + DECODE
+            + "(blob)\nsubprocess."
+            + RUN
+            + "(cmd)\n"
+        )
+        assert self._safe(source) == frozenset()
+
+    def test_an_unresolved_command_is_not(self) -> None:
+        source = "import os\nos." + SYSTEM + "(downloaded)\n"
+        assert self._safe(source) == frozenset()
+
+    def test_a_bare_shell_literal_is_not(self) -> None:
+        source = "import os\nos." + SYSTEM + '("sh -i")\n'
+        assert self._safe(source) == frozenset()

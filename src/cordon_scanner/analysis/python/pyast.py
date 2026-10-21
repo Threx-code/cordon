@@ -173,6 +173,55 @@ REFLECTIVE = frozenset({"getattr", "__import__", "globals", "vars", "locals"})
 BUILTIN_MODULES = frozenset({"builtins", "__builtin__", "__builtins__"})
 WRITE_METHODS = frozenset({"write", "write_text", "write_bytes", "writelines"})
 MAX_FOLDED_CODES = 200_000
+
+#: Names and attributes the interpreter or platform provides, never an attacker: a command built
+#: only from these and literals cannot be running a decoded or downloaded value (`safe_spawn_lines`).
+SOURCE_FREE_NAMES = frozenset({"__file__"})
+SOURCE_FREE_DOTTED = frozenset(
+    {
+        "sys.executable",
+        "sys.prefix",
+        "sys.base_prefix",
+        "sys.platform",
+        "sys.version",
+        "os.sep",
+        "os.linesep",
+        "os.pathsep",
+        "os.name",
+        "os.curdir",
+    }
+)
+#: Calls and string methods that return a source-free value when handed only source-free arguments.
+SOURCE_FREE_CALLS = frozenset(
+    {
+        "str",
+        "repr",
+        "os.getcwd",
+        "os.path.join",
+        "os.path.dirname",
+        "os.path.abspath",
+        "os.path.basename",
+        "os.path.normpath",
+        "os.path.expanduser",
+        "shlex.quote",
+        "posixpath.join",
+        "ntpath.join",
+    }
+)
+SOURCE_FREE_METHODS = frozenset(
+    {
+        "join",
+        "format",
+        "upper",
+        "lower",
+        "strip",
+        "rstrip",
+        "lstrip",
+        "replace",
+        "removeprefix",
+        "removesuffix",
+    }
+)
 """Character codes folded from one `map(chr, [...])`; a longer literal list is not read."""
 #: Calls that return this machine's own name; `get_hostname` is Ansible's callback helper.
 OWN_HOST_CALLS = frozenset({"gethostname", "getfqdn", "node", "get_hostname"})
@@ -1472,6 +1521,89 @@ class PythonAnalyzer:
             # puts it. `subprocess.run(["git", "rev-parse"])` names a tool, not a file.
             return False
         return cls.WRITABLE_TARGET.search(resolved) is None
+
+    def _source_free(self, node: ast.AST) -> bool:
+        """Whether this expression is built only from literals and interpreter- or platform-provided
+        constants (`sys.executable`, `__file__`, `os.sep`, ...), so nothing sourced -- decoded,
+        downloaded, read or passed in -- can be part of its value. Fail-closed: a name not on the
+        source-free list, an unresolved call, a subscript, `getattr`, a comprehension or a starred
+        argument all make it False, which is what keeps `exec(b64decode(blob))` paired."""
+        if isinstance(node, ast.Constant):
+            return True
+        if isinstance(node, ast.JoinedStr):
+            return all(self._source_free(value) for value in node.values)
+        if isinstance(node, ast.FormattedValue):
+            return self._source_free(node.value)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod):
+            return self._source_free(node.left) and self._source_free(node.right)
+        if isinstance(node, ast.List | ast.Tuple | ast.Set):
+            return all(self._source_free(element) for element in node.elts)
+        if isinstance(node, ast.Name):
+            return node.id in SOURCE_FREE_NAMES
+        if isinstance(node, ast.Attribute):
+            return (self._dotted(node) or "") in SOURCE_FREE_DOTTED
+        if isinstance(node, ast.Call):
+            attr = node.func.attr if isinstance(node.func, ast.Attribute) else None
+            transform = (self._dotted(node.func) or "") in SOURCE_FREE_CALLS or (
+                attr in SOURCE_FREE_METHODS
+                and isinstance(node.func, ast.Attribute)
+                and self._source_free(node.func.value)
+            )
+            if transform:
+                return all(self._source_free(a) for a in node.args) and all(
+                    self._source_free(k.value) for k in node.keywords
+                )
+        return False
+
+    def _source_free_command(self, node: ast.Call) -> str | None:
+        """The command a spawn or execute runs, folded to text with each source-free non-literal
+        part shown as a neutral token, or None if any part is not source-free. The command is the
+        first argument (an argv list is joined); `os.execv`/`execve`/`spawnv` also carry it in the
+        second argument."""
+        if not node.args:
+            return None
+        targets = [node.args[0]]
+        if (self._dotted(node.func) or "") in ("os.execv", "os.execve", "os.spawnv") and len(
+            node.args
+        ) > 1:
+            targets.append(node.args[1])
+        parts: list[str] = []
+        for target in targets:
+            elements = target.elts if isinstance(target, ast.List | ast.Tuple) else [target]
+            for element in elements:
+                if not self._source_free(element):
+                    return None
+                parts.append(self.constant(element) or "x")
+        return " ".join(parts)
+
+    @classmethod
+    def safe_spawn_lines(cls, source: str) -> frozenset[int]:
+        """Lines of a spawn or execute whose command is provably source-free, so it cannot be
+        running a decoded value -- the Python analogue of `JsFlow.safe_spawn_lines`, which
+        `DecodeRun` uses to drop such a spawn from a decode-run pairing. `os.system(f"{sys.executable}
+        -m pip install requests")` is here; `exec(b64decode(blob))` and `subprocess.run(cmd)` for
+        any sourced `cmd` are not (fail-closed). A bare shell, a `start x.vbs` script launch, or a
+        command that runs a file the unit writes is kept too: there the literal IS the act
+        (`_fixed_command`'s guards)."""
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return frozenset()
+        analyzer = cls._prepared(tree)
+        analyzer._walk(tree)
+        lines: set[int] = set()
+        for node in PythonSyntax.of(tree, ast.Call):
+            if PRIMITIVES.get(analyzer._dotted(node.func) or "") not in (
+                Capability.SPAWN,
+                Capability.EXECUTE,
+            ):
+                continue
+            folded = analyzer._source_free_command(node)
+            if folded is None or cls.BARE_SHELL.match(folded) or SCRIPT_LAUNCH.search(folded):
+                continue
+            if cls.WRITABLE_TARGET.search(folded) is None:
+                lines.add(node.lineno)
+        return frozenset(lines)
 
     def _command(self, node: ast.Call) -> str | None:
         """The command a spawn primitive is being handed.
