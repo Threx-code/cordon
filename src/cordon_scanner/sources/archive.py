@@ -165,12 +165,18 @@ class ArchiveReader:
         return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
 
     @staticmethod
-    def safe_member_name(name: str) -> str | None:
+    def safe_member_name(name: str, *, collapse: bool = False) -> str | None:
         """Normalise a member name, or return None if it is unsafe.
 
         Rejected: absolute paths, drive letters, any traversal segment, and names
         containing NUL. The check is on the *normalised* form, so ``a/../../b`` is
         caught even though no single component looks wrong.
+
+        With `collapse`, a `..` that stays inside the archive is resolved instead
+        (`pkg-0.3.1/../README.md` is `README.md`, which some sdist builders write);
+        one that climbs above the archive's root is still refused. Callers pass it
+        only while no link member has come before this one: an extractor writes
+        `a/../x` through `a` once `a` is a symlink, so then the name is refused.
         """
         if not name or "\x00" in name:
             return None
@@ -182,11 +188,26 @@ class ArchiveReader:
 
         parts = PurePosixPath(cleaned).parts
         if any(part == ".." for part in parts):
-            return None
+            if not collapse:
+                return None
+            kept: list[str] = []
+            for part in parts:
+                if part == "..":
+                    if not kept:
+                        return None
+                    kept.pop()
+                elif part not in {".", ""}:
+                    kept.append(part)
+            parts = tuple(kept)
 
         normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
         text = str(normalised)
         return None if text in {".", ""} else text
+
+    @staticmethod
+    def _links_seen(result: ExtractionResult) -> bool:
+        """Whether a link member has been met yet, kept or refused (`safe_member_name`)."""
+        return bool(result.links) or any(r.reason == Rejection.LINK for r in result.rejected)
 
     @staticmethod
     def link_stays_inside(member: str, target: str, *, hard: bool = False) -> bool:
@@ -379,7 +400,9 @@ class ArchiveReader:
                 if info.is_dir():
                     continue
 
-                safe = ArchiveReader.safe_member_name(info.filename)
+                safe = ArchiveReader.safe_member_name(
+                    info.filename, collapse=not ArchiveReader._links_seen(result)
+                )
                 if safe is None:
                     result.rejected.append(
                         RejectedMember(
@@ -541,7 +564,9 @@ class ArchiveReader:
                         )
                         continue
 
-                    safe = ArchiveReader.safe_member_name(member.name)
+                    safe = ArchiveReader.safe_member_name(
+                        member.name, collapse=not ArchiveReader._links_seen(result)
+                    )
                     if safe is None:
                         result.rejected.append(
                             RejectedMember(
