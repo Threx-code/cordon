@@ -84,3 +84,15 @@ def hardening(monkeypatch: pytest.MonkeyPatch) -> None:
     from cordon_scanner.engine.engine import Engine
 
     monkeypatch.setattr(Engine, "_hardening_tier", staticmethod(lambda findings, policy: findings))
+
+
+@pytest.fixture
+def verdict_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scan with the shipped package verdict model off, so a test asserts what a RULE grades, not
+    what the verdict then holds. The verdict (`decide/verdict.py`) lowers a minimal synthetic
+    fixture whose combination is not what real malware looks like; a rule test that asserts HIGH on
+    such a fixture turns the model off here and keeps testing the rule. The verdict's own
+    held-as-a-warning behaviour is pinned separately (test_verdict_features.py)."""
+    from cordon_scanner.decide.verdict import VerdictModel
+
+    monkeypatch.setattr(VerdictModel, "load", staticmethod(lambda path=None: None))

@@ -96,6 +96,9 @@ class TestWhatStillBlocks:
             ({"postinstall": "cat ~/.npmrc"}, None),
         ],
     )
-    def test_blocks(self, tmp_path: Path, scripts: dict, deps: dict | None) -> None:
+    def test_blocks(self, tmp_path: Path, scripts: dict, deps: dict | None, verdict_off) -> None:
+        # The rule's grade, with the package verdict off: a minimal synthetic package here is one
+        # the verdict holds as a warning (pinned in test_verdict_features.py); this asserts the
+        # rule still grades the hook HIGH, so a regression to MEDIUM cannot pass silently.
         found = HookKit.findings(tmp_path, scripts, deps)
         assert any(f.severity >= Severity.HIGH for f in found)

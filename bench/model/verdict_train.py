@@ -63,6 +63,28 @@ EXCLUDED = {
     "empty-template",
     "identical-to-benign-reference",
 }
+#: Rules the verdict never re-grades, whatever its code score: a name, a provenance or a
+#: dependency-source flag is orthogonal to what a package's own code does (a clean-looking package
+#: can carry a typosquat name or a 999.x dependency-confusion release). Shipped in `keep` and
+#: honoured by `Verdict._lowers`, so the code-content model can lift only code-evidence findings.
+NAME_PROVENANCE_RULES = frozenset(
+    {
+        "SUSPECT.PACKAGE.NAME_RISK.001",
+        "SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",
+        "SUSPECT.DEPENDENCY.TYPOSQUAT.001",
+        "SUSPECT.MCP.TOOL_SQUATTING.001",
+        "SUSPECT.PACKAGE.STARJACKING.001",
+        "SUSPECT.DEPENDENCY.CONFUSION.001",
+        "SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001",
+        "SUSPECT.DEPENDENCY.REMOTE_TARBALL.001",
+        "MALWARE.DEPENDENCY.REMOTE_TARBALL.001",
+        "MALWARE.DEPENDENCY.PAYLOAD.001",
+        "SUSPECT.PACKAGE.MANIFEST_CONFUSION.001",
+        "SUSPECT.PACKAGE.PROVENANCE.001",
+        "SUSPECT.PROVENANCE.MISMATCH.001",
+        "SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001",
+    }
+)
 GENERATED = re.compile(r"__(CI|PI|MIXED)_(B\d+)$")
 #: A corpus directory and the ecosystem it is part of.
 ECOSYSTEM = {"popular-npm": "npm", "popular-pypi": "pypi"}
@@ -486,13 +508,29 @@ class VerdictTrain:
         )
         p.add_argument("--budget", type=float, default=0.3, help="percent of an ecosystem's units")
         p.add_argument(
+            "--keep-rule-min",
+            type=int,
+            default=10,
+            help="untrained means untouched: a code rule seen on fewer than this many work-half "
+            "malware units is kept (never re-graded or lifted), and an area with fewer than this "
+            "many work-half malware units is add-only. The model lowers a block only where it has "
+            "training support (review 98: the G7 fresh/actions regression came from lifting rules "
+            "and areas the npm-only split never trained on -- REMOTE_TARBALL, EXFIL.DNS, DESTROY).",
+        )
+        p.add_argument(
             "--split",
-            choices=("package", "family", "time"),
+            choices=("package", "family", "time", "p8"),
             default="package",
             help="package: halves by package name; family: malware by publisher family; time: "
-            "malware published before --cutoff trains, after tests",
+            "malware published before --cutoff trains, after tests; p8: the halves in --p8-split",
         )
         p.add_argument("--cutoff", default="2026-05-01")
+        p.add_argument(
+            "--p8-split",
+            type=Path,
+            help="review-98 P8 split (data/p8-split.jsonl): per unit, train->work, later->holdout, "
+            "campaign-aware so no family straddles. Used with --split p8 for malware AND benign.",
+        )
         p.add_argument(
             "--leave-out", default="", help="a labelled set kept out of training entirely"
         )
@@ -539,7 +577,14 @@ class VerdictTrain:
         if not (a.malware or a.benchmark):
             raise SystemExit("--malware or --benchmark is required")
         data, size = cls.load(a)
+        p8_halves: dict[str, str] = {}
+        if a.p8_split:
+            for row in cls.rows_any(a.p8_split):
+                p8_halves[row["unit"]] = "work" if row["split"] == "train" else "holdout"
         for r in data:
+            if a.split == "p8":
+                # The review-98 campaign-aware split: a unit not in it is unmeasured, not quiet.
+                r["half"] = p8_halves.get(r["file"], "none")
             if a.split == "family" and r["label"] and r["source"].startswith("datadog"):
                 r["half"] = r["family_half"]
             if a.split == "time" and r["label"] and r["date"]:
@@ -566,6 +611,29 @@ class VerdictTrain:
                 r["f"] = {k: v for k, v in r["f"].items() if k not in unstable}
         work = [r for r in data if r["half"] == "work" and r["eco"] != a.leave_out]
         test = [r for r in data if r["half"] == "holdout"]
+        if a.split == "p8":
+            # The ship bar: the >=2-distinct-domain-at->=MEDIUM baseline on the holdout. The trained
+            # model must beat it -- more malware blocked at no more benign blocked.
+            def two_domain(findings: list) -> bool:
+                domains = set()
+                for f in findings or []:
+                    try:
+                        sev = Severity[f[1].upper()]
+                    except (KeyError, IndexError, AttributeError):
+                        continue
+                    if sev >= Severity.MEDIUM:
+                        domains.add(Taxonomy.domain_of(f[0]))
+                return len(domains) >= 2
+
+            mal = [r for r in test if r["label"]]
+            ben = [r for r in test if not r["label"]]
+            bm = sum(two_domain(r["findings"]) for r in mal)
+            bb = sum(two_domain(r["findings"]) for r in ben)
+            print(
+                f"P8 >=2-domain baseline (holdout): malware {bm}/{len(mal)} = "
+                f"{100 * bm / max(1, len(mal)):.1f}%, benign {bb}/{len(ben)} = "
+                f"{100 * bb / max(1, len(ben)):.2f}% -- the model must beat this"
+            )
         names = sorted({k for r in work for k in r["f"]})
         index = {k: i for i, k in enumerate(names)}
 
@@ -606,6 +674,46 @@ class VerdictTrain:
                     (strong if r["label"] else misfired)[f[0]] += 1
         floor = sorted(rule for rule, n in strong.items() if n >= 3 and not misfired[rule])
         floor_set = frozenset(floor)
+        # Untrained means untouched (review 98, the G7 fresh/actions regression): the model may
+        # lower a block only for a rule it actually learned. A code rule seen on fewer than
+        # --keep-rule-min work-half malware units is kept, not re-graded -- the A/B showed the
+        # model lifting rare-rule blocks it never trained on (SUSPECT.DEPENDENCY.REMOTE_TARBALL,
+        # EXFIL.DNS, DESTROY.HOME_OR_ROOT, DECODE_EXEC.INVISIBLE), a fresh-set net loss.
+        rule_support = collections.Counter()
+        for r in work:
+            if not r["label"]:
+                continue
+            for rule in {
+                f[0] for f in r["findings"] if VerdictFeatures.is_code(f[0]) and cls.trips(f)
+            }:
+                rule_support[rule] += 1
+
+        def trained(rule: str) -> bool:
+            return rule_support[rule] >= a.keep_rule_min
+
+        rare_rules = {
+            f[0]
+            for r in data
+            for f in r["findings"]
+            if VerdictFeatures.is_code(f[0]) and not trained(f[0])
+        }
+        # An area with fewer than --keep-rule-min work-half malware units is add-only: the model
+        # has no basis to lift a block there. Under the npm-only P8 split that is actions and every
+        # non-npm area; npm (and skill/mcp if above the floor) keep full re-grading.
+        area_malware = collections.Counter(r["area"] for r in work if r["label"])
+        add_only_areas = set(a.add_only) | {
+            area for area in {r["area"] for r in data} if area_malware[area] < a.keep_rule_min
+        }
+        # The allowlist the model SHIPS (`lift_areas`): the areas it may lower a block in -- those
+        # with enough work-half malware to have trained on. The scanner default-denies every other
+        # area, `package` and the fallback included, so an area the scan computes but the split
+        # never trained (actions as `package`) is add-only, not lifted (review 98 G7).
+        lift_areas = {r["area"] for r in data} - add_only_areas
+        print(
+            f"keep-rule-min={a.keep_rule_min}: {len(rare_rules)} thin-support rules + "
+            f"{len(NAME_PROVENANCE_RULES)} name/provenance rules in `keep`; "
+            f"lift_areas (>={a.keep_rule_min} work malware): {sorted(lift_areas)}"
+        )
 
         def untouched_trip(r, content_only: bool) -> bool:
             """A finding the verdict never re-grades trips the gate."""
@@ -615,7 +723,12 @@ class VerdictTrain:
                 ):
                     continue
                 code = VerdictFeatures.is_code(f[0])
-                kept = not code or (f[0] in floor_set and f[2] in ("high", "confirmed"))
+                kept = (
+                    not code
+                    or (f[0] in floor_set and f[2] in ("high", "confirmed"))
+                    or not trained(f[0])
+                    or f[0] in NAME_PROVENANCE_RULES
+                )
                 if kept and cls.trips(f):
                     return True
             return False
@@ -630,7 +743,7 @@ class VerdictTrain:
             )
 
         for r in data:
-            add_only = r["area"] in a.add_only
+            add_only = r["area"] in add_only_areas
             r["kept"] = (gate_trip if add_only else untouched_trip)(r, content_only=True)
             r["kept_intel"] = (gate_trip if add_only else untouched_trip)(r, content_only=False)
             r["has_code"] = any(k.startswith("r:") for k in r["f"])
@@ -697,8 +810,14 @@ class VerdictTrain:
             lines[area] = float(grid[lo])
         # A package whose kind the scan cannot tell answers to the strictest package line.
         lines[Verdict.FALLBACK] = max(
-            lines[x] for x in lines if x not in ("skill", "mcp") and x not in a.add_only
+            lines[x] for x in lines if x not in ("skill", "mcp") and x not in add_only_areas
         )
+        # An untrained area is pass-through: the model neither lifts (G7) nor adds a block by its
+        # score there, since the score has no training support. Its line blocks nothing, so the
+        # outcome equals today's gate (kept = gate_trip). Reducing benign in these areas is the
+        # G6 rule work's job, not the model's.
+        for area in add_only_areas:
+            lines[area] = 1.01
 
         fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
         xt = matrix(test)
@@ -741,7 +860,9 @@ class VerdictTrain:
             "budget_percent": a.budget,
             "lines": lines,
             "floor": floor,
-            "add_only": a.add_only,
+            "add_only": sorted(add_only_areas),
+            "lift_areas": sorted(lift_areas),
+            "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
             "benign_blocked": {},
             "malware_caught": {},
         }
@@ -833,7 +954,14 @@ class VerdictTrain:
                         + "\n"
                     )
         if a.out:
-            body = {**exported, "areas": lines, "floor": floor, "add_only": sorted(a.add_only)}
+            body = {
+                **exported,
+                "areas": lines,
+                "floor": floor,
+                "add_only": sorted(add_only_areas),
+                "lift_areas": sorted(lift_areas),
+                "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
+            }
             if a.scope:
                 body["scope"] = sorted(a.scope)
             digest = hashlib.sha256(

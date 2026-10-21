@@ -4356,7 +4356,7 @@ class Engine:
                     ),
                     confidence=Confidence.MEDIUM,
                     always_report=False,
-                    detector="manifest",
+                    detector="verdict",
                 )
             )
         area = str(verdict.get("area", ""))

@@ -594,6 +594,32 @@ class Verdict:
         return Verdict.FALLBACK
 
     @staticmethod
+    def _lowers(
+        rule_id: str,
+        severity: Severity,
+        confidence: Confidence,
+        category: Category,
+        *,
+        score: float,
+        block: float,
+        liftable: bool,
+        floor: frozenset[str],
+        keep: frozenset[str],
+    ) -> bool:
+        """Whether the package verdict lowers this finding below the gate. The one lowering
+        decision the scanner (`decide`) and the trainer (`bench/model/verdict_train.py`) both make,
+        so what is measured is what ships. A finding is lowered only in a liftable area whose score
+        clears the line, and never when it is kept as untrained (`keep`), floored, or is not a code
+        finding already at or below a warning."""
+        if score >= block or not liftable:
+            return False
+        if rule_id in keep or not VerdictFeatures.is_code(rule_id):
+            return False
+        if rule_id in floor and confidence in Verdict.FLOOR_CONFIDENCE:
+            return False
+        return severity > Severity.MEDIUM or category is Category.MALICIOUS
+
+    @staticmethod
     def decide(
         findings: list[Finding],
         paths_sizes: Sequence[tuple[str, int]],
@@ -662,15 +688,29 @@ class Verdict:
         areas = model["areas"]
         block = float(areas.get(area, areas[Verdict.FALLBACK]))
         summary.update(score=round(score, 4), block=block, model=model.get("version", ""))
-        # In an area the model does not yet separate as well as the findings alone, it may add a
-        # block but never lift one: nothing that blocked without the verdict passes with it.
-        if score >= block or area in model.get("add_only", ()):
-            return findings, summary
+        # The model lowers a block only in an area it was trained to separate (`lift_areas`: the
+        # allowlist of areas with enough training malware -- npm and the skill/MCP sets). Every
+        # other area, `package` and the fallback included, is add-only: it may add a block, never
+        # lift one (review 98, the G7 actions regression came from lifting an untrained `package`
+        # row). An older model without the allowlist keeps the former add-only denylist.
+        lift_areas = model.get("lift_areas")
+        liftable = (
+            area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())
+        )
         floor = frozenset(model["floor"])
+        keep = frozenset(model.get("keep", ()))
         out: list[Finding] = []
         for finding in findings:
-            if not Verdict.floored(finding, floor) and (
-                finding.severity > Severity.MEDIUM or finding.category is Category.MALICIOUS
+            if Verdict._lowers(
+                finding.rule_id,
+                finding.severity,
+                finding.confidence,
+                finding.category,
+                score=score,
+                block=block,
+                liftable=liftable,
+                floor=floor,
+                keep=keep,
             ):
                 finding = replace(
                     finding,

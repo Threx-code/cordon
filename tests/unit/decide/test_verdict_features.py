@@ -6,7 +6,7 @@ import gzip
 import json
 from unittest import mock
 
-from cordon_scanner.decide.verdict import Verdict, VerdictFeatures, VerdictModel
+from cordon_scanner.decide.verdict import MODEL_PATH, Verdict, VerdictFeatures, VerdictModel
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -364,3 +364,190 @@ class TestWhatRunsOnItsOwn:
         package = result.verdict["package"]
         assert package["install_files"] >= 1.0
         assert package["install_can_spawn"] == 1.0
+
+
+class TestLowers:
+    """`Verdict._lowers`: the one lowering decision the scanner (`decide`) and the trainer
+    (`bench/model/verdict_train.py`) both make, so what is measured is what ships (review 98).
+    The model lowers a block only in a liftable area whose score clears the line, and never for a
+    rule kept as untrained, a floored rule, a non-code finding, or a finding already a warning."""
+
+    def test_a_trained_area_below_the_line_is_lowered(self) -> None:
+        assert Verdict._lowers(
+            "SUSPECT.DROPPER.001",
+            Severity.HIGH,
+            Confidence.HIGH,
+            Category.SUSPICIOUS,
+            score=0.1,
+            block=0.9,
+            liftable=True,
+            floor=frozenset(),
+            keep=frozenset(),
+        )
+
+    def test_a_score_over_the_line_is_not_lowered(self) -> None:
+        assert not Verdict._lowers(
+            "SUSPECT.DROPPER.001",
+            Severity.HIGH,
+            Confidence.HIGH,
+            Category.SUSPICIOUS,
+            score=0.95,
+            block=0.9,
+            liftable=True,
+            floor=frozenset(),
+            keep=frozenset(),
+        )
+
+    def test_an_add_only_area_is_not_lowered(self) -> None:
+        # Default-deny: an area not in the model's lift_areas allowlist (package, actions, ...).
+        assert not Verdict._lowers(
+            "SUSPECT.DROPPER.001",
+            Severity.HIGH,
+            Confidence.HIGH,
+            Category.SUSPICIOUS,
+            score=0.1,
+            block=0.9,
+            liftable=False,
+            floor=frozenset(),
+            keep=frozenset(),
+        )
+
+    def test_a_kept_untrained_rule_is_not_lowered(self) -> None:
+        assert not Verdict._lowers(
+            "SUSPECT.DROPPER.001",
+            Severity.HIGH,
+            Confidence.HIGH,
+            Category.SUSPICIOUS,
+            score=0.1,
+            block=0.9,
+            liftable=True,
+            floor=frozenset(),
+            keep=frozenset({"SUSPECT.DROPPER.001"}),
+        )
+
+    def test_a_floored_rule_is_not_lowered(self) -> None:
+        assert not Verdict._lowers(
+            "SUSPECT.DROPPER.001",
+            Severity.HIGH,
+            Confidence.HIGH,
+            Category.MALICIOUS,
+            score=0.1,
+            block=0.9,
+            liftable=True,
+            floor=frozenset({"SUSPECT.DROPPER.001"}),
+            keep=frozenset(),
+        )
+
+    def test_a_non_code_finding_is_not_lowered(self) -> None:
+        assert not Verdict._lowers(
+            "SECRET.AWS.ACCESS_KEY.001",
+            Severity.HIGH,
+            Confidence.HIGH,
+            Category.MALICIOUS,
+            score=0.1,
+            block=0.9,
+            liftable=True,
+            floor=frozenset(),
+            keep=frozenset(),
+        )
+
+    def test_a_warning_is_not_lowered_further(self) -> None:
+        assert not Verdict._lowers(
+            "SUSPECT.DROPPER.001",
+            Severity.MEDIUM,
+            Confidence.HIGH,
+            Category.SUSPICIOUS,
+            score=0.1,
+            block=0.9,
+            liftable=True,
+            floor=frozenset(),
+            keep=frozenset(),
+        )
+
+    def test_a_malicious_warning_level_finding_is_lowered(self) -> None:
+        # A MALICIOUS-category finding is lowered even at MEDIUM severity (it trips by category).
+        assert Verdict._lowers(
+            "MALWARE.DROPPER.001",
+            Severity.MEDIUM,
+            Confidence.HIGH,
+            Category.MALICIOUS,
+            score=0.1,
+            block=0.9,
+            liftable=True,
+            floor=frozenset(),
+            keep=frozenset(),
+        )
+
+
+class TestTheVerdictModelShips:
+    """The verdict model ships with the scanner: without it every verdict line is silently off,
+    and with it the keep list and area allowlist must be present for decide() to honour them."""
+
+    def test_the_model_file_is_in_the_package(self) -> None:
+        assert MODEL_PATH.is_file(), (
+            f"{MODEL_PATH} is missing: train it (bench/model/verdict_train.py)"
+        )
+
+    def test_it_loads_with_keep_and_lift_areas(self) -> None:
+        model = VerdictModel.load(MODEL_PATH)
+        assert model is not None
+        assert model["features"] and model["trees"]
+        assert Verdict.FALLBACK in model["areas"]
+        assert all(0.0 < line <= 1.01 for line in model["areas"].values())
+        assert model["lift_areas"] and all(a in model["areas"] for a in model["lift_areas"])
+        assert isinstance(model["keep"], list)
+        # Name / provenance flags are never re-graded by the code-content verdict.
+        assert "SUSPECT.PACKAGE.NAME_RISK.001" in model["keep"]
+        assert "SUSPECT.DEPENDENCY.REMOTE_TARBALL.001" in model["keep"]
+        assert model["manifest"]["measured_holdout"]["malware_caught"]
+
+
+class TestVerdictHoldsMinimalPackages:
+    """The shipped truth behind the rule tests that run with the verdict off: the package verdict
+    holds a minimal synthetic npm package -- whose only real finding is an opaque install hook --
+    as a warning, because the combination is not what malware in the training half looked like.
+    This is the measured trade (review 98: later recall +3, fresh +10); a real later example is
+    test-agency-assignment-02. Pinned here so the behaviour is visible, not hidden."""
+
+    @staticmethod
+    def _npm_tarball(tmp_path, manifest: dict, extra: dict) -> object:
+        import io
+        import json
+        import tarfile
+        from pathlib import Path
+
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, data in {
+                "package/package.json": json.dumps(manifest).encode(),
+                **extra,
+            }.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        path = Path(tmp_path) / "pkg.tgz"
+        path.write_bytes(buffer.getvalue())
+        return path
+
+    def test_a_minimal_install_hook_package_is_held_as_a_warning(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config import Config
+
+        tgz = self._npm_tarball(
+            tmp_path,
+            {
+                "name": "tool",
+                "version": "1.0.0",
+                "scripts": {"postinstall": "bip40"},
+                "dependencies": {"bip40": "^1.0.0"},
+            },
+            {},
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tgz)
+        hook = [f for f in result.findings if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"]
+        assert hook, "expected an install-script finding on the hook"
+        # The rule grades the hook HIGH (asserted with the verdict off elsewhere); the package
+        # verdict holds it as a warning, because the combination is not what training-half malware
+        # looked like.
+        assert all(f.severity <= Severity.MEDIUM for f in hook), [f.severity for f in hook]
+        assert any("Held as a warning by the package verdict" in f.message for f in result.findings)

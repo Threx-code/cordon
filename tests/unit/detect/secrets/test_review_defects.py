@@ -13455,10 +13455,12 @@ class TestAPublishedPackagesHookIsGradedByWhatItRuns:
         }
         assert self._severity(tmp_path, files) == ["LOW"]
 
-    def test_a_target_that_is_not_there_blocks(self, tmp_path) -> None:
+    def test_a_target_that_is_not_there_blocks(self, tmp_path, verdict_off) -> None:
         assert self._severity(tmp_path, {"package.json": self.MANIFEST}) == ["HIGH"]
 
-    def test_a_binary_target_blocks(self, tmp_path) -> None:
+    def test_a_binary_target_blocks(self, tmp_path, verdict_off) -> None:
+        # The rule's grade, with the package verdict off (this minimal fixture is one the verdict
+        # holds as a warning -- pinned in test_verdict_features.py).
         manifest = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"./bin/helper"}}'
         files = {"package.json": manifest, "bin/helper": b"\x7fELF\x02\x01\x01" + b"\x00" * 64}
         assert self._severity(tmp_path, files) == ["HIGH"]

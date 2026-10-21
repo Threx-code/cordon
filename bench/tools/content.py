@@ -43,6 +43,10 @@ CONTENT_DETECTORS = frozenset(
         # Added by the engine after the detectors: the intent layer reads facts it computed from
         # the content, and refuses registry facts by construction (IntentFacts.EXTERNAL).
         "intent",
+        # The package verdict's own block (`Verdict.RULE`): the combination of the package's
+        # content findings and what kind of package it is, scored over its line -- content-derived,
+        # so a block it adds counts as a content catch (G4). It never reads registry facts.
+        "verdict",
     }
 )
 

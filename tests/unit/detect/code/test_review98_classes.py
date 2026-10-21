@@ -94,7 +94,9 @@ class TestWalletSecretThroughHelper:
 
 
 class TestCaseVariantHook:
-    def test_a_postinstall_spelled_in_another_case_is_install_code(self, tmp_path) -> None:
+    def test_a_postinstall_spelled_in_another_case_is_install_code(
+        self, tmp_path, verdict_off
+    ) -> None:
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
             for name, text in (
