@@ -34,6 +34,7 @@ from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.javascript.js_persist import JsPersistence
 from cordon_scanner.analysis.nix.nix_code import NixCode
 from cordon_scanner.analysis.python.pyast import CREDENTIAL_VARIABLE, PythonSource
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -460,6 +461,8 @@ class CapabilityDetector(BaseDetector):
             for h in hits
         ):
             hits = self._drop_excused_pattern_hits(content, hits)
+        if unit.language in ("javascript", "typescript"):
+            hits = JsPersistence.drop_named_only(content, hits)
         if GradleBuildAuth.is_build_script(content.path) and any(
             h.capability is Capability.CREDENTIAL for h in hits
         ):

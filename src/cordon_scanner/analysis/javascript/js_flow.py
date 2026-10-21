@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import bisect
 import re
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import ClassVar, Final
@@ -422,8 +423,11 @@ class JsFlow:
 
 
 class _Analysis:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, seed: Callable[[str], str | None] | None = None) -> None:
         self.text = text
+        #: Opt-in: a label for a string literal, ahead of every other fact about it -- what a caller
+        #: follows that no rule reads (`js_persist.py`). None for every analysis the rules run.
+        self.seed = seed
         self.t: list[Tok] = _Analysis._uncomma(JsEval.tokens(text, templates=True))
         self.n = len(self.t)
         self.newlines = [i for i, c in enumerate(text) if c == "\n"]
@@ -1019,7 +1023,9 @@ class _Analysis:
         for k in range(self.n):
             tok = t[k]
             if tok.kind == "str":
-                if _SECRET_PATH.search(str(tok.value)):
+                if self.seed is not None and (label := self.seed(str(tok.value))) is not None:
+                    self.fact[k] = ("src", label)
+                elif _SECRET_PATH.search(str(tok.value)):
                     self.fact[k] = ("src", "secret_path")
                 elif str(tok.value).startswith(("~/", "~\\")) or str(tok.value) in (
                     "~",
