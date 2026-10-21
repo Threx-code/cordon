@@ -132,6 +132,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
+| `MALWARE.DEPENDENCY.PAYLOAD.001` | critical | `manifest` | malicious_code |
 | `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | `manifest` | malicious_code |
 | `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.RECIPE.KNOWN.001` | critical | `recipe-digest` | malicious_code |

@@ -27,6 +27,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.cli.dependency_payload import DependencyPayload
 from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.engine.audit import AuditLog
@@ -325,6 +326,7 @@ class CommandLine:
                 "fetched from the registry instead"
             ),
         )
+        DependencyPayload.add_argument(execution)
         execution.add_argument(
             "--allow-network",
             action="store_true",
@@ -939,12 +941,8 @@ class CommandLine:
         from cordon_scanner.detect.supply.manifest_confusion import ManifestConfusion
         from cordon_scanner.intel.malware.feed import FeedClient
 
-        if (
-            not args.online
-            or args.offline
-            or FeedClient.offline_requested()
-            or not target.is_file()
-        ):
+        offline = not args.online or args.offline or FeedClient.offline_requested()
+        if offline or not target.is_file():
             return result
         added = list(SuppressionMatcher(config).apply(ManifestConfusion.check(target)))
         if not added:
@@ -1306,6 +1304,7 @@ class CommandLine:
                 target
             )
             result = cls._with_release_diff(args, target, result, config, selected)
+            result = DependencyPayload.applied(args, target, result, config, selected)
             result = cls._with_manifest_confusion(args, target, result, config)
             result = cls._with_secret_history(args, target, result, config)
             result = cls._with_model(args, target, result, config)

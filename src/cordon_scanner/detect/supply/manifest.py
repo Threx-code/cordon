@@ -1203,6 +1203,17 @@ class ManifestDetector(BaseDetector):
                 remediation="Do not install this version; read the tarball's package.json and report the package.",
             ),
             DeclaredRule(
+                id="MALWARE.DEPENDENCY.PAYLOAD.001",
+                title="A declared dependency is malicious by its own content",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.HIGH,
+                category=Category.MALICIOUS,
+                detector=ManifestDetector.id,
+                message="A dependency this npm package declares, resolved and scanned on its own bytes (`--dependency-store`, or `--online`), is malicious by its content: installing this package installs it.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install this package; read the named dependency's finding first.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.RELEASE.NEW_PUBLISHER.001",
                 title="This release was published by a different account than the previous one",
                 severity=Severity.MEDIUM,
