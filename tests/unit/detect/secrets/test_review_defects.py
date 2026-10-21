@@ -845,6 +845,11 @@ class TestWhereProjectsActuallyKeepTestMaterial:
             "spec/fixtures/key.pem",
             "e2e/support/commands.js",
             "samples/quickstart/config.yaml",
+            # A demonstration deployment and a secret scanner's own allowlist (review 98).
+            "manifests/quick-start-postgres.yaml",
+            "deploy/quickstart.yml",
+            ".gitleaks.toml",
+            "config/.secrets.baseline",
         ],
     )
     def test_it_is_recognised(self, path: str) -> None:
@@ -854,7 +859,14 @@ class TestWhereProjectsActuallyKeepTestMaterial:
 
     @pytest.mark.parametrize(
         "path",
-        ["celery/app/base.py", "src/main.rs", "cmd/server/main.go", "lib/client.rb"],
+        [
+            "celery/app/base.py",
+            "src/main.rs",
+            "cmd/server/main.go",
+            "lib/client.rb",
+            "manifests/production.yaml",
+            "config/leaks.toml",
+        ],
     )
     def test_application_code_is_not(self, path: str) -> None:
         from cordon_scanner.detect.secrets.secrets import SourcePaths

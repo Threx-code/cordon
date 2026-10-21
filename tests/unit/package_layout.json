@@ -79,6 +79,7 @@
   "detect/infra/iac_policies": "detect/infra/iac_policies",
   "detect/secrets/secret_history": "detect/secrets/secret_history",
   "detect/secrets/secrets": "detect/secrets/secrets",
+  "detect/secrets/test_material": "detect/secrets/test_material",
   "detect/source/submodules": "detect/source/submodules",
   "detect/source/vcs": "detect/source/vcs",
   "detect/supply/advisory": "detect/supply/advisory",
@@ -559,7 +560,7 @@
    "cli/main": 3131,
    "detect/agents/agents": 4687,
    "detect/code/capability": 5170,
-   "detect/secrets/secrets": 5147,
+   "detect/secrets/secrets": 4838,
    "engine/engine": 7873,
    "intel/advisories/upstream_advisories": 3918,
    "intel/registries/real": 3511
