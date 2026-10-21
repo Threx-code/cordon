@@ -120,6 +120,22 @@ class HiddenInstruction:
         r"|make\s{1,4}sure|ensure|always|must|silently|quietly|automatically|without\s{1,4}(?:asking|telling))\b",
         re.I,
     )
+    #: The operational core of an exfiltration: a secret worth taking. A hidden order that names one
+    #: and an action takes it, whether it leaves by a URL or simply rides back in the agent's reply.
+    #: Bare "token" is left out on purpose -- it is a REST/grammar word a skill's own notes carry.
+    _SECRET: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:\.env\b|env(?:ironment)?\s{1,4}variables?|credentials?|secrets?"
+        r"|api[\s_-]{0,2}keys?|passwords?|private\s{1,4}keys?|ssh|id_rsa|\.aws|kubeconfig|cookies?"
+        r"|wallet|seed\s{1,4}phrase|mnemonic)\b",
+        re.I,
+    )
+    #: The operational core of a jailbreak: the agent's own control -- its standing instructions,
+    #: its safety, its system prompt. A hidden order that reaches for these is an attack by form.
+    _CONTROL: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:(?:previous|prior|above|earlier|all)\s{1,4}(?:instructions?|rules?|guidelines?)"
+        r"|safety|guardrails?|system\s{1,4}prompt)\b",
+        re.I,
+    )
     MIN_LETTERS: ClassVar[int] = 12
 
     _URL: ClassVar[re.Pattern[str]] = re.compile(r"https?://\S{1,400}")
@@ -157,9 +173,19 @@ class HiddenInstruction:
 
     @classmethod
     def strong(cls, span: HiddenSpan) -> bool:
-        """Addressed to the agent and about something that matters: the form graded at the gate."""
+        """Graded at the gate only when the hidden order is OPERATIONAL: addressed to the agent, and
+        either it names where to send what it takes (a URL or shell channel), or it reaches for a
+        secret to take, or it overrides the agent's own control. A skill's capability list or grammar,
+        hidden in a comment, is addressed to the agent and mentions a token or a model -- it matches
+        the broad object set -- but carries none of these, so it reports below the gate, not at it."""
         prose = cls._URL.sub(" ", span.text)
-        return bool(cls._ADDRESSED.search(prose) and cls._OBJECT.search(prose))
+        if not (cls._ADDRESSED.search(prose) and cls._OBJECT.search(prose)):
+            return False
+        return bool(
+            cls._DESTINATION.search(span.text)
+            or cls._SECRET.search(prose)
+            or cls._CONTROL.search(prose)
+        )
 
 
 __all__ = ["HiddenInstruction", "HiddenSpan", "RenderDiff"]
