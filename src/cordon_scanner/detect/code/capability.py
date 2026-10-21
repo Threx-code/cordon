@@ -1550,6 +1550,7 @@ class CapabilityDetector(BaseDetector):
     ON_REQUEST_RULES = frozenset(
         {
             "SUSPECT.DROPPER.001",
+            "SUSPECT.DROPPER.REMOTE_CODE.001",
             "SUSPECT.DYNAMIC_DISPATCH.001",
             "SUSPECT.EXFIL.BEACON.001",
             "SUSPECT.ANTI_ANALYSIS.001",
