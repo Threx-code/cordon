@@ -48,6 +48,7 @@
   "detect/agents/agent_judge": "detect/agents/agent_judge",
   "detect/agents/agent_semantics": "detect/agents/agent_semantics",
   "detect/agents/agents": "detect/agents/agents",
+  "detect/agents/defensive_doc": "detect/agents/defensive_doc",
   "detect/agents/live_mcp": "detect/agents/live_mcp",
   "detect/agents/mcp_code": "detect/agents/mcp_code",
   "detect/agents/mcp_model": "detect/agents/mcp_model",

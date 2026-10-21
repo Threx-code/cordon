@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
+from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION, DefensiveDoc
 from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionModel
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -346,10 +347,6 @@ _HIDDEN_DIRECTIVE: Final = re.compile(
     + _NOT_COMMENT_END
     + r"{0,1500}?-->"
 )
-#: A document about the attack, quoting it: security notes, payload lists, red-team playbooks.
-_DISCUSSES_INJECTION: Final = re.compile(
-    r"(?i)prompt[ -]?injection|jailbreak|red[ -]team|(?:injection|attack|test)[ -]payloads?"
-)
 #: A claim of priority over other tools in general -- not "prefer this tool over WebFetch", which
 #: names the one it replaces, and not "call this tool first", which orders a workflow.
 _PRIORITY_CLAIM: Final = re.compile(
@@ -562,7 +559,7 @@ class InstructionText:
         for found in _HIDDEN_DIRECTIVE.finditer(text):
             if text[: found.start()].count("```") % 2:
                 continue
-            if _DISCUSSES_INJECTION.search(text, 0, found.start()) or _DISCUSSES_INJECTION.search(
+            if DISCUSSES_INJECTION.search(text, 0, found.start()) or DISCUSSES_INJECTION.search(
                 text, found.end()
             ):
                 continue
@@ -2425,6 +2422,7 @@ class AgentChainDetector(BaseDetector):
                 severity=None if HiddenInstruction.strong(span) else Severity.MEDIUM,
             )
         corroborated = bool(hidden or injection or exfil or concealed or alarming is not None)
+        corroborated_code = DefensiveDoc.code_evidence(hidden, exfil, concealed, alarming)
         third_party = SkillOrigin.third_party(unit.content.path, ctx)
         # A skill's instructions, read by the learned model (`SKILL_MODEL`). On held-out
         # MalSkillBench it took the blocked share from 44% to 83% and the benign blocked share
@@ -2456,6 +2454,8 @@ class AgentChainDetector(BaseDetector):
             # installed from elsewhere is code being installed and keeps ATR's grades (AG-2).
             instruction_file=not third_party,
             corroborated=corroborated,
+            corroborated_code=corroborated_code,
+            documentation=True,
             unconfirmed=unconfirmed,
         )
 
@@ -2540,6 +2540,8 @@ class AgentChainDetector(BaseDetector):
         within: str | None = None,
         instruction_file: bool = False,
         corroborated: bool = False,
+        corroborated_code: bool = False,
+        documentation: bool = False,
         local: bool = False,
         unconfirmed: bool = False,
     ) -> Iterator[Finding]:
@@ -2555,22 +2557,18 @@ class AgentChainDetector(BaseDetector):
         by_category: dict[str, list[atr.AtrMatch]] = {}
         for match in matches:
             by_category.setdefault(match.rule.category, []).append(match)
+        defensive = DefensiveDoc.is_defensive(documentation, within or text)
         for category, found in by_category.items():
             rule_id = AgentRules.atr_rule_id(category)
 
-            # Graded by ATR's own quality standard, from each rule's measured benign match
-            # rate: a production-grade rule (0.5% or less) ATR also marks stable at critical or
-            # high severity blocks; any other production-grade rule warns; a rule above ATR's
-            # production line is recorded as an observation, never alone the reason a
-            # repository is flagged.
-            # An instruction file is prose written to the agent, and ATR's rules were written
-            # for traffic: across 815 rules, each one's small error on such prose adds up. So
-            # there a rule counts only if it matched at most `atr.INSTRUCTION_TOLERANCE` of the
-            # real instruction files it was calibrated on, and it blocks only beside Cordon's own
-            # evidence in the same file --
-            # hidden text, override wording, a fetch-and-run, credentials moved. Tool
-            # descriptions and commands, where text addressing the agent has no business, keep
-            # ATR's grades.
+            # Graded by ATR's own quality standard, from each rule's measured benign match rate:
+            # a production-grade rule (0.5% or less) that ATR marks stable at critical or high
+            # blocks; any other production-grade rule warns; a rule above ATR's production line is
+            # only ever an observation, never alone the reason a repository is flagged. An
+            # instruction file is prose written to the agent, and ATR's 815 rules were written for
+            # traffic, so there a rule counts only if it matched at most `atr.INSTRUCTION_TOLERANCE`
+            # of its calibration instruction files. Whether a counted stable match then blocks is
+            # `DefensiveDoc.stable_blocks`.
             def counts(m: atr.AtrMatch) -> bool:
                 if m.rule.grade != "production" or m.rule.severity in ("low", "info"):
                     return False
@@ -2586,7 +2584,9 @@ class AgentChainDetector(BaseDetector):
                 for m in counted
                 if m.rule.status == "stable"
                 and m.rule.severity in ("critical", "high")
-                and (corroborated or not instruction_file)
+                and DefensiveDoc.stable_blocks(
+                    corroborated_code, defensive, corroborated, instruction_file
+                )
                 and not local
                 and not unconfirmed
             ]
