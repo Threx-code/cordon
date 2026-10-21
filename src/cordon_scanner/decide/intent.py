@@ -63,7 +63,7 @@ class IntentFacts:
 
     #: Bumped whenever a fact is computed differently: a weights file measured on other facts is
     #: not applied (S3). The weights file records it beside the scanner commit.
-    VERSION: ClassVar[int] = 1
+    VERSION: ClassVar[int] = 2
 
     #: Effects, each in the group a correlated other is in (E1): an install script that reaches the
     #: network by `https.get` and by `fetch` has one network effect, not two.
