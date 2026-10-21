@@ -401,3 +401,122 @@ class TestRegistryInstall:
         assert not VerifiedDownload.registry_install(
             unscoped, "javascript", [], frozenset({"tool-linux-x64"})
         )
+
+
+#: positron-stata's uv download, reduced: the asset URL chosen from literals for the platform and
+#: returned in an object, fetched, written beside the extension and run (review 98 #28). Inert text.
+OFFICIAL_INSTALL = """const fs = require("fs");
+const path = require("path");
+const child_process = require("child_process");
+function asset(platform, arch) {
+  const cpu = arch === "x64" ? "x86_64" : arch === "arm64" ? "aarch64" : void 0;
+  if (!cpu) return void 0;
+  const target = platform === "darwin" ? `${cpu}-apple-darwin` : `${cpu}-unknown-linux-gnu`;
+  const ext = platform === "win32" ? "zip" : "tar.gz";
+  return { target, ext, url: `https://github.com/astral-sh/uv/releases/latest/download/uv-${target}.${ext}` };
+}
+async function download(dir) {
+  const found = asset(process.platform, process.arch);
+  if (!found) throw new Error("no prebuilt uv");
+  const response = await fetch(found.url);
+  const archive = path.join(dir, `uv.${found.ext}`);
+  fs.writeFileSync(archive, Buffer.from(await response.arrayBuffer()));
+  child_process.execFileSync(archive, ["--version"]);
+}
+exports.activate = (context) => download(context.globalStorageUri.fsPath);
+"""
+
+
+class TestOfficialInstall:
+    """A file whose every request is a listed tool's own release binary, every string of the URL
+    decided by literals in the file: lowered like a verified release, never cleared."""
+
+    REMOTE_CODE = ("MALWARE.INSTALL.REMOTE_CODE.001", "SUSPECT.DROPPER.REMOTE_CODE.001")
+
+    @classmethod
+    def scan(cls, tmp_path: Path, script: str) -> list[tuple[str, Severity]]:
+        import zipfile
+
+        manifest = {
+            "name": "tool",
+            "publisher": "example",
+            "version": "1.0.0",
+            "engines": {"vscode": "^1.90.0"},
+            "main": "./dist/extension.js",
+        }
+        target = tmp_path / "example.tool-1.0.0.vsix"
+        with zipfile.ZipFile(target, "w") as archive:
+            archive.writestr("extension.vsixmanifest", "<PackageManifest/>")
+            archive.writestr("extension/package.json", json.dumps(manifest))
+            archive.writestr("extension/dist/extension.js", script)
+        return [
+            (f.rule_id, f.severity)
+            for f in Scanner().scan(target).findings
+            if f.rule_id in cls.REMOTE_CODE
+        ]
+
+    @staticmethod
+    def blocked(found: list[tuple[str, Severity]]) -> bool:
+        return any(rule.startswith("MALWARE.") or sev >= Severity.HIGH for rule, sev in found)
+
+    def test_a_pinned_uv_release_is_lowered_and_still_reported(self, tmp_path: Path) -> None:
+        found = self.scan(tmp_path, OFFICIAL_INSTALL)
+        assert found == [("SUSPECT.DROPPER.REMOTE_CODE.001", Severity.MEDIUM)]
+
+    def test_another_owner_on_the_same_host_keeps_the_block(self, tmp_path: Path) -> None:
+        script = OFFICIAL_INSTALL.replace("astral-sh/uv", "someone/uv")
+        assert self.blocked(self.scan(tmp_path, script))
+
+    def test_a_base_url_from_the_environment_keeps_the_block(self, tmp_path: Path) -> None:
+        script = OFFICIAL_INSTALL.replace(
+            "`https://github.com/astral-sh/uv/releases/latest/download/uv-",
+            '(process.env.UV_MIRROR || "https://github.com/astral-sh/uv/releases/latest/download")'
+            " + `/uv-",
+        )
+        assert self.blocked(self.scan(tmp_path, script))
+
+    def test_a_segment_that_climbs_out_keeps_the_block(self, tmp_path: Path) -> None:
+        script = OFFICIAL_INSTALL.replace(
+            "uv-${target}", "${target}/../../../../o/r/releases/download/v1/x"
+        )
+        assert self.blocked(self.scan(tmp_path, script))
+
+    def test_one_request_elsewhere_keeps_the_block(self, tmp_path: Path) -> None:
+        script = OFFICIAL_INSTALL.replace(
+            "exports.activate", 'fetch("https://example.invalid/beacon");\nexports.activate'
+        )
+        assert self.blocked(self.scan(tmp_path, script))
+
+    def test_the_url_must_be_decided_in_the_file(self) -> None:
+        # The asset's target handed in by a caller the file does not show: no value set, no
+        # official request, the dropper keeps its grade.
+        script = OFFICIAL_INSTALL.replace(
+            "const found = asset(process.platform, process.arch);",
+            "const found = { ext: 'zip', url: `https://github.com/astral-sh/uv/releases/download/${dir}` };",
+        )
+        assert not VerifiedDownload.official_install(script, "javascript", [])
+        assert VerifiedDownload.official_install(OFFICIAL_INSTALL, "javascript", [])
+
+
+class TestPinnedDownload:
+    def test_a_listed_release_path(self) -> None:
+        from cordon_scanner.intel.registries.installers import OfficialInstallers
+
+        assert OfficialInstallers.pinned_download(
+            "https://github.com/astral-sh/uv/releases/download/0.9.0/uv-x86_64-apple-darwin.tar.gz"
+        )
+
+    def test_what_is_not_pinned(self) -> None:
+        from cordon_scanner.intel.registries.installers import OfficialInstallers
+
+        for url in (
+            "http://github.com/astral-sh/uv/releases/download/0.9.0/uv.tar.gz",  # not https
+            "https://github.com/someone/uv/releases/download/0.9.0/uv.tar.gz",  # another owner
+            "https://github.com/astral-sh/uv/releases/download/../../../o/r/x",  # climbs out
+            "https://github.com/astral-sh/uv/releases/download/%2e%2e/x",  # escaped
+            "https://github.com/astral-sh/uv/releases/download/x\\..\\y",  # backslash
+            "https://github.com:443@evil.example/astral-sh/uv/releases/download/x",  # user part
+            "https://deno.land/x/anyone/mod.ts",  # a listed host with no path pinned
+            "https://astral.sh/uv/install.sh",  # a script installer, not a release binary
+        ):
+            assert not OfficialInstallers.pinned_download(url), url

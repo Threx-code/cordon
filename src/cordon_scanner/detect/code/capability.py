@@ -1602,6 +1602,11 @@ class CapabilityDetector(BaseDetector):
     #: so a sha256-checked self-update stays below the gate; kept out of VERIFIABLE_DROPPERS so the
     #: no-download-run escalations do not apply to it.
     REMOTE_CODE_RULE = "SUSPECT.DROPPER.REMOTE_CODE.001"
+    #: Malware grade -> its suspect grade, which a verified download leaves reporting (review 98 #28).
+    WITHDRAWN_WHEN_VERIFIED: ClassVar[dict[str, str]] = {
+        "MALWARE.DROPPER.001": DROPPER_RULE,
+        "MALWARE.INSTALL.REMOTE_CODE.001": REMOTE_CODE_RULE,
+    }
 
     #: Rules whose act is destroying data. They keep their severity in build tooling: a recipe
     #: runs unattended on every machine that builds, so "written to be read" does not hold.
@@ -1611,23 +1616,9 @@ class CapabilityDetector(BaseDetector):
 
     @staticmethod
     def _official_installs_only(content: FileContent, hits: list[CapabilityHit]) -> bool:
-        """Every fetch-and-run in the file names a listed official installer, and nothing is
-        decoded: storybook's script runs `curl -LsSf https://astral.sh/uv/install.sh | sh`, the
-        documented way to install uv."""
-        from cordon_scanner.intel.registries.installers import OfficialInstallers
+        from cordon_scanner.detect.code.verified_download import VerifiedDownload
 
-        if any(h.capability is Capability.DECODE for h in hits):
-            return False
-        fetches = [h for h in hits if h.capability is Capability.FETCH_EXEC]
-        if not fetches:
-            return False
-        text = content.raw
-        return all(
-            OfficialInstallers.is_official_installer(
-                text[h.byte_start : h.byte_end + 300].decode("utf-8", "replace")
-            )
-            for h in fetches
-        )
+        return VerifiedDownload.official_installs_only(content.raw, hits)
 
     BEACON_RULE: ClassVar[str] = "MALWARE.EXFIL.BEACON.001"
     #: Dataflow facts: the machine's identity reaches what a request sends.
@@ -1651,8 +1642,9 @@ class CapabilityDetector(BaseDetector):
 
         if not ctx.package_distribution:
             # Condition (b) places the digest in the package, and only a published package's
-            # members are known to be what the consumer receives beside the script.
-            return False
+            # members are known to be what the consumer receives beside the script. A listed
+            # tool's own release is pinned by its URL alone (`official_install`), wherever it is.
+            return VerifiedDownload.official_install(unit.content.text, unit.language, file_hits)
         return VerifiedDownload.verified(
             unit.content.text,
             unit.language,
@@ -1733,14 +1725,14 @@ class CapabilityDetector(BaseDetector):
         )
 
     def _suspect_dropper_reports(
-        self, ctx: ScanContext, path: str, hits: list[CapabilityHit]
+        self, ctx: ScanContext, path: str, hits: list[CapabilityHit], rule: str = DROPPER_RULE
     ) -> bool:
-        """Whether `SUSPECT.DROPPER.001` fires on the window `MALWARE.DROPPER.001` matched: its
-        `unless` excludes test paths, and withdrawing the one where the other does not report
-        would leave the file clean."""
-        suspect = ctx.rules.get(self.DROPPER_RULE)
+        """Whether the suspect grade (`SUSPECT.DROPPER.001`) fires on the window its malware grade
+        matched: its `unless` excludes test paths, and withdrawing the one where the other does
+        not report would leave the file clean."""
+        suspect, fired = ctx.rules.get(rule), frozenset(hit.rule_id for hit in hits)
         return suspect is not None and self._evaluate(
-            suspect, {hit.capability for hit in hits}, path, in_hook=True
+            suspect, {hit.capability for hit in hits}, path, in_hook=True, fired=fired
         )
 
     _SKILL_SCRIPT = re.compile(
@@ -4603,7 +4595,9 @@ class CapabilityDetector(BaseDetector):
         # before anything runs (review 98, FP-2: `@ohos-ports/larksuite-cli`). Read over the whole
         # file's hits, not this window's: a credential read anywhere in it keeps the dropper.
         verified = (
-            rule.id in self.VERIFIABLE_DROPPERS or rule.id == self.REMOTE_CODE_RULE
+            rule.id in self.VERIFIABLE_DROPPERS
+            or rule.id == self.REMOTE_CODE_RULE
+            or rule.id in self.WITHDRAWN_WHEN_VERIFIED
         ) and self._verified_release_download(unit, ctx, hits if file_hits is None else file_hits)
 
         mode = Redactor.effective_mode(rule.evidence_policy, ctx.config.evidence)
@@ -4631,7 +4625,7 @@ class CapabilityDetector(BaseDetector):
             # An agent's tool that never runs what it fetched is not escalated as an install-time
             # dropper; `SUSPECT.DROPPER.001` reports the pair below the gate.
             in_hook = False
-        if verified and rule.id == self.DROPPER_RULE:
+        if verified and rule.id in (self.DROPPER_RULE, self.REMOTE_CODE_RULE):
             # Not escalated as an install-time dropper either: the hook escalation would put the
             # span straight back at CRITICAL. The ceiling below says why it is still reported.
             in_hook = False
@@ -4721,8 +4715,10 @@ class CapabilityDetector(BaseDetector):
 
         if (
             verified
-            and compiled.rule.id == "MALWARE.DROPPER.001"
-            and self._suspect_dropper_reports(ctx, content.path, hits)
+            and compiled.rule.id in self.WITHDRAWN_WHEN_VERIFIED
+            and self._suspect_dropper_reports(
+                ctx, content.path, hits, self.WITHDRAWN_WHEN_VERIFIED[compiled.rule.id]
+            )
         ):
             # Withdrawn for the reason above, and only where `SUSPECT.DROPPER.001` reports the same
             # span, so the file is never left clean. What is withdrawn is the claim that the content

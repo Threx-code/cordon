@@ -56,6 +56,11 @@ KNOWN_INSTALLERS: Final = (
     ("micro.mamba.pm", "/install.sh"),
     ("foundry.paradigm.xyz", ""),
     ("raw.githubusercontent.com", "/ohmyzsh/ohmyzsh/"),
+    # Release binaries of a tool listed above by its install.sh host, owner and repository exact:
+    # astral-sh/uv ships `uv-<target>` archives, which editor extensions fetch instead of piping
+    # install.sh (review 98 #28). Never a whole host or a wildcard owner.
+    ("github.com", "/astral-sh/uv/releases/download/"),
+    ("github.com", "/astral-sh/uv/releases/latest/download/"),
 )
 """(host, path prefix) pairs. A host matches itself and its subdomains."""
 
@@ -72,6 +77,27 @@ class OfficialInstallers:
         host, path = found.group(1).lower(), (found.group(2) or "").lower()
         return any(
             (host == known or host.endswith("." + known)) and path.startswith(prefix)
+            for known, prefix in KNOWN_INSTALLERS
+        )
+
+    @staticmethod
+    def pinned_download(url: str) -> bool:
+        """Whether `url`, a whole URL, is a download from a listed installer's own path: https, the
+        host exactly (no user or port in front of it), a listed entry that names a path and not a
+        bare host -- `deno.land` also serves anyone's modules under `/x/` -- and nothing that can
+        climb out of that path (`.`/`..` segments, a backslash, a percent-escape)."""
+        if not url.startswith("https://"):
+            return False
+        rest = url[len("https://") :]
+        host, slash, path = rest.partition("/")
+        host = host.lower()
+        if not slash or not re.fullmatch(r"[a-z0-9.-]{1,253}", host):
+            return False
+        path = "/" + path.split("?", 1)[0].split("#", 1)[0]
+        if "\\" in path or "%" in path or any(seg in (".", "..") for seg in path.split("/")):
+            return False
+        return any(
+            prefix and (host == known or host.endswith("." + known)) and path.startswith(prefix)
             for known, prefix in KNOWN_INSTALLERS
         )
 

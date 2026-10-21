@@ -295,6 +295,9 @@ class Request:
     #: The literal parts of the file's registry tarball URLs (`@esbuild/` in
     #: `${pkg.replace("@esbuild/", "")}`), for matching against the package's own manifest.
     parts: tuple[str, ...] = ()
+    #: For an `other` request, every string its URL can spell when literals in the file decide it
+    #: (`JsValues`), sorted; empty when anything else does.
+    urls: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1953,8 +1956,11 @@ class _Analysis:
 
     def requests(self) -> list[Request]:
         """See `JsFlow.requests`."""
+        from cordon_scanner.analysis.javascript.js_values import JsValues
+
         out: list[Request] = []
         parts = tuple(sorted(self.registry_parts))
+        values: JsValues | None = None
         for k in range(self.n - 1):
             if not self._called(k):
                 continue
@@ -1963,7 +1969,18 @@ class _Analysis:
                 continue
             args = self._args(k + 1)
             kind = self._url_kind(args[0], scope, k, 0) if args else "other"
-            out.append(Request(self.line(k), kind, parts if kind == "registry" else ()))
+            urls: frozenset[str] | None = None
+            if kind == "other" and args:
+                values = values or JsValues(self)
+                urls = values.strings(*args[0], scope)
+            out.append(
+                Request(
+                    self.line(k),
+                    kind,
+                    parts if kind == "registry" else (),
+                    tuple(sorted(urls)) if urls else (),
+                )
+            )
         return out
 
     def clean_spawns(self) -> frozenset[int]:

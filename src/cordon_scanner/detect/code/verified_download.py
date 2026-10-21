@@ -329,10 +329,13 @@ class VerifiedDownload:
         repository: str | None,
         ctx: ScanContext,
     ) -> bool:
-        """A download of the package's own release (`own_release`), or of a package its manifest
-        declares, from the registry (`registry_install`)."""
-        return cls.own_release(text, language, hits, repository) or cls.registry_install(
-            text, language, hits, ctx.declared_dependencies
+        """A download of the package's own release (`own_release`), of a package its manifest
+        declares, from the registry (`registry_install`), or of a listed tool's own release binary
+        (`official_install`)."""
+        return (
+            cls.own_release(text, language, hits, repository)
+            or cls.registry_install(text, language, hits, ctx.declared_dependencies)
+            or cls.official_install(text, language, hits)
         )
 
     @classmethod
@@ -379,6 +382,65 @@ class VerifiedDownload:
         names = {p for p in parts if cls.PACKAGE_NAME.fullmatch(p)}
         scopes = {p for p in parts if cls.SCOPE.fullmatch(p)}
         return bool(names & declared) or any(n.startswith(s) for n in declared for s in scopes)
+
+    @classmethod
+    def official_install(
+        cls, text: str, language: str | None, hits: Sequence[CapabilityHit]
+    ) -> bool:
+        """Every request the file makes is a listed tool's own release binary -- every string its
+        URL can spell (`Request.urls`) is `OfficialInstallers.pinned_download` -- or a redirect one
+        gave (`JsFlow.requests`).
+
+        positron-stata's extension fetches `github.com/astral-sh/uv/releases/latest/download/
+        uv-${target}.${ext}`, with the target and extension chosen from literals for the platform,
+        unpacks it and runs uv: the installer astral.sh documents, done by hand (review 98 #28). The
+        URL is read as the strings it can spell (`JsValues`), so a URL any part of which the file
+        does not decide -- a parameter, an environment variable, a response, a call outside the
+        file -- is not official. The same disqualifiers as `registry_install`; the consequence is
+        the same too: reported at MEDIUM, never cleared. Whether uv is what its owner says is not a
+        question this scan can answer, and the report keeps it visible.
+        """
+        if language not in ("javascript", "typescript") or len(text) > cls.MAX_CHARS:
+            return False
+        if any(
+            hit.capability in DISQUALIFYING_CAPABILITIES
+            or hit.rule_id in UNVERIFIABLE_RUNS
+            or hit.rule_id.startswith("INTEL.")
+            for hit in hits
+        ):
+            return False
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+        from cordon_scanner.intel.registries.installers import OfficialInstallers
+
+        requests = JsFlow.requests(text)
+        official = [
+            r.kind == "other"
+            and bool(r.urls)
+            and all(map(OfficialInstallers.pinned_download, r.urls))
+            for r in requests
+        ]
+        return any(official) and all(
+            o or r.kind == "redirect" for o, r in zip(official, requests, strict=True)
+        )
+
+    @staticmethod
+    def official_installs_only(raw: bytes, hits: Sequence[CapabilityHit]) -> bool:
+        """Every fetch-and-run in the file names a listed official installer, and nothing is
+        decoded: storybook's script runs `curl -LsSf https://astral.sh/uv/install.sh | sh`, the
+        documented way to install uv."""
+        from cordon_scanner.intel.registries.installers import OfficialInstallers
+
+        if any(h.capability is Capability.DECODE for h in hits):
+            return False
+        fetches = [h for h in hits if h.capability is Capability.FETCH_EXEC]
+        if not fetches:
+            return False
+        return all(
+            OfficialInstallers.is_official_installer(
+                raw[h.byte_start : h.byte_end + 300].decode("utf-8", "replace")
+            )
+            for h in fetches
+        )
 
     # -- source -----------------------------------------------------------------------------------
 
