@@ -58,6 +58,20 @@ VERIFIED_BINARY = (
 )
 
 
+#: shape A (review 98, rollup-plugins-polyfills-rode): a base64 blob decoded, split into a command
+#: and run, and another decoded into a module name and required. The decoded label is followed
+#: through `.toString`, `.split` and the `[cmd, ...args]` destructuring, so the run is a dataflow
+#: fact. The b64 here is inert ("echo hi", "foo").
+DECODED_RUN = (
+    'const { spawn } = require("child_process");\n'
+    'const CMD = Buffer.from("ZWNobyBoaQ==", "base64").toString("utf8");\n'
+    'const [cmd, ...args] = CMD.split(" ");\n'
+    'spawn(cmd, args, { stdio: "ignore" });\n'
+    'const MODULE_NAME = Buffer.from("Zm9v", "base64").toString("utf8");\n'
+    "require(MODULE_NAME);\n"
+)
+
+
 class TestWrittenThenRun:
     @staticmethod
     def _scan(tmp_path: Path, install: str, name: str = "example-pkg") -> list[tuple[str, str]]:
@@ -90,3 +104,9 @@ class TestWrittenThenRun:
     def test_a_verified_binary_self_updater_does_not_fire(self, tmp_path: Path) -> None:
         found = self._scan(tmp_path, VERIFIED_BINARY)
         assert not [r for r, _ in found if r == REMOTE_CODE], found
+
+    def test_a_decoded_command_run_is_remote_code(self, tmp_path: Path) -> None:
+        # The decoded value reaches spawn and require; the `decoded` source makes that a
+        # REMOTE_CODE flow, caught without the written-to-disk step.
+        found = self._scan(tmp_path, DECODED_RUN)
+        assert [r for r, _ in found if r == REMOTE_CODE], found

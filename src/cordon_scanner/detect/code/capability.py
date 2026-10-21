@@ -2890,6 +2890,11 @@ class CapabilityDetector(BaseDetector):
         ("identity", "CAP.JS.FLOW.IDENTITY_SENT", _JS_SENDS),
         ("environment", "CAP.JS.FLOW.ENVIRONMENT_SENT", _JS_SENDS),
         ("network_response", "CAP.JS.FLOW.REMOTE_CODE", frozenset({"execute", "process"})),
+        # A decoded blob reaching the same sinks: `Buffer.from(b64,"base64").toString()` split into
+        # a command and run, or decoded into a module name and required (review 98 shape A,
+        # rollup-plugins-polyfills-rode). The decoded label is followed through .split, array
+        # destructuring and bindings by js_flow, so the pairing is a dataflow fact, not proximity.
+        ("decoded", "CAP.JS.FLOW.REMOTE_CODE", frozenset({"execute", "process"})),
         # Sent over a raw socket or inside a DNS name rather than a request: what a command
         # printed, a home-directory file, a credential store. A client library speaks HTTP to its
         # service; a channel of its own is how a payload reports what it found.
