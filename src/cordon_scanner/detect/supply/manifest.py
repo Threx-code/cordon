@@ -433,7 +433,7 @@ class ManifestScripts:
         if not known:
             return ()
         tokens = {
-            token.strip("\"'`()").lstrip("./")
+            re.sub(r"^(?:\./)+", "", token.strip("\"'`()"))
             for token in re.split(r"[\s;|&]+", command)
             if token.strip()
         }
@@ -453,7 +453,9 @@ class ManifestScripts:
             # `node .`: the package's own entry point.
             tokens |= {f"{base}/index.js" if base else "index.js"}
         return tuple(
-            sorted(path for path in known if path in tokens or path.lstrip("./") in tokens)
+            sorted(
+                path for path in known if path in tokens or re.sub(r"^(?:\./)+", "", path) in tokens
+            )
         )
 
     @staticmethod

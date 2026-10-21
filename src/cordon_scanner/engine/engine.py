@@ -3082,7 +3082,7 @@ class Engine:
                 for candidate in tokens[index + 1 :]:
                     if candidate.startswith("-"):
                         continue
-                    target = candidate.lstrip("./")
+                    target = re.sub(r"^(?:\./)+", "", candidate)
                     if not target:
                         break
                     resolved = f"{base}/{target}" if base else target

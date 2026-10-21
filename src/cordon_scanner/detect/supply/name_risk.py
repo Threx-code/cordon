@@ -326,13 +326,13 @@ class PackageIdentities:
         root = cls._root(unit)
         prefix = f"{root}/" if root else ""
         tokens = {
-            token.strip("\"'`()").lstrip("./")
+            re.sub(r"^(?:\./)+", "", token.strip("\"'`()"))
             for _, command in hooks
             for token in re.split(r"[\s;|&]+", command)
             if token.strip()
         }
         runs_file = any(
-            path.startswith(prefix) and path[len(prefix) :].lstrip("./") in tokens
+            path.startswith(prefix) and re.sub(r"^(?:\./)+", "", path[len(prefix) :]) in tokens
             for path in ctx.tree_paths
         )
         return PackageIdentity(

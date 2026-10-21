@@ -393,6 +393,7 @@
   "test_infra_ecosystems.py": "ecosystems",
   "test_infrastructure_noise.py": "detect/infra",
   "test_inline_hook_programs.py": "analysis/shared",
+  "test_install_hook_dot_paths.py": "foundation",
   "test_install_hooks_graded.py": "foundation",
   "test_install_hooks_tools.py": "foundation",
   "test_install_persist_named.py": "foundation",

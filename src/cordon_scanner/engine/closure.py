@@ -29,6 +29,7 @@ because a payload inside `requests` is not this repository's file to judge.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -216,7 +217,7 @@ class ImportClosure:
                     for suffix in (".py", "/__init__.py")
                 ]
                 for candidate in [*cls.candidates(module, path), *rooted]:
-                    normalised = candidate.lstrip("./")
+                    normalised = re.sub(r"^(?:\./)+", "", candidate)
                     if normalised in sources and normalised not in seen:
                         seen.add(normalised)
                         frontier.append((normalised, depth + 1))
