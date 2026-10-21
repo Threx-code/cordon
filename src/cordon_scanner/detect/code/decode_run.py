@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, ClassVar, Final
 from cordon_scanner.foundation.models import Capability
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from cordon_scanner.detect.base import FileUnit
     from cordon_scanner.detect.code.capability import CapabilityHit
     from cordon_scanner.foundation.content import FileContent
@@ -65,7 +67,7 @@ class DecodeRun:
 
     @classmethod
     def excused_lines(
-        cls, unit: FileUnit, hits: list[CapabilityHit], bundled: bool, rule_ids: object
+        cls, unit: FileUnit, hits: list[CapabilityHit], bundled: bool, rule_ids: Iterable[str]
     ) -> frozenset[int]:
         """Lines whose run cannot be of decoded content, so a spawn or execute there does not pair
         with a decode. Empty, computing nothing, unless a decode-run composite is among `rule_ids`.
