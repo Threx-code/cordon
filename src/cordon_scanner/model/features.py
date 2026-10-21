@@ -266,11 +266,15 @@ class FileFeatures:
                     command = str(scripts.get(key) or "")
                     if command:
                         has_hook = True
-                        hooks.update(m.lstrip("./") for m in _HOOK_FILE.findall(command))
+                        hooks.update(
+                            re.sub(r"^(?:\./)+", "", m) for m in _HOOK_FILE.findall(command)
+                        )
                 for key in ("main", "module", "bin"):
                     value = manifest.get(key)
                     values = value.values() if isinstance(value, dict) else [value]
-                    entries.update(str(v).lstrip("./") for v in values if isinstance(v, str))
+                    entries.update(
+                        re.sub(r"^(?:\./)+", "", str(v)) for v in values if isinstance(v, str)
+                    )
             if lower.endswith("setup.py"):
                 has_hook = has_hook or b"cmdclass" in body
         return hooks, entries, has_hook
