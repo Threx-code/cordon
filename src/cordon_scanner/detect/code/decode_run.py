@@ -84,9 +84,13 @@ class DecodeRun:
             # The Python analogue: a spawn whose command folds from literals and interpreter
             # constants only (`os.system(f"{sys.executable} -m pip install …")`) cannot be running
             # the file's decoded bytes, which go to `write_bytes`/a data URI (review 98 media skills).
+            # Nor can a run no decoded value reaches, followed through the file (`py_decoded.py`).
+            from cordon_scanner.analysis.python.py_decoded import PythonDecodedRun
             from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 
-            safe_spawn = PythonAnalyzer.safe_spawn_lines(content.text)
+            safe_spawn = PythonAnalyzer.safe_spawn_lines(
+                content.text
+            ) | PythonDecodedRun.unreached_runs(content.text)
         written = cls._written_literal_paths(content) if hits else frozenset()
         fixed: set[int] = set()
         for h in hits:
