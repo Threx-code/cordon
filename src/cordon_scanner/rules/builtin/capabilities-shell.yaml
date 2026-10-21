@@ -432,14 +432,20 @@ rules:
         # `find ... -delete` -- and the ones that ARE a write are four.
         #
         # `systemctl disable` is not an alternative to `enable` here, and never was.
-        - '\b(?:cp|mv|install|ln|tee|cat|echo|printf|touch|mkdir)\b[^\n]{0,100}?/etc/systemd/system/'
+        #
+        # `echo`, `printf` and `cat` are NOT in the verb list: they write only by redirect, which
+        # the `>`/`>>` alternatives already catch, so listing them as `verb ... path` matched a
+        # path INSIDE an echoed string -- an audit script's `echo "--- User LaunchAgents ---"`
+        # header read as installing one (review 98). `tee` takes the path as an argument, so it
+        # stays.
+        - '\b(?:cp|mv|install|ln|tee|touch|mkdir)\b[^\n]{0,100}?/etc/systemd/system/'
         - '>[ \t]{0,8}[^\n]{0,60}?/etc/systemd/system/'
         # No `path ... >` alternative. `rm -f /etc/systemd/system/x.service &>
         # /dev/null` has a redirect AFTER the path and writes nothing to it; a write
         # puts the redirect first, which the alternative above already covers.
         - '\bsystemctl\s+enable\b'
         - '\blaunchctl\s+load\b'
-        - '\b(?:cp|mv|install|ln|tee|cat|echo|printf|touch|mkdir|defaults\s+write)\b[^\n]{0,100}?(?:LaunchAgents|LaunchDaemons)'
+        - '\b(?:cp|mv|install|ln|tee|touch|mkdir|defaults\s+write)\b[^\n]{0,100}?(?:LaunchAgents|LaunchDaemons)'
         - '>[ \t]{0,8}[^\n]{0,60}?(?:LaunchAgents|LaunchDaemons)'
         - '\bRegister-ScheduledTask\b|\bschtasks\s+/create\b'
         - 'CurrentVersion\\\\Run'
@@ -467,6 +473,8 @@ rules:
         - "rm -rf /etc/systemd/system/pihole-FTL.service.d"
         - "net user flask"
         - "id -u someone"
+        - "echo '--- User LaunchAgents ---'"
+        - "printf 'inspecting /etc/systemd/system contents\\n'"
 
   # ---------------------------------------------------------------------
   # Fetch-execute adjacency
