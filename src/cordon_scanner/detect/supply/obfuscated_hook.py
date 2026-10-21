@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, Unit
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets.secrets import SourcePaths
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -91,11 +92,15 @@ class ObfuscatedHookDetector(BaseDetector):
             return ()
         content = unit.content
         # The deobfuscated copies the engine lifts (`#deobfuscated.js`) are skipped: the coverage
-        # gap is in the file as it ships, read at the hook target the installer actually runs.
+        # gap is in the file as it ships, read at the hook target the installer actually runs. An
+        # editor extension's activation entry is in install_hook_paths too, but the editor starts
+        # it, not npm, and it ships minified -- a dense bundle that is not a packed install hook
+        # (review 98: 5 benign Open VSX extensions).
         if (
             content.path not in ctx.install_hook_paths
             or "#" in content.path
             or content.is_binary
+            or SourcePaths.is_editor_extension(content.path)
             or not self.dense(content.text)
         ):
             return ()
