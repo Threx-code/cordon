@@ -126,6 +126,8 @@ class TestNamedInCodeNotWritten:
             'CMDS = ["find /etc/cron.d -name x -exec cp payload {} +"]\n'
             "for c in CMDS:\n"
             "    subprocess.run(c, shell=True)\n",
+            # `crontab -e` with the editor a command installs; only `-l` is a listing.
+            "subprocess.run(['crontab', '-e'], env={**os.environ, 'EDITOR': 'tee'}, input=job)\n",
             # A table command that installs.
             'CMDS = ["crontab -", "ls /tmp"]\n'
             "for c in CMDS:\n"
