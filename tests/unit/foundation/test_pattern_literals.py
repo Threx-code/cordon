@@ -36,8 +36,8 @@ class TestAPatternIsNotAWrite:
         assert Kit.persistence(tmp_path, GUARD) == []
 
     def test_the_same_paths_outside_a_pattern_still_report(self, tmp_path) -> None:
-        """The control: the identical text, handed to a variable rather than `re.compile`."""
-        source = GUARD.replace("REFUSED = re.compile(", "REFUSED = (").replace(
-            "REFUSED.search(value) or REFUSED.search(text)", "value in REFUSED or text in REFUSED"
-        )
+        """The control: the identical text, handed to a call outside the file rather than
+        `re.compile`. (Kept only in a variable and compared, it is named and never written, which
+        `analysis/python/py_persist.py` excuses too.)"""
+        source = GUARD.replace("REFUSED = re.compile(", "REFUSED = install(")
         assert Kit.persistence(tmp_path, source)

@@ -14,6 +14,8 @@
   "analysis/javascript/js_values": "analysis/javascript/js_values",
   "analysis/jvm/jvm_class": "analysis/jvm/jvm_class",
   "analysis/nix/nix_code": "analysis/nix/nix_code",
+  "analysis/python/py_flow": "analysis/python/py_flow",
+  "analysis/python/py_persist": "analysis/python/py_persist",
   "analysis/python/pyast": "analysis/python/pyast",
   "analysis/python/pysyntax": "analysis/python/pysyntax",
   "analysis/shared/ast_providers": "analysis/shared/ast_providers",

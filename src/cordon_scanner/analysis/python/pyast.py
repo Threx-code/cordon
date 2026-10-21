@@ -768,7 +768,9 @@ class PythonAnalyzer:
         patterns = cls._pattern_literals(tree)
         return {
             "CAP.EGRESS.DNS_CONSTRUCTED.001": own_name,
-            Capability.PERSIST: cls._persistence_named_not_written(tree) | patterns,
+            Capability.PERSIST: cls._persistence_named_not_written(tree)
+            | patterns
+            | cls._persistence_not_reaching_a_write(source, tree, analyzer._hits),
             Capability.EXECUTE: frozenset(analyzer._excused_lines),
             Capability.CREDENTIAL: frozenset(environment) | patterns,
             Capability.DECODE: analyzer._decoded_into_data_parsers(tree),
@@ -823,6 +825,22 @@ class PythonAnalyzer:
                 if first is not None:
                     lines.update(range(first, (last or first) + 1))
         return frozenset(lines)
+
+    @staticmethod
+    def _persistence_not_reaching_a_write(
+        source: str, tree: ast.AST, hits: list[AstHit]
+    ) -> frozenset[int]:
+        """Lines whose persistence location is named in a literal that never reaches a write
+        (`analysis/python/py_persist.py`): a list of the profiles a key is read from, a scanner's
+        pattern table, `crontab -l` saved as evidence. A line this tier itself read as persistence
+        (a profile opened to append, its path folded from character codes) keeps its hit."""
+        from cordon_scanner.analysis.python.py_persist import PythonPersistence
+
+        written = PythonPersistence.written_lines(tree)
+        if written is None:
+            return frozenset()
+        recorded = {hit.line for hit in hits if hit.capability is Capability.PERSIST}
+        return PythonPersistence.named_only_lines(source) - written - recorded
 
     #: Calls that show text to a person: what a shell profile line is in them is advice.
     MESSAGE_CALLS = frozenset(
