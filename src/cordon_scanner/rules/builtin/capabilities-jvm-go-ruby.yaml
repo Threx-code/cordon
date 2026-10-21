@@ -902,15 +902,23 @@ rules:
       kind: regex
       patterns:
         - '\bInetAddress\s*\.\s*getLocalHost\s*\('
-        - '\bSystem\s*\.\s*getProperty\s*\(\s*["\'](?:user\.name|user\.home)["\']'
+        - '\bSystem\s*\.\s*getProperty\s*\(\s*["\']user\.name["\']'
+        # The home directory read for itself. Followed at once by a path under it -- a Gradle
+        # script's `"${System.getProperty("user.home")}/.android/debug.keystore"`, `+ "/.m2"` --
+        # it locates a local file and reports nothing (review 98 G6: two Android builds).
+        - '\bSystem\s*\.\s*getProperty\s*\(\s*["\']user\.home["\']\s*\)(?!\s*\}?\s*[/\\]|\s*\+\s*["\'][/\\])'
         - '\bgetHostName\s*\(\s*\)'
     tests:
       positive:
         - "String h = InetAddress.getLocalHost().getHostName();"
         - "System.getProperty(\"user.name\")"
+        - "body.put(\"home\", System.getProperty(\"user.home\"));"
+        - "String q = \"?h=\" + System.getProperty(\"user.home\");"
       negative:
         - "System.getProperty(\"java.version\")"
         - "new File(path)"
+        - "storeFile = file(\"${System.getProperty(\"user.home\")}/.android/debug.keystore\")"
+        - "File(System.getProperty(\"user.home\") + \"/.m2/settings.xml\")"
 
   - id: CAP.RB.RECON.001
     version: 1.0.0

@@ -28,11 +28,14 @@ class BinaryHelpers:
     """Helpers for test_binary.py."""
 
     @staticmethod
-    def findings_for(path: str, raw: bytes, *, hooks: tuple[str, ...] = ()) -> list:
+    def findings_for(
+        path: str, raw: bytes, *, hooks: tuple[str, ...] = (), tree: tuple[str, ...] = ()
+    ) -> list:
         ctx = ScanContext(
             config=Config.default(),
             rules=RuleSet(RuleLoader.load_builtin()),
             install_hook_paths=frozenset(hooks),
+            tree_paths=frozenset((path, *tree)),
         )
         unit = FileUnit(content=FileContent.from_bytes(path, raw), language=None)
         return list(BinaryDetector().inspect(unit, ctx))
@@ -67,6 +70,27 @@ class TestContext:
 
     def test_a_binary_named_by_an_install_hook_is_a_finding(self) -> None:
         found = BinaryHelpers.findings_for("tool", ELF, hooks=("tool",))
+        assert found[0].rule_id == "SUSPECT.BINARY.EXECUTABLE_PATH.001"
+
+    def test_a_virtualenvs_own_launcher_is_a_note(self) -> None:
+        # An sdist that packaged its build environment: `.venv/Scripts/pip.exe` beside the
+        # environment's `pyvenv.cfg`. No lifecycle step runs it (review 98 G6).
+        found = BinaryHelpers.findings_for(
+            "pkg-1.0/.venv/Scripts/pip.exe", ELF, tree=("pkg-1.0/.venv/pyvenv.cfg",)
+        )
+        assert found[0].rule_id == "POLICY.BINARY.COMMITTED.001"
+
+    def test_a_scripts_directory_without_an_environment_is_still_a_finding(self) -> None:
+        found = BinaryHelpers.findings_for(
+            "pkg-1.0/.venv/Scripts/pip.exe", ELF, tree=("pkg-1.0/pyvenv.cfg",)
+        )
+        assert found[0].rule_id == "SUSPECT.BINARY.EXECUTABLE_PATH.001"
+
+    def test_a_launcher_an_install_hook_names_is_still_a_finding(self) -> None:
+        path = "pkg-1.0/.venv/Scripts/pip.exe"
+        found = BinaryHelpers.findings_for(
+            path, ELF, hooks=(path,), tree=("pkg-1.0/.venv/pyvenv.cfg",)
+        )
         assert found[0].rule_id == "SUSPECT.BINARY.EXECUTABLE_PATH.001"
 
     def test_a_vendored_library_is_a_note(self) -> None:

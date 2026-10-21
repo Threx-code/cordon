@@ -2130,8 +2130,20 @@ class _Analysis:
         hands it over bare. A parameter is not one either: what a caller passed is not seen."""
         if b - a > 64 or len(seen) > 8:
             return False
-        for i in range(a, b):
+        i = a - 1
+        while i + 1 < b:
+            i += 1
             tok = self.t[i]
+            if (
+                self.is_name(i, "require")
+                and self.is_p(i + 1, "(")
+                and i + 3 < b
+                and self.t[i + 2].kind == "str"
+                and self.t[i + 2].value in ("os", "node:os")
+                and self.is_p(i + 3, ")")
+            ):
+                i += 3  # `require("os").hostname()`: the module itself, as an alias of it is
+                continue
             if tok.kind == "str" or (tok.kind == "punct" and tok.value in ("+", "+=", "`")):
                 return False
             if tok.kind != "name":

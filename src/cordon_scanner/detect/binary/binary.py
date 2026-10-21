@@ -988,7 +988,7 @@ class BinaryDetector(BaseDetector):
             for fragment in EXECUTING_DIRECTORIES
             # And not a `scripts/` that is part of a source tree. See `SOURCE_TREES`.
             if not any(tree in lowered.split(fragment, 1)[0] + "/" for tree in SOURCE_TREES)
-        )
+        ) and not self._virtualenv_launcher(path, ctx)
         if found.name not in NOT_LIFECYCLE_RUNNABLE and (
             in_lifecycle_directory or ctx.in_install_hook(path)
         ):
@@ -1010,6 +1010,17 @@ class BinaryDetector(BaseDetector):
 
         yield from self._import_findings(unit, ctx, content, found)
         yield from self._content_findings(unit, ctx, content, executable=True)
+
+    @staticmethod
+    def _virtualenv_launcher(path: str, ctx: ScanContext) -> bool:
+        """A Windows virtual environment's own `Scripts/` (`pip.exe`, a console script's launcher):
+        the directory above holds the environment's `pyvenv.cfg`. No lifecycle step runs it; an
+        sdist that ships one has packaged its build environment by mistake (review 98 G6). What an
+        install hook names is still reported, and the binary is still read."""
+        cut = path.lower().rfind("scripts/")
+        if cut < 0 or (cut > 0 and path[cut - 1] != "/"):
+            return False
+        return f"{path[:cut]}pyvenv.cfg" in ctx.tree_paths
 
     def _import_findings(
         self, unit: FileUnit, ctx: ScanContext, content: FileContent, found: Format

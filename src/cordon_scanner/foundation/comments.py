@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import functools
 import re
+from typing import ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
@@ -319,10 +320,94 @@ class SourceComments:
         start = SourceComments.comment_column(line, language)
         return start is not None and column >= start
 
+    #: A manifest's fields about the project, which no install fetches: where its source, home
+    #: page and issue tracker are, who wrote it, how to fund it.
+    METADATA_KEYS: ClassVar[frozenset[bytes]] = frozenset(
+        {
+            b"repository",
+            b"homepage",
+            b"bugs",
+            b"author",
+            b"contributors",
+            b"maintainers",
+            b"funding",
+        }
+    )
+
+    @staticmethod
+    def manifest_metadata_spans(raw: bytes) -> tuple[tuple[int, int], ...]:
+        """Byte ranges of a JSON manifest's project metadata (`METADATA_KEYS`, top level only):
+        `iflow-open-engine`'s `"repository": {"url": "http://<ip>:13000/..."}` names where the
+        source is kept, and npm contacts none of it at install (review 98 G6). Only for an object
+        with a top-level `name`; what a script or a config value holds is not in these."""
+        spans: list[tuple[int, int]] = []
+        depth, i, n = 0, 0, len(raw)
+        key: bytes | None = None
+        named = False
+        while i < n:
+            c = raw[i : i + 1]
+            if c == b'"':
+                end = SourceComments._json_string_end(raw, i)
+                if depth == 1 and key is None and raw[end : end + 64].lstrip().startswith(b":"):
+                    key = raw[i + 1 : end - 1]
+                    named = named or key == b"name"
+                elif depth == 1:
+                    if key in SourceComments.METADATA_KEYS:
+                        spans.append((i, end))
+                    key = None
+                i = end
+                continue
+            if c in (b"{", b"["):
+                if depth == 1 and key in SourceComments.METADATA_KEYS:
+                    end = SourceComments._json_value_end(raw, i)
+                    spans.append((i, end))
+                    key, i = None, end
+                    continue
+                depth += 1
+            elif c in (b"}", b"]"):
+                depth -= 1
+                key = None if depth == 1 else key
+            elif c == b"," and depth == 1:
+                key = None
+            i += 1
+        return tuple(spans) if named else ()
+
+    @staticmethod
+    def _json_string_end(raw: bytes, start: int) -> int:
+        """The offset just past the JSON string that opens at `start`."""
+        i = start + 1
+        while i < len(raw):
+            if raw[i : i + 1] == b"\\":
+                i += 2
+                continue
+            if raw[i : i + 1] == b'"':
+                return i + 1
+            i += 1
+        return len(raw)
+
+    @staticmethod
+    def _json_value_end(raw: bytes, start: int) -> int:
+        """The offset just past the JSON object or array that opens at `start`."""
+        depth, i = 0, start
+        while i < len(raw):
+            c = raw[i : i + 1]
+            if c == b'"':
+                i = SourceComments._json_string_end(raw, i)
+                continue
+            if c in (b"{", b"["):
+                depth += 1
+            elif c in (b"}", b"]"):
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+            i += 1
+        return len(raw)
+
     @staticmethod
     @functools.lru_cache(maxsize=8)
     def docstring_spans(raw: bytes, language: str | None) -> tuple[tuple[int, int], ...]:
-        """Byte ranges of Python docstrings.
+        """Byte ranges of Python docstrings, and of a JSON manifest's project metadata
+        (`manifest_metadata_spans`).
 
         `block_comment_spans` covers `/* */` and `comment_column` covers `#`, and
         neither sees a triple-quoted string used as documentation -- which in Python
@@ -345,6 +430,8 @@ class SourceComments:
         Offsets are bytes, matching `ast`'s own `col_offset`, so they line up with
         the rest of the detector without a decode.
         """
+        if language == "json":
+            return SourceComments.manifest_metadata_spans(raw)
         if language != "python":
             return ()
         import ast

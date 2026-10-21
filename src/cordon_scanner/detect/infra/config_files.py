@@ -1917,9 +1917,13 @@ RULES: tuple[ConfigRule, ...] = (
         # a pinned or checksum-verified fetch is a step down, not silence.
         mitigation=VERIFIED_FETCH,
         pattern=ConfigRule._p(
-            r"(?:curl|wget)[^\n|]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:ba)?sh"
+            # Not inside make's own messages: `$(warning "... run: curl -sfL <url> | sh")` tells a
+            # person what to run, and make runs nothing of it (review 98 G6: cobra's Makefile,
+            # vendored).
+            r"(?m)^(?![^\n]{0,400}?\$[({](?:warning|info|error)\b)[^\n]{0,400}?"
+            r"(?:(?:curl|wget)[^\n|]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:ba)?sh"
             r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
-            r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357]))"
+            r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357])))"
         ),
         paths=MAKE_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),

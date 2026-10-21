@@ -321,6 +321,8 @@
   "test_closure_order.py": "engine",
   "test_cloud.py": "cloud",
   "test_cmake_fetch.py": "foundation",
+  "test_make_fetch.py": "foundation",
+  "test_manifest_metadata.py": "foundation",
   "test_cocoapods_trunk.py": "ecosystems",
   "test_code_carried_as_data.py": "detect/agents",
   "test_comments.py": "foundation",
