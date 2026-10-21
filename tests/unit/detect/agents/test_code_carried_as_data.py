@@ -67,6 +67,11 @@ class TestAStringRunAsCode:
         assert not self.hit("eval(`" + PROGRAM + "${tail}`);\n")
         assert not self.hit("eval(source);\nconst s = '" + PROGRAM + "';\n")
 
+    def test_a_literal_filled_by_a_replace_is_still_carried(self):
+        # A placeholder the replacement fills does not make the literal computed: the program is
+        # still the literal (`.replace(/X/g, "")` would excuse any payload).
+        assert self.hit(f'new Function(`{PROGRAM}/*X*/`.replace(/X/g, ""));\n')
+
     def test_run_from_an_install_hook_it_is_reported(self, tmp_path):
         target = Package.npm(
             tmp_path,

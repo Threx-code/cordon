@@ -12,6 +12,7 @@
   "analysis/javascript/js_flow": "analysis/javascript/js_flow",
   "analysis/javascript/js_fold": "analysis/javascript/js_fold",
   "analysis/javascript/js_persist": "analysis/javascript/js_persist",
+  "analysis/javascript/js_string_code": "analysis/javascript/js_string_code",
   "analysis/javascript/js_values": "analysis/javascript/js_values",
   "analysis/jvm/jvm_class": "analysis/jvm/jvm_class",
   "analysis/nix/nix_code": "analysis/nix/nix_code",
@@ -571,7 +572,7 @@
   "long_modules": {
    "cli/main": 3131,
    "detect/agents/agents": 4687,
-   "detect/code/capability": 5170,
+   "detect/code/capability": 5120,
    "detect/secrets/secrets": 4838,
    "engine/engine": 7873,
    "intel/advisories/upstream_advisories": 3918,

@@ -3116,75 +3116,26 @@ class CapabilityDetector(BaseDetector):
             )
         ]
 
-    #: Where JavaScript turns a string into code it runs.
-    _JS_STRING_EVALUATOR: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?<![\w$.])(?:eval|Function|new\s{1,4}Function)\s{0,4}\("
-        r"|(?:\bvm|require\(\s{0,4}['\"](?:node:)?vm['\"]\s{0,4}\))\s{0,4}\.\s{0,4}"
-        r"(?:runInThisContext|runInNewContext|runInContext|compileFunction)\s{0,4}\("
-        r"|\bnew\s{1,4}vm\s{0,4}\.\s{0,4}Script\s{0,4}\("
-    )
-    #: A string this long handed to an evaluator is a program carried as data. What code builds at
-    #: run time -- `new Function("return this")`, a template compiled to a function -- is short or
-    #: computed; nobody hand-writes a thousand characters of JavaScript inside quotes.
-    STRING_CODE_MIN: ClassVar[int] = 1000
-    _JS_SHORT_STRING_ARG: ClassVar[re.Pattern[str]] = re.compile(
-        r"""\s{0,8}(?:'[^'\\\n]{0,80}'|"[^"\\\n]{0,80}"|`[^`\\]{0,80}`)\s{0,8},"""
-    )
+    @staticmethod
+    def _js_string_code_run(content: FileContent, language: str | None) -> list[CapabilityHit]:
+        """An evaluator handed a long string literal (`analysis/javascript/js_string_code.py`)."""
+        from cordon_scanner.analysis.javascript.js_string_code import JsStringCode
 
-    @classmethod
-    def _js_string_code_run(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
-        """An evaluator handed a long string literal: the program the file runs, kept out of its
-        code. `Function("w", "<822 KB>")(...)` from a postinstall was the whole of a hijacked `is`
-        release (review 98); nothing is decoded, so the decode-and-run composites never see it.
-        Up to three short leading arguments are skipped -- `Function`'s parameter names."""
         if language not in ("javascript", "typescript"):
             return []
-        text = content.text
-        if len(text) < cls.STRING_CODE_MIN:
+        found = JsStringCode.first_run(content.text)
+        if found is None:
             return []
-        for call in cls._JS_STRING_EVALUATOR.finditer(text):
-            index = call.end()
-            for _ in range(3):
-                short = cls._JS_SHORT_STRING_ARG.match(text, index)
-                if short is None:
-                    break
-                index = short.end()
-            while index < len(text) and text[index] in " \t\r\n":
-                index += 1
-            if index >= len(text) or text[index] not in "'\"`":
-                continue
-            if cls._string_length(text, index) < cls.STRING_CODE_MIN:
-                continue
-            start = len(text[: call.start()].encode("utf-8"))
-            return [
-                CapabilityHit(
-                    capability=Capability.FLOW,
-                    rule_id="CAP.JS.STRING_CODE_RUN",
-                    byte_start=start,
-                    byte_end=start + len(call.group(0).encode("utf-8")),
-                    line=text.count("\n", 0, call.start()) + 1,
-                )
-            ]
-        return []
-
-    @staticmethod
-    def _string_length(text: str, open_quote: int) -> int:
-        """The length of the string literal opening at `open_quote`, or 0 if it does not close."""
-        quote = text[open_quote]
-        index = open_quote + 1
-        while index < len(text):
-            char = text[index]
-            if char == "\\":
-                index += 2
-                continue
-            if char == quote:
-                return index - open_quote - 1
-            if char == "\n" and quote != "`":
-                return 0
-            if quote == "`" and text.startswith("${", index):
-                return 0  # a template that computes part of itself is not a literal
-            index += 1
-        return 0
+        text, (begin, finish) = content.text, found
+        start = len(text[:begin].encode("utf-8"))
+        hit = CapabilityHit(
+            capability=Capability.FLOW,
+            rule_id="CAP.JS.STRING_CODE_RUN",
+            byte_start=start,
+            byte_end=start + len(text[begin:finish].encode("utf-8")),
+            line=text.count("\n", 0, begin) + 1,
+        )
+        return [hit]
 
     @classmethod
     def _js_flows(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
