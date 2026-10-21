@@ -377,6 +377,10 @@ class TestSelfScan(CorpusFixtures):
             # Campaign behaviours rebuilt as inert fixtures, each a rule's test positive.
             and f.location.path != "tests/unit/detect/code/test_npm_campaign_classes.py"
             and f.location.path != "tests/unit/detect/agents/test_agents.py"
+            # The JavaScript dataflow's fixtures are attack-shaped fixtures by construction -- a
+            # credential read reaching a request, a decoded blob reaching a spawn -- each the
+            # positive a flow rule is tested on.
+            and f.location.path != "tests/unit/analysis/javascript/test_js_flow.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/suites/skills_measure.py"

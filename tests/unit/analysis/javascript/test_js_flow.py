@@ -103,6 +103,51 @@ class TestRemoteCode:
         assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
 
 
+class TestADecodedValueRun:
+    """A decoded blob reaching a run is the decoded-content dropper; a constant run beside an
+    unrelated decode is not. `safe_spawn_lines` marks the latter so the decode composites drop it."""
+
+    def test_a_decoded_string_executed_is_found(self) -> None:
+        text = 'const cp = require("child_process");\ncp.exec(atob("ZWNobyBoaQ=="));\n'
+        assert (["decoded"], "process", "unknown") in FlowKit.flows(text)
+
+    def test_a_base64_buffer_spawned_is_found(self) -> None:
+        text = (
+            'const cp = require("child_process");\n'
+            'function go(x) { cp.spawn(Buffer.from(x, "base64").toString()); }\n'
+        )
+        assert (["decoded"], "process", "unknown") in FlowKit.flows(text)
+
+    def test_a_decoded_payload_written_then_run_is_found(self) -> None:
+        text = (
+            'const cp = require("child_process"); const fs = require("fs");\n'
+            'const p = require("os").tmpdir() + "/x";\n'
+            'const d = atob("ZWNobyBoaQ=="); fs.writeFileSync(p, d);\n'
+            'cp.execFile("node", [p]);\n'
+        )
+        assert (["decoded"], "process", "unknown") in FlowKit.flows(text)
+
+    def test_a_constant_tool_spawn_beside_an_unrelated_decode_is_safe(self) -> None:
+        # The common.mjs shape: a discovered interpreter run with literal args, and a screenshot
+        # decode that never reaches it. The spawns are source-free, so they are "safe" -- which the
+        # decode composites read as "cannot be running the decoded value".
+        text = (
+            'const cp = require("child_process");\n'
+            'const PY = cp.execFileSync("which", ["python3"]).toString().trim();\n'
+            'const FF = cp.execFileSync(PY, ["-c", "import imageio_ffmpeg"]).toString();\n'
+            "async function shot(cdp) {\n"
+            '  const { data } = await cdp.send("Page.captureScreenshot");\n'
+            '  return Buffer.from(data, "base64");\n'
+            "}\n"
+        )
+        assert JsFlow.safe_spawn_lines(text) == frozenset({2, 3})
+        assert not any(sources == ["decoded"] for sources, _, _ in FlowKit.flows(text))
+
+    def test_a_decoded_run_is_not_safe(self) -> None:
+        text = 'const cp = require("child_process");\ncp.exec(atob("ZWNobyBoaQ=="));\n'
+        assert JsFlow.safe_spawn_lines(text) == frozenset()
+
+
 class TestQuiet:
     def test_a_client_sending_its_own_token(self) -> None:
         text = (

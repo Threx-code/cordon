@@ -222,6 +222,25 @@ _INTERPRETER: Final = re.compile(
     r"|bash|dash|zsh|ksh|sh|pwsh|powershell)(?:\.exe)?(?:$|[\s\"'`])",
     re.I,
 )
+#: Decompressors whose output is bytes a server or a blob chose: running that output is the
+#: decoded-content dropper. `Buffer.from(x, "base64"|"hex")` and `atob(x)` are handled by name.
+_DECODERS: Final = frozenset(
+    {
+        "gunzipSync",
+        "gunzip",
+        "inflateSync",
+        "inflate",
+        "inflateRawSync",
+        "inflateRaw",
+        "unzipSync",
+        "unzip",
+        "brotliDecompressSync",
+        "brotliDecompress",
+    }
+)
+#: The base64/hex encodings a `Buffer.from(value, enc)` DECODES (a string of code back into bytes),
+#: as opposed to `.toString("base64")`, which encodes.
+_DECODE_ENCODINGS: Final = frozenset({"base64", "base64url", "hex"})
 _DNS_CALL: Final = frozenset(
     {"lookup", "resolve", "resolve4", "resolve6", "resolveTxt", "resolveAny", "resolveCname"}
 )
@@ -321,6 +340,7 @@ class JsFlow:
         "secret_file",
         "home_file",
         "network_response",
+        "decoded",
         "environment",
         "identity",
         "browser",
@@ -387,6 +407,23 @@ class JsFlow:
             return _Analysis(text).deferred()
         except RecursionError:
             return None
+
+    @classmethod
+    def safe_spawn_lines(cls, text: str) -> frozenset[int]:
+        """Lines of process calls the analysis RESOLVED as a process sink and found no source
+        reaches -- the command and its arguments are literals or local constants, nothing decoded,
+        fetched or otherwise tracked flows in. For the decode-run composites to drop a spawn that
+        cannot be running decoded content. A call it could not resolve as a process sink is absent,
+        so a dynamic command keeps its pairing; empty when the file is too large or did not parse,
+        so the caller drops nothing (fail-closed)."""
+        if len(text) > MAX_BYTES:
+            return frozenset()
+        try:
+            analysis = _Analysis(text)
+            analysis.run()
+            return analysis.clean_spawns()
+        except (RecursionError, _OverBudget):
+            return frozenset()
 
 
 class _Analysis:
@@ -1044,6 +1081,9 @@ class _Analysis:
                         and str(t[k - 2].value) in ("clipboard", "clipboardy")
                     ):
                         self.fact[k] = ("src", "clipboard")
+                    elif self.is_p(k + 1, "(") and self.match[k + 1] > 0 and self._is_decode(k):
+                        # `Buffer.from(x, "base64")`, `zlib.gunzipSync(x)`: the decoded bytes.
+                        self.fact[k] = ("src", "decoded")
                     elif (
                         (self.is_name(k - 2, "this") or self._on_class(k))
                         and self.is_p(k + 1, "(")
@@ -1075,6 +1115,9 @@ class _Analysis:
                     ):
                         # What a request returns is what the server chose to send.
                         self.fact[k] = ("src", "network_response")
+                    elif self.is_p(k + 1, "(") and self.match[k + 1] > 0 and self._is_decode(k):
+                        # `atob(x)`, a destructured `gunzipSync(x)`: the decoded bytes.
+                        self.fact[k] = ("src", "decoded")
                     elif self.is_p(k + 1, "(") and self.match[k + 1] > 0:
                         self.fact[k] = ("call", v)
                     else:
@@ -1278,6 +1321,22 @@ class _Analysis:
         return out
 
     # -- sinks -----------------------------------------------------------------------------------
+
+    def _is_decode(self, k: int) -> bool:
+        """Whether the call at name token `k` decodes a value -- `atob(x)`, `Buffer.from(x,
+        "base64"|"hex")`, or a zlib/brotli decompressor -- so its result is bytes a server or a
+        blob chose. Running that result is the decoded-content dropper the REMOTE_CODE/DECODE rules
+        read; `.toString("base64")` is the opposite act and is not one."""
+        parts = self._chain(k)[0]
+        last = parts[-1]
+        if last == "atob" or last in _DECODERS:
+            return True
+        if last == "from" and len(parts) >= 2 and parts[-2] == "Buffer":
+            args = self._args(k + 1)
+            if len(args) >= 2:
+                enc = self._folded(args[1][0], args[1][1])
+                return enc is not None and enc.lower() in _DECODE_ENCODINGS
+        return False
 
     def _sink_kind(self, k: int, scope: int) -> str | None:
         """The kind of sink a call at name token `k` is, if any."""
@@ -1676,20 +1735,17 @@ class _Analysis:
             elif name in _ARCHIVE_ADD_PATH:  # the archiver reads the path: its contents go in
                 added = set().union(*(JsFlow.read_of(self.taint(s, e, scope)) for s, e in args))
                 changed |= self._grow(self.vars.setdefault(av, set()), added)
-        # A response written to a file to be run from disk: the file now holds code a server
-        # chose, so the path it was written to carries `network_response`. Running that path
-        # (`exec(p)`, `require(p)`) is the dropper the REMOTE_CODE rule reads; `network_response`
-        # reaches no send-sink, so the path is only ever judged where it runs. A verified
+        # A response -- or a decoded blob -- written to a file to be run from disk: the file now
+        # holds code something chose, so the path it was written to carries that label. Running the
+        # path (`exec(p)`, `require(p)`) is the dropper the REMOTE_CODE/DECODE rules read; neither
+        # label reaches a send-sink, so the path is only ever judged where it runs. A verified
         # own-release download is lowered in grading (review 98 round 2 B).
-        if (
-            name in _FS_WRITE
-            and len(args) >= 2
-            and "network_response" in self.taint(*args[1], scope)
-        ):
+        if name in _FS_WRITE and len(args) >= 2:
+            carried = self.taint(*args[1], scope) & {"network_response", "decoded"}
             s0, e0 = args[0]
-            if e0 - s0 == 1 and self.t[s0].kind == "name":
+            if carried and e0 - s0 == 1 and self.t[s0].kind == "name":
                 written = self.resolve(str(self.t[s0].value), scope)
-                changed |= self._grow(self.vars.setdefault(written, set()), {"network_response"})
+                changed |= self._grow(self.vars.setdefault(written, set()), carried)
         # Callbacks get what the call works on: its receiver and its other arguments.
         candidates = [
             (i, self.fn_at_token.get(s) or self.fn_at_token.get(s + 1))
@@ -1933,6 +1989,25 @@ class _Analysis:
             kind = self._url_kind(args[0], scope, k, 0) if args else "other"
             out.append(Request(self.line(k), kind, parts if kind == "registry" else ()))
         return out
+
+    def clean_spawns(self) -> frozenset[int]:
+        """See `JsFlow.safe_spawn_lines`. Read after `run`, over the final taint: a process sink
+        whose command position carries no label at all -- so its command and arguments are
+        literals or local constants, with nothing decoded, fetched or deferred to a call site
+        flowing into them."""
+        out: set[int] = set()
+        for k in range(self.n - 1):
+            if not self._called(k):
+                continue
+            scope = self.scope_of(k)
+            if self._sink_kind(k, scope) != "process":
+                continue
+            args = self._args(k + 1)
+            if not args or self._opener(*args[0], scope):
+                continue
+            if not self._sent(k, "process", args, scope):
+                out.add(self.line(k))
+        return frozenset(out)
 
     def _called(self, k: int) -> bool:
         """Whether name token `k` is called here, not declared (`function fetch(url) {`, a

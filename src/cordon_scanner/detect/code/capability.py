@@ -46,6 +46,8 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     ScanContext,
 )
+from cordon_scanner.detect.code.addresses import PublicAddress
+from cordon_scanner.detect.code.decode_run import DecodeRun
 from cordon_scanner.detect.code.store_flow import StoreFlow
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
 from cordon_scanner.detect.secrets.secrets import (
@@ -321,7 +323,7 @@ class CapabilityDetector(BaseDetector):
     # the pattern tier wins -- one call is not two of a composite's capabilities.
     # 0.12.0: an encoded command's plaintext reaches the rules, and the
     # minified ceiling no longer excuses a language nobody minifies.
-    version = "0.12.0"
+    version = "0.13.0"  # decode-run composites drop a spawn nothing decoded reaches (decode_run)
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -3592,7 +3594,7 @@ class CapabilityDetector(BaseDetector):
         ]
         for match in sorted(matches, key=lambda m: m.start()):
             octets = [int(part) for part in match.groups()]
-            if any(o > 255 for o in octets) or not cls._is_public(octets):
+            if any(o > 255 for o in octets) or not PublicAddress.is_public(octets):
                 continue
             if tuple(octets) in cls._RESOLVERS:
                 continue
@@ -3614,20 +3616,6 @@ class CapabilityDetector(BaseDetector):
                 )
             ]
         return []
-
-    @staticmethod
-    def _is_public(octets: list[int]) -> bool:
-        a, b, c = octets[0], octets[1], octets[2]
-        return not (
-            a in (0, 10, 127)
-            or a >= 224
-            or (a == 169 and b == 254)
-            or (a == 172 and 16 <= b <= 31)
-            or (a == 192 and b == 168)
-            or (a == 100 and 64 <= b <= 127)
-            or (a, b, c) in ((192, 0, 2), (198, 51, 100), (203, 0, 113))
-            or (a == 198 and b in (18, 19))
-        )
 
     def _embedded_capabilities(
         self, ctx: ScanContext, content: FileContent, commands: list[Command]
@@ -3741,6 +3729,9 @@ class CapabilityDetector(BaseDetector):
             else frozenset()
         )
 
+        decode_excused = DecodeRun.excused_lines(
+            unit, hits, self._bundled_path(unit.path), [c.rule.id for c in candidates]
+        )
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
                 continue
@@ -3752,7 +3743,7 @@ class CapabilityDetector(BaseDetector):
                 if compiled.rule.id in self.SETTINGS_ARE_NOT_LOOT
                 else [h for h in hits if not self._spawns_an_unpacker(unit.content, h)]
                 if compiled.rule.id in self.VERIFIABLE_DROPPERS
-                else hits
+                else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
             )
             if compiled.rule.id in self.CONTEXT_FREE:
                 window = self._satisfying_window(
