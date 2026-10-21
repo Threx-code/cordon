@@ -79,18 +79,6 @@ class TestRemoteCode:
         text = 'async function go() {\n  const r = await fetch("https://api.invalid/x");\n  console.log(await r.json());\n}\n'
         assert FlowKit.flows(text) == []
 
-    def test_a_reply_as_an_argument_to_a_fixed_program_is_not_run(self) -> None:
-        # execFileSync("taskkill", [pid]): taskkill runs its own code; the reply is data handed to
-        # it, not code it runs. Two Open VSX extensions blocked here (review 98).
-        text = (
-            'const cp = require("child_process"); const https = require("https");\n'
-            'https.get("https://x.invalid/p", (res) => {\n'
-            '  let b = ""; res.on("data", (p) => b += p);\n'
-            '  res.on("end", () => cp.execFileSync("taskkill", ["/PID", b]));\n'
-            "});\n"
-        )
-        assert not any(sink == "process" for _, sink, _ in FlowKit.flows(text))
-
     def test_a_reply_as_the_script_of_an_interpreter_is_run(self) -> None:
         # execFile("node", [reply]): node runs the script named after it, so the reply is code.
         text = (

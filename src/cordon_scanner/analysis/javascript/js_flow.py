@@ -214,14 +214,6 @@ _DESTINATION_KEYS: Final = frozenset({"host", "hostname", "localAddress", "port"
 _PROCESS_CALL: Final = frozenset(
     {"exec", "execSync", "spawn", "spawnSync", "execFile", "execFileSync", "fork"}
 )
-#: A program that runs the script named after it, so a fetched value passed as its argument is
-#: code it runs (`execFile("node", [downloadedScript])`). Any other program runs its own code and
-#: takes the argument as data (`execFile("taskkill", [pid])`), so the fetched value is not run.
-_INTERPRETER: Final = re.compile(
-    r"(?:^|[\\/\s\"'`])(?:node(?:js)?|deno|bun|ts-node|python[0-9.]*|ruby|perl|php|osascript"
-    r"|bash|dash|zsh|ksh|sh|pwsh|powershell)(?:\.exe)?(?:$|[\s\"'`])",
-    re.I,
-)
 #: Decompressors whose output is bytes a server or a blob chose: running that output is the
 #: decoded-content dropper. `Buffer.from(x, "base64"|"hex")` and `atob(x)` are handled by name.
 _DECODERS: Final = frozenset(
@@ -1886,22 +1878,6 @@ class _Analysis:
         identity in a path, a body or a name's labels (`id + ".x.invalid"`), which stay."""
         parts = self._chain(k)[0]
         root, last = parts[0], parts[-1]
-        if kind == "process":
-            # A process call RUNS its command, not an argument handed to a fixed program. exec(cmd)
-            # and execFile(prog, argv) run arg 0; a later arg is data unless arg 0 is an interpreter
-            # (node, python, sh) that runs the script named after it. execFile("taskkill", [pid])
-            # and spawn("open", [url]) run neither the pid nor the url, so a fetched value reaching
-            # one is data to a fixed tool, not code (review 98: two Open VSX extensions blocked on a
-            # response reaching taskkill's argument and an fs call's argument).
-            run = {0}
-            cmd = self._folded(args[0][0], args[0][1]) if args else None
-            if cmd is not None and _INTERPRETER.search(cmd):
-                run |= set(range(1, len(args)))
-            out: set[Label] = set()
-            for i in sorted(run):
-                if i < len(args):
-                    out |= self.taint(args[i][0], args[i][1], scope)
-            return out
         if kind == "dns":
             where = {0}
         elif root in _RAW_SOCKET_MODULES and last in _CONNECTION_OPEN:
