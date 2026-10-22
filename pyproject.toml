@@ -307,6 +307,8 @@ ignore = [
 #   S310 urlopen - fixed https URLs
 #   S603/S607 subprocess - git, cordon-scanner, guarddog, osv-scanner, trivy by name
 "bench/**" = ["S310", "S603", "S607"]
+# CDI learning-pipeline tests use pytest asserts, like tests/**.
+"bench/**/test_*.py" = ["S101", "S310", "S603", "S607"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cordon_scanner"]
