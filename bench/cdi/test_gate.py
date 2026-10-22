@@ -13,7 +13,8 @@ def scans(path: Path, rows: dict[str, tuple[object, list[list[str]], float]]) ->
         "".join(
             json.dumps({"file": f, "exit": e, "findings": fs, "seconds": s}) + "\n"
             for f, (e, fs, s) in rows.items()
-        )
+        ),
+        encoding="utf-8",
     )
     return str(path)
 
