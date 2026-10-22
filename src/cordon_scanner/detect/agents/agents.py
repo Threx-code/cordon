@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
+from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS, autorun_findings
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION, DefensiveDoc
 from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionModel
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
@@ -141,16 +142,6 @@ MCP_PATHS: Final = (
     "**/.continue/mcpServers/*",
 )
 WORKFLOW_PATHS: Final = ("**/.github/workflows/*.yml", "**/.github/workflows/*.yaml")
-AUTORUN_PATHS: Final = (
-    "**/.vscode/tasks.json",
-    "**/.devcontainer/devcontainer.json",
-    "**/.devcontainer.json",
-    "**/.devcontainer/*/devcontainer.json",
-    "**/.cursor/environment.json",
-)
-"""Files whose commands an editor or agent runs without anyone typing them: VS Code tasks set to
-run when the folder opens, dev-container lifecycle commands (`initializeCommand` on the host
-itself), and the install and start steps of Cursor's background-agent environment."""
 CODEX_CONFIG_PATHS: Final = ("**/.codex/config.toml",)
 MARKETPLACE_PATHS: Final = ("**/.claude-plugin/marketplace.json",)
 COMMAND_PATHS: Final = (
@@ -2980,62 +2971,11 @@ class AgentChainDetector(BaseDetector):
                     "SECRET.MCP.INLINE_CREDENTIAL.001", unit, ctx, text, literal, secret=True
                 )
 
-    _LIFECYCLE: Final = (
-        "initializeCommand",
-        "onCreateCommand",
-        "updateContentCommand",
-        "postCreateCommand",
-        "postStartCommand",
-        "postAttachCommand",
-    )
-
     def _autorun(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
-        """Commands an editor or agent runs when the folder is opened or the environment built."""
-        document = McpConfigs._json(unit.content)
-        if not isinstance(document, dict):
-            return
-        text = unit.content.text
-        commands: list[tuple[str, str]] = []
-        for task in document.get("tasks") or ():
-            if not isinstance(task, dict):
-                continue
-            options = task.get("runOptions")
-            if isinstance(options, dict) and options.get("runOn") == "folderOpen":
-                command = task.get("command")
-                arguments = [str(a) for a in task.get("args") or () if isinstance(a, str)]
-                if isinstance(command, str):
-                    commands.append(
-                        ("a task that runs when the folder opens", " ".join([command, *arguments]))
-                    )
-        for key in self._LIFECYCLE:
-            commands.extend(
-                (f"the dev container's `{key}`", c)
-                for c in McpConfigs._command_strings(document.get(key))
-            )
-        for key in ("install", "start"):
-            commands.extend(
-                (f"the agent environment's `{key}`", c)
-                for c in McpConfigs._command_strings(document.get(key))
-            )
-        for terminal in document.get("terminals") or ():
-            if isinstance(terminal, dict):
-                commands.extend(
-                    ("an agent environment terminal", c)
-                    for c in McpConfigs._command_strings(terminal.get("command"))
-                )
-        for where, command in commands:
-            verdict = agent_config.CommandClassifier.classify(command)
-            if verdict is not None:
-                yield self._at_text(
-                    "MALWARE.AGENT.AUTORUN.001",
-                    unit,
-                    ctx,
-                    text,
-                    command.split(" ", 1)[0] if command not in text else command,
-                    message=RULES["MALWARE.AGENT.AUTORUN.001"].message
-                    + f" Here it is {where}, which {verdict.reason}.",
-                )
-                return
+        """Commands an editor or agent runs when the folder is opened or the environment built.
+
+        The handling lives in `autorun.py` so the rule can grow without this file; this delegates."""
+        yield from autorun_findings(self, unit, ctx)
 
     def _codex_config(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """Codex's settings: approval and sandbox modes, and where model requests go."""
