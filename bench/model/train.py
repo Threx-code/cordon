@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -27,6 +28,11 @@ import numpy as np
 from scipy import sparse
 from sklearn.feature_selection import chi2
 from sklearn.model_selection import StratifiedGroupKFold
+
+try:  # run as a module (tests) or as a script from this directory
+    from bench.model import area
+except ImportError:  # pragma: no cover - script invocation
+    import area
 
 PARAMS = {
     "objective": "binary",
@@ -99,11 +105,23 @@ class Training:
     @staticmethod
     def main() -> int:
         parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+        # The one entry point (CDI self-improving). --area code is this trainer; verdict and
+        # skill-text dispatch to their trainers. Every area writes the contract (training-list sha
+        # + metrics.json) beside its model via bench.model.area.
+        parser.add_argument("--area", choices=("code", "verdict", "skill-text"), default="code")
+        parser.add_argument("--seed", type=int, default=None, help="RNG seed (overrides PARAMS)")
+        parser.add_argument(
+            "--train", type=Path, default=None, help="explicit training-id list, one per line"
+        )
         parser.add_argument("--work", type=Path, default=Path("/work"))
         parser.add_argument("--split", choices=("hash", "time", "campaign"), default="hash")
         parser.add_argument("--fpr", type=float, default=0.005)
         parser.add_argument("--extra", default="", help="extra dense columns: features/<name>.npy")
-        args = parser.parse_args()
+        args, extra = parser.parse_known_args()
+        if args.area != "code":
+            return Training.dispatch(args, extra)
+        if args.seed is not None:
+            PARAMS["seed"] = args.seed
         rows, matrix = Training.load(args.work, args.extra)
         labels = np.array([int(r["label"]) for r in rows])
         side = np.array([r[f"{args.split}_split"] for r in rows])
@@ -174,7 +192,72 @@ class Training:
             json.dumps({rows[i]["id"]: float(s) for i, s in zip(train, oof, strict=True)}),
             encoding="utf-8",
         )
+        area.write_contract(
+            out,
+            area="code",
+            seed=PARAMS["seed"],
+            train_ids=[rows[i]["id"] for i in train],
+            metrics={
+                "split": args.split,
+                "fpr": args.fpr,
+                "threshold": float(threshold),
+                "recall": round(sum(mal) / max(len(mal), 1), 6),
+                "n_malicious_held": len(mal),
+                "benign_rate": round(sum(leg) / max(len(leg), 1), 6),
+                "n_legit_held": len(leg),
+            },
+        )
         return 0
+
+    @staticmethod
+    def dispatch(args: argparse.Namespace, extra: list[str]) -> int:
+        """Run a non-code area's trainer, then record the one-entry-point contract. The trainer owns
+        the model and its own report; the contract adds the training-list sha (from --train) so every
+        area is built the one way and the gate's lineage check is reproducible."""
+        script = {"verdict": "verdict_train.py", "skill-text": "train_text.py"}[args.area]
+        here = Path(__file__).resolve().parent
+        extra = [a for a in extra if a != "--"]  # drop the argparse options separator
+        cmd = [sys.executable, str(here / script), *extra]
+        if args.seed is not None:
+            cmd += ["--seed", str(args.seed)]
+        print(f"area={args.area}: {' '.join(cmd)}", flush=True)
+        rc = subprocess.run(cmd, check=False).returncode  # our own trainer, invoked by path
+        out = Path(extra[extra.index("--out") + 1]) if "--out" in extra else None
+        if rc != 0 or out is None:
+            return rc
+        # The training list for the contract: an explicit --train list, else the trainer's --dump
+        # (the work-half rows are what was trained on). The gate's lineage check reads this sha.
+        train_ids: list[str] = []
+        if args.train is not None and args.train.exists():
+            train_ids = args.train.read_text(encoding="utf-8").split()
+        elif "--dump" in extra:
+            dump = Path(extra[extra.index("--dump") + 1])
+            if dump.exists():
+                for line in dump.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    r = json.loads(line)
+                    if r.get("half") == "work":
+                        train_ids.append(r.get("file", r.get("id", "")))
+        metrics: dict = {
+            "dispatched_to": script,
+            # The CV changed from a positional split to a family-grouped, seeded one (more correct;
+            # no family leaks across folds). A retrain of any verdict model goes through the full
+            # gate again -- old thresholds are never reused silently.
+            "cv_scheme": "family-grouped-seeded (>=5 families; positional fallback otherwise)",
+        }
+        if "--family-map" in extra:
+            fm = Path(extra[extra.index("--family-map") + 1])
+            if fm.exists():
+                metrics["family_map_sha"] = area.file_sha(fm)
+        area.write_contract(
+            out.parent if out.is_file() else out,
+            area=args.area,
+            seed=args.seed if args.seed is not None else 0,
+            train_ids=train_ids,
+            metrics=metrics,
+        )
+        return rc
 
 
 if __name__ == "__main__":

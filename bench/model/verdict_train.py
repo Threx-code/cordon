@@ -52,6 +52,15 @@ from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 from cordon_scanner.foundation.taxonomy import Taxonomy
 
+try:  # the scanner's own content-gate definition, for the add-only OR (one definition of "blocked")
+    from bench.tools.content import Content
+except ImportError:  # pragma: no cover - script invocation puts bench/model on the path, not repo
+    import pathlib as _pl
+    import sys as _sys
+
+    _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[2]))
+    from bench.tools.content import Content
+
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
 #: the scan's own notes are not a malware verdict (review 98).
 NOT_MALWARE = ("SECRET.", "POLICY.", "VULNERABLE.", "OPERATIONAL.")
@@ -201,6 +210,11 @@ class VerdictTrain:
     @classmethod
     def load(cls, a: argparse.Namespace) -> tuple[list[dict], dict[str, collections.Counter]]:
         """Every row with its label, ecosystem, area, halves and features; and the denominators."""
+        family_map: dict[str, str] = (
+            json.loads(a.family_map.read_text(encoding="utf-8"))
+            if getattr(a, "family_map", None)
+            else {}
+        )
         excluded: set[str] = set()
         for path in a.adjudication:
             for r in cls.rows_any(path):
@@ -286,6 +300,7 @@ class VerdictTrain:
                     "source": source,
                     "half": half or cls.half(key),
                     "family_half": half or cls.half(family),
+                    "family": family,
                     "area": cls.area(row, eco, rules),
                     "f": features,
                     "findings": row["findings"],
@@ -304,11 +319,12 @@ class VerdictTrain:
             if row["file"] in seen:
                 continue
             seen.add(row["file"])
-            eco = row["file"].split("/")[0]
-            if eco in replaced:
+            raw_eco = row["file"].split("/")[0]
+            if raw_eco in replaced:
                 continue
+            eco = a.eco or ECOSYSTEM.get(raw_eco, raw_eco)
             key = "pkg:" + cls.package_name(row["file"])
-            add(row, 0, ECOSYSTEM.get(eco, eco), key, "corpus", key)
+            add(row, 0, eco, key, "corpus", key)
         if a.benchmark:
             # Every ecosystem's real malware, on the benchmark's own split: its holdout is never
             # trained on, whatever this trainer's hash would have said.
@@ -346,8 +362,10 @@ class VerdictTrain:
                 if u.startswith("datadog/ide")
                 else "skill"
             )
+            eco = a.eco or eco
             source = "malregistry" if u.startswith("malregistry") else "/".join(u.split("/")[:2])
-            add(row, 1, eco, cls.malware_key(u), source, cls.family_key(u))
+            family = family_map.get(row["file"], cls.family_key(u))
+            add(row, 1, eco, cls.malware_key(u), source, family)
         for spec in a.labelled:
             name, _, path = spec.partition("=")
             prefix, keyer = LABELLED[name]
@@ -458,6 +476,17 @@ class VerdictTrain:
             "--malware", type=Path, help="npm/PyPI malware scans (superseded by --benchmark)"
         )
         p.add_argument(
+            "--eco",
+            help="force this ecosystem for --benign/--malware rows when the path does not name one "
+            "(a single-ecosystem corpus such as the PyPI baseline)",
+        )
+        p.add_argument(
+            "--family-map",
+            type=Path,
+            help="json {scan file -> family} overriding the path-derived malware family "
+            "(e.g. the S5 families of the PyPI half-A); benign keeps its PEP 503 normalised key",
+        )
+        p.add_argument(
             "--benchmark",
             type=Path,
             nargs=2,
@@ -525,6 +554,12 @@ class VerdictTrain:
             "malware published before --cutoff trains, after tests; p8: the halves in --p8-split",
         )
         p.add_argument("--cutoff", default="2026-05-01")
+        p.add_argument(
+            "--seed",
+            type=int,
+            default=0,
+            help="RNG seed threaded through the CV family-fold shuffle and the trees",
+        )
         p.add_argument(
             "--p8-split",
             type=Path,
@@ -654,7 +689,7 @@ class VerdictTrain:
                 max_leaf_nodes=31,
                 l2_regularization=1.0,
                 monotonic_cst=monotone,
-                random_state=0,
+                random_state=a.seed,
             )
 
         xw, yw = matrix(work), np.array([r["label"] for r in work])
@@ -742,10 +777,23 @@ class VerdictTrain:
                 and not (content_only and VerdictFeatures.is_intel(f[0]))
             )
 
+        def content_block(r) -> bool:
+            # The shipped scanner's content gate (bench/tools/content.py): one definition of
+            # "blocked", so an add-only area's model can never remove a block the content rules make.
+            return any(
+                len(f) >= 7
+                and Content.fails(f[0], f[1], f[2], f[3])
+                and Content.is_content(f[0], f[6])
+                for f in r["findings"]
+            )
+
         for r in data:
             add_only = r["area"] in add_only_areas
-            r["kept"] = (gate_trip if add_only else untouched_trip)(r, content_only=True)
-            r["kept_intel"] = (gate_trip if add_only else untouched_trip)(r, content_only=False)
+            floor = content_block(r) if add_only else False  # add-only ORs with the content gate
+            r["kept"] = (gate_trip if add_only else untouched_trip)(r, content_only=True) or floor
+            r["kept_intel"] = (
+                gate_trip if add_only else untouched_trip
+            )(r, content_only=False) or floor
             r["has_code"] = any(k.startswith("r:") for k in r["f"])
 
         groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in a.separate}
@@ -755,7 +803,23 @@ class VerdictTrain:
             if not idx:
                 continue
             idx_a = np.array(idx, dtype=int)
-            g = np.arange(len(idx_a)) % 5
+            # Family-grouped, seeded CV: whole families go to one fold (the work half is already
+            # family-whole), so an out-of-fold score is never set with a sibling release on the
+            # training side. Families are shuffled by --seed and dealt round-robin into 5 folds,
+            # which keeps every fold non-empty when there are at least five families. With fewer
+            # (a small area), the original positional split is used so every row is still scored.
+            members: dict[str, list[int]] = collections.defaultdict(list)
+            for pos, i in enumerate(idx_a):
+                members[work[int(i)]["family"]].append(pos)
+            g = np.empty(len(idx_a), dtype=int)
+            if len(members) >= 5:
+                fam_keys = list(members)
+                np.random.default_rng(a.seed).shuffle(fam_keys)
+                for fold_i, fam in enumerate(fam_keys):
+                    for pos in members[fam]:
+                        g[pos] = fold_i % 5
+            else:
+                g = np.arange(len(idx_a)) % 5
             for k in range(5):
                 tr, te = idx_a[g != k], idx_a[g == k]
                 fold = model().fit(xw[tr], yw[tr]).predict_proba(xw[te])[:, 1]
