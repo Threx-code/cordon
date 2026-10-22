@@ -9,9 +9,12 @@ function to avoid an import cycle (`agents` imports this module at load time).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.agents import agent_config
+from cordon_scanner.foundation import references as ref
+from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -39,6 +42,39 @@ _LIFECYCLE: Final = (
     "postStartCommand",
     "postAttachCommand",
 )
+
+
+def build_rules(rule: Callable[..., Any]) -> dict[str, Any]:
+    """The autorun rules, built with the caller's rule factory (agents.py passes AgentRules._rule
+    after its classes exist, so this module needs no AgentRule import and no cycle)."""
+    return {
+        "MALWARE.AGENT.AUTORUN.001": rule(
+            "MALWARE.AGENT.AUTORUN.001",
+            "A command an editor or agent runs on its own attacks the machine",
+            Category.MALICIOUS,
+            Severity.CRITICAL,
+            Confidence.HIGH,
+            "A command this repository configures to run without anyone typing it -- a "
+            "settings helper the agent calls, a task that starts when the folder opens, a "
+            "dev-container lifecycle command, an agent environment's install step -- downloads "
+            "and runs code, sends credentials away, or opens a remote shell.",
+            "Remove the command and treat the repository as untrusted.",
+            (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_SETTINGS),
+        ),
+        "SUSPECT.CI.DEVCONTAINER_FETCH.001": rule(
+            "SUSPECT.CI.DEVCONTAINER_FETCH.001",
+            "A published package's dev-container fetches and runs code when a developer opens it",
+            Category.SUSPICIOUS,
+            Severity.LOW,
+            Confidence.HIGH,
+            "A published package ships an editor task or dev-container lifecycle command that "
+            "downloads and runs code when a developer opens the repository. That is off the path a "
+            "consumer who installs the package ever runs, so it is a hardening concern rather than "
+            "package malware -- but review it before opening the repository in a dev container.",
+            "Pin or vendor the fetched installer, and review before opening in a dev container.",
+            (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+        ),
+    }
 
 
 def autorun_findings(
@@ -81,14 +117,22 @@ def autorun_findings(
             )
     for where, command in commands:
         verdict = agent_config.CommandClassifier.classify(command)
-        if verdict is not None:
-            yield detector._at_text(
-                "MALWARE.AGENT.AUTORUN.001",
-                unit,
-                ctx,
-                text,
-                command.split(" ", 1)[0] if command not in text else command,
-                message=RULES["MALWARE.AGENT.AUTORUN.001"].message
-                + f" Here it is {where}, which {verdict.reason}.",
-            )
-            return
+        if verdict is None:
+            continue
+        rule_id = "MALWARE.AGENT.AUTORUN.001"
+        # A published package's editor/dev-container config is off the path a consumer who installs
+        # the package ever runs: a fetch-run there runs for a developer who opens the repository,
+        # not on an install. That is a hardening concern (recorded LOW), not package malware. Secret
+        # or environment egress and reverse shells stay critical -- they attack whoever opens it
+        # either way. A repo, skill or agent unit (not a published package) is unchanged.
+        if ctx.package_distribution and verdict.kind == "fetch-exec":
+            rule_id = "SUSPECT.CI.DEVCONTAINER_FETCH.001"
+        yield detector._at_text(
+            rule_id,
+            unit,
+            ctx,
+            text,
+            command.split(" ", 1)[0] if command not in text else command,
+            message=RULES[rule_id].message + f" Here it is {where}, which {verdict.reason}.",
+        )
+        return

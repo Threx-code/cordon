@@ -167,7 +167,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 
 ## Every agent rule
 
-71 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
+72 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -219,6 +219,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001` | high | A skill's script hands the agent text that tells it to drop its instructions |
 | `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | A skill's script runs its own input as code or a command |
 | `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | Tells the agent to pick this tool over every other |
+| `SUSPECT.CI.DEVCONTAINER_FETCH.001` | low | A published package's dev-container fetches and runs code when a developer opens it |
 | `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | An editor extension's display name carries invisible characters |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |

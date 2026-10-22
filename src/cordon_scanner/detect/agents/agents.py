@@ -37,13 +37,14 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
-from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS, autorun_findings
+from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS, autorun_findings, build_rules
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION, DefensiveDoc
 from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionModel
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.secrets import SourcePaths
 from cordon_scanner.engine.walker import PathGlob
+from cordon_scanner.foundation import jsonc
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import (
     Category,
@@ -1216,19 +1217,6 @@ RULES.update(
                 (ref.CLAUDE_CODE_HOOKS, ref.EXPOSED_RESOURCE),
             ),
             AgentRules._rule(
-                "MALWARE.AGENT.AUTORUN.001",
-                "A command an editor or agent runs on its own attacks the machine",
-                Category.MALICIOUS,
-                Severity.CRITICAL,
-                Confidence.HIGH,
-                "A command this repository configures to run without anyone typing it -- a "
-                "settings helper the agent calls, a task that starts when the folder opens, a "
-                "dev-container lifecycle command, an agent environment's install step -- downloads "
-                "and runs code, sends credentials away, or opens a remote shell.",
-                "Remove the command and treat the repository as untrusted.",
-                (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_SETTINGS),
-            ),
-            AgentRules._rule(
                 "SUSPECT.AGENT.API_REDIRECT.001",
                 "Agent API traffic redirected to a host that is not the provider",
                 Category.SUSPICIOUS,
@@ -1685,6 +1673,9 @@ RULES.update(
         ),
     }
 )
+# The autorun rules live in autorun.py (extracted); registered here with the rule factory so that
+# module needs no AgentRule import (it is imported before AgentRule is defined).
+RULES.update(build_rules(AgentRules._rule))
 
 #: What each intent is, as a finding says it.
 INTENT_WORDS: Final = {
@@ -4491,20 +4482,8 @@ class McpConfigs:
 
     @staticmethod
     def _json(content: FileContent) -> Any:
-        text = content.text
-        try:
-            return json.loads(text)
-        except ValueError:
-            pass
-        # VS Code configuration is JSON with comments and trailing commas.
-        stripped = re.sub(
-            r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*[\s\S]*?\*/', lambda m: m.group(1) or "", text
-        )
-        stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
-        try:
-            return json.loads(stripped)
-        except ValueError:
-            return None
+        # JSON with comments and trailing commas (VS Code config, dev containers): the shared helper.
+        return jsonc.loads(content.text)
 
 
 _YAML_KEY: Final = re.compile(r"^\s*-?\s*(name|command|url|args)\s*:\s*(.*?)\s*$")
