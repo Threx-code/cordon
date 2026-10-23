@@ -211,9 +211,12 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `MALWARE.CI.CREDENTIAL_HARVEST.001` | high | `config` | malicious_code |
 | `MALWARE.CI.DECODED_PROGRAM.001` | critical | `composites` | malicious_code |
 | `MALWARE.CI.RUNNER_SECRETS.001` | critical | `composites` | malicious_code |
+| `MALWARE.CI.SECRET_DUMP.001` | high | `config` | malicious_code |
 | `MALWARE.CI.SECRET_EXFIL.001` | critical | `config` | exfiltration |
+| `MALWARE.CI.SECRET_TO_DROP_POINT.001` | high | `config` | malicious_code |
 | `POLICY.CI.UNPINNED_ACTION.001` | medium | `config` | policy |
 | `POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001` | medium | `config` | policy |
 | `POLICY.CI.WRITE_ALL_PERMISSIONS.001` | medium | `config` | policy |
@@ -225,6 +228,7 @@ rather than a document.
 | `SUSPECT.CI.BUILDKITE_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.CACHE_POISONING.001` | medium | `config` | misconfiguration |
 | `SUSPECT.CI.CIRCLE_INJECTION.001` | high | `config` | misconfiguration |
+| `SUSPECT.CI.DEVCONTAINER_FETCH.001` | low | `agents` | misconfiguration |
 | `SUSPECT.CI.ENVIRONMENT_INJECTION.001` | high | `composites` | misconfiguration |
 | `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.FETCH_EXEC.001` | high | `config` | misconfiguration |
