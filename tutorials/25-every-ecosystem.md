@@ -819,7 +819,7 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 | PowerShell | `*.ps1`, `*.psm1` | 14 |
 | Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 24 |
 | R | `*.r` | 8 |
-| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 16 |
+| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 17 |
 | Rust | `*.rs`, `build.rs` | 14 |
 | Scala | `*.scala` | 10 |
 | Shell | `*.bash`, `*.sh`, `*.zsh` | 18 |
