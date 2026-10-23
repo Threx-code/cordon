@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 75 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,473 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -27,13 +27,59 @@ rule's own samples.
 
 ## AI agents
 
-3 rules.
+49 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.AGENT.AUTORUN.001` | critical | A command an editor or agent runs on its own attacks the machine |
 | `MALWARE.AGENT.CONFIG_PLANTED.001` | critical | Installing the package plants an AI agent's configuration in your project |
 | `MALWARE.AGENT.HIJACK.001` | critical | Turns the machine's AI agent against it |
+| `MALWARE.AGENT.HOOK_EXFIL.001` | critical | An agent hook that sends credentials away or opens a remote shell |
+| `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | An agent hook that fetches and executes remote code |
+| `POLICY.AGENT.AUTO_APPROVE.001` | high | Agent confirmations switched off in committed settings |
+| `POLICY.AGENT.MCP_BROAD_SCOPE.001` | medium | A filesystem MCP server given the whole disk or home directory |
+| `POLICY.AGENT.WIDE_DIRECTORY.001` | medium | Agent given the whole disk or home directory to work in |
+| `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | Agent permissions allow any shell command |
+| `SUSPECT.AGENT.API_REDIRECT.001` | high | Agent API traffic redirected to a host that is not the provider |
+| `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | Text that impersonates an agent or hijacks the agent's task |
+| `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | Text that asks an agent to move secrets or context off the machine |
+| `SUSPECT.AGENT.ATR.DATA_POISONING.001` | medium | Text that plants triggers or false facts for an agent |
+| `SUSPECT.AGENT.ATR.EXCESSIVE_AUTONOMY.001` | medium | Text that asks an agent to act without the user's confirmation |
+| `SUSPECT.AGENT.ATR.MODEL_ABUSE.001` | medium | Text that turns an agent toward abuse of the model |
+| `SUSPECT.AGENT.ATR.MODEL_SECURITY.001` | medium | Text that targets the model's weights or safety |
+| `SUSPECT.AGENT.ATR.PRIVILEGE_ESCALATION.001` | medium | Text that asks an agent to widen its own permissions |
+| `SUSPECT.AGENT.ATR.PROMPT_INJECTION.001` | medium | Text that tries to override an agent's instructions |
+| `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | A skill or plugin shaped like a known compromise |
+| `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | Text that turns a tool into a channel for steering the agent |
+| `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | Tells the agent to add an access check that one fixed identity always passes |
+| `SUSPECT.AGENT.CI_PROMPT_INJECTION.001` | high | Untrusted event text passed straight into an agent's prompt |
+| `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | An AI agent in CI reads text an outsider can write |
+| `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | Agent instructions that move credentials somewhere |
+| `SUSPECT.AGENT.DROPPER_PROSE.001` | high | Agent instructions that have the reader run a hidden or pasted payload |
+| `SUSPECT.AGENT.FETCH_EXEC.001` | high | Agent instructions that fetch and execute remote code |
+| `SUSPECT.AGENT.FRONT_MATTER_CODE.001` | high | Agent instructions whose front matter is code |
+| `SUSPECT.AGENT.HIDDEN_DIRECTIVE.001` | high | Instructions to the model hidden in a comment |
+| `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | An instruction to the agent that the rendered page does not show |
+| `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | Hidden characters in an agent instruction file |
+| `SUSPECT.AGENT.HOOK.001` | medium | An agent hook committed to the repository |
+| `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | Instruction-like text aimed at a coding agent |
+| `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | Code an agent runs points package installs somewhere else |
+| `SUSPECT.AGENT.INTENT.001` | high | Text that tells the agent to act against its user |
+| `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
+| `SUSPECT.AGENT.JUDGED.001` | medium | A language model judges agent-facing text to be subverting the agent |
+| `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | Agent instructions that require downloading a tool they never use |
+| `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
+| `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
+| `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
+| `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
+| `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | A skill script installs an agent hook that runs a download |
+| `SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001` | high | A skill's script installs a package named like a popular one |
+| `SUSPECT.AGENT.SKILL_INSTRUCTIONS.001` | high | A skill's instructions read as an attack on the agent |
+| `SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001` | high | A skill's script hands the agent text that tells it to drop its instructions |
+| `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | A skill's script runs its own input as code or a command |
+| `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | Tells the agent to pick this tool over every other |
 | `SUSPECT.AGENT.UNATTENDED.001` | medium | Runs your AI agent with every permission and no confirmation |
+| `VULNERABLE.AGENT.ACTION_VERSION.001` | high | An AI agent action below its security fix |
 
 ## Anti Analysis
 
@@ -44,15 +90,380 @@ rule's own samples.
 | `MALWARE.ANTI_ANALYSIS.001` | critical | Install-time code that checks whether it is being watched |
 | `SUSPECT.ANTI_ANALYSIS.001` | high | Behaviour gated on whether it is being observed |
 
+## Archive
+
+5 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.ARCHIVE.LINK_TO_SECRET.001` | high | Archive member is a link to a secret on the user's machine |
+| `SUSPECT.ARCHIVE.NESTING.001` | high | Archives nested past the depth the scan opens |
+| `SUSPECT.ARCHIVE.PADDED.001` | high | Archive padded past the scan's budget |
+| `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | Archive member named to write outside the archive |
+| `SUSPECT.ARCHIVE.POLYGLOT.001` | high | Archive that is a tarball and a zip at once |
+
+## Azure
+
+16 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLEPURGEPROTECTION.001` | medium | Microsoft.KeyVault/vaults: a deleted vault can be purged immediately |
+| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLESOFTDELETE.001` | medium | Microsoft.KeyVault/vaults: a deleted secret is gone immediately |
+| `POLICY.AZURE.RBAC.KEYVAULT_VAULTS_ENABLERBACAUTHORIZATION.001` | low | Microsoft.KeyVault/vaults: access is governed by vault access policies rather than RBAC |
+| `POLICY.AZURE.SHARED_KEY_AUTH.ANY_DISABLELOCALAUTH.001` | medium | Microsoft.*: shared-key authentication is enabled |
+| `POLICY.AZURE.SHARED_KEY_AUTH.STORAGE_STORAGEACCOUNTS_ALLOWSHAREDKEYACCESS.001` | medium | Microsoft.Storage/storageAccounts: the account key authenticates callers |
+| `POLICY.AZURE.WEAK_TLS.STORAGE_STORAGEACCOUNTS_MINIMUMTLSVERSION.001` | medium | Microsoft.Storage/storageAccounts: an obsolete TLS version is accepted |
+| `SUSPECT.AZURE.NETWORK_DEFAULT_ALLOW.ANY_DEFAULTACTION.001` | medium | Microsoft.*: the network rules default to allowing everything |
+| `SUSPECT.AZURE.NO_AUTH.CONTAINERREGISTRY_REGISTRIES_ANONYMOUSPULLENABLED.001` | high | Microsoft.ContainerRegistry/registries: anyone may pull images from the registry |
+| `SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001` | high | Microsoft.Network/networkSecurityGroups: an administrative port is open to the whole internet |
+| `SUSPECT.AZURE.PASSWORD_AUTH.COMPUTE_VIRTUALMACHINES_DISABLEPASSWORDAUTHENTICATION.001` | medium | Microsoft.Compute/virtualMachines: SSH password authentication is enabled |
+| `SUSPECT.AZURE.PLAINTEXT.STORAGE_STORAGEACCOUNTS_SUPPORTSHTTPSTRAFFICONLY.001` | high | Microsoft.Storage/storageAccounts: the storage account accepts plain HTTP |
+| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_FTPSSTATE.001` | medium | Microsoft.Web/sites: deployment over plain FTP is allowed |
+| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_HTTPSONLY.001` | medium | Microsoft.Web/sites: the site answers plain HTTP |
+| `SUSPECT.AZURE.PUBLIC_ACCESS.ANY_PUBLICNETWORKACCESS.001` | medium | Microsoft.*: the resource answers on a public endpoint |
+| `SUSPECT.AZURE.PUBLIC_STORAGE.STORAGE_STORAGEACCOUNTS_ALLOWBLOBPUBLICACCESS.001` | high | Microsoft.Storage/storageAccounts: containers may be made public |
+| `SUSPECT.AZURE.SHARED_KEY_AUTH.CONTAINERREGISTRY_REGISTRIES_ADMINUSERENABLED.001` | medium | Microsoft.ContainerRegistry/registries: the shared admin account is enabled |
+
+## Binary
+
+10 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.BINARY.COMMITTED.001` | low | Executable committed to a source repository |
+| `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | Committed binary imports credential-store and network calls |
+| `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | Executable committed where a lifecycle step will run it |
+| `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | Committed binary resolves its imports at run time |
+| `SUSPECT.BINARY.IMPLANT.001` | high | Committed binary imports download-and-run calls |
+| `SUSPECT.BINARY.KEYLOGGER.001` | medium | Committed binary imports keyboard-capture and network calls |
+| `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | A pure-Python wheel loads a native library it carries |
+| `SUSPECT.BINARY.PACKED.001` | medium | Committed binary is packed |
+| `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | Committed binary imports process-injection calls |
+| `SUSPECT.BINARY.STRINGS.001` | medium | Committed binary contains a URL, command or credential path |
+
+## Build
+
+5 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.BUILD.UNPINNED_DEPENDENCY.001` | medium | Build dependency resolves to whatever is newest, not a fixed version |
+| `POLICY.BUILD.WRAPPER_UNVERIFIED.001` | low | Build wrapper downloads its tool without a checksum |
+| `SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001` | medium | CMake fetches a URL with nothing verifying what it downloaded |
+| `SUSPECT.BUILD.MAKE_FETCH_EXEC.001` | high | Makefile recipe fetches and executes remote content |
+| `SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001` | high | MSBuild target fetches and executes remote content |
+
+## Campaign
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.CAMPAIGN.SIBLING.001` | high | Package is a variant of a condemned campaign |
+
 ## CI/CD pipelines
+
+26 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.CI.CREDENTIAL_HARVEST.001` | high | Pipeline step searches for credentials and sends what it gathered |
+| `MALWARE.CI.DECODED_PROGRAM.001` | critical | A CI step runs a program it decodes on the spot |
+| `MALWARE.CI.RUNNER_SECRETS.001` | critical | Code dumps the CI runner's secrets |
+| `MALWARE.CI.SECRET_DUMP.001` | high | Pipeline step sends secrets labelled with their own names |
+| `MALWARE.CI.SECRET_EXFIL.001` | critical | CI workflow serialises its secret context |
+| `MALWARE.CI.SECRET_TO_DROP_POINT.001` | high | Pipeline step sends a secret to a destination no pipeline publishes to |
+| `POLICY.CI.UNPINNED_ACTION.001` | medium | Action referenced by a mutable tag |
+| `POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001` | medium | Reusable workflow called by a mutable ref |
+| `POLICY.CI.WRITE_ALL_PERMISSIONS.001` | medium | Workflow token is granted every write scope |
+| `SUSPECT.CI.ARTIFACT_POISONING.001` | high | Untrusted build uploads or restores a cache it can control |
+| `SUSPECT.CI.AZURE_INJECTION.001` | high | Azure Pipelines script interpolates a contributor-controlled value |
+| `SUSPECT.CI.BITBUCKET_INJECTION.001` | high | Bitbucket Pipelines step re-parses a contributor-controlled branch name |
+| `SUSPECT.CI.BUILDKITE_INJECTION.001` | high | Buildkite pipeline interpolates a contributor-controlled value at upload |
+| `SUSPECT.CI.CACHE_POISONING.001` | medium | A publishing workflow restores a cache an untrusted run can write |
+| `SUSPECT.CI.CIRCLE_INJECTION.001` | high | CircleCI step interpolates a contributor-controlled pipeline value |
+| `SUSPECT.CI.DEVCONTAINER_FETCH.001` | low | A published package's dev-container fetches and runs code when a developer opens it |
+| `SUSPECT.CI.ENVIRONMENT_INJECTION.001` | high | A package writes the CI job's environment when it is imported |
+| `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | Untrusted pipeline input interpolated into a shell command |
+| `SUSPECT.CI.FETCH_EXEC.001` | high | CI step fetches and executes remote content |
+| `SUSPECT.CI.GITLAB_INJECTION.001` | high | GitLab job interpolates a contributor-controlled variable into a script |
+| `SUSPECT.CI.JENKINS_INJECTION.001` | high | Jenkins shell step interpolates a contributor-controlled value |
+| `SUSPECT.CI.PR_TARGET.001` | high | Workflow uses pull_request_target and checks out the pull request head |
+| `SUSPECT.CI.SECRET_EGRESS.001` | medium | Pipeline step reads a secret and sends data off the runner |
+| `SUSPECT.CI.SECRET_OVERPROVISION.001` | high | CI workflow hands another workflow every secret it has |
+| `SUSPECT.CI.SELF_HOSTED_FORK.001` | high | A fork's pull request runs on a self-hosted runner |
+| `SUSPECT.CI.WORKFLOW_RUN_CHECKOUT.001` | high | workflow_run checks out the commit that triggered it |
+
+## ClamAV
 
 3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| `MALWARE.CI.DECODED_PROGRAM.001` | critical | A CI step runs a program it decodes on the spot |
-| `MALWARE.CI.RUNNER_SECRETS.001` | critical | Code dumps the CI runner's secrets |
-| `SUSPECT.CI.ENVIRONMENT_INJECTION.001` | high | A package writes the CI job's environment when it is imported |
+| `MALWARE.CLAMAV.SIGNATURE.001` | critical | ClamAV recognises the file as malware |
+| `OPERATIONAL.CLAMAV.STATUS` | info | ClamAV examined the scan's files |
+| `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | ClamAV was asked for and could not be used |
+
+## CloudFormation
+
+232 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.CFN.CMEK.AWS_AIOPS_INVESTIGATIONGROUP.001` | low | cfn:AWS::AIOps::InvestigationGroup: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_AMAZONMQ_BROKER.001` | low | cfn:AWS::AmazonMQ::Broker: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_APS_WORKSPACE.001` | low | cfn:AWS::APS::Workspace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BACKUPGATEWAY_HYPERVISOR.001` | low | cfn:AWS::BackupGateway::Hypervisor: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_CAPACITYPROVIDER.001` | low | cfn:AWS::BedrockAgentCore::CapacityProvider: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_CONFIGURATIONBUNDLE.001` | low | cfn:AWS::BedrockAgentCore::ConfigurationBundle: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_DATASET.001` | low | cfn:AWS::BedrockAgentCore::Dataset: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_EVALUATOR.001` | low | cfn:AWS::BedrockAgentCore::Evaluator: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_GATEWAY.001` | low | cfn:AWS::BedrockAgentCore::Gateway: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCK_AUTOMATEDREASONINGPOLICY.001` | low | cfn:AWS::Bedrock::AutomatedReasoningPolicy: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCK_BLUEPRINT.001` | low | cfn:AWS::Bedrock::Blueprint: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCK_DATAAUTOMATIONLIBRARY.001` | low | cfn:AWS::Bedrock::DataAutomationLibrary: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCK_DATAAUTOMATIONPROJECT.001` | low | cfn:AWS::Bedrock::DataAutomationProject: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCK_DATASOURCE.001` | low | cfn:AWS::Bedrock::DataSource: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCK_GUARDRAIL.001` | low | cfn:AWS::Bedrock::Guardrail: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_BEDROCK_KNOWLEDGEBASE.001` | low | cfn:AWS::Bedrock::KnowledgeBase: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_CLEANROOMSML_CONFIGUREDMODELALGORITHM.001` | low | cfn:AWS::CleanRoomsML::ConfiguredModelAlgorithm: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_CLEANROOMS_IDMAPPINGTABLE.001` | low | cfn:AWS::CleanRooms::IdMappingTable: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_CLEANROOMS_INTERMEDIATETABLE.001` | low | cfn:AWS::CleanRooms::IntermediateTable: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_CLOUDTRAIL_EVENTDATASTORE.001` | low | cfn:AWS::CloudTrail::EventDataStore: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_CODECOMMIT_REPOSITORY.001` | low | cfn:AWS::CodeCommit::Repository: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_COGNITO_USERPOOL.001` | low | cfn:AWS::Cognito::UserPool: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_COMPREHEND_DOCUMENTCLASSIFIER.001` | low | cfn:AWS::Comprehend::DocumentClassifier: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DATAEXCHANGE_EVENTACTION.001` | low | cfn:AWS::DataExchange::EventAction: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DATASYNC_LOCATIONAZUREBLOB.001` | low | cfn:AWS::DataSync::LocationAzureBlob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DATASYNC_LOCATIONFSXONTAP.001` | low | cfn:AWS::DataSync::LocationFSxONTAP: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DATASYNC_LOCATIONFSXWINDOWS.001` | low | cfn:AWS::DataSync::LocationFSxWindows: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DATASYNC_LOCATIONHDFS.001` | low | cfn:AWS::DataSync::LocationHDFS: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DATASYNC_LOCATIONOBJECTSTORAGE.001` | low | cfn:AWS::DataSync::LocationObjectStorage: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DATASYNC_LOCATIONSMB.001` | low | cfn:AWS::DataSync::LocationSMB: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DEADLINE_FARM.001` | low | cfn:AWS::Deadline::Farm: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DEVOPSAGENT_AGENTSPACE.001` | low | cfn:AWS::DevOpsAgent::AgentSpace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DEVOPSAGENT_SERVICE.001` | low | cfn:AWS::DevOpsAgent::Service: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DMS_ENDPOINT.001` | low | cfn:AWS::DMS::Endpoint: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DMS_INSTANCEPROFILE.001` | low | cfn:AWS::DMS::InstanceProfile: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DMS_REPLICATIONCONFIG.001` | low | cfn:AWS::DMS::ReplicationConfig: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DMS_REPLICATIONINSTANCE.001` | low | cfn:AWS::DMS::ReplicationInstance: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DOCDBELASTIC_CLUSTER.001` | low | cfn:AWS::DocDBElastic::Cluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_DOCDB_DBCLUSTER.001` | low | cfn:AWS::DocDB::DBCluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSENDPOINT.001` | low | cfn:AWS::EC2::VerifiedAccessEndpoint: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSGROUP.001` | low | cfn:AWS::EC2::VerifiedAccessGroup: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSTRUSTPROVIDER.001` | low | cfn:AWS::EC2::VerifiedAccessTrustProvider: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EC2_VOLUME.001` | low | cfn:AWS::EC2::Volume: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ECS_CLUSTER.001` | low | cfn:AWS::ECS::Cluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EFS_FILESYSTEM.001` | low | cfn:AWS::EFS::FileSystem: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ELASTICACHE_REPLICATIONGROUP.001` | low | cfn:AWS::ElastiCache::ReplicationGroup: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ELASTICACHE_SERVERLESSCACHE.001` | low | cfn:AWS::ElastiCache::ServerlessCache: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ELASTICACHE_SERVERLESSCACHESNAPSHOT.001` | low | cfn:AWS::ElastiCache::ServerlessCacheSnapshot: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ELASTICSEARCH_DOMAIN.001` | low | cfn:AWS::Elasticsearch::Domain: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EVS_ENVIRONMENT.001` | low | cfn:AWS::EVS::Environment: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_FINSPACE_ENVIRONMENT.001` | low | cfn:AWS::FinSpace::Environment: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_FORECAST_DATASET.001` | low | cfn:AWS::Forecast::Dataset: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_FSX_FILECACHE.001` | low | cfn:AWS::FSx::FileCache: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_FSX_FILESYSTEM.001` | low | cfn:AWS::FSx::FileSystem: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_GLUE_CONNECTION.001` | low | cfn:AWS::Glue::Connection: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_GLUE_DATACATALOGENCRYPTIONSETTINGS.001` | low | cfn:AWS::Glue::DataCatalogEncryptionSettings: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_GLUE_INTEGRATION.001` | low | cfn:AWS::Glue::Integration: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_GLUE_MLTRANSFORM.001` | low | cfn:AWS::Glue::MLTransform: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_GLUE_SECURITYCONFIGURATION.001` | low | cfn:AWS::Glue::SecurityConfiguration: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_GROUNDSTATION_MISSIONPROFILE.001` | low | cfn:AWS::GroundStation::MissionProfile: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_GUARDDUTY_PUBLISHINGDESTINATION.001` | low | cfn:AWS::GuardDuty::PublishingDestination: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_HEALTHIMAGING_DATASTORE.001` | low | cfn:AWS::HealthImaging::Datastore: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_HEALTHLAKE_DATATRANSFORMATIONPROFILE.001` | low | cfn:AWS::HealthLake::DataTransformationProfile: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_HEALTHLAKE_FHIRDATASTORE.001` | low | cfn:AWS::HealthLake::FHIRDatastore: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_IMAGEBUILDER_COMPONENT.001` | low | cfn:AWS::ImageBuilder::Component: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_IMAGEBUILDER_CONTAINERRECIPE.001` | low | cfn:AWS::ImageBuilder::ContainerRecipe: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_IMAGEBUILDER_WORKFLOW.001` | low | cfn:AWS::ImageBuilder::Workflow: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_IOTSITEWISE_WORKSPACE.001` | low | cfn:AWS::IoTSiteWise::Workspace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_IOT_ENCRYPTIONCONFIGURATION.001` | low | cfn:AWS::IoT::EncryptionConfiguration: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_KENDRA_INDEX.001` | low | cfn:AWS::Kendra::Index: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_KINESISVIDEO_STREAM.001` | low | cfn:AWS::KinesisVideo::Stream: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LAMBDA_CAPACITYPROVIDER.001` | low | cfn:AWS::Lambda::CapacityProvider: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LAMBDA_EVENTSOURCEMAPPING.001` | low | cfn:AWS::Lambda::EventSourceMapping: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LAMBDA_FUNCTION.001` | low | cfn:AWS::Lambda::Function: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LOCATION_GEOFENCECOLLECTION.001` | low | cfn:AWS::Location::GeofenceCollection: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LOCATION_TRACKER.001` | low | cfn:AWS::Location::Tracker: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LOGS_INTEGRATION.001` | low | cfn:AWS::Logs::Integration: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LOGS_LOGANOMALYDETECTOR.001` | low | cfn:AWS::Logs::LogAnomalyDetector: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LOGS_LOGGROUP.001` | low | cfn:AWS::Logs::LogGroup: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LOOKOUTEQUIPMENT_INFERENCESCHEDULER.001` | low | cfn:AWS::LookoutEquipment::InferenceScheduler: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_M2_APPLICATION.001` | low | cfn:AWS::M2::Application: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_M2_ENVIRONMENT.001` | low | cfn:AWS::M2::Environment: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_MEMORYDB_CLUSTER.001` | low | cfn:AWS::MemoryDB::Cluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_MEMORYDB_SNAPSHOT.001` | low | cfn:AWS::MemoryDB::Snapshot: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_MSK_CHANNEL.001` | low | cfn:AWS::MSK::Channel: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_MWAASERVERLESS_WORKFLOW.001` | low | cfn:AWS::MWAAServerless::Workflow: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_NEPTUNE_DBCLUSTER.001` | low | cfn:AWS::Neptune::DBCluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_OBSERVABILITYADMIN_ORGANIZATIONTELEMETRYRULE.001` | low | cfn:AWS::ObservabilityAdmin::OrganizationTelemetryRule: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_OBSERVABILITYADMIN_S3TABLEINTEGRATION.001` | low | cfn:AWS::ObservabilityAdmin::S3TableIntegration: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_OBSERVABILITYADMIN_TELEMETRYRULE.001` | low | cfn:AWS::ObservabilityAdmin::TelemetryRule: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_OPENSEARCHSERVERLESS_COLLECTION.001` | low | cfn:AWS::OpenSearchServerless::Collection: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_OPENSEARCHSERVICE_APPLICATION.001` | low | cfn:AWS::OpenSearchService::Application: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_OPENSEARCHSERVICE_DOMAIN.001` | low | cfn:AWS::OpenSearchService::Domain: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_OSIS_PIPELINE.001` | low | cfn:AWS::OSIS::Pipeline: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_PERSONALIZE_DATASETEXPORTJOB.001` | low | cfn:AWS::Personalize::DatasetExportJob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_PERSONALIZE_DATASETGROUP.001` | low | cfn:AWS::Personalize::DatasetGroup: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_PERSONALIZE_METRICATTRIBUTION.001` | low | cfn:AWS::Personalize::MetricAttribution: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_QBUSINESS_APPLICATION.001` | low | cfn:AWS::QBusiness::Application: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_RDS_DBCLUSTER.001` | low | cfn:AWS::RDS::DBCluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_REDSHIFTSERVERLESS_NAMESPACE.001` | low | cfn:AWS::RedshiftServerless::Namespace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_REDSHIFT_CLUSTER.001` | low | cfn:AWS::Redshift::Cluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_REDSHIFT_SNAPSHOTCOPYGRANT.001` | low | cfn:AWS::Redshift::SnapshotCopyGrant: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_REKOGNITION_STREAMPROCESSOR.001` | low | cfn:AWS::Rekognition::StreamProcessor: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_RESILIENCEHUBV2_POLICY.001` | low | cfn:AWS::ResilienceHubV2::Policy: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_RESILIENCEHUBV2_SERVICE.001` | low | cfn:AWS::ResilienceHubV2::Service: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_RESILIENCEHUBV2_SYSTEM.001` | low | cfn:AWS::ResilienceHubV2::System: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_S3FILES_FILESYSTEM.001` | low | cfn:AWS::S3Files::FileSystem: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_S3VECTORS_INDEX.001` | low | cfn:AWS::S3Vectors::Index: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_S3VECTORS_VECTORBUCKET.001` | low | cfn:AWS::S3Vectors::VectorBucket: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_S3_BUCKET.001` | low | cfn:AWS::S3::Bucket: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_AUTOMLJOB.001` | low | cfn:AWS::SageMaker::AutoMLJob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_DATAQUALITYJOBDEFINITION.001` | low | cfn:AWS::SageMaker::DataQualityJobDefinition: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_DEVICEFLEET.001` | low | cfn:AWS::SageMaker::DeviceFleet: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_DOMAIN.001` | low | cfn:AWS::SageMaker::Domain: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_ENDPOINTCONFIG.001` | low | cfn:AWS::SageMaker::EndpointConfig: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_FEATUREGROUP.001` | low | cfn:AWS::SageMaker::FeatureGroup: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_HYPERPARAMETERTUNINGJOB.001` | low | cfn:AWS::SageMaker::HyperParameterTuningJob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_MODELBIASJOBDEFINITION.001` | low | cfn:AWS::SageMaker::ModelBiasJobDefinition: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_MODELCARD.001` | low | cfn:AWS::SageMaker::ModelCard: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_MODELEXPLAINABILITYJOBDEFINITION.001` | low | cfn:AWS::SageMaker::ModelExplainabilityJobDefinition: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_MODELPACKAGE.001` | low | cfn:AWS::SageMaker::ModelPackage: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_MODELQUALITYJOBDEFINITION.001` | low | cfn:AWS::SageMaker::ModelQualityJobDefinition: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_MONITORINGSCHEDULE.001` | low | cfn:AWS::SageMaker::MonitoringSchedule: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_NOTEBOOKINSTANCE.001` | low | cfn:AWS::SageMaker::NotebookInstance: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_OPTIMIZATIONJOB.001` | low | cfn:AWS::SageMaker::OptimizationJob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_PARTNERAPP.001` | low | cfn:AWS::SageMaker::PartnerApp: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_PROCESSINGJOB.001` | low | cfn:AWS::SageMaker::ProcessingJob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_TRAININGJOB.001` | low | cfn:AWS::SageMaker::TrainingJob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SAGEMAKER_TRANSFORMJOB.001` | low | cfn:AWS::SageMaker::TransformJob: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SCHEDULER_SCHEDULE.001` | low | cfn:AWS::Scheduler::Schedule: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECRETSMANAGER_ROTATIONSCHEDULE.001` | low | cfn:AWS::SecretsManager::RotationSchedule: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECRETSMANAGER_SECRET.001` | low | cfn:AWS::SecretsManager::Secret: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECURITYAGENT_AGENTSPACE.001` | low | cfn:AWS::SecurityAgent::AgentSpace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECURITYAGENT_SECURITYREQUIREMENTPACK.001` | low | cfn:AWS::SecurityAgent::SecurityRequirementPack: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECURITYHUB_CONNECTORV2.001` | low | cfn:AWS::SecurityHub::ConnectorV2: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECURITYLAKE_DATALAKE.001` | low | cfn:AWS::SecurityLake::DataLake: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SES_MAILMANAGERARCHIVE.001` | low | cfn:AWS::SES::MailManagerArchive: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SES_MAILMANAGERINGRESSPOINT.001` | low | cfn:AWS::SES::MailManagerIngressPoint: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SNS_TOPIC.001` | low | cfn:AWS::SNS::Topic: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SQS_QUEUE.001` | low | cfn:AWS::SQS::Queue: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_STEPFUNCTIONS_ACTIVITY.001` | low | cfn:AWS::StepFunctions::Activity: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_STEPFUNCTIONS_STATEMACHINE.001` | low | cfn:AWS::StepFunctions::StateMachine: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SYNTHETICS_CANARY.001` | low | cfn:AWS::Synthetics::Canary: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_TIMESTREAM_DATABASE.001` | low | cfn:AWS::Timestream::Database: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_TIMESTREAM_SCHEDULEDQUERY.001` | low | cfn:AWS::Timestream::ScheduledQuery: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_TIMESTREAM_TABLE.001` | low | cfn:AWS::Timestream::Table: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_VOICEID_DOMAIN.001` | low | cfn:AWS::VoiceID::Domain: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_WISDOM_ASSISTANT.001` | low | cfn:AWS::Wisdom::Assistant: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_WISDOM_KNOWLEDGEBASE.001` | low | cfn:AWS::Wisdom::KnowledgeBase: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_WORKSPACESINSTANCES_VOLUME.001` | low | cfn:AWS::WorkspacesInstances::Volume: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_WORKSPACESTHINCLIENT_ENVIRONMENT.001` | low | cfn:AWS::WorkSpacesThinClient::Environment: a customer-managed key |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_DOCDB_DBCLUSTER.001` | low | cfn:AWS::DocDB::DBCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_DOCDB_GLOBALCLUSTER.001` | low | cfn:AWS::DocDB::GlobalCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_DSQL_CLUSTER.001` | low | cfn:AWS::DSQL::Cluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_DYNAMODB_TABLE.001` | low | cfn:AWS::DynamoDB::Table: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_EKS_CLUSTER.001` | low | cfn:AWS::EKS::Cluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_LOGS_LOGGROUP.001` | low | cfn:AWS::Logs::LogGroup: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_NEPTUNEGRAPH_GRAPH.001` | low | cfn:AWS::NeptuneGraph::Graph: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_NEPTUNE_DBCLUSTER.001` | low | cfn:AWS::Neptune::DBCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_NEPTUNE_GLOBALCLUSTER.001` | low | cfn:AWS::Neptune::GlobalCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_QLDB_LEDGER.001` | low | cfn:AWS::QLDB::Ledger: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_DBCLUSTER.001` | low | cfn:AWS::RDS::DBCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_GLOBALCLUSTER.001` | low | cfn:AWS::RDS::GlobalCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_PHONENUMBER.001` | low | cfn:AWS::SMSVOICE::PhoneNumber: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_POOL.001` | low | cfn:AWS::SMSVOICE::Pool: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_PROTECTCONFIGURATION.001` | low | cfn:AWS::SMSVOICE::ProtectConfiguration: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_SENDERID.001` | low | cfn:AWS::SMSVOICE::SenderId: deletion protection |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_BEDROCKAGENTCORE_CAPACITYPROVIDER.001` | high | cfn:AWS::BedrockAgentCore::CapacityProvider: encryption at rest |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_DOCDB_DBCLUSTER.001` | high | cfn:AWS::DocDB::DBCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_DOCDB_GLOBALCLUSTER.001` | high | cfn:AWS::DocDB::GlobalCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_EC2_VOLUME.001` | high | cfn:AWS::EC2::Volume: encryption at rest |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_NEPTUNE_DBCLUSTER.001` | high | cfn:AWS::Neptune::DBCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_NEPTUNE_GLOBALCLUSTER.001` | high | cfn:AWS::Neptune::GlobalCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_RDS_DBCLUSTER.001` | high | cfn:AWS::RDS::DBCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_RDS_DBCLUSTERAUTOMATEDBACKUP.001` | high | cfn:AWS::RDS::DBClusterAutomatedBackup: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_RDS_DBINSTANCEAUTOMATEDBACKUP.001` | high | cfn:AWS::RDS::DBInstanceAutomatedBackup: encryption at rest |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_RDS_GLOBALCLUSTER.001` | high | cfn:AWS::RDS::GlobalCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_REDSHIFT_CLUSTER.001` | high | cfn:AWS::Redshift::Cluster: encryption at rest |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_WORKSPACESINSTANCES_VOLUME.001` | high | cfn:AWS::WorkspacesInstances::Volume: encryption at rest |
+| `POLICY.CFN.ENCRYPT_AT_REST.DBINSTANCE.001` | high | AWS::RDS::DBInstance: storage encryption is switched off |
+| `POLICY.CFN.ENCRYPT_AT_REST.FILESYSTEM.001` | medium | AWS::EFS::FileSystem: the file system is not encrypted |
+| `POLICY.CFN.GOVERNANCE.AWS_DOCDB_DBCLUSTER.001` | low | cfn:AWS::DocDB::DBCluster: tags on snapshots |
+| `POLICY.CFN.GOVERNANCE.AWS_NEPTUNE_DBCLUSTER.001` | low | cfn:AWS::Neptune::DBCluster: tags on snapshots |
+| `POLICY.CFN.GOVERNANCE.AWS_RDS_DBCLUSTER.001` | low | cfn:AWS::RDS::DBCluster: tags on snapshots |
+| `POLICY.CFN.GOVERNANCE.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: tags on snapshots |
+| `POLICY.CFN.KEY_ROTATION.AWS_KMS_KEY.001` | medium | cfn:AWS::KMS::Key: automatic key rotation |
+| `POLICY.CFN.LOGGING.AWS_DOCDB_DBINSTANCE.001` | low | cfn:AWS::DocDB::DBInstance: performance insights |
+| `POLICY.CFN.LOGGING.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: performance insights |
+| `POLICY.CFN.PATCHING.AWS_AMAZONMQ_BROKER.001` | medium | cfn:AWS::AmazonMQ::Broker: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_DMS_REPLICATIONINSTANCE.001` | medium | cfn:AWS::DMS::ReplicationInstance: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_DOCDB_DBINSTANCE.001` | medium | cfn:AWS::DocDB::DBInstance: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_ELASTICACHE_CACHECLUSTER.001` | medium | cfn:AWS::ElastiCache::CacheCluster: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_ELASTICACHE_REPLICATIONGROUP.001` | medium | cfn:AWS::ElastiCache::ReplicationGroup: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_MEMORYDB_CLUSTER.001` | medium | cfn:AWS::MemoryDB::Cluster: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_NEPTUNE_DBINSTANCE.001` | medium | cfn:AWS::Neptune::DBInstance: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_RDS_DBCLUSTER.001` | medium | cfn:AWS::RDS::DBCluster: automatic minor version upgrades |
+| `POLICY.CFN.PATCHING.AWS_RDS_DBINSTANCE.001` | medium | cfn:AWS::RDS::DBInstance: automatic minor version upgrades |
+| `POLICY.CFN.PUBLIC_IP.AWS_AUTOSCALING_LAUNCHCONFIGURATION.001` | low | cfn:AWS::AutoScaling::LaunchConfiguration: a public ip address |
+| `POLICY.CFN.PUBLIC_IP.AWS_EC2_SUBNET.001` | low | cfn:AWS::EC2::Subnet: every instance in the subnet gets a public address |
+| `POLICY.CFN.RESILIENCE.AWS_DMS_REPLICATIONCONFIG.001` | low | cfn:AWS::DMS::ReplicationConfig: a standby in another availability zone |
+| `POLICY.CFN.RESILIENCE.AWS_DMS_REPLICATIONINSTANCE.001` | low | cfn:AWS::DMS::ReplicationInstance: a standby in another availability zone |
+| `POLICY.CFN.RESILIENCE.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: a standby in another availability zone |
+| `POLICY.CFN.RESILIENCE.AWS_REDSHIFT_CLUSTER.001` | low | cfn:AWS::Redshift::Cluster: a standby in another availability zone |
+| `POLICY.CFN.SHARED_KEY_AUTH.AWS_RDS_DBCLUSTER.001` | low | cfn:AWS::RDS::DBCluster: iam database authentication |
+| `POLICY.CFN.SHARED_KEY_AUTH.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: iam database authentication |
+| `POLICY.CFN.WEAK_TLS.AWS_CLOUDFRONT_DISTRIBUTION.001` | medium | cfn:AWS::CloudFront::Distribution: an obsolete tls version is accepted |
+| `POLICY.CFN.WRITABLE_ROOT.AWS_BATCH_JOBDEFINITION.001` | low | cfn:AWS::Batch::JobDefinition: a read-only root filesystem |
+| `SUSPECT.CFN.IAM_WILDCARD.POLICY.001` | high | AWS::IAM::Policy: the policy grants every action |
+| `SUSPECT.CFN.IMDSV1.AWS_AUTOSCALING_LAUNCHCONFIGURATION.001` | medium | cfn:AWS::AutoScaling::LaunchConfiguration: instance metadata is reachable without a token |
+| `SUSPECT.CFN.IMDSV1.AWS_EC2_INSTANCE.001` | medium | cfn:AWS::EC2::Instance: instance metadata is reachable without a token |
+| `SUSPECT.CFN.IMDSV1.AWS_EC2_LAUNCHTEMPLATE.001` | medium | cfn:AWS::EC2::LaunchTemplate: instance metadata is reachable without a token |
+| `SUSPECT.CFN.IMDSV1.AWS_IMAGEBUILDER_INFRASTRUCTURECONFIGURATION.001` | medium | cfn:AWS::ImageBuilder::InfrastructureConfiguration: instance metadata is reachable without a token |
+| `SUSPECT.CFN.IMDSV1.AWS_WORKSPACESINSTANCES_WORKSPACEINSTANCE.001` | medium | cfn:AWS::WorkspacesInstances::WorkspaceInstance: instance metadata is reachable without a token |
+| `SUSPECT.CFN.OPEN_INGRESS.SECURITYGROUP.001` | high | AWS::EC2::SecurityGroup: a security group admits the whole internet |
+| `SUSPECT.CFN.PLAINTEXT.LISTENER.001` | medium | AWS::ElasticLoadBalancingV2::Listener: the listener serves plain HTTP |
+| `SUSPECT.CFN.PRIVILEGED.AWS_BATCH_JOBDEFINITION.001` | high | cfn:AWS::Batch::JobDefinition: the container runs privileged |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_AMAZONMQ_BROKER.001` | high | cfn:AWS::AmazonMQ::Broker: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_DMS_INSTANCEPROFILE.001` | high | cfn:AWS::DMS::InstanceProfile: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_DMS_REPLICATIONINSTANCE.001` | high | cfn:AWS::DMS::ReplicationInstance: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_LIGHTSAIL_DATABASE.001` | high | cfn:AWS::Lightsail::Database: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_M2_ENVIRONMENT.001` | high | cfn:AWS::M2::Environment: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_NEPTUNE_DBINSTANCE.001` | high | cfn:AWS::Neptune::DBInstance: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_RDS_DBCLUSTER.001` | high | cfn:AWS::RDS::DBCluster: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_RDS_DBSHARDGROUP.001` | high | cfn:AWS::RDS::DBShardGroup: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_REDSHIFTSERVERLESS_WORKGROUP.001` | high | cfn:AWS::RedshiftServerless::Workgroup: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_REDSHIFT_CLUSTER.001` | high | cfn:AWS::Redshift::Cluster: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_TIMESTREAM_INFLUXDBCLUSTER.001` | high | cfn:AWS::Timestream::InfluxDBCluster: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.AWS_TIMESTREAM_INFLUXDBINSTANCE.001` | high | cfn:AWS::Timestream::InfluxDBInstance: reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_ACCESS.DBINSTANCE.001` | high | AWS::RDS::DBInstance: the database is reachable from the public internet |
+| `SUSPECT.CFN.PUBLIC_STORAGE.BUCKET.001` | high | AWS::S3::Bucket: the bucket is readable by anyone |
+
+## Compose files
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.COMPOSE.DANGEROUS_CAPABILITY.001` | high | Compose service: the service is granted a capability that defeats isolation |
+| `SUSPECT.COMPOSE.HOST_NETWORK.001` | medium | Compose service: the service shares the host network namespace |
+
+## Containers
+
+5 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.CONTAINER.UNPINNED_BASE.001` | low | Base image referenced by tag rather than digest |
+| `POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001` | low | Kubernetes workload runs an image by tag rather than digest |
+| `POLICY.CONTAINER.UNSIGNED_IMAGE.001` | low | An image this project runs carries no signature or build attestation |
+| `SUSPECT.CONTAINER.BUILD_SECRET.001` | high | Secret passed as a build argument |
+| `SUSPECT.CONTAINER.FETCH_EXEC.001` | high | Image build fetches and executes remote content |
 
 ## Cryptominer
 
@@ -81,6 +492,39 @@ rule's own samples.
 | `MALWARE.DECODE_EXEC.INVISIBLE.001` | critical | A payload written in invisible characters is decoded and run |
 | `SUSPECT.DECODE_EXEC.001` | high | Encoded data decoded and executed in the same file |
 
+## Dependencies
+
+26 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.DEPENDENCY.KNOWN.001` | critical | Dependency is a known-malicious release |
+| `MALWARE.DEPENDENCY.PAYLOAD.001` | critical | A declared dependency is malicious by its own content |
+| `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | A published package installs a dependency from a drop-point host |
+| `POLICY.DEPENDENCY.ABANDONED.001` | medium | Dependency is abandoned by its maintainer |
+| `POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001` | medium | Package source over plain HTTP |
+| `POLICY.DEPENDENCY.DEPRECATED.001` | medium | Dependency pins a version its publisher deprecated |
+| `POLICY.DEPENDENCY.DOWNGRADE.001` | low | Dependency pins a version far behind the current release |
+| `POLICY.DEPENDENCY.INTEGRITY.001` | medium | Dependency has no integrity hash |
+| `POLICY.DEPENDENCY.MUTABLE_REF.001` | medium | Git dependency on a reference that can move |
+| `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | Dependency pins npm's security placeholder |
+| `POLICY.DEPENDENCY.SOURCE.001` | low | Dependency declared from a non-registry source |
+| `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | Dependency has had no release in five years |
+| `SUSPECT.DEPENDENCY.CONFUSION.001` | high | Internal package name resolved from a public registry |
+| `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | Dependency pins a version its publisher deprecated for a security reason |
+| `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | A published package installs a dependency from another project's commit |
+| `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | A dependency's name is a documented AI hallucination |
+| `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | Dependency version is held for review |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
+| `SUSPECT.DEPENDENCY.SOURCE.001` | medium | Dependency resolved from outside the registry |
+| `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | A private package index merged with a public one |
+| `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | Dependency name is one edit from a popular package |
+| `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | A dependency does not exist on its public registry |
+| `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | A dependency is new, sourceless and unknown: the shape of a slopsquatted package |
+| `SUSPECT.DEPENDENCY.YANKED.001` | high | Dependency pins a version its publisher withdrew |
+| `VULNERABLE.DEPENDENCY.EXPLOITED.001` | critical | Dependency has a vulnerability that is exploited in the wild |
+| `VULNERABLE.DEPENDENCY.KNOWN.001` | high | Dependency has a known vulnerability |
+
 ## Destroy
 
 2 rules.
@@ -89,6 +533,36 @@ rule's own samples.
 |---|---|---|
 | `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | Deletes the home directory or the filesystem root |
 | `SUSPECT.DESTROY.SYSTEM_DISK.001` | high | Writes to the system disk itself |
+
+## Dockerfiles
+
+6 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | Dockerfile: the image serves a port and declares no health check |
+| `POLICY.DOCKERFILE.ROOT_USER.001` | medium | Dockerfile: the image runs as root |
+| `POLICY.DOCKERFILE.SECRET_ARG_DECLARED.001` | medium | Dockerfile: a credential is passed as a build argument |
+| `POLICY.DOCKERFILE.SUDO.001` | low | Dockerfile: the build uses sudo |
+| `SUSPECT.DOCKERFILE.ADD_REMOTE.001` | medium | Dockerfile: the build downloads a URL with ADD |
+| `SUSPECT.DOCKERFILE.SECRET_ARG.001` | high | Dockerfile: a credential is baked into the image |
+
+## Document
+
+10 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.DOCUMENT.AUTO_EXEC.001` | high | A macro runs by itself on open and starts a program or fetches from the network |
+| `SUSPECT.DOCUMENT.DDE.001` | high | A document contains a DDE field |
+| `SUSPECT.DOCUMENT.MACRO.001` | medium | An office document carries macros |
+| `SUSPECT.DOCUMENT.PDF_AUTO_ACTION.001` | high | A PDF runs JavaScript when it is opened |
+| `SUSPECT.DOCUMENT.PDF_EMBEDDED_EXECUTABLE.001` | high | A PDF embeds a file with an executable name |
+| `SUSPECT.DOCUMENT.PDF_JAVASCRIPT.001` | medium | A PDF carries JavaScript |
+| `SUSPECT.DOCUMENT.PDF_LAUNCH.001` | high | A PDF asks the viewer to launch a program |
+| `SUSPECT.DOCUMENT.PDF_RISKY_URI.001` | medium | A PDF link opens a script, a local file or a download that runs |
+| `SUSPECT.DOCUMENT.REMOTE_OBJECT.001` | high | A document loads a template or object from elsewhere when opened |
+| `SUSPECT.DOCUMENT.RTF_OBJECT.001` | high | An RTF document embeds an object that loads itself |
 
 ## Dropper
 
@@ -144,6 +618,19 @@ rule's own samples.
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
 
+## Extension
+
+6 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.EXTENSION.KNOWN.001` | critical | An editor extension is a recorded malicious release |
+| `MALWARE.EXTENSION.REMOVED.001` | critical | A recommended or vendored editor extension was removed from the Marketplace as malware |
+| `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | An editor extension's display name carries invisible characters |
+| `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
+| `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |
+| `SUSPECT.EXTENSION.REMOVED.001` | high | A recommended or vendored editor extension was removed from the Marketplace |
+
 ## File
 
 1 rules.
@@ -152,9 +639,861 @@ rule's own samples.
 |---|---|---|
 | `SUSPECT.FILE.DISGUISED_PROGRAM.001` | high | Code turns a file shipped as data into a program |
 
+## Format
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.FORMAT.UNREADABLE` | info | A model, document or image could not be read |
+
+## Helm
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.HELM.UNTRUSTED_REPOSITORY.001` | medium | Chart depends on a chart from an unpinned or plain-HTTP repository |
+
+## Image
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.IMAGE.UNMATCHED` | info | An image's packages were not all matched against advisories |
+| `VULNERABLE.IMAGE.EXPLOITED.001` | critical | An image's operating-system package has a vulnerability exploited in the wild |
+| `VULNERABLE.IMAGE.PACKAGE.001` | high | An image's operating-system package has a known vulnerability |
+
+## Infrastructure as code
+
+819 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.IAC.ANSIBLE_TLS_UNVERIFIED.001` | medium | Task turns off TLS certificate verification |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_CRON_JOB.001` | low | kubernetes_cron_job: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_CRON_JOB_V1.001` | low | kubernetes_cron_job_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_DAEMONSET.001` | low | kubernetes_daemonset: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_DAEMON_SET_V1.001` | low | kubernetes_daemon_set_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_DEFAULT_SERVICE_ACCOUNT.001` | low | kubernetes_default_service_account: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_DEFAULT_SERVICE_ACCOUNT_V1.001` | low | kubernetes_default_service_account_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_DEPLOYMENT.001` | low | kubernetes_deployment: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_DEPLOYMENT_V1.001` | low | kubernetes_deployment_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_JOB.001` | low | kubernetes_job: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_JOB_V1.001` | low | kubernetes_job_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_POD.001` | low | kubernetes_pod: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_POD_V1.001` | low | kubernetes_pod_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_REPLICATION_CONTROLLER.001` | low | kubernetes_replication_controller: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_REPLICATION_CONTROLLER_V1.001` | low | kubernetes_replication_controller_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_SERVICE_ACCOUNT.001` | low | kubernetes_service_account: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_SERVICE_ACCOUNT_V1.001` | low | kubernetes_service_account_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_STATEFUL_SET.001` | low | kubernetes_stateful_set: the service account token is mounted into the pod |
+| `POLICY.IAC.AUTOMOUNT_TOKEN.KUBERNETES_STATEFUL_SET_V1.001` | low | kubernetes_stateful_set_v1: the service account token is mounted into the pod |
+| `POLICY.IAC.BACKUP.AWS_DB_INSTANCE_BACKUP_RETENTION_PERIOD.001` | medium | aws_db_instance: a backup retention period is not configured |
+| `POLICY.IAC.BACKUP.AWS_DOCDB_CLUSTER_BACKUP_RETENTION_PERIOD.001` | low | aws_docdb_cluster: a backup retention period is not configured |
+| `POLICY.IAC.BACKUP.AWS_LIGHTSAIL_DATABASE.001` | medium | aws_lightsail_database: no snapshot is taken when the database is destroyed |
+| `POLICY.IAC.BACKUP.AWS_NEPTUNE_CLUSTER_BACKUP_RETENTION_PERIOD.001` | low | aws_neptune_cluster: a backup retention period is not configured |
+| `POLICY.IAC.BACKUP.AWS_NEPTUNE_CLUSTER_INSTANCE.001` | medium | aws_neptune_cluster_instance: no snapshot is taken when the database is destroyed |
+| `POLICY.IAC.BACKUP.AWS_RDS_CLUSTER_BACKUP_RETENTION_PERIOD.001` | medium | aws_rds_cluster: a backup retention period is not configured |
+| `POLICY.IAC.BACKUP.AWS_REDSHIFT_CLUSTER_AUTOMATED_SNAPSHOT_RETENTION_PERIOD.001` | low | aws_redshift_cluster: a backup retention period is not configured |
+| `POLICY.IAC.BACKUP.AZURERM_APP_SERVICE.001` | low | azurerm_app_service: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_LINUX_FUNCTION_APP.001` | low | azurerm_linux_function_app: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_LINUX_FUNCTION_APP_SLOT.001` | low | azurerm_linux_function_app_slot: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_LINUX_WEB_APP.001` | low | azurerm_linux_web_app: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_LINUX_WEB_APP_SLOT.001` | low | azurerm_linux_web_app_slot: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_MYSQL_SERVER_BACKUP_RETENTION_DAYS.001` | low | azurerm_mysql_server: a backup retention period is not configured |
+| `POLICY.IAC.BACKUP.AZURERM_POSTGRESQL_SERVER_BACKUP_RETENTION_DAYS.001` | low | azurerm_postgresql_server: a backup retention period is not configured |
+| `POLICY.IAC.BACKUP.AZURERM_WINDOWS_FUNCTION_APP.001` | low | azurerm_windows_function_app: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_WINDOWS_FUNCTION_APP_SLOT.001` | low | azurerm_windows_function_app_slot: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_WINDOWS_WEB_APP.001` | low | azurerm_windows_web_app: keeping a backup |
+| `POLICY.IAC.BACKUP.AZURERM_WINDOWS_WEB_APP_SLOT.001` | low | azurerm_windows_web_app_slot: keeping a backup |
+| `POLICY.IAC.BACKUP_DISABLED.AWS_DB_INSTANCE.001` | medium | aws_db_instance: backups are switched off |
+| `POLICY.IAC.BACKUP_DISABLED.AWS_DOCDB_CLUSTER.001` | low | aws_docdb_cluster: backups are switched off |
+| `POLICY.IAC.BACKUP_DISABLED.AWS_NEPTUNE_CLUSTER.001` | low | aws_neptune_cluster: backups are switched off |
+| `POLICY.IAC.BACKUP_DISABLED.AWS_RDS_CLUSTER.001` | medium | aws_rds_cluster: backups are switched off |
+| `POLICY.IAC.BACKUP_DISABLED.AWS_REDSHIFT_CLUSTER.001` | low | aws_redshift_cluster: backups are switched off |
+| `POLICY.IAC.BACKUP_DISABLED.AZURERM_MYSQL_SERVER.001` | low | azurerm_mysql_server: backups are switched off |
+| `POLICY.IAC.BACKUP_DISABLED.AZURERM_POSTGRESQL_SERVER.001` | low | azurerm_postgresql_server: backups are switched off |
+| `POLICY.IAC.BOOT_INTEGRITY.AZURERM_BATCH_POOL.001` | low | azurerm_batch_pool: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.AZURERM_LINUX_VIRTUAL_MACHINE.001` | low | azurerm_linux_virtual_machine: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.AZURERM_LINUX_VIRTUAL_MACHINE_SCALE_SET.001` | low | azurerm_linux_virtual_machine_scale_set: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.AZURERM_WINDOWS_VIRTUAL_MACHINE.001` | low | azurerm_windows_virtual_machine: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.AZURERM_WINDOWS_VIRTUAL_MACHINE_SCALE_SET.001` | low | azurerm_windows_virtual_machine_scale_set: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_COLAB_RUNTIME_TEMPLATE.001` | low | google_colab_runtime_template: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_COMPUTE_INSTANCE.001` | low | google_compute_instance: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_COMPUTE_INSTANCE_FROM_TEMPLATE.001` | low | google_compute_instance_from_template: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_COMPUTE_INSTANCE_TEMPLATE.001` | low | google_compute_instance_template: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_COMPUTE_REGION_INSTANCE_TEMPLATE.001` | low | google_compute_region_instance_template: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_CONTAINER_CLUSTER.001` | low | google_container_cluster: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_CONTAINER_NODE_POOL.001` | low | google_container_node_pool: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_DATAPROC_CLUSTER.001` | low | google_dataproc_cluster: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_DATAPROC_WORKFLOW_TEMPLATE.001` | low | google_dataproc_workflow_template: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_NOTEBOOKS_INSTANCE.001` | low | google_notebooks_instance: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_NOTEBOOKS_RUNTIME.001` | low | google_notebooks_runtime: secure boot |
+| `POLICY.IAC.BOOT_INTEGRITY.GOOGLE_WORKBENCH_INSTANCE.001` | low | google_workbench_instance: secure boot |
+| `POLICY.IAC.CMEK.AWS_AMI_COPY.001` | low | aws_ami_copy: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_ATHENA_WORKGROUP.001` | low | aws_athena_workgroup: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_BACKUP_VAULT.001` | low | aws_backup_vault: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_BEDROCKAGENT_DATA_SOURCE.001` | low | aws_bedrockagent_data_source: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_BEDROCK_GUARDRAIL.001` | low | aws_bedrock_guardrail: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_CHIMESDKVOICE_VOICE_PROFILE_DOMAIN.001` | low | aws_chimesdkvoice_voice_profile_domain: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_CLOUDTRAIL.001` | low | aws_cloudtrail: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_CLOUDTRAIL_EVENT_DATA_STORE.001` | low | aws_cloudtrail_event_data_store: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_CLOUDWATCH_LOG_ANOMALY_DETECTOR.001` | low | aws_cloudwatch_log_anomaly_detector: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_CODECOMMIT_REPOSITORY.001` | low | aws_codecommit_repository: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_CODEGURUREVIEWER_REPOSITORY_ASSOCIATION.001` | low | aws_codegurureviewer_repository_association: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_COGNITO_USER_POOL.001` | low | aws_cognito_user_pool: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_COMPREHEND_DOCUMENT_CLASSIFIER.001` | low | aws_comprehend_document_classifier: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DATAEXCHANGE_EVENT_ACTION.001` | low | aws_dataexchange_event_action: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DATAEXCHANGE_REVISION_ASSETS.001` | low | aws_dataexchange_revision_assets: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DB_INSTANCE.001` | low | aws_db_instance: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DB_INSTANCE_AUTOMATED_BACKUPS_REPLICATION.001` | low | aws_db_instance_automated_backups_replication: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DB_SNAPSHOT_COPY.001` | low | aws_db_snapshot_copy: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DEVOPSGURU_SERVICE_INTEGRATION.001` | low | aws_devopsguru_service_integration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DMS_ENDPOINT.001` | low | aws_dms_endpoint: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DMS_REPLICATION_CONFIG.001` | low | aws_dms_replication_config: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DMS_REPLICATION_INSTANCE.001` | low | aws_dms_replication_instance: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DMS_S3_ENDPOINT.001` | low | aws_dms_s3_endpoint: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DOCDBELASTIC_CLUSTER.001` | low | aws_docdbelastic_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DOCDB_CLUSTER.001` | low | aws_docdb_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DYNAMODB_TABLE.001` | low | aws_dynamodb_table: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_DYNAMODB_TABLE_REPLICA.001` | low | aws_dynamodb_table_replica: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_EBS_SNAPSHOT_COPY.001` | low | aws_ebs_snapshot_copy: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_EBS_SNAPSHOT_IMPORT.001` | low | aws_ebs_snapshot_import: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_EBS_VOLUME.001` | low | aws_ebs_volume: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_ECS_CLUSTER.001` | low | aws_ecs_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_ECS_SERVICE.001` | low | aws_ecs_service: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_EFS_FILE_SYSTEM.001` | low | aws_efs_file_system: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_EFS_REPLICATION_CONFIGURATION.001` | low | aws_efs_replication_configuration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_ELASTICACHE_REPLICATION_GROUP.001` | low | aws_elasticache_replication_group: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_ELASTICACHE_SERVERLESS_CACHE.001` | low | aws_elasticache_serverless_cache: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_ELASTICSEARCH_DOMAIN.001` | low | aws_elasticsearch_domain: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_EMRCONTAINERS_JOB_TEMPLATE.001` | low | aws_emrcontainers_job_template: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_FINSPACE_KX_ENVIRONMENT.001` | low | aws_finspace_kx_environment: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_FSX_FILE_CACHE.001` | low | aws_fsx_file_cache: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_FSX_LUSTRE_FILE_SYSTEM.001` | low | aws_fsx_lustre_file_system: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_FSX_ONTAP_FILE_SYSTEM.001` | low | aws_fsx_ontap_file_system: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_FSX_OPENZFS_FILE_SYSTEM.001` | low | aws_fsx_openzfs_file_system: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_FSX_WINDOWS_FILE_SYSTEM.001` | low | aws_fsx_windows_file_system: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_GLUE_SECURITY_CONFIGURATION.001` | low | aws_glue_security_configuration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_GUARDDUTY_PUBLISHING_DESTINATION.001` | low | aws_guardduty_publishing_destination: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_IMAGEBUILDER_COMPONENT.001` | low | aws_imagebuilder_component: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_IMAGEBUILDER_CONTAINER_RECIPE.001` | low | aws_imagebuilder_container_recipe: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_IMAGEBUILDER_DISTRIBUTION_CONFIGURATION.001` | low | aws_imagebuilder_distribution_configuration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_IMAGEBUILDER_IMAGE_RECIPE.001` | low | aws_imagebuilder_image_recipe: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_IMAGEBUILDER_WORKFLOW.001` | low | aws_imagebuilder_workflow: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_INSTANCE.001` | low | aws_instance: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_KENDRA_INDEX.001` | low | aws_kendra_index: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_KINESIS_FIREHOSE_DELIVERY_STREAM.001` | low | aws_kinesis_firehose_delivery_stream: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_KINESIS_STREAM.001` | low | aws_kinesis_stream: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_KINESIS_VIDEO_STREAM.001` | low | aws_kinesis_video_stream: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_LAMBDA_EVENT_SOURCE_MAPPING.001` | low | aws_lambda_event_source_mapping: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_LAMBDA_FUNCTION.001` | low | aws_lambda_function: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_LAUNCH_TEMPLATE.001` | low | aws_launch_template: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_LEXV2MODELS_SLOT_TYPE.001` | low | aws_lexv2models_slot_type: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_LEX_BOT_ALIAS.001` | low | aws_lex_bot_alias: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_LOCATION_GEOFENCE_COLLECTION.001` | low | aws_location_geofence_collection: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_LOCATION_TRACKER.001` | low | aws_location_tracker: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_M2_APPLICATION.001` | low | aws_m2_application: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_M2_ENVIRONMENT.001` | low | aws_m2_environment: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_MACIE2_CLASSIFICATION_EXPORT_CONFIGURATION.001` | low | aws_macie2_classification_export_configuration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_MEMORYDB_CLUSTER.001` | low | aws_memorydb_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_MEMORYDB_SNAPSHOT.001` | low | aws_memorydb_snapshot: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_MQ_BROKER.001` | low | aws_mq_broker: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_NEPTUNE_CLUSTER.001` | low | aws_neptune_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_OPENSEARCH_DOMAIN.001` | low | aws_opensearch_domain: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_OSIS_PIPELINE.001` | low | aws_osis_pipeline: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_PROMETHEUS_WORKSPACE.001` | low | aws_prometheus_workspace: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_QBUSINESS_APPLICATION.001` | low | aws_qbusiness_application: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_RDS_CLUSTER.001` | low | aws_rds_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_RDS_CLUSTER_ACTIVITY_STREAM.001` | low | aws_rds_cluster_activity_stream: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_RDS_CLUSTER_SNAPSHOT_COPY.001` | low | aws_rds_cluster_snapshot_copy: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_RDS_CUSTOM_DB_ENGINE_VERSION.001` | low | aws_rds_custom_db_engine_version: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_RDS_EXPORT_TASK.001` | low | aws_rds_export_task: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_RDS_INTEGRATION.001` | low | aws_rds_integration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_REDSHIFTSERVERLESS_NAMESPACE.001` | low | aws_redshiftserverless_namespace: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_REDSHIFT_CLUSTER.001` | low | aws_redshift_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_REDSHIFT_INTEGRATION.001` | low | aws_redshift_integration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_REDSHIFT_SNAPSHOT_COPY_GRANT.001` | low | aws_redshift_snapshot_copy_grant: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_REKOGNITION_STREAM_PROCESSOR.001` | low | aws_rekognition_stream_processor: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_S3_BUCKET_OBJECT.001` | low | aws_s3_bucket_object: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_S3_OBJECT.001` | low | aws_s3_object: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_S3_OBJECT_COPY.001` | low | aws_s3_object_copy: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SAGEMAKER_DATA_QUALITY_JOB_DEFINITION.001` | low | aws_sagemaker_data_quality_job_definition: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SAGEMAKER_DEVICE_FLEET.001` | low | aws_sagemaker_device_fleet: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SAGEMAKER_DOMAIN.001` | low | aws_sagemaker_domain: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SAGEMAKER_ENDPOINT_CONFIGURATION.001` | low | aws_sagemaker_endpoint_configuration: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SAGEMAKER_FEATURE_GROUP.001` | low | aws_sagemaker_feature_group: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SAGEMAKER_FLOW_DEFINITION.001` | low | aws_sagemaker_flow_definition: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SAGEMAKER_NOTEBOOK_INSTANCE.001` | low | aws_sagemaker_notebook_instance: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SCHEDULER_SCHEDULE.001` | low | aws_scheduler_schedule: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SECRETSMANAGER_SECRET.001` | low | aws_secretsmanager_secret: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SES_RECEIPT_RULE.001` | low | aws_ses_receipt_rule: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SFN_ACTIVITY.001` | low | aws_sfn_activity: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SFN_STATE_MACHINE.001` | low | aws_sfn_state_machine: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SPOT_FLEET_REQUEST.001` | low | aws_spot_fleet_request: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SPOT_INSTANCE_REQUEST.001` | low | aws_spot_instance_request: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SSMINCIDENTS_REPLICATION_SET.001` | low | aws_ssmincidents_replication_set: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SSM_RESOURCE_DATA_SYNC.001` | low | aws_ssm_resource_data_sync: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_STORAGEGATEWAY_NFS_FILE_SHARE.001` | low | aws_storagegateway_nfs_file_share: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_STORAGEGATEWAY_SMB_FILE_SHARE.001` | low | aws_storagegateway_smb_file_share: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_SYNTHETICS_CANARY.001` | low | aws_synthetics_canary: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_TIMESTREAMQUERY_SCHEDULED_QUERY.001` | low | aws_timestreamquery_scheduled_query: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_TIMESTREAMWRITE_DATABASE.001` | low | aws_timestreamwrite_database: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_TIMESTREAMWRITE_TABLE.001` | low | aws_timestreamwrite_table: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_VERIFIEDACCESS_ENDPOINT.001` | low | aws_verifiedaccess_endpoint: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_VERIFIEDACCESS_GROUP.001` | low | aws_verifiedaccess_group: a customer-managed key |
+| `POLICY.IAC.CMEK.AWS_VERIFIEDACCESS_TRUST_PROVIDER.001` | low | aws_verifiedaccess_trust_provider: a customer-managed key |
+| `POLICY.IAC.CMEK.AZURERM_IMAGE.001` | low | azurerm_image: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_KUBERNETES_CLUSTER.001` | low | azurerm_kubernetes_cluster: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_LINUX_VIRTUAL_MACHINE.001` | low | azurerm_linux_virtual_machine: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_LINUX_VIRTUAL_MACHINE_SCALE_SET.001` | low | azurerm_linux_virtual_machine_scale_set: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_MANAGED_DISK.001` | low | azurerm_managed_disk: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_ORCHESTRATED_VIRTUAL_MACHINE_SCALE_SET.001` | low | azurerm_orchestrated_virtual_machine_scale_set: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_REDHAT_OPENSHIFT_CLUSTER.001` | low | azurerm_redhat_openshift_cluster: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_SHARED_IMAGE_VERSION.001` | low | azurerm_shared_image_version: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_WINDOWS_VIRTUAL_MACHINE.001` | low | azurerm_windows_virtual_machine: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.AZURERM_WINDOWS_VIRTUAL_MACHINE_SCALE_SET.001` | low | azurerm_windows_virtual_machine_scale_set: a customer-managed disk encryption set |
+| `POLICY.IAC.CMEK.GOOGLE_ALLOYDB_BACKUP.001` | low | google_alloydb_backup: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_ALLOYDB_CLUSTER.001` | low | google_alloydb_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_ARTIFACT_REGISTRY_REPOSITORY.001` | low | google_artifact_registry_repository: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_BIGQUERY_CONNECTION.001` | low | google_bigquery_connection: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_BIGQUERY_DATASET.001` | low | google_bigquery_dataset: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_BIGQUERY_DATA_TRANSFER_CONFIG.001` | low | google_bigquery_data_transfer_config: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_BIGQUERY_JOB.001` | low | google_bigquery_job: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_BIGQUERY_TABLE.001` | low | google_bigquery_table: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_BIGTABLE_INSTANCE.001` | low | google_bigtable_instance: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_CLOUDBUILD_TRIGGER.001` | low | google_cloudbuild_trigger: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_CLOUDFUNCTIONS2_FUNCTION.001` | low | google_cloudfunctions2_function: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_CLOUDFUNCTIONS_FUNCTION.001` | low | google_cloudfunctions_function: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_COLAB_RUNTIME_TEMPLATE.001` | low | google_colab_runtime_template: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_COMPOSER_ENVIRONMENT.001` | low | google_composer_environment: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_COMPUTE_REGION_DISK.001` | low | google_compute_region_disk: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_CONTAINER_AWS_CLUSTER.001` | low | google_container_aws_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_CONTAINER_AWS_NODE_POOL.001` | low | google_container_aws_node_pool: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_DATAFLOW_JOB.001` | low | google_dataflow_job: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_DATAPROC_CLUSTER.001` | low | google_dataproc_cluster: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_DATASTREAM_STREAM.001` | low | google_datastream_stream: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_DATA_PIPELINE_PIPELINE.001` | low | google_data_pipeline_pipeline: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_DISCOVERY_ENGINE_DATA_STORE.001` | low | google_discovery_engine_data_store: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_DOCUMENT_AI_PROCESSOR.001` | low | google_document_ai_processor: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_FILESTORE_INSTANCE.001` | low | google_filestore_instance: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_FIRESTORE_DATABASE.001` | low | google_firestore_database: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_HEALTHCARE_DATASET.001` | low | google_healthcare_dataset: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_INTEGRATION_CONNECTORS_CONNECTION.001` | low | google_integration_connectors_connection: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_LOGGING_BILLING_ACCOUNT_BUCKET_CONFIG.001` | low | google_logging_billing_account_bucket_config: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_LOGGING_FOLDER_BUCKET_CONFIG.001` | low | google_logging_folder_bucket_config: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_LOGGING_FOLDER_SETTINGS.001` | low | google_logging_folder_settings: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_LOGGING_ORGANIZATION_BUCKET_CONFIG.001` | low | google_logging_organization_bucket_config: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_LOGGING_ORGANIZATION_SETTINGS.001` | low | google_logging_organization_settings: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_LOGGING_PROJECT_BUCKET_CONFIG.001` | low | google_logging_project_bucket_config: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_LOOKER_INSTANCE.001` | low | google_looker_instance: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_PUBSUB_TOPIC.001` | low | google_pubsub_topic: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_SECRET_MANAGER_REGIONAL_SECRET.001` | low | google_secret_manager_regional_secret: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_SECRET_MANAGER_SECRET.001` | low | google_secret_manager_secret: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_SPANNER_BACKUP_SCHEDULE.001` | low | google_spanner_backup_schedule: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_SPANNER_DATABASE.001` | low | google_spanner_database: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_STORAGE_BUCKET_OBJECT.001` | low | google_storage_bucket_object: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_VERTEX_AI_DATASET.001` | low | google_vertex_ai_dataset: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_VERTEX_AI_ENDPOINT.001` | low | google_vertex_ai_endpoint: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_VERTEX_AI_FEATURESTORE.001` | low | google_vertex_ai_featurestore: a customer-managed key |
+| `POLICY.IAC.CMEK.GOOGLE_VERTEX_AI_TENSORBOARD.001` | low | google_vertex_ai_tensorboard: a customer-managed key |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_ALB_ENABLE_DELETION_PROTECTION.001` | low | aws_alb: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_DB_INSTANCE_DELETION_PROTECTION.001` | low | aws_db_instance: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_DOCDB_CLUSTER_DELETION_PROTECTION.001` | low | aws_docdb_cluster: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_DOCDB_GLOBAL_CLUSTER.001` | low | aws_docdb_global_cluster: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_DSQL_CLUSTER.001` | low | aws_dsql_cluster: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_DYNAMODB_TABLE_DELETION_PROTECTION_ENABLED.001` | low | aws_dynamodb_table: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_DYNAMODB_TABLE_REPLICA.001` | low | aws_dynamodb_table_replica: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_LB_ENABLE_DELETION_PROTECTION.001` | low | aws_lb: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_NEPTUNEGRAPH_GRAPH.001` | low | aws_neptunegraph_graph: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_NEPTUNE_CLUSTER_DELETION_PROTECTION.001` | low | aws_neptune_cluster: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_NEPTUNE_GLOBAL_CLUSTER.001` | low | aws_neptune_global_cluster: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_PINPOINTSMSVOICEV2_PHONE_NUMBER.001` | low | aws_pinpointsmsvoicev2_phone_number: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_QLDB_LEDGER.001` | low | aws_qldb_ledger: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_RDS_CLUSTER_DELETION_PROTECTION.001` | low | aws_rds_cluster: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.AWS_RDS_GLOBAL_CLUSTER.001` | low | aws_rds_global_cluster: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.AZURERM_APP_CONFIGURATION.001` | medium | azurerm_app_configuration: purge protection |
+| `POLICY.IAC.DELETION_PROTECTION.AZURERM_KEY_VAULT_MANAGED_HARDWARE_SECURITY_MODULE.001` | medium | azurerm_key_vault_managed_hardware_security_module: purge protection |
+| `POLICY.IAC.DELETION_PROTECTION.AZURERM_KEY_VAULT_PURGE_PROTECTION_ENABLED.001` | medium | azurerm_key_vault: deletion protection is not configured |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_ACTIVE_DIRECTORY_DOMAIN.001` | low | google_active_directory_domain: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_BIGQUERY_TABLE.001` | low | google_bigquery_table: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_BIGTABLE_INSTANCE.001` | low | google_bigtable_instance: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_BIGTABLE_LOGICAL_VIEW.001` | low | google_bigtable_logical_view: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_BIGTABLE_MATERIALIZED_VIEW.001` | low | google_bigtable_materialized_view: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_CLOUD_RUN_V2_JOB.001` | low | google_cloud_run_v2_job: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_CLOUD_RUN_V2_SERVICE.001` | low | google_cloud_run_v2_service: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_CLOUD_RUN_V2_WORKER_POOL.001` | low | google_cloud_run_v2_worker_pool: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_COMPUTE_INSTANCE.001` | low | google_compute_instance: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_COMPUTE_INSTANCE_FROM_TEMPLATE.001` | low | google_compute_instance_from_template: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_COMPUTE_STORAGE_POOL.001` | low | google_compute_storage_pool: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_CONTAINER_CLUSTER.001` | low | google_container_cluster: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_DATAPROC_METASTORE_FEDERATION.001` | low | google_dataproc_metastore_federation: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_DATAPROC_METASTORE_SERVICE.001` | low | google_dataproc_metastore_service: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_FILESTORE_INSTANCE.001` | low | google_filestore_instance: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_FOLDER.001` | low | google_folder: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_MEMORYSTORE_INSTANCE.001` | low | google_memorystore_instance: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_ORACLE_DATABASE_AUTONOMOUS_DATABASE.001` | low | google_oracle_database_autonomous_database: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_ORACLE_DATABASE_CLOUD_EXADATA_INFRASTRUCTURE.001` | low | google_oracle_database_cloud_exadata_infrastructure: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_ORACLE_DATABASE_CLOUD_VM_CLUSTER.001` | low | google_oracle_database_cloud_vm_cluster: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_ORACLE_DATABASE_ODB_NETWORK.001` | low | google_oracle_database_odb_network: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_ORACLE_DATABASE_ODB_SUBNET.001` | low | google_oracle_database_odb_subnet: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_PRIVATECA_CERTIFICATE_AUTHORITY.001` | low | google_privateca_certificate_authority: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_REDIS_CLUSTER.001` | low | google_redis_cluster: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_SECRET_MANAGER_REGIONAL_SECRET.001` | low | google_secret_manager_regional_secret: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_SECRET_MANAGER_SECRET.001` | low | google_secret_manager_secret: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_SPANNER_DATABASE.001` | low | google_spanner_database: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_SQL_DATABASE_INSTANCE.001` | low | google_sql_database_instance: deletion protection |
+| `POLICY.IAC.DELETION_PROTECTION.GOOGLE_WORKFLOWS_WORKFLOW.001` | low | google_workflows_workflow: deletion protection |
+| `POLICY.IAC.DEPRECATED_RUNTIME.AWS_ELASTIC_BEANSTALK_ENVIRONMENT.001` | medium | aws_elastic_beanstalk_environment: the runtime is out of support |
+| `POLICY.IAC.DEPRECATED_RUNTIME.AWS_LAMBDA_FUNCTION.001` | medium | aws_lambda_function: the runtime is out of support |
+| `POLICY.IAC.DEPRECATED_RUNTIME.AZURERM_LINUX_FUNCTION_APP.001` | medium | azurerm_linux_function_app: the runtime is out of support |
+| `POLICY.IAC.DEPRECATED_RUNTIME.GOOGLE_CLOUDFUNCTIONS_FUNCTION.001` | medium | google_cloudfunctions_function: the runtime is out of support |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_AMI.001` | high | aws_ami: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_AMI_COPY.001` | high | aws_ami_copy: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_APPSYNC_API_CACHE.001` | medium | aws_appsync_api_cache: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ATHENA_DATABASE_ENCRYPTION_CONFIGURATION.001` | medium | aws_athena_database: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ATHENA_WORKGROUP_ENCRYPTION_CONFIGURATION.001` | medium | aws_athena_workgroup: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_BACKUP_VAULT.001` | medium | aws_backup_vault: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_CLOUDTRAIL_KMS_KEY_ID.001` | medium | aws_cloudtrail: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_CLOUDWATCH_LOG_GROUP_KMS_KEY_ID.001` | low | aws_cloudwatch_log_group: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_CODEBUILD_PROJECT.001` | low | aws_codebuild_project: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_DAX_CLUSTER.001` | medium | aws_dax_cluster: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_DB_INSTANCE.001` | high | aws_db_instance: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_DLM_LIFECYCLE_POLICY.001` | high | aws_dlm_lifecycle_policy: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_DOCDB_CLUSTER.001` | high | aws_docdb_cluster: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_DOCDB_GLOBAL_CLUSTER.001` | high | aws_docdb_global_cluster: storage encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_EBS_SNAPSHOT_COPY.001` | high | aws_ebs_snapshot_copy: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_EBS_SNAPSHOT_IMPORT.001` | high | aws_ebs_snapshot_import: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_EBS_VOLUME.001` | high | aws_ebs_volume: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ECR_REPOSITORY.001` | low | aws_ecr_repository: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ECS_SERVICE.001` | high | aws_ecs_service: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_EFS_FILE_SYSTEM.001` | high | aws_efs_file_system: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_EKS_CLUSTER.001` | medium | aws_eks_cluster: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ELASTICACHE_REPLICATION_GROUP.001` | medium | aws_elasticache_replication_group: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ELASTICSEARCH_DOMAIN_ENCRYPT_AT_REST.001` | high | aws_elasticsearch_domain: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_FSX_LUSTRE_FILE_SYSTEM.001` | medium | aws_fsx_lustre_file_system: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_GLUE_CATALOG_DATABASE_TARGET_DATABASE.001` | low | aws_glue_catalog_database: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_INSTANCE.001` | high | aws_instance: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_KINESIS_FIREHOSE_DELIVERY_STREAM_SERVER_SIDE_ENCRYPTION.001` | medium | aws_kinesis_firehose_delivery_stream: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_KINESIS_STREAM_ENCRYPTION_TYPE.001` | medium | aws_kinesis_stream: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_LAMBDA_FUNCTION_KMS_KEY_ARN.001` | low | aws_lambda_function: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_LAUNCH_CONFIGURATION.001` | high | aws_launch_configuration: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_MEMORYDB_CLUSTER_KMS_KEY_ARN.001` | medium | aws_memorydb_cluster: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_MQ_BROKER_ENCRYPTION_OPTIONS.001` | medium | aws_mq_broker: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_NEPTUNE_CLUSTER.001` | high | aws_neptune_cluster: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_NEPTUNE_GLOBAL_CLUSTER.001` | high | aws_neptune_global_cluster: storage encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPENSEARCH_DOMAIN_ENCRYPT_AT_REST.001` | high | aws_opensearch_domain: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_CUSTOM_LAYER.001` | high | aws_opsworks_custom_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_ECS_CLUSTER_LAYER.001` | high | aws_opsworks_ecs_cluster_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_GANGLIA_LAYER.001` | high | aws_opsworks_ganglia_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_HAPROXY_LAYER.001` | high | aws_opsworks_haproxy_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_JAVA_APP_LAYER.001` | high | aws_opsworks_java_app_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_MEMCACHED_LAYER.001` | high | aws_opsworks_memcached_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_MYSQL_LAYER.001` | high | aws_opsworks_mysql_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_NODEJS_APP_LAYER.001` | high | aws_opsworks_nodejs_app_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_PHP_APP_LAYER.001` | high | aws_opsworks_php_app_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_RAILS_APP_LAYER.001` | high | aws_opsworks_rails_app_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPSWORKS_STATIC_WEB_LAYER.001` | high | aws_opsworks_static_web_layer: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_QLDB_LEDGER.001` | low | aws_qldb_ledger: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_RDS_CLUSTER.001` | high | aws_rds_cluster: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_RDS_GLOBAL_CLUSTER.001` | medium | aws_rds_global_cluster: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_REDSHIFT_CLUSTER.001` | high | aws_redshift_cluster: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SAGEMAKER_ENDPOINT_CONFIGURATION.001` | medium | aws_sagemaker_endpoint_configuration: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SAGEMAKER_NOTEBOOK_INSTANCE.001` | medium | aws_sagemaker_notebook_instance: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SECRETSMANAGER_SECRET_KMS_KEY_ID.001` | low | aws_secretsmanager_secret: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SNS_TOPIC_KMS_MASTER_KEY_ID.001` | medium | aws_sns_topic: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SPOT_FLEET_REQUEST.001` | high | aws_spot_fleet_request: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SPOT_INSTANCE_REQUEST.001` | high | aws_spot_instance_request: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SQS_QUEUE_KMS_MASTER_KEY_ID.001` | medium | aws_sqs_queue: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SSM_PARAMETER_KEY_ID.001` | medium | aws_ssm_parameter: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_TIMESTREAMWRITE_DATABASE.001` | low | aws_timestreamwrite_database: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_TRANSFER_SERVER_POST_AUTHENTICATION_LOGIN_BANNER.001` | low | aws_transfer_server: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_WORKSPACES_WORKSPACE.001` | medium | aws_workspaces_workspace: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_AUTOMATION_VARIABLE_BOOL.001` | high | azurerm_automation_variable_bool: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_AUTOMATION_VARIABLE_DATETIME.001` | high | azurerm_automation_variable_datetime: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_AUTOMATION_VARIABLE_INT.001` | high | azurerm_automation_variable_int: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_AUTOMATION_VARIABLE_OBJECT.001` | high | azurerm_automation_variable_object: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_AUTOMATION_VARIABLE_STRING.001` | high | azurerm_automation_variable_string: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_COSMOSDB_ACCOUNT_KEY_VAULT_KEY_ID.001` | low | azurerm_cosmosdb_account: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_DATABRICKS_WORKSPACE.001` | medium | azurerm_databricks_workspace: infrastructure encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_EVENTHUB_NAMESPACE_CUSTOMER_MANAGED_KEY.001` | medium | azurerm_eventhub_namespace_customer_managed_key: infrastructure encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_EVENTHUB_NAMESPACE_LOCAL_AUTHENTICATION_ENABLED.001` | low | azurerm_eventhub_namespace: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_HDINSIGHT_HADOOP_CLUSTER.001` | medium | azurerm_hdinsight_hadoop_cluster: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_HDINSIGHT_HBASE_CLUSTER.001` | medium | azurerm_hdinsight_hbase_cluster: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_HDINSIGHT_INTERACTIVE_QUERY_CLUSTER.001` | medium | azurerm_hdinsight_interactive_query_cluster: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_HDINSIGHT_KAFKA_CLUSTER.001` | medium | azurerm_hdinsight_kafka_cluster: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_HDINSIGHT_SPARK_CLUSTER.001` | medium | azurerm_hdinsight_spark_cluster: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_HPC_CACHE.001` | high | azurerm_hpc_cache: encryption at rest |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_LINUX_VIRTUAL_MACHINE.001` | medium | azurerm_linux_virtual_machine: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_LINUX_VIRTUAL_MACHINE_SCALE_SET.001` | medium | azurerm_linux_virtual_machine_scale_set: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_MANAGED_DISK.001` | medium | azurerm_managed_disk: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_MSSQL_DATABASE_TRANSPARENT_DATA_ENCRYPTION_ENABLED.001` | high | azurerm_mssql_database: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_MYSQL_SERVER.001` | medium | azurerm_mysql_server: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_ORCHESTRATED_VIRTUAL_MACHINE_SCALE_SET.001` | medium | azurerm_orchestrated_virtual_machine_scale_set: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_POSTGRESQL_SERVER.001` | medium | azurerm_postgresql_server: Encryption at rest is not enabled |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_RECOVERY_SERVICES_VAULT.001` | medium | azurerm_recovery_services_vault: infrastructure encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_REDHAT_OPENSHIFT_CLUSTER.001` | medium | azurerm_redhat_openshift_cluster: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_SERVICEBUS_NAMESPACE.001` | medium | azurerm_servicebus_namespace: infrastructure encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_SERVICEBUS_NAMESPACE_CUSTOMER_MANAGED_KEY.001` | medium | azurerm_servicebus_namespace_customer_managed_key: infrastructure encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_STORAGE_ACCOUNT_INFRASTRUCTURE_ENCRYPTION_ENABLED.001` | low | azurerm_storage_account: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_WINDOWS_VIRTUAL_MACHINE.001` | medium | azurerm_windows_virtual_machine: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_WINDOWS_VIRTUAL_MACHINE_SCALE_SET.001` | medium | azurerm_windows_virtual_machine_scale_set: host-level encryption |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_BIGQUERY_DATASET.001` | low | google_bigquery_dataset: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_BIGTABLE_INSTANCE_CLUSTER.001` | low | google_bigtable_instance: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_CONTAINER_CLUSTER_DATABASE_ENCRYPTION.001` | medium | google_container_cluster: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_DATAPROC_CLUSTER.001` | low | google_dataproc_cluster: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_PUBSUB_TOPIC_KMS_KEY_NAME.001` | low | google_pubsub_topic: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_SPANNER_DATABASE_ENCRYPTION_CONFIG.001` | low | google_spanner_database: a customer-managed key is not configured |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_SQL_DATABASE_INSTANCE.001` | low | google_sql_database_instance: encryption at rest is not configured |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AWS_APPSYNC_API_CACHE.001` | high | aws_appsync_api_cache: encryption in transit |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AWS_CLOUDSEARCH_DOMAIN.001` | high | aws_cloudsearch_domain: https enforcement |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AWS_ELASTICACHE_CLUSTER.001` | high | aws_elasticache_cluster: encryption in transit |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AWS_ELASTICACHE_REPLICATION_GROUP.001` | high | aws_elasticache_replication_group: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AWS_ELASTICSEARCH_DOMAIN.001` | high | aws_elasticsearch_domain: https enforcement |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AWS_OPENSEARCH_DOMAIN.001` | high | aws_opensearch_domain: https enforcement |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_APP_SERVICE.001` | medium | azurerm_app_service: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_APP_SERVICE_SLOT.001` | medium | azurerm_app_service_slot: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_FUNCTION_APP.001` | medium | azurerm_function_app: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_FUNCTION_APP_FLEX_CONSUMPTION.001` | medium | azurerm_function_app_flex_consumption: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_FUNCTION_APP_SLOT.001` | medium | azurerm_function_app_slot: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_LINUX_FUNCTION_APP.001` | medium | azurerm_linux_function_app: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_LINUX_FUNCTION_APP_SLOT.001` | medium | azurerm_linux_function_app_slot: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_LINUX_WEB_APP.001` | medium | azurerm_linux_web_app: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_LINUX_WEB_APP_SLOT.001` | medium | azurerm_linux_web_app_slot: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_LOGIC_APP_STANDARD.001` | medium | azurerm_logic_app_standard: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_MARIADB_SERVER.001` | high | azurerm_mariadb_server: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_MYSQL_SERVER.001` | high | azurerm_mysql_server: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_POSTGRESQL_SERVER.001` | high | azurerm_postgresql_server: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_SPRING_CLOUD_APP.001` | medium | azurerm_spring_cloud_app: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_SPRING_CLOUD_GATEWAY.001` | medium | azurerm_spring_cloud_gateway: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_STORAGE_ACCOUNT.001` | high | azurerm_storage_account: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_WINDOWS_FUNCTION_APP.001` | medium | azurerm_windows_function_app: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_WINDOWS_FUNCTION_APP_SLOT.001` | medium | azurerm_windows_function_app_slot: https-only traffic |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_WINDOWS_WEB_APP.001` | medium | azurerm_windows_web_app: Encryption in transit is not enabled |
+| `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_WINDOWS_WEB_APP_SLOT.001` | medium | azurerm_windows_web_app_slot: https-only traffic |
+| `POLICY.IAC.FORCE_DESTROY.AWS_ATHENA_DATABASE.001` | low | aws_athena_database: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_ATHENA_WORKGROUP.001` | low | aws_athena_workgroup: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_BACKUP_VAULT.001` | low | aws_backup_vault: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_CLOUDWATCH_EVENT_RULE.001` | low | aws_cloudwatch_event_rule: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_CLOUDWATCH_EVENT_TARGET.001` | low | aws_cloudwatch_event_target: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_DATAEXCHANGE_REVISION_ASSETS.001` | low | aws_dataexchange_revision_assets: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_DEFAULT_SUBNET.001` | low | aws_default_subnet: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_DEFAULT_VPC.001` | low | aws_default_vpc: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_DX_LAG.001` | low | aws_dx_lag: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_ECRPUBLIC_REPOSITORY.001` | low | aws_ecrpublic_repository: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_IAM_USER.001` | low | aws_iam_user: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_RDS_CLUSTER_INSTANCE.001` | low | aws_rds_cluster_instance: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_RDS_GLOBAL_CLUSTER.001` | low | aws_rds_global_cluster: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_REDSHIFT_SNAPSHOT_SCHEDULE.001` | low | aws_redshift_snapshot_schedule: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_ROUTE53_ZONE.001` | low | aws_route53_zone: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_S3_BUCKET.001` | low | aws_s3_bucket: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_S3_BUCKET_OBJECT.001` | low | aws_s3_bucket_object: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_S3_DIRECTORY_BUCKET.001` | low | aws_s3_directory_bucket: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_S3_OBJECT.001` | low | aws_s3_object: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_S3_OBJECT_COPY.001` | low | aws_s3_object_copy: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_SERVICE_DISCOVERY_SERVICE.001` | low | aws_service_discovery_service: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.AWS_TRANSFER_SERVER.001` | low | aws_transfer_server: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_BIGTABLE_INSTANCE.001` | low | google_bigtable_instance: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_DNS_MANAGED_ZONE.001` | low | google_dns_managed_zone: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_GEMINI_CODE_REPOSITORY_INDEX.001` | low | google_gemini_code_repository_index: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_SPANNER_INSTANCE.001` | low | google_spanner_instance: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_STORAGE_BUCKET.001` | low | google_storage_bucket: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_STORAGE_FOLDER.001` | low | google_storage_folder: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_STORAGE_MANAGED_FOLDER.001` | low | google_storage_managed_folder: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_VERTEX_AI_FEATURESTORE.001` | low | google_vertex_ai_featurestore: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.FORCE_DESTROY.GOOGLE_VERTEX_AI_FEATURE_ONLINE_STORE.001` | low | google_vertex_ai_feature_online_store: a destroy will not be stopped by the data in it |
+| `POLICY.IAC.GOVERNANCE.AWS_DB_INSTANCE.001` | low | aws_db_instance: tags on snapshots |
+| `POLICY.IAC.GOVERNANCE.AWS_DOCDB_CLUSTER_INSTANCE.001` | low | aws_docdb_cluster_instance: tags on snapshots |
+| `POLICY.IAC.GOVERNANCE.AWS_NEPTUNE_CLUSTER.001` | low | aws_neptune_cluster: tags on snapshots |
+| `POLICY.IAC.GOVERNANCE.AWS_RDS_CLUSTER.001` | low | aws_rds_cluster: tags on snapshots |
+| `POLICY.IAC.GOVERNANCE.AWS_RDS_CLUSTER_INSTANCE.001` | low | aws_rds_cluster_instance: tags on snapshots |
+| `POLICY.IAC.KEY_ROTATION.AWS_KMS_KEY.001` | medium | aws_kms_key: automatic key rotation is not enabled |
+| `POLICY.IAC.KEY_ROTATION.GOOGLE_KMS_CRYPTO_KEY.001` | medium | google_kms_crypto_key: no rotation period is set |
+| `POLICY.IAC.LOGGING.AWS_ALB_ACCESS_LOGS.001` | low | aws_alb: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_APIGATEWAYV2_STAGE_ACCESS_LOG_SETTINGS.001` | low | aws_apigatewayv2_stage: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_API_GATEWAY_STAGE_ACCESS_LOG_SETTINGS.001` | low | aws_api_gateway_stage: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_API_GATEWAY_STAGE_XRAY_TRACING_ENABLED.001` | low | aws_api_gateway_stage: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_CLOUDFRONT_DISTRIBUTION_LOGGING_CONFIG.001` | low | aws_cloudfront_distribution: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_CLOUDTRAIL_ENABLE_LOG_FILE_VALIDATION.001` | medium | aws_cloudtrail: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_CLOUDTRAIL_IS_MULTI_REGION_TRAIL.001` | medium | aws_cloudtrail: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_DB_INSTANCE.001` | low | aws_db_instance: performance insights |
+| `POLICY.IAC.LOGGING.AWS_DOCDB_CLUSTER_ENABLED_CLOUDWATCH_LOGS_EXPORTS.001` | low | aws_docdb_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_EKS_CLUSTER_ENABLED_CLUSTER_LOG_TYPES.001` | medium | aws_eks_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_ELASTICSEARCH_DOMAIN_LOG_PUBLISHING_OPTIONS.001` | low | aws_elasticsearch_domain: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_GLOBALACCELERATOR_ACCELERATOR_ATTRIBUTES.001` | low | aws_globalaccelerator_accelerator: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_LAMBDA_FUNCTION_TRACING_CONFIG.001` | low | aws_lambda_function: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_LB_ACCESS_LOGS.001` | low | aws_lb: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_MQ_BROKER_LOGS.001` | low | aws_mq_broker: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_MSK_CLUSTER_LOGGING_INFO.001` | low | aws_msk_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_NEPTUNE_CLUSTER_ENABLE_CLOUDWATCH_LOGS_EXPORTS.001` | low | aws_neptune_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_OPENSEARCH_DOMAIN_LOG_PUBLISHING_OPTIONS.001` | low | aws_opensearch_domain: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_RDS_CLUSTER.001` | low | aws_rds_cluster: performance insights |
+| `POLICY.IAC.LOGGING.AWS_RDS_CLUSTER_INSTANCE.001` | low | aws_rds_cluster_instance: performance insights |
+| `POLICY.IAC.LOGGING.AWS_REDSHIFT_CLUSTER_LOGGING.001` | low | aws_redshift_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_S3_BUCKET_LOGGING_TARGET_BUCKET.001` | low | aws_s3_bucket_logging: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AWS_VPC_ENABLE_DNS_HOSTNAMES.001` | low | aws_vpc: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AZURERM_KEY_VAULT_SOFT_DELETE_RETENTION_DAYS.001` | low | azurerm_key_vault: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AZURERM_KUBERNETES_CLUSTER_OMS_AGENT.001` | low | azurerm_kubernetes_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.AZURERM_MSSQL_SERVER_EXTENDED_AUDITING_POLICY.001` | medium | azurerm_mssql_server: audit logging is not configured |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_FIREWALL.001` | low | google_compute_firewall: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_FIREWALL_POLICY_RULE.001` | low | google_compute_firewall_policy_rule: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_FIREWALL_POLICY_WITH_RULES.001` | low | google_compute_firewall_policy_with_rules: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_NETWORK_FIREWALL_POLICY_RULE.001` | low | google_compute_network_firewall_policy_rule: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_NETWORK_FIREWALL_POLICY_WITH_RULES.001` | low | google_compute_network_firewall_policy_with_rules: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_REGION_NETWORK_FIREWALL_POLICY_RULE.001` | low | google_compute_region_network_firewall_policy_rule: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_REGION_NETWORK_FIREWALL_POLICY_WITH_RULES.001` | low | google_compute_region_network_firewall_policy_with_rules: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_SUBNETWORK_LOG_CONFIG.001` | low | google_compute_subnetwork: audit logging is not configured |
+| `POLICY.IAC.LOGGING.GOOGLE_CONTAINER_CLUSTER_LOGGING_SERVICE.001` | low | google_container_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.GOOGLE_CONTAINER_CLUSTER_MONITORING_SERVICE.001` | low | google_container_cluster: audit logging is not configured |
+| `POLICY.IAC.LOGGING.GOOGLE_DATA_FUSION_INSTANCE.001` | low | google_data_fusion_instance: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DIALOGFLOW_AGENT.001` | low | google_dialogflow_agent: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DIALOGFLOW_CONVERSATION_PROFILE.001` | low | google_dialogflow_conversation_profile: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DIALOGFLOW_CX_AGENT.001` | low | google_dialogflow_cx_agent: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DIALOGFLOW_CX_FLOW.001` | low | google_dialogflow_cx_flow: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DIALOGFLOW_CX_PAGE.001` | low | google_dialogflow_cx_page: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DIALOGFLOW_CX_WEBHOOK.001` | low | google_dialogflow_cx_webhook: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DNS_MANAGED_ZONE.001` | low | google_dns_managed_zone: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_DNS_POLICY.001` | low | google_dns_policy: logging |
+| `POLICY.IAC.LOGGING.GOOGLE_SQL_DATABASE_INSTANCE_BACKUP_CONFIGURATION.001` | medium | google_sql_database_instance: audit logging is not configured |
+| `POLICY.IAC.LOGGING.GOOGLE_STORAGE_BUCKET_LOGGING.001` | low | google_storage_bucket: audit logging is not configured |
+| `POLICY.IAC.MFA.AWS_S3_BUCKET.001` | medium | aws_s3_bucket: mfa for deletion |
+| `POLICY.IAC.MUTABLE_TAGS.AWS_ECR_REPOSITORY.001` | medium | aws_ecr_repository: image tags are mutable |
+| `POLICY.IAC.NO_MFA.AWS_IAM_USER.001` | low | aws_iam_user: a long-lived user is created |
+| `POLICY.IAC.ORPHANED_DATA.AWS_AMI.001` | low | aws_ami: deleting the volume with the instance |
+| `POLICY.IAC.ORPHANED_DATA.AWS_INSTANCE.001` | low | aws_instance: deleting the volume with the instance |
+| `POLICY.IAC.ORPHANED_DATA.AWS_LAUNCH_CONFIGURATION.001` | low | aws_launch_configuration: deleting the volume with the instance |
+| `POLICY.IAC.ORPHANED_DATA.AWS_OPSWORKS_INSTANCE.001` | low | aws_opsworks_instance: deleting the volume with the instance |
+| `POLICY.IAC.ORPHANED_DATA.AWS_SPOT_FLEET_REQUEST.001` | low | aws_spot_fleet_request: deleting the volume with the instance |
+| `POLICY.IAC.ORPHANED_DATA.AWS_SPOT_INSTANCE_REQUEST.001` | low | aws_spot_instance_request: deleting the volume with the instance |
+| `POLICY.IAC.PATCHING.AWS_DB_INSTANCE.001` | medium | aws_db_instance: automatic minor version upgrades |
+| `POLICY.IAC.PATCHING.AWS_DMS_REPLICATION_INSTANCE.001` | medium | aws_dms_replication_instance: automatic minor version upgrades |
+| `POLICY.IAC.PATCHING.AWS_DOCDB_CLUSTER_INSTANCE.001` | medium | aws_docdb_cluster_instance: automatic minor version upgrades |
+| `POLICY.IAC.PATCHING.AWS_MEMORYDB_CLUSTER.001` | medium | aws_memorydb_cluster: automatic minor version upgrades |
+| `POLICY.IAC.PATCHING.AWS_MQ_BROKER.001` | medium | aws_mq_broker: automatic minor version upgrades |
+| `POLICY.IAC.PATCHING.AWS_NEPTUNE_CLUSTER_INSTANCE.001` | medium | aws_neptune_cluster_instance: automatic minor version upgrades |
+| `POLICY.IAC.PATCHING.AWS_RDS_CLUSTER_INSTANCE.001` | medium | aws_rds_cluster_instance: automatic minor version upgrades |
+| `POLICY.IAC.PUBLIC_IP.AWS_CLOUDWATCH_EVENT_TARGET.001` | low | aws_cloudwatch_event_target: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_DEFAULT_SUBNET.001` | low | aws_default_subnet: every instance in the subnet gets a public address |
+| `POLICY.IAC.PUBLIC_IP.AWS_ECS_SERVICE.001` | low | aws_ecs_service: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_ECS_TASK_SET.001` | low | aws_ecs_task_set: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_INSTANCE.001` | low | aws_instance: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_LAUNCH_CONFIGURATION.001` | low | aws_launch_configuration: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_SCHEDULER_SCHEDULE.001` | low | aws_scheduler_schedule: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_SPOT_FLEET_REQUEST.001` | low | aws_spot_fleet_request: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_SPOT_INSTANCE_REQUEST.001` | low | aws_spot_instance_request: a public ip address |
+| `POLICY.IAC.PUBLIC_IP.AWS_SUBNET.001` | low | aws_subnet: every instance in the subnet gets a public address |
+| `POLICY.IAC.RESILIENCE.AWS_CLOUDSEARCH_DOMAIN.001` | low | aws_cloudsearch_domain: a standby in another availability zone |
+| `POLICY.IAC.RESILIENCE.AWS_DB_INSTANCE.001` | low | aws_db_instance: a standby in another availability zone |
+| `POLICY.IAC.RESILIENCE.AWS_DMS_REPLICATION_CONFIG.001` | low | aws_dms_replication_config: a standby in another availability zone |
+| `POLICY.IAC.RESILIENCE.AWS_DMS_REPLICATION_INSTANCE.001` | low | aws_dms_replication_instance: a standby in another availability zone |
+| `POLICY.IAC.RESILIENCE.AWS_REDSHIFT_CLUSTER.001` | low | aws_redshift_cluster: a standby in another availability zone |
+| `POLICY.IAC.RETENTION.AWS_CLOUDWATCH_LOG_GROUP.001` | low | aws_cloudwatch_log_group: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_APPLICATION_INSIGHTS.001` | low | azurerm_application_insights: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_APP_SERVICE.001` | low | azurerm_app_service: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_APP_SERVICE_SLOT.001` | low | azurerm_app_service_slot: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_FIREWALL_POLICY.001` | low | azurerm_firewall_policy: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_LINUX_WEB_APP.001` | low | azurerm_linux_web_app: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_LINUX_WEB_APP_SLOT.001` | low | azurerm_linux_web_app_slot: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_LOG_ANALYTICS_WORKSPACE.001` | low | azurerm_log_analytics_workspace: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_LOG_ANALYTICS_WORKSPACE_TABLE.001` | low | azurerm_log_analytics_workspace_table: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_LOG_ANALYTICS_WORKSPACE_TABLE_CUSTOM_LOG.001` | low | azurerm_log_analytics_workspace_table_custom_log: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_LOG_ANALYTICS_WORKSPACE_TABLE_MICROSOFT.001` | low | azurerm_log_analytics_workspace_table_microsoft: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_MSSQL_DATABASE_EXTENDED_AUDITING_POLICY.001` | low | azurerm_mssql_database_extended_auditing_policy: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_MSSQL_SERVER_EXTENDED_AUDITING_POLICY.001` | low | azurerm_mssql_server_extended_auditing_policy: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_SYNAPSE_SQL_POOL_EXTENDED_AUDITING_POLICY.001` | low | azurerm_synapse_sql_pool_extended_auditing_policy: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_SYNAPSE_WORKSPACE_EXTENDED_AUDITING_POLICY.001` | low | azurerm_synapse_workspace_extended_auditing_policy: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_WINDOWS_WEB_APP.001` | low | azurerm_windows_web_app: a retention period |
+| `POLICY.IAC.RETENTION.AZURERM_WINDOWS_WEB_APP_SLOT.001` | low | azurerm_windows_web_app_slot: a retention period |
+| `POLICY.IAC.RUN_AS_ROOT.AWS_BATCH_JOB_DEFINITION.001` | medium | aws_batch_job_definition: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_CRON_JOB.001` | medium | kubernetes_cron_job: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_CRON_JOB_V1.001` | medium | kubernetes_cron_job_v1: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_DAEMONSET.001` | medium | kubernetes_daemonset: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_DAEMON_SET_V1.001` | medium | kubernetes_daemon_set_v1: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_DEPLOYMENT.001` | medium | kubernetes_deployment: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_DEPLOYMENT_V1.001` | medium | kubernetes_deployment_v1: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_JOB.001` | medium | kubernetes_job: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_JOB_V1.001` | medium | kubernetes_job_v1: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_POD.001` | medium | kubernetes_pod: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_POD_V1.001` | medium | kubernetes_pod_v1: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_REPLICATION_CONTROLLER.001` | medium | kubernetes_replication_controller: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_REPLICATION_CONTROLLER_V1.001` | medium | kubernetes_replication_controller_v1: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_STATEFUL_SET.001` | medium | kubernetes_stateful_set: a non-root user |
+| `POLICY.IAC.RUN_AS_ROOT.KUBERNETES_STATEFUL_SET_V1.001` | medium | kubernetes_stateful_set_v1: a non-root user |
+| `POLICY.IAC.SCAN_ON_PUSH.AWS_ECR_REPOSITORY.001` | low | aws_ecr_repository: images are not scanned on push |
+| `POLICY.IAC.SHARED_KEY_AUTH.AWS_DB_INSTANCE.001` | low | aws_db_instance: iam database authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AWS_NEPTUNE_CLUSTER.001` | low | aws_neptune_cluster: iam database authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AWS_RDS_CLUSTER.001` | low | aws_rds_cluster: iam database authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_AI_SERVICES.001` | medium | azurerm_ai_services: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_APPLICATION_INSIGHTS.001` | medium | azurerm_application_insights: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_APP_CONFIGURATION.001` | medium | azurerm_app_configuration: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_AUTOMATION_ACCOUNT.001` | medium | azurerm_automation_account: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_BOT_SERVICE_AZURE_BOT.001` | medium | azurerm_bot_service_azure_bot: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_COGNITIVE_ACCOUNT.001` | medium | azurerm_cognitive_account: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_COSMOSDB_ACCOUNT.001` | medium | azurerm_cosmosdb_account: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_EVENTGRID_DOMAIN.001` | medium | azurerm_eventgrid_domain: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_EVENTGRID_PARTNER_NAMESPACE.001` | medium | azurerm_eventgrid_partner_namespace: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_EVENTGRID_TOPIC.001` | medium | azurerm_eventgrid_topic: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_EVENTHUB_NAMESPACE.001` | medium | azurerm_eventhub_namespace: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_IOTHUB.001` | medium | azurerm_iothub: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_LOG_ANALYTICS_WORKSPACE.001` | medium | azurerm_log_analytics_workspace: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_MACHINE_LEARNING_COMPUTE_CLUSTER.001` | medium | azurerm_machine_learning_compute_cluster: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_MACHINE_LEARNING_COMPUTE_INSTANCE.001` | medium | azurerm_machine_learning_compute_instance: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_MACHINE_LEARNING_SYNAPSE_SPARK.001` | medium | azurerm_machine_learning_synapse_spark: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_MAPS_ACCOUNT.001` | medium | azurerm_maps_account: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_SEARCH_SERVICE.001` | medium | azurerm_search_service: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_SERVICEBUS_NAMESPACE.001` | medium | azurerm_servicebus_namespace: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_SIGNALR_SERVICE.001` | medium | azurerm_signalr_service: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_WEB_PUBSUB.001` | medium | azurerm_web_pubsub: shared-key authentication |
+| `POLICY.IAC.SHARED_KEY_AUTH.AZURERM_WEB_PUBSUB_SOCKETIO.001` | medium | azurerm_web_pubsub_socketio: shared-key authentication |
+| `POLICY.IAC.SQL_REQUIRE_SSL.GOOGLE_SQL_DATABASE_INSTANCE.001` | medium | google_sql_database_instance: SSL is not required |
+| `POLICY.IAC.UNENCRYPTED_STATE.TERRAFORM.001` | high | The remote state backend does not require encryption |
+| `POLICY.IAC.WEAK_TLS.AWS_API_GATEWAY_DOMAIN_NAME.001` | medium | aws_api_gateway_domain_name: obsolete TLS version accepted |
+| `POLICY.IAC.WEAK_TLS.AWS_LB_LISTENER.001` | medium | aws_lb_listener: obsolete TLS version accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_APP_SERVICE.001` | medium | azurerm_app_service: obsolete TLS version accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_APP_SERVICE_SLOT.001` | medium | azurerm_app_service_slot: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_CDN_FRONTDOOR_CUSTOM_DOMAIN.001` | medium | azurerm_cdn_frontdoor_custom_domain: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_EVENTHUB_NAMESPACE.001` | medium | azurerm_eventhub_namespace: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_FUNCTION_APP.001` | medium | azurerm_function_app: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_FUNCTION_APP_FLEX_CONSUMPTION.001` | medium | azurerm_function_app_flex_consumption: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_FUNCTION_APP_SLOT.001` | medium | azurerm_function_app_slot: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_HDINSIGHT_HADOOP_CLUSTER.001` | medium | azurerm_hdinsight_hadoop_cluster: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_HDINSIGHT_HBASE_CLUSTER.001` | medium | azurerm_hdinsight_hbase_cluster: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_HDINSIGHT_INTERACTIVE_QUERY_CLUSTER.001` | medium | azurerm_hdinsight_interactive_query_cluster: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_HDINSIGHT_KAFKA_CLUSTER.001` | medium | azurerm_hdinsight_kafka_cluster: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_HDINSIGHT_SPARK_CLUSTER.001` | medium | azurerm_hdinsight_spark_cluster: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_IOTHUB.001` | medium | azurerm_iothub: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_LINUX_FUNCTION_APP.001` | medium | azurerm_linux_function_app: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_LINUX_FUNCTION_APP_SLOT.001` | medium | azurerm_linux_function_app_slot: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_LINUX_WEB_APP.001` | medium | azurerm_linux_web_app: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_LINUX_WEB_APP_SLOT.001` | medium | azurerm_linux_web_app_slot: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_LOGIC_APP_STANDARD.001` | medium | azurerm_logic_app_standard: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_MSSQL_MANAGED_INSTANCE.001` | medium | azurerm_mssql_managed_instance: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_MSSQL_SERVER.001` | medium | azurerm_mssql_server: obsolete TLS version accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_REDIS_CACHE.001` | medium | azurerm_redis_cache: obsolete TLS version accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_REDIS_ENTERPRISE_CLUSTER.001` | medium | azurerm_redis_enterprise_cluster: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_SERVICEBUS_NAMESPACE.001` | medium | azurerm_servicebus_namespace: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_STORAGE_ACCOUNT.001` | medium | azurerm_storage_account: obsolete TLS version accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_WINDOWS_FUNCTION_APP.001` | medium | azurerm_windows_function_app: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_WINDOWS_FUNCTION_APP_SLOT.001` | medium | azurerm_windows_function_app_slot: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_WINDOWS_WEB_APP.001` | medium | azurerm_windows_web_app: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.AZURERM_WINDOWS_WEB_APP_SLOT.001` | medium | azurerm_windows_web_app_slot: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.GOOGLE_COMPUTE_REGION_SSL_POLICY.001` | medium | google_compute_region_ssl_policy: an obsolete tls version is accepted |
+| `POLICY.IAC.WEAK_TLS.GOOGLE_COMPUTE_SSL_POLICY.001` | medium | google_compute_ssl_policy: obsolete TLS version accepted |
+| `POLICY.IAC.WEAK_TLS.GOOGLE_NETWORK_SECURITY_TLS_INSPECTION_POLICY.001` | medium | google_network_security_tls_inspection_policy: an obsolete tls version is accepted |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_CRON_JOB.001` | low | kubernetes_cron_job: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_CRON_JOB_V1.001` | low | kubernetes_cron_job_v1: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_DAEMONSET.001` | low | kubernetes_daemonset: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_DAEMON_SET_V1.001` | low | kubernetes_daemon_set_v1: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_DEPLOYMENT.001` | low | kubernetes_deployment: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_DEPLOYMENT_V1.001` | low | kubernetes_deployment_v1: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_JOB.001` | low | kubernetes_job: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_JOB_V1.001` | low | kubernetes_job_v1: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_POD.001` | low | kubernetes_pod: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_POD_SECURITY_POLICY.001` | low | kubernetes_pod_security_policy: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_POD_SECURITY_POLICY_V1BETA1.001` | low | kubernetes_pod_security_policy_v1beta1: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_POD_V1.001` | low | kubernetes_pod_v1: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_REPLICATION_CONTROLLER.001` | low | kubernetes_replication_controller: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_REPLICATION_CONTROLLER_V1.001` | low | kubernetes_replication_controller_v1: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_STATEFUL_SET.001` | low | kubernetes_stateful_set: a read-only root filesystem |
+| `POLICY.IAC.WRITABLE_ROOT.KUBERNETES_STATEFUL_SET_V1.001` | low | kubernetes_stateful_set_v1: a read-only root filesystem |
+| `SUSPECT.IAC.ADMIN_ENABLED.AZURERM_CONTAINER_REGISTRY.001` | medium | azurerm_container_registry: the shared admin account is enabled |
+| `SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001` | high | Play downloads and runs a script on every host |
+| `SUSPECT.IAC.ANSIBLE_UNSIGNED_PACKAGES.001` | high | Task installs packages without checking their signatures |
+| `SUSPECT.IAC.CREDENTIALS_INLINE.TERRAFORM.001` | high | A static credential is written into the configuration |
+| `SUSPECT.IAC.ENCRYPT_IN_TRANSIT.GOOGLE_OS_CONFIG_OS_POLICY_ASSIGNMENT.001` | medium | google_os_config_os_policy_assignment: insecure transport is allowed |
+| `SUSPECT.IAC.ENCRYPT_IN_TRANSIT.GOOGLE_OS_CONFIG_V2_POLICY_ORCHESTRATOR.001` | medium | google_os_config_v2_policy_orchestrator: insecure transport is allowed |
+| `SUSPECT.IAC.ENCRYPT_IN_TRANSIT.GOOGLE_OS_CONFIG_V2_POLICY_ORCHESTRATOR_FOR_FOLDER.001` | medium | google_os_config_v2_policy_orchestrator_for_folder: insecure transport is allowed |
+| `SUSPECT.IAC.ENCRYPT_IN_TRANSIT.GOOGLE_OS_CONFIG_V2_POLICY_ORCHESTRATOR_FOR_ORGANIZATION.001` | medium | google_os_config_v2_policy_orchestrator_for_organization: insecure transport is allowed |
+| `SUSPECT.IAC.EXTERNAL_PROGRAM.TERRAFORM.001` | medium | A data source runs a local program when the plan is made |
+| `SUSPECT.IAC.HOST_MOUNT.001` | high | Host path mounted into a container |
+| `SUSPECT.IAC.HOST_NAMESPACE.AWS_BATCH_JOB_DEFINITION.001` | high | aws_batch_job_definition: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_CRON_JOB.001` | high | kubernetes_cron_job: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_CRON_JOB_V1.001` | high | kubernetes_cron_job_v1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_DAEMONSET.001` | high | kubernetes_daemonset: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_DAEMON_SET_V1.001` | high | kubernetes_daemon_set_v1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_DEPLOYMENT.001` | high | kubernetes_deployment: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_DEPLOYMENT_V1.001` | high | kubernetes_deployment_v1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_JOB.001` | high | kubernetes_job: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_JOB_V1.001` | high | kubernetes_job_v1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_POD.001` | high | kubernetes_pod: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_POD_SECURITY_POLICY.001` | high | kubernetes_pod_security_policy: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_POD_SECURITY_POLICY_V1BETA1.001` | high | kubernetes_pod_security_policy_v1beta1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_POD_V1.001` | high | kubernetes_pod_v1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_REPLICATION_CONTROLLER.001` | high | kubernetes_replication_controller: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_REPLICATION_CONTROLLER_V1.001` | high | kubernetes_replication_controller_v1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_STATEFUL_SET.001` | high | kubernetes_stateful_set: the pod shares the node's network namespace |
+| `SUSPECT.IAC.HOST_NAMESPACE.KUBERNETES_STATEFUL_SET_V1.001` | high | kubernetes_stateful_set_v1: the pod shares the node's network namespace |
+| `SUSPECT.IAC.IAM_WILDCARD.001` | high | Policy grants every action or every resource |
+| `SUSPECT.IAC.IMDSV1.AWS_EC2_INSTANCE_METADATA_DEFAULTS.001` | medium | aws_ec2_instance_metadata_defaults: instance metadata is reachable without a token |
+| `SUSPECT.IAC.IMDSV1.AWS_IMAGEBUILDER_INFRASTRUCTURE_CONFIGURATION.001` | medium | aws_imagebuilder_infrastructure_configuration: instance metadata is reachable without a token |
+| `SUSPECT.IAC.IMDSV1.AWS_INSTANCE.001` | medium | aws_instance: instance metadata is reachable without a token |
+| `SUSPECT.IAC.IMDSV1.AWS_SPOT_INSTANCE_REQUEST.001` | medium | aws_spot_instance_request: instance metadata is reachable without a token |
+| `SUSPECT.IAC.LEGACY_ABAC.GOOGLE_CONTAINER_CLUSTER.001` | high | google_container_cluster: legacy ABAC authorisation is enabled |
+| `SUSPECT.IAC.LOCAL_EXEC.TERRAFORM.001` | medium | A provisioner runs a shell command on the machine applying the plan |
+| `SUSPECT.IAC.NO_AUTH.AWS_API_GATEWAY_METHOD.001` | medium | aws_api_gateway_method: the method is unauthenticated |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_FUNCTION_APP_FLEX_CONSUMPTION.001` | high | azurerm_function_app_flex_consumption: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_LINUX_FUNCTION_APP.001` | high | azurerm_linux_function_app: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_LINUX_FUNCTION_APP_SLOT.001` | high | azurerm_linux_function_app_slot: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_LINUX_WEB_APP.001` | high | azurerm_linux_web_app: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_LINUX_WEB_APP_SLOT.001` | high | azurerm_linux_web_app_slot: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_NETAPP_VOLUME_GROUP_ORACLE.001` | medium | azurerm_netapp_volume_group_oracle: nfsv3 is enabled |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_NETAPP_VOLUME_GROUP_SAP_HANA.001` | medium | azurerm_netapp_volume_group_sap_hana: nfsv3 is enabled |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_STORAGE_ACCOUNT.001` | medium | azurerm_storage_account: nfsv3 is enabled |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_WINDOWS_FUNCTION_APP.001` | high | azurerm_windows_function_app: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_WINDOWS_FUNCTION_APP_SLOT.001` | high | azurerm_windows_function_app_slot: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_WINDOWS_WEB_APP.001` | high | azurerm_windows_web_app: authentication |
+| `SUSPECT.IAC.NO_AUTH.AZURERM_WINDOWS_WEB_APP_SLOT.001` | high | azurerm_windows_web_app_slot: authentication |
+| `SUSPECT.IAC.OWNER_ROLE.AZURERM_ROLE_ASSIGNMENT.001` | medium | azurerm_role_assignment: Owner or Contributor is assigned |
+| `SUSPECT.IAC.OWNER_ROLE.GOOGLE_PROJECT_IAM_MEMBER.001` | medium | google_project_iam_member: the owner role is granted directly |
+| `SUSPECT.IAC.PASSWORD_AUTH.AZURERM_LINUX_VIRTUAL_MACHINE.001` | medium | azurerm_linux_virtual_machine: password authentication is enabled |
+| `SUSPECT.IAC.PLAINTEXT.AWS_LB_LISTENER.001` | medium | aws_lb_listener: traffic is served over plain HTTP |
+| `SUSPECT.IAC.PLAINTEXT.AWS_MSK_CLUSTER.001` | high | aws_msk_cluster: brokers accept plaintext client connections |
+| `SUSPECT.IAC.PLAINTEXT.AZURERM_REDIS_CACHE.001` | high | azurerm_redis_cache: the non-TLS port is open |
+| `SUSPECT.IAC.PRIVILEGED.001` | high | Privileged container or host namespace |
+| `SUSPECT.IAC.PRIVILEGED.AWS_BATCH_JOB_DEFINITION.001` | high | aws_batch_job_definition: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.AWS_CODEBUILD_PROJECT.001` | medium | aws_codebuild_project: the build runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_CRON_JOB.001` | high | kubernetes_cron_job: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_CRON_JOB_V1.001` | high | kubernetes_cron_job_v1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_DAEMONSET.001` | high | kubernetes_daemonset: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_DAEMON_SET_V1.001` | high | kubernetes_daemon_set_v1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_DEPLOYMENT.001` | high | kubernetes_deployment: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_DEPLOYMENT_V1.001` | high | kubernetes_deployment_v1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_JOB.001` | high | kubernetes_job: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_JOB_V1.001` | high | kubernetes_job_v1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_POD.001` | high | kubernetes_pod: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_POD_SECURITY_POLICY.001` | high | kubernetes_pod_security_policy: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_POD_SECURITY_POLICY_V1BETA1.001` | high | kubernetes_pod_security_policy_v1beta1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_POD_V1.001` | high | kubernetes_pod_v1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_REPLICATION_CONTROLLER.001` | high | kubernetes_replication_controller: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_REPLICATION_CONTROLLER_V1.001` | high | kubernetes_replication_controller_v1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_STATEFUL_SET.001` | high | kubernetes_stateful_set: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED.KUBERNETES_STATEFUL_SET_V1.001` | high | kubernetes_stateful_set_v1: the container runs privileged |
+| `SUSPECT.IAC.PRIVILEGED_BUILD.AWS_CODEBUILD_PROJECT.001` | medium | aws_codebuild_project: the build runs privileged |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_CRON_JOB.001` | medium | kubernetes_cron_job: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_CRON_JOB_V1.001` | medium | kubernetes_cron_job_v1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_DAEMONSET.001` | medium | kubernetes_daemonset: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_DAEMON_SET_V1.001` | medium | kubernetes_daemon_set_v1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_DEPLOYMENT.001` | medium | kubernetes_deployment: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_DEPLOYMENT_V1.001` | medium | kubernetes_deployment_v1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_JOB.001` | medium | kubernetes_job: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_JOB_V1.001` | medium | kubernetes_job_v1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_POD.001` | medium | kubernetes_pod: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_POD_SECURITY_POLICY.001` | medium | kubernetes_pod_security_policy: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_POD_SECURITY_POLICY_V1BETA1.001` | medium | kubernetes_pod_security_policy_v1beta1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_POD_V1.001` | medium | kubernetes_pod_v1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_REPLICATION_CONTROLLER.001` | medium | kubernetes_replication_controller: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_REPLICATION_CONTROLLER_V1.001` | medium | kubernetes_replication_controller_v1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_STATEFUL_SET.001` | medium | kubernetes_stateful_set: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PRIVILEGE_ESCALATION.KUBERNETES_STATEFUL_SET_V1.001` | medium | kubernetes_stateful_set_v1: the container may gain more privileges than it started with |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_DB_INSTANCE.001` | high | aws_db_instance: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_DMS_REPLICATION_INSTANCE.001` | medium | aws_dms_replication_instance: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_DOCDB_CLUSTER_INSTANCE.001` | high | aws_docdb_cluster_instance: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_LIGHTSAIL_DATABASE.001` | high | aws_lightsail_database: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_M2_ENVIRONMENT.001` | high | aws_m2_environment: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_MQ_BROKER.001` | high | aws_mq_broker: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_NEPTUNE_CLUSTER_INSTANCE.001` | high | aws_neptune_cluster_instance: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_RDS_CLUSTER_INSTANCE.001` | high | aws_rds_cluster_instance: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_RDS_SHARD_GROUP.001` | high | aws_rds_shard_group: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_REDSHIFTSERVERLESS_WORKGROUP.001` | high | aws_redshiftserverless_workgroup: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_REDSHIFT_CLUSTER.001` | high | aws_redshift_cluster: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_SAGEMAKER_NOTEBOOK_INSTANCE.001` | medium | aws_sagemaker_notebook_instance: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AWS_TIMESTREAMINFLUXDB_DB_INSTANCE.001` | high | aws_timestreaminfluxdb_db_instance: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_AI_FOUNDRY.001` | medium | azurerm_ai_foundry: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_AI_SERVICES.001` | medium | azurerm_ai_services: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_API_MANAGEMENT.001` | medium | azurerm_api_management: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_APP_CONFIGURATION.001` | medium | azurerm_app_configuration: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_ARC_PRIVATE_LINK_SCOPE.001` | medium | azurerm_arc_private_link_scope: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_AUTOMATION_ACCOUNT.001` | medium | azurerm_automation_account: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_BATCH_ACCOUNT.001` | medium | azurerm_batch_account: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_BOT_CHANNELS_REGISTRATION.001` | medium | azurerm_bot_channels_registration: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_BOT_SERVICE_AZURE_BOT.001` | medium | azurerm_bot_service_azure_bot: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_COGNITIVE_ACCOUNT.001` | medium | azurerm_cognitive_account: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_CONTAINER_APP_ENVIRONMENT.001` | medium | azurerm_container_app_environment: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_CONTAINER_REGISTRY.001` | low | azurerm_container_registry: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_COSMOSDB_ACCOUNT.001` | medium | azurerm_cosmosdb_account: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_DASHBOARD_GRAFANA.001` | medium | azurerm_dashboard_grafana: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_DATABRICKS_WORKSPACE.001` | medium | azurerm_databricks_workspace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_EVENTGRID_DOMAIN.001` | medium | azurerm_eventgrid_domain: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_EVENTGRID_NAMESPACE.001` | medium | azurerm_eventgrid_namespace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_EVENTGRID_PARTNER_NAMESPACE.001` | medium | azurerm_eventgrid_partner_namespace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_EVENTGRID_TOPIC.001` | medium | azurerm_eventgrid_topic: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_EVENTHUB_NAMESPACE.001` | medium | azurerm_eventhub_namespace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_FUNCTION_APP_FLEX_CONSUMPTION.001` | medium | azurerm_function_app_flex_consumption: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_HEALTHCARE_DICOM_SERVICE.001` | medium | azurerm_healthcare_dicom_service: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_HEALTHCARE_SERVICE.001` | medium | azurerm_healthcare_service: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_IOTCENTRAL_APPLICATION.001` | medium | azurerm_iotcentral_application: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_IOTHUB.001` | medium | azurerm_iothub: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_IOTHUB_DEVICE_UPDATE_ACCOUNT.001` | medium | azurerm_iothub_device_update_account: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_IOTHUB_DPS.001` | medium | azurerm_iothub_dps: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_KEY_VAULT.001` | medium | azurerm_key_vault: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_KEY_VAULT_MANAGED_HARDWARE_SECURITY_MODULE.001` | medium | azurerm_key_vault_managed_hardware_security_module: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_KUSTO_CLUSTER.001` | medium | azurerm_kusto_cluster: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_LINUX_FUNCTION_APP.001` | medium | azurerm_linux_function_app: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_LINUX_FUNCTION_APP_SLOT.001` | medium | azurerm_linux_function_app_slot: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_LINUX_WEB_APP.001` | medium | azurerm_linux_web_app: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_LINUX_WEB_APP_SLOT.001` | medium | azurerm_linux_web_app_slot: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_LOGIC_APP_STANDARD.001` | medium | azurerm_logic_app_standard: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MACHINE_LEARNING_WORKSPACE.001` | medium | azurerm_machine_learning_workspace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MANAGED_DISK.001` | medium | azurerm_managed_disk: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MANAGED_REDIS.001` | medium | azurerm_managed_redis: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MONGO_CLUSTER.001` | medium | azurerm_mongo_cluster: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MONITOR_DATA_COLLECTION_ENDPOINT.001` | medium | azurerm_monitor_data_collection_endpoint: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MONITOR_WORKSPACE.001` | medium | azurerm_monitor_workspace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MSSQL_SERVER.001` | medium | azurerm_mssql_server: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MYSQL_FLEXIBLE_SERVER.001` | medium | azurerm_mysql_flexible_server: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_MYSQL_SERVER.001` | medium | azurerm_mysql_server: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_POSTGRESQL_FLEXIBLE_SERVER.001` | medium | azurerm_postgresql_flexible_server: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_POSTGRESQL_SERVER.001` | medium | azurerm_postgresql_server: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_RECOVERY_SERVICES_VAULT.001` | medium | azurerm_recovery_services_vault: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_REDIS_CACHE.001` | medium | azurerm_redis_cache: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_RESOURCE_MANAGEMENT_PRIVATE_LINK_ASSOCIATION.001` | medium | azurerm_resource_management_private_link_association: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SEARCH_SERVICE.001` | medium | azurerm_search_service: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SERVICEBUS_NAMESPACE.001` | medium | azurerm_servicebus_namespace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SIGNALR_SERVICE.001` | medium | azurerm_signalr_service: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SNAPSHOT.001` | medium | azurerm_snapshot: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SPRING_CLOUD_API_PORTAL.001` | medium | azurerm_spring_cloud_api_portal: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SPRING_CLOUD_DEV_TOOL_PORTAL.001` | medium | azurerm_spring_cloud_dev_tool_portal: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SPRING_CLOUD_GATEWAY.001` | medium | azurerm_spring_cloud_gateway: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_STATIC_WEB_APP.001` | medium | azurerm_static_web_app: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_STORAGE_ACCOUNT.001` | medium | azurerm_storage_account: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_SYNAPSE_WORKSPACE.001` | medium | azurerm_synapse_workspace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_VIDEO_INDEXER_ACCOUNT.001` | medium | azurerm_video_indexer_account: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_VIRTUAL_DESKTOP_HOST_POOL.001` | medium | azurerm_virtual_desktop_host_pool: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_VIRTUAL_DESKTOP_WORKSPACE.001` | medium | azurerm_virtual_desktop_workspace: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_WEB_PUBSUB.001` | medium | azurerm_web_pubsub: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_WEB_PUBSUB_SOCKETIO.001` | medium | azurerm_web_pubsub_socketio: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_WINDOWS_FUNCTION_APP.001` | medium | azurerm_windows_function_app: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_WINDOWS_FUNCTION_APP_SLOT.001` | medium | azurerm_windows_function_app_slot: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_WINDOWS_WEB_APP.001` | medium | azurerm_windows_web_app: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS.AZURERM_WINDOWS_WEB_APP_SLOT.001` | medium | azurerm_windows_web_app_slot: reachable from the public internet |
+| `SUSPECT.IAC.PUBLIC_ACCESS_BLOCK.BLOCK_PUBLIC_ACLS.001` | high | aws_s3_bucket_public_access_block: block_public_acls is off |
+| `SUSPECT.IAC.PUBLIC_ACCESS_BLOCK.BLOCK_PUBLIC_POLICY.001` | high | aws_s3_bucket_public_access_block: block_public_policy is off |
+| `SUSPECT.IAC.PUBLIC_ACCESS_BLOCK.IGNORE_PUBLIC_ACLS.001` | high | aws_s3_bucket_public_access_block: ignore_public_acls is off |
+| `SUSPECT.IAC.PUBLIC_ACCESS_BLOCK.RESTRICT_PUBLIC_BUCKETS.001` | high | aws_s3_bucket_public_access_block: restrict_public_buckets is off |
+| `SUSPECT.IAC.PUBLIC_IAM.GOOGLE_PROJECT_IAM_MEMBER.001` | high | google_project_iam_member: a role is granted to everyone |
+| `SUSPECT.IAC.PUBLIC_INGRESS.001` | high | Ingress permitted from the entire internet |
+| `SUSPECT.IAC.PUBLIC_SQL.GOOGLE_SQL_DATABASE_INSTANCE.001` | high | google_sql_database_instance: authorised network is the whole internet |
+| `SUSPECT.IAC.PUBLIC_STORAGE.AWS_S3_BUCKET.001` | high | aws_s3_bucket: storage is readable by anyone |
+| `SUSPECT.IAC.PUBLIC_STORAGE.AWS_S3_BUCKET_ACL.001` | high | aws_s3_bucket_acl: storage is readable by anyone |
+| `SUSPECT.IAC.PUBLIC_STORAGE.AZURERM_STORAGE_ACCOUNT.001` | medium | azurerm_storage_account: storage is readable by anyone |
+| `SUSPECT.IAC.PUBLIC_STORAGE.AZURERM_STORAGE_CONTAINER.001` | high | azurerm_storage_container: storage is readable by anyone |
+| `SUSPECT.IAC.PUBLIC_STORAGE.GOOGLE_STORAGE_BUCKET_ACCESS_CONTROL.001` | high | google_storage_bucket_access_control: storage is readable by anyone |
+| `SUSPECT.IAC.PUBLIC_STORAGE.GOOGLE_STORAGE_BUCKET_IAM_BINDING.001` | high | google_storage_bucket_iam_binding: storage is readable by anyone |
+| `SUSPECT.IAC.PUBLIC_STORAGE.GOOGLE_STORAGE_BUCKET_IAM_MEMBER.001` | high | google_storage_bucket_iam_member: storage is readable by anyone |
+| `SUSPECT.IAC.RBAC_DISABLED.AZURERM_KUBERNETES_CLUSTER.001` | high | azurerm_kubernetes_cluster: role-based access control is disabled |
+| `SUSPECT.IAC.ROOT_ACCESS.AWS_SAGEMAKER_NOTEBOOK_INSTANCE.001` | medium | aws_sagemaker_notebook_instance: notebook users have root |
+| `SUSPECT.IAC.SERIAL_PORT.GOOGLE_COMPUTE_INSTANCE.001` | medium | google_compute_instance: the interactive serial console is enabled |
+| `SUSPECT.IAC.SHARED_KEY_AUTH.AZURERM_CONTAINER_REGISTRY.001` | medium | azurerm_container_registry: a shared admin account |
+| `SUSPECT.IAC.SHARED_KEY_AUTH.AZURERM_EXPRESS_ROUTE_PORT.001` | medium | azurerm_express_route_port: a shared admin account |
+| `SUSPECT.IAC.SHARED_KEY_AUTH.GOOGLE_COMPUTE_INTERCONNECT.001` | medium | google_compute_interconnect: a shared admin account |
+| `SUSPECT.IAC.SHARED_KEY_AUTH.GOOGLE_COMPUTE_INTERCONNECT_ATTACHMENT.001` | medium | google_compute_interconnect_attachment: a shared admin account |
+| `SUSPECT.IAC.WILDCARD_PRINCIPAL.AWS_IAM_POLICY.001` | high | A resource policy trusts every principal |
+
 ## Install-time code
 
-14 rules.
+19 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -162,6 +1501,7 @@ rule's own samples.
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | Code that runs on every machine that installs this package |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
 | `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
+| `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | Install script runs code that cannot be read |
@@ -171,7 +1511,120 @@ rule's own samples.
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | Install script spells its names in character codes |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
+| `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | A version made to win resolution runs code on install |
+| `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | An install hook runs a file too obfuscated to read |
+| `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
+| `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
+
+## Intent
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.INTENT.UNEXPLAINED_EFFECT.001` | high | The package's effects are not explained by what it says it is |
+
+## Judge
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.JUDGE.BUDGET` | info | The judge's call budget ran out |
+| `OPERATIONAL.JUDGE.STATUS` | info | A language model judged the scan's agent-facing text |
+| `OPERATIONAL.JUDGE.UNAVAILABLE` | info | The judge was asked for and could not be used |
+
+## Kubernetes
+
+19 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.K8S.AUTOMOUNT_TOKEN.001` | low | Kubernetes workload: the service account token is mounted into the pod |
+| `POLICY.K8S.DEFAULT_SERVICE_ACCOUNT.001` | low | Kubernetes workload: the workload uses the namespace's default service account |
+| `POLICY.K8S.LATEST_TAG.001` | medium | Kubernetes workload: a container image is pinned to :latest |
+| `POLICY.K8S.NET_ADMIN.001` | medium | Container adds network-administration capability |
+| `POLICY.K8S.NO_RESOURCE_LIMITS.001` | low | Kubernetes workload: no resource limits are set |
+| `POLICY.K8S.NO_RUN_AS_NON_ROOT.001` | low | Kubernetes workload: nothing requires the container to run as a non-root user |
+| `POLICY.K8S.NO_SECCOMP.001` | low | Kubernetes workload: no seccomp profile is applied |
+| `POLICY.K8S.SERVICE_ACCOUNT_TOKEN.001` | low | Service-account token mounted into a workload |
+| `POLICY.K8S.WRITABLE_ROOT.001` | low | Kubernetes workload: the container's root filesystem is writable |
+| `SUSPECT.K8S.CAPABILITIES.001` | high | Container adds a capability that escapes the sandbox |
+| `SUSPECT.K8S.DANGEROUS_CAPABILITY.001` | high | Kubernetes workload: a container is granted a capability that defeats isolation |
+| `SUSPECT.K8S.HOST_IPC.001` | medium | Kubernetes workload: the pod shares the node's IPC namespace |
+| `SUSPECT.K8S.HOST_NETWORK.001` | high | Kubernetes workload: the pod shares the node's network namespace |
+| `SUSPECT.K8S.HOST_PID.001` | high | Kubernetes workload: the pod shares the node's process namespace |
+| `SUSPECT.K8S.HOST_PORT.001` | medium | Kubernetes workload: a container binds a port on the node |
+| `SUSPECT.K8S.PRIVILEGE_ESCALATION.001` | medium | Kubernetes workload: a container may gain more privileges than it started with |
+| `SUSPECT.K8S.RBAC_WILDCARD.001` | high | Role grants every verb or every resource |
+| `SUSPECT.K8S.RUN_AS_ROOT.001` | medium | Kubernetes workload: a container runs as uid 0 |
+| `SUSPECT.K8S.SECRET_ENV_VALUE.001` | high | Kubernetes workload: a credential is written into the manifest |
+
+## License
+
+6 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.LICENSE.COPYLEFT.001` | medium | Dependency is under a copyleft license |
+| `POLICY.LICENSE.DENIED.001` | high | Dependency under a licence the policy denies |
+| `POLICY.LICENSE.NETWORK_COPYLEFT.001` | medium | Dependency is under a network-copyleft license |
+| `POLICY.LICENSE.NOT_ALLOWED.001` | medium | Dependency under a licence outside the allowed list |
+| `POLICY.LICENSE.UNKNOWN.001` | low | Dependency whose licence could not be established |
+| `POLICY.LICENSE.WEAK_COPYLEFT.001` | low | Dependency is under a weak-copyleft license |
+
+## Lockfiles
+
+4 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.LOCKFILE.INTEGRITY.001` | medium | Lockfile entry without an integrity hash |
+| `SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001` | high | One package version locked with two different hashes |
+| `SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001` | high | Lockfile integrity value is not a hash |
+| `SUSPECT.LOCKFILE.SOURCE.001` | medium | Lockfile entry resolved from outside the registry |
+
+## MCP servers
+
+24 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.MCP.LIVE_UNREAD.001` | info | A remote MCP server could not be read |
+| `OPERATIONAL.MCP.UNRESOLVED` | info | An MCP server package was not examined |
+| `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | An MCP tool replaces the argument it was called with |
+| `SUSPECT.MCP.BORROWED_NAME.001` | high | MCP server published under a service's name its code never mentions |
+| `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
+| `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
+| `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
+| `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
+| `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
+| `SUSPECT.MCP.INPUT_MIRROR.001` | high | An MCP tool copies what it is asked into a hidden file |
+| `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | A remote MCP server over plain HTTP |
+| `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
+| `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
+| `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
+| `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
+| `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |
+| `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
+| `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | A remote MCP server's tools changed since they were approved |
+| `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
+| `SUSPECT.MCP.TOOL_POISONING.001` | high | An MCP server's tool description hides text or instructs the agent |
+| `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
+| `SUSPECT.MCP.UNPINNED.001` | medium | An MCP server launched from an unpinned package |
+| `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | A remote MCP server on a tunnel, paste or interaction host |
+
+## Media
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.MEDIA.APPENDED_PAYLOAD.001` | high | An image has an archive, executable or script appended after its end |
+| `SUSPECT.MEDIA.OPAQUE_TRAILER.001` | medium | A file carries a large, near-random block after its end |
+| `SUSPECT.MEDIA.TRAILING_DATA.001` | low | An image has data after its end |
 
 ## Mobile
 
@@ -183,13 +1636,44 @@ rule's own samples.
 
 ## Model
 
-3 rules.
+6 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.MODEL.PICKLE_EXEC.001` | critical | A pickle that runs a command, reaches the network or evaluates code when loaded |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | The package deserialises a model file it ships, unsafely, when it is imported |
+| `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | Cordon's model judges a package malicious |
+| `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | A pickle imports something ordinary model files do not |
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | Loads a model with trust_remote_code, running its repository's Python |
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | Loads a model with the loader's safety switch turned off |
+
+## Obfuscation
+
+5 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.OBFUSCATION.BIDI.001` | high | Bidirectional or invisible Unicode in source |
+| `SUSPECT.OBFUSCATION.ENCODED.001` | medium | Large encoded blob embedded in source |
+| `SUSPECT.OBFUSCATION.LONGLINE.001` | low | Line far longer than any hand-written source |
+| `SUSPECT.OBFUSCATION.PACKED.001` | medium | Packer or minifier signature in hand-written source |
+| `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | Invisible text written in Unicode Tag characters |
+
+## Package
+
+9 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.PACKAGE.KNOWN.001` | critical | The scanned package is a recorded malicious release |
+| `POLICY.PACKAGE.DENIED.001` | high | Dependency on a package the policy denies |
+| `POLICY.PACKAGE.NOT_ALLOWED.001` | medium | Dependency outside the policy's allowed packages |
+| `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | The manifest npm serves is not the package.json in the tarball |
+| `SUSPECT.PACKAGE.NAME_RISK.001` | high | Published package is a name with nothing behind it |
+| `SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001` | high | A published release ships no code under a throwaway description |
+| `SUSPECT.PACKAGE.PROVENANCE.001` | medium | Version published without the provenance its package normally carries |
+| `SUSPECT.PACKAGE.REPOSITORY.001` | medium | Package claims a source repository the registry does not record |
+| `SUSPECT.PACKAGE.STARJACKING.001` | high | A new package claims a popular project's repository |
 
 ## Persistence
 
@@ -199,6 +1683,14 @@ rule's own samples.
 |---|---|---|
 | `SUSPECT.PERSIST.001` | high | Network access combined with a persistence mechanism |
 
+## Polyglot
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.POLYGLOT.MISMATCH.001` | high | File contents do not match its extension |
+
 ## Protestware
 
 1 rules.
@@ -207,13 +1699,51 @@ rule's own samples.
 |---|---|---|
 | `MALWARE.PROTESTWARE.001` | critical | Deletes data on machines in a named region |
 
-## Registry
+## Provenance
 
-1 rules.
+4 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `OPERATIONAL.PROVENANCE.NOT_CHECKED.001` | low | Build provenance was not checked for part of the graph |
+| `POLICY.PROVENANCE.UNVERIFIED.001` | low | Dependency advertises an attestation that could not be verified |
+| `SUSPECT.PROVENANCE.MISMATCH.001` | critical | Lockfile hash disagrees with the registry |
+| `VULNERABLE.PROVENANCE.INVALID.001` | critical | Dependency's build attestation fails verification |
+
+## Recipe
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.RECIPE.KNOWN.001` | critical | Recipe is a known-malicious release |
+| `SUSPECT.RECIPE.PROVISIONAL.001` | high | Recipe is held for review |
+
+## Registry
+
+5 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | Dependencies past the query ceiling or time budget were never asked about |
+| `OPERATIONAL.REGISTRY.NO_SOURCE.001` | low | No registry is configured for part of the dependency graph |
+| `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | Registry could not be asked about a dependency |
+| `SUSPECT.REGISTRY.REVIEW.001` | high | What the registry recorded about this release looks like a malicious release |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | Shipped code that publishes packages |
+
+## Release
+
+7 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.RELEASE.NO_PROVENANCE.001` | low | Release workflow publishes without build provenance |
+| `SUSPECT.RELEASE.NEW_BINARY.001` | medium | This release adds compiled files |
+| `SUSPECT.RELEASE.NEW_CAPABILITY.001` | high | This release's flagged code gains network, process or execution capability |
+| `SUSPECT.RELEASE.NEW_INSTALL_HOOK.001` | high | This release runs code at install that the previous release did not |
+| `SUSPECT.RELEASE.NEW_OBFUSCATION.001` | high | This release ships obfuscated code where the previous shipped none |
+| `SUSPECT.RELEASE.NEW_PUBLISHER.001` | medium | This release was published by a different account than the previous one |
+| `SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001` | medium | This release adds a dependency that was itself published days ago |
 
 ## Reverse Shell
 
@@ -224,6 +1754,120 @@ rule's own samples.
 | `MALWARE.REVERSE_SHELL.001` | critical | A shell piped to a socket |
 | `MALWARE.REVERSE_SHELL.002` | critical | A shell's input and output joined to a stream |
 
+## SBOMs
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.SBOM.UNREADABLE.001` | low | Bill of materials could not be read |
+| `SUSPECT.SBOM.DRIFT.001` | medium | Bill of materials omits resolved dependencies |
+| `VULNERABLE.SBOM.LISTED.001` | medium | A bill of materials lists a vulnerability in one of its components |
+
+## Secret History
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001` | low | Part of git history was not read for secrets |
+
+## Secret Liveness
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.SECRET_LIVENESS.UNCHECKED.001` | low | Some credentials could not be checked with their issuer |
+
+## Secrets
+
+62 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SECRET.AIRTABLE.TOKEN.001` | high | Committed credential: Airtable personal access token |
+| `SECRET.ALIBABA.ACCESS_KEY.001` | high | Committed credential: Alibaba Cloud access key id |
+| `SECRET.ANTHROPIC.KEY.001` | critical | Committed credential: Anthropic API key |
+| `SECRET.ATLASSIAN.TOKEN.001` | critical | Committed credential: Atlassian API token |
+| `SECRET.AWS.ACCESS_KEY.001` | critical | Committed credential: AWS access key id |
+| `SECRET.AZURE.STORAGE_KEY.001` | critical | Committed credential: Azure Storage account key |
+| `SECRET.DATABRICKS.TOKEN.001` | critical | Committed credential: Databricks personal access token |
+| `SECRET.DIGITALOCEAN.TOKEN.001` | critical | Committed credential: DigitalOcean token |
+| `SECRET.DISCORD.WEBHOOK.001` | high | Committed credential: Discord webhook URL |
+| `SECRET.DOCKERHUB.TOKEN.001` | critical | Committed credential: Docker Hub personal access token |
+| `SECRET.DOPPLER.TOKEN.001` | critical | Committed credential: Doppler token |
+| `SECRET.DROPBOX.TOKEN.001` | high | Committed credential: Dropbox access token |
+| `SECRET.FIGMA.TOKEN.001` | high | Committed credential: Figma personal access token |
+| `SECRET.FLYIO.TOKEN.001` | critical | Committed credential: Fly.io token |
+| `SECRET.GENERIC.ASSIGNMENT.001` | high | Credential-shaped value assigned to a credential-shaped name |
+| `SECRET.GITHUB.TOKEN.001` | critical | Committed credential: GitHub token |
+| `SECRET.GITLAB.TOKEN.001` | critical | Committed credential: GitLab token |
+| `SECRET.GOOGLE.API_KEY.001` | high | Committed credential: Google API key |
+| `SECRET.GOOGLE.OAUTH_TOKEN.001` | critical | Committed credential: Google OAuth access token |
+| `SECRET.GRAFANA.TOKEN.001` | high | Committed credential: Grafana token |
+| `SECRET.GROQ.KEY.001` | high | Committed credential: Groq API key |
+| `SECRET.HUGGINGFACE.TOKEN.001` | high | Committed credential: Hugging Face access token |
+| `SECRET.JFROG.TOKEN.001` | critical | Committed credential: JFrog Artifactory token |
+| `SECRET.JWT.001` | medium | Committed credential: JSON Web Token |
+| `SECRET.LANGCHAIN.KEY.001` | high | Committed credential: LangSmith API key |
+| `SECRET.LINEAR.KEY.001` | high | Committed credential: Linear API key |
+| `SECRET.LIVE.001` | critical | The credential's issuer confirms it still works |
+| `SECRET.LIVENESS.REJECTED.001` | info | The credential's issuer rejects it |
+| `SECRET.MAILGUN.KEY.001` | high | Committed credential: Mailgun API key |
+| `SECRET.MCP.INLINE_CREDENTIAL.001` | high | A credential written inline in an MCP configuration |
+| `SECRET.MICROSOFT.TEAMS_WEBHOOK.001` | medium | Committed credential: Microsoft Teams webhook URL |
+| `SECRET.NETLIFY.TOKEN.001` | critical | Committed credential: Netlify personal access token |
+| `SECRET.NEWRELIC.KEY.001` | high | Committed credential: New Relic key |
+| `SECRET.NOTION.TOKEN.001` | high | Committed credential: Notion integration token |
+| `SECRET.NPM.TOKEN.001` | critical | Committed credential: npm access token |
+| `SECRET.NUGET.KEY.001` | critical | Committed credential: NuGet API key |
+| `SECRET.OPENAI.KEY.001` | critical | Committed credential: OpenAI API key |
+| `SECRET.PAGERDUTY.TOKEN.001` | high | Committed credential: PagerDuty API token |
+| `SECRET.PAYPAL.TOKEN.001` | critical | Committed credential: PayPal or Braintree access token |
+| `SECRET.PLANETSCALE.TOKEN.001` | critical | Committed credential: PlanetScale token |
+| `SECRET.PRIVATE_KEY.001` | critical | Committed credential: Private key block |
+| `SECRET.PYPI.TOKEN.001` | critical | Committed credential: PyPI API token |
+| `SECRET.REPLICATE.TOKEN.001` | high | Committed credential: Replicate API token |
+| `SECRET.RESEND.KEY.001` | high | Committed credential: Resend API key |
+| `SECRET.RUBYGEMS.TOKEN.001` | critical | Committed credential: RubyGems API key |
+| `SECRET.SENDGRID.KEY.001` | critical | Committed credential: SendGrid API key |
+| `SECRET.SENTRY.TOKEN.001` | high | Committed credential: Sentry auth token |
+| `SECRET.SHOPIFY.TOKEN.001` | critical | Committed credential: Shopify access token |
+| `SECRET.SLACK.APP_TOKEN.001` | high | Committed credential: Slack app-level token |
+| `SECRET.SLACK.TOKEN.001` | high | Committed credential: Slack token |
+| `SECRET.SLACK.WEBHOOK.001` | medium | Committed credential: Slack webhook URL |
+| `SECRET.SONAR.TOKEN.001` | high | Committed credential: SonarQube token |
+| `SECRET.SQUARE.TOKEN.001` | critical | Committed credential: Square access token |
+| `SECRET.STRIPE.KEY.001` | critical | Committed credential: Stripe secret key |
+| `SECRET.STRIPE.WEBHOOK_SECRET.001` | high | Committed credential: Stripe webhook signing secret |
+| `SECRET.SUPABASE.TOKEN.001` | critical | Committed credential: Supabase access token |
+| `SECRET.TELEGRAM.BOT_TOKEN.001` | high | Committed credential: Telegram bot token |
+| `SECRET.TENCENT.SECRET_ID.001` | high | Committed credential: Tencent Cloud secret id |
+| `SECRET.TERRAFORM.TOKEN.001` | critical | Committed credential: Terraform Cloud API token |
+| `SECRET.TWILIO.KEY.001` | high | Committed credential: Twilio API key |
+| `SECRET.URL.CREDENTIAL.001` | high | Credential embedded in a URL |
+| `SECRET.VAULT.TOKEN.001` | critical | Committed credential: HashiCorp Vault token |
+
+## Source and history
+
+4 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.VCS.UNREADABLE.001` | low | Repository history could not be read |
+| `POLICY.VCS.BINARY_ADDED.001` | low | Executable or archive added in recent history |
+| `SUSPECT.VCS.HOOKS_PATH.001` | medium | Repository configures its own git hooks directory |
+| `SUSPECT.VCS.HOOK_ADDED.001` | medium | Version-control hook added in recent history |
+
+## Submodule
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.SUBMODULE.UNTRUSTED.001` | medium | Submodule fetched over an unauthenticated transport |
+
 ## Targeted Payload
 
 1 rules.
@@ -231,6 +1875,33 @@ rule's own samples.
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | Runs or downloads code only on machines in a named region |
+
+## Typosquat
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.TYPOSQUAT.PACKAGE_NAME.001` | high | Package is named like a popular package |
+
+## Verdict
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.VERDICT.MODEL.001` | high | The package's findings together look malicious |
+
+## YARA
+
+4 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.YARA.MATCH.001` | critical | An operator's YARA rule identifies this file as malware |
+| `OPERATIONAL.YARA.STATUS` | info | YARA examined the scan's files |
+| `OPERATIONAL.YARA.UNAVAILABLE` | info | YARA was asked for and could not be used |
+| `SUSPECT.YARA.MATCH.001` | high | An operator's YARA rule matched this file |
 
 ## Agent Threat Rules
 
