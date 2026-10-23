@@ -250,17 +250,52 @@ class Gate:
             # team approval (owner decision, 2026-10-22).
             "outcome": outcome,
             "approver": policy["policy_id"],
+            # Binds the decision to the exact evaluation it was drawn from.
+            "evaluation_run_sha256": hashlib.sha256(Gate.canonical(run)).hexdigest(),
         }
         return run, decision
+
+    @staticmethod
+    def canonical(document: dict[str, Any]) -> bytes:
+        """The bytes a signature covers: sorted keys, no whitespace, the signature itself left out."""
+        body = {k: v for k, v in document.items() if k != "signature"}
+        return json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    @staticmethod
+    def sign(decision: dict[str, Any], seed_hex: str) -> dict[str, Any]:
+        """Sign a decision with the evaluation lab's Ed25519 key (CDI §7).
+
+        The Cloud promotes only a decision signed by a key it is configured to trust, so a decision
+        written by hand -- "outcome": "shadow" for a candidate the gate rejected -- promotes nothing.
+        """
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(seed_hex.strip()))
+        public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+        return {
+            **decision,
+            "signature": {
+                "keyid": hashlib.sha256(bytes.fromhex(public)).hexdigest()[:16],
+                "public": public,
+                "sig": key.sign(Gate.canonical(decision)).hex(),
+            },
+        }
 
     @staticmethod
     def main(argv: list[str] | None = None) -> int:
         parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
         parser.add_argument("--spec", required=True)
         parser.add_argument("--out", required=True)
+        parser.add_argument(
+            "--sign-key",
+            help="file holding the evaluation lab's Ed25519 seed (hex); never committed",
+        )
         args = parser.parse_args(argv)
         spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
         run, decision = Gate.evaluate(spec)
+        if args.sign_key:
+            decision = Gate.sign(decision, Path(args.sign_key).read_text(encoding="utf-8"))
         out = Path(args.out)
         out.mkdir(parents=True, exist_ok=True)
         (out / "evaluation_run.json").write_text(

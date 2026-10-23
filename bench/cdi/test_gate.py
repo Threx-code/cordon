@@ -106,3 +106,30 @@ class TestTheGates:
             GateKit.spec(tmp_path, {"m1": (1, MAL, 1.0), "m2": (0, [], 1.0)}, BEN_CLEAN)
         )
         assert decision["gates"]["benign_bar_evidence"]["result"] == "insufficient"
+
+
+class TestTheSignature:
+    SEED = "11" * 32
+
+    def test_a_signed_decision_verifies_and_any_edit_breaks_it(self, tmp_path: Path) -> None:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        _, decision = Gate.evaluate(
+            GateKit.spec(tmp_path, {"m1": (1, MAL, 1.0), "m2": (1, MAL, 1.0)}, BEN_CLEAN)
+        )
+        signed = Gate.sign(decision, self.SEED)
+        key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(signed["signature"]["public"]))
+        key.verify(bytes.fromhex(signed["signature"]["sig"]), Gate.canonical(signed))
+        forged = {**signed, "outcome": "block"}
+        try:
+            key.verify(bytes.fromhex(signed["signature"]["sig"]), Gate.canonical(forged))
+        except InvalidSignature:
+            return
+        raise AssertionError("an edited decision still verified")
+
+    def test_the_decision_names_the_run_it_came_from(self, tmp_path: Path) -> None:
+        import hashlib
+
+        run, decision = Gate.evaluate(GateKit.spec(tmp_path, {"m1": (1, MAL, 1.0)}, BEN_CLEAN))
+        assert decision["evaluation_run_sha256"] == hashlib.sha256(Gate.canonical(run)).hexdigest()
