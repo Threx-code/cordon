@@ -13,7 +13,7 @@ import tarfile
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.capability import CapabilityDetector
+from cordon_scanner.detect.code.install_payload import InstallPayload
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.models import Severity
 
@@ -72,4 +72,4 @@ class TestTheUnpacker:
 
     def test_an_unpack_chained_to_a_run_is_not_only_an_unpack(self):
         line = b"execSync(`tar -xzf x.tgz && ./x`)"
-        assert not CapabilityDetector._UNPACKER_CALL.match(line)
+        assert not InstallPayload._UNPACKER_CALL.match(line)

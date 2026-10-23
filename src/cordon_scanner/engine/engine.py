@@ -1568,6 +1568,7 @@ class Engine:
             dependencies=Engine._packages(dependencies),
             install_hook_paths=frozenset(hook_paths),
             tree_paths=frozenset(unit.path for unit in units),
+            shipped_native_paths=Engine._shipped_native(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
@@ -2003,6 +2004,7 @@ class Engine:
             ctx,
             install_hook_paths=frozenset(hook_paths),
             tree_paths=frozenset(unit.path for unit in units),
+            shipped_native_paths=Engine._shipped_native(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
@@ -4022,6 +4024,14 @@ class Engine:
                 )
             out.append(finding)
         return out
+
+    @staticmethod
+    def _shipped_native(units: Iterable[FileUnit]) -> frozenset[str]:
+        """Paths whose bytes begin with ELF, PE or Mach-O magic: a binary the package ships (census A)."""
+        from cordon_scanner.detect.binary.binary import NATIVE_FORMATS, BinaryDetector
+
+        ids = ((u.path, BinaryDetector.identify(u.content.raw)) for u in units if u.content)
+        return frozenset(p for p, f in ids if f is not None and f.name in NATIVE_FORMATS)
 
     @staticmethod
     def _entry_points_reached(

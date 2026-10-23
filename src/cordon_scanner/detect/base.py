@@ -146,6 +146,12 @@ class ScanContext:
     its manifest rather than a field in it (an R package's `configure`), so the manifest detector
     can see that the file is there."""
 
+    shipped_native_paths: frozenset[str] = frozenset()
+    """Paths whose bytes begin with native-executable magic (ELF, PE, Mach-O). A spawn of one from
+    install code runs the author's own compiled binary on the consumer's machine -- which no reader
+    of the install script can see, unlike a compiler spawned by bare name (census A, pypi-98). Used
+    to keep a dropper of a shipped binary blocked while a compiler-spawn `setup.py` clears."""
+
     consumer_install_paths: frozenset[str] = frozenset()
     """Paths that execute on the machine of whoever INSTALLS the package.
 

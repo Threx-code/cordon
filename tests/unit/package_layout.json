@@ -73,6 +73,7 @@
   "detect/code/decode_run": "detect/code/decode_run",
   "detect/code/download_flow": "detect/code/download_flow",
   "detect/code/go_runs": "detect/code/go_runs",
+  "detect/code/install_payload": "detect/code/install_payload",
   "detect/code/pack_rules": "detect/code/pack_rules",
   "detect/code/js_campaigns": "detect/code/js_campaigns",
   "detect/code/js_runs": "detect/code/js_runs",
@@ -581,7 +582,7 @@
   "long_modules": {
    "cli/main": 3131,
    "detect/agents/agents": 4606,
-   "detect/code/capability": 5120,
+   "detect/code/capability": 5101,
    "detect/secrets/secrets": 4838,
    "engine/engine": 7873,
    "intel/advisories/upstream_advisories": 3918,
