@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,473 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,474 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -164,13 +164,14 @@ rule's own samples.
 
 ## CI/CD pipelines
 
-26 rules.
+27 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.CI.CREDENTIAL_HARVEST.001` | high | Pipeline step searches for credentials and sends what it gathered |
 | `MALWARE.CI.DECODED_PROGRAM.001` | critical | A CI step runs a program it decodes on the spot |
 | `MALWARE.CI.RUNNER_SECRETS.001` | critical | Code dumps the CI runner's secrets |
+| `MALWARE.CI.SCHEDULED_FETCH_EXEC.001` | high | Pipeline step installs a cron job that downloads and runs code |
 | `MALWARE.CI.SECRET_DUMP.001` | high | Pipeline step sends secrets labelled with their own names |
 | `MALWARE.CI.SECRET_EXFIL.001` | critical | CI workflow serialises its secret context |
 | `MALWARE.CI.SECRET_TO_DROP_POINT.001` | high | Pipeline step sends a secret to a destination no pipeline publishes to |

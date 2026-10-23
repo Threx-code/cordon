@@ -34,6 +34,7 @@ from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.infra.ci_exfil import (
     CREDENTIAL_FORMAT_SEARCH,
     ONE_COMMAND_BREAK,
+    SCHEDULED_FETCH_RUN,
     SECRET_FIELD,
     SECRET_IN_REQUEST,
     SENDS_A_VARIABLE,
@@ -829,6 +830,28 @@ RULES: tuple[ConfigRule, ...] = (
         confirm=SecretInventory.labels_a_secret_by_its_name,
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
+    ),
+    ConfigRule(
+        rule_id="MALWARE.CI.SCHEDULED_FETCH_EXEC.001",
+        references=(references.GITHUB_ACTIONS_HARDENING,),
+        title="Pipeline step installs a cron job that downloads and runs code",
+        message=(
+            "A step writes a crontab entry that fetches a script from the network and pipes it "
+            "into a shell. Whatever is served at that address then runs on a schedule, on any "
+            "runner that keeps the job -- a self-hosted runner indefinitely. A pipeline builds "
+            "and publishes; it does not leave a downloader behind."
+        ),
+        remediation=(
+            "Treat every self-hosted runner this workflow reached as compromised and rebuild it; "
+            "rotate every secret the workflow can read. Find who added the step."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        # Measured (CDI, 2026-10-23): 0 of 81,662 benign workflow files (18,062 repositories).
+        category=Category.MALICIOUS,
+        pattern=SCHEDULED_FETCH_RUN,
+        paths=CI_PATHS,
+        capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
     ConfigRule(
         rule_id="MALWARE.CI.CREDENTIAL_HARVEST.001",

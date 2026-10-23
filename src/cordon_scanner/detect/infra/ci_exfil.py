@@ -161,9 +161,23 @@ class DropPoint:
         return bool(sent) and all(name in owned or names.search(name) for name in sent)
 
 
+_FETCH_RUN = rb"\b(?:curl|wget)\b[^\n|]{0,300}\|\s{0,4}(?:sudo\s{1,4})?(?:ba|z|da|k)?sh\b"
+SCHEDULED_FETCH_RUN: Final = re.compile(
+    rb"(?m)^[^\n]{0,600}?(?:"
+    + _FETCH_RUN
+    + rb"[^\n]{0,400}?\bcrontab\b|\bcrontab\b[^\n]{0,400}?"
+    + _FETCH_RUN
+    + rb")"
+)
+"""A crontab entry, written in one command, that downloads code and pipes it into a shell: code the
+attacker can change at will, run every few minutes on whatever runner keeps the job. No pipeline
+schedules that; GhostAction's later waves did (measured 0 of 81,662 benign workflow files)."""
+
+
 __all__ = [
     "CREDENTIAL_FORMAT_SEARCH",
     "ONE_COMMAND_BREAK",
+    "SCHEDULED_FETCH_RUN",
     "SECRET_FIELD",
     "SECRET_IN_REQUEST",
     "SENDS_A_VARIABLE",

@@ -214,6 +214,7 @@ rather than a document.
 | `MALWARE.CI.CREDENTIAL_HARVEST.001` | high | `config` | malicious_code |
 | `MALWARE.CI.DECODED_PROGRAM.001` | critical | `composites` | malicious_code |
 | `MALWARE.CI.RUNNER_SECRETS.001` | critical | `composites` | malicious_code |
+| `MALWARE.CI.SCHEDULED_FETCH_EXEC.001` | high | `config` | malicious_code |
 | `MALWARE.CI.SECRET_DUMP.001` | high | `config` | malicious_code |
 | `MALWARE.CI.SECRET_EXFIL.001` | critical | `config` | exfiltration |
 | `MALWARE.CI.SECRET_TO_DROP_POINT.001` | high | `config` | malicious_code |

