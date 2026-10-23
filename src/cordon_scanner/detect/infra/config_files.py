@@ -24,6 +24,7 @@ decorative.
 from __future__ import annotations
 
 import functools
+import ipaddress
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
@@ -56,7 +57,7 @@ from cordon_scanner.intel.malware.hosts import Destinations
 from cordon_scanner.intel.registries.installers import OfficialInstallers
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.content import FileContent
@@ -202,6 +203,18 @@ class ConfigRule:
     webhook catcher, a bare IP address, a raw socket."""
 
     aggravation_in_file: bool = False
+    require_aggravation: bool = False
+    one_command: bool = False
+    """With `require_aggravation`: the match and its aggravation must be one shell command, not
+    merely one step. A secret written to a file in one command and a request made in the next are
+    two acts; only the publishing shape spans them."""
+    confirm: Callable[[re.Pattern[bytes], bytes, bytes], bool] | None = None
+    """With `require_aggravation`: decides, from (aggravation, window, whole file), whether the
+    window really has it, where a regex search alone cannot -- `DropPoint.sends_to_one` resolves
+    which addresses are the job's own and which secrets belong to the service receiving them."""
+    """Report only a match whose window HAS the aggravation; one without it is not this rule's
+    claim at all. `MALWARE.CI.SECRET_TO_DROP_POINT.001` is the case: a secret sent somewhere is
+    `SUSPECT.CI.SECRET_EGRESS.001`; a secret sent to a bare IP or a paste site is theft."""
     """Look for `aggravation` anywhere in the file rather than near the match: a workflow's
     trigger is declared once at the top and decides what every job in it can be made to do."""
 
@@ -593,6 +606,163 @@ UNTRUSTED_TRIGGER: Final = re.compile(
 cache scope and secrets."""
 
 
+SECRET_BESIDE_EGRESS: Final = ConfigRule._p(
+    PatternProximity._near(
+        r"(?:\$\{\{[ \t]{0,32}secrets\.(?!GITHUB_TOKEN\b)\w{1,64}[^\n]{0,80}\}\}"
+        r"|credentials[ \t]{0,32}\(|withCredentials\b"
+        r"|\$\{?[A-Z_]{0,24}(?:TOKEN|SECRET|PASSWORD|APIKEY|API_KEY|CREDENTIAL)"
+        r"[A-Z_]{0,24}\}?"
+        r"|\$\([A-Za-z_]{0,24}(?:Token|Secret|Password|ApiKey)[A-Za-z_]{0,24}\))",
+        r"(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp|scp\s)",
+    )
+)
+"""A named CI secret and an egress verb in one step: how a pipeline publishes, and how one steals."""
+
+ONE_COMMAND_BREAK: Final = re.compile(rb"(?<!\\)\r?\n")
+"""A line break a shell does not continue: the end of one command."""
+
+SECRET_IN_REQUEST: Final = re.compile(
+    rb"(?m)^[^\n]{0,400}\b(?:curl|wget|Invoke-WebRequest|Invoke-RestMethod)\b[^\n]{0,400}?"
+    rb"\b[A-Z][A-Z0-9_]{1,63}=\$\{\{[ \t]{0,8}secrets\.[A-Z][A-Z0-9_]{1,63}[ \t]{0,8}\}\}"
+)
+"""A request command whose body assigns a secret to a field: `-d 'NAME=${{ secrets.X }}'`."""
+
+SECRET_FIELD: Final = re.compile(
+    rb"\b([A-Z][A-Z0-9_]{1,63})=\$\{\{[ \t]{0,8}secrets\.([A-Z][A-Z0-9_]{1,63})[ \t]{0,8}\}\}"
+)
+
+
+def labels_a_secret_by_its_name(fields: re.Pattern[bytes], window: bytes, _whole: bytes) -> bool:
+    """A field named exactly as the secret it carries: `NPM_TOKEN=${{ secrets.NPM_TOKEN }}`.
+
+    A pipeline hands a credential to the service it is for, under that service's parameter name;
+    a list of secrets keyed by their own names is an inventory sent to whoever collects it.
+    Case-sensitive on purpose: `token=${{ secrets.TOKEN }}` is a parameter that happens to agree.
+    Compared here rather than by a backreference, which the pattern validator refuses."""
+    return any(m.group(1) == m.group(2) for m in fields.finditer(window))
+
+
+CREDENTIAL_FORMAT_SEARCH: Final = re.compile(
+    rb"\b(?:e?grep|rg|git[ \t]+grep)\b[^\n]{0,400}?"
+    rb"(?:AKIA\[0-9A-Z\]|ASIA\[0-9A-Z\]|sk-ant-|sk-proj-|ghp_|gh\[pousr\]_|glpat-|xox[abps]-|xox\[|AIza)"
+)
+"""A search of files or history for the FORMAT of a credential -- an AWS key id, an Anthropic or
+OpenAI key, a GitHub, GitLab or Slack token: what a secret scanner does, and what a harvester does."""
+
+SENDS_A_VARIABLE: Final = re.compile(
+    rb"\b(?:curl|wget)\b[^\n]{0,400}?"
+    rb"(?:-d|--data(?:-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file|--post-data|--post-file)"
+    rb"[ \t=]{1,4}[\"']?@?\$"
+)
+"""A request whose body is a shell variable's contents: what was gathered earlier in the step."""
+
+
+class DropPoint:
+    """Whether a command sends a secret to a destination no pipeline publishes to.
+
+    Two shapes look like one and are not (measured on 18,062 benign repositories' workflows):
+
+    * A private, loopback, link-local or carrier-grade-NAT address is the job's own infrastructure
+      -- a runner-local service, a test server, an internal deploy target. Any other bare IP is a
+      drop point.
+    * A chat or webhook service receiving its OWN credential is a notification: a release bot
+      posting with `secrets.TELEGRAM_BOT_TOKEN` to `api.telegram.org`. The same service receiving
+      any other secret is the exfiltration channel it is in malware. The name that counts is the
+      `secrets.NAME` the value comes from -- an env alias (`TELEGRAM_TOKEN: ${{ secrets.NPM_TOKEN
+      }}`) is resolved back to it, so renaming a stolen secret does not excuse it; and an alias
+      that resolves to no secret is not excused at all. A value in the service's credential slot
+      (`/bot<token>/`) is its credential whatever it is called: three release bots in the 18,062
+      named theirs `TOKEN` or `BOT_TOKEN`. And the chat a bot posts to (`secrets.CHAT_ID`) is the
+      address the service needs, not anything's credential.
+    """
+
+    #: (host, the names its own credential goes by, the place in a request where only that
+    #: credential can sit). A bot token is the path segment after `/bot` in every Bot API call: a
+    #: value there is the bot's credential whatever the workflow calls it (`TOKEN`, `BOT_TOKEN`),
+    #: and a stolen secret put there reaches Telegram, not whoever planted the step.
+    SERVICES: ClassVar[tuple[tuple[bytes, re.Pattern[bytes], re.Pattern[bytes] | None], ...]] = (
+        (
+            b"api.telegram.org",
+            re.compile(rb"TELEGRAM|(?:^|_)TG(?:_|$)|TGBOT", re.I),
+            re.compile(
+                rb"api\.telegram\.org/bot\$\{?\{?[ \t]{0,8}(?:secrets\.)?([A-Za-z_]\w{0,63})"
+            ),
+        ),
+        (b"hooks.slack.com", re.compile(rb"SLACK", re.I), None),
+        (b"discord.com/api/webhooks", re.compile(rb"DISCORD", re.I), None),
+        (b"discordapp.com/api/webhooks", re.compile(rb"DISCORD", re.I), None),
+    )
+    _SECRET: ClassVar[re.Pattern[bytes]] = re.compile(rb"secrets\.(\w{1,64})")
+    _VAR: ClassVar[re.Pattern[bytes]] = re.compile(rb"\$\{?([A-Za-z_][A-Za-z0-9_]{0,63})\}?")
+    #: `NAME: ${{ secrets.X }}` in an `env:` mapping, or `NAME="${{ secrets.X }}"` in the script.
+    _ALIAS: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?m)^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]{0,63})[ \t]*[:=][ \t]*['\"]?"
+        rb"\$\{\{[ \t]*secrets\.(\w{1,64})"
+    )
+    _IP: ClassVar[re.Pattern[bytes]] = re.compile(rb"(?:\d{1,3}\.){3}\d{1,3}")
+    #: The job's own networks: a runner-local service, a VPC, a test container. Everything else,
+    #: documentation ranges included, is somewhere outside the pipeline.
+    OWN_NETWORKS: ClassVar[tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]] = tuple(
+        ipaddress.ip_network(n)
+        for n in (
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "100.64.0.0/10",
+            "0.0.0.0/8",
+        )
+    )
+    _CREDENTIAL: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_KEY|WEBHOOK", re.I
+    )
+    _DESTINATION_ID: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?:^|_)(?:CHAT|CHANNEL|GROUP|THREAD|TOPIC)_?ID$", re.I
+    )
+
+    @classmethod
+    def sends_to_one(cls, destinations: re.Pattern[bytes], window: bytes, whole: bytes) -> bool:
+        for found in destinations.finditer(window):
+            text = found.group(0)
+            address = cls._IP.search(text)
+            if address is not None:
+                try:
+                    ip = ipaddress.ip_address(address.group(0).decode())
+                except ValueError:
+                    return True
+                if not any(ip in net for net in cls.OWN_NETWORKS):
+                    return True
+                continue
+            service = next((s for s in cls.SERVICES if s[0] in text.lower()), None)
+            if service is None or not cls._own_credential(service[1], service[2], window, whole):
+                return True
+        return False
+
+    @classmethod
+    def _own_credential(
+        cls,
+        names: re.Pattern[bytes],
+        slot: re.Pattern[bytes] | None,
+        window: bytes,
+        whole: bytes,
+    ) -> bool:
+        """Every secret the command sends is the destination service's own."""
+        aliases = {m.group(1): m.group(2) for m in cls._ALIAS.finditer(whole)}
+        slotted = {m.group(1) for m in slot.finditer(window)} if slot is not None else set()
+        owned = slotted | {aliases[n] for n in slotted if n in aliases}
+        sent = [m.group(1) for m in cls._SECRET.finditer(window)]
+        for var in cls._VAR.finditer(window):
+            name = var.group(1)
+            if name in aliases:
+                sent.append(aliases[name])  # judged by the secret it really holds
+            elif cls._CREDENTIAL.search(name):
+                sent.append(name)  # a credential not mapped from `secrets`: judged by its own name
+        # Which chat to post to is the address the service needs, not a credential of anything.
+        sent = [name for name in sent if not cls._DESTINATION_ID.search(name)]
+        return bool(sent) and all(name in owned or names.search(name) for name in sent)
+
+
 RULES: tuple[ConfigRule, ...] = (
     # -- CI -------------------------------------------------------------
     ConfigRule(
@@ -735,19 +905,93 @@ RULES: tuple[ConfigRule, ...] = (
         # `MALWARE.CI.SECRET_EXFIL.001` still reports a serialised secret context at
         # CRITICAL, and `SUSPECT.CI.FETCH_EXEC.001` still reports fetch-and-run.
         severity=Severity.MEDIUM,
-        pattern=ConfigRule._p(
-            PatternProximity._near(
-                r"(?:\$\{\{[ \t]{0,32}secrets\.(?!GITHUB_TOKEN\b)\w{1,64}[^\n]{0,80}\}\}"
-                r"|credentials[ \t]{0,32}\(|withCredentials\b"
-                r"|\$\{?[A-Z_]{0,24}(?:TOKEN|SECRET|PASSWORD|APIKEY|API_KEY|CREDENTIAL)"
-                r"[A-Z_]{0,24}\}?"
-                r"|\$\([A-Za-z_]{0,24}(?:Token|Secret|Password|ApiKey)[A-Za-z_]{0,24}\))",
-                r"(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp|scp\s)",
-            )
-        ),
+        pattern=SECRET_BESIDE_EGRESS,
         aggravation=UNTRUSTED_DESTINATION,
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
+    ),
+    ConfigRule(
+        rule_id="MALWARE.CI.SECRET_TO_DROP_POINT.001",
+        references=(references.GITHUB_ACTIONS_HARDENING,),
+        title="Pipeline step sends a secret to a destination no pipeline publishes to",
+        message=(
+            "A step reads a named secret and sends it, in the same command, to a bare IP "
+            "address, a paste site, a tunnel, a webhook catcher or a raw socket. A pipeline "
+            "publishes with its credentials to services the project uses; none of those is "
+            "one. This is the shape of a planted workflow stealing the repository's secrets."
+        ),
+        remediation=(
+            "Treat every secret this workflow can read as exposed and rotate it. Find who "
+            "added the step, and review the account's other pushes."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        # Malicious, so the hardening tier never lowers it (`Engine._hardening_tier`). The
+        # SUSPECT rule above stays at LOW for the common publishing shape; this one needs
+        # the untrusted destination IN the same command, which publishing does not have.
+        # GhostAction (2026) planted `curl` to a raw IP with named secrets on one line in
+        # thousands of repositories; at LOW, 0 of 217 unique planted workflows blocked.
+        category=Category.MALICIOUS,
+        pattern=SECRET_BESIDE_EGRESS,
+        aggravation=UNTRUSTED_DESTINATION,
+        require_aggravation=True,
+        one_command=True,
+        confirm=DropPoint.sends_to_one,
+        paths=CI_PATHS,
+        capabilities=(Capability.CREDENTIAL,),
+    ),
+    ConfigRule(
+        rule_id="MALWARE.CI.SECRET_DUMP.001",
+        references=(references.GITHUB_ACTIONS_HARDENING,),
+        title="Pipeline step sends secrets labelled with their own names",
+        message=(
+            "A request in this workflow carries secrets in its body keyed by their own names "
+            "(`NAME=${{ secrets.NAME }}`). A pipeline passes a credential to the service it is "
+            "for, under that service's parameter name; an inventory of secrets by name is what a "
+            "planted step sends to whoever collects it, wherever that is."
+        ),
+        remediation=(
+            "Treat every secret this workflow can read as exposed and rotate it. Find who "
+            "added the step, and review the account's other pushes."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        # Measured (CDI, 2026-10-22): 0 of 18,062 benign repositories' 81,662 workflow files,
+        # where the same self-named form appears 561 times outside a request (`env:` mappings).
+        category=Category.MALICIOUS,
+        pattern=SECRET_IN_REQUEST,
+        aggravation=SECRET_FIELD,
+        require_aggravation=True,
+        one_command=True,
+        confirm=labels_a_secret_by_its_name,
+        paths=CI_PATHS,
+        capabilities=(Capability.CREDENTIAL,),
+    ),
+    ConfigRule(
+        rule_id="MALWARE.CI.CREDENTIAL_HARVEST.001",
+        references=(references.GITHUB_ACTIONS_HARDENING,),
+        title="Pipeline step searches for credentials and sends what it gathered",
+        message=(
+            "One step searches the checkout or its history for the format of a credential (an "
+            "AWS key id, an API or access token) and, in the same step, sends a variable's "
+            "contents over the network. A secret scanner searches and fails the build; sending "
+            "the results somewhere is collecting them."
+        ),
+        remediation=(
+            "Treat every credential in this repository and its history as exposed and rotate "
+            "it. Find who added the step, and review the account's other pushes."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        # Measured (CDI, 2026-10-22): 11 benign repositories search for these formats (their
+        # own secret scanning); none sends a variable from the same step.
+        category=Category.MALICIOUS,
+        pattern=CREDENTIAL_FORMAT_SEARCH,
+        aggravation=SENDS_A_VARIABLE,
+        require_aggravation=True,
+        in_shell=True,
+        paths=CI_PATHS,
+        capabilities=(Capability.CREDENTIAL, Capability.EGRESS),
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.EXPRESSION_INJECTION.001",
@@ -2139,6 +2383,30 @@ class ConfigDetector(BaseDetector):
                 return True
             return any(match.start() < end and start < match.end() for start, end in shell)
 
+        if rule.require_aggravation and rule.aggravation is not None:
+            aggravation, confirm = rule.aggravation, rule.confirm
+
+            def claimed(m: re.Match[bytes]) -> bool:
+                window = ConfigDetector._span_window(uncommented, shell, m.start(), m.end())
+                if confirm is not None:
+                    return confirm(aggravation, window, uncommented)
+                return aggravation.search(window) is not None
+
+            if not rule.one_command:
+                return next(
+                    (m for m in rule.pattern.finditer(uncommented) if eligible(m) and claimed(m)),
+                    None,
+                )
+            # Searched one logical command at a time: a match that spans two commands is not this
+            # rule's claim, and letting the regex consume it would hide the same-line pair after it.
+            start = 0
+            for brk in [*ONE_COMMAND_BREAK.finditer(uncommented), None]:
+                end = brk.start() if brk is not None else len(uncommented)
+                for m in rule.pattern.finditer(uncommented, start, end):
+                    if eligible(m) and claimed(m):
+                        return m
+                start = brk.end() if brk is not None else end
+            return None
         if rule.mitigation is None:
             return next((m for m in rule.pattern.finditer(uncommented) if eligible(m)), None)
 
