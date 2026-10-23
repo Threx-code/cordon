@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
-from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS, autorun_findings, build_rules
+from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS, Autorun
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION, DefensiveDoc
 from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionModel
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
@@ -1675,7 +1675,7 @@ RULES.update(
 )
 # The autorun rules live in autorun.py (extracted); registered here with the rule factory so that
 # module needs no AgentRule import (it is imported before AgentRule is defined).
-RULES.update(build_rules(AgentRules._rule))
+RULES.update(Autorun.build_rules(AgentRules._rule))
 
 #: What each intent is, as a finding says it.
 INTENT_WORDS: Final = {
@@ -2966,7 +2966,7 @@ class AgentChainDetector(BaseDetector):
         """Commands an editor or agent runs when the folder is opened or the environment built.
 
         The handling lives in `autorun.py` so the rule can grow without this file; this delegates."""
-        yield from autorun_findings(self, unit, ctx)
+        yield from Autorun.autorun_findings(self, unit, ctx)
 
     def _codex_config(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """Codex's settings: approval and sandbox modes, and where model requests go."""
@@ -4483,7 +4483,7 @@ class McpConfigs:
     @staticmethod
     def _json(content: FileContent) -> Any:
         # JSON with comments and trailing commas (VS Code config, dev containers): the shared helper.
-        return jsonc.loads(content.text)
+        return jsonc.Jsonc.loads(content.text)
 
 
 _YAML_KEY: Final = re.compile(r"^\s*-?\s*(name|command|url|args)\s*:\s*(.*?)\s*$")

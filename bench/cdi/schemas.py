@@ -75,30 +75,34 @@ FACTORY_TIERS: frozenset[str] = frozenset({"confirmed", "corroborated"})
 FACTORY_SPLITS: frozenset[str] = frozenset({"train", "dev"})
 
 
-def canonical_json(obj: Any) -> str:
-    """A stable, sorted JSON string: the basis for every digest, so a record hashes identically
-    wherever it is built."""
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+class Schemas:
+    """Schema helpers for the CDI records. Stateless; call the static methods."""
 
+    @staticmethod
+    def canonical_json(obj: Any) -> str:
+        """A stable, sorted JSON string: the basis for every digest, so a record hashes identically
+        wherever it is built."""
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
-def digest(obj: Any) -> str:
-    return "sha256:" + hashlib.sha256(canonical_json(obj).encode("utf-8")).hexdigest()
+    @staticmethod
+    def digest(obj: Any) -> str:
+        return "sha256:" + hashlib.sha256(Schemas.canonical_json(obj).encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def validate(kind: str, record: dict[str, Any]) -> dict[str, Any]:
+        """Structural + version check. Raises ValueError; returns the record so callers can
+        ``return Schemas.validate(...)``."""
+        if kind not in SCHEMA_VERSIONS:
+            raise ValueError(f"unknown schema {kind!r}")
+        missing = REQUIRED[kind] - set(record)
+        if missing:
+            raise ValueError(f"{kind} missing keys: {sorted(missing)}")
+        want = SCHEMA_VERSIONS[kind]
+        if record.get("schema_version") != want:
+            raise ValueError(f"{kind} schema_version {record.get('schema_version')!r} != {want!r}")
+        return record
 
-def validate(kind: str, record: dict[str, Any]) -> dict[str, Any]:
-    """Structural + version check. Raises ValueError; returns the record so callers can
-    ``return validate(...)``."""
-    if kind not in SCHEMA_VERSIONS:
-        raise ValueError(f"unknown schema {kind!r}")
-    missing = REQUIRED[kind] - set(record)
-    if missing:
-        raise ValueError(f"{kind} missing keys: {sorted(missing)}")
-    want = SCHEMA_VERSIONS[kind]
-    if record.get("schema_version") != want:
-        raise ValueError(f"{kind} schema_version {record.get('schema_version')!r} != {want!r}")
-    return record
-
-
-def eligible_for_factory(label_tier: str, split: str) -> bool:
-    """The two-gate rule E and F obey before a miss may inform a candidate."""
-    return label_tier in FACTORY_TIERS and split in FACTORY_SPLITS
+    @staticmethod
+    def eligible_for_factory(label_tier: str, split: str) -> bool:
+        """The two-gate rule E and F obey before a miss may inform a candidate."""
+        return label_tier in FACTORY_TIERS and split in FACTORY_SPLITS

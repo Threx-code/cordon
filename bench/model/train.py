@@ -192,7 +192,7 @@ class Training:
             json.dumps({rows[i]["id"]: float(s) for i, s in zip(train, oof, strict=True)}),
             encoding="utf-8",
         )
-        area.write_contract(
+        area.Contract.write_contract(
             out,
             area="code",
             seed=PARAMS["seed"],
@@ -249,8 +249,8 @@ class Training:
         if "--family-map" in extra:
             fm = Path(extra[extra.index("--family-map") + 1])
             if fm.exists():
-                metrics["family_map_sha"] = area.file_sha(fm)
-        area.write_contract(
+                metrics["family_map_sha"] = area.Contract.file_sha(fm)
+        area.Contract.write_contract(
             out.parent if out.is_file() else out,
             area=args.area,
             seed=args.seed if args.seed is not None else 0,

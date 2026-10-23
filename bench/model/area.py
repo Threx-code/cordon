@@ -24,40 +24,44 @@ from pathlib import Path
 from typing import Any
 
 
-def training_list_sha(train_ids: Iterable[str]) -> str:
-    """sha256 over the sorted, de-duplicated training ids. The id is the normalised-content key the
-    dataset assigns (a package/version or a featureset digest), NOT a file path, so the same content
-    hashes the same wherever it was trained."""
-    joined = "\n".join(sorted({str(i) for i in train_ids}))
-    return "sha256:" + hashlib.sha256(joined.encode("utf-8")).hexdigest()
+class Contract:
+    """The one-entry-point contract. Stateless; call the static methods."""
 
+    @staticmethod
+    def training_list_sha(train_ids: Iterable[str]) -> str:
+        """sha256 over the sorted, de-duplicated training ids. The id is the normalised-content key
+        the dataset assigns (a package/version or a featureset digest), NOT a file path, so the same
+        content hashes the same wherever it was trained."""
+        joined = "\n".join(sorted({str(i) for i in train_ids}))
+        return "sha256:" + hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
-def file_sha(path: Path) -> str:
-    """sha256 of a file's bytes -- used for the family-map sha recorded beside the training list."""
-    return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    @staticmethod
+    def file_sha(path: Path) -> str:
+        """sha256 of a file's bytes -- the family-map sha recorded beside the training list."""
+        return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
-
-def write_contract(
-    out: Path,
-    *,
-    area: str,
-    seed: int,
-    train_ids: Iterable[str],
-    metrics: dict[str, Any],
-) -> dict[str, Any]:
-    """Write training_list.sha256 and metrics.json into ``out``; return the metrics body."""
-    out.mkdir(parents=True, exist_ok=True)
-    ids = sorted({str(i) for i in train_ids})
-    sha = training_list_sha(ids)
-    (out / "training_list.sha256").write_text(sha + "\n", encoding="utf-8")
-    body = {
-        "area": area,
-        "seed": seed,
-        "n_train": len(ids),
-        "training_list_sha": sha,
-        **metrics,
-    }
-    (out / "metrics.json").write_text(
-        json.dumps(body, indent=1, sort_keys=True), encoding="utf-8"
-    )
-    return body
+    @staticmethod
+    def write_contract(
+        out: Path,
+        *,
+        area: str,
+        seed: int,
+        train_ids: Iterable[str],
+        metrics: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Write training_list.sha256 and metrics.json into ``out``; return the metrics body."""
+        out.mkdir(parents=True, exist_ok=True)
+        ids = sorted({str(i) for i in train_ids})
+        sha = Contract.training_list_sha(ids)
+        (out / "training_list.sha256").write_text(sha + "\n", encoding="utf-8")
+        body = {
+            "area": area,
+            "seed": seed,
+            "n_train": len(ids),
+            "training_list_sha": sha,
+            **metrics,
+        }
+        (out / "metrics.json").write_text(
+            json.dumps(body, indent=1, sort_keys=True), encoding="utf-8"
+        )
+        return body
