@@ -109,10 +109,22 @@ class Scanner:
 
         packs = list(RuleLoader.load_builtin())
         if self.config.extra_rule_paths:
-            from cordon_scanner.rules.loader import RuleLoader
+            from cordon_scanner.foundation.errors import RulePackError
+            from cordon_scanner.rules.loader import RuleLoader, RuleTester
 
             loader = RuleLoader()
-            packs.extend(loader.load_file(p) for p in self.config.extra_rule_paths)
+            for path in self.config.extra_rule_paths:
+                pack = loader.load_file(path)
+                # The samples run here too, not only under `cordon-scanner rules test`: a pack whose own
+                # samples fail would load and report nothing while the scan looks healthy.
+                failures = RuleTester.run(pack)
+                if failures:
+                    first = failures[0]
+                    raise RulePackError(
+                        f"{path}: {first.rule_id} fails its own {first.kind} sample: {first.detail}",
+                        hint="Run `cordon-scanner rules test` on the pack to see every failing sample.",
+                    )
+                packs.append(pack)
 
         self.rules = RuleSet(packs)
 

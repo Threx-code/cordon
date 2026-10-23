@@ -99,6 +99,27 @@ class FeedKit:
         )
 
     @staticmethod
+    def rule_packs(packs: dict[str, tuple[str, str]], disabled: tuple[str, ...] = ()) -> bytes:
+        """A delivered rule-pack set: {pack file: (yaml, enforcement)} plus the index."""
+        files = {name: text.encode() for name, (text, _) in packs.items()}
+        files["rulepacks.json"] = json.dumps(
+            {
+                "packs": [
+                    {"file": name, "enforcement": enforcement, "candidate_id": f"cand:{name}"}
+                    for name, (_, enforcement) in packs.items()
+                ],
+                "disabled_rules": list(disabled),
+            }
+        ).encode()
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, data in files.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        return buffer.getvalue()
+
+    @staticmethod
     def full_bundle(
         records: dict[str, list[dict[str, Any]]], built_at: str = "2027-01-01T00:00:00Z"
     ) -> bytes:
@@ -164,6 +185,7 @@ class SignedFeed:
         *,
         deltas: dict[int, bytes] | None = None,
         full: tuple[int, bytes] | None = None,
+        rules: tuple[int, bytes] | None = None,
         expires: str = FAR,
         issued: str = ISSUED,
         version: int | None = None,
@@ -187,6 +209,10 @@ class SignedFeed:
             path = f"full/{full[0]}.tar.gz"
             self.files[path] = full[1]
             targets_body["full"] = FeedKit.meta_of(full[1], path=path, serial=full[0])
+        if rules is not None:
+            path = f"rules/{rules[0]}.tar.gz"
+            self.files[path] = rules[1]
+            targets_body["rules"] = FeedKit.meta_of(rules[1], path=path, version=rules[0])
         targets = FeedRoles.canonical(FeedKit.signed(targets_body, self.targets_key))
         snapshot = FeedRoles.canonical(
             FeedKit.signed(

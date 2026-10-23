@@ -72,6 +72,7 @@ BUILTIN_DETECTORS = (
     "obfuscated-hook",
     "obfuscation",
     "os-packages",
+    "pack-rules",
     "provenance",
     "recipe-digest",
     "registry",
@@ -103,6 +104,8 @@ DETECTOR_RUN_ORDER = (
     "iac",
     "obfuscation",
     "obfuscated-hook",
+    # A pack's own reporting rules (`--rules`, the signed feed): one bounded search per rule.
+    "pack-rules",
     # Tier 3: the full sweeps -- hundreds of patterns, and an AST pass.
     "secrets",
     "capability",

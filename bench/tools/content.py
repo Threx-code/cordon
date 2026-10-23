@@ -36,6 +36,9 @@ CONTENT_DETECTORS = frozenset(
         "model",
         "obfuscated-hook",
         "obfuscation",
+        # A pack's own reporting rules: pattern logic over the bytes, as `yara` below. Measurement
+        # scans run offline with no `--rules`, so no feed-delivered pack is in a content number.
+        "pack-rules",
         "secrets",
         "vcs",
         # The rule pack and pinned GuardDog source rules: pattern logic over the bytes.

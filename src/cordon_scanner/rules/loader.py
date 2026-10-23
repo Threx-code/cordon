@@ -1414,8 +1414,15 @@ class RuleLoader:
             # The default load, once per process: compiling 1,390 rules' patterns is most of a
             # scan's fixed cost, and the packs are immutable once loaded. Keyed by directory, so
             # anything pointing the tool at another copy loads that one.
-            return cls._builtin_once(str(cls.builtin_pack_dir()))
-        return cls._load_builtin(loader, cls.builtin_pack_dir())
+            bundled = cls._builtin_once(str(cls.builtin_pack_dir()))
+        else:
+            bundled = cls._load_builtin(loader, cls.builtin_pack_dir())
+        # Then the packs the signed feed delivered (`intel/malware/feed_rules.py`): they add rules,
+        # never replace a bundled one, and a shadow pack loads only in the Cloud analyser fleet.
+        from cordon_scanner.intel.malware.feed_rules import FeedRules
+
+        ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
+        return bundled + FeedRules.packs(loader or cls(), ids)
 
     @classmethod
     @functools.cache
