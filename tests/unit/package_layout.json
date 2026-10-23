@@ -421,6 +421,7 @@
   "test_install_hook_dot_paths.py": "foundation",
   "test_install_hooks_graded.py": "foundation",
   "test_install_hooks_tools.py": "foundation",
+  "test_install_payload.py": "detect/code",
   "test_install_persist_named.py": "foundation",
   "test_intent.py": "decide",
   "test_intent_build.py": "decide",
