@@ -17,6 +17,7 @@ import io
 import pickletools
 import struct
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -287,6 +288,18 @@ class PickleReader:
             PickleReader._walk_streams(raw, report, "")
         if report.pickles == 0 and not report.imports and not report.partial:
             raise FormatError("not a readable pickle")
+        return report
+
+    @staticmethod
+    def read_members(
+        members: Iterable[tuple[str, bytes]], *, truncated: bool = False
+    ) -> PickleReport:
+        """A report over pickle members already extracted from an archive (by name and bytes), for
+        a zip too large to hold that was read through its index on disk (`detect/binary/formats`).
+        Each member is walked as its own stream set; nothing here raises on an empty set."""
+        report = PickleReport(partial=truncated)
+        for name, data in members:
+            PickleReader._walk_streams(data, report, name)
         return report
 
     @staticmethod

@@ -270,6 +270,12 @@ class FileContent:
     """Where the rest of an oversized file is read from, a window at a time (`core/windows.py`).
     None for a file that fits, and when `max_stream_bytes` is 0."""
 
+    archive_source: WindowSource | None = field(default=None, repr=False, compare=False)
+    """Where the whole of an oversized *archive* (a zip, e.g. a PyTorch model file) is read from by
+    a structured reader that seeks -- its index is at the end, past the prefix. Set for a truncated
+    file on disk whose first bytes are a zip; None otherwise. Unlike `window_source` it drives no
+    text window pass, so giving it to a binary does not run the text rules over binary bytes."""
+
     whole_sha256: str | None = field(default=None, repr=False, compare=False)
     """The hash of the whole file as far as its windows read, for a file on disk past
     `max_file_bytes`: computed while streaming it, so it is never held."""
@@ -370,6 +376,12 @@ class FileContent:
                         digest.update(f"\0{size}".encode())
                         whole = digest.hexdigest()
                         source = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
+                    archive: WindowSource | None = None
+                    if raw[:4] == b"PK\x03\x04":
+                        # A zip keeps its index at the end, past this prefix. A structured reader is
+                        # given the whole file on disk to seek through -- the one way to reach a
+                        # member (a PyTorch `data.pkl`) stored after the first `max_file_bytes`.
+                        archive = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
                     return cls(
                         path=rel_path,
                         raw=text,
@@ -377,6 +389,7 @@ class FileContent:
                         limits=limits,
                         truncated=True,
                         window_source=source,
+                        archive_source=archive,
                         whole_sha256=whole,
                     )
 

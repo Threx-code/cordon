@@ -13,6 +13,8 @@ not examined (`OPERATIONAL.FORMAT.UNREADABLE`, which marks the scan incomplete),
 from __future__ import annotations
 
 import contextlib
+import zipfile
+import zlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
@@ -33,6 +35,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.foundation.windows import SeekableReader, WindowSource, WindowSourceChanged
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -40,6 +43,8 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext, Unit
 
 MAX_IMPORTS_LISTED: Final = 8
+MAX_MEMBER_BYTES: Final = 64 << 20
+"""How much of one archive member is read -- a pickle's opcodes, never a tensor blob's gigabytes."""
 
 
 @dataclass(frozen=True)
@@ -310,7 +315,13 @@ class FormatDetector(BaseDetector):
         try:
             if path.endswith(pickles.ALWAYS_PICKLE) or (
                 path.endswith(pickles.PICKLE_SUFFIXES)
-                and pickles.PickleReader.looks_like_pickle(raw)
+                and (
+                    pickles.PickleReader.looks_like_pickle(raw)
+                    # A torch model too large to hold stores `data.pkl` past the prefix, so the
+                    # prefix does not look like a pickle; the zip on disk (`archive_source`) is read
+                    # through its index instead.
+                    or content.archive_source is not None
+                )
             ):
                 return self._pickle(unit, ctx)
             if documents.DocumentReader.kind_of(raw, path) is not None:
@@ -326,7 +337,9 @@ class FormatDetector(BaseDetector):
         return ()
 
     def _pickle(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
-        report = pickles.PickleReader.read(unit.content.raw, truncated=unit.content.truncated)
+        report = self._pickle_report(unit)
+        if report is None:
+            raise FormatError("not a readable pickle")
         always = sorted({i.dotted for i in report.imports if i.always})
         dual = sorted({i.dotted for i in report.imports if i.dual})
         if always:
@@ -357,6 +370,48 @@ class FormatDetector(BaseDetector):
                 )
             ]
         return []
+
+    @staticmethod
+    def _pickle_report(unit: FileUnit) -> pickles.PickleReport | None:
+        """What the pickle imports, from the prefix and -- for a truncated zip on disk whose members
+        the prefix could not reach -- from the whole archive read through its index. The disk read
+        wins only when the prefix found nothing dangerous, so a payload already seen in the prefix
+        is never re-read. None means nothing could be read at all (an unreadable pickle)."""
+        content = unit.content
+        report: pickles.PickleReport | None = None
+        with contextlib.suppress(FormatError):
+            report = pickles.PickleReader.read(content.raw, truncated=content.truncated)
+        if content.archive_source is not None and (
+            report is None or not any(i.dangerous for i in report.imports)
+        ):
+            whole = FormatDetector._pickles_from_disk(content.archive_source, content.truncated)
+            if whole is not None and (report is None or whole.imports):
+                report = whole
+        return report
+
+    @staticmethod
+    def _pickles_from_disk(source: WindowSource, truncated: bool) -> pickles.PickleReport | None:
+        """The pickle members of a zip too large to hold, read through its central directory on
+        disk: the one way to reach a `data.pkl` stored after the prefix. None when the file is not a
+        readable zip (the prefix path reports what it could); an empty report when the zip holds no
+        pickle, so a non-model zip clears rather than being called unreadable."""
+        members: list[tuple[str, bytes]] = []
+        try:
+            with source.reader() as read:
+                handle = SeekableReader(read, source.size)
+                with zipfile.ZipFile(handle) as archive:
+                    for info in archive.infolist():
+                        if not info.filename.endswith(".pkl"):
+                            continue
+                        if len(members) >= pickles.MAX_PICKLES:
+                            break
+                        with archive.open(info) as member:
+                            members.append((info.filename, member.read(MAX_MEMBER_BYTES)))
+        except WindowSourceChanged:
+            return None
+        except (zipfile.BadZipFile, OSError, EOFError, ValueError, zlib.error):
+            return None
+        return pickles.PickleReader.read_members(members, truncated=truncated)
 
     @staticmethod
     def _own_module(module: str, ctx: ScanContext) -> bool:

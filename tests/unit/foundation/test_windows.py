@@ -6,7 +6,11 @@ token is inert: a string of the shape a secret detector recognises, in a file no
 
 from __future__ import annotations
 
+import io
+import os
+import pickle
 import random
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -16,6 +20,7 @@ from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.windows import (
     BytesWindows,
     DiskWindows,
+    SeekableReader,
     Windows,
     WindowSourceChanged,
 )
@@ -34,6 +39,33 @@ class WindowKit:
     @staticmethod
     def findings(target: Path, config: Config) -> list:
         return list(Scanner(config).scan(target).findings)
+
+
+class TestSeekableReader:
+    """A seekable file over a random-access reader, for a library (zipfile) that seeks."""
+
+    @staticmethod
+    def _reader(data: bytes) -> SeekableReader:
+        return SeekableReader(lambda offset, length: data[offset : offset + length], len(data))
+
+    def test_seek_from_start_current_and_end(self) -> None:
+        data = bytes(range(256))
+        fh = self._reader(data)
+        assert fh.read(4) == data[:4]
+        assert fh.tell() == 4
+        assert fh.seek(10) == 10 and fh.read(2) == data[10:12]
+        assert fh.seek(3, os.SEEK_CUR) == 15 and fh.read(1) == data[15:16]
+        assert fh.seek(-2, os.SEEK_END) == 254 and fh.read() == data[254:]
+        assert fh.seekable()
+
+    def test_a_zip_is_read_through_it(self) -> None:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+            archive.writestr("m/data/0", b"\x00" * 4096)
+            archive.writestr("m/data.pkl", pickle.dumps({"ok": 1}))
+        with zipfile.ZipFile(self._reader(buffer.getvalue())) as archive:
+            assert "m/data.pkl" in archive.namelist()
+            assert archive.read("m/data.pkl") == pickle.dumps({"ok": 1})
 
 
 class TestTheWindows:

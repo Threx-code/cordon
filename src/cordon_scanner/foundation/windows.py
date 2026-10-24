@@ -116,6 +116,41 @@ class DiskWindows(WindowSource):
             yield read
 
 
+class SeekableReader:
+    """A read-only, seekable file over a `WindowSource` reader, for a library that seeks rather
+    than streams -- `zipfile` reads a zip's index from the end, then each member from its offset.
+    Each read is a range from the source; the file is never held in memory. Only the methods such a
+    library uses are provided (`seek`, `tell`, `read`, `seekable`)."""
+
+    def __init__(self, read: Callable[[int, int], bytes], size: int) -> None:
+        self._read = read
+        self._size = size
+        self._pos = 0
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+        if whence == os.SEEK_SET:
+            self._pos = offset
+        elif whence == os.SEEK_CUR:
+            self._pos += offset
+        elif whence == os.SEEK_END:
+            self._pos = self._size + offset
+        else:  # pragma: no cover - the stdlib never passes another whence
+            raise ValueError(f"invalid whence: {whence}")
+        return self._pos
+
+    def read(self, size: int | None = -1) -> bytes:
+        length = self._size - self._pos if size is None or size < 0 else size
+        data = self._read(self._pos, length)
+        self._pos += len(data)
+        return data
+
+
 @dataclass(frozen=True)
 class Window:
     begin: int

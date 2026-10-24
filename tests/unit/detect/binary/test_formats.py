@@ -14,13 +14,17 @@ import pickle
 import struct
 import zipfile
 import zlib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.formats import FormatError, documents, media, ole, pickles
+from cordon_scanner.detect.binary.formats import FormatDetector
 from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+from cordon_scanner.foundation.windows import BytesWindows
 from kits.formatkit import FormatKit, Reduces
 
 
@@ -204,6 +208,59 @@ class TestPicklesInAScan:
         assert not found["MALWARE.MODEL.PICKLE_EXEC.001"]
         [hit] = found["SUSPECT.MODEL.PICKLE_IMPORT.001"]
         assert "functools.partial" in hit.message
+
+
+class TestLargeModelArchives:
+    """A PyTorch model too large to hold in memory stores `data.pkl` after the prefix every rule
+    reads; it is reached through the zip's index on disk (`archive_source`)."""
+
+    @staticmethod
+    def _torch_zip(pkl: bytes, *, blob: int = 0) -> bytes:
+        # `blob` bytes of tensor data before data.pkl push it past a small prefix, as a real
+        # checkpoint's storages do.
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+            if blob:
+                archive.writestr("m/data/0", b"\x00" * blob)
+            archive.writestr("m/data.pkl", pkl)
+        return buffer.getvalue()
+
+    def test_a_pickle_past_the_prefix_is_read_through_the_index(self) -> None:
+        raw = self._torch_zip(pickle.dumps(Reduces(os.system, "true"), protocol=2), blob=4096)
+        report = FormatDetector._pickles_from_disk(BytesWindows(raw), True)
+        assert report is not None
+        assert any(i.dangerous and i.name == "system" for i in report.imports)
+
+    def test_a_zip_with_no_pickle_is_empty_not_unreadable(self) -> None:
+        # A non-model zip that was routed here (a large `.bin`) clears rather than being unreadable.
+        report = FormatDetector._pickles_from_disk(
+            BytesWindows(self._torch_zip(b"", blob=16)), True
+        )
+        assert report is not None and report.imports == []
+
+    def test_bytes_that_are_not_a_zip_are_not_a_report(self) -> None:
+        assert (
+            FormatDetector._pickles_from_disk(BytesWindows(b"PK\x03\x04 not a real zip"), True)
+            is None
+        )
+
+    def test_a_truncated_model_on_disk_is_scanned_through_its_index(self, tmp_path) -> None:
+        # The whole path: a file larger than the prefix, so the loader truncates it and records a
+        # disk `archive_source`, and the detector reads data.pkl from the end.
+        raw = self._torch_zip(pickle.dumps(Reduces(os.system, "true"), protocol=2), blob=8192)
+        (tmp_path / "pytorch_model.bin").write_bytes(raw)
+        config = Config(limits=replace(DEFAULT_LIMITS, max_file_bytes=2048))
+        found = FormatsHelpers._rules(Scanner(config).scan(tmp_path))
+        assert found["MALWARE.MODEL.PICKLE_EXEC.001"]
+
+    def test_a_large_benign_model_on_disk_is_not_blocked(self, tmp_path) -> None:
+        raw = self._torch_zip(
+            pickle.dumps(collections.OrderedDict(a=[1, 2]), protocol=2), blob=8192
+        )
+        (tmp_path / "pytorch_model.bin").write_bytes(raw)
+        config = Config(limits=replace(DEFAULT_LIMITS, max_file_bytes=2048))
+        found = FormatsHelpers._rules(Scanner(config).scan(tmp_path))
+        assert not found["MALWARE.MODEL.PICKLE_EXEC.001"]
 
 
 # -- OLE and VBA ---------------------------------------------------------------------------------
