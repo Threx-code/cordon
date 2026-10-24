@@ -1,5 +1,5 @@
 # Malicious pypi package names the registry no longer serves. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh/refresh_removed_names.py --only pypi
+# Regenerate with: PYTHONPATH=src python3 scripts/refresh/refresh_removed_names.py --only pypi
 # Source:    https://pypi.org/pypi/<name>/json, for every name the shipped advisories record as malicious in every version
 # Threshold: a definite answer that nothing installable is served (404, or no release with a file); any error leaves the name out
 # Fetched:   7,674 candidates, 7,655 removed, 19 still served, 0 unsure

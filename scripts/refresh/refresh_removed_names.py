@@ -4,9 +4,9 @@
 A MAINTENANCE script, like `refresh_package_intel.py`: never imported by the scanner, never run
 during a scan, and its output is a reviewed artefact that ships with the release.
 
-    python3 scripts/refresh/refresh_removed_names.py                 # pypi and cargo
-    python3 scripts/refresh/refresh_removed_names.py --only pypi
-    python3 scripts/refresh/refresh_removed_names.py --check         # fail if stale, write nothing
+    PYTHONPATH=src python3 scripts/refresh/refresh_removed_names.py              # pypi and cargo
+    PYTHONPATH=src python3 scripts/refresh/refresh_removed_names.py --only pypi
+    PYTHONPATH=src python3 scripts/refresh/refresh_removed_names.py --check      # fail if stale
 
 ## What goes in the file
 
@@ -43,7 +43,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import ClassVar
 
-DATA = Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "intel" / "data"
+from cordon_scanner.foundation.paths import PackagePaths
+
+DATA = PackagePaths.data("intel")
 AGENT = "cordon-scanner refresh_removed_names (https://github.com/Threx-code/cordon)"
 #: How old a list may be before `--check` fails: a name can be registered again.
 STALE_DAYS = 14
@@ -99,7 +101,6 @@ class RemovedNames:
         """Names the scanner itself treats as malicious in every version: the records as
         `AdvisoryDatabase` materialises them, the same test `AdvisoryDetector._admitted_malware`
         applies. The raw file can hold an all-versions form beside an exact list for one record."""
-        sys.path.insert(0, str(DATA.parents[2]))
         from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         database = AdvisoryDatabase.bundled()
@@ -160,7 +161,7 @@ class RemovedNames:
         return (
             f"# Malicious {ecosystem} package names the registry no longer serves. "
             "Generated; do not edit by hand.\n"
-            f"# Regenerate with: python3 scripts/refresh/refresh_removed_names.py --only {ecosystem}\n"
+            f"# Regenerate with: PYTHONPATH=src python3 scripts/refresh/refresh_removed_names.py --only {ecosystem}\n"
             f"# Source:    {source}, for every name the shipped advisories record as malicious "
             "in every version\n"
             "# Threshold: a definite answer that nothing installable is served (404, or no release "

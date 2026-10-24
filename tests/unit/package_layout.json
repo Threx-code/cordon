@@ -226,6 +226,7 @@
   "intel/registries/popular": "intel/registries/popular",
   "intel/registries/private_registries": "intel/registries/private_registries",
   "intel/registries/real": "intel/registries/real",
+  "intel/registries/removed": "intel/registries/removed",
   "intel/registries/registry_client": "intel/registries/registry_client",
   "intel/registries/registry_image": "intel/registries/registry_image",
   "intel/registries/registry_record": "intel/registries/registry_record",
