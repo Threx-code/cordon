@@ -350,18 +350,11 @@ _PRIORITY_CLAIM: Final = re.compile(
 _DETECTOR_VOCABULARY: Final = re.compile(
     r"(?i)\b(?:detect(?:ion|or|s)?|scanner|signatures?|heuristics?)\b"
 )
-#: Package-manager configuration naming where installs come from, in code an agent runs: a tool
-#: has no reason to rewrite the index the user's next `pip install` or `npm install` trusts.
+#: Package-manager config naming where installs come from, in code an agent runs: a literal URL, or
+#: `${X}` in the no-space config syntax (not PowerShell's `registry = $registry`). No tool needs it.
 _INSTALL_REDIRECT: Final = re.compile(
-    # The index's address as a literal URL or through a variable (`registry=${CORP_REGISTRY}` in a
-    # heredoc written to .npmrc: found in a skill that pointed every install at a public `.dev`
-    # domain posing as a corporate mirror), and yarn's `registry "<url>"` form.
-    # A variable is taken only in the config files' own syntax (`registry=${X}`, no spaces), so a
-    # script's `registry = $registry` (a PowerShell variable for the Windows registry) is not one.
-    r"(?m)(?:extra-)?index-url\s*=\s*https?://|(?:extra-)?index-url=\$\{?\w"
-    r"|\bregistry\s*=\s*https?://|\bregistry=\$\{?\w"
-    r"|npmRegistryServer\s*:|^\s*registry\s+\"(?:https?://|\$\{?\w)"
-    r"|config\s+set\s+(?:global\.)?(?:index-url|registry)\b"
+    r"(?m)\b(?:(?:extra-)?index-url|registry)(?:\s*=\s*https?://|=\$\{?\w)|npmRegistryServer\s*:"
+    r"|^\s*registry\s+\"(?:https?://|\$\{?\w)|config\s+set\s+(?:global\.)?(?:index-url|registry)\b"
 )
 #: Code that lets one fixed identity through an access check: an equality with a literal or a
 #: constant, then `return {allowed: true}`, `return True` or `authorized = true`.
