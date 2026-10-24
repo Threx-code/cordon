@@ -126,10 +126,10 @@ PRIMITIVES: dict[str, Capability] = {
     "httpx.get": Capability.EGRESS,
     "httpx.post": Capability.EGRESS,
     "httpx.Client": Capability.EGRESS,
-    "socket.socket": Capability.EGRESS,
+    # Socket creation and a bare DNS lookup are not egress on their own (census D): a server creates
+    # a socket to bind and resolves its own name. Egress is `create_connection`, a `.connect(...)` on
+    # a created socket (`_socket_connect`), or a runtime-built DNS name (DNS_CONSTRUCTED.AST).
     "socket.create_connection": Capability.EGRESS,
-    "socket.gethostbyname": Capability.EGRESS,
-    "socket.getaddrinfo": Capability.EGRESS,
     "smtplib.SMTP": Capability.EGRESS,
     "ftplib.FTP": Capability.EGRESS,
     "http.client.HTTPConnection": Capability.EGRESS,
@@ -1699,6 +1699,7 @@ class PythonAnalyzer:
                 self._invoked[id(node.func)] = node
 
         keyed = self._keyed_environment_reads(tree)
+        self._socket_connect(tree)
 
         called = {id(node.func) for node in PythonSyntax.nodes(tree) if isinstance(node, ast.Call)}
         """The function of every call, which `_call` has already judged.
@@ -1729,6 +1730,18 @@ class PythonAnalyzer:
                     self._record(PRIMITIVES[dotted], node, dotted)
             elif isinstance(node, ast.Subscript):
                 self._subscript(node)
+
+    def _socket_connect(self, tree: ast.AST) -> None:
+        """A socket a file creates and then sends out on reaches the network; one it only binds and
+        listens on does not. `.connect(...)` (a TCP client, in any argument form) and `.sendto(...)`
+        (a UDP beacon, which never connects) both target a remote the code chose; a bind/listen/
+        accept server uses neither. Socket creation alone is not egress (census D)."""
+        calls = list(PythonSyntax.of(tree, ast.Call))
+        if not any((r := self._resolve_callee(n)) and r[0] == "socket.socket" for n in calls):
+            return
+        for node in calls:
+            if isinstance(node.func, ast.Attribute) and node.func.attr in ("connect", "sendto"):
+                self._record(Capability.EGRESS, node, "a created socket sends to a remote")
 
     def _written_code(self, node: ast.Call) -> None:
         """Python source written to a file, analysed as the code it is.
