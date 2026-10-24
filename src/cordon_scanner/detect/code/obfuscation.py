@@ -87,9 +87,11 @@ DIRECTIONAL_CONTROL = re.compile(
 
 #: Directional embedding/isolate openers (not the overrides, not the pops): a balanced one laying
 #: text out for display is not an attack, which needs an override or a span that re-reads the code.
-_EMBED_OPEN = frozenset(map(chr, (0x202a, 0x202b, 0x2066, 0x2067, 0x2068)))  # LRE RLE LRI RLI FSI
-_EMBED_CLOSE = frozenset(map(chr, (0x202c, 0x2069)))  # PDF PDI
-_DIR_CONTROLS = frozenset(map(chr, (0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069)))  # all directional controls
+_EMBED_OPEN = frozenset(map(chr, (0x202A, 0x202B, 0x2066, 0x2067, 0x2068)))  # LRE RLE LRI RLI FSI
+_EMBED_CLOSE = frozenset(map(chr, (0x202C, 0x2069)))  # PDF PDI
+_DIR_CONTROLS = frozenset(
+    map(chr, (0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069))
+)  # all directional controls
 #: The overrides, as UTF-8 bytes: the Trojan Source primitive. Their presence anywhere in a file
 #: keeps every directional finding in it at full severity.
 _OVERRIDE_BYTES = (b"\xe2\x80\xad", b"\xe2\x80\xae")  # LRO, RLO
