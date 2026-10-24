@@ -171,6 +171,9 @@ class HiddenInstruction:
                 found.append(span)
         return found
 
+    #: One entry of a list of names and what each is: `- dual_paradigm: COMPETE ...`.
+    _ENTRY: ClassVar[re.Pattern[str]] = re.compile(r"\s*(?:[-*]\s+)?[\w.-]{2,60}\s*:(?:\s|$)")
+
     @classmethod
     def strong(cls, span: HiddenSpan) -> bool:
         """Graded at the gate only when the hidden order is OPERATIONAL: addressed to the agent, and
@@ -180,6 +183,13 @@ class HiddenInstruction:
         the broad object set -- but carries none of these, so it reports below the gate, not at it."""
         prose = cls._URL.sub(" ", span.text)
         if not (cls._ADDRESSED.search(prose) and cls._OBJECT.search(prose)):
+            return False
+        # A manifest -- `- threat_modeling: Design threat models ...`, line after line -- lists
+        # what the skill does; an order is prose. 72 real public skills hid such a list; no
+        # malicious skill in the development half had more than 3 of 16 lines so.
+        lines = [line for line in span.text.splitlines() if line.strip()]
+        entries = sum(bool(cls._ENTRY.match(line)) for line in lines)
+        if len(lines) >= 4 and entries * 5 >= len(lines) * 3:
             return False
         return bool(
             cls._DESTINATION.search(span.text)
