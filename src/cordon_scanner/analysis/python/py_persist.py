@@ -212,6 +212,18 @@ class PythonPersistence(PythonValueFlow):
     TEXT_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
         ["help", "description", "epilog", "usage", "msg", "message", "prog", "title", "doc"]
     )
+    #: The packaging entry points. A persistence word that reaches one of these is in package
+    #: metadata (`long_description`, a package name), not a filesystem write: setup() declares, it
+    #: does not run a write. The one argument that does place files at install is `data_files`,
+    #: which pip copies to the directory each `(dir, [files])` pair names -- so that one is kept.
+    SETUP_CALLS: ClassVar[frozenset[str]] = frozenset(
+        [
+            "setuptools.setup",
+            "distutils.core.setup",
+            "distutils.setup",
+            "numpy.distutils.core.setup",
+        ]
+    )
 
     def __init__(self, tree: ast.AST) -> None:
         super().__init__(tree)
@@ -302,6 +314,13 @@ class PythonPersistence(PythonValueFlow):
         name = self.name(node.func)
         if name in self.functions or name in self.STORES or name in self.records:
             return set()  # followed into the function; a store is a flow, not a write
+        if name == "setup" or self.dotted(node.func) in self.SETUP_CALLS:
+            # Packaging metadata, not a write (census D). `long_description`, the package name and
+            # the rest are declarations; only `data_files` places files at install, so a
+            # persistence word there is kept and everything else is named, not planted. A file's
+            # own `setup` function returned above, so this is the imported setuptools entry.
+            data_files = next((k.value for k in node.keywords if k.arg == "data_files"), None)
+            return self.taint(data_files) if data_files is not None else set()
         given = self.given(node, self.TEXT_KEYWORDS | {"file"})
         if self.dotted(node.func) in self.PROCESS or name in self.PROCESS:
             command = self.command(node)
