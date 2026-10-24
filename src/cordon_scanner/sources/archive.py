@@ -334,7 +334,11 @@ class ArchiveReader:
             if flags & 0x08 or compressed == 0xFFFFFFFF or start + compressed > len(data):
                 break
             seen += 1
-            if offset not in listed:
+            # A nameless entry or an empty directory installs no file, whichever view is read: an
+            # APK's leading stub, a directory entry whose offset a writer recorded shifted.
+            name_end = offset + header.size + name_len
+            empty = not name_len or (compressed == 0 and data[name_end - 1 : name_end] == b"/")
+            if offset not in listed and not empty:
                 raw_name = bytes(data[offset + header.size : offset + header.size + name_len])
                 name = raw_name.decode("utf-8" if flags & 0x800 else "cp437", "replace")
                 safe = ArchiveReader.safe_member_name(name) or "unnamed"

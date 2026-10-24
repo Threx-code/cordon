@@ -47,3 +47,21 @@ class TestAMemberOnlyAStreamingExtractorSeesIsFound:
         result = ArchiveReader.extract(buf.getvalue(), path="p.zip")
         assert not [r for r in result.rejected if r.reason == Rejection.HIDDEN]
         assert len(result.members) == 5
+
+    def test_an_unlisted_empty_directory_installs_nothing(self) -> None:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(zipfile.ZipInfo("CANTON/"), b"")
+            archive.writestr("CANTON/CANTON.prj", "GEOGCS\n")
+        data = buf.getvalue()
+        # Keep only the second central-directory record: the directory entry is local-only.
+        end = data.rindex(b"PK\x05\x06")
+        _directory_size, directory_offset = struct.unpack_from("<LL", data, end + 12)
+        first = data.index(b"PK\x01\x02", directory_offset)
+        second = data.index(b"PK\x01\x02", first + 4)
+        kept = data[second:end]
+        eocd = bytearray(data[end:])
+        struct.pack_into("<HHLL", eocd, 8, 1, 1, len(kept), directory_offset)
+        result = ArchiveReader.extract(data[:directory_offset] + kept + bytes(eocd), path="p.zip")
+        assert not [r for r in result.rejected if r.reason == Rejection.HIDDEN]
+        assert [m.name for m in result.members] == ["CANTON/CANTON.prj"]
