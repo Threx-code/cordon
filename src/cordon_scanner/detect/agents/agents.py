@@ -2359,7 +2359,7 @@ class AgentChainDetector(BaseDetector):
             moved = next(
                 (
                     m
-                    for m in re.finditer(r"[^\n]+", text)
+                    for m in re.finditer(r"(?:[^\n]*\\\n)*[^\n]+", text)  # with its `\` lines
                     if (verdict := agent_config.CommandClassifier.classify(m.group(0))) is not None
                     and verdict.kind != "fetch-exec"
                 ),
@@ -2406,15 +2406,15 @@ class AgentChainDetector(BaseDetector):
         corroborated = bool(hidden or injection or exfil or concealed or alarming is not None)
         corroborated_code = DefensiveDoc.code_evidence(hidden, exfil, concealed, alarming)
         third_party = SkillOrigin.third_party(unit.content.path, ctx)
-        # A skill's instructions, read by the learned model (`SKILL_MODEL`). On held-out
-        # MalSkillBench it took the blocked share from 44% to 83% and the benign blocked share
-        # from 5.0% to 3.3%, because an ATR phrase match blocks only where the model agrees.
+        # A skill's instructions, read by the learned model (`SKILL_MODEL`). Held-out MalSkillBench:
+        # blocked 44% -> 83%, benign 5.0% -> 3.3%, as ATR wording blocks only where the model or
+        # Cordon's own evidence agrees; an override phrase is wording too (41 public skills).
         unconfirmed = False
         if ContainerPaths.basename(unit.content.path).upper() == "SKILL.MD":
             limits = SKILL_MODEL.thresholds("skill")
             score = SKILL_MODEL.score(text, "skill") if limits is not None else None
             if limits is not None and score is not None:
-                unconfirmed = score < limits[1] and not corroborated
+                unconfirmed = score < limits[1] and not corroborated_code
                 if score >= limits[1]:
                     blocking = third_party and score >= limits[0]
                     yield self._finding(

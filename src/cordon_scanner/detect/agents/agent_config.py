@@ -73,6 +73,14 @@ _REVERSE_SHELL: Final = re.compile(
 )
 
 
+_PORT_PROBE: Final = re.compile(
+    r"(?i)(?<![\w$-])(?:echo|:|true)(?:\s+(?:-n\s*)?(?:\"\"|''))?"
+    r"\s*[<>]\s*/dev/(?:tcp|udp)/[\w.-]+/\d{1,5}"
+)
+"""`echo > /dev/tcp/host/443`: a connection opened with nothing sent and no shell on it -- how a
+script checks a port is open. A shell wired to the socket, or a file sent down it, is not this."""
+
+
 _TOKEN_HOMES: Final = {
     "OPENAI_API_KEY": ("api.openai.com", ".openai.azure.com"),
     "ANTHROPIC_API_KEY": ("api.anthropic.com",),
@@ -104,7 +112,7 @@ class CommandClassifier:
         """What an attack-shaped command does, or None for one that is not attack-shaped."""
         if not command:
             return None
-        if _REVERSE_SHELL.search(command):
+        if _REVERSE_SHELL.search(_PORT_PROBE.sub(" ", command)):
             return CommandVerdict("reverse-shell", "opens an interactive shell to another machine")
         if _ENV_TO_NETWORK.search(command) or (
             _SENDS_IT.search(command)
