@@ -34,6 +34,20 @@ OBFUSCATOR_IO_ALPHABET: Final = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU
 STANDARD_ALPHABET: Final = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 
 
+class IntegerLiteral:
+    """An integer as source code writes it, including the legacy octal `05` that `int(_, 0)`
+    refuses: Go reads a leading zero as octal, and so does sloppy-mode JavaScript unless an 8
+    or 9 follows. Refusing it made one padded number enough to stop a decoder (and, in Go, to
+    fail the capability detector on the whole file)."""
+
+    @staticmethod
+    def value(literal: str) -> int:
+        digits = literal.strip().replace("_", "")
+        if len(digits) > 1 and digits[0] == "0" and digits.isdigit():
+            return int(digits, 8) if set(digits) <= set("01234567") else int(digits)
+        return int(digits, 0)
+
+
 @dataclass(frozen=True, slots=True)
 class Recovery:
     text: str
@@ -742,7 +756,10 @@ class Layers:
                 found.append(
                     (
                         "fromCharCode",
-                        "".join(chr(int(n, 0)) for n in re.split(r"\s*,\s*", match.group("n"))),
+                        "".join(
+                            chr(IntegerLiteral.value(n))
+                            for n in re.split(r"\s*,\s*", match.group("n"))
+                        ),
                     )
                 )
             except ValueError:

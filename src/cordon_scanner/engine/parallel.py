@@ -35,11 +35,11 @@ import multiprocessing.context
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-    from pathlib import Path
 
     from cordon_scanner.foundation.config import Config
     from cordon_scanner.foundation.content import FileContent
@@ -172,12 +172,49 @@ class ParallelScanner:
         if file_count < 2 or estimate < MIN_FILES_FOR_PARALLEL * AVERAGE_FILE_BYTES:
             return 1
 
-        available = requested if requested > 0 else (os.cpu_count() or 1)
+        available = requested if requested > 0 else ParallelScanner.available_cpus()
         # Never more workers than batches, and never more than files. The comment claimed
         # this and the code did not do it, so a repository just over the threshold started
         # a process per core to share one batch.
         batches = max(1, math.ceil(estimate / BATCH_TARGET_BYTES))
         return max(1, min(available, MAX_WORKERS, batches, file_count))
+
+    @staticmethod
+    def available_cpus(cgroup: str = "/sys/fs/cgroup") -> int:
+        """The cores this process may actually use, not the cores the host has.
+
+        `os.cpu_count()` counts the host: inside a container given two CPUs on a
+        twelve-core host it says twelve, so an automatic pool started twelve workers
+        that shared two cores, each holding its own engine and slice of the input.
+        The CPU affinity mask and the cgroup quota (v2 `cpu.max`, v1 `cfs_quota_us`)
+        are what the scheduler enforces, so the smallest of the three is the answer.
+        """
+        try:
+            count = len(os.sched_getaffinity(0))
+        except (AttributeError, OSError):
+            count = os.cpu_count() or 1
+        quota = ParallelScanner._cgroup_quota(cgroup)
+        if quota is not None:
+            count = min(count, max(1, math.ceil(quota)))
+        return max(1, count)
+
+    @staticmethod
+    def _cgroup_quota(cgroup: str) -> float | None:
+        """CPUs the cgroup quota allows, or None when there is no quota to read."""
+        root = Path(cgroup)
+        try:
+            limit, _, period = (root / "cpu.max").read_text(encoding="ascii").strip().partition(" ")
+            if limit == "max":
+                return None
+            return int(limit) / int(period or "100000")
+        except (OSError, ValueError, ZeroDivisionError):
+            pass
+        try:
+            quota = int((root / "cpu" / "cpu.cfs_quota_us").read_text(encoding="ascii"))
+            interval = int((root / "cpu" / "cpu.cfs_period_us").read_text(encoding="ascii"))
+        except (OSError, ValueError):
+            return None
+        return quota / interval if quota > 0 and interval > 0 else None
 
     @staticmethod
     def start_context() -> multiprocessing.context.BaseContext:

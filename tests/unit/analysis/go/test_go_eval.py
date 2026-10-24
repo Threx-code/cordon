@@ -59,6 +59,27 @@ class TestAnXorEncodedSlice:
         )
         assert '_d(_p) = ".config/demo.txt"' in GoEval.resolve(source)
 
+    def test_a_legacy_octal_byte_neither_fails_nor_hides_the_slice(self):
+        """Go reads `05` as octal; `int("05", 0)` refused it, and the capability detector failed on
+        the whole file (a real module's `utils/encrypt.go`)."""
+        key = b"k3y"
+        data = bytes(b ^ key[i % len(key)] for i, b in enumerate(b".config/demo.txt"))
+        items = ", ".join(f"0{b:o}" if i == 0 else f"0x{b:02x}" for i, b in enumerate(data))
+        source = (
+            "package x\n\n"
+            'var _k = []byte("k3y")\n'
+            f"var _p = []byte{{{items}}}\n\n"
+            "func _d(enc []byte) string {\n"
+            "\tout := make([]byte, len(enc))\n"
+            "\tfor i, b := range enc {\n"
+            "\t\tout[i] = b ^ _k[i%len(_k)]\n"
+            "\t}\n"
+            "\treturn string(out)\n"
+            "}\n\n"
+            "func init() { _ = read(_d(_p)) }\n"
+        )
+        assert '_d(_p) = ".config/demo.txt"' in GoEval.resolve(source)
+
 
 class TestWhatIsLeftAlone:
     def test_literals_already_readable_add_nothing(self):

@@ -170,3 +170,18 @@ class TestGrading:
 
     def test_the_recovery_entry_point_handles_only_javascript(self):
         assert Deobfuscator.recover(ObfuscatedKit.program(), "python") is None
+
+
+class TestIntegerLiterals:
+    """Source integers as Go and sloppy-mode JavaScript read them."""
+
+    def test_forms(self) -> None:
+        from cordon_scanner.analysis.shared.deobfuscation import IntegerLiteral
+
+        assert IntegerLiteral.value("05") == 5
+        assert IntegerLiteral.value("0101") == 65
+        assert IntegerLiteral.value("089") == 89
+        assert IntegerLiteral.value("0x41") == 65
+        assert IntegerLiteral.value("0o17") == 15
+        assert IntegerLiteral.value("1_000") == 1000
+        assert IntegerLiteral.value("0") == 0

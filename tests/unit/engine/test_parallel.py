@@ -11,6 +11,8 @@ hardware is a flaky test rather than a useful one.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from cordon_scanner import Scanner
@@ -439,3 +441,35 @@ class TestEverySettingReachesTheWorkers:
             and f"'{renamed.get(f.name, f.name)}'" not in schema
         ]
         assert not unaccounted, f"decide where these go: {unaccounted}"
+
+
+class TestAvailableCpus:
+    """An automatic pool is sized to the cores the process may use, not the host's."""
+
+    @staticmethod
+    def cgroup(tmp_path, cpu_max: str | None = None, v1: tuple[int, int] | None = None) -> str:
+        if cpu_max is not None:
+            (tmp_path / "cpu.max").write_text(cpu_max + "\n", encoding="ascii")
+        if v1 is not None:
+            (tmp_path / "cpu").mkdir()
+            (tmp_path / "cpu" / "cpu.cfs_quota_us").write_text(f"{v1[0]}\n", encoding="ascii")
+            (tmp_path / "cpu" / "cpu.cfs_period_us").write_text(f"{v1[1]}\n", encoding="ascii")
+        return str(tmp_path)
+
+    def test_a_container_quota_of_two_cpus_is_two(self, tmp_path) -> None:
+        assert ParallelScanner.available_cpus(self.cgroup(tmp_path, "200000 100000")) <= 2
+
+    def test_a_fractional_quota_rounds_up(self, tmp_path) -> None:
+        assert ParallelScanner.available_cpus(self.cgroup(tmp_path, "150000 100000")) <= 2
+
+    def test_no_quota_is_the_affinity_mask(self, tmp_path) -> None:
+        expected = (
+            len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+        )
+        assert ParallelScanner.available_cpus(self.cgroup(tmp_path, "max 100000")) == expected
+
+    def test_a_cgroup_v1_quota(self, tmp_path) -> None:
+        assert ParallelScanner.available_cpus(self.cgroup(tmp_path, v1=(100000, 100000))) == 1
+
+    def test_unreadable_cgroup_files_fall_back(self, tmp_path) -> None:
+        assert ParallelScanner.available_cpus(self.cgroup(tmp_path, "garbage")) >= 1

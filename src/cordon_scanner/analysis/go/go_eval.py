@@ -28,6 +28,8 @@ from __future__ import annotations
 import re
 from typing import Final
 
+from cordon_scanner.analysis.shared.deobfuscation import IntegerLiteral
+
 MAX_VALUE: Final = 8_000
 #: Where `values` lists the names whose value the file does not show as written.
 HIDDEN_KEY: Final = "\x00hidden"
@@ -46,7 +48,7 @@ _JOIN: Final = re.compile(
 _CALL_ARGS: Final = re.compile(r"\bexec\.Command(?:Context)?\s*\((?P<args>[^()\n]{1,2000})\)")
 
 _BYTES: Final = re.compile(r"^\[\]byte[ \t]*\{(?P<body>[^{}]*)\}[ \t;,]*$")
-_BYTE_ITEM: Final = re.compile(r"0[xX][0-9a-fA-F]{1,2}|\d{1,3}|'(?:\\.|[^'\\])'")
+_BYTE_ITEM: Final = re.compile(r"0[xX][0-9a-fA-F]{1,2}|0[0-7]{1,3}|\d{1,3}|'(?:\\.|[^'\\])'")
 #: `func NAME(enc []byte) string {` whose loop XORs each byte with a key, repeating or single.
 #: The head of `func NAME(enc []byte) string {`; the body is found by brace matching.
 _XOR_HELPER: Final = re.compile(
@@ -55,7 +57,7 @@ _XOR_HELPER: Final = re.compile(
 #: `b ^ key[i%len(key)]` (the two key names compared in code) or `b ^ 0x5a`.
 _XOR_KEY: Final = re.compile(
     rf"\^[ \t]*(?:(?P<key>{_NAME})\[[ \t]*{_NAME}[ \t]*%[ \t]*len\([ \t]*(?P<again>{_NAME})[ \t]*\)[ \t]*\]"
-    r"|(?P<byte>0[xX][0-9a-fA-F]{1,2}|\d{1,3}))"
+    r"|(?P<byte>0[xX][0-9a-fA-F]{1,2}|0[0-7]{1,3}|\d{1,3}))"
 )
 _DECODE_CALL: Final = re.compile(rf"\b(?P<fn>{_NAME})\([ \t]*(?P<arg>{_NAME})[ \t]*\)")
 #: A one-line helper over its string parameters: `func _env(a, b string) string { return
@@ -170,7 +172,7 @@ class GoEval:
             if item.startswith("'"):
                 value = ord(item[1]) if len(item) == 3 else ord(_ESCAPES.get(item[2], item[2]))
             else:
-                value = int(item, 0)
+                value = IntegerLiteral.value(item)
             if value > 255:
                 return None
             out.append(value)
@@ -194,7 +196,7 @@ class GoEval:
                     found[helper["fn"]] = key["key"].encode()
                     break
                 if key["byte"]:
-                    found[helper["fn"]] = int(key["byte"], 0)
+                    found[helper["fn"]] = IntegerLiteral.value(key["byte"])
                     break
         return found
 

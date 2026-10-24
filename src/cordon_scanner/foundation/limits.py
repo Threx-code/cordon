@@ -151,11 +151,15 @@ class Limits:
 
     # -- Memory and parallelism -------------------------------------------
     max_memory_bytes: int = 1024 * 1024 * 1024
+    """File content one scan holds at once. Not the process's whole footprint: decoded text,
+    analysis and findings come on top, and an archive expanded to this ceiling peaked near three
+    times it (a 25,392-member archive: 3.1 GB)."""
 
     max_workers: int = 0
-    """0 means automatic: CPU count, capped. Capped rather than unbounded because
-    a high-core CI runner spawning one worker per core over a small repository
-    spends more time on process startup than on matching."""
+    """0 means automatic: the CPUs this process may use (its affinity and any container
+    quota, not the host's count), capped. Capped rather than unbounded because a high-core
+    CI runner spawning one worker per core over a small repository spends more time on
+    process startup than on matching."""
 
     mmap_threshold: int = 1 * 1024 * 1024
     """Above this a file is memory-mapped instead of read. Below it, a plain read

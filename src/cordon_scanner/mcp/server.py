@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Final, TextIO
 
+from cordon_scanner.engine.parallel import ParallelScanner
 from cordon_scanner.mcp.brand import ICONS
 from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner
 from cordon_scanner.mcp.tools import Outcome, Registry, Settings, ToolError
@@ -555,7 +556,7 @@ class Server:
             version=__version__,
             # The scans running at once share the machine: each gets its share of the cores, so
             # an agent calling in parallel cannot take every core from the developer.
-            jobs=max(1, (os.cpu_count() or 2) // args.max_concurrent),
+            jobs=max(1, ParallelScanner.available_cpus() // args.max_concurrent),
         )
         print(
             f"cordon-scanner mcp {__version__}: serving on stdio; roots {', '.join(workspace.describe())}; "

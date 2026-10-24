@@ -122,8 +122,8 @@ environment:
 | `max_uncompressed_bytes` | 2 GiB | Expanded archive size. |
 | `max_path_depth` | 64 | Directory nesting. |
 | `max_path_bytes` | 4096 | Path length. |
-| `max_memory_bytes` | 1 GiB | File content held at once. |
-| `max_workers` | 0 (automatic) | Worker processes. |
+| `max_memory_bytes` | 1 GiB | File content held at once. Peak process memory is higher: about three times this for an archive expanded to the ceiling. |
+| `max_workers` | 0 (automatic) | Worker processes. Automatic follows the CPUs the process may use, including a container quota. |
 
 Reaching any limit produces a finding and marks the scan incomplete. **A scan
 that stopped early and a scan that found nothing never look the same.**
