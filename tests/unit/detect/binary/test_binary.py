@@ -183,6 +183,8 @@ class TestPolyglot:
         [
             b"\x8f\x13\xa2\x00\x91\xfe" * 40,  # an encrypted secret named for what it decrypts to
             b"placeholder\n",  # a stand-in someone committed
+            # An icon exported as SVG and saved under `.png`: shapes, nothing run or fetched.
+            b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h20"/></svg>',
         ],
     )
     def test_no_format_and_no_code_under_an_image_name_is_recorded(self, raw: bytes) -> None:
@@ -199,6 +201,8 @@ class TestPolyglot:
             b"push graphic-context\nviewbox 0 0 640 480\nfill url(https://x.test/a.jpg)\n",
             b"<?php system($_GET['c']); ?>",
             ELF + b"\x00" * 32,
+            b'<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>',
+            b'<svg><image xlink:href="|ls -la" width="1" height="1"/></svg>',
         ],
     )
     def test_code_or_a_program_under_an_image_name_is_not(self, raw: bytes) -> None:

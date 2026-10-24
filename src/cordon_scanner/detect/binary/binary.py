@@ -750,9 +750,13 @@ class BinaryDetector(BaseDetector):
         rb"|\bexec\s*\(|\brequire\s*\(|\bimport\s+[\w.]+|\bfunction\s*[\w$]*\s*\("
         rb"|\b(?:var|const|let)\s+[\w$]+\s*=|\bdef\s+\w+\s*\(|\bInvoke-\w+|\bSet-\w+"
         rb"|\bWScript\.|\bCreateObject\s*\(|/bin/(?:ba)?sh\b|\bcurl\s+-|\bwget\s+"
-        # What an image or document processor executes: ImageMagick's MVG (ImageTragick), SVG,
-        # HTML, an XML entity declaration, PostScript.
-        rb"|push\s+graphic-context|<svg\b|<html\b|<!doctype\b|<iframe\b|<!ENTITY\b|%!PS"
+        # What an image or document processor executes: ImageMagick's MVG (ImageTragick), HTML,
+        # an XML entity declaration, PostScript, and what SVG runs or fetches. A plain SVG saved
+        # under `.png` draws shapes; one with a handler, a script URL, a fetched or piped
+        # `href` or a `url()` is not plain.
+        rb"|push\s+graphic-context|<html\b|<!doctype\b|<iframe\b|<!ENTITY\b|%!PS"
+        rb"|<foreignObject\b|\bon[a-z]{3,20}\s*=|javascript:"
+        rb"|(?:href\s*=\s*[\"']|url\(\s*[\"']?)(?:\||(?:https?|file|msl|text|ephemeral):)"
     )
 
     @staticmethod
