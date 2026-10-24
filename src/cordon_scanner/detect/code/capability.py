@@ -3727,8 +3727,7 @@ class CapabilityDetector(BaseDetector):
 
             local_by_capability = {hit.capability: hit for hit in window}
             if InstallPayload.gate(
-                compiled.rule.id, in_hook or in_consumer, local_by_capability,
-                unit.content, window, ctx.shipped_native_paths, unit.path,
+                compiled.rule.id, in_hook or in_consumer, local_by_capability, window, unit, ctx
             ):
                 continue
             matched = matched_capabilities
@@ -3739,7 +3738,6 @@ class CapabilityDetector(BaseDetector):
             )
             if finding is not None:
                 yield finding
-
 
     #: Composites whose source half is what a file sends: a setting it reads to configure itself is
     #: not that. See `_a_setting`.

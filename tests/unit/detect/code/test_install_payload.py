@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 import tempfile
+from types import SimpleNamespace
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.code.install_payload import InstallPayload
@@ -46,6 +47,16 @@ class Fixture:
     @staticmethod
     def rules(root: str) -> list[str]:
         return [f.rule_id for f in Scanner().scan(root).findings]
+
+    @staticmethod
+    def unit(content: FileContent | None, path: str = "setup.py") -> SimpleNamespace:
+        """A stand-in for the FileUnit `gate` reads: it uses only `.content` and `.path`."""
+        return SimpleNamespace(content=content, path=path)
+
+    @staticmethod
+    def ctx(native: frozenset[str] = frozenset()) -> SimpleNamespace:
+        """A stand-in for the ScanContext `gate` reads: it uses only `.shipped_native_paths`."""
+        return SimpleNamespace(shipped_native_paths=native)
 
     @staticmethod
     def build(tmp: str, imp: str, body: str, extra: dict[str, bytes] | None = None) -> str:
@@ -106,7 +117,7 @@ class TestGateEndToEnd:
                 t,
                 "subprocess",
                 'subprocess.call(["cc", "-c", "x.c"])\n'
-                '        import urllib.request\n'
+                "        import urllib.request\n"
                 '        urllib.request.urlopen("http://example.com/x").read()',
             )
             assert CONSUMER_CODE in Fixture.rules(root)
@@ -117,27 +128,26 @@ class TestGateUnit:
 
     def test_e_a_non_gated_malicious_finding_is_never_lowered(self) -> None:
         # (e) Only CONSUMER_CODE is gated. Another malicious finding -- even one whose only install
-        # capability is a spawn -- is never lowered.
+        # capability is a spawn -- is never lowered. The rule-id check short-circuits before the
+        # unit and context are read, so they are untouched here.
         assert not InstallPayload.gate(
             "MALWARE.EXFIL.INSTALL_CALLBACK.001",
             True,
             {Capability.SPAWN},
-            None,  # content is untouched: the rule-id check short-circuits first.
             [],
-            frozenset(),
-            "setup.py",
+            Fixture.unit(None),
+            Fixture.ctx(),
         )
 
     def test_a_reachable_payload_capability_keeps_the_finding(self) -> None:
+        # A payload capability short-circuits before the unit is read, so it is untouched.
         assert not InstallPayload.gate(
-            CONSUMER_CODE, True, {Capability.EGRESS}, None, [], frozenset(), "setup.py"
+            CONSUMER_CODE, True, {Capability.EGRESS}, [], Fixture.unit(None), Fixture.ctx()
         )
 
     def test_a_spawn_only_window_with_nothing_shipped_is_lowered(self) -> None:
-        content = FileContent(path="setup.py", raw=b"", size=0)
-        assert InstallPayload.gate(
-            CONSUMER_CODE, True, {Capability.SPAWN}, content, [], frozenset(), "setup.py"
-        )
+        unit = Fixture.unit(FileContent(path="setup.py", raw=b"", size=0))
+        assert InstallPayload.gate(CONSUMER_CODE, True, {Capability.SPAWN}, [], unit, Fixture.ctx())
 
     def test_has_payload_truth_table(self) -> None:
         # Always a payload on its own.

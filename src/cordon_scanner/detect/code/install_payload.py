@@ -24,6 +24,7 @@ from cordon_scanner.foundation.models import Capability
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from cordon_scanner.detect.base import FileUnit, ScanContext
     from cordon_scanner.detect.code.capability import CapabilityHit
     from cordon_scanner.foundation.content import FileContent
 
@@ -57,10 +58,9 @@ class InstallPayload:
         rule_id: str,
         installing: bool,
         local_by_capability: dict[Capability, CapabilityHit],
-        content: FileContent,
         window: Iterable[CapabilityHit],
-        native_paths: frozenset[str],
-        self_path: str,
+        unit: FileUnit,
+        ctx: ScanContext,
     ) -> bool:
         """Whether to hold an install composite rather than let it escalate to the malicious install
         finding: it is a gated rule, it runs at install, and no payload is reachable -- neither a
@@ -71,7 +71,9 @@ class InstallPayload:
             rule_id in cls.GATED
             and installing
             and not cls.has_payload(set(local_by_capability))
-            and not cls.spawns_shipped_file(content, window, native_paths, self_path)
+            and not cls.spawns_shipped_file(
+                unit.content, window, ctx.shipped_native_paths, unit.path
+            )
         )
 
     @classmethod
