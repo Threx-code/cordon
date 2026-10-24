@@ -61,13 +61,15 @@ STEPS: Final[dict[str, re.Pattern[str]]] = {
     # A description that OPENS with an order about something else, never saying what this tool
     # does: a decoy, there only to steer the agent. Real tools describe themselves first; their
     # guidance follows. Self-references ("always call this first") and a parameter's own
-    # mode ("when using `structured` output type") are not this.
+    # mode ("when using `structured` output type") are not this, nor a heading that says what
+    # the tool answers ("Before running git commands: what they will do").
     "opens_order": re.compile(
         r"^\s{0,4}(?:\W{0,4}\s{0,2})?(?:"
         r"(?:before|after|when|whenever|prior to|each time|every time)\s{1,3}(?:you\s{1,3})?"
         r"(?:using|calling|invoking|running|use|call|retrieving|executing)\s{1,3}"
         r"(?!this\b|it\b|the tool\b|first\b)(?![`'\"]?[\w-]{1,40}[`'\"]?\s{1,3}(?:output|option|mode|"
         r"format|parameter|flag|type|setting)s?\b)"
+        r"(?![^.;:\n]{1,60}:\s{0,3}(?:what|which|how|whether)\b)"
         r"|(?:you|the assistant|the agent)\s{1,3}(?:must|should|need to)\s{1,3}(?:first\s{1,3}|"
         r"always\s{1,3}|also\s{1,3})?(?:call|use|invoke|run|fetch|set|send|request|scan|log|mark|"
         r"trigger)\s{1,3}(?!this\b|it\b)"
