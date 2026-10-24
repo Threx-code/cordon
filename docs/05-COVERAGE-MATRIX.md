@@ -160,6 +160,7 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | `advisory` | policy |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | `manifest` | policy |
+| `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | `advisory` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |

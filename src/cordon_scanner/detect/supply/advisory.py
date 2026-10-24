@@ -46,6 +46,7 @@ from cordon_scanner.intel.advisories.ranges import VersionRanges
 from cordon_scanner.intel.advisories.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
 from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, UpstreamResult
 from cordon_scanner.intel.registries.real import RealPackages
+from cordon_scanner.intel.registries.removed import RemovedNames
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -60,6 +61,10 @@ TEST_FIXTURE_SEGMENTS = frozenset(
 MALICIOUS_RULE = "MALWARE.DEPENDENCY.KNOWN.001"
 PLACEHOLDER_RULE = "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
 PROVISIONAL_RULE = "SUSPECT.DEPENDENCY.PROVISIONAL.001"
+REMOVED_RULE = "SUSPECT.DEPENDENCY.REMOVED_NAME.001"
+"""A range over a name whose every version is malicious, and which the registry no longer serves
+(`RemovedNames`): an install fails rather than installing the malware, and a re-registration of the
+name would deliver whatever its new owner publishes. Medium: a risk worth removing, not a block."""
 """This exact version is HELD FOR REVIEW by Cordon's feed: one signal flagged it minutes ago, and a
 second signal or a person has not yet confirmed or cleared it (`FeedStore.read_provisional`).
 Suspicious, not malicious -- nothing has confirmed it -- and HIGH, so the default gate pauses it."""
@@ -167,6 +172,25 @@ class AdvisoryDetector(BaseDetector):
                 remediation=(
                     "Pin the previous version until the hold is decided, usually within the hour; "
                     "the hold lifts by itself if the verdict is cleared."
+                ),
+                references=(references.OSV,),
+            ),
+            DeclaredRule(
+                id=REMOVED_RULE,
+                title="Dependency names a removed malicious package",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=AdvisoryDetector.id,
+                message=(
+                    "A declared range names a package whose every version is recorded as "
+                    "malicious, and which its registry no longer serves. An install fails "
+                    "rather than installing the malware; whoever registers the name again "
+                    "would have their code installed by this project."
+                ),
+                remediation=(
+                    "Remove the dependency, or replace it with the package it was meant to be "
+                    "(a removed malicious name is usually a squat of a real one)."
                 ),
                 references=(references.OSV,),
             ),
@@ -511,6 +535,9 @@ class AdvisoryDetector(BaseDetector):
             if not admitted:
                 continue
             release = admitted[-1] if admitted[-1] != "every version" else None
+            if release is None and dependency.name in RemovedNames.removed(dependency.ecosystem):
+                yield self._removed_finding(dependency, spec, advisory, ctx)
+                break
             finding = self._finding(replace(dependency, version=release or spec), advisory, ctx)
             where = (
                 f"every version of {dependency.name} is recorded as malicious"
@@ -860,6 +887,46 @@ class AdvisoryDetector(BaseDetector):
             except (OSError, ValueError):
                 cache[ecosystem] = []
         return cache[ecosystem]
+
+    def _removed_finding(
+        self, dependency: Dependency, spec: str, advisory: Advisory, ctx: ScanContext
+    ) -> Finding:
+        """The name is malicious in every version and gone from its registry (`REMOVED_RULE`)."""
+        checked = RemovedNames.checked(dependency.ecosystem)
+        return Finding(
+            rule_id=REMOVED_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            message=(
+                f"{dependency.name} is declared as {spec!r}. Every version of it is recorded as "
+                f"malicious ({advisory.summary.strip()}), and its registry served nothing for it "
+                f"when last checked{f' ({checked})' if checked else ''}, so an install fails "
+                f"rather than installing the malware. Whoever registers {dependency.name} again "
+                f"would have their code installed by this project."
+            ),
+            remediation=(
+                f"Remove {dependency.name}, or replace it with the package it was meant to be; "
+                f"a removed malicious name is usually a squat of a real one."
+            ),
+            location=Location(
+                path=dependency.declared_in or dependency.project or ".",
+                package=dependency.purl,
+                project=dependency.project,
+            ),
+            evidence=Evidence(
+                kind=EvidenceKind.GRAPH,
+                match_hash=Evidence.hash_bytes(f"{REMOVED_RULE}:{dependency.purl}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            explanation=Explanation(
+                summary=f"{dependency.name} is a removed malicious name",
+                matched_rule=REMOVED_RULE,
+            ),
+            risk=ctx.scorer.score(Severity.MEDIUM, Confidence.HIGH),
+            detector=self.id,
+            references=(references.OSV,),
+        )
 
     def _placeholder_finding(
         self, dependency: Dependency, advisory: Advisory, ctx: ScanContext
