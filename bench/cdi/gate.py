@@ -216,6 +216,25 @@ class Gate:
             else "fail",
             f"worst p99 ratio {worst:.2f}, new timeouts {new_to}",
         )
+        if spec.get("requires_reach") or spec.get("reach"):
+            # A rule pack fires wherever its text appears. Every area its patterns reach in benign
+            # content must be one the measured benign sets cover, or the block was never measured.
+            reach = spec.get("reach") or {}
+            unmeasured = sorted(
+                f"{area} {r['matched']}/{r['units']}"
+                for area, r in reach.items()
+                if r.get("matched") and area not in benign_by_area
+            )
+            metrics["reach"] = reach
+            if not reach:
+                gates["reach"] = ("fail", "the pack's reach beyond its own sets was not measured")
+            else:
+                gates["reach"] = (
+                    "fail" if unmeasured else "pass",
+                    "matches benign content in unmeasured areas: " + ", ".join(unmeasured)
+                    if unmeasured
+                    else f"no benign match outside measured areas ({len(reach)} areas searched)",
+                )
         lineage = spec.get("lineage")
         if lineage:
             train = Gate.keys(lineage["train_keys"])

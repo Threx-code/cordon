@@ -133,3 +133,29 @@ class TestTheSignature:
 
         run, decision = Gate.evaluate(GateKit.spec(tmp_path, {"m1": (1, MAL, 1.0)}, BEN_CLEAN))
         assert decision["evaluation_run_sha256"] == hashlib.sha256(Gate.canonical(run)).hexdigest()
+
+
+GAIN = {"m1": (1, MAL, 1.0), "m2": (1, MAL, 1.0)}
+
+
+class TestReach:
+    """A rule pack fires wherever its text appears: its reach in benign content of every area."""
+
+    def test_a_pack_whose_reach_was_not_measured_is_rejected(self, tmp_path: Path) -> None:
+        _, decision = Gate.evaluate(GateKit.spec(tmp_path, GAIN, BEN_CLEAN, requires_reach=True))
+        assert decision["outcome"] == "reject"
+        assert "not measured" in decision["gates"]["reach"]["reason"]
+
+    def test_a_match_in_an_area_no_benign_set_covers_rejects(self, tmp_path: Path) -> None:
+        reach = {"npm": {"units": 1000, "matched": 40}, "pypi": {"units": 1000, "matched": 0}}
+        _, decision = Gate.evaluate(GateKit.spec(tmp_path, GAIN, BEN_CLEAN, reach=reach))
+        assert decision["outcome"] == "reject"
+        assert "npm 40/1000" in decision["gates"]["reach"]["reason"]
+
+    def test_a_match_only_where_a_benign_set_measures_it_is_left_to_those_gates(
+        self, tmp_path: Path
+    ) -> None:
+        reach = {"pypi": {"units": 1000, "matched": 3}, "npm": {"units": 1000, "matched": 0}}
+        _, decision = Gate.evaluate(GateKit.spec(tmp_path, GAIN, BEN_CLEAN, reach=reach))
+        assert decision["gates"]["reach"]["result"] == "pass"
+        assert decision["outcome"] == "shadow"

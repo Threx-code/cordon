@@ -98,6 +98,10 @@ class PackRuleDetector(BaseDetector):
                     explanation=Explanation(summary=rule.title, matched_rule=rule.id),
                     risk=ctx.scorer.score(severity, rule.confidence),
                     detector=self.id,
+                    # Which pack and version: a delivered shadow pack is `shadow:<id>`, how the
+                    # analyser fleet tells what it would block from what it decides.
+                    rule_version=rule.version,
+                    rulepack=rule.rulepack,
                     references=rule.references,
                 )
             )
