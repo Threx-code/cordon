@@ -85,6 +85,15 @@ DIRECTIONAL_CONTROL = re.compile(
 )
 """The characters that actually REORDER text, which is what Trojan Source is."""
 
+#: Directional embedding/isolate openers (not the overrides, not the pops): a balanced one laying
+#: text out for display is not an attack, which needs an override or a span that re-reads the code.
+_EMBED_OPEN = frozenset(map(chr, (0x202a, 0x202b, 0x2066, 0x2067, 0x2068)))  # LRE RLE LRI RLI FSI
+_EMBED_CLOSE = frozenset(map(chr, (0x202c, 0x2069)))  # PDF PDI
+_DIR_CONTROLS = frozenset(map(chr, (0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069)))  # all directional controls
+#: The overrides, as UTF-8 bytes: the Trojan Source primitive. Their presence anywhere in a file
+#: keeps every directional finding in it at full severity.
+_OVERRIDE_BYTES = (b"\xe2\x80\xad", b"\xe2\x80\xae")  # LRO, RLO
+
 NON_DIRECTIONAL_INVISIBLE = re.compile(
     # A BOM anywhere but the start. The assertion has to be a lookbehind: as a
     # lookahead placed after the bytes it is trivially true, because the
@@ -263,6 +272,40 @@ class ObfuscationText:
             return False
         before = raw[start - 1 : start]
         return before in (b'"', b"'", b"`") and before == raw[end : end + 1]
+
+    @staticmethod
+    def _is_inert_embedded_data(raw: bytes, start: int) -> bool:
+        r"""Whether the control at `start` opens a BALANCED embedding (opener ... matching pop)
+        whose enclosed span is only inert text -- letters, digits, spaces and ordinary punctuation
+        -- inside a string literal, in a file with no directional OVERRIDE anywhere.
+
+        This is data laid out for display, not Trojan Source. A phone number wrapped in LRE..PDF in
+        an iOS accessibility label (``'\u202a158 8020 6986\u202c'``) renders right-to-left-aware but
+        reorders nothing a reviewer reads. The attack needs an OVERRIDE (LRO/RLO), or a span that
+        carries a quote or comment delimiter so the code after it re-reads -- the stretched-string
+        variant of CVE-2021-42574 -- and either of those keeps the finding (census D).
+        """
+        if any(override in raw for override in _OVERRIDE_BYTES):
+            return False
+        if not ObfuscationDetector._inside_quotes(raw, start):
+            return False
+        text = raw.decode("utf-8", "replace")
+        index = len(raw[:start].decode("utf-8", "replace"))
+        if index >= len(text) or text[index] not in _EMBED_OPEN:
+            return False
+        depth = 0
+        for char in text[index:]:
+            if char in _EMBED_OPEN:
+                depth += 1
+            elif char in _EMBED_CLOSE:
+                depth -= 1
+                if depth == 0:
+                    return True
+            elif char in _DIR_CONTROLS or not (char.isalnum() or char in " \t.,:!?"):
+                # A stray control, a quote, a comment marker, a bracket, a semicolon or an
+                # operator inside the span: it could change how the line reads. Keep the finding.
+                return False
+        return False  # never closed -- unbalanced, so keep the finding
 
     @staticmethod
     def _longest_padding_run(text: str) -> int:
@@ -943,6 +986,13 @@ class ObfuscationDetector(BaseDetector):
             or ObfuscationText._is_rtl_resource(content.raw)
         )
 
+        # The fourth case: a balanced embedding around inert text inside a string literal, in a
+        # file with no override -- data laid out for display, not a reorder of code the reviewer
+        # reads. See `_is_inert_embedded_data`.
+        inert_data = directional and ObfuscationText._is_inert_embedded_data(
+            content.raw, match.start()
+        )
+
         if not directional:
             # A zero-width no-break space or an interlinear annotation mark. Reported,
             # and not as Trojan Source: it cannot reorder anything, so the claim above
@@ -1001,7 +1051,7 @@ class ObfuscationDetector(BaseDetector):
             ),
             severity=(
                 Severity.INFO
-                if ObfuscationDetector._bundled_string(content, match.start())
+                if ObfuscationDetector._bundled_string(content, match.start()) or inert_data
                 else Severity.LOW
                 if documented or ordering_text
                 else Severity.HIGH
