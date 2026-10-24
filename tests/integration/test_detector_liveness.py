@@ -56,6 +56,12 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # for the same reason the registry detector is -- a suite that reaches the
     # network and a trust root fails when either is slow or unreachable.
     "provenance",
+    # Runs only the rules a rule pack declares without a capability, and no bundled rule has that
+    # shape: such packs arrive through the signed feed (`intel/malware/feed_rules.py`), which a
+    # committed corpus does not hold. Exercised in tests/unit/detect/code/test_pack_rules.py, and
+    # end to end, a delivered shadow pack's finding included, in
+    # tests/unit/intel/malware/test_feed_rules.py.
+    "pack-rules",
 }
 
 

