@@ -13,10 +13,15 @@
 ```
 
     docker run --rm --network none -v cordon-bench-public:/p:ro -v cordon-bench-skills:/k:ro \\
-      -v "$PWD:/s:ro" -v OUT:/o -e PYTHONPATH=/s/src python:3.12-slim \\
-      python /s/bench/model/skill_devset.py --public /p --skills /k/skills --out /o/skills.jsonl
+      -v "$PWD:/s:ro" -v OUT:/o -e PYTHONPATH=/s/src:/s/bench/tools python:3.12-slim \\
+      python /s/bench/model/skill_devset.py --public /p --skills /k/skills --out /o/skills.jsonl \\
+      --held /o/held-sha256.txt
 
-DataDog's ai-skills set is not read here: it is the test that no training ever saw.
+DataDog's ai-skills set is not read here: it is the test that no training ever saw. Nor are the
+other held-out sets: a public skill in the evaluation half (`AgentConfigCorpus.half_of`), and any
+text listed in `--held` (sha256 of the first 40,000 characters, one per line: the skills
+inventory's held half). The shipped model was trained before this, on 47,040 of the evaluation
+half's skills, so its finals score only the skills it never trained on (`finals-skills-*-unseen`).
 """
 
 from __future__ import annotations
@@ -85,13 +90,17 @@ class SkillDevset:
 
     @classmethod
     def corpus(cls, root: Path) -> Iterator[dict]:
+        from fetch_agent_configs import AgentConfigCorpus
+
         for folder in sorted(root.iterdir()):
+            repository = "__".join(folder.name.split("__")[:2])
+            if AgentConfigCorpus.half_of(repository.replace("__", "/", 1)) == "evaluate":
+                continue
             path = folder / "SKILL.md"
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            repository = "__".join(folder.name.split("__")[:2])
             yield cls.row("corpus-skill", "corpus", repository, 0, text)
 
     @classmethod
@@ -100,7 +109,9 @@ class SkillDevset:
         parser.add_argument("--public", type=Path, required=True)
         parser.add_argument("--skills", type=Path, required=True)
         parser.add_argument("--out", type=Path, required=True)
+        parser.add_argument("--held", type=Path, help="sha256 of held-out texts, one per line")
         args = parser.parse_args()
+        held = set(args.held.read_text(encoding="utf-8").split()) if args.held else set()
         counts: dict[str, int] = {}
         with args.out.open("w", encoding="utf-8") as out:
             for rows in (
@@ -109,6 +120,8 @@ class SkillDevset:
                 cls.corpus(args.skills),
             ):
                 for row in rows:
+                    if hashlib.sha256(row["text"].encode("utf-8", "replace")).hexdigest() in held:
+                        continue
                     out.write(json.dumps(row, ensure_ascii=False) + "\n")
                     counts[row["source"]] = counts.get(row["source"], 0) + 1
         print(json.dumps(counts, indent=2, sort_keys=True))

@@ -226,7 +226,10 @@ class VerdictTrain:
         }
         for unit in a.corpus.read_text(encoding="utf-8").split():
             eco = unit.split("/")[0]
-            size[cls.half("pkg:" + cls.package_name(unit))][ECOSYSTEM.get(eco, eco)] += 1
+            # Keyed as the benign rows are (`--eco` included): keyed by the path's directory, a
+            # PyPI baseline's denominators were `q` and `r` while its rows were `pypi`, so every
+            # budget check saw nothing blocked and the PyPI line fell to 0.0.
+            size[cls.half("pkg:" + cls.package_name(unit))][a.eco or ECOSYSTEM.get(eco, eco)] += 1
         data: list[dict] = []
         fresh: dict[str, dict] = {}
         for spec in a.features:
@@ -791,9 +794,9 @@ class VerdictTrain:
             add_only = r["area"] in add_only_areas
             floor = content_block(r) if add_only else False  # add-only ORs with the content gate
             r["kept"] = (gate_trip if add_only else untouched_trip)(r, content_only=True) or floor
-            r["kept_intel"] = (
-                gate_trip if add_only else untouched_trip
-            )(r, content_only=False) or floor
+            r["kept_intel"] = (gate_trip if add_only else untouched_trip)(
+                r, content_only=False
+            ) or floor
             r["has_code"] = any(k.startswith("r:") for k in r["f"])
 
         groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in a.separate}

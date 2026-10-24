@@ -572,7 +572,7 @@ class InstructionText:
 
     @staticmethod
     def _alarming_fetch(command: str) -> bool:
-        """A fetch-and-run whose destination or shape has no business in setup instructions."""
+        """A fetch-and-run from where setup never fetches (a shortener, a gist) or of such a shape."""
         from cordon_scanner.intel.malware.hosts import Destinations
 
         raw = command.encode("utf-8", "replace")
@@ -586,7 +586,7 @@ class InstructionText:
         host = found.group(1).lower() if found else ""
         # `astral.sh.evil.example` is built to read as the official host it is not.
         lookalike = any(host.startswith(f"{known}.") for known, _ in KNOWN_INSTALLERS)
-        return host in _SHORTENERS or lookalike
+        return host in _SHORTENERS or lookalike or host == "gist.githubusercontent.com"
 
     @staticmethod
     def _quoted(text: str, match: re.Match[str]) -> bool:
