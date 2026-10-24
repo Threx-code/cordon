@@ -498,6 +498,7 @@
   "test_public_ingress_direction.py": "repository",
   "test_publisher_hygiene.py": "foundation",
   "test_py_decoded.py": "analysis/python",
+  "test_py_persist_metadata.py": "analysis/python",
   "test_pyast.py": "analysis/python",
   "test_pyast_depth.py": "analysis/python",
   "test_python_syntax.py": "analysis/python",
