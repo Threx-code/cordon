@@ -4,18 +4,19 @@
 A MAINTENANCE script, like `refresh_package_intel.py`: never imported by the scanner, never run
 during a scan, and its output is a reviewed artefact that ships with the release.
 
-    python3 scripts/refresh/refresh_removed_names.py                 # pypi, rubygems, cargo
+    python3 scripts/refresh/refresh_removed_names.py                 # pypi and cargo
     python3 scripts/refresh/refresh_removed_names.py --only pypi
     python3 scripts/refresh/refresh_removed_names.py --check         # fail if stale, write nothing
 
 ## What goes in the file
 
-A name whose EVERY version is recorded as malicious, and for which the registry, asked today, serves
-nothing an install could resolve: PyPI answers 404 or lists no release with a file; RubyGems and
-crates.io answer 404. A project that declares such a name as a range cannot install the malware any
-more, only fail, so the advisory detector reports it as a re-registration risk
-(`SUSPECT.DEPENDENCY.REMOVED_NAME.001`, medium) instead of a known-malicious dependency
-(found on PyPI: 10 legitimate packages blocked for declaring `umap`, `urllib`, `detectron2`,
+A name whose EVERY version is recorded as malicious, as the scanner reads the records, and for which
+the registry, asked today, serves nothing an install could resolve: PyPI answers 404 or lists no
+release with a file; crates.io answers 404. (RubyGems records name exact versions, so none
+qualifies.) A project that declares such a name as a range cannot install the malware any more,
+only fail, so the advisory detector reports it as a re-registration risk
+(`SUSPECT.DEPENDENCY.REMOVED_NAME.001`, medium) instead of a known-malicious dependency (found on
+PyPI: 10 legitimate packages blocked for declaring `umap`, `urllib`, `detectron2`,
 `importlib-resource` or `azure-sdk-tools`, every one a 404).
 
 The list can only lower a block to a warning, so it is built to fail safe: a name is listed only on
@@ -23,8 +24,8 @@ a definite answer that nothing is served. A timeout, a rate limit or any other e
 and the block stands. An exact pin of a recorded malicious release is never affected; nor is npm,
 where a removed name becomes the security team's placeholder (`POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001`).
 
-Each file is plain text, one name per line, after a `# checked YYYY-MM-DD` header, so a reviewer
-sees every name added or removed.
+Each file is plain text, one name per line, sorted, after the provenance header every shipped list
+carries (Source, Threshold, Fetched, Refreshed), so a reviewer sees every name added or removed.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -52,7 +54,6 @@ class RegistryProbe:
 
     URLS: ClassVar[dict[str, str]] = {
         "pypi": "https://pypi.org/pypi/{name}/json",
-        "rubygems": "https://rubygems.org/api/v1/versions/{name}.json",
         "cargo": "https://crates.io/api/v1/crates/{name}",
     }
 
@@ -77,7 +78,7 @@ class RegistryProbe:
 
     @classmethod
     def removed(cls, ecosystem: str, name: str) -> bool | None:
-        status, body = cls.get(cls.URLS[ecosystem].format(name=urllib.request.quote(name, safe="")))
+        status, body = cls.get(cls.URLS[ecosystem].format(name=urllib.parse.quote(name, safe="")))
         if status == 404:
             return True
         if status != 200:
@@ -95,19 +96,26 @@ class RegistryProbe:
 class RemovedNames:
     @staticmethod
     def candidates(ecosystem: str) -> list[str]:
-        """Names whose every version is recorded as malicious in the shipped advisories."""
+        """Names the scanner itself treats as malicious in every version: the records as
+        `AdvisoryDatabase` materialises them, the same test `AdvisoryDetector._admitted_malware`
+        applies. The raw file can hold an all-versions form beside an exact list for one record."""
+        sys.path.insert(0, str(DATA.parents[2]))
+        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+
+        database = AdvisoryDatabase.bundled()
         raw = json.loads(gzip.decompress((DATA / f"advisories-{ecosystem}.json.gz").read_bytes()))
-        names = {
-            str(r["name"])
-            for r in raw
-            if isinstance(r, dict)
-            and r.get("malicious")
-            and not r.get("versions")
-            and not r.get("fixed")
-            and not r.get("last_affected")
-            and r.get("name")
-        }
-        return sorted(names)
+        names = sorted({str(r["name"]) for r in raw if isinstance(r, dict) and r.get("malicious")})
+        return [
+            name
+            for name in names
+            if any(
+                a.malicious
+                and not a.versions
+                and a.affects("0")
+                and not (a.fixed or a.last_affected)
+                for a in database.for_package(ecosystem, name)
+            )
+        ]
 
     @staticmethod
     def path(ecosystem: str) -> Path:
@@ -116,13 +124,16 @@ class RemovedNames:
     @staticmethod
     def checked(ecosystem: str) -> dt.date | None:
         try:
-            first = RemovedNames.path(ecosystem).read_text(encoding="utf-8").splitlines()[0]
-        except (OSError, IndexError):
+            lines = RemovedNames.path(ecosystem).read_text(encoding="utf-8").splitlines()
+        except OSError:
             return None
-        try:
-            return dt.date.fromisoformat(first.removeprefix("# checked ").strip())
-        except ValueError:
-            return None
+        for line in lines:
+            if line.startswith("# Refreshed:"):
+                try:
+                    return dt.date.fromisoformat(line.removeprefix("# Refreshed:").strip())
+                except ValueError:
+                    return None
+        return None
 
     @staticmethod
     def refresh(ecosystem: str, workers: int) -> dict[str, int]:
@@ -131,15 +142,33 @@ class RemovedNames:
             answers = list(pool.map(lambda n: RegistryProbe.removed(ecosystem, n), names))
         removed = sorted(n for n, a in zip(names, answers, strict=True) if a is True)
         today = dt.datetime.now(dt.UTC).date().isoformat()
-        RemovedNames.path(ecosystem).write_text(
-            f"# checked {today}\n" + "".join(f"{n}\n" for n in removed), encoding="utf-8"
-        )
-        return {
+        counts = {
             "candidates": len(names),
             "removed": len(removed),
             "served": sum(1 for a in answers if a is False),
             "unsure": sum(1 for a in answers if a is None),
         }
+        RemovedNames.path(ecosystem).write_text(
+            RemovedNames.header(ecosystem, counts, today) + "".join(f"{n}\n" for n in removed),
+            encoding="utf-8",
+        )
+        return counts
+
+    @staticmethod
+    def header(ecosystem: str, counts: dict[str, int], today: str) -> str:
+        source = RegistryProbe.URLS[ecosystem].replace("{name}", "<name>")
+        return (
+            f"# Malicious {ecosystem} package names the registry no longer serves. "
+            "Generated; do not edit by hand.\n"
+            f"# Regenerate with: python3 scripts/refresh/refresh_removed_names.py --only {ecosystem}\n"
+            f"# Source:    {source}, for every name the shipped advisories record as malicious "
+            "in every version\n"
+            "# Threshold: a definite answer that nothing installable is served (404, or no release "
+            "with a file); any error leaves the name out\n"
+            f"# Fetched:   {counts['candidates']:,} candidates, {counts['removed']:,} removed, "
+            f"{counts['served']:,} still served, {counts['unsure']:,} unsure\n"
+            f"# Refreshed: {today}\n"
+        )
 
     @staticmethod
     def main(argv: list[str] | None = None) -> int:

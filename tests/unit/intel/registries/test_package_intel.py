@@ -31,7 +31,11 @@ from cordon_scanner.intel.registries.popular import PackageIntel
 from cordon_scanner.intel.registries.real import DATA_DIR, REAL_PACKAGES, RealPackages
 from support import ROOT as REPO
 
-SHIPPED = sorted(p for p in DATA_DIR.glob("*.txt") if not p.name.endswith(".refused.txt"))
+SHIPPED = sorted(
+    p for p in DATA_DIR.glob("*.txt") if not p.name.endswith((".refused.txt", ".removed.txt"))
+)
+#: Not allowlists: malicious names the registry no longer serves (`refresh_removed_names.py`).
+REMOVED = sorted(DATA_DIR.glob("*.removed.txt"))
 
 #: Below this, a refresh did not work. Not a target -- a floor that a source
 #: returning an error page, an empty array or an HTML redirect would fall through.
@@ -486,3 +490,30 @@ class TestPackageIntel:
         curated sets when a file is missing, so an empty `data/` is a working scanner
         with a far smaller allowlist and no error anywhere."""
         assert SHIPPED, f"no allowlist files found in {DATA_DIR}"
+
+
+@pytest.mark.parametrize("path", REMOVED, ids=lambda p: p.stem)
+class TestEachRemovedNameListIsWellFormed:
+    """The same reviewability as an allowlist: where the names came from, the rule that admitted
+    them and when, sorted so a refresh diffs, and every name a malicious one."""
+
+    def test_it_has_a_provenance_header(self, path: Path) -> None:
+        header = "\n".join(
+            line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("#")
+        )
+        for required in ("Source:", "Threshold:", "Fetched:", "Refreshed:"):
+            assert required in header, f"{path.name} header is missing {required!r}"
+
+    def test_it_is_sorted_and_has_no_duplicates(self, path: Path) -> None:
+        entries = PackageIntelHelpers.names(path)
+        assert entries == sorted(entries), f"{path.name} is not sorted"
+        assert len(entries) == len(set(entries)), f"{path.name} has duplicates"
+
+    def test_every_name_is_recorded_malicious_in_every_version(self, path: Path) -> None:
+        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+
+        ecosystem = path.name.removesuffix(".removed.txt")
+        database = AdvisoryDatabase.bundled()
+        for name in PackageIntelHelpers.names(path)[:200]:
+            records = database.for_package(ecosystem, name)
+            assert any(r.malicious and not r.versions for r in records), name

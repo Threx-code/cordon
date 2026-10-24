@@ -1,4 +1,9 @@
-# checked 2026-10-24
+# Malicious cargo package names the registry no longer serves. Generated; do not edit by hand.
+# Regenerate with: python3 scripts/refresh/refresh_removed_names.py --only cargo
+# Source:    https://crates.io/api/v1/crates/<name>, for every name the shipped advisories record as malicious in every version
+# Threshold: a definite answer that nothing installable is served (404, or no release with a file); any error leaves the name out
+# Fetched:   9 candidates, 9 removed, 0 still served, 0 unsure
+# Refreshed: 2026-10-24
 aovine
 arone
 aronenao

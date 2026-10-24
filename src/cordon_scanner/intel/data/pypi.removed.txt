@@ -1,4 +1,9 @@
-# checked 2026-10-24
+# Malicious pypi package names the registry no longer serves. Generated; do not edit by hand.
+# Regenerate with: python3 scripts/refresh/refresh_removed_names.py --only pypi
+# Source:    https://pypi.org/pypi/<name>/json, for every name the shipped advisories record as malicious in every version
+# Threshold: a definite answer that nothing installable is served (404, or no release with a file); any error leaves the name out
+# Fetched:   7,674 candidates, 7,655 removed, 19 still served, 0 unsure
+# Refreshed: 2026-10-24
 0wneg
 1337test
 282828282828282828
@@ -738,7 +743,6 @@ discord-manager
 discord-p
 discord-ppy
 discord-pyy
-discord-token-generator
 discord-wbehook
 discord-wbhook
 discord-webbhook
@@ -1752,8 +1756,6 @@ forgyps
 formatter-test-package
 fortnoob123
 foxx-py
-fredli
-fredmi
 free-net-vpn
 free-net-vpn2
 freeqtrade
@@ -1777,7 +1779,6 @@ fretrade
 frqetrade
 frqtrade
 frreqtrade
-fsociety-tools
 fxzontop
 fyinance
 gal32fjdsbf89hnd
@@ -2120,7 +2121,6 @@ infovm
 init2winit
 inject-rem
 inkpy-jinja
-inlifegram
 instacart-roulette-daemon-client
 install-crypto
 install-pytest
@@ -3446,7 +3446,6 @@ paypalsplit
 pckaging
 pcodestyle
 pcyodestyle
-pdf-converter-pro
 pdf2doc
 peloton-client123
 pendirequests
@@ -3536,7 +3535,6 @@ pipvisa
 pipvm
 pirate-balls
 piynstaller
-pkg-fallback
 pllow
 ploghandle
 pluginlibrary
@@ -4582,7 +4580,6 @@ pycblines
 pyccodestyle
 pycdestyle
 pycdoestyle
-pyclack
 pycoddestyle
 pycodeestyle
 pycodesstyle
@@ -4626,7 +4623,6 @@ pydiolag6688
 pydiscordclient
 pydiscordion
 pydllcfg
-pyefflorer
 pyevasive
 pyezstyle
 pyfastcode
@@ -4642,14 +4638,11 @@ pygame-pytorch
 pygamee
 pygamme
 pyggame
-pyghoster
 pygmae
 pygrand
 pyheul
-pyhjdddo
 pyhon-binance
 pyhton-binance
-pyhulul
 pyiinstaller
 pyinnstaller
 pyinsaller
@@ -4666,15 +4659,9 @@ pyinstlaler
 pyinsttaller
 pyintaller
 pyintsaller
-pyioapso
-pyioler
 pyisntaller
-pyjio
-pyjoul
 pykane
-pykokalalz
 pykooler
-pyktrkatoo
 pylibscate
 pylibutil
 pylint-beautifulsoup
@@ -4684,7 +4671,6 @@ pylint-sys
 pylioner
 pyloy
 pymatematics
-pyminor
 pymocks
 pymulticolor
 pynalc
@@ -4694,12 +4680,10 @@ pyocdestyle
 pyocks
 pyodestyle
 pyoscks
-pyowler
 pypackscate
 pypackscraper
 pypaquets
 pypep
-pypiele
 pypiion
 pypip
 pyporoxy
@@ -4732,14 +4716,12 @@ pysolara
 pysoocks
 pyspliter
 pyssocks
-pystallerer
 pystlete
 pystob
 pystylerio
 pysubprocess
 pytabtrust
 pytarlooko
-pytasler
 pytest-pandas
 pytest-tt-ddriven
 pythhon-binance
@@ -4818,7 +4800,6 @@ pywcraft
 pywgame
 pywgrand
 pywgui
-pywhool
 pywhttp
 pywinfo
 pywint
@@ -4829,8 +4810,6 @@ pywload
 pywmask
 pywmc
 pywmine
-pywolle
-pywool
 pywosint
 pywpep
 pywpong
@@ -6054,6 +6033,7 @@ selfvmvisahacked
 sellenium
 selneium
 selnium
+sentinelone
 service-affinity-scheduling
 set-utils
 setdotwork
@@ -6153,7 +6133,6 @@ spammingsynonyms
 spamysynonym
 spatialmedia
 speech-dtw
-spellcheckers
 sphinx-rdt-theme
 sphinx-rtd-theme-cilium
 sphinx-rtd-themes
@@ -6174,7 +6153,6 @@ sqlalchemy-install
 sqlalchemy-os
 sqlalchemy-presto
 sqlalchemy-requests
-sqligen
 squeezieontop
 srcapy
 sscikit-learn
@@ -6251,7 +6229,6 @@ suyo
 swapmempool
 sylex-syntax
 sylexnaranjoo
-sympy-dev
 synapse-sso-proconnect
 syns-knox-xss-allwhere
 syntax-init
@@ -6262,15 +6239,12 @@ sys-selenium
 sysargvsox
 syslog-ng
 syslog-udp
-tablates
-tableate
 tarseir
 tarsie
 tarsire
 tcalendar
 tchap-bot
 tckalendar
-tdata-grabber
 tdwtauthauthentication
 teensorflow
 telethon2
@@ -7256,7 +7230,6 @@ trove4j
 tryconf
 tryhackme-offensive
 tryquests
-tsshare
 ttat-api-test
 ttensorflow-gpu
 ttkcalendar
