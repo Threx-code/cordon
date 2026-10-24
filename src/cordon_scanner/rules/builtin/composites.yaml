@@ -2761,7 +2761,11 @@ rules:
       proximity: 200
       all:
         - context: install_hook
-        - rule: CAP.CREDENTIAL.STORE.001
+        # An application's own secret counts here, though not in the two-signal rule: install
+        # code and a skill's scripts have no business reading the user's (review 98).
+        - any:
+            - rule: CAP.CREDENTIAL.STORE.001
+            - rule: CAP.CREDENTIAL.APP_SECRET.001
         - capability: egress
 
   # ---------------------------------------------------------------------
