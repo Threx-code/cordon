@@ -21,6 +21,17 @@ RULE = "SUSPECT.INSTALL.OBFUSCATED_HOOK.001"
 JSFUCK = "[]()!+" * 400 + "\n"
 #: A line over 2,000 characters that is almost all kana identifiers.
 KANA = "const " + "ソゾギダぢヾ" * 400 + " = 1;\n"
+#: A line over 2,000 characters renamed into `_0x` hex identifiers -- the hex-name packer.
+HEX_PACKER = "var x=[" + ",".join(f"_0x{i:04x}" for i in range(300)) + "];\n"
+#: A README carried as one long `long_description` string literal: over 2,000 characters of
+#: natural-language prose with accents (about 9% non-ASCII) and no `_0x` names. This is the census
+#: D false block -- a one-in-fifty off-ASCII bar read it as packed; it is readable (7 benign PyPI
+#: setup.py lines: businessowner-retriever, declatravaux, viburnum, nonebot-plugin-hammer, ...).
+README_PROSE = (
+    'const long_description = "'
+    + "a readable sentence with a few accents café déjà naïve résumé here. " * 35
+    + '";\n'
+)
 READABLE = (
     'const fs = require("fs");\nconsole.log("building");\nfs.writeFileSync("out.txt", "ok");\n'
 )
@@ -54,8 +65,18 @@ class TestObfuscatedHook:
         found = Kit.scan(tmp_path, KANA)
         assert any(r == RULE and s == "high" for r, s in found), found
 
+    def test_a_hex_name_packer_install_target_blocks(self, tmp_path: Path) -> None:
+        found = Kit.scan(tmp_path, HEX_PACKER)
+        assert any(r == RULE and s == "high" for r, s in found), found
+
     def test_a_readable_install_target_does_not_fire(self, tmp_path: Path) -> None:
         found = Kit.scan(tmp_path, READABLE)
+        assert not [r for r, _ in found if r == RULE], found
+
+    def test_a_readme_prose_long_description_does_not_fire(self, tmp_path: Path) -> None:
+        # census D: a README carried as one long string literal is natural-language prose, not a
+        # packed hook. Off-ASCII accents at a fifth of the line or less, and no `_0x` names.
+        found = Kit.scan(tmp_path, README_PROSE)
         assert not [r for r, _ in found if r == RULE], found
 
     def test_an_editor_extension_entry_is_not_an_install_hook(self) -> None:

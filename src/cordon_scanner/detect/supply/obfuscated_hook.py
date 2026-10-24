@@ -36,9 +36,14 @@ if TYPE_CHECKING:
 
 OBFUSCATED_HOOK_RULE = "SUSPECT.INSTALL.OBFUSCATED_HOOK.001"
 
-#: A character a line is "dense with" when it is this far from readable source: outside ASCII
-#: (kana and other identifier scripts) or a `_0x`-prefixed hex name (the hex-identifier packers).
-_DENSE_IDENTIFIER = re.compile(r"[^\x00-\x7f]|_0x[0-9a-f]{3,}")
+#: A non-ASCII codepoint -- kana and the other identifier scripts a packer renames into. The
+#: hex-name packers do not use these (their identifiers are ASCII `_0x...`), so the two signals
+#: are counted apart: a kana payload is almost all non-ASCII, while a README carried as one long
+#: string literal is natural-language prose a fifth non-ASCII at most (census D).
+_NON_ASCII = re.compile(r"[^\x00-\x7f]")
+#: A `_0x`-prefixed hex name, the hex-identifier packers' signature. These are ASCII, so prose
+#: never produces them.
+_HEX_IDENTIFIER = re.compile(r"_0x[0-9a-f]{3,}")
 
 
 class ObfuscatedHookDetector(BaseDetector):
@@ -52,11 +57,23 @@ class ObfuscatedHookDetector(BaseDetector):
     @staticmethod
     def dense(text: str) -> bool:
         """JSFuck-dense -- at least 60% of the characters in `[]()!+`, over 2,000 of them -- or a
-        line over 2,000 characters that is mostly non-ASCII or `_0x` identifiers."""
+        line over 2,000 characters that is a hex-name packer (`_0x` identifiers past one in fifty
+        characters) or kana-dense (more than half the line non-ASCII).
+
+        The two off-ASCII signals are counted apart, not summed (census D). A README carried as a
+        single long `long_description` string literal is natural-language prose: moderate non-ASCII
+        (seven benign PyPI setup.py lines, at most 19%) and no `_0x` names. Summing the two counted
+        it dense at a one-in-fifty bar; counting them apart -- more than half the line non-ASCII, or
+        a `_0x` density unchanged from before -- leaves the prose readable and still catches the
+        kana packer (almost all non-ASCII) and the hex packer."""
         if len(text) > 2000 and sum(text.count(c) for c in "[]()!+") / len(text) >= 0.6:
             return True
         return any(
-            len(line) > 2000 and len(_DENSE_IDENTIFIER.findall(line)) > len(line) / 50
+            len(line) > 2000
+            and (
+                len(_HEX_IDENTIFIER.findall(line)) > len(line) / 50
+                or len(_NON_ASCII.findall(line)) > len(line) / 2
+            )
             for line in text.splitlines()
         )
 
