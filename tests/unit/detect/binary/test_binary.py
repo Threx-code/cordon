@@ -80,6 +80,22 @@ class TestContext:
         )
         assert found[0].rule_id == "POLICY.BINARY.COMMITTED.001"
 
+    def test_a_wheels_installed_command_is_a_note(self) -> None:
+        # `<name>-<version>.data/scripts/` is what a wheel installs as the package's commands; no
+        # install step runs it (`buf-bin`, `litestream-bin`).
+        found = BinaryHelpers.findings_for("buf_bin-1.73.0.data/scripts/buf", ELF)
+        assert found[0].rule_id == "POLICY.BINARY.COMMITTED.001"
+
+    def test_a_scripts_directory_beside_a_data_directory_is_still_a_finding(self) -> None:
+        found = BinaryHelpers.findings_for("pkg-1.0/data/scripts/helper", ELF)
+        assert found[0].rule_id == "SUSPECT.BINARY.EXECUTABLE_PATH.001"
+
+    def test_a_java_class_in_a_package_named_hooks_is_a_note(self) -> None:
+        found = BinaryHelpers.findings_for(
+            "tool.jar!ksp/hooks/Processor.class", bytes.fromhex("cafebabe0000003d") + bytes(64)
+        )
+        assert all(f.rule_id != "SUSPECT.BINARY.EXECUTABLE_PATH.001" for f in found)
+
     def test_a_scripts_directory_without_an_environment_is_still_a_finding(self) -> None:
         found = BinaryHelpers.findings_for(
             "pkg-1.0/.venv/Scripts/pip.exe", ELF, tree=("pkg-1.0/pyvenv.cfg",)

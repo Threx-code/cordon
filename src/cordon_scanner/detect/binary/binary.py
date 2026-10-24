@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
@@ -327,6 +327,9 @@ uses -- installers and single-file distributions are packed -- so the finding
 says what was observed rather than what it means, and leaves the conclusion to
 somebody who knows whether this project ships a packed artefact."""
 
+#: A wheel's data directory holding scripts (`buf_bin-1.73.0.data/`), at the end of a path.
+_WHEEL_SCRIPTS: Final = re.compile(r"(?:^|/)[A-Za-z0-9_.]+-[^/]+\.data/$")
+
 EXECUTING_DIRECTORIES = (
     "scripts/",
     ".githooks/",
@@ -371,7 +374,7 @@ Named as a closed list rather than bounded by depth, because a monorepo's
 `packages/server/scripts/postinstall.sh` is at the same depth and IS a lifecycle
 location."""
 
-NOT_LIFECYCLE_RUNNABLE = frozenset({"WebAssembly"})
+NOT_LIFECYCLE_RUNNABLE = frozenset({"WebAssembly", "Java class"})
 """Executable formats that no lifecycle step can invoke.
 
 A `.wasm` module has no entry point an operating system or a shell can start: it is
@@ -379,6 +382,10 @@ instantiated by a host runtime that has to be written to load it. `excalidraw` k
 `scripts/wasm/hb-subset.wasm`, the HarfBuzz subsetter its font pipeline calls from
 JavaScript, and the finding said it "sits where a lifecycle step will run it", which
 is not something that can happen.
+
+A Java class is the same: only a JVM given a classpath starts it, and in a JAR its directory is
+its Java package (`Typechecker.jar!ksp/hooks/...class`), not a hooks directory: 57 legitimate
+PyPI blocks, no malware in any archived set.
 
 It still reports as a committed binary through the other branch, which is the true
 statement about it."""
@@ -1013,13 +1020,19 @@ class BinaryDetector(BaseDetector):
 
     @staticmethod
     def _virtualenv_launcher(path: str, ctx: ScanContext) -> bool:
-        """A Windows virtual environment's own `Scripts/` (`pip.exe`, a console script's launcher):
-        the directory above holds the environment's `pyvenv.cfg`. No lifecycle step runs it; an
+        """A `scripts/` no lifecycle step runs: a wheel's installed commands, or a Windows virtual
+        environment's own `Scripts/` (`pip.exe`, a console script's launcher), the directory above
+        holding the environment's `pyvenv.cfg`. No lifecycle step runs it; an
         sdist that ships one has packaged its build environment by mistake (review 98 G6). What an
         install hook names is still reported, and the binary is still read."""
         cut = path.lower().rfind("scripts/")
         if cut < 0 or (cut > 0 and path[cut - 1] != "/"):
             return False
+        # A wheel's `<name>-<version>.data/scripts/`: the wheel format installs these as the
+        # package's commands, and no install step runs them (`buf-bin`, `litestream-bin` ship their
+        # tool so). 34 legitimate PyPI blocks; none of 5,459 PyPI malware releases had one.
+        if _WHEEL_SCRIPTS.search(path[:cut]):
+            return True
         return f"{path[:cut]}pyvenv.cfg" in ctx.tree_paths
 
     def _import_findings(
