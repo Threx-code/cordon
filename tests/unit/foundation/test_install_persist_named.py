@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import io
+import tarfile
+
 import pytest
 
 from cordon_scanner import Scanner
@@ -45,6 +48,39 @@ class TestNamedNotWritten:
             "FROM debian:12\nRUN useradd -m app && echo 'export X=1' >> /home/app/.profile\n"
         )
         assert RULE not in PersistHelpers.rules(tmp_path, {"Dockerfile": dockerfile})
+
+    def test_a_dependency_vendoring_a_dockerfile_does_not_make_it_an_install_hook(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # opencv's sdist carries zlib-ng's `actions-runner.Dockerfile`; pip never builds it. A
+        # directory scan skips vendored trees, so this is read as the sdist it ships in.
+        from cordon_scanner.detect.code.capability import CapabilityDetector
+
+        members = {
+            "x-1.0/setup.py": 'from setuptools import setup\nsetup(name="x")\n',
+            "x-1.0/3rdparty/zlib-ng/builder/runner.Dockerfile": "FROM almalinux:9\nRUN make\n",
+            "x-1.0/docker/Dockerfile": "FROM almalinux:9\nRUN make\n",
+        }
+        sdist = tmp_path / "x-1.0.tar.gz"
+        with tarfile.open(sdist, "w:gz") as archive:
+            for name, text in members.items():
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        seen: dict[str, bool] = {}
+        inspect = CapabilityDetector.inspect
+
+        def record(self, unit, ctx):  # type: ignore[no-untyped-def]
+            seen[unit.path.rpartition("/")[2]] = ctx.in_install_hook(unit.path)
+            return inspect(self, unit, ctx)
+
+        monkeypatch.setattr(CapabilityDetector, "inspect", record)
+        config = Config.default()
+        limits = config.limits.merged(max_workers=1)
+        Scanner(config.with_overrides(use_cache=False, limits=limits)).scan(sdist)
+        # The package's own Dockerfile keeps its build-hook reading; the vendored one does not.
+        assert seen == {"setup.py": True, "runner.Dockerfile": False, "Dockerfile": True}
 
 
 class TestNamedInCodeNotWritten:

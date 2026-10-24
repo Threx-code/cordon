@@ -7155,30 +7155,29 @@ class Engine:
         """Paths that execute at install time, according to their manifests -- and, third, the
         scripts a published GitHub action's composite steps run, which are CI code.
 
-        The same packaging test the inventory applies, for the same reason and
-        against the same repository: this is the SECOND place a `setup.py`
-        becomes an install hook, and fixing only the first left
-        `hermes_cli/subcommands/setup.py` -- an argument parser -- seeding an
-        import closure of 510 files. See `Engine._hook_executes`.
+        The inventory's packaging test, here too: fixing only the first place a `setup.py` becomes
+        a hook left `hermes_cli/subcommands/setup.py`, an argument parser, seeding an import closure
+        of 510 files (`Engine._hook_executes`). A Dockerfile a dependency vendors is not a hook:
+        its RUN steps run when somebody builds that image, never on install (opencv's zlib-ng).
         """
         paths: set[str] = set()
         consumer: set[str] = set()
         ci_scripts: set[str] = set()
-        """Paths that run for whoever INSTALLS the package, which is a subset.
-
-        See `ScanContext.consumer_install_paths`. A `setup.py` is an install hook
-        because arbitrary Python runs during a build; it reaches a consumer only
-        when it overrides a consumer-time command.
-        """
+        """Paths that run for whoever INSTALLS the package, a subset (`ScanContext.consumer_install_paths`):
+        a `setup.py` reaches a consumer only when it overrides a consumer-time command."""
         known = frozenset(unit.path for unit in units)
         package_directories = {
             unit.path.rpartition("/")[0]
             for unit in units
             if ContainerPaths.basename(unit.path) == "__init__.py"
         }
+        from cordon_scanner.detect.secrets.secrets import SourcePaths
+
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
-            if ecosystem_id is None:
+            if ecosystem_id is None or (
+                ecosystem_id == "image" and SourcePaths.is_vendored(unit.path)
+            ):
                 continue
             if ContainerPaths.basename(unit.path) in PACKAGED_BUILD_FILENAMES and (
                 unit.path.rpartition("/")[0] in package_directories
