@@ -115,6 +115,53 @@ class TestPickles:
         with pytest.raises(FormatError, match="opcodes"):
             pickles.PickleReader.read(pickle.dumps(list(range(100)), protocol=2))
 
+    def test_a_command_module_reached_through_an_attribute_chain_is_dangerous(self) -> None:
+        # `torch.serialization` does `import os`, so a pickle GETs `os` off it and calls `system`:
+        # the dotted name is torch.serialization.os.system, which a direct module match misses.
+        reached = pickles.PickleImport("torch", "serialization.os.system", 0, "")
+        assert reached.dangerous and reached.always
+        # A real helper on the same module, with no command component, is left alone.
+        assert not pickles.PickleImport("torch", "serialization.load", 0, "").dangerous
+
+    def test_a_callable_dangerous_by_name_is_caught_wherever_it_comes_from(self) -> None:
+        # `execfile` re-exported under a debugger shim runs a file all the same.
+        shim = pickles.PickleImport("_pydev_bundle._pydev_execfile", "execfile", 0, "")
+        assert shim.dangerous and shim.always
+
+    def test_pathlib_file_writes_are_dangerous_but_a_stored_path_is_not(self) -> None:
+        # Writing, deleting or re-linking a path on load is a payload; holding a path is not.
+        assert pickles.PickleImport("pathlib", "Path.write_text", 0, "").always
+        assert pickles.PickleImport("pathlib", "Path.unlink", 0, "").always
+        assert not pickles.PickleImport("pathlib", "Path", 0, "").dangerous
+
+    def test_reconstruction_primitives_are_dual_use_not_load_and_run(self) -> None:
+        # getattr/setattr, functools.partial, the operator/types helpers and dill's own rebuild
+        # module are how benign model files reconstruct objects: dangerous but dual-use, reported as
+        # an unexplained import rather than the load-and-run block.
+        partial = pickles.PickleImport("functools", "partial", 0, "")
+        assert partial.dangerous and partial.dual and not partial.always
+        fetched = pickles.PickleImport("builtins", "getattr", 0, "")
+        assert fetched.dual and not fetched.always
+        assert pickles.PickleImport("dill._dill", "_create_function", 0, "").dual
+        # A real command import stays load-and-run even beside the primitives.
+        assert pickles.PickleImport("os", "system", 0, "").always
+
+    def test_a_payload_appended_after_a_decoy_stream_is_read(self) -> None:
+        # A benign first stream (a lone integer) that STOPs, then the real pickle appended after it
+        # (PickleBall `coldwaterq_inject_calc.pt`). Both streams are walked.
+        report = pickles.PickleReader.read(
+            pickle.dumps(1234, protocol=2) + pickle.dumps(Reduces(os.system, "true"), protocol=2)
+        )
+        assert report.pickles >= 2
+        assert any(i.dangerous and i.name == "system" for i in report.imports)
+
+    def test_trailing_bytes_that_are_not_a_pickle_do_not_raise(self) -> None:
+        # A clean pickle followed by raw bytes (a tensor blob): the trailing data ends the file, it
+        # does not make the read fail.
+        report = pickles.PickleReader.read(pickle.dumps([1, 2, 3], protocol=2) + b"\x00" * 32)
+        assert report.pickles == 1
+        assert not any(i.dangerous for i in report.imports)
+
 
 class TestPicklesInAScan:
     def test_a_dangerous_model_is_malware(self, tmp_path) -> None:
@@ -142,6 +189,21 @@ class TestPicklesInAScan:
         result = FormatsHelpers._scan(tmp_path, {"weights.pkl": b"\xff\x00\x01 garbage"})
         assert "OPERATIONAL.FORMAT.UNREADABLE" in FormatsHelpers._rules(result)
         assert not result.complete
+
+    def test_a_pickle_that_writes_a_file_on_load_is_malware(self, tmp_path) -> None:
+        raw = pickle.dumps(Reduces(Path.write_text, "payload"), protocol=4)
+        found = FormatsHelpers._rules(FormatsHelpers._scan(tmp_path, {"w.pkl": raw}))
+        assert found["MALWARE.MODEL.PICKLE_EXEC.001"]
+
+    def test_a_model_rebuilt_only_with_dual_use_helpers_is_reported_below_malware(
+        self, tmp_path
+    ) -> None:
+        # functools.partial alone -- an object-reconstruction primitive, no command import.
+        raw = b"\x80\x02cfunctools\npartial\nq\x00)Rq\x01."
+        found = FormatsHelpers._rules(FormatsHelpers._scan(tmp_path, {"model.pkl": raw}))
+        assert not found["MALWARE.MODEL.PICKLE_EXEC.001"]
+        [hit] = found["SUSPECT.MODEL.PICKLE_IMPORT.001"]
+        assert "functools.partial" in hit.message
 
 
 # -- OLE and VBA ---------------------------------------------------------------------------------

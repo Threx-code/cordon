@@ -327,9 +327,12 @@ class FormatDetector(BaseDetector):
 
     def _pickle(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
         report = pickles.PickleReader.read(unit.content.raw, truncated=unit.content.truncated)
-        dangerous = sorted({i.dotted for i in report.imports if i.dangerous})
-        if dangerous:
-            listed = ", ".join(dangerous[:MAX_IMPORTS_LISTED])
+        always = sorted({i.dotted for i in report.imports if i.always})
+        dual = sorted({i.dotted for i in report.imports if i.dual})
+        if always:
+            # A load-and-run import (os/subprocess/eval/a loader), on its own or alongside the
+            # reconstruction primitives. List both so the evidence is complete.
+            listed = ", ".join((always + dual)[:MAX_IMPORTS_LISTED])
             return [
                 self._finding(
                     "MALWARE.MODEL.PICKLE_EXEC.001", unit, ctx, detail=f"It imports {listed}."
@@ -342,8 +345,12 @@ class FormatDetector(BaseDetector):
                 if not i.recognised and not FormatDetector._own_module(i.module, ctx)
             }
         )
-        if unknown:
-            listed = ", ".join(unknown[:MAX_IMPORTS_LISTED])
+        # Reconstruction primitives alone (dill's own helpers, getattr, functools.partial) are how a
+        # benign model file rebuilds its objects: reported as an unexplained import, never the
+        # load-and-run block. Unrecognised imports are reported the same way.
+        reported = dual + [u for u in unknown if u not in dual]
+        if reported:
+            listed = ", ".join(sorted(reported)[:MAX_IMPORTS_LISTED])
             return [
                 self._finding(
                     "SUSPECT.MODEL.PICKLE_IMPORT.001", unit, ctx, detail=f"It imports {listed}."

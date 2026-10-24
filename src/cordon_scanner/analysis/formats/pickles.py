@@ -71,6 +71,22 @@ DANGEROUS: Final = {
     "asyncio": None,
     "multiprocessing": None,
     "sys": None,
+    "pathlib": frozenset(
+        {
+            # The file-mutating methods only: a load that writes, deletes, moves, re-permissions or
+            # links a path has run a payload. Storing a path (`pathlib.Path`, the class) does not,
+            # so the class itself is left out (PickleBall `ours/write_file.pkl` is Path.write_text).
+            "Path.write_text",
+            "Path.write_bytes",
+            "Path.rename",
+            "Path.replace",
+            "Path.unlink",
+            "Path.rmdir",
+            "Path.chmod",
+            "Path.symlink_to",
+            "Path.hardlink_to",
+        }
+    ),
     "pickle": frozenset({"loads", "load", "Unpickler"}),
     "_pickle": frozenset({"loads", "load", "Unpickler"}),
     "dill": None,
@@ -109,6 +125,43 @@ DANGEROUS: Final = {
 }
 """Modules whose callables run commands, reach the network, touch files or evaluate code.
 `None` means every name in the module; a set names the dangerous members only."""
+
+#: Command/code-execution modules that stay dangerous when reached through an attribute chain. A
+#: pickle GETs `os` off `torch.serialization` (which does `import os`) and calls `system` on it; the
+#: dotted name is then `torch.serialization.os.system`, not `os.system`, so the direct match misses
+#: it (census B: PickleBall `ours/call_system.pkl`). Only the unambiguous command/code modules are
+#: here -- a benign module whose last component is literally `os`/`subprocess`/`runpy` is not a real
+#: shape, while `code`/`commands`/`socket` as a trailing component plausibly are, so they are left out.
+SUFFIX_MODULES: Final = frozenset({"os", "posix", "nt", "subprocess", "runpy"})
+
+#: Callables dangerous by name wherever they are imported from. A re-export of `execfile` under
+#: `_pydev_bundle._pydev_execfile` runs a file all the same (census B: `pytorch_reduce_execfile.pt`).
+DANGEROUS_CALLABLES: Final = frozenset({"execfile"})
+
+#: Dangerous-but-dual-use: object-reconstruction primitives that benign model files legitimately
+#: use -- getattr/setattr to rebuild attributes, functools.partial, operator/types helpers, and
+#: dill's own `_dill` module (how every dill-serialised object rebuilds itself). On their own these
+#: are reported as an unexplained import (SUSPECT.MODEL.PICKLE_IMPORT), not a load-and-run block;
+#: paired with a DANGEROUS_ALWAYS import in the same pickle they keep the critical PICKLE_EXEC
+#: (census B: the 14 benign ML-weight false positives were dill._dill._*, __builtin__.getattr,
+#: functools.partial, builtins.setattr -- none alongside an os/exec import).
+DANGEROUS_DUAL: Final = frozenset(
+    {
+        "builtins.getattr",
+        "builtins.setattr",
+        "builtins.globals",
+        "builtins.vars",
+        "__builtin__.getattr",
+        "__builtin__.setattr",
+        "operator.attrgetter",
+        "operator.methodcaller",
+        "functools.partial",
+        "types.FunctionType",
+        "types.CodeType",
+        "types.LambdaType",
+    }
+)
+DANGEROUS_DUAL_PREFIXES: Final = ("dill._dill.",)
 
 SAFE_PREFIXES: Final = (
     "torch.",
@@ -173,10 +226,25 @@ class PickleImport:
 
     @property
     def dangerous(self) -> bool:
+        if self.name in DANGEROUS_CALLABLES:
+            return True
         for module, names in DANGEROUS.items():
             if self.module == module or self.module.startswith(module + "."):
                 return names is None or self.name in names
-        return False
+        # A command/code module reached through an attribute chain, named in the module or the
+        # qualified name: `torch` GET `serialization.os.system` is os.system off torch's `os`. Any
+        # command/code module that appears as a component with a callable after it is dangerous.
+        return any(part in SUFFIX_MODULES for part in self.dotted.split(".")[:-1])
+
+    @property
+    def dual(self) -> bool:
+        """A dangerous import that is also an ordinary object-reconstruction primitive."""
+        return self.dotted in DANGEROUS_DUAL or self.dotted.startswith(DANGEROUS_DUAL_PREFIXES)
+
+    @property
+    def always(self) -> bool:
+        """Dangerous and not merely a reconstruction primitive: loading runs it (os, exec, a loader)."""
+        return self.dangerous and not self.dual
 
     @property
     def recognised(self) -> bool:
@@ -213,23 +281,46 @@ class PickleReader:
         report = PickleReport(partial=truncated)
         if raw[:4] == b"PK\x03\x04":
             for member, data, cut in PickleReader._zip_pickles(raw, truncated=truncated):
-                report.pickles += 1
                 report.partial |= cut
-                PickleReader._walk(data, report, member)
+                PickleReader._walk_streams(data, report, member)
         else:
-            report.pickles = 1
-            PickleReader._walk(raw, report, "")
+            PickleReader._walk_streams(raw, report, "")
+        if report.pickles == 0 and not report.imports and not report.partial:
+            raise FormatError("not a readable pickle")
         return report
 
     @staticmethod
-    def _walk(data: bytes, report: PickleReport, member: str) -> None:
+    def _walk_streams(data: bytes, report: PickleReport, member: str) -> None:
+        """A file can hold several pickle streams end to end: a benign decoy that STOPs early, then
+        the real payload appended after it (PickleBall `coldwaterq_inject_calc.pt`, whose first
+        stream is a lone integer). Walk each from where the last one stopped; a run of bytes that is
+        not a pickle ends the file. `genops` leaves the position just past the STOP it read, so the
+        next walk resumes at the following stream."""
+        stream = io.BytesIO(data)
+        total = len(data)
+        while stream.tell() < total and report.pickles < MAX_PICKLES:
+            start = stream.tell()
+            count, clean = PickleReader._walk(stream, report, member)
+            if count == 0 or stream.tell() <= start:
+                # Nothing here was a pickle opcode: trailing data, not another stream.
+                break
+            report.pickles += 1
+            if not clean:
+                # The stream ran out or hit a byte that is not an opcode; stop before trailing data.
+                break
+
+    @staticmethod
+    def _walk(stream: io.BytesIO, report: PickleReport, member: str) -> tuple[int, bool]:
         """Follow the stack from each opcode's declared effect, so `STACK_GLOBAL` names exactly the
-        two values it would consume -- a decoy string pushed and popped in between changes nothing."""
+        two values it would consume -- a decoy string pushed and popped in between changes nothing.
+
+        Reads one stream from the current position to its STOP. Returns the opcode count and whether
+        it ended cleanly at a STOP; a count of zero means the position did not begin a pickle."""
         stack: list[object] = []
         memo: dict[int, object] = {}
         count = 0
         try:
-            for opcode, argument, position in pickletools.genops(io.BytesIO(data)):
+            for opcode, argument, position in pickletools.genops(stream):
                 count += 1
                 if count > MAX_OPCODES:
                     raise FormatError(f"the pickle has more than {MAX_OPCODES} opcodes")
@@ -275,12 +366,14 @@ class PickleReader:
                     )
         except FormatError:
             raise
-        except (ValueError, EOFError, struct.error, UnicodeDecodeError, IndexError) as exc:
+        except (ValueError, EOFError, struct.error, UnicodeDecodeError, IndexError):
             # A stream that ends early is expected when only the start of a file was read; anything
-            # found before the break is still reported. With nothing found, it was not a pickle.
-            if not report.partial and not report.imports:
-                raise FormatError(f"not a readable pickle ({type(exc).__name__})") from exc
-            report.partial = True
+            # found before the break is still reported. `count == 0` means the position was not a
+            # pickle at all (`read` turns an empty, un-truncated result into an unreadable finding).
+            if count > 0:
+                report.partial = True
+            return count, False
+        return count, True
 
     @staticmethod
     def _zip_pickles(raw: bytes, *, truncated: bool) -> list[tuple[str, bytes, bool]]:
