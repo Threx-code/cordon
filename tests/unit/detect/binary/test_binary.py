@@ -170,7 +170,7 @@ class TestPolyglot:
         scan; it still misleads a person, so it stays on the record."""
         found = [
             f
-            for f in BinaryHelpers.findings_for(name, b"#!/bin/sh\nexec node \"$0.js\" \"$@\"\n")
+            for f in BinaryHelpers.findings_for(name, b'#!/bin/sh\nexec node "$0.js" "$@"\n')
             if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
         ]
         assert found and all(f.severity <= Severity.LOW for f in found)
@@ -179,7 +179,7 @@ class TestPolyglot:
     def test_a_script_under_a_data_name_keeps_its_grade(self, name: str) -> None:
         found = [
             f
-            for f in BinaryHelpers.findings_for(name, b"#!/bin/sh\nexec node \"$0.js\" \"$@\"\n")
+            for f in BinaryHelpers.findings_for(name, b'#!/bin/sh\nexec node "$0.js" "$@"\n')
             if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
         ]
         assert found and all(f.severity >= Severity.HIGH for f in found)
