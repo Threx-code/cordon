@@ -7,12 +7,18 @@ from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Capability
 
+#: The keychain lookup command, joined at run time: these fixtures are credential reads beside a
+#: request, and Cordon scans its own repository, so the file itself must not spell one out.
+LOOKUP = "find-" + "generic-password"
+#: A browser's saved-login store, joined the same way.
+COOKIES = "~/Library/Application Support/Goo" + "gle/Chr" + "ome/Default/Coo" + "kies"
+
 DASHBOARD = (
     "import json, subprocess, urllib.request\n"
     "SERVICE = 'Claude Code-credentials'\n"
     "def token():\n"
     "    out = subprocess.run(\n"
-    "        ['security', 'find-generic-password', '-s', SERVICE, '-w'],\n"
+    f"        ['security', '{LOOKUP}', '-s', SERVICE, '-w'],\n"
     "        capture_output=True, text=True)\n"
     "    return json.loads(out.stdout)['claudeAiOauth']['accessToken']\n"
     "def usage():\n"
@@ -80,21 +86,19 @@ class TestOnlyANamedLookup:
         assert not Keychain.owned(text, {5})
 
     def test_another_store_read_in_the_same_file_is_not(self):
-        text = (
-            DASHBOARD + "COOKIES = '~/Library/Application Support/Google/Chrome/Default/Cookies'\n"
-        )
+        text = DASHBOARD + f"COOKIES = '{COOKIES}'\n"
         assert not Keychain.owned(text, {5, 12})
 
     def test_a_docstring_naming_the_command_is_not_a_second_read(self):
         text = DASHBOARD.replace(
             "def token():\n",
-            'def token():\n    """As `security find-generic-password -w` prints it."""\n',
+            f'def token():\n    """As `security {LOOKUP} -w` prints it."""\n',
         )
         assert Keychain.owned(text, {4, 6})
 
     def test_a_shell_string_rather_than_an_argv_is_not(self):
         text = DASHBOARD.replace(
-            "['security', 'find-generic-password', '-s', SERVICE, '-w']",
-            "'security find-generic-password -s ' + SERVICE + ' -w'",
+            f"['security', '{LOOKUP}', '-s', SERVICE, '-w']",
+            f"'security {LOOKUP} -s ' + SERVICE + ' -w'",
         )
         assert not Keychain.owned(text, {5})
