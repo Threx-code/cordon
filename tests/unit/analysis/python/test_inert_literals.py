@@ -100,3 +100,17 @@ class TestInertLiterals:
         # cord-engine / mindfabric shape: a plain command string reaches a `.get()` LOOKUP, not a
         # URL fetch, so a bare `get` must not count as a network sink.
         self._assert("cfg = {}\nfor c in ['rm -rf /']:\n    cfg.get(c)\n", live=False)
+
+    def test_a_stratum_pool_beside_a_wallet_is_live(self) -> None:
+        # Must-keep: the SUSPECT.CRYPTOMINER.001 control. A stratum pool URL and a payout wallet as
+        # bare constants are mining configuration, not a listed indicator, so the pool literal is
+        # never inert even though it reaches no sink.
+        wallet = "4A" + "b" * 93  # 95-char base58, Monero-shaped
+        src = f'POOL = "stratum+tcp://pool.minexmr.invalid:4444"\nWALLET = "{wallet}"\n'
+        assert 1 not in self.inert(src), (sorted(self.inert(src)),)
+
+    def test_a_stratum_pool_without_a_wallet_is_inert(self) -> None:
+        # The other side (the `animica` shape): a stratum URL catalogued without a payout wallet is
+        # a listed protocol pattern, not configuration, so it stays inert.
+        src = 'POOLS = ["stratum+tcp://pool.example.invalid:4444"]\nprint(len(POOLS))\n'
+        assert 1 in self.inert(src), (sorted(self.inert(src)),)

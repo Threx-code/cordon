@@ -21,6 +21,7 @@ reported LOW, never dropped: the string is there, a reviewer may want it, but it
 from __future__ import annotations
 
 import ast
+import re
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
@@ -66,6 +67,17 @@ class InertLiterals(PythonValueFlow):
     _FETCH: ClassVar[frozenset[str]] = frozenset(["get", "head"])
     #: A seeded value is URL-shaped when it opens with one of these schemes.
     _URL_SCHEMES: ClassVar[tuple[str, ...]] = ("http://", "https://", "ftp://")
+    #: Stratum is the mining pool wire protocol and exists for nothing else. A stratum URL is not a
+    #: command a tool merely inspects; it is mining configuration. Paired in the same file with a
+    #: payout wallet (``POOL = "stratum+tcp://..."`` beside ``WALLET = "4A..."``) it is mining by
+    #: definition, so such a literal is never graded inert even when it reaches no sink -- that pair
+    #: is the control `SUSPECT.CRYPTOMINER.001` rests on. A security tool's IOC table carries the
+    #: protocol pattern but not a specific attacker wallet, so the pairing is what separates the two.
+    _STRATUM_SCHEMES: ClassVar[tuple[str, ...]] = ("stratum+tcp://", "stratum+ssl://", "stratum://")
+    #: A payout-wallet-shaped literal: a long base58 run (Monero is 95 chars, integrated 106), the
+    #: kind of address a miner is configured to pay. Scanned only to decide whether a stratum pool
+    #: literal in the same file is configuration rather than a listed indicator.
+    _WALLET: ClassVar[re.Pattern[str]] = re.compile(r"[1-9A-HJ-NP-Za-km-z]{90,110}")
     #: Write the value out. A command written to a file is the first half of write-then-run, and
     #: telling that from a benign log needs the file traced to an exec; kept as a sink so the
     #: write-then-run dropper is never called inert.
@@ -80,13 +92,17 @@ class InertLiterals(PythonValueFlow):
         self._focus = focus
         #: Seeded lines whose literal is URL-shaped -- the only ones a fetch verb makes live.
         self._url_seeds: set[int] = set()
+        #: Seeded lines whose literal is a stratum pool URL -- never inert when the file also holds
+        #: a wallet-shaped literal (mining configuration, not a listed indicator).
+        self._stratum_seeds: set[int] = set()
 
     def seed(self, node: ast.AST) -> Label | None:
         """A non-blank string literal on a focus line (every line when `focus` is None), by line.
 
         A URL-shaped literal also records its line in `_url_seeds`, so a fetch verb can be made a
-        sink for it alone. A line that carries both a URL and a plain string is treated as a URL
-        seed, which over-approximates toward keeping the finding.
+        sink for it alone. A stratum pool literal records its line in `_stratum_seeds`. A line that
+        carries more than one kind is recorded under each, which over-approximates toward keeping
+        the finding.
         """
         if (
             isinstance(node, ast.Constant)
@@ -94,8 +110,11 @@ class InertLiterals(PythonValueFlow):
             and node.value.strip()
             and (self._focus is None or node.lineno in self._focus)
         ):
-            if node.value.strip().lower().startswith(self._URL_SCHEMES):
+            low = node.value.strip().lower()
+            if low.startswith(self._URL_SCHEMES):
                 self._url_seeds.add(node.lineno)
+            if any(scheme in low for scheme in self._STRATUM_SCHEMES):
+                self._stratum_seeds.add(node.lineno)
             return node.lineno
         return None
 
@@ -120,7 +139,21 @@ class InertLiterals(PythonValueFlow):
                 # A fetch (`get`/`head`) is a sink only for a URL-shaped value, so a plain command
                 # string flowing into a dict/attr `.get()` lookup stays inert.
                 reached |= self.given(node) & self._url_seeds
+        # A stratum pool literal beside a payout wallet is mining configuration, not a listed
+        # indicator, so it is live however it is (or is not) used. The pairing is what tells it from
+        # a security tool's IOC table, which lists the protocol but not a specific attacker wallet.
+        if self._stratum_seeds and self._has_wallet():
+            reached |= self._stratum_seeds
         return reached
+
+    def _has_wallet(self) -> bool:
+        """Whether any string literal in the file is payout-wallet-shaped."""
+        return any(
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and self._WALLET.search(node.value)
+            for node in ast.walk(self.tree)
+        )
 
     @classmethod
     def inert_lines(cls, tree: ast.AST) -> frozenset[int]:
