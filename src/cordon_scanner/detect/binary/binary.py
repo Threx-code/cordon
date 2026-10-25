@@ -1049,17 +1049,29 @@ class BinaryDetector(BaseDetector):
         if table is None:
             return
         binding = ImportCapabilities.is_binding(table)
-        for rule_id, detail in ImportCapabilities.verdicts(ImportCapabilities.profile(table)):
+        # Cygwin's and MSYS2's POSIX layer builds `fork()` from another process's memory and
+        # threads, so it imports what an injector does (review 98, CDI: two PyPI packages ship it).
+        # Its name alone is free to take; its own `cygwin_internal` export is what makes it one.
+        runtime = (
+            content.path.rsplit("/", 1)[-1].lower() in {"cygwin1.dll", "msys-2.0.dll"}
+            and b"cygwin_internal" in content.raw
+        )
+        profile = ImportCapabilities.profile(table)
+        for rule_id, detail in ImportCapabilities.verdicts(profile, content.raw):
             finding = self._finding(
                 rule_id, unit, ctx, f"{Prose.article(found.name)} {found.name} that {detail}"
             )
-            if binding and rule_id == "SUSPECT.BINARY.PROCESS_INJECTION.001":
+            if (binding or runtime) and rule_id == "SUSPECT.BINARY.PROCESS_INJECTION.001":
                 # A language binding imports the API it wraps (FP-10): reported, not blocking.
+                because = (
+                    " It is a Python or Node binding, which imports the calls it exposes."
+                    if binding
+                    else " It is the Cygwin POSIX runtime, whose fork() is built from these calls."
+                )
                 finding = replace(
                     finding,
                     severity=min(finding.severity, Severity.MEDIUM),
-                    message=finding.message
-                    + " It is a Python or Node binding, which imports the calls it exposes.",
+                    message=finding.message + because,
                 )
             yield finding
 

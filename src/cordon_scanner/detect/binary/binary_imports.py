@@ -295,8 +295,17 @@ class ImportCapabilities:
         {"IsDebuggerPresent", "OutputDebugStringA"}
     )
 
+    #: Names of the stores a stealer reads a browser's saved logins from.
+    BROWSER_STORES: ClassVar[tuple[bytes, ...]] = (
+        b"Safe Storage",
+        b"Login Data",
+        b"logins.json",
+        b"key4.db",
+        b"Local State",
+    )
+
     @staticmethod
-    def verdicts(profile: ImportProfile) -> list[tuple[str, str]]:
+    def verdicts(profile: ImportProfile, strings: bytes = b"") -> list[tuple[str, str]]:
         """`(rule id, detail)` for each combination worth reporting."""
         out: list[tuple[str, str]] = []
         caps = profile.capabilities
@@ -308,9 +317,22 @@ class ImportCapabilities:
             profile.has("inject") and len(caps["inject"]) >= 3
         ):
             out.append(("SUSPECT.BINARY.PROCESS_INJECTION.001", f"imports {named('inject')}"))
+        # Reading one named item (`CredReadW`, `SecItemCopyMatching`) is what a keyring library
+        # does for the program's own secret: a wallet SDK and a database driver were blocked on it
+        # (review 98, CDI), and no malware in any corpus was. It counts only beside the name of a
+        # browser's secret store; enumerating or decrypting other programs' secrets always counts.
         if profile.has("credential", "network"):
             out.append(
                 ("SUSPECT.BINARY.CREDENTIAL_THEFT.001", f"imports {named('credential', 'network')}")
+            )
+        elif profile.has("credential_item", "network") and any(
+            store in strings for store in ImportCapabilities.BROWSER_STORES
+        ):
+            out.append(
+                (
+                    "SUSPECT.BINARY.CREDENTIAL_THEFT.001",
+                    f"imports {named('credential_item', 'network')}",
+                )
             )
         if profile.has("keylog", "network"):
             out.append(("SUSPECT.BINARY.KEYLOGGER.001", f"imports {named('keylog', 'network')}"))

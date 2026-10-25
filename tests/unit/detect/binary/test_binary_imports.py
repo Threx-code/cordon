@@ -23,6 +23,7 @@ from cordon_scanner.detect.binary.binary_imports import (
     ImportTable,
 )
 from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.models import Severity
 
 
 class Build:
@@ -221,6 +222,19 @@ class TestVerdicts:
         ) == ["SUSPECT.BINARY.CREDENTIAL_THEFT.001"]
         assert self.rules(["CryptUnprotectData"]) == []
 
+    def test_reading_one_named_keychain_item_is_a_keyring_not_a_stealer(self) -> None:
+        # A wallet SDK's table, abridged (review 98, CDI): its own secret, then the network.
+        sdk = ["CredReadW", "SecItemCopyMatching", "connect", "send", *[f"f{i}" for i in range(20)]]
+        assert self.rules(sdk) == []
+
+    def test_a_named_item_beside_a_browsers_secret_store_is(self) -> None:
+        profile = ImportCapabilities.profile(
+            ImportTable("Mach-O", (), ("SecKeychainFindGenericPassword", "connect", "send"))
+        )
+        assert [r for r, _ in ImportCapabilities.verdicts(profile, b"\0Chrome Safe Storage\0")] == [
+            "SUSPECT.BINARY.CREDENTIAL_THEFT.001"
+        ]
+
     def test_download_and_execute(self) -> None:
         assert "SUSPECT.BINARY.IMPLANT.001" in self.rules(["URLDownloadToFileA", "ShellExecuteA"])
 
@@ -317,6 +331,31 @@ class TestTheDetectorReportsThem:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         rules = {f.rule_id for f in result.findings}
         assert "SUSPECT.BINARY.PROCESS_INJECTION.001" in rules
+
+    @staticmethod
+    def injection_severity(tmp_path, name: str, extra: bytes) -> Severity:
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "pkg" / name).write_bytes(
+            Build.pe(
+                {"KERNEL32.dll": ["VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread"]}
+            )
+            + extra
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return next(
+            f.severity
+            for f in result.findings
+            if f.rule_id == "SUSPECT.BINARY.PROCESS_INJECTION.001"
+        )
+
+    def test_the_cygwin_runtime_is_reported_below_the_gate(self, tmp_path) -> None:
+        assert (
+            self.injection_severity(tmp_path, "cygwin1.dll", b"\0cygwin_internal\0")
+            == Severity.MEDIUM
+        )
+
+    def test_the_cygwin_name_without_its_runtime_is_not(self, tmp_path) -> None:
+        assert self.injection_severity(tmp_path, "cygwin1.dll", b"") == Severity.HIGH
 
     def test_a_benign_binary_is_only_a_policy_note(self, tmp_path) -> None:
         (tmp_path / "bin").mkdir()
