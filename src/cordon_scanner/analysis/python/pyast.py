@@ -44,6 +44,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.models import Capability
 
@@ -244,11 +245,6 @@ EXECUTABLE_NAME = re.compile(
     r"(?i)\.(?:exe|scr|com|bat|cmd|vbs|vbe|js|jse|wsf|hta|ps1|msi|dll|sh|app)\b"
 )
 """File names that a launch runs as a program."""
-
-IDENTITY_COMMANDS = frozenset(
-    {"whoami", "hostname", "id", "uname", "hostnamectl", "ipconfig", "ifconfig"}
-)
-"""Commands whose whole output is this machine's or this user's identity."""
 
 DNS_LOOKUPS = frozenset(
     {"socket.gethostbyname", "socket.gethostbyname_ex", "socket.getaddrinfo", "socket.getfqdn"}
@@ -2151,13 +2147,17 @@ class PythonAnalyzer:
         return EXECUTABLE_NAME.search(text) is not None
 
     def _is_recon_call(self, node: ast.AST) -> bool:
-        """A call that returns who or where this machine is: `socket.gethostname()`, or a process
-        spawned to say so -- `subprocess.getoutput("whoami")`, `check_output(["hostname"])`."""
+        """Who or where this machine is: `socket.gethostname()`, a process spawned to say so
+        (`getoutput("whoami")`), or the variable naming it (`os.getenv("COMPUTERNAME")`)."""
         if not isinstance(node, ast.Call):
-            return False
+            return isinstance(node, ast.Subscript) and IdentityVariables.read(
+                node, self._dotted(node.value)
+            )
         resolved = self._resolve_callee(node)
         if resolved is None:
             return False
+        if IdentityVariables.read(node, resolved[0]):
+            return True
         capability = PRIMITIVES.get(resolved[0])
         if capability is Capability.RECONNAISSANCE:
             return True
@@ -2297,7 +2297,7 @@ class PythonAnalyzer:
         thirty lines is what a telemetry plugin, a socket demo and a browser installer all do;
         putting the hostname in the request is the probe.
         """
-        holds = self._carried(tree, self._is_recon_call, ast.Call)
+        holds = self._carried(tree, self._is_recon_call, ast.Subscript)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:

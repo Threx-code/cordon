@@ -18,6 +18,7 @@
   "analysis/nix/nix_code": "analysis/nix/nix_code",
   "analysis/python/py_decoded": "analysis/python/py_decoded",
   "analysis/python/py_flow": "analysis/python/py_flow",
+  "analysis/python/py_identity": "analysis/python/py_identity",
   "analysis/python/py_persist": "analysis/python/py_persist",
   "analysis/python/pyast": "analysis/python/pyast",
   "analysis/python/pysyntax": "analysis/python/pysyntax",
