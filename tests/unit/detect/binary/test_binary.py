@@ -164,6 +164,26 @@ class TestPolyglot:
             "libfoo.so", b"#!/bin/sh\necho\n"
         )
 
+    @pytest.mark.parametrize("name", ["bin/cli.exe", "lib/native/tool.dll", "libfoo.so"])
+    def test_a_launcher_script_under_a_program_name_is_recorded(self, name: str) -> None:
+        """Every shell rule reads the script by its shebang, so the name hides nothing from the
+        scan; it still misleads a person, so it stays on the record."""
+        found = [
+            f
+            for f in BinaryHelpers.findings_for(name, b"#!/bin/sh\nexec node \"$0.js\" \"$@\"\n")
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+        assert found and all(f.severity <= Severity.LOW for f in found)
+
+    @pytest.mark.parametrize("name", ["assets/logo.png", "static/manual.pdf", "data/model.bin.gz"])
+    def test_a_script_under_a_data_name_keeps_its_grade(self, name: str) -> None:
+        found = [
+            f
+            for f in BinaryHelpers.findings_for(name, b"#!/bin/sh\nexec node \"$0.js\" \"$@\"\n")
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+        assert found and all(f.severity >= Severity.HIGH for f in found)
+
     def test_a_source_extension_promises_nothing(self) -> None:
         """A `.py` file has no required first bytes, and most have no shebang.
         Treating the extension as a promise reported every Python file in the

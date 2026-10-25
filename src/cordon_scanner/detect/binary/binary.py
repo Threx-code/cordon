@@ -140,7 +140,8 @@ default rather than a claim that two formats mean the same thing."""
 
 NATIVE_FORMATS = frozenset({"ELF executable", "PE executable", "Mach-O executable"})
 """Compiled machine code for one platform or another. Swapped for each other they are a build's
-naming convention; a script or a Java class in their place is still a disguise."""
+naming convention; a script or a Java class in their place is still a disguise -- reported, and for
+a shell script, which every shell rule reads by its shebang, recorded at low."""
 
 
 FORMATS: tuple[Format, ...] = (
@@ -713,6 +714,23 @@ class BinaryDetector(BaseDetector):
                     + " Its bytes are no recognised format and do not read as code, so it is "
                     "recorded rather than raised.",
                 )
+            elif (
+                named is not None
+                and named.name == "shell script"
+                and self._names_a_native_program(content.path)
+            ):
+                # A launcher script under a compiled program's name: a `bin/cli.exe` that is
+                # `#!/bin/sh` (review 98: 3 of the npm work set's 10 legitimate blocks by this rule
+                # alone). The name still misleads a person, so it is recorded. It hides nothing
+                # from this scan, which reads the file by its shebang with every shell rule: what
+                # the script does is judged on its own.
+                finding = replace(
+                    finding,
+                    severity=min(finding.severity, Severity.LOW),
+                    message=finding.message
+                    + " Every shell rule reads it by its shebang, so it is recorded rather than "
+                    "raised.",
+                )
             findings.append(finding)
 
         if found is not None and found.executable and found.name != "shell script":
@@ -772,6 +790,14 @@ class BinaryDetector(BaseDetector):
             return False
         promised = next((f for f in FORMATS if f".{extension}" in f.extensions), None)
         return promised is not None and not promised.executable
+
+    @staticmethod
+    def _names_a_native_program(path: str) -> bool:
+        """The name is an extension compiled machine code is stored under (`.exe`, `.so`, ...)."""
+        _, dot, extension = ContainerPaths.basename(path).lower().rpartition(".")
+        return bool(dot) and any(
+            f.name in NATIVE_FORMATS and f".{extension}" in f.extensions for f in FORMATS
+        )
 
     @staticmethod
     def _is_font(path: str, raw: bytes) -> bool:
