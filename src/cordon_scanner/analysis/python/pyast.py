@@ -2172,15 +2172,16 @@ class PythonAnalyzer:
         tree: ast.AST, is_source: Callable[[ast.AST], bool], kind: type
     ) -> Callable[..., bool]:
         """Whether an expression holds what `is_source` finds: the source itself, a name assigned
-        from it, or a call to a function of this file that returns it.
-
-        The last is how a collector is written -- `def collect(): return json.dumps({"host":
+        from it, or a call to a function of this file that returns it. The last is how a collector
+        is written -- `def collect(): return json.dumps({"host":
         socket.gethostname(), ...})` in one function, `requests.post(URL, data=collect())` in
-        another. Read one function at a time, the request carries nothing (review 98: eight of the
-        MalSkillBench beacons; the API clients beside them, which name their platform in a header
-        and never send who the machine is, stay unflagged). Names are file-wide, as before.
+        another (review 98: eight MalSkillBench beacons). Names resolve per scope (`name_scope`), and
+        an argument's load passes to the parameter it binds, call after call (`passed`).
         """
-        carrying: set[str] = set()
+        scope = PythonSyntax.name_scope(tree)
+        passed = PythonSyntax.passed(tree)
+        functions = PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
+        carrying: set[tuple[int, str]] = set()
         returning: set[str] = set()
 
         def callee(call: ast.Call) -> str | None:
@@ -2196,16 +2197,18 @@ class PythonAnalyzer:
             parts = PythonSyntax.within(node, kind, ast.Call, ast.Name) if deep else [node]
             return any(
                 is_source(part)
-                or (isinstance(part, ast.Name) and part.id in carrying)
+                or (isinstance(part, ast.Name) and (scope(part, part.id), part.id) in carrying)
                 or (isinstance(part, ast.Call) and callee(part) in returning)
                 for part in parts
             )
 
-        functions = PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
         for _ in range(3):
+            carrying.update((function, param) for arg, function, param in passed if holds(arg))
             for node in PythonSyntax.nodes(tree):
                 if isinstance(node, ast.Assign) and holds(node.value):
-                    carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
+                    carrying.update(
+                        (scope(t, t.id), t.id) for t in node.targets if isinstance(t, ast.Name)
+                    )
             for function in functions:
                 if function.name not in returning and any(
                     isinstance(part, ast.Return) and part.value is not None and holds(part.value)

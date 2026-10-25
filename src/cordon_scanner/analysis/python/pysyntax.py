@@ -15,6 +15,7 @@ import collections
 import functools
 import warnings
 import weakref
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 
@@ -75,6 +76,73 @@ class PythonSyntax:
                     cached[id(child)] = node
             tree.__dict__["_cordon_parents"] = cached
         return cached
+
+    @staticmethod
+    def passed(tree: ast.AST) -> list[tuple[ast.AST, int, str]]:
+        """`(argument, id(function), parameter)` for each call of a function of this file:
+        `beacon(data)` binds `data` to `beacon`'s first parameter, so what the argument carries
+        the parameter carries, however many calls deep it is handed on. `self.send(x)` skips
+        `self`; a `*args` or keyword-only parameter is not followed."""
+        functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {
+            f.name: f for f in PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
+        }
+        out: list[tuple[ast.AST, int, str]] = []
+        for call in PythonSyntax.of(tree, ast.Call):
+            func = call.func
+            name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+            function = functions.get(name) if isinstance(name, str) else None
+            if function is None:
+                continue
+            params = [a.arg for a in (*function.args.posonlyargs, *function.args.args)]
+            if isinstance(func, ast.Attribute) and params[:1] in (["self"], ["cls"]):
+                params = params[1:]
+            out.extend((arg, id(function), p) for arg, p in zip(call.args, params, strict=False))
+            known = set(params)
+            out.extend((k.value, id(function), k.arg) for k in call.keywords if k.arg in known)
+        return out
+
+    @staticmethod
+    def name_scope(tree: ast.AST) -> Callable[[ast.AST, str], int]:
+        """Where a name used at `node` is bound, as Python resolves it: the nearest enclosing
+        function that binds it (a parameter or an assignment, `global` excepted), else the module
+        (0). Returns the binding function's `id`, so a name can be told apart per scope:
+        `env = dict(os.environ)` in one function is not the `env` another sends (review 98)."""
+        parents = PythonSyntax.parents(tree)
+        local: dict[int, set[str]] = {}
+        for function in PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
+            arguments = function.args
+            bound = {
+                a.arg for a in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
+            }
+            bound |= {a.arg for a in (arguments.vararg, arguments.kwarg) if a is not None}
+            bound |= {
+                n.id
+                for n in PythonSyntax.within(function, ast.Name)
+                if isinstance(n.ctx, ast.Store)
+                and PythonSyntax.enclosing_function(n, parents) is function
+            }
+            declared = {g for n in PythonSyntax.within(function, ast.Global) for g in n.names}
+            local[id(function)] = bound - declared
+
+        def scope(node: ast.AST, name: str) -> int:
+            owner = PythonSyntax.enclosing_function(node, parents)
+            while owner is not None and name not in local.get(id(owner), ()):
+                owner = PythonSyntax.enclosing_function(owner, parents)
+            return 0 if owner is None else id(owner)
+
+        return scope
+
+    @staticmethod
+    def enclosing_function(node: ast.AST, parents: dict[int, ast.AST]) -> ast.AST | None:
+        """The function whose body `node` is in -- for a function, the one it is nested in -- or
+        None at module level. A class body is no scope here: its names fall through to the
+        module's, as a method sees them."""
+        parent = parents.get(id(node))
+        while parent is not None and not isinstance(
+            parent, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            parent = parents.get(id(parent))
+        return parent
 
     @staticmethod
     def nodes(tree: ast.AST) -> list[ast.AST]:
