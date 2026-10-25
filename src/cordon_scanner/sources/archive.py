@@ -25,6 +25,7 @@ archive that was refused and an archive that was clean must never look alike.
 
 from __future__ import annotations
 
+import hashlib
 import struct
 import tarfile
 import time
@@ -114,6 +115,20 @@ class ExtractedMember:
     data: bytes
     compressed_size: int
     uncompressed_size: int
+
+
+@dataclass
+class NestedWalk:
+    """What one `walk_archive` has opened, and what it met past the depth limit.
+
+    A package that ships its own earlier `npm pack` tarballs carries each one at several depths;
+    the copy past the limit holds the same bytes as one opened higher up, so its contents were
+    examined. Only an archive no copy of which was opened is reported as unexamined."""
+
+    opened: set[bytes] = field(default_factory=set)
+    """sha256 of every nested archive opened and walked."""
+    too_deep: list[tuple[bytes, tuple[str, str, str]]] = field(default_factory=list)
+    """(sha256, rejection) for every nested archive met past the limit."""
 
 
 @dataclass
@@ -760,8 +775,13 @@ class ArchiveReader:
         depth: int = 0,
         rejected: list[tuple[str, str, str]] | None = None,
         deadline: float | None = None,
+        walk: NestedWalk | None = None,
     ) -> Iterator[tuple[str, bytes]]:
         """Yield every member, descending into nested archives.
+
+        A nested archive met past the depth limit whose exact bytes this walk also opened at a
+        shallower depth has had its contents examined, so it is not reported as unexamined
+        (`NestedWalk`).
 
         Nested archives are expanded up to the depth limit and their members are
         yielded with a path that records the nesting, so a finding inside a wheel
@@ -786,10 +806,34 @@ class ArchiveReader:
             if result.truncated:
                 rejected.append((path, Rejection.ENTRIES, "extraction stopped early at a limit"))
 
+        root = walk is None
+        walk = NestedWalk() if walk is None else walk
+        try:
+            yield from ArchiveReader._walk_members(
+                result, path, limits, depth, rejected, deadline, walk
+            )
+        finally:
+            if root and rejected is not None:
+                # Settled once the whole walk has run (or stopped): an archive is unexamined
+                # only if no copy of it was opened anywhere in this walk.
+                rejected.extend(r for digest, r in walk.too_deep if digest not in walk.opened)
+
+    @staticmethod
+    def _walk_members(
+        result: ExtractionResult,
+        path: str,
+        limits: Limits,
+        depth: int,
+        rejected: list[tuple[str, str, str]] | None,
+        deadline: float | None,
+        walk: NestedWalk,
+    ) -> Iterator[tuple[str, bytes]]:
         for member in result.members:
             member_path = f"{path}!{member.name}"
 
-            too_deep = ArchiveReader.is_archive(member.name) and depth >= limits.max_archive_depth
+            nested = ArchiveReader.is_archive(member.name)
+            digest = hashlib.sha256(member.data).digest() if nested else b""
+            too_deep = nested and depth >= limits.max_archive_depth
             if too_deep and rejected is not None:
                 # Past the depth limit. Reported, then yielded as opaque bytes.
                 #
@@ -806,16 +850,19 @@ class ArchiveReader:
                 # disappeared at the fourth, with the scan still reporting
                 # complete. One extra layer of zip hid it, and the output was
                 # identical to a clean archive.
-                rejected.append(
+                walk.too_deep.append(
                     (
-                        member_path,
-                        Rejection.DEPTH,
-                        f"nested deeper than {limits.max_archive_depth} levels; "
-                        f"its contents were not examined",
+                        digest,
+                        (
+                            member_path,
+                            Rejection.DEPTH,
+                            f"nested deeper than {limits.max_archive_depth} levels; "
+                            f"its contents were not examined",
+                        ),
                     )
                 )
 
-            if ArchiveReader.is_archive(member.name) and depth < limits.max_archive_depth:
+            if nested and depth < limits.max_archive_depth:
                 try:
                     yield from ArchiveReader.walk_archive(
                         member.data,
@@ -824,7 +871,9 @@ class ArchiveReader:
                         depth=depth + 1,
                         rejected=rejected,
                         deadline=deadline,
+                        walk=walk,
                     )
+                    walk.opened.add(digest)
                     continue
                 except ArchiveError as exc:
                     # A nested archive that will not open is still worth scanning as
