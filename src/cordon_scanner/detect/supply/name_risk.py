@@ -405,7 +405,13 @@ class NameSignals:
     #: A name claimed so nobody else can claim it. Empty by design, so empty is not evidence.
     HOLDING: ClassVar[re.Pattern[str]] = re.compile(
         r"(?i)\b(?:reserved|placeholder|prevent(?:s|ing)?|protect(?:s|ing)?|mitigat\w*|defensive"
-        r"|squat\w*|claim(?:ed)?|namespace|dummy|stub|holding)\b"
+        r"|squat\w*|claim(?:ed)?|namespace|dummy|stub|holding"
+        # A name its owner has retired or moved: the tombstone, the migration stub that tells
+        # the installer where the package went, the release pulled for being published in error.
+        r"|tombstone|withdrawn|deprecated|no longer (?:maintained|supported)|migrat\w*"
+        r"|published in error|private registry)\b"
+        # The owner's security contact, given in place of a description.
+        r"|\bsecurity@[\w-]+\.[\w.-]+"
     )
     #: Words that name something as a company's own and not for publication.
     INTERNAL: ClassVar[re.Pattern[str]] = re.compile(
@@ -648,9 +654,22 @@ class NameRisk:
             add("confusion-version", "name", f"{version}, a dependency-confusion version")
         said = " ".join([identity.description, *(command for _, command in identity.hooks)])
         holding = bool(NameSignals.HOLDING.search(identity.description))
+        # The claim is also made where the owner sends the installer elsewhere ("please use the
+        # private registry" in the install output) or in the name itself
+        # (`@corp-internal/placeholder`). Only the description outranks a probe's own words.
+        retired = bool(
+            NameSignals.HOLDING.search(
+                " ".join(
+                    [
+                        *(command for _, command in identity.hooks),
+                        re.sub(r"[-_./@]", " ", identity.name),
+                    ]
+                )
+            )
+        )
         if NameSignals.RESEARCH.search(said) and not holding:
             add("says-research", "name", "describes itself as a proof of concept or a probe")
-        elif holding:
+        elif holding or retired:
             add("says-holding", "name", "describes itself as a reserved or placeholder name")
         organisation = NameSignals.organisation(identity)
         if organisation is not None:

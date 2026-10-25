@@ -127,6 +127,60 @@ class TestTheTable:
         verdict = NameRisk.assess(holder)
         assert verdict is None or not verdict.blocks
 
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "Tombstone, project withdrawn from public distribution.",
+            "REMOVED - this package was published in error",
+            "This package is no longer maintained or supported.",
+            "Migration package.",
+            "For questions reach out to security@example.com",
+        ],
+    )
+    def test_a_name_its_owner_retired_is_not_blocked(self, description: str) -> None:
+        retired = Identities.of(
+            version="9999.0.0", description=description, has_source=False, code_files=0
+        )
+        verdict = NameRisk.assess(retired)
+        assert verdict is None or not verdict.blocks
+
+    def test_an_install_hook_that_sends_the_installer_to_a_private_registry(self) -> None:
+        # The company's own guard: installing from the public registry fails on purpose.
+        guard = Identities.of(
+            name="example-corp-internal-api",
+            version="0.0.0",
+            description="",
+            has_source=False,
+            hooks=(("postinstall", "echo please use the private registry && exit 1"),),
+            code_files=0,
+        )
+        verdict = NameRisk.assess(guard)
+        assert verdict is None or not verdict.blocks
+
+    def test_a_placeholder_in_the_name_is_a_holding_claim(self) -> None:
+        held = Identities.of(
+            name="@example-wms-internal/placeholder",
+            version="1.0.0",
+            description="",
+            has_source=False,
+            code_files=0,
+        )
+        verdict = NameRisk.assess(held)
+        assert verdict is None or not verdict.blocks
+
+    def test_a_probe_that_names_itself_a_placeholder_still_blocks(self) -> None:
+        # Only the description outranks a probe's own words; a name or a hook does not.
+        probe = Identities.of(
+            name="@example-corp/placeholder",
+            version="11.11.11",
+            description="dependency confusion poc",
+            has_source=False,
+            hooks=(("preinstall", 'echo "poc possible by example"'),),
+            code_files=0,
+        )
+        verdict = NameRisk.assess(probe)
+        assert verdict is not None and verdict.blocks
+
     def test_npm_security_placeholders_are_left_to_the_release_check(self) -> None:
         holding = Identities.of(
             version="0.0.1-security",
