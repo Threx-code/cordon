@@ -4231,6 +4231,7 @@ class Engine:
         """
         from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.detect.code.download_flow import DownloadFlow
+        from cordon_scanner.detect.code.reached_flows import ReachedFlows
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
         if detector is None:
@@ -4263,7 +4264,7 @@ class Engine:
             out[f"{place}_files"] = float(read)
             out[f"{place}_capabilities"] = float(len(held))
             out.update({f"{place}_can_{name}": 1.0 for name in held})
-        return out
+        return out | ReachedFlows.of(units, ctx)  # what the reached code does with what it reads
 
     @staticmethod
     def _registry_facts(units: Sequence[FileUnit], root: Path | None = None) -> dict[str, float]:
