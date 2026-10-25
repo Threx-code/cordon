@@ -55,6 +55,7 @@ from cordon_scanner.detect.code.install_payload import InstallPayload
 from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.detect.code.publish_reach import PublishReach
 from cordon_scanner.detect.code.store_flow import StoreFlow
+from cordon_scanner.detect.code.wasm_glue import WasmBindgenGlue
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
 from cordon_scanner.detect.secrets.secrets import (
     FIXTURE_CEILING,
@@ -3133,11 +3134,18 @@ class CapabilityDetector(BaseDetector):
             if char == "\n":
                 starts.append(index + 1)
         hits: list[CapabilityHit] = []
+        glue = WasmBindgenGlue.generated(text)
         for flow in flows:
             for kind, rule_id, sinks in cls._JS_FLOW_RULES:
                 if kind not in flow.sources or flow.sink not in sinks:
                     continue
                 offset = starts[min(flow.line, len(starts)) - 1]
+                if (
+                    glue
+                    and rule_id == "CAP.JS.FLOW.REMOTE_CODE"
+                    and WasmBindgenGlue.shim_at(text, offset)
+                ):
+                    continue  # the crate's own code, by its own module (`wasm_glue`)
                 start = len(text[:offset].encode("utf-8"))
                 hits.append(
                     CapabilityHit(
