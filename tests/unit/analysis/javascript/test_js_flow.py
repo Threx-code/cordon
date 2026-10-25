@@ -91,6 +91,35 @@ class TestRemoteCode:
         assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
 
 
+class TestAReplyAsAFixedProgramsArgument:
+    PREFIX = (
+        'const cp = require("child_process");\n'
+        "async function go() {\n"
+        '  const r = await fetch("https://api.invalid/latest");\n'
+        "  const v = await r.text();\n"
+    )
+
+    def test_a_version_handed_to_ffmpeg_is_not_run(self) -> None:
+        text = self.PREFIX + '  cp.spawnSync("ffmpeg", ["-i", v, "out.mp4"]);\n}\n'
+        assert not [f for f in FlowKit.flows(text) if "network_response" in f[0]]
+
+    def test_the_same_reply_through_a_shell_option_is_run(self) -> None:
+        text = self.PREFIX + '  cp.spawn("ffmpeg", ["-i", v], { shell: true });\n}\n'
+        assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
+
+    def test_a_package_runner_runs_the_package_it_is_named(self) -> None:
+        text = self.PREFIX + '  cp.spawnSync("npx", [v]);\n}\n'
+        assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
+
+    def test_a_shell_command_line_is_still_run(self) -> None:
+        text = self.PREFIX + '  cp.exec("ffmpeg -i " + v);\n}\n'
+        assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
+
+    def test_a_program_named_by_the_reply_is_run(self) -> None:
+        text = self.PREFIX + "  cp.spawnSync(v, []);\n}\n"
+        assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
+
+
 class TestADecodedValueRun:
     """A decoded blob reaching a run is the decoded-content dropper; a constant run beside an
     unrelated decode is not. `safe_spawn_lines` marks the latter so the decode composites drop it."""

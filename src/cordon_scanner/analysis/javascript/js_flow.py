@@ -215,6 +215,16 @@ _DESTINATION_KEYS: Final = frozenset({"host", "hostname", "localAddress", "port"
 _PROCESS_CALL: Final = frozenset(
     {"exec", "execSync", "spawn", "spawnSync", "execFile", "execFileSync", "fork"}
 )
+#: The calls that take a program and an argument list rather than a shell command line.
+_ARGV_CALLS: Final = frozenset({"spawn", "spawnSync", "execFile", "execFileSync"})
+#: Programs whose arguments are code or a package to run: an interpreter (`node -e`, `sh -c`), a
+#: shell, or a package runner (`npx <pkg>`).
+_RUNS_ITS_ARGUMENT: Final = re.compile(
+    r"(?:^|[/\\])(?:node|nodejs|deno|bun|bunx|npx|pnpx|npm|pnpm|yarn|uvx|pipx|python[\d.]*|py"
+    r"|ruby|perl|php|lua|sh|bash|zsh|dash|ksh|fish|cmd|powershell|pwsh|osascript|wscript|cscript"
+    r"|mshta|rundll32|regsvr32|env|sudo|xargs|eval)(?:\.exe)?$",
+    re.I,
+)
 #: Decompressors whose output is bytes a server or a blob chose: running that output is the
 #: decoded-content dropper. `Buffer.from(x, "base64"|"hex")` and `atob(x)` are handled by name.
 _DECODERS: Final = frozenset(
@@ -1912,7 +1922,31 @@ class _Analysis:
                         out |= self.taint(a, b, scope)
             else:
                 out |= self.taint(s, e, scope)
+        if kind == "process" and self._argv_only(last, args):
+            # A fixed program given what a server sent as its arguments, with no shell: the
+            # reply is data to that program (a version to install, a file to convert), not code
+            # run. Anything else the arguments carry -- a secret handed to curl -- stays.
+            out -= {"network_response", "decoded"}
         return out
+
+    def _argv_only(self, call: str, args: list[tuple[int, int]]) -> bool:
+        """Whether a process call runs a literal, non-interpreter program with an argument list and
+        no shell: `spawn("ffmpeg", [...])`, not `exec(cmd)`, `spawn(path)`, `spawn("node", ["-e",
+        x])` or `spawn("npx", [pkg])`, which run what they are given."""
+        if call not in _ARGV_CALLS or len(args) < 2:
+            return False
+        s, e = args[0]
+        if e != s + 1 or self.t[s].kind != "str":
+            return False
+        program = str(self.t[s].value).strip()
+        if not program or _RUNS_ITS_ARGUMENT.search(program):
+            return False
+        options = args[2:] if call.startswith("spawn") else args[2:3]
+        return not any(
+            self.t[k].kind in ("name", "str") and str(self.t[k].value) == "shell"
+            for a, b in options
+            for k in range(a, b)
+        )
 
     def _opener(self, a: int, b: int, scope: int, follow: bool = True) -> bool:
         """Whether the command [a, b) only opens its operand in the desktop's handler: `open`,
