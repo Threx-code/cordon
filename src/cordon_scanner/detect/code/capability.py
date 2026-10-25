@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.js_persist import JsPersistence
 from cordon_scanner.analysis.nix.nix_code import NixCode
+from cordon_scanner.analysis.python.inert_literals import InertLiterals
 from cordon_scanner.analysis.python.pyast import CREDENTIAL_VARIABLE, PythonSource
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared import embedded
@@ -4861,6 +4862,27 @@ class CapabilityDetector(BaseDetector):
                 ceiling = RULE_MATERIAL_CEILING
             elif SourcePaths.is_test_material_here(content.path, ctx):
                 ceilinged = "test material"
+            elif (
+                compiled.rule.id in InertLiterals.CAP
+                and not in_hook
+                and not ctx.in_consumer_install(content.path)
+                and not CapabilityDetector._agent_run(content, ctx)
+                and InertLiterals.all_inert(
+                    content.path,
+                    content.text,
+                    content.raw,
+                    [
+                        (h.byte_start, h.byte_end, h.line)
+                        for h in hits
+                        if h.capability is InertLiterals.CAP[compiled.rule.id]
+                    ],
+                )
+            ):
+                # A command-shaped string that is only data (census D: launchpromptly's
+                # redteam/attacks.py, cord-engine's demo.py): InertLiterals proves it reaches no
+                # spawn, exec, sender or write. A MALICIOUS form never reaches this cascade.
+                ceilinged = "a command-shaped string that reaches no sink"
+                ceiling = Severity.LOW
             elif SourcePaths.is_documentation(content.path):
                 ceilinged = "documentation"
                 if CapabilityDetector._is_prose(content.path):
