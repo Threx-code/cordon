@@ -295,14 +295,14 @@ class ImportCapabilities:
         {"IsDebuggerPresent", "OutputDebugStringA"}
     )
 
-    #: Names of the stores a stealer reads a browser's saved logins from.
-    BROWSER_STORES: ClassVar[tuple[bytes, ...]] = (
-        b"Safe Storage",
-        b"Login Data",
-        b"logins.json",
-        b"key4.db",
-        b"Local State",
-    )
+    @classmethod
+    @functools.cache
+    def browser_stores(cls) -> tuple[bytes, ...]:
+        """Names of the stores a stealer reads a browser's saved logins from. Data, for the
+        reason the import groups are: beside this file's anti-debugging names they would read
+        as the stealer they describe."""
+        names = json.loads((cls.DATA / "browser-stores.json").read_text(encoding="utf-8"))
+        return tuple(str(n).encode() for n in names)
 
     @staticmethod
     def verdicts(profile: ImportProfile, strings: bytes = b"") -> list[tuple[str, str]]:
@@ -326,7 +326,7 @@ class ImportCapabilities:
                 ("SUSPECT.BINARY.CREDENTIAL_THEFT.001", f"imports {named('credential', 'network')}")
             )
         elif profile.has("credential_item", "network") and any(
-            store in strings for store in ImportCapabilities.BROWSER_STORES
+            store in strings for store in ImportCapabilities.browser_stores()
         ):
             out.append(
                 (
