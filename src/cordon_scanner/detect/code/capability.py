@@ -49,8 +49,10 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.addresses import PublicAddress
+from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
 from cordon_scanner.detect.code.install_payload import InstallPayload
+from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.detect.code.publish_reach import PublishReach
 from cordon_scanner.detect.code.store_flow import StoreFlow
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
@@ -490,7 +492,7 @@ class CapabilityDetector(BaseDetector):
             hits.append(replace(first, rule_id="CAP.JS.COMPUTED_REQUIRE_SOURCE"))
         hits.extend(self._js_spelled_names(content, unit.language))
         hits.extend(self._js_string_code_run(content, unit.language))
-        hits.extend(self._credential_sweep(matched_content))
+        hits.extend(CredentialSweep.hits(matched_content))
         hits.extend(self._browser_secrets_decrypted(matched_content))
         if unit.language == "go":
             from cordon_scanner.detect.code.go_runs import GoRuns
@@ -2909,58 +2911,6 @@ class CapabilityDetector(BaseDetector):
         ("secret_file", "CAP.JS.FLOW.SECRET_FILE_RAW", frozenset({"connection", "dns"})),
     )
 
-    #: Where one service keeps its credentials on disk, by service. A tool reads its own; a
-    #: stealer reads every one it knows.
-    _CREDENTIAL_STORES: ClassVar[dict[str, re.Pattern[str]]] = {
-        name: re.compile(pattern)
-        for name, pattern in {
-            "ssh": r"\.ssh/(?:id_(?:rsa|ed25519|ecdsa|dsa)|identity)\b",
-            "aws": r"\.aws/credentials\b",
-            "npm": r"(?<![\w.])\.npmrc\b",
-            "netrc": r"(?<![\w.])\.netrc\b",
-            "kube": r"\.kube/config\b",
-            "docker": r"\.docker/config\.json\b",
-            "gh": r"\.config/gh/hosts\.ya?ml\b",
-            "git": r"(?<![\w.])\.git-credentials\b",
-            "pypi": r"(?<![\w.])\.pypirc\b",
-            "gcloud": r"\.config/gcloud/(?:credentials\.db|application_default_credentials\.json)",
-            "azure": r"\.azure/(?:accessTokens|msal_token_cache)",
-        }.items()
-    }
-    #: Distinct services' stores before reading them is a sweep rather than a tool's own login.
-    SWEEP_MIN: ClassVar[int] = 3
-
-    @classmethod
-    def _credential_sweep(cls, content: FileContent) -> list[CapabilityHit]:
-        """One file naming the credential stores of several unrelated services.
-
-        A cloud SDK reads `~/.aws/credentials`; a stealer reads that, the SSH keys, `.npmrc`,
-        `.netrc`, the kube and Docker configs and the GitHub CLI's tokens, because it takes
-        whatever is there (review 98: the 2025 Go `BufferZoneCorp/*` family, its paths
-        XOR-encoded and recovered by `detect/go_eval.py`). Read from the file as resolved, in any
-        language; documentation is excluded by the rule's path filter."""
-        text = content.text
-        if len(text) > 4_000_000:
-            return []
-        found: list[tuple[int, str]] = []
-        for name, pattern in cls._CREDENTIAL_STORES.items():
-            match = pattern.search(text)
-            if match:
-                found.append((match.start(), name))
-        if len({name for _, name in found}) < cls.SWEEP_MIN:
-            return []
-        first = min(offset for offset, _ in found)
-        start = len(text[:first].encode("utf-8"))
-        return [
-            CapabilityHit(
-                capability=Capability.CREDENTIAL,
-                rule_id="CAP.CREDENTIAL.SWEEP",
-                byte_start=start,
-                byte_end=start + 1,
-                line=text.count("\n", 0, first) + 1,
-            )
-        ]
-
     _DETECTION_RULES: ClassVar[re.Pattern[str]] = re.compile(
         r"(?m)^[ \t]{0,8}tests:[ \t]*\n[ \t]{0,12}positive:[ \t]*$"
         r"|^[ \t]{0,8}(?:pattern-either|pattern-inside|patterns):[ \t]*$"
@@ -3721,9 +3671,14 @@ class CapabilityDetector(BaseDetector):
                 # Not at install time: nothing installing a package needs its user's keys, and
                 # boto3 uploads just as well to a bucket the attacker owns.
                 or (not in_hook and self._store_used_by_its_own_client(unit.content, window))
+                or (
+                    not in_hook
+                    and compiled.rule.id == self.CREDENTIAL_STORE_RULE
+                    and KeychainOwner.excuses(unit.content, window, hits)
+                )
             ):
-                # Authentication, not exfiltration. See
-                # `_credential_reaches_its_own_issuer` and `_store_used_by_its_own_client`.
+                # Authentication, not exfiltration. See `_credential_reaches_its_own_issuer`,
+                # `_store_used_by_its_own_client` and `keychain_owner`.
                 continue
 
             local_by_capability = {hit.capability: hit for hit in window}
