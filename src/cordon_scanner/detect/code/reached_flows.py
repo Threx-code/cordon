@@ -25,10 +25,12 @@ fact is a function of the files' bytes alone.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
+from cordon_scanner.detect.code.code_features import CodeFeatures
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -78,6 +80,29 @@ class ReachedFlows:
                     continue
                 read += 1
                 out.update(ReachedFlows.facts(place, unit.content.text))
+        if os.environ.get(ReachedFlows.MEASURE) == "1":
+            out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
+        return out
+
+    #: Set only by measurement runs (`reviews/review-98/tools/rescan_sample.py`'s containers): the
+    #: code features (`CodeFeatures`) are computed for the scan records a model is trained on, and a
+    #: user's scan neither computes nor reports them until a shipped model reads them.
+    MEASURE: ClassVar[str] = "CORDON_MEASURE_FEATURES"
+    CODE: ClassVar[tuple[str, ...]] = (".js", ".mjs", ".cjs", ".py")
+
+    @staticmethod
+    def sources(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, list[tuple[str, bytes]]]:
+        """Each place's JavaScript and Python files, within the same limits as the flow facts."""
+        out: dict[str, list[tuple[str, bytes]]] = {}
+        for place, paths in ReachedFlows.places(ctx).items():
+            files = [
+                (unit.path, unit.content.raw)
+                for unit in units
+                if unit.path in paths
+                and unit.content.size <= ReachedFlows.MAX_SIZE
+                and unit.path.rsplit("!", 1)[-1].lower().endswith(ReachedFlows.CODE)
+            ]
+            out[place] = files[: ReachedFlows.FILES]
         return out
 
     @staticmethod
