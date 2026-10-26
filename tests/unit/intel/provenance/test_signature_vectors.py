@@ -12,7 +12,8 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.intel.provenance._der import DerError
+from cordon_scanner.intel.provenance._der import Der, DerError
+from cordon_scanner.intel.provenance._dsa import Dsa
 from cordon_scanner.intel.provenance._ecdsa import Ecdsa
 from cordon_scanner.intel.provenance._ed25519 import Ed25519
 from cordon_scanner.intel.provenance._rsa import Rsa
@@ -43,6 +44,7 @@ class TestEcdsa:
             "ecdsa_secp256r1_sha256_test.json",
             "ecdsa_secp384r1_sha256_test.json",
             "ecdsa_secp384r1_sha384_test.json",
+            "ecdsa_secp521r1_sha512_test.json",
         ],
     )
     def test_every_vector(self, name: str) -> None:
@@ -119,3 +121,37 @@ class TestEd25519:
             if got != Vectors.expected(test):
                 wrong.append((test["tcId"], test["comment"], test["result"]))
         assert not wrong, wrong[:10]
+
+
+class TestDsa:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "dsa_2048_224_sha256_test.json",
+            "dsa_2048_256_sha256_test.json",
+            "dsa_3072_256_sha256_test.json",
+        ],
+    )
+    def test_every_vector(self, name: str) -> None:
+        import hashlib
+
+        wrong = []
+        for group, test in Vectors.cases(name):
+            k = group["publicKey"]
+            key = Dsa.checked(*(int(k[part], 16) for part in ("p", "q", "g", "y")))
+            try:
+                parts = Der.parse(bytes.fromhex(test["sig"]), Der.SEQUENCE).children()
+                r, s = (parts[0].integer(), parts[1].integer()) if len(parts) == 2 else (0, 0)
+            except DerError:
+                r = s = 0
+            digest = hashlib.new(
+                Vectors.hash_name(group["sha"]), bytes.fromhex(test["msg"])
+            ).digest()
+            got = Dsa.verify_digest(key, digest, r, s)
+            if got != Vectors.expected(test):
+                wrong.append((test["tcId"], test["comment"], test["result"]))
+        assert not wrong, wrong[:10]
+
+    def test_a_key_outside_its_group_is_refused(self) -> None:
+        with pytest.raises(ValueError):
+            Dsa.checked((1 << 2047) + 1, (1 << 223) + 1, 2, 3)

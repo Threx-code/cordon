@@ -1,4 +1,4 @@
-"""ECDSA signature verification over P-256 and P-384, verify-only, in pure Python.
+"""ECDSA signature verification over P-256, P-384 and P-521, verify-only, in pure Python.
 
 Why: Sigstore's certificate authority, its certificate transparency log and its transparency log
 (Rekor) sign with ECDSA on these curves, and a signed build attestation is checked through all
@@ -89,6 +89,34 @@ class Ecdsa:
         ),
         size=48,
     )
+    P521: ClassVar[Curve] = Curve(
+        "P-521",
+        "1.3.132.0.35",
+        p=2**521 - 1,
+        a=2**521 - 4,
+        b=int(
+            "0051953EB9618E1C9A1F929A21A0B68540EEA2DA725B99B315F3B8B489918EF109E156193951EC7E937B"
+            "1652C0BD3BB1BF073573DF883D2C34F1EF451FD46B503F00",
+            16,
+        ),
+        gx=int(
+            "00C6858E06B70404E9CD9E3ECB662395B4429C648139053FB521F828AF606B4D3DBAA14B5E77EFE75928"
+            "FE1DC127A2FFA8DE3348B3C1856A429BF97E7E31C2E5BD66",
+            16,
+        ),
+        gy=int(
+            "011839296A789A3BC0045C8A5FB42C7D1BD998F54449579B446817AFBD17273E662C97EE72995EF42640"
+            "C550B9013FAD0761353C7086A272C24088BE94769FD16650",
+            16,
+        ),
+        n=int(
+            "01FF"
+            + "FFFFFFFF" * 7
+            + "FFFFFFFA51868783BF2F966B7FCC0148F709A5D03BB5C9B8899C47AEBB6FB71E91386409",
+            16,
+        ),
+        size=66,
+    )
     CURVES: ClassVar[dict[str, Curve]] = {}
     EC_PUBLIC_KEY: ClassVar[str] = "1.2.840.10045.2.1"
 
@@ -120,7 +148,7 @@ class Ecdsa:
             if x >= curve.p:
                 raise DerError("a coordinate out of range")
             rhs = (pow(x, 3, curve.p) + curve.a * x + curve.b) % curve.p
-            y = pow(rhs, (curve.p + 1) // 4, curve.p)  # p = 3 mod 4 for both curves
+            y = pow(rhs, (curve.p + 1) // 4, curve.p)  # p = 3 mod 4 for each of these curves
             if y * y % curve.p != rhs:
                 raise DerError("not a point on the curve")
             if y & 1 != encoded[0] & 1:
@@ -237,7 +265,7 @@ class Ecdsa:
         return (x * zi2 % curve.p, y * zi2 * zi % curve.p)
 
 
-Ecdsa.CURVES.update({Ecdsa.P256.oid: Ecdsa.P256, Ecdsa.P384.oid: Ecdsa.P384})
+Ecdsa.CURVES.update({c.oid: c for c in (Ecdsa.P256, Ecdsa.P384, Ecdsa.P521)})
 
 
 __all__ = ["Curve", "Ecdsa"]

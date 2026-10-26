@@ -59,8 +59,8 @@ class Rsa:
         return Rsa.checked(parts[0].integer(), parts[1].integer())
 
     @staticmethod
-    def checked(n: int, e: int) -> tuple[int, int]:
-        if not Rsa.MIN_BITS <= n.bit_length() <= Rsa.MAX_BITS or n % 2 == 0:
+    def checked(n: int, e: int, *, min_bits: int | None = None) -> tuple[int, int]:
+        if not (min_bits or Rsa.MIN_BITS) <= n.bit_length() <= Rsa.MAX_BITS or n % 2 == 0:
             raise DerError("an RSA modulus out of range")
         if e < 3 or e % 2 == 0 or e >= n:
             raise DerError("an RSA exponent out of range")
@@ -81,13 +81,22 @@ class Rsa:
     def verify_pkcs1(
         key: tuple[int, int], message: bytes, signature: bytes, hash_name: str
     ) -> bool:
+        return Rsa.verify_pkcs1_digest(
+            key, hashlib.new(hash_name, message).digest(), signature, hash_name
+        )
+
+    @staticmethod
+    def verify_pkcs1_digest(
+        key: tuple[int, int], digest: bytes, signature: bytes, hash_name: str
+    ) -> bool:
+        """PKCS #1 v1.5 over a digest already taken (OpenPGP hashes its own trailer in)."""
         prefix = Rsa.DIGEST_INFO.get(hash_name)
-        if prefix is None:
+        if prefix is None or len(digest) != hashlib.new(hash_name).digest_size:
             return False
         em = Rsa._recover(key, signature)
         if em is None:
             return False
-        t = prefix + hashlib.new(hash_name, message).digest()
+        t = prefix + digest
         k = len(em)
         if k < len(t) + 11:
             return False
