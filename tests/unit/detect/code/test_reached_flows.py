@@ -67,9 +67,9 @@ class TestPlaces:
     def test_code_nothing_runs_has_no_facts(self) -> None:
         assert ReachedFlows.of([Fixture.unit("tools/release.js", SENDS)], Fixture.ctx()) == {}
 
-    def test_only_javascript_is_read(self) -> None:
+    def test_only_code_is_read(self) -> None:
         facts = ReachedFlows.of(
-            [Fixture.unit("index.py", SENDS)], Fixture.ctx(entries=frozenset({"index.py"}))
+            [Fixture.unit("notes.txt", SENDS)], Fixture.ctx(entries=frozenset({"notes.txt"}))
         )
         assert facts == {}
 
@@ -95,9 +95,9 @@ class TestBudget:
         seen: list[str] = []
         original = ReachedFlows.facts
 
-        def counting(place: str, text: str) -> dict[str, float]:
+        def counting(place: str, text: str, *, python: bool = False) -> dict[str, float]:
             seen.append(place)
-            return original(place, text)
+            return original(place, text, python=python)
 
         ReachedFlows.facts = staticmethod(counting)  # type: ignore[method-assign]
         try:

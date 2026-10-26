@@ -354,6 +354,15 @@ class JsFlow:
         "wallet_key",
     )
 
+    #: A string naming a credential store, as the file-read sources read it (`_SECRET_PATH`).
+    SECRET_PATH: ClassVar[re.Pattern[str]] = _SECRET_PATH
+
+    @staticmethod
+    def classify(url: str) -> tuple[str | None, str]:
+        """(host, kind) of a URL: `drop`, `ip`, `fixed`, or (None, "unknown") for no URL. Shared
+        with the Python flow facts (`PythonFlowFacts`), so both languages class a host alike."""
+        return _Analysis.classify(url)
+
     @staticmethod
     def read_of(labels: set[Label]) -> set[Label]:
         """What reading a file at a path carrying `labels` yields: a credential store's path gives its

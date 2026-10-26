@@ -6,7 +6,7 @@ harmless; what it does with a secret is the question. These facts name each sour
 reads, the sink it reaches and the kind of destination (`JsFlow`): `import_flow_environment_
 request_unknown` is the entry point sending the environment somewhere its file does not name.
 
-Three places, each a key prefix, each read as JavaScript only:
+Three places, each a key prefix; JavaScript is read by `JsFlow`, Python by `PythonFlowFacts`:
 
 - `install`: the hook scripts and the files they run;
 - `import`: the package's own entry points (`main`, `bin`, `exports`);
@@ -30,6 +30,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
+from cordon_scanner.analysis.python.py_flow_facts import PythonFlowFacts
 from cordon_scanner.detect.binary.binary_features import BinaryFeatures
 from cordon_scanner.detect.code.code_features import CodeFeatures
 from cordon_scanner.foundation.windows import BytesWindows, WindowSourceChanged
@@ -47,7 +48,6 @@ class ReachedFlows:
     FILES: ClassVar[int] = 50
     #: The size past which a file is not read here: the profile's own limit.
     MAX_SIZE: ClassVar[int] = 1_000_000
-    JS: ClassVar[tuple[str, ...]] = (".js", ".mjs", ".cjs")
 
     FRAMEWORK: ClassVar[dict[str, re.Pattern[str]]] = {
         "framework_credential": re.compile(r"\.getCredentials\s*\("),
@@ -77,11 +77,12 @@ class ReachedFlows:
                 if (
                     path not in paths
                     or unit.content.size > ReachedFlows.MAX_SIZE
-                    or not path.rsplit("!", 1)[-1].lower().endswith(ReachedFlows.JS)
+                    or not path.rsplit("!", 1)[-1].lower().endswith(ReachedFlows.CODE)
                 ):
                     continue
                 read += 1
-                out.update(ReachedFlows.facts(place, unit.content.text))
+                python = path.lower().endswith(".py")
+                out.update(ReachedFlows.facts(place, unit.content.text, python=python))
         if os.environ.get(ReachedFlows.MEASURE) == "1":
             out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
             out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
@@ -128,7 +129,7 @@ class ReachedFlows:
         return out
 
     @staticmethod
-    def facts(place: str, text: str) -> dict[str, float]:
+    def facts(place: str, text: str, *, python: bool = False) -> dict[str, float]:
         """One file's facts under `place`: each source, sink and destination kind it joins, and
         the framework calls it makes."""
         out = {
@@ -136,6 +137,10 @@ class ReachedFlows:
             for name, pattern in ReachedFlows.FRAMEWORK.items()
             if pattern.search(text)
         }
+        if python:
+            for source, sink, destination in PythonFlowFacts.of(text):
+                out[f"{place}_flow_{source}_{sink}_{destination}"] = 1.0
+            return out
         try:
             flows = JsFlow.flows(text)
         except Exception:  # a fact is evidence, never a scan failure
