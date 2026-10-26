@@ -41,6 +41,7 @@ from typing import Any, ClassVar
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.provenance._der import DerError
 from cordon_scanner.intel.provenance._ecdsa import Ecdsa
+from cordon_scanner.intel.provenance._rsa import Rsa
 from cordon_scanner.intel.provenance.transparency import (
     Checkpoint,
     EmbeddedTimestamps,
@@ -105,19 +106,20 @@ class TrustRoot:
             )
             for ca in document.get("certificateAuthorities", [])
         ]
-        self.tlogs = {
-            Strict.b64(t["logId"]["keyId"]): Log(
-                PublicKey.from_spki(Strict.b64(t["publicKey"]["rawBytes"])),
-                Window.of(t["publicKey"].get("validFor")),
-            )
-            for t in document.get("tlogs", [])
-        }
-        self.ctlogs = {
-            Strict.b64(t["logId"]["keyId"]): PublicKey.from_spki(
-                Strict.b64(t["publicKey"]["rawBytes"])
-            )
-            for t in document.get("ctlogs", [])
-        }
+        #: Logs whose key this does not read: left out, so evidence from them is unverifiable.
+        self.unread: list[str] = []
+        self.tlogs: dict[bytes, Log] = {}
+        for log in document.get("tlogs", []):
+            key = self._key(log)
+            if key is not None:
+                self.tlogs[Strict.b64(log["logId"]["keyId"])] = Log(
+                    key, Window.of(log["publicKey"].get("validFor"))
+                )
+        self.ctlogs: dict[bytes, PublicKey] = {}
+        for log in document.get("ctlogs", []):
+            key = self._key(log)
+            if key is not None:
+                self.ctlogs[Strict.b64(log["logId"]["keyId"])] = key
         self.npm: dict[str, tuple[PublicKey, dt.datetime | None]] = {}
         for key in npm_keys.get("keys", []):
             if key.get("keytype") != "ecdsa-sha2-nistp256":
@@ -126,6 +128,20 @@ class TrustRoot:
                 PublicKey.from_spki(Strict.b64(key["key"])),
                 Strict.time(key.get("expires")),
             )
+
+    def _key(self, log: dict[str, Any]) -> PublicKey | None:
+        """A log's key in the encoding its `keyDetails` names: PKIX (a SubjectPublicKeyInfo) or
+        PKCS #1 (a bare RSA key)."""
+        public = log.get("publicKey") or {}
+        details = str(public.get("keyDetails", ""))
+        try:
+            raw = Strict.b64(public["rawBytes"])
+            if details.startswith("PKCS1_RSA"):
+                return PublicKey("rsa", Rsa.raw_key(raw), raw)
+            return PublicKey.from_spki(raw)
+        except (KeyError, BundleError, DerError):
+            self.unread.append(str(log.get("baseUrl", "a log")))
+            return None
 
     @staticmethod
     def production() -> TrustRoot:

@@ -133,6 +133,9 @@ class Algorithms:
     ECDSA: ClassVar[int] = 19
     EDDSA_LEGACY: ClassVar[int] = 22
     ED25519: ClassVar[int] = 27
+    #: Encryption-only key algorithms (ElGamal, ECDH, X25519, X448): read for their fingerprint,
+    #: never able to sign.
+    ENCRYPTION_ONLY: ClassVar[frozenset[int]] = frozenset({16, 18, 25, 26})
     #: Hash algorithm IDs (RFC 9580 9.5) -> hashlib names.
     HASHES: ClassVar[dict[int, str]] = {
         1: "md5",
@@ -192,6 +195,9 @@ class Key:
 
     @staticmethod
     def _material(algorithm: int, r: _Reader, version: int) -> object:
+        if algorithm in Algorithms.ENCRYPTION_ONLY:
+            r.rest()  # an encryption subkey: its material is never used to verify anything
+            return None
         try:
             if algorithm in Algorithms.RSA:
                 return Rsa.checked(r.mpi(), r.mpi(), min_bits=1024)
