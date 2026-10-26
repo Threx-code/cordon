@@ -16,7 +16,7 @@ from __future__ import annotations
 import io
 import struct
 from collections.abc import Iterator
-from typing import Any, ClassVar, Final
+from typing import IO, Any, ClassVar, Final
 
 MAGIC: Final = 0xFD2FB528
 MAX_BLOCK: Final = 128 << 10
@@ -80,6 +80,107 @@ class XXH64:
         acc ^= acc >> 29
         acc = (acc * p3) & m
         return acc ^ (acc >> 32)
+
+
+class XXH64Stream:
+    """XXH64 over data given a piece at a time: the same digest as `XXH64.digest` of the whole,
+    holding at most one 32-byte stripe -- so a frame's checksum never keeps its output."""
+
+    def __init__(self, seed: int = 0) -> None:
+        p1, p2, m = XXH64.P1, XXH64.P2, XXH64.M
+        self.seed = seed
+        self.v = [(seed + p1 + p2) & m, (seed + p2) & m, seed & m, (seed - p1) & m]
+        self.buffer = b""
+        self.total = 0
+        self.striped = False
+
+    def update(self, data: bytes) -> None:
+        self.total += len(data)
+        data = self.buffer + data
+        whole = len(data) - len(data) % 32
+        for at in range(0, whole, 32):
+            lanes = struct.unpack_from("<4Q", data, at)
+            self.v = [XXH64._round(self.v[i], lanes[i]) for i in range(4)]
+            self.striped = True
+        self.buffer = data[whole:]
+
+    def digest(self) -> int:
+        p1, p2, p3, p4, p5, m = XXH64.P1, XXH64.P2, XXH64.P3, XXH64.P4, XXH64.P5, XXH64.M
+        v = self.v
+        if self.striped:
+            acc = (
+                XXH64._rotl(v[0], 1) + XXH64._rotl(v[1], 7) + XXH64._rotl(v[2], 12) + XXH64._rotl(v[3], 18)
+            ) & m
+            for lane in v:
+                acc = ((acc ^ XXH64._round(0, lane)) * p1 + p4) & m
+        else:
+            acc = (self.seed + p5) & m
+        acc = (acc + self.total) & m
+        data, position = self.buffer, 0
+        while position + 8 <= len(data):
+            lane = int.from_bytes(data[position : position + 8], "little")
+            acc = (XXH64._rotl(acc ^ XXH64._round(0, lane), 27) * p1 + p4) & m
+            position += 8
+        if position + 4 <= len(data):
+            lane = int.from_bytes(data[position : position + 4], "little")
+            acc = (XXH64._rotl(acc ^ (lane * p1 & m), 23) * p2 + p3) & m
+            position += 4
+        for byte in data[position:]:
+            acc = (XXH64._rotl(acc ^ (byte * p5 & m), 11) * p1) & m
+        acc ^= acc >> 33
+        acc = (acc * p2) & m
+        acc ^= acc >> 29
+        acc = (acc * p3) & m
+        return acc ^ (acc >> 32)
+
+
+class _Input:
+    """Compressed input read as it is needed, from bytes or a stream: never held whole. Reads
+    move an offset into a buffer refilled a megabyte at a time, so a small read copies nothing."""
+
+    CHUNK: ClassVar[int] = 1 << 20
+
+    def __init__(self, source: bytes | IO[bytes]) -> None:
+        self.stream: IO[bytes] = (
+            io.BytesIO(source) if isinstance(source, (bytes, bytearray, memoryview)) else source
+        )
+        self.buffer = b""
+        self.at = 0
+
+    def _fill(self, n: int) -> None:
+        if len(self.buffer) - self.at >= n:
+            return
+        parts = [self.buffer[self.at :]]
+        have = len(parts[0])
+        while have < n:
+            chunk = self.stream.read(max(n - have, _Input.CHUNK))
+            if not chunk:
+                break
+            parts.append(chunk)
+            have += len(chunk)
+        self.buffer, self.at = b"".join(parts), 0
+
+    def take(self, n: int, what: str) -> bytes:
+        self._fill(n)
+        if len(self.buffer) - self.at < n:
+            raise ZstdError(f"{what} past the end of the data")
+        out = self.buffer[self.at : self.at + n]
+        self.at += n
+        return out
+
+    def skip(self, n: int, what: str) -> None:
+        while n > 0:
+            step = min(n, _Input.CHUNK)
+            self.take(step, what)
+            n -= step
+
+    def at_end(self) -> bool:
+        self._fill(1)
+        return len(self.buffer) == self.at
+
+    def left(self) -> int:
+        self._fill(4)
+        return len(self.buffer) - self.at
 
 
 class Backward:
@@ -481,30 +582,29 @@ class Frame:
 
 class Zstd:
     @staticmethod
-    def frames(data: bytes, limit: int) -> Iterator[bytes]:
-        """The decompressed content of every frame in `data`, a block at a time; fails once more
-        than `limit` bytes have come out. Malformed data is a `ZstdError`, whatever part of the
-        format it breaks."""
+    def frames(data: bytes | IO[bytes], limit: int | None = None) -> Iterator[bytes]:
+        """The decompressed content of every frame in `data` -- bytes, or a stream read as it is
+        needed -- a block at a time; with a `limit`, fails once more than that has come out.
+        Malformed data is a `ZstdError`, whatever part of the format it breaks."""
         try:
-            yield from Zstd._frames(data, limit)
+            yield from Zstd._frames(_Input(data), limit)
         except (IndexError, KeyError) as exc:
             raise ZstdError("data cut short or out of range") from exc
 
     @staticmethod
-    def _frames(data: bytes, limit: int) -> Iterator[bytes]:
-        position, produced = 0, 0
-        while position < len(data):
-            if len(data) - position < 4:
+    def _frames(src: _Input, limit: int | None) -> Iterator[bytes]:
+        produced = 0
+        while not src.at_end():
+            if src.left() < 4:
                 raise ZstdError("trailing bytes after the last frame")
-            magic = int.from_bytes(data[position : position + 4], "little")
+            magic = int.from_bytes(src.take(4, "a frame magic"), "little")
             if magic & 0xFFFFFFF0 == 0x184D2A50:
-                size = int.from_bytes(data[position + 4 : position + 8], "little")
-                position += 8 + size
+                size = int.from_bytes(src.take(4, "a skippable frame size"), "little")
+                src.skip(size, "a skippable frame")
                 continue
             if magic != MAGIC:
                 raise ZstdError("not a zstd frame")
-            descriptor = data[position + 4]
-            position += 5
+            descriptor = src.take(1, "a frame header")[0]
             fcs_flag, single, checksum, dict_flag = (
                 descriptor >> 6,
                 (descriptor >> 5) & 1,
@@ -515,72 +615,62 @@ class Zstd:
                 raise ZstdError("a reserved frame header bit is set")
             window = 0
             if not single:
-                exponent, mantissa = data[position] >> 3, data[position] & 7
+                byte = src.take(1, "a window descriptor")[0]
+                exponent, mantissa = byte >> 3, byte & 7
                 base = 1 << (10 + exponent)
                 window = base + (base >> 3) * mantissa
-                position += 1
             dict_size = (0, 1, 2, 4)[dict_flag]
-            if int.from_bytes(data[position : position + dict_size], "little"):
+            if int.from_bytes(src.take(dict_size, "a dictionary id"), "little"):
                 raise ZstdError("a frame that needs a dictionary")
-            position += dict_size
             fcs_size = (1 if single else 0, 2, 4, 8)[fcs_flag]
-            content = int.from_bytes(data[position : position + fcs_size], "little")
+            content = int.from_bytes(src.take(fcs_size, "a content size"), "little")
             if fcs_size == 2:
                 content += 256
-            position += fcs_size
             if single:
                 window = content
             if window > MAX_WINDOW:
                 raise ZstdError("a window beyond the limit")
             frame = Frame(max(window, 1))
-            whole = bytearray() if checksum else None
+            hasher = XXH64Stream() if checksum else None
             while True:
-                if position + 3 > len(data):
-                    raise ZstdError("a block header past the end of the data")
-                header = int.from_bytes(data[position : position + 3], "little")
-                position += 3
+                header = int.from_bytes(src.take(3, "a block header"), "little")
                 last, kind, size = header & 1, (header >> 1) & 3, header >> 3
                 if kind == 1:
-                    if position >= len(data):
-                        raise ZstdError("an RLE block past the end of the data")
-                    out = bytes([data[position]]) * size
+                    out = src.take(1, "an RLE block") * size
                     frame.history += out
-                    position += 1
                 elif kind == 3:
                     raise ZstdError("a reserved block type")
                 else:
-                    if size > MAX_BLOCK or position + size > len(data):
-                        raise ZstdError("a block past the end of the data")
-                    body = data[position : position + size]
-                    position += size
+                    if size > MAX_BLOCK:
+                        raise ZstdError("a block larger than the format allows")
+                    body = src.take(size, "a block")
                     if kind == 0:
                         out = body
                         frame.history += out
                     else:
                         out = frame.compressed(body)
                 produced += len(out)
-                if produced > limit:
+                if limit is not None and produced > limit:
                     raise ZstdError("decompressed data beyond the limit")
-                if whole is not None:
-                    whole += out
+                if hasher is not None:
+                    hasher.update(out)
                 frame.keep()
                 yield out
                 if last:
                     break
-            if checksum:
-                expected = int.from_bytes(data[position : position + 4], "little")
-                position += 4
-                if whole is not None and XXH64.digest(bytes(whole)) & 0xFFFFFFFF != expected:
+            if hasher is not None:
+                expected = int.from_bytes(src.take(4, "a content checksum"), "little")
+                if hasher.digest() & 0xFFFFFFFF != expected:
                     raise ZstdError("a frame whose content checksum does not match")
 
     @staticmethod
-    def decompress(data: bytes, limit: int) -> bytes:
+    def decompress(data: bytes, limit: int | None = None) -> bytes:
         return b"".join(Zstd.frames(data, limit))
 
     class Reader(io.RawIOBase):
         """`frames` as a readable stream."""
 
-        def __init__(self, data: bytes, limit: int) -> None:
+        def __init__(self, data: bytes | IO[bytes], limit: int | None = None) -> None:
             self.blocks: Any = Zstd.frames(data, limit)
             self.pending = b""
 

@@ -324,15 +324,10 @@ class CondaPackage:
 
             stream: Any = zstd.ZstdFile(io.BytesIO(blob))
         except ImportError:
-            try:
-                import zstandard  # type: ignore[import-not-found]
+            from cordon_scanner.intel.store.zstd import Zstd
 
-                stream = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(blob))
-            except ImportError:
-                from cordon_scanner.intel.store.zstd import Zstd
-
-                # The core's own decoder: no third-party dependency (CONSTRAINT C1).
-                stream = Zstd.Reader(blob, CondaPackage.MAX_STREAM_BYTES)
+            # The core's own decoder: no third-party dependency (CONSTRAINT C1).
+            stream = Zstd.Reader(blob, CondaPackage.MAX_STREAM_BYTES)
         return CondaPackage._Bounded(stream, CondaPackage.MAX_STREAM_BYTES)
 
     class _Bounded(io.RawIOBase):

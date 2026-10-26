@@ -469,9 +469,9 @@ class ImageLayers:
 
     @staticmethod
     def _zstd_reader(raw: IO[bytes]) -> IO[bytes]:
-        """A zstd decompressor: the standard library's (Python 3.14+), else the `zstandard` package
-        if installed, else the core's own decoder (`intel/zstd`), as conda packages are read. The
-        shipped image runs Python 3.11, where every zstd layer was left unread (review 98)."""
+        """A zstd decompressor: the standard library's (Python 3.14+), else the core's own
+        (`intel/store/zstd`), which reads the layer as a stream, as the gzip path does -- no layer
+        too large to read, and no third-party decoder."""
         import importlib
 
         try:
@@ -480,25 +480,9 @@ class ImageLayers:
             return reader
         except ImportError:
             pass
-        try:
-            zstandard = importlib.import_module("zstandard")
-            stream: IO[bytes] = zstandard.ZstdDecompressor().stream_reader(raw)
-            return stream
-        except ImportError:
-            pass
         from cordon_scanner.intel.store.zstd import Zstd
 
-        blob = raw.read(ImageLayers.MAX_ZSTD_LAYER + 1)
-        if len(blob) > ImageLayers.MAX_ZSTD_LAYER:
-            raise ValueError(
-                "zstd-compressed layer too large for the built-in decoder; install `zstandard` "
-                "or run on Python 3.14"
-            )
-        return io.BufferedReader(Zstd.Reader(blob, ImageLayers.MAX_ZSTD_OUTPUT))
-
-    #: The built-in decoder holds a compressed layer in memory and is pure Python.
-    MAX_ZSTD_LAYER: ClassVar[int] = 128 * 1024 * 1024
-    MAX_ZSTD_OUTPUT: ClassVar[int] = 1024 * 1024 * 1024
+        return io.BufferedReader(Zstd.Reader(raw))
 
     @staticmethod
     def _apply_layer(

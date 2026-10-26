@@ -1015,23 +1015,17 @@ class _BudgetedStream:
 
     @staticmethod
     def _zstd(raw: _BytesReader, limit: int) -> Any:
-        """A zstd decompressing reader: the standard library's (3.14), `zstandard` where installed,
-        else the core's own decoder (`intel/zstd`), so a `.conda` package is read with no
-        third-party dependency (CONSTRAINT C1). The last fails past `limit` bytes."""
+        """A zstd decompressing reader: the standard library's (3.14), else the core's own decoder
+        (`intel/store/zstd`), so a `.conda` package is read with no third-party dependency
+        (CONSTRAINT C1). The last fails past `limit` bytes."""
         try:
             from compression import zstd  # type: ignore[import-not-found]
 
             return zstd.ZstdFile(raw, mode="rb")
         except ImportError:
-            pass
-        try:
-            import zstandard  # type: ignore[import-not-found]
-
-            return zstandard.ZstdDecompressor().stream_reader(raw)
-        except ImportError:
             from cordon_scanner.intel.store.zstd import Zstd
 
-            return Zstd.Reader(raw.getvalue(), limit)
+            return Zstd.Reader(raw, limit)
 
     def read(self, size: int = -1) -> bytes:
         if self.deadline is not None and time.monotonic() > self.deadline:
