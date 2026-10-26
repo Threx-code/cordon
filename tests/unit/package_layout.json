@@ -301,6 +301,7 @@
   "test_archive_bombs_are_refused_while_streaming.py": "sources",
   "test_archive_inner_dotdot.py": "sources",
   "test_nested_repeats.py": "sources",
+  "test_program_head.py": "sources",
   "test_ast_providers.py": "analysis/shared",
   "test_atomic_file.py": "foundation",
   "test_atr_gate.py": "intel/malware",

@@ -72,6 +72,17 @@ ARCHIVE_SUFFIXES = (
 READ_CHUNK = 65536
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _COMPRESSED_MAGIC = (b"\x1f\x8b", b"BZh", b"\xfd7zXZ\x00", ZSTD_MAGIC)
+#: The first bytes of a compiled program: ELF, PE, Mach-O (thin and fat) and WebAssembly. A member
+#: over the size limit that begins with one is read up to the limit rather than refused unread
+#: (`ArchiveReader._program_head`).
+_PROGRAM_MAGIC = (
+    b"\x7fELF",
+    b"MZ",
+    b"\xcf\xfa\xed\xfe",
+    b"\xce\xfa\xed\xfe",
+    b"\xca\xfe\xba\xbe",
+    b"\x00asm",
+)
 """gzip, bzip2, xz and zstd: the streams a tarball is compressed in."""
 
 
@@ -459,6 +470,21 @@ class ArchiveReader:
                 if ArchiveReader._would_exceed(
                     result, info.compress_size, info.file_size, limits, safe
                 ):
+                    if ArchiveReader._over_member_limit(result, safe):
+                        try:
+                            with archive.open(info) as handle:
+                                head = ArchiveReader._program_head(handle, limits, result, safe)
+                        except (zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError):
+                            head = None
+                        if head is not None:
+                            result.members.append(
+                                ExtractedMember(
+                                    name=safe,
+                                    data=head,
+                                    compressed_size=info.compress_size,
+                                    uncompressed_size=len(head),
+                                )
+                            )
                     continue
 
                 try:
@@ -599,6 +625,19 @@ class ArchiveReader:
                     # The declared size is the attacker's number. It is used only to
                     # reject early; the real bound is enforced while reading.
                     if ArchiveReader._would_exceed(result, 0, member.size, limits, safe):
+                        if ArchiveReader._over_member_limit(result, safe):
+                            head = ArchiveReader._program_head(
+                                archive.extractfile(member), limits, result, safe
+                            )
+                            if head is not None:
+                                result.members.append(
+                                    ExtractedMember(
+                                        name=safe,
+                                        data=head,
+                                        compressed_size=0,
+                                        uncompressed_size=len(head),
+                                    )
+                                )
                         continue
 
                     try:
@@ -668,6 +707,57 @@ class ArchiveReader:
         repository (21:1) as bombs, unread (review 98). Every archive may reach
         `max_member_bytes`; past that, `max_archive_ratio` times its size."""
         return max(limits.max_member_bytes, compressed * limits.max_archive_ratio)
+
+    @staticmethod
+    def _over_member_limit(result: ExtractionResult, name: str) -> bool:
+        """Whether `_would_exceed` just refused `name` for its own size alone: not as padding, and
+        not for the archive's total budget, which no member may be read past."""
+        last = result.rejected[-1] if result.rejected else None
+        return (
+            last is not None
+            and last.name == name
+            and last.reason == Rejection.SIZE
+            and last.detail.startswith("declared ")
+        )
+
+    @staticmethod
+    def _program_head(
+        handle: Any, limits: Limits, result: ExtractionResult, name: str
+    ) -> bytes | None:
+        """The first `member_limit` bytes of an oversized member that is a compiled program, or None.
+
+        A platform binary is most of what a malicious launcher package ships, and a Go or Rust one
+        runs past 64 MB: refused unread, its whole package passed with nothing examined (review 98:
+        189 of the npm work set's malware). Its first `member_limit` bytes hold the headers, the
+        import table and most of its strings, and are no more than any member this reader keeps.
+        The refusal stays on the record -- the rest was not read -- and every budget still applies:
+        the expansion cap and the archive total are charged for what is kept."""
+        if handle is None:
+            return None
+        start = handle.read(8)
+        if not start.startswith(_PROGRAM_MAGIC):
+            return None
+        chunks = [start]
+        read_total = len(start)
+        cap = ArchiveReader.member_limit(limits)
+        while read_total < cap:
+            chunk = handle.read(min(READ_CHUNK, cap - read_total))
+            if not chunk:
+                break
+            read_total += len(chunk)
+            if (
+                0 < result.expansion_cap < result.total_uncompressed + read_total
+                or result.total_uncompressed + read_total > limits.max_uncompressed_bytes
+            ):
+                return None
+            chunks.append(chunk)
+        result.total_uncompressed += read_total
+        result.rejected[-1] = RejectedMember(
+            name,
+            Rejection.SIZE,
+            result.rejected[-1].detail + f"; a compiled program, its first {read_total} bytes read",
+        )
+        return b"".join(chunks)
 
     @staticmethod
     def _would_exceed(
