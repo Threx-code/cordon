@@ -112,21 +112,61 @@ class ReachedFlows:
     #: user's scan neither computes nor reports them until a shipped model reads them.
     MEASURE: ClassVar[str] = "CORDON_MEASURE_FEATURES"
     CODE: ClassVar[tuple[str, ...]] = (".js", ".mjs", ".cjs", ".py")
+    #: What the code features read besides: TypeScript a loader runs, and shell scripts.
+    SOURCE: ClassVar[tuple[str, ...]] = (*CODE, ".ts", ".mts", ".cts", ".tsx", *CodeFeatures.SHELL)
 
     @staticmethod
     def sources(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, list[tuple[str, bytes]]]:
-        """Each place's JavaScript and Python files, within the same limits as the flow facts."""
+        """Each place's code, as the code features read it: the install hooks' own command lines
+        first (a `postinstall` is often the whole payload, and no file holds it), then the reached
+        JavaScript, TypeScript, Python and shell files. A file past `MAX_SIZE` -- one 27 MB bundle
+        as a package's `main` -- gives its first `CodeFeatures.PLACE_BYTES`, not nothing."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
         out: dict[str, list[tuple[str, bytes]]] = {}
         for place, paths in ReachedFlows.places(ctx).items():
-            files = [
-                (unit.path, unit.content.raw)
-                for unit in units
-                if unit.path in paths
-                and unit.content.size <= ReachedFlows.MAX_SIZE
-                and unit.path.rsplit("!", 1)[-1].lower().endswith(ReachedFlows.CODE)
-            ]
+            files: list[tuple[str, bytes]] = []
+            for unit in units:
+                if unit.path not in paths or place != "install":
+                    continue
+                ecosystem = EcosystemRegistry.get(
+                    EcosystemRegistry.manifest_ecosystem(unit.path) or ""
+                )
+                try:
+                    hooks = ecosystem.parse_manifest(unit.content).hooks if ecosystem else ()
+                except Exception:  # noqa: S112 -- a feature is evidence, never a scan failure
+                    continue
+                files += [
+                    (f"{unit.path}#{hook.name}.sh", hook.command.encode())
+                    for hook in hooks
+                    if hook.command and not hook.action_step
+                ]
+            for unit in units:
+                if unit.path not in paths:
+                    continue
+                name = unit.path.rsplit("!", 1)[-1].lower()
+                path = unit.path if name.endswith(ReachedFlows.SOURCE) else None
+                if path is None and "." not in name.rsplit("/", 1)[-1]:
+                    path = ReachedFlows._interpreted(unit.path, unit.content.raw[:128])
+                if path is not None:
+                    files.append((path, unit.content.raw[: CodeFeatures.PLACE_BYTES]))
             out[place] = files[: ReachedFlows.FILES]
         return out
+
+    _SHEBANG: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"#![ \t]*\S*?(?:env[ \t]+(?:-\S+[ \t]+)*)?(node|python[0-9.]*|bash|sh|zsh|dash)\b"
+    )
+
+    @staticmethod
+    def _interpreted(path: str, head: bytes) -> str | None:
+        """An extensionless script -- a `bin` such as `bin/tool` -- named for the language its
+        `#!` line runs it with, so the code features read it as that language."""
+        match = ReachedFlows._SHEBANG.match(head)
+        if match is None:
+            return None
+        interpreter = match.group(1).decode()
+        suffix = ".js" if interpreter == "node" else ".py" if interpreter[:2] == "py" else ".sh"
+        return path + "#" + suffix
 
     @staticmethod
     def facts(place: str, text: str, *, python: bool = False) -> dict[str, float]:

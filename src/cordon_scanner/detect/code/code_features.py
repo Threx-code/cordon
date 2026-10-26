@@ -14,8 +14,11 @@ itself, per place (`install`, `import`, `closure`, as in `ReachedFlows`):
 A string's value is never a feature, hashed or not: every literal becomes its shape (`URL`,
 `BASE64`, `HEX`, `LONG_STRING`, `STRING`). The model learns what code does, not one campaign's
 addresses, and no record carries a payload. Tokens come from the scanner's own tokenizers --
-`JsEval.tokens` for JavaScript, the standard library's `tokenize` for Python -- so a comment, a
-template or a regular expression cannot shift where a string starts.
+`JsEval.tokens` for JavaScript and TypeScript, the standard library's `tokenize` for Python -- so a
+comment, a template or a regular expression cannot shift where a string starts. A shell script and
+an install hook's command line (`postinstall` in a `package.json`: most install-time malware is
+that one line) are split into words, and a word that is not a plain command, flag or name -- an
+address, a path, a blob -- is a string, its shape.
 
 Deterministic (stable hashes, no clock) and bounded: at most `PLACE_BYTES` of text per place, after
 the caller's per-file limits.
@@ -127,6 +130,13 @@ class CodeFeatures:
     _HEX: ClassVar[re.Pattern[str]] = re.compile(r"(?:\\x[0-9a-fA-F]{2}){6,}|\b[0-9a-fA-F]{32,}\b")
     _BASE64: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")
     _SAFE: ClassVar[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9_.$]")
+    SHELL: ClassVar[tuple[str, ...]] = (".sh", ".bash", ".bat", ".cmd", ".ps1")
+    _SHELL_TOKEN: ClassVar[re.Pattern[str]] = re.compile(
+        r"""'[^']*'|"(?:\\.|[^"\\])*"|\|\||&&|>>|[|;&<>()`{}$=]|[^\s|;&<>()`{}$='"]+"""
+    )
+    _SHELL_WORD: ClassVar[re.Pattern[str]] = re.compile(
+        r"[A-Za-z_][A-Za-z0-9_.-]{0,39}|-{1,2}[A-Za-z][A-Za-z0-9-]{0,30}"
+    )
     _SKIP: ClassVar[frozenset[int]] = frozenset(
         {
             tokenize.COMMENT,
@@ -174,6 +184,8 @@ class CodeFeatures:
         """The file as (kind, token): `str` tokens keep their text only for the module check."""
         if path.lower().endswith(".py"):
             return CodeFeatures._python(text)
+        if path.lower().endswith(CodeFeatures.SHELL):
+            return CodeFeatures._shell(text)
         try:
             tokens = JsEval.tokens(text, templates=True)
         except Exception:  # a file the tokenizer cannot read gives no features, never a failure
@@ -207,6 +219,19 @@ class CodeFeatures:
                     out.append(("punct", t.string))
         except (tokenize.TokenError, SyntaxError, ValueError):
             return []
+        return out
+
+    @staticmethod
+    def _shell(text: str) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for match in CodeFeatures._SHELL_TOKEN.finditer(text):
+            word = match.group()
+            if word in ("||", "&&", ">>") or (len(word) == 1 and not word.isalnum()):
+                out.append(("punct", word))
+            elif CodeFeatures._SHELL_WORD.fullmatch(word) and CodeFeatures.shape(word) == "STRING":
+                out.append(("name", word))
+            else:
+                out.append(("str", word))
         return out
 
     @staticmethod
