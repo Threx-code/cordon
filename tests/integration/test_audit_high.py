@@ -275,7 +275,8 @@ class TestH5DeepNestingIsNotSilent:
     def test_past_the_limit_it_is_reported_not_dropped(self, tmp_path: Path) -> None:
         """The contents still are not examined -- that is what a depth limit
         means. What must not happen is looking identical to a clean archive."""
-        result = self.scan(self.wrapped(tmp_path, 5))
+        past = Config.default().limits.max_archive_depth + 2
+        result = self.scan(self.wrapped(tmp_path, past))
         assert not result.complete, "a scan that stopped early reported complete"
         assert any("ARCHIVE" in f.rule_id for f in result.findings), (
             "one extra layer of wrapping hid the payload silently"

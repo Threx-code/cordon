@@ -575,7 +575,7 @@ scan:
     per_file_timeout: 5
     total_timeout: 900
     max_archive_ratio: 200
-    max_archive_depth: 3
+    max_archive_depth: 8
     max_archive_entries: 50000
 
 policy:

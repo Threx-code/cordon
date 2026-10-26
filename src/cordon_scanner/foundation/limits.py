@@ -134,9 +134,13 @@ class Limits:
 
     max_archive_entries: int = 50_000
 
-    max_archive_depth: int = 3
+    max_archive_depth: int = 8
     """Archives nested inside archives. Beyond this depth the nesting is itself
-    the signal, so it is reported rather than skipped."""
+    the signal, so it is reported rather than skipped. Eight, not three: a package
+    that ships its previous release, which ships the one before (`npm pack` run in a
+    directory holding the last tarball), nested four deep in npm's legitimate set and
+    was refused at three with nothing unread but its own history; and depth is not
+    what stops a bomb -- the expansion ratio and the total budget are, at any depth."""
 
     max_uncompressed_bytes: int = 768 * 1024 * 1024
     """Bytes one archive may expand to, in total. Below `max_memory_bytes` on purpose: the kept

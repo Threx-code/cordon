@@ -118,7 +118,7 @@ environment:
 | `total_timeout` | 900 s | Whole scan. `0` means no limit. |
 | `max_archive_ratio` | 200 | Compression ratio before an archive is refused. |
 | `max_archive_entries` | 50,000 | Members extracted. |
-| `max_archive_depth` | 3 | Nested archive levels. |
+| `max_archive_depth` | 8 | Nested archive levels. |
 | `max_uncompressed_bytes` | 2 GiB | Expanded archive size. |
 | `max_path_depth` | 64 | Directory nesting. |
 | `max_path_bytes` | 4096 | Path length. |

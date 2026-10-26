@@ -78,7 +78,7 @@ a tar with a billion 1-byte entries.
 - `max_archive_ratio` (default 200:1) checked **incrementally during the stream**,
   not after extraction. Extraction aborts the moment the running ratio is exceeded.
 - `max_archive_entries` (default 50,000).
-- `max_archive_depth` (default 3). A nested archive beyond the limit is a finding,
+- `max_archive_depth` (default 8). A nested archive beyond the limit is a finding,
   not a silent skip.
 - `max_uncompressed_bytes` per archive and per scan, enforced by a counting
   wrapper around the stream, never by trusting the header's declared size.
