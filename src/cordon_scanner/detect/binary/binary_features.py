@@ -18,7 +18,11 @@ Keys (`exe_*`, counts across the package's executables, each capped):
 - `exe_shape_<url|ip|onion|b64|psenc>`: how many strings have that shape;
 - `exe_packed`: a packer's own signature; `exe_high_entropy`: the share of 4 KB blocks (every
   sixteenth one) above 7.2 bits a byte, in tenths;
-- `exe_log_size`: the largest executable's size, as the number of its decimal digits.
+- `exe_log_size`: the largest executable's size, as the number of its decimal digits;
+- `exe_tok_<h>`: the words its strings are made of -- symbol and API names, format strings,
+  messages -- hashed, each counted once per executable, the top `TOKENS` across the package.
+  Every address, IP, onion name, blob and host name is blanked first, so a word of one is never
+  a key: what is learned is what the program names, not where it sends.
 
 A string's value is never a feature: a group counts names on a fixed list, a shape counts strings
 of that shape. Read in windows of `WINDOW` bytes with `OVERLAP` carried across each cut, so an
@@ -28,6 +32,7 @@ executable of any size held in a window source costs one pass and bounded memory
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import math
 import re
@@ -92,6 +97,18 @@ class BinaryFeatures:
     #: Read in the first window, where the headers and section names are.
     PACKERS: ClassVar[re.Pattern[bytes]] = re.compile(rb"UPX!|UPX0\x00|\.MPRESS1|\.themida|\.vmp0")
     _ASCII: ClassVar[re.Pattern[bytes]] = re.compile(rb"[\x20-\x7e]{5,}")
+    TOKENS: ClassVar[int] = 1500
+    HASH_MOD: ClassVar[int] = 1 << 18
+    _WORD: ClassVar[re.Pattern[bytes]] = re.compile(rb"[A-Za-z_][A-Za-z0-9_]{3,39}")
+    _RUN: ClassVar[re.Pattern[bytes]] = re.compile(rb"[^\s\x00]{4,2048}")
+    #: What is never a word -- where a program sends -- by the top-level domains a host name ends
+    #: in, the shape of an IP and of an encoded blob.
+    _TLDS: ClassVar[frozenset[bytes]] = frozenset(
+        b"com net org io ru xyz top cn info onion app dev me cc su tk pw biz site online link club "
+        b"live co uk de fr jp kr br in us eu ws to gg sh".split()
+    )
+    _IP: ClassVar[re.Pattern[bytes]] = re.compile(rb"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+    _BLOB: ClassVar[re.Pattern[bytes]] = re.compile(rb"[A-Za-z0-9+/]{40}")
     #: Written to start on a printable byte, not on a group: four times faster on a 4 MB window.
     _WIDE: ClassVar[re.Pattern[bytes]] = re.compile(rb"[\x20-\x7e]\x00(?:[\x20-\x7e]\x00){4,}")
 
@@ -105,6 +122,7 @@ class BinaryFeatures:
     def of(executables: Iterable[tuple[int, Callable[[int, int], bytes]]]) -> dict[str, float]:
         """`executables`: each one's size and a reader of (offset, length) -> bytes."""
         out: Counter[str] = Counter()
+        words: Counter[bytes] = Counter()
         largest = 0
         for size, read in executables:
             kind = BinaryFeatures.format_of(read(0, 4))
@@ -112,14 +130,25 @@ class BinaryFeatures:
                 continue
             out[f"exe_{kind}"] += 1
             largest = max(largest, size)
-            BinaryFeatures._one(size, read, out)
+            words.update(BinaryFeatures._one(size, read, out))
         if largest:
             out["exe_log_size"] = len(str(largest))
+        for word, n in sorted(words.items(), key=lambda kv: (-kv[1], kv[0]))[
+            : BinaryFeatures.TOKENS
+        ]:
+            out[f"exe_tok_{BinaryFeatures.hashed(word)}"] += n
         return {k: float(min(v, BinaryFeatures.CAP)) for k, v in out.items()}
 
     @staticmethod
-    def _one(size: int, read: Callable[[int, int], bytes], out: Counter[str]) -> None:
+    def hashed(word: bytes) -> int:
+        digest = hashlib.blake2b(word, digest_size=4).digest()
+        return int.from_bytes(digest, "big") % BinaryFeatures.HASH_MOD
+
+    @staticmethod
+    def _one(size: int, read: Callable[[int, int], bytes], out: Counter[str]) -> set[bytes]:
+        """Adds one executable's facts to `out`; returns the distinct words its strings hold."""
         names: dict[str, set[bytes]] = {g: set() for g in BinaryFeatures.groups()}
+        words: set[bytes] = set()
         langs: set[str] = set()
         shapes: Counter[str] = Counter()
         packed = False
@@ -143,6 +172,7 @@ class BinaryFeatures:
                 packed = BinaryFeatures.PACKERS.search(chunk) is not None
             for shape, pattern in BinaryFeatures.SHAPES.items():
                 shapes[shape] += len(pattern.findall(new))
+            words.update(BinaryFeatures.words(new))
             # Every sixteenth block: the share is what is wanted, and a byte histogram per 4 KB
             # is the one cost here that grows with the file.
             for start in range(0, len(chunk) - BinaryFeatures.BLOCK + 1, 16 * BinaryFeatures.BLOCK):
@@ -162,6 +192,27 @@ class BinaryFeatures:
             out["exe_packed"] += 1
         if blocks:
             out["exe_high_entropy"] = max(out["exe_high_entropy"], round(10 * high / blocks))
+        return words
+
+    @staticmethod
+    def words(strings: bytes) -> set[bytes]:
+        """The words of `strings`, each distinct run of non-space bytes asked once: a run that is
+        an address, an IP, a blob or a host name gives none. Plain byte tests, not a pattern per
+        run: a 133 MB program has two hundred thousand distinct runs."""
+        kept: list[bytes] = []
+        for run in set(BinaryFeatures._RUN.findall(strings)):
+            if b"://" in run:
+                continue
+            if b"." in run and (
+                b"/" in run
+                or run.rsplit(b".", 1)[-1].lower().rstrip(b"\"');,)]") in BinaryFeatures._TLDS
+                or (run.count(b".") >= 3 and BinaryFeatures._IP.search(run) is not None)
+            ):
+                continue
+            if len(run) >= 40 and BinaryFeatures._BLOB.search(run) is not None:
+                continue
+            kept.append(run)
+        return set(BinaryFeatures._WORD.findall(b" ".join(kept)))
 
     @staticmethod
     def strings(data: bytes) -> bytes:

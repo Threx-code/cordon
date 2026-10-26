@@ -79,3 +79,26 @@ class TestStrings:
 
     def test_a_name_split_by_bytes_that_are_no_text_is_not_found(self) -> None:
         assert "exe_group_injection" not in Fixture.features(ELF + b"WriteProc\x01essMemory")
+
+
+class TestWords:
+    BODY = b"\x00GetAsyncKeyState\x00CreateRemoteThread\x00send report to "
+
+    def test_the_words_a_program_names_are_hashed_keys(self) -> None:
+        facts = Fixture.features(ELF + self.BODY + b"https://zqxhost.example/zqxpath\x00")
+        assert f"exe_tok_{BinaryFeatures.hashed(b'GetAsyncKeyState')}" in facts
+        assert not any(k.startswith("exe_tok_") and not k[8:].isdigit() for k in facts)
+
+    def test_where_it_sends_is_never_a_word(self) -> None:
+        facts = Fixture.features(
+            ELF + self.BODY + b"https://zqxhost.example/zqxpath zqxbare.com\x00"
+        )
+        hashes = {
+            BinaryFeatures.hashed(w) for w in (b"zqxhost", b"zqxpath", b"zqxbare", b"example")
+        }
+        assert not any(f"exe_tok_{h}" in facts for h in hashes)
+
+    def test_two_hosts_give_the_same_words(self) -> None:
+        one = Fixture.features(ELF + self.BODY + b"https://alpha.example/a\x00")
+        two = Fixture.features(ELF + self.BODY + b"https://bravo.example/b\x00")
+        assert one == two
