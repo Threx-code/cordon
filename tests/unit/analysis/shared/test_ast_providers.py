@@ -1,8 +1,8 @@
 """The per-language providers behind the `kind: ast` match kind.
 
 The property that matters: one `AstCall` shape across languages, so a single
-`kind: ast` rule resolves calls in each -- and a language with no installed
-provider is reported as such, never silently treated as scanned.
+`kind: ast` rule resolves calls in each -- and every provider is the project's
+own code in the core install, so no language depends on an extra being present.
 """
 
 from __future__ import annotations
@@ -10,8 +10,6 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.analysis.shared import ast_providers
-
-tree_sitter = pytest.importorskip("tree_sitter", reason="the ast-js extra is not installed")
 
 
 class TestTheRegistry:
@@ -25,10 +23,9 @@ class TestTheRegistry:
         assert ast_providers.AstProviders.ast_provider_for("ruby") is None
         assert ast_providers.AstProviders.ast_provider_for(None) is None
 
-    def test_missing_provider_language_is_none_when_installed(self) -> None:
-        # tree_sitter is importable in the test environment, so js is not missing.
-        assert ast_providers.AstProviders.missing_provider_language("javascript") is None
-        assert ast_providers.AstProviders.missing_provider_language("ruby") is None
+    def test_no_language_waits_on_an_extra(self) -> None:
+        for language in ("javascript", "typescript", "ruby"):
+            assert ast_providers.AstProviders.missing_provider_language(language) is None
 
 
 class TestTheJavaScriptProvider:
@@ -77,20 +74,31 @@ class TestTheJavaScriptProvider:
         assert call.has_constructed_argument is True
 
     def test_unparseable_source_yields_nothing_rather_than_raising(self, js) -> None:
-        # tree-sitter is error-tolerant, but this must never raise regardless.
         assert isinstance(js.resolve_calls("const const const {{{"), list)
 
 
-class TestDegradationWhenTheExtraIsAbsent:
-    def test_a_missing_grammar_makes_the_language_have_no_provider(self, monkeypatch) -> None:
-        """Simulates the base install without the extra: the provider build
-        raises ImportError, so the registry returns None and names the extra to
-        install -- rather than crashing or pretending the language was scanned."""
+class TestTheCoreInstall:
+    def test_javascript_and_typescript_resolve_with_no_third_party_module(
+        self, monkeypatch
+    ) -> None:
+        """The base install: no tree-sitter importable, and both languages still resolve,
+        through the project's own front end."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _no_tree_sitter(name: str, *args, **kwargs):
+            if name.startswith("tree_sitter"):
+                raise ImportError(name)
+            return real_import(name, *args, **kwargs)
+
         monkeypatch.setattr(ast_providers, "_CACHE", {})
-
-        def _raise(_language: str):
-            raise ImportError("tree_sitter not installed")
-
-        monkeypatch.setattr(ast_providers, "_TreeSitterProvider", _raise)
-        assert ast_providers.AstProviders.ast_provider_for("javascript") is None
-        assert ast_providers.AstProviders.missing_provider_language("javascript") == "ast-js"
+        monkeypatch.setattr(builtins, "__import__", _no_tree_sitter)
+        for language in ("javascript", "typescript"):
+            provider = ast_providers.AstProviders.ast_provider_for(language)
+            assert provider is not None
+            names = {
+                c.name
+                for c in provider.resolve_calls("const cp = require('child_process');\ncp.exec(x);")
+            }
+            assert "child_process.exec" in names

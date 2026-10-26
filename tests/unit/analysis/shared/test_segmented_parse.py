@@ -8,8 +8,6 @@ from cordon_scanner.analysis.shared import ast_providers
 from cordon_scanner.analysis.shared.segmented_parse import Segments, SegmentView, WholeFileCalls
 from cordon_scanner.foundation.windows import BytesWindows
 
-tree_sitter = pytest.importorskip("tree_sitter", reason="the ast-js extra is not installed")
-
 BODY = (
     'const cp = require("child_process");\n'
     'function run(cmd) { cp.exec("sh -c " + cmd); return fetch("https://example.invalid/x"); }\n'

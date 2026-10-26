@@ -3,9 +3,10 @@
 The `ast` match kind resolves a call through imports, aliases, bindings and
 folded constants, so a rule that names `child_process.exec` matches it however
 the call site spells it. That resolution is language-specific, so it lives
-behind a provider: the core ships the Python one (stdlib `ast`, always
-available), and other languages are added by installing an optional extra that
-carries a parser.
+behind a provider. Every provider is this project's own code, in the core: the
+Python one over the stdlib `ast`, and the JavaScript and TypeScript one over
+Cordon's own front end (`analysis/javascript/front`). No parser written
+elsewhere reads a scanned file.
 
 One shape, every language. A provider returns `AstCall` records -- the same
 records the Python resolver produces and the same ones `AstQuery` consumes -- so
@@ -80,8 +81,10 @@ class AstProviders:
         provider: AstProvider | None
         if language == "python":
             provider = PythonAstProvider()
-        elif language in _TREE_SITTER_LANGUAGES:
-            provider = AstProviders._build_tree_sitter_provider(language)
+        elif language in ("javascript", "typescript"):
+            from cordon_scanner.analysis.javascript.front.resolve import CallResolver
+
+            provider = CallResolver(typescript=language == "typescript")
         else:
             provider = None
         _CACHE[language] = provider
@@ -92,8 +95,6 @@ class AstProviders:
         """The name of the extra to install for a language that could have a provider
         but does not, or None. Lets the detector say what to install rather than only
         that something is missing."""
-        if language in _TREE_SITTER_LANGUAGES and AstProviders.ast_provider_for(language) is None:
-            return "ast-js"
         return None
 
     @staticmethod
