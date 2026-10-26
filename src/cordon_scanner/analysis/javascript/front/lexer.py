@@ -103,6 +103,12 @@ class Lexer:
         "0": "\0",
     }
 
+    @staticmethod
+    def run(pattern: re.Pattern[str], text: str, pos: int) -> int:
+        """The end of `pattern`'s run of characters from `pos` (`pos` itself when it has none)."""
+        found = pattern.match(text, pos)
+        return pos if found is None else found.end()
+
     def __init__(self, text: str) -> None:
         self.text = text
         self.pos = 0
@@ -163,14 +169,14 @@ class Lexer:
     def _skip_trivia(self) -> None:
         text, n = self.text, len(self.text)
         pos = self.pos
-        space_run, brk = Lexer.SPACE_RUN.match, Lexer.BREAK.search
+        brk = Lexer.BREAK.search
         while pos < n:
             c = text[pos]
             if c in Lexer.LINE_BREAKS:
                 self.newline = True
                 pos += 1
             elif c in Lexer.SPACE:
-                pos = space_run(text, pos).end()
+                pos = Lexer.run(Lexer.SPACE_RUN, text, pos)
             elif c == "/" and text.startswith("//", pos):
                 pos = self._line_end(pos)
             elif c == "/" and text.startswith("/*", pos):
@@ -186,12 +192,12 @@ class Lexer:
         self.pos = pos
 
     def _line_end(self, pos: int) -> int:
-        return Lexer.LINE_REST.match(self.text, pos).end()
+        return Lexer.run(Lexer.LINE_REST, self.text, pos)
 
     def _name(self, kind: str, pos: int, newline: bool, start: int | None = None) -> Token:
         text, n = self.text, len(self.text)
         begin = pos if start is None else start
-        end = Lexer.ASCII_NAME.match(text, pos).end()
+        end = Lexer.run(Lexer.ASCII_NAME, text, pos)
         if end >= n or (text[end] != "\\" and ord(text[end]) < 128):  # all ASCII: one scan
             self.pos = end
             return Token(kind, text[pos:end], begin, end, newline)
@@ -243,14 +249,14 @@ class Lexer:
     def _string(self, pos: int, quote: str, newline: bool) -> Token:
         text, n = self.text, len(self.text)
         start, pos = pos, pos + 1
-        plain = Lexer.PLAIN[quote].match
-        end = plain(text, pos).end()
+        plain = Lexer.PLAIN[quote]
+        end = Lexer.run(plain, text, pos)
         if end < n and text[end] == quote:  # no escape: the body as it stands
             self.pos = end + 1
             return Token("string", text[pos:end], start, end + 1, newline)
         out: list[str] = []
         while pos < n:
-            end = plain(text, pos).end()
+            end = Lexer.run(plain, text, pos)
             if end > pos:
                 out.append(text[pos:end])
                 pos = end

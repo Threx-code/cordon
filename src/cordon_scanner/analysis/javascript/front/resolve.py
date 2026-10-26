@@ -494,8 +494,9 @@ class _Walker:
             callee = _Walker.unwrap(callee["expressions"][-1])
         values, built = self.arguments(node["arguments"], scope)
         byte, line, column = self.places.of(node.start)
+        rest: tuple[str, ...] = ()
         if callee.type == "Identifier":
-            root, rest = callee["name"], ()
+            root = callee["name"]
         elif callee.type == "MemberExpression":
             path = self.member_path(callee, scope)
             if path is None:

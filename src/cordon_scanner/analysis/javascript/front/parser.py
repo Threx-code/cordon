@@ -599,9 +599,8 @@ class Parser:
                 if not self.eat(","):
                     break
             self.expect("}")
-            source = None
-            if self.eat("from"):
-                source = self.literal()
+            reexported = self.literal() if self.eat("from") else None
+            if reexported is not None:
                 self._import_attributes()
             self.semicolon()
             return self.node(
@@ -609,7 +608,7 @@ class Parser:
                 start,
                 declaration=None,
                 specifiers=specifiers,
-                source=source,
+                source=reexported,
             )
         declaration = self.statement()
         return self.node(
@@ -788,9 +787,9 @@ class Parser:
                 "MethodDefinition", start, key=key, computed=computed, kind=kind, value=value
             )
         self._type_annotation()
-        value = self.assignment() if self.eat("=") else None
+        initial = self.assignment() if self.eat("=") else None
         self.semicolon()
-        return self.node("PropertyDefinition", start, key=key, computed=computed, value=value)
+        return self.node("PropertyDefinition", start, key=key, computed=computed, value=initial)
 
     def _accessor_follows(self) -> bool:
         """Whether a `get` or `set` here is an accessor's keyword: a property name follows it on
