@@ -53,11 +53,12 @@ On a few hundred files that is most of the runtime, so parallelism would make
 the common case slower while helping only the rare one.
 """
 
-WorkItem = tuple[int, str, int, str, "bytes | None"]
+WorkItem = tuple[int, str, int, str, "bytes | str | None"]
 """One file handed to a worker: its index, path, size, the parent's content
-hash, and -- for a source whose bytes are not on disk -- the bytes themselves.
-The hash travels so the worker can tell whether it read what the parent read;
-see `_inspect_batch`."""
+hash, and -- for a source whose bytes are not on disk -- the bytes themselves,
+or for an archive member kept on disk past `max_file_bytes` the path it was kept
+at (`FileContent.carried`). The hash travels so the worker can tell whether it
+read what the parent read; see `_inspect_batch`."""
 
 MAX_CARRIED_BYTES = 64 * 1024 * 1024
 """How much content a non-re-readable source may send to the pool.
@@ -399,11 +400,12 @@ class ParallelScanner:
         out: list[tuple[int, list[dict[str, Any]], bool]] = []
 
         for index, relative, _size, expected, carried in batch:
-            loaded = (
-                FileContent.from_bytes(relative, carried, limits=engine.config.limits)
-                if carried is not None
-                else FileContent.load(Path(root) / relative, relative, engine.config.limits)
-            )
+            if isinstance(carried, str):
+                loaded = FileContent.load(Path(carried), relative, engine.config.limits)
+            elif carried is not None:
+                loaded = FileContent.from_bytes(relative, carried, limits=engine.config.limits)
+            else:
+                loaded = FileContent.load(Path(root) / relative, relative, engine.config.limits)
             if isinstance(loaded, Skipped):
                 # An empty list used to be returned here with nothing said. The
                 # serial path turns a `Skipped` into OPERATIONAL.FILE.UNREADABLE

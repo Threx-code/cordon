@@ -1927,7 +1927,7 @@ class Engine:
                     )
                     break
 
-                member_content = FileContent.from_bytes(
+                member_content = FileContent.from_member(
                     member_path, member_data, self.config.limits
                 )
                 if member_content.truncated:
@@ -3804,7 +3804,7 @@ class Engine:
                         # An archive member has no path on disk to re-read. The whole of an
                         # oversized one travels, so the worker can sweep it as well. Nor does
                         # a hook's inline program (`core.inline_programs`).
-                        (unit.content.streamed or unit.content.raw)
+                        unit.content.carried
                         if carry_content or "!" in unit.path or "#" in unit.path
                         else None,
                     )
@@ -6870,7 +6870,7 @@ class Engine:
         units: list[FileUnit] = []
         for suffix, data in members:
             member_path = rel_path + suffix
-            content = FileContent.from_bytes(member_path, data, self.config.limits)
+            content = FileContent.from_member(member_path, data, self.config.limits)
             if content.truncated:
                 acc.complete = acc.complete and Engine._read_to_end(content)
                 acc.append(Engine._truncated_note(member_path, content))

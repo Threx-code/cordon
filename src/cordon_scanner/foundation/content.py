@@ -23,7 +23,7 @@ import contextlib
 import errno
 import hashlib
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,6 +32,7 @@ from cordon_scanner.engine.samples import SampleKinds
 from cordon_scanner.foundation.comments import SourceComments
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.spill import SpilledBytes
 from cordon_scanner.foundation.windows import BytesWindows, DiskWindows, WindowSource
 
 if TYPE_CHECKING:
@@ -280,6 +281,10 @@ class FileContent:
     """The hash of the whole file as far as its windows read, for a file on disk past
     `max_file_bytes`: computed while streaming it, so it is never held."""
 
+    spill: SpilledBytes | None = field(default=None, repr=False, compare=False)
+    """The archive member this was read from, kept on disk (`foundation/spill.py`): held so the
+    file stays for as long as this content is scanned, and what a worker is given to read."""
+
     _comment_columns: dict[tuple[int, str | None], int | None] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -445,6 +450,24 @@ class FileContent:
                 window_source=None if whole is None else BytesWindows(whole),
             )
         return cls(path=path, raw=text, size=len(raw), limits=limits)
+
+    @classmethod
+    def from_member(cls, path: str, data: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:
+        """An archive member: from its bytes, or -- kept on disk past `max_file_bytes` -- read as
+        a large file on disk is read, its prefix by every rule and its windows by the sweeps."""
+        if isinstance(data, SpilledBytes):
+            loaded = cls.load(Path(data.path), path, limits)
+            if isinstance(loaded, FileContent):
+                return replace(loaded, spill=data)
+        return cls.from_bytes(path, data, limits)
+
+    @property
+    def carried(self) -> bytes | str:
+        """What a worker is given for a file it cannot re-read by its own path: the bytes, or the
+        path of the file on disk an archive member was kept in."""
+        if self.spill is not None:
+            return self.spill.path
+        return self.streamed or self.raw
 
     # -- Derived forms ---------------------------------------------------
 

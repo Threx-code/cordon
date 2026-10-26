@@ -37,9 +37,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.foundation.spill import Spill, SpilledBytes
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from typing import BinaryIO
 
 ARCHIVE_SUFFIXES = (
     ".zip",
@@ -72,17 +74,6 @@ ARCHIVE_SUFFIXES = (
 READ_CHUNK = 65536
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _COMPRESSED_MAGIC = (b"\x1f\x8b", b"BZh", b"\xfd7zXZ\x00", ZSTD_MAGIC)
-#: The first bytes of a compiled program: ELF, PE, Mach-O (thin and fat) and WebAssembly. A member
-#: over the size limit that begins with one is read up to the limit rather than refused unread
-#: (`ArchiveReader._program_head`).
-_PROGRAM_MAGIC = (
-    b"\x7fELF",
-    b"MZ",
-    b"\xcf\xfa\xed\xfe",
-    b"\xce\xfa\xed\xfe",
-    b"\xca\xfe\xba\xbe",
-    b"\x00asm",
-)
 """gzip, bzip2, xz and zstd: the streams a tarball is compressed in."""
 
 
@@ -469,22 +460,7 @@ class ArchiveReader:
 
                 if ArchiveReader._would_exceed(
                     result, info.compress_size, info.file_size, limits, safe
-                ):
-                    if ArchiveReader._over_member_limit(result, safe):
-                        try:
-                            with archive.open(info) as handle:
-                                head = ArchiveReader._program_head(handle, limits, result, safe)
-                        except (zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError):
-                            head = None
-                        if head is not None:
-                            result.members.append(
-                                ExtractedMember(
-                                    name=safe,
-                                    data=head,
-                                    compressed_size=info.compress_size,
-                                    uncompressed_size=len(head),
-                                )
-                            )
+                ) and not ArchiveReader._spilled_instead(result, safe):
                     continue
 
                 try:
@@ -624,20 +600,9 @@ class ArchiveReader:
 
                     # The declared size is the attacker's number. It is used only to
                     # reject early; the real bound is enforced while reading.
-                    if ArchiveReader._would_exceed(result, 0, member.size, limits, safe):
-                        if ArchiveReader._over_member_limit(result, safe):
-                            head = ArchiveReader._program_head(
-                                archive.extractfile(member), limits, result, safe
-                            )
-                            if head is not None:
-                                result.members.append(
-                                    ExtractedMember(
-                                        name=safe,
-                                        data=head,
-                                        compressed_size=0,
-                                        uncompressed_size=len(head),
-                                    )
-                                )
+                    if ArchiveReader._would_exceed(
+                        result, 0, member.size, limits, safe
+                    ) and not ArchiveReader._spilled_instead(result, safe):
                         continue
 
                     try:
@@ -690,10 +655,10 @@ class ArchiveReader:
 
     @staticmethod
     def member_limit(limits: Limits) -> int:
-        """The largest member extracted. Up to `max_member_bytes`, not `max_file_bytes`: a member
-        over the latter is held whole so its windows can be read (`core/windows.py`), and every
-        rule reads its first `max_file_bytes` (`FileContent.from_bytes`). The ratio and total
-        budgets still bound what an archive can make this reader allocate."""
+        """The largest member a declared size may be refused at, and the largest nested archive
+        opened in memory. A member past it is not refused for its size: past `max_file_bytes` every
+        member is kept on disk as it is read (`foundation/spill.py`), and only the ratio and total
+        budgets stop one."""
         return max(limits.max_file_bytes, limits.max_member_bytes)
 
     @staticmethod
@@ -709,55 +674,25 @@ class ArchiveReader:
         return max(limits.max_member_bytes, compressed * limits.max_archive_ratio)
 
     @staticmethod
-    def _over_member_limit(result: ExtractionResult, name: str) -> bool:
-        """Whether `_would_exceed` just refused `name` for its own size alone: not as padding, and
-        not for the archive's total budget, which no member may be read past."""
+    def _spilled_instead(result: ExtractionResult, name: str) -> bool:
+        """Whether `_would_exceed` just refused `name` for its own declared size alone -- not as
+        padding, and not for the archive's total budget -- and so it is read after all, spilled to
+        disk as it arrives (`_read_bounded`), its refusal withdrawn.
+
+        A member over the size limit used to be refused unread, a compiled program's first 64 MB
+        excepted: a Go or Rust launcher runs past that, and a payload padded past any limit is
+        exactly what the limit hides (review 98: 207 of the npm work set's malware refused so).
+        Read whole from disk, only the decompression-bomb ceilings stop it."""
         last = result.rejected[-1] if result.rejected else None
-        return (
-            last is not None
-            and last.name == name
-            and last.reason == Rejection.SIZE
-            and last.detail.startswith("declared ")
-        )
-
-    @staticmethod
-    def _program_head(
-        handle: Any, limits: Limits, result: ExtractionResult, name: str
-    ) -> bytes | None:
-        """The first `member_limit` bytes of an oversized member that is a compiled program, or None.
-
-        A platform binary is most of what a malicious launcher package ships, and a Go or Rust one
-        runs past 64 MB: refused unread, its whole package passed with nothing examined (review 98:
-        189 of the npm work set's malware). Its first `member_limit` bytes hold the headers, the
-        import table and most of its strings, and are no more than any member this reader keeps.
-        The refusal stays on the record -- the rest was not read -- and every budget still applies:
-        the expansion cap and the archive total are charged for what is kept."""
-        if handle is None:
-            return None
-        start = handle.read(8)
-        if not start.startswith(_PROGRAM_MAGIC):
-            return None
-        chunks = [start]
-        read_total = len(start)
-        cap = ArchiveReader.member_limit(limits)
-        while read_total < cap:
-            chunk = handle.read(min(READ_CHUNK, cap - read_total))
-            if not chunk:
-                break
-            read_total += len(chunk)
-            if (
-                0 < result.expansion_cap < result.total_uncompressed + read_total
-                or result.total_uncompressed + read_total > limits.max_uncompressed_bytes
-            ):
-                return None
-            chunks.append(chunk)
-        result.total_uncompressed += read_total
-        result.rejected[-1] = RejectedMember(
-            name,
-            Rejection.SIZE,
-            result.rejected[-1].detail + f"; a compiled program, its first {read_total} bytes read",
-        )
-        return b"".join(chunks)
+        if (
+            last is None
+            or last.name != name
+            or last.reason != Rejection.SIZE
+            or not last.detail.startswith("declared ")
+        ):
+            return False
+        result.rejected.pop()
+        return True
 
     @staticmethod
     def _would_exceed(
@@ -810,51 +745,69 @@ class ArchiveReader:
         """
         chunks: list[bytes] = []
         read_total = 0
-
-        while True:
-            chunk = handle.read(READ_CHUNK)
-            if not chunk:
-                break
-            read_total += len(chunk)
-
-            if read_total > ArchiveReader.member_limit(limits):
-                result.rejected.append(
-                    RejectedMember(
-                        name,
-                        Rejection.SIZE,
-                        f"expanded past the {ArchiveReader.member_limit(limits)}-byte member limit",
-                    )
-                )
-                return None
-
-            if 0 < result.expansion_cap < result.total_uncompressed + read_total:
-                result.truncated = True
-                result.rejected.append(
-                    RejectedMember(
-                        name,
-                        Rejection.PADDED,
-                        f"the archive expanded past {result.expansion_cap} bytes, over "
-                        f"{limits.max_archive_ratio} times its size",
-                    )
-                )
-                return None
-
-            if result.total_uncompressed + read_total > limits.max_uncompressed_bytes:
-                result.truncated = True
-                result.rejected.append(
-                    RejectedMember(
-                        name,
-                        Rejection.SIZE,
-                        "archive exceeds the total uncompressed budget",
-                    )
-                )
-                return None
-
-            chunks.append(chunk)
+        # Past `max_file_bytes` the member is written to disk as it arrives and read from there
+        # (`foundation/spill.py`): memory holds its prefix, and no size of member is refused.
+        spill: BinaryIO | None = None
+        spill_path, prefix = "", b""
+        try:
+            while True:
+                chunk = handle.read(READ_CHUNK)
+                if not chunk:
+                    break
+                read_total += len(chunk)
+                if ArchiveReader._over_budget(result, limits, name, read_total):
+                    return None
+                if spill is None and read_total > limits.max_file_bytes:
+                    chunks.append(chunk)
+                    held = b"".join(chunks)
+                    prefix, chunks = held[: limits.max_file_bytes], []
+                    spill, spill_path = Spill.writer()
+                    spill.write(held)
+                elif spill is None:
+                    chunks.append(chunk)
+                else:
+                    spill.write(chunk)
+            if spill is not None:
+                spill.close()
+                spill = None
+                kept_member: bytes = SpilledBytes(prefix, spill_path, read_total)
+                spill_path = ""
+            else:
+                kept_member = b"".join(chunks)
+        finally:
+            if spill is not None:
+                spill.close()
+            if spill_path:  # stopped at a budget or an error: nothing of it is kept
+                Spill.remove(spill_path)
 
         result.total_uncompressed += read_total
         result.total_compressed += compressed_size
-        return b"".join(chunks)
+        return kept_member
+
+    @staticmethod
+    def _over_budget(result: ExtractionResult, limits: Limits, name: str, read_total: int) -> bool:
+        """Whether reading `read_total` bytes of `name` passes the archive's expansion cap or its
+        total budget -- the decompression-bomb ceilings, which no member is read past."""
+        if 0 < result.expansion_cap < result.total_uncompressed + read_total:
+            result.truncated = True
+            result.rejected.append(
+                RejectedMember(
+                    name,
+                    Rejection.PADDED,
+                    f"the archive expanded past {result.expansion_cap} bytes, over "
+                    f"{limits.max_archive_ratio} times its size",
+                )
+            )
+            return True
+        if result.total_uncompressed + read_total > limits.max_uncompressed_bytes:
+            result.truncated = True
+            result.rejected.append(
+                RejectedMember(
+                    name, Rejection.SIZE, "archive exceeds the total uncompressed budget"
+                )
+            )
+            return True
+        return False
 
     @staticmethod
     def walk_archive(
@@ -922,7 +875,25 @@ class ArchiveReader:
             member_path = f"{path}!{member.name}"
 
             nested = ArchiveReader.is_archive(member.name)
-            digest = hashlib.sha256(member.data).digest() if nested else b""
+            # A nested archive is opened in memory. One kept on disk is read back within the size a
+            # member could always be held at; past it, its contents are reported unexamined.
+            inner = member.data
+            if nested and isinstance(inner, SpilledBytes):
+                if inner.size <= ArchiveReader.member_limit(limits):
+                    inner = inner.read_whole()
+                else:
+                    nested = False
+                    if rejected is not None:
+                        rejected.append(
+                            (
+                                member_path,
+                                Rejection.SIZE,
+                                f"a nested archive of {inner.size} bytes, past the "
+                                f"{ArchiveReader.member_limit(limits)} bytes one is opened at; "
+                                "its contents were not examined",
+                            )
+                        )
+            digest = hashlib.sha256(inner).digest() if nested else b""
             too_deep = nested and depth >= limits.max_archive_depth
             if too_deep and rejected is not None:
                 # Past the depth limit. Reported, then yielded as opaque bytes.
@@ -955,7 +926,7 @@ class ArchiveReader:
             if nested and depth < limits.max_archive_depth:
                 try:
                     yield from ArchiveReader.walk_archive(
-                        member.data,
+                        inner,
                         path=member_path,
                         limits=limits,
                         depth=depth + 1,
