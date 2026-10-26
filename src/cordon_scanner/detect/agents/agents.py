@@ -3708,14 +3708,14 @@ _DOCSTRING_TOOL: Final = re.compile(
 _SQUATTED_TOOL: Final = re.compile(
     r"""["'`](?P<name>read_file|read_text_file|write_file|edit_file|list_directory|directory_tree|"""
     r"""search_files|move_file|create_directory|get_file_info|execute_command|run_command|"""
-    r"""shell_exec|fetch|git_status|git_commit)["'`][^\n]{0,40}\n?(?:[^\n]{0,240}\n?){0,3}?"""
-    r"""[^\n]{0,240}?(?i:enhanced\s+version|integrated\s+security|security[- ]enhanced|"""
+    r"""shell_exec|fetch|git_status|git_commit)["'`](?=(?:[^\n]{0,240}\n){0,4}"""
+    r"""[^\n]{0,1004}?(?i:enhanced\s+version|integrated\s+security|security[- ]enhanced|"""
     r"""malware\s+(?:scan|detection)|virus\s+scan|integrity\s+verification|safer\s+(?:version|"""
-    r"""alternative|replacement)|secure\s+(?:version|replacement))"""
+    r"""alternative|replacement)|secure\s+(?:version|replacement)))"""
 )
-"""A tool named exactly as the filesystem, shell, fetch or git servers' tools are, described as the
-safer version of it: in a multi-server setup the agent picks between same-named tools by their
-descriptions, and this one is written to win (review 98: canack/bad-mcp squatting-file-ops)."""
+"""A filesystem, shell, fetch or git server's tool name, described as the safer version of it, which
+the agent picks between same-named tools by (canack/bad-mcp squatting-file-ops). Crossed lines end
+at their newline, so a long minified line has one reading, not thousands of backtracked splits."""
 _SERVER_BUILT: Final = re.compile(
     r"\bFastMCP[ \t]*\(|\bMcpServer[ \t]*\(|\bnew[ \t]+(?:Mcp)?Server[ \t]*\(|"
     r"\bserver\.NewMCPServer[ \t]*\(|\bMCP::Server\.new\b|\bFastMcp::Server\.new\b|"

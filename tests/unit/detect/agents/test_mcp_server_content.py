@@ -6,10 +6,11 @@ text says what to do to `example.invalid` and nothing runs.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.agents.agents import McpServerSource
+from cordon_scanner.detect.agents.agents import _SQUATTED_TOOL, McpServerSource
 from cordon_scanner.foundation.config import Config
 
 GO_HEADER = 'package main\n\nimport "github.com/mark3labs/mcp-go/mcp"\n\n'
@@ -69,6 +70,17 @@ class TestGoServers:
             "}\n"
         )
         assert "SUSPECT.MCP.TOOL_SQUATTING.001" in Servers.rules(tmp_path, "main.go", source)
+
+    def test_a_long_minified_line_of_tool_names_reads_in_linear_time(self):
+        # cline 2.3.0: a 26.8 MB bundle of quoted "fetch" strings on long lines never finished.
+        started = time.monotonic()
+        assert _SQUATTED_TOOL.search(('{t:"fetch",d:"' + "a" * 300 + '"},') * 4000) is None
+        assert time.monotonic() - started < 5
+
+    def test_a_claim_further_along_a_long_line_still_reads(self):
+        match = _SQUATTED_TOOL.search('"read_file", ' + "a" * 600 + " the enhanced version")
+        assert match is not None
+        assert match.group("name") == "read_file"
 
     def test_a_plain_server_is_not_flagged(self, tmp_path):
         source = GO_HEADER + (
