@@ -244,20 +244,89 @@ class Ecdsa:
         z3 = h * z1 * z2 % p
         return (x3, y3, z3)
 
+    #: per point, k * 2^(4i) * P for every 4-bit digit k and window i, in affine form: the
+    #: generator's built once, a public key's once it recurs (a log's or an authority's key
+    #: signs every bundle), at most KEY_TABLES of them kept
+    BASE_TABLES: ClassVar[dict[tuple[str, int, int], list[list[_Jacobian]]]] = {}
+    SEEN: ClassVar[dict[tuple[str, int, int], int]] = {}
+    KEY_TABLES: ClassVar[int] = 32
+
+    @staticmethod
+    def _affine(curve: Curve, pt: _Jacobian) -> _Jacobian:
+        x, y, z = pt
+        if z == 0:
+            return pt
+        zi = pow(z, -1, curve.p)
+        zi2 = zi * zi % curve.p
+        return (x * zi2 % curve.p, y * zi2 * zi % curve.p, 1)
+
+    @staticmethod
+    def _base_table(
+        curve: Curve, point: tuple[int, int] | None = None
+    ) -> list[list[_Jacobian]] | None:
+        """The table for `point` (the generator when None); None for a key seen only once."""
+        px, py = point if point is not None else (curve.gx, curve.gy)
+        key = (curve.oid, px, py)
+        table = Ecdsa.BASE_TABLES.get(key)
+        if table is None and point is not None:
+            seen = Ecdsa.SEEN[key] = Ecdsa.SEEN.get(key, 0) + 1
+            if seen < 2:
+                if len(Ecdsa.SEEN) > 4 * Ecdsa.KEY_TABLES:
+                    Ecdsa.SEEN.clear()
+                return None
+            if len(Ecdsa.BASE_TABLES) > Ecdsa.KEY_TABLES:
+                Ecdsa.BASE_TABLES.clear()
+        if table is None:
+            table = []
+            step: _Jacobian = (px, py, 1)
+            for _ in range((curve.n.bit_length() + 3) // 4):
+                row = [step]
+                for _ in range(14):
+                    row.append(Ecdsa._affine(curve, Ecdsa._add(curve, row[-1], step)))
+                table.append(row)
+                for _ in range(4):
+                    step = Ecdsa._double(curve, step)
+                step = Ecdsa._affine(curve, step)
+            Ecdsa.BASE_TABLES[key] = table
+        return table
+
+    @staticmethod
+    def _fixed(curve: Curve, k: int, table: list[list[_Jacobian]]) -> _Jacobian:
+        acc: _Jacobian = (0, 1, 0)
+        for i, row in enumerate(table):
+            digit = (k >> (4 * i)) & 15
+            if digit:
+                acc = Ecdsa._add(curve, acc, row[digit - 1])
+        return acc
+
     @staticmethod
     def _shamir(curve: Curve, u1: int, u2: int, q: tuple[int, int]) -> tuple[int, int] | None:
-        """u1*G + u2*Q in one pass over the bits, in affine form, or None at infinity."""
-        g: _Jacobian = (curve.gx, curve.gy, 1)
+        """u1*G + u2*Q, or None at infinity: u1*G from the precomputed generator table (one
+        addition per 4-bit digit, no doublings), u2*Q by a 4-bit window. Every input is public,
+        so neither needs to run in constant time."""
+        generator = Ecdsa._base_table(curve)
+        assert generator is not None  # noqa: S101 - the generator's table is always built
+        acc = Ecdsa._fixed(curve, u1, generator)
+        known = Ecdsa._base_table(curve, q)
+        if known is not None:
+            x, y, z = Ecdsa._add(curve, acc, Ecdsa._fixed(curve, u2, known))
+            if z == 0:
+                return None
+            zi = pow(z, -1, curve.p)
+            zi2 = zi * zi % curve.p
+            return (x * zi2 % curve.p, y * zi2 * zi % curve.p)
         qj: _Jacobian = (q[0], q[1], 1)
-        gq = Ecdsa._add(curve, g, qj)
-        table = {(1, 0): g, (0, 1): qj, (1, 1): gq}
-        acc: _Jacobian = (0, 1, 0)
-        for i in range(max(u1.bit_length(), u2.bit_length()) - 1, -1, -1):
-            acc = Ecdsa._double(curve, acc)
-            bits = ((u1 >> i) & 1, (u2 >> i) & 1)
-            if bits != (0, 0):
-                acc = Ecdsa._add(curve, acc, table[bits])
-        x, y, z = acc
+        multiples = [qj]
+        for _ in range(14):
+            multiples.append(Ecdsa._add(curve, multiples[-1], qj))
+        var: _Jacobian = (0, 1, 0)
+        for i in range((u2.bit_length() + 3) // 4 - 1, -1, -1):
+            for _ in range(4):
+                var = Ecdsa._double(curve, var)
+            digit = (u2 >> (4 * i)) & 15
+            if digit:
+                var = Ecdsa._add(curve, var, multiples[digit - 1])
+        x, y, z = Ecdsa._add(curve, acc, var)
         if z == 0:
             return None
         zi = pow(z, -1, curve.p)

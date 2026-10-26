@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import hashlib
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -73,9 +76,30 @@ class PublicKey:
     def from_pem(pem: str) -> PublicKey:
         return PublicKey.from_spki(Pem.decode(pem, "PUBLIC KEY"))
 
+    #: verdicts already reached, by (key, hash, digest of the message, signature): verification
+    #: is a pure function of these, and a certificate authority's signature over its
+    #: intermediate recurs in every bundle it issues
+    VERDICTS: ClassVar[OrderedDict[tuple[bytes, str | None, bytes, bytes], bool]] = OrderedDict()
+    VERDICTS_MAX: ClassVar[int] = 4096
+    VERDICTS_LOCK: ClassVar[threading.Lock] = threading.Lock()
+
     def verify(self, message: bytes, signature: bytes, hash_name: str | None) -> bool:
         """Whether `signature` signs `message`: ECDSA in DER, RSA PKCS #1 v1.5, or Ed25519.
         False for anything malformed, and for a hash this family is not used with."""
+        key = (self.spki, hash_name, hashlib.sha512(message).digest(), bytes(signature))
+        with PublicKey.VERDICTS_LOCK:
+            cached = PublicKey.VERDICTS.get(key)
+            if cached is not None:
+                PublicKey.VERDICTS.move_to_end(key)
+                return cached
+        verdict = self._verify(message, signature, hash_name)
+        with PublicKey.VERDICTS_LOCK:
+            PublicKey.VERDICTS[key] = verdict
+            if len(PublicKey.VERDICTS) > PublicKey.VERDICTS_MAX:
+                PublicKey.VERDICTS.popitem(last=False)
+        return verdict
+
+    def _verify(self, message: bytes, signature: bytes, hash_name: str | None) -> bool:
         if self.family == "ec" and hash_name:
             return Ecdsa.verify(self.key, message, signature, hash_name)  # type: ignore[arg-type]
         if self.family == "rsa" and hash_name:
