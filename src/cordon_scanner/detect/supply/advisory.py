@@ -454,12 +454,20 @@ class AdvisoryDetector(BaseDetector):
         for text in (dependency.resolved_from, dependency.declared_spec):
             if text and (
                 text.startswith(
-                    ("git+", "git:", "git@", "github:", "gitlab:", "bitbucket:", "ssh://")
+                    (
+                        "git+",
+                        "git:",
+                        "git@",
+                        "github:",
+                        "gitlab:",
+                        "bitbucket:",
+                        "ssh://",
+                        "https://github.com/",
+                        "https://gitlab.com/",
+                        "https://bitbucket.org/",
+                    )
                 )
                 or (text.startswith(("https://", "http://")) and ".git" in text)
-                or text.startswith(
-                    ("https://github.com/", "https://gitlab.com/", "https://bitbucket.org/")
-                )
             ):
                 candidates.append(text)
         for candidate in candidates:

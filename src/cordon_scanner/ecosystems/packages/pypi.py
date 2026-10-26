@@ -1290,7 +1290,7 @@ class PypiEcosystem(BaseEcosystem):
             if not stripped:
                 continue
             if not stripped.startswith("#"):
-                if stripped.startswith("--hash") or stripped.startswith("-") or raw[:1].isspace():
+                if stripped.startswith(("--hash", "-")) or raw[:1].isspace():
                     continue
                 parsed = PypiRequirement.parse(stripped.split(" --hash", 1)[0].rstrip("\\ "))
                 current = _NORMALIZE.sub("-", parsed[0].lower()) if parsed else None

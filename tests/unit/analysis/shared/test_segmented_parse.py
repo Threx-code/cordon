@@ -110,7 +110,7 @@ class TestPieces(Small):
         assert calls
         for call in calls:
             at = piece.split(b"\n")[call.line - 1][call.column :]
-            assert at.startswith(call.name.split(".")[0].encode()) or at.startswith(b"cp.")
+            assert at.startswith((call.name.split(".")[0].encode(), b"cp."))
         assert len(calls) < len(Parsed.whole(data.decode()))
 
     def test_a_piece_that_is_not_the_files_bytes_is_left_to_its_own_parse(self) -> None:

@@ -273,6 +273,13 @@ select = [
     "S",    # bandit: this project must pass its own class of check
     "PTH",  # use pathlib
     "RET",  # return consistency
+    "PIE",  # unnecessary constructs
+    "PGH",  # blanket `noqa` and `type: ignore` are refused: each names its code
+    "G",    # logging calls format lazily
+    "LOG",  # logging used as documented
+    "TID",  # tidy imports
+    "FA",   # postponed annotations where they are needed
+    "Q",    # one quoting style
 ]
 ignore = [
     "E501",  # line length is the formatter's job
@@ -325,6 +332,8 @@ testpaths = ["tests"]
 # So `tests/support.py` is importable as `support` without making `tests` a
 # package, which would change collection semantics for every file in it.
 pythonpath = ["tests"]
+# An expected failure that starts passing fails the run, so a fixed bug's marker cannot outlive it.
+xfail_strict = true
 addopts = [
     # Deselected by default. `perf` generates fifty thousand files, `fuzz`
     # explores for hundreds of examples, and `network` reaches an upstream --

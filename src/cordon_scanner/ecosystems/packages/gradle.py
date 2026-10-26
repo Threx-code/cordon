@@ -917,7 +917,7 @@ class GradleLock:
         unreadable = 0
         for raw in content.text.splitlines():
             line = raw.strip()
-            if not line or line.startswith("#") or line.startswith("empty="):
+            if not line or line.startswith(("#", "empty=")):
                 continue
             if legacy and "=" not in line:
                 line = f"{line}={name.removesuffix('.lockfile')}"

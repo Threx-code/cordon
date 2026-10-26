@@ -148,7 +148,7 @@ class InstallPayload:
                 if not t:
                     continue
                 base = t.rsplit("/", 1)[-1]
-                if "/" in t and any(p.endswith(t) or p.endswith("/" + base) for p in tails):
+                if "/" in t and any(p.endswith((t, "/" + base)) for p in tails):
                     return True
                 if "/" not in t and base in basenames:
                     return True

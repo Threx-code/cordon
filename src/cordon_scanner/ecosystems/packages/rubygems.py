@@ -209,7 +209,7 @@ class Gemfile:
             found.errors.append(str(exc))
             return found
         for number, line in lines:
-            if line == "end" or line.startswith("end ") or line.startswith("end."):
+            if line == "end" or line.startswith(("end ", "end.")):
                 if not stack:
                     found.errors.append(f"line {number}: `end` with no block open")
                     continue

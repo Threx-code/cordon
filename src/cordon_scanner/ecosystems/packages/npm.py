@@ -508,7 +508,7 @@ class NpmEcosystem(BaseEcosystem):
             return None
 
         head = text.split("(", 1)[0]
-        scoped = head.startswith("/@") or head.startswith("@")
+        scoped = head.startswith(("/@", "@"))
         body = head[1:] if head.startswith("/") else head
 
         at = body.rfind("@")
