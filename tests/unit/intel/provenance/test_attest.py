@@ -1,24 +1,63 @@
-"""The provenance verifier, tested without a live trust root or a real bundle.
+"""The provenance verifier, on real attestations and on every way one can fail.
 
-The cryptographic verification itself belongs to sigstore, and reaching its
-production trust root needs the network -- so the boundary is what is tested
-here: that a digest string parses to the right bytes, that a registry document
-becomes bundle JSON, that every reason a check cannot run is reported as
-`UNVERIFIABLE` and only a cryptographic or identity rejection as `INVALID`, and
-that a real, unparseable bundle is refused rather than crashed on. The sigstore
-call is substituted where the test is about the outcome mapping rather than the
-signature maths.
+The cryptography is Cordon's own (`sigstore_bundle`), so it is tested for real here: one genuine
+public attestation of each shape the registries publish (`tests/unit/data/sigstore`) verifies
+against the trust material Cordon pins, with no network, and each fails as it should when the
+digest, the repository or the identity is not the one asked about. Every reason a check cannot
+run is `UNVERIFIABLE`; only a cryptographic, identity or subject rejection is `INVALID`.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import json
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.intel.provenance import attest
+from cordon_scanner.intel.provenance import attest, sigstore_bundle
 from cordon_scanner.intel.provenance.attest import Outcome
+from cordon_scanner.intel.provenance.x509 import Certificate
+from support import ROOT as REPO
+
+
+class Fixtures:
+    DIR = REPO / "tests" / "unit" / "data" / "sigstore"
+
+    @staticmethod
+    def load(name: str) -> dict[str, Any]:
+        return json.loads((Fixtures.DIR / f"{name}.json").read_text(encoding="utf-8"))
+
+    @staticmethod
+    def npm(name: str) -> tuple[str, str, tuple[str, str, str] | None]:
+        """A fixture's bundle JSON, its sha512 subject digest, and the repository its certificate
+        names (None for a registry-signed bundle)."""
+        fixture = Fixtures.load(name)
+        bundle = fixture["bundle"]
+        material = bundle["verificationMaterial"]
+        raw = (
+            material.get("certificate")
+            or (material.get("x509CertificateChain") or {}).get("certificates", [None])[0]
+        )
+        repository = None
+        if raw is not None:
+            import base64
+
+            certificate = Certificate.from_der(base64.b64decode(raw["rawBytes"]))
+            named = certificate.extension_text("1.3.6.1.4.1.57264.1.5", der_string=False)
+            assert named is not None
+            owner, name_ = named.split("/")
+            repository = ("github.com", owner, name_)
+        return json.dumps(bundle), fixture["subject_digest"]["sha512"], repository
+
+    @staticmethod
+    def certificate() -> Certificate:
+        import base64
+
+        bundle = Fixtures.load("npm-provenance-dsse")["bundle"]
+        return Certificate.from_der(
+            base64.b64decode(bundle["verificationMaterial"]["certificate"]["rawBytes"])
+        )
 
 
 class TestParseIntegrity:
@@ -76,324 +115,222 @@ class TestExtractBundles:
 class TestVerifyDegradation:
     """Every reason the check cannot run maps to UNVERIFIABLE, not INVALID."""
 
-    def test_the_extra_absent_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: False)
-        result = attest.SigstoreVerification.verify(
-            "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=("github.com", "o", "r")
-        )
-        assert result.outcome is Outcome.UNVERIFIABLE
-        assert "extra" in result.detail
+    REPO: ClassVar[tuple[str, str, str]] = ("github.com", "o", "r")
 
-    def test_an_unsupported_algorithm_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+    def test_verification_needs_no_extra(self) -> None:
+        assert attest.SigstoreVerification.available() is True
+
+    def test_an_unsupported_algorithm_is_unverifiable(self) -> None:
         result = attest.SigstoreVerification.verify(
-            "{}", digest_hex="aa" * 16, algorithm="md5", source_repo=("github.com", "o", "r")
+            "{}", digest_hex="aa" * 16, algorithm="md5", source_repo=self.REPO
         )
         assert result.outcome is Outcome.UNVERIFIABLE
 
-    def test_no_declared_repo_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+    def test_no_declared_repo_is_unverifiable(self) -> None:
         result = attest.SigstoreVerification.verify(
             "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=None
         )
         assert result.outcome is Outcome.UNVERIFIABLE
 
-    def test_a_non_github_forge_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+    def test_a_non_github_forge_is_unverifiable(self) -> None:
         result = attest.SigstoreVerification.verify(
             "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=("gitlab.com", "o", "r")
         )
         assert result.outcome is Outcome.UNVERIFIABLE
 
-    def test_an_unparseable_bundle_is_unverifiable(self, monkeypatch) -> None:
-        # Uses the real sigstore Bundle parser: garbage in is refused, not a pass.
-        pytest.importorskip("sigstore")
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+    def test_an_unparseable_bundle_is_unverifiable(self) -> None:
         result = attest.SigstoreVerification.verify(
-            "not a bundle",
-            digest_hex="aa" * 32,
-            algorithm="sha256",
-            source_repo=("github.com", "o", "r"),
+            "not a bundle", digest_hex="aa" * 32, algorithm="sha256", source_repo=self.REPO
         )
         assert result.outcome is Outcome.UNVERIFIABLE
-        assert "did not parse" in result.detail
+        assert "could not be checked" in result.detail
 
 
-class TestTheSignerMustBeTheDeclaredRepository:
-    """UNI-17: a valid signature from the wrong identity is not provenance. The policy handed to
-    sigstore pins the certificate to GitHub Actions' issuer AND to the repository the package
-    declares; a signature by any other repository fails that policy and is `INVALID`."""
+class TestRealAttestations:
+    """One genuine attestation of each shape, verified offline against the pinned trust root."""
 
     @pytest.mark.conformance("x", "x.provenance")
     @pytest.mark.conformance("npm", "UNI-17", "x.provenance")
+    @pytest.mark.parametrize("name", ["npm-provenance-dsse", "npm-provenance-v0.1"])
+    def test_npm_provenance_verifies(self, name: str) -> None:
+        bundle, digest, repository = Fixtures.npm(name)
+        result = attest.SigstoreVerification.verify(
+            bundle, digest_hex=digest, algorithm="sha512", source_repo=repository
+        )
+        assert result.outcome is Outcome.VERIFIED, result.detail
+
+    def test_an_intoto_entry_sigstore_python_declines_is_verified(self) -> None:
+        """npm's provenance logged as Rekor `intoto` 0.0.2 until 2025, which sigstore-python
+        will not check (39 genuine attestations unverifiable on real lockfiles); this verifier
+        reads them."""
+        bundle, digest, repository = Fixtures.npm("npm-provenance-intoto")
+        result = attest.SigstoreVerification.verify(
+            bundle, digest_hex=digest, algorithm="sha512", source_repo=repository
+        )
+        assert result.outcome is Outcome.VERIFIED, result.detail
+
+    def test_npm_publish_attestation_is_verified_but_names_no_repository(self) -> None:
+        bundle, digest, _ = Fixtures.npm("npm-publish")
+        result = attest.SigstoreVerification.verify(
+            bundle, digest_hex=digest, algorithm="sha512", source_repo=("github.com", "o", "r")
+        )
+        assert result.outcome is Outcome.UNVERIFIABLE
+        assert "registry" in result.detail
+
+    @pytest.mark.conformance("npm", "UNI-17")
     @pytest.mark.conformance("pypi", "UNI-17")
-    def test_the_policy_names_the_declared_repository_and_issuer(self) -> None:
-        pytest.importorskip("sigstore")
-        built = attest.SigstoreVerification._identity_policy(("github.com", "acme", "app"))
-        children = getattr(built, "_children", ())
-        values = {type(c).__name__: getattr(c, "_value", None) for c in children}
-        assert values.get("GitHubWorkflowRepository") == "acme/app"
-        assert values.get("OIDCIssuer") == attest.GITHUB_OIDC_ISSUER
+    def test_a_signed_statement_about_other_bytes_is_invalid(self) -> None:
+        """The envelope's signature says who signed the statement and nothing about which
+        artefact it describes: a genuine attestation of another release is not proof of this one."""
+        bundle, _, repository = Fixtures.npm("npm-provenance-dsse")
+        result = attest.SigstoreVerification.verify(
+            bundle, digest_hex="cd" * 64, algorithm="sha512", source_repo=repository
+        )
+        assert result.outcome is Outcome.INVALID
+        assert "subject" in result.detail
+
+    def test_a_subject_under_another_algorithm_cannot_be_compared(self) -> None:
+        bundle, _, repository = Fixtures.npm("npm-provenance-dsse")
+        result = attest.SigstoreVerification.verify(
+            bundle, digest_hex="ab" * 32, algorithm="sha256", source_repo=repository
+        )
+        assert result.outcome is Outcome.UNVERIFIABLE
+
+    @pytest.mark.conformance("pypi", "UNI-17", "x.provenance")
+    def test_pypi_pep740_provenance_verifies(self) -> None:
+        fixture = Fixtures.load("pypi-pep740")
+        bundles = attest.AttestationDocuments.extract_bundles("pypi", fixture["provenance"])
+        assert bundles
+        owner, name = fixture["repository"].split("/")
+        results = [
+            attest.SigstoreVerification.verify(
+                b,
+                digest_hex=fixture["sha256"],
+                algorithm="sha256",
+                source_repo=("github.com", owner, name),
+            )
+            for b in bundles
+        ]
+        assert any(r.outcome is Outcome.VERIFIED for r in results), [r.detail for r in results]
+
+    def test_every_tampered_byte_of_the_envelope_is_refused(self) -> None:
+        import base64
+
+        bundle, digest, repository = Fixtures.npm("npm-provenance-dsse")
+        document = json.loads(bundle)
+        payload = bytearray(base64.b64decode(document["dsseEnvelope"]["payload"]))
+        for at in range(0, len(payload), max(1, len(payload) // 64)):
+            tampered = bytearray(payload)
+            tampered[at] ^= 0x20
+            document["dsseEnvelope"]["payload"] = base64.b64encode(bytes(tampered)).decode()
+            result = attest.SigstoreVerification.verify(
+                json.dumps(document), digest_hex=digest, algorithm="sha512", source_repo=repository
+            )
+            assert result.outcome is not Outcome.VERIFIED, at
+
+
+class TestTheSignerMustBeTheDeclaredRepository:
+    """UNI-17: a valid signature from the wrong identity is not provenance. The certificate must
+    come from GitHub Actions' issuer AND name the repository the package declares."""
+
+    @pytest.mark.conformance("npm", "UNI-17")
+    @pytest.mark.conformance("pypi", "UNI-17")
+    def test_another_repository_is_invalid_and_named(self) -> None:
+        bundle, digest, repository = Fixtures.npm("npm-provenance-dsse")
+        assert repository is not None
+        result = attest.SigstoreVerification.verify(
+            bundle,
+            digest_hex=digest,
+            algorithm="sha512",
+            source_repo=("github.com", "evil", "fork"),
+        )
+        assert result.outcome is Outcome.INVALID
+        assert "GitHubWorkflowRepository does not match" in result.detail
+        assert f"{repository[1]}/{repository[2]}" in result.detail
+
+    def test_the_repository_is_compared_without_regard_to_case(self) -> None:
+        """typedoc declares `TypeStrong/TypeDoc`; its certificates say `TypeStrong/typedoc`."""
+        bundle, digest, repository = Fixtures.npm("npm-provenance-dsse")
+        assert repository is not None
+        shouted = (repository[0], repository[1].upper(), repository[2].upper())
+        result = attest.SigstoreVerification.verify(
+            bundle, digest_hex=digest, algorithm="sha512", source_repo=shouted
+        )
+        assert result.outcome is Outcome.VERIFIED
 
     @pytest.mark.conformance("npm", "UNI-17")
     @pytest.mark.conformance("pypi", "UNI-17")
     def test_no_declared_repository_is_never_verified(self) -> None:
-        assert attest.SigstoreVerification._identity_policy(None) is None
-        assert attest.SigstoreVerification._identity_policy(("gitlab.com", "acme", "app")) is None
+        assert attest.SigstoreVerification._repository(None) is None
+        assert attest.SigstoreVerification._repository(("gitlab.com", "acme", "app")) is None
+        assert attest.SigstoreVerification._repository(("github.com", "acme", "app")) == "acme/app"
 
 
 class TestVerifyOutcomeMapping:
-    """With the bundle parser and verifier substituted, the outcome maps right."""
+    """What the verifier concluded, mapped to the outcome the detector acts on."""
 
-    @pytest.fixture(autouse=True)
-    def _stub_bundle(self, monkeypatch):
-        pytest.importorskip("sigstore")
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
-        monkeypatch.setattr("sigstore.models.Bundle.from_json", staticmethod(lambda raw: object()))
+    def _with(self, monkeypatch, outcome) -> attest.Result:
+        def verify(self, bundle_json, *, digest_hex=None, algorithm=None):
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
 
-    def _run(self):
+        monkeypatch.setattr(sigstore_bundle.BundleVerifier, "verify", verify)
         return attest.SigstoreVerification.verify(
             "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=("github.com", "o", "r")
         )
 
-    def test_a_passing_verification_is_verified(self, monkeypatch) -> None:
-        class FakeVerifier:
-            def verify_artifact(self, hashed, bundle, policy) -> None:
-                return None
-
-        monkeypatch.setattr(
-            "sigstore.verify.Verifier.production",
-            staticmethod(lambda *, offline=False: FakeVerifier()),
-        )
-        assert self._run().outcome is Outcome.VERIFIED
-
     @pytest.mark.conformance("npm", "UNI-17")
     @pytest.mark.conformance("pypi", "UNI-17")
-    def test_a_rejected_signature_is_invalid(self, monkeypatch) -> None:
-        from sigstore.verify.policy import VerificationError
-
-        class FakeVerifier:
-            def verify_artifact(self, hashed, bundle, policy) -> None:
-                raise VerificationError("signature does not verify")
-
-        monkeypatch.setattr(
-            "sigstore.verify.Verifier.production",
-            staticmethod(lambda *, offline=False: FakeVerifier()),
-        )
-        assert self._run().outcome is Outcome.INVALID
-
-    def test_an_unreachable_trust_root_is_unverifiable(self, monkeypatch) -> None:
-        from sigstore.errors import Error as SigstoreError
-
-        def _raise(*, offline=False):
-            raise SigstoreError("no trust root")
-
-        monkeypatch.setattr("sigstore.verify.Verifier.production", staticmethod(_raise))
-        assert self._run().outcome is Outcome.UNVERIFIABLE
-
-
-class TestDsseBundlesTakeTheDsseRoute:
-    """npm `--provenance` and PyPI PEP 740 publish DSSE envelopes, not message
-    signatures, and the two are verified by different calls.
-
-    `verify_artifact` requires a `messageSignature` and rejects a DSSE bundle
-    with "Missing bundle message signature" however sound the attestation is --
-    so routing provenance through it reported every honest publisher as a
-    forgery. These tests assert the *route*, which a stub of one method alone
-    cannot: a verifier here offers both, and fails if the wrong one is called.
-    """
-
-    DIGEST = "aa" * 32
-    STATEMENT: ClassVar[dict] = {
-        "_type": "https://in-toto.io/Statement/v1",
-        "predicateType": "https://slsa.dev/provenance/v1",
-        "subject": [{"name": "pkg:npm/x@1.0.0", "digest": {"sha256": DIGEST}}],
-    }
-
-    @pytest.fixture(autouse=True)
-    def _stub_bundle(self, monkeypatch):
-        pytest.importorskip("sigstore")
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
-        monkeypatch.setattr("sigstore.models.Bundle.from_json", staticmethod(lambda raw: object()))
-
-    def _install(self, monkeypatch, verifier) -> None:
-        monkeypatch.setattr(
-            "sigstore.verify.Verifier.production",
-            staticmethod(lambda *, offline=False: verifier),
-        )
-
-    def _verify(self, statement=None, digest=None):
-        return attest.SigstoreVerification.verify(
-            json.dumps({"dsseEnvelope": {"payload": "x"}}),
-            digest_hex=digest or self.DIGEST,
-            algorithm="sha256",
-            source_repo=("github.com", "o", "r"),
-        )
-
-    def test_a_dsse_bundle_is_verified_through_verify_dsse(self, monkeypatch) -> None:
-        class FakeVerifier:
-            def verify_artifact(self, hashed, bundle, policy):
-                raise AssertionError("a DSSE bundle must not go through verify_artifact")
-
-            def verify_dsse(self, bundle, policy):
-                return (
-                    "application/vnd.in-toto+json",
-                    json.dumps(TestDsseBundlesTakeTheDsseRoute.STATEMENT).encode(),
-                )
-
-        self._install(monkeypatch, FakeVerifier())
-        assert self._verify().outcome is Outcome.VERIFIED
-
-    @pytest.mark.conformance("npm", "UNI-17")
-    @pytest.mark.conformance("pypi", "UNI-17")
-    def test_a_signed_statement_about_other_bytes_is_invalid(self, monkeypatch) -> None:
-        """`verify_dsse` proves who signed the envelope and nothing about which
-        artefact the statement describes. Without the subject comparison this
-        accepts a genuine attestation for another release as proof of this one."""
-
-        class FakeVerifier:
-            def verify_dsse(self, bundle, policy):
-                return (
-                    "application/vnd.in-toto+json",
-                    json.dumps(TestDsseBundlesTakeTheDsseRoute.STATEMENT).encode(),
-                )
-
-        self._install(monkeypatch, FakeVerifier())
-        result = self._verify(digest="bb" * 32)
+    def test_a_rejected_bundle_is_invalid(self, monkeypatch) -> None:
+        result = self._with(monkeypatch, sigstore_bundle.Rejected("signature does not verify"))
         assert result.outcome is Outcome.INVALID
-        assert "subject" in result.detail
 
-    @pytest.mark.conformance("x", "x.provenance")
-    def test_a_subject_under_another_algorithm_cannot_be_compared(self, monkeypatch) -> None:
-        class FakeVerifier:
-            def verify_dsse(self, bundle, policy):
-                statement = {
-                    "subject": [{"name": "x", "digest": {"sha512": "cc" * 64}}],
-                }
-                return ("application/vnd.in-toto+json", json.dumps(statement).encode())
+    def test_a_bundle_that_cannot_be_checked_is_unverifiable(self, monkeypatch) -> None:
+        result = self._with(monkeypatch, sigstore_bundle.BundleError("unknown log"))
+        assert result.outcome is Outcome.UNVERIFIABLE
 
-        self._install(monkeypatch, FakeVerifier())
-        assert self._verify().outcome is Outcome.UNVERIFIABLE
-
-    def test_an_unknown_payload_type_is_not_read(self, monkeypatch) -> None:
-        class FakeVerifier:
-            def verify_dsse(self, bundle, policy):
-                return ("application/octet-stream", b"whatever")
-
-        self._install(monkeypatch, FakeVerifier())
-        assert self._verify().outcome is Outcome.UNVERIFIABLE
-
-    def test_a_message_signature_bundle_still_uses_verify_artifact(self, monkeypatch) -> None:
-        class FakeVerifier:
-            def verify_dsse(self, bundle, policy):
-                raise AssertionError("a message-signature bundle must not go through verify_dsse")
-
-            def verify_artifact(self, hashed, bundle, policy) -> None:
-                return None
-
-        self._install(monkeypatch, FakeVerifier())
-        result = attest.SigstoreVerification.verify(
-            json.dumps({"messageSignature": {"signature": "x"}}),
-            digest_hex=self.DIGEST,
-            algorithm="sha256",
-            source_repo=("github.com", "o", "r"),
-        )
-        assert result.outcome is Outcome.VERIFIED
-
-
-class Certificates:
-    """A throwaway self-signed certificate carrying Fulcio's issuer extension, made in the test:
-    `SigstoreVerification.issuer` reads the extension and nothing else of it."""
-
-    @staticmethod
-    def with_issuer(issuer: str, *, legacy: bool = False):
-        pytest.importorskip("cryptography")
-        import datetime
-
-        from cryptography import x509
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.x509.oid import NameOID
-
-        key = ec.generate_private_key(ec.SECP256R1())
-        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "conformance")])
-        encoded = issuer.encode()
-        oid = (
+    @pytest.mark.conformance("maven", "UNI-17")
+    @pytest.mark.parametrize("legacy", [False, True])
+    def test_a_person_signed_bundle_is_unverifiable_not_invalid(self, monkeypatch, legacy) -> None:
+        """Signed through a Google or Microsoft login: honest, common on Maven Central, and tied
+        to no source repository -- a question this check cannot answer, not a forgery."""
+        certificate = Fixtures.certificate()
+        wanted = (
             attest.SigstoreVerification._ISSUER_V1
             if legacy
             else attest.SigstoreVerification._ISSUER_V2
         )
-        value = encoded if legacy else bytes([0x0C, len(encoded)]) + encoded
-        now = datetime.datetime.now(datetime.UTC)
-        return (
-            x509.CertificateBuilder()
-            .subject_name(name)
-            .issuer_name(name)
-            .public_key(key.public_key())
-            .serial_number(1)
-            .not_valid_before(now)
-            .not_valid_after(now + datetime.timedelta(minutes=10))
-            .add_extension(
-                x509.UnrecognizedExtension(x509.ObjectIdentifier(oid), value), critical=False
-            )
-            .sign(key, hashes.SHA256())
+
+        def text(self, oid, *, der_string):
+            return "https://accounts.google.com" if oid == wanted else None
+
+        monkeypatch.setattr(Certificate, "extension_text", text)
+        verified = sigstore_bundle.Verified(certificate, None, None, None, dt.datetime.now(dt.UTC))
+        result = self._with(monkeypatch, verified)
+        assert result.outcome is Outcome.UNVERIFIABLE and "accounts.google.com" in result.detail
+
+    def test_an_unknown_payload_type_is_not_read(self, monkeypatch) -> None:
+        verified = sigstore_bundle.Verified(
+            Fixtures.certificate(), None, "application/octet-stream", b"x", dt.datetime.now(dt.UTC)
         )
+        bundle, _, repository = Fixtures.npm("npm-provenance-dsse")
+        monkeypatch.setattr(
+            sigstore_bundle.BundleVerifier,
+            "verify",
+            lambda self, b, digest_hex=None, algorithm=None: verified,
+        )
+        assert repository is not None
+        result = attest.SigstoreVerification.verify(
+            bundle, digest_hex="aa" * 32, algorithm="sha256", source_repo=repository
+        )
+        assert result.outcome is Outcome.UNVERIFIABLE
 
 
 class TestMavenCentralSignatures:
     """Maven Central's Sigstore bundles (`<jar>.sigstore.json`): a signature over the jar itself,
     bound to the jar's SHA-256 the build recorded (`.mvn/checksums/`) and to the repository the
-    published POM declares. A bundle a person signed with an email identity is honest and
-    common on Central, and is unverifiable here -- never reported as a forgery."""
-
-    DIGEST = "bb" * 32
-
-    @pytest.fixture(autouse=True)
-    def _available(self, monkeypatch):
-        pytest.importorskip("sigstore")
-        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
-
-    def _bundle(self, monkeypatch, issuer: str | None) -> None:
-        certificate = Certificates.with_issuer(issuer) if issuer else None
-
-        class FakeBundle:
-            @property
-            def signing_certificate(self):
-                if certificate is None:
-                    raise ValueError("no certificate")
-                return certificate
-
-        monkeypatch.setattr(
-            "sigstore.models.Bundle.from_json", staticmethod(lambda raw: FakeBundle())
-        )
-
-    def _verifier(self, monkeypatch, *, rejects: bool) -> list[str]:
-        from sigstore.verify.policy import VerificationError
-
-        called: list[str] = []
-
-        class FakeVerifier:
-            def verify_dsse(self, bundle, policy):
-                raise AssertionError("a Maven bundle signs the jar, not a DSSE envelope")
-
-            def verify_artifact(self, hashed, bundle, policy) -> None:
-                called.append(hashed.digest.hex())
-                if rejects:
-                    raise VerificationError("signature does not verify")
-
-        monkeypatch.setattr(
-            "sigstore.verify.Verifier.production",
-            staticmethod(lambda *, offline=False: FakeVerifier()),
-        )
-        return called
-
-    def _verify(self):
-        return attest.SigstoreVerification.verify(
-            json.dumps({"messageSignature": {"signature": "x"}}),
-            digest_hex=self.DIGEST,
-            algorithm="sha256",
-            source_repo=("github.com", "acme", "lib"),
-        )
+    published POM declares."""
 
     @pytest.mark.conformance("maven", "UNI-17", "x.provenance")
     @pytest.mark.conformance("gradle", "UNI-17")
@@ -411,36 +348,24 @@ class TestMavenCentralSignatures:
             attest.AttestationDocuments.extract_bundles(ecosystem, {"bundle": "not a bundle"}) == ()
         )
 
-    @pytest.mark.conformance("maven", "UNI-17")
-    def test_a_workflow_signature_over_the_jar_digest_verifies(self, monkeypatch) -> None:
-        self._bundle(monkeypatch, attest.GITHUB_OIDC_ISSUER)
-        called = self._verifier(monkeypatch, rejects=False)
-        assert self._verify().outcome is Outcome.VERIFIED
-        assert called == [self.DIGEST], (
-            "the signature was not checked against the recorded jar digest"
+    def _verify(self, digest: str) -> attest.Result:
+        fixture = Fixtures.load("maven-message-signature")
+        owner, name = fixture["repository"].split("/")
+        return attest.SigstoreVerification.verify(
+            json.dumps(fixture["bundle"]),
+            digest_hex=digest,
+            algorithm="sha256",
+            source_repo=("github.com", owner, name),
         )
 
     @pytest.mark.conformance("maven", "UNI-17")
-    def test_a_workflow_signature_that_does_not_verify_is_invalid(self, monkeypatch) -> None:
-        self._bundle(monkeypatch, attest.GITHUB_OIDC_ISSUER)
-        self._verifier(monkeypatch, rejects=True)
-        assert self._verify().outcome is Outcome.INVALID
+    def test_a_workflow_signature_over_the_jar_digest_verifies(self) -> None:
+        result = self._verify(Fixtures.load("maven-message-signature")["sha256"])
+        assert result.outcome is Outcome.VERIFIED, result.detail
 
     @pytest.mark.conformance("maven", "UNI-17")
-    @pytest.mark.parametrize("legacy", [False, True])
-    def test_a_person_signed_bundle_is_unverifiable_not_invalid(self, monkeypatch, legacy) -> None:
-        certificate = Certificates.with_issuer("https://accounts.google.com", legacy=legacy)
-        assert (
-            attest.SigstoreVerification.issuer(
-                type("B", (), {"signing_certificate": certificate})()
-            )
-            == "https://accounts.google.com"
-        )
-        self._bundle(monkeypatch, "https://accounts.google.com")
-        called = self._verifier(monkeypatch, rejects=True)
-        result = self._verify()
-        assert result.outcome is Outcome.UNVERIFIABLE and "accounts.google.com" in result.detail
-        assert called == [], "a policy check against the repository would call this a forgery"
+    def test_a_signature_over_another_jar_is_invalid(self) -> None:
+        assert self._verify("00" * 32).outcome is Outcome.INVALID
 
     @pytest.mark.conformance("maven", "UNI-17")
     @pytest.mark.conformance("gradle", "UNI-17")
@@ -571,62 +496,6 @@ class TestRubyGemsAttestations:
     def test_a_locked_checksum_is_the_digest_bound(self) -> None:
         digest = "ab" * 32
         assert attest.AttestationDocuments.parse_integrity(f"sha256:{digest}") == ("sha256", digest)
-
-
-class TestWhatIsNotARejection:
-    """Two answers sigstore gives that are not a forged attestation, found on real npm lockfiles:
-    39 packages' genuine attestations, and typedoc's, had been reported VULNERABLE.PROVENANCE.INVALID."""
-
-    @staticmethod
-    def certificate(repository: str):
-        pytest.importorskip("cryptography")
-        import datetime
-
-        from cryptography import x509
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.x509.oid import NameOID
-
-        key = ec.generate_private_key(ec.SECP256R1())
-        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "conformance")])
-        now = datetime.datetime.now(datetime.UTC)
-        return (
-            x509.CertificateBuilder()
-            .subject_name(name)
-            .issuer_name(name)
-            .public_key(key.public_key())
-            .serial_number(1)
-            .not_valid_before(now)
-            .not_valid_after(now + datetime.timedelta(minutes=10))
-            # GitHub Actions' workflow-repository claim, raw bytes, as Fulcio writes it.
-            .add_extension(
-                x509.UnrecognizedExtension(
-                    x509.ObjectIdentifier("1.3.6.1.4.1.57264.1.5"), repository.encode()
-                ),
-                critical=False,
-            )
-            .sign(key, hashes.SHA256())
-        )
-
-    def test_an_entry_sigstore_does_not_support_is_unverifiable(self) -> None:
-        pytest.importorskip("sigstore")
-        from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
-
-        unsupported = VerificationError(
-            "Integrated time only supported for dsse/hashedrekord 0.0.1 types"
-        )
-        assert attest.SigstoreVerification._refused(unsupported).outcome is Outcome.UNVERIFIABLE
-        forged = VerificationError("Signature is invalid for input")
-        assert attest.SigstoreVerification._refused(forged).outcome is Outcome.INVALID
-
-    def test_the_repository_is_compared_without_regard_to_case(self) -> None:
-        pytest.importorskip("sigstore")
-        from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
-
-        check = attest.SigstoreVerification._repository_policy("TypeStrong/TypeDoc")
-        check.verify(self.certificate("TypeStrong/typedoc"))
-        with pytest.raises(VerificationError, match="does not match"):
-            check.verify(self.certificate("TypeStrong/typedoc-fork"))
 
 
 class TestTheAttestationOfThePinnedFile:
