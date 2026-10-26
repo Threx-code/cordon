@@ -84,6 +84,20 @@ class TestFileContent(ContentWalkerFixtures):
         assert content.column_of(5) == 2
         assert content.line_text(2) == "two"
 
+    def test_line_bounds_exclude_the_terminator(self) -> None:
+        content = FileContent.from_bytes("x.sh", b"one\r\ntwo\nlast")
+        assert content.line_bounds(1) == (0, 3)
+        assert content.line_bounds(6) == (5, 8)
+        assert content.line_bounds(11) == (9, 13)
+
+    def test_a_line_question_is_answered_once_per_line(self) -> None:
+        content = FileContent.from_bytes("x.js", b"a(); b();\nc();\n")
+        asked: list[int] = []
+        for offset in (0, 5, 10):
+            content.once_per_line("probe", offset, lambda o=offset: asked.append(o) or o)
+        assert asked == [0, 10]
+        assert content.once_per_line("probe", 5, lambda: 99) == 0
+
     def test_line_text_out_of_range_is_empty(self) -> None:
         content = FileContent.from_bytes("x.py", b"one\n")
         assert content.line_text(0) == ""

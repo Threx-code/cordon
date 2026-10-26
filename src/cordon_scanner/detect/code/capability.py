@@ -668,14 +668,15 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _is_declaration(content: FileContent, offset: int, end: int) -> bool:
         """Whether this match is a name being DEFINED rather than called."""
-        line_number = content.line_of(offset)
-        line = content.line_text(line_number).encode("utf-8", errors="replace")
-        column = content.column_of(offset) - 1
-        if CapabilityDetector.DECLARATION.search(line[:column]) is not None:
+        # The bytes just around the match, not its line: both patterns span a few hundred bytes,
+        # and on a minified bundle the line is the file, copied once per match.
+        line_number, (start, stop) = content.line_of(offset), content.line_bounds(offset)
+        if CapabilityDetector.DECLARATION.search(content.raw[max(start, offset - 512) : offset]):
             return True
         # From the match's LAST byte, which for these patterns is the opening
         # parenthesis -- `exec(` -- and the signature test needs to see it.
-        tail = line[content.column_of(max(offset, end - 1)) - 1 :]
+        at = max(offset, end - 1)
+        tail = content.raw[at : min(stop, at + 256)]
         if CapabilityDetector.SIGNATURE_ARGUMENT.match(tail) is not None:
             return True
 
@@ -695,7 +696,9 @@ class CapabilityDetector(BaseDetector):
         #
         # The defect is general rather than new: `exec(` opening a multi-line
         # signature was never suppressed either.
-        if CapabilityDetector.OPEN_PAREN_ONLY.match(tail.strip()) is None:
+        if CapabilityDetector.OPEN_PAREN_ONLY.match(tail.strip()) is None or (
+            b"//" not in tail and content.raw[at + 256 : stop].strip()
+        ):
             return False
         last = len(content.line_starts)
         stop = min(line_number + 1 + CapabilityDetector.SIGNATURE_LOOKAHEAD, last + 1)
@@ -717,14 +720,16 @@ class CapabilityDetector(BaseDetector):
         EVERY occurrence has to be a probe, so `which curl && curl https://x/y | sh` --
         a probe and then the real thing on one line -- is not excused.
         """
-        line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
-        commands = list(CapabilityDetector.FETCH_COMMAND.finditer(line))
-        if not commands:
-            return False
-        return all(
-            CapabilityDetector.TOOL_PROBE.search(line[: command.start()]) is not None
-            for command in commands
-        )
+        def answer() -> bool:
+            line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
+            commands = list(CapabilityDetector.FETCH_COMMAND.finditer(line))
+            if not commands:
+                return False
+            return all(
+                CapabilityDetector.TOOL_PROBE.search(line[: command.start()]) is not None
+                for command in commands
+            )
+        return bool(content.once_per_line("tool_probe", offset, answer))
 
     @staticmethod
     def _is_local_target(content: FileContent, offset: int) -> bool:
@@ -736,22 +741,24 @@ class CapabilityDetector(BaseDetector):
         so a command that reads metadata and pipes it somewhere real keeps its
         capability.
         """
-        line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
-        hosts = (
-            EGRESS_TARGET.findall(line)
-            + SCHEMELESS_TARGET.findall(line)
-            # And hosts written as a bare quoted string. See `QUOTED_TARGET`.
-            + [found.strip(b"\"'`") for found in QUOTED_TARGET.findall(line)]
-        )
-        # Trimmed, because a URL is often assembled out of shell quoting:
-        # `"http://127.0.0.1:'"$port"'/health"` leaves the capture as `127.0.0.1:` with
-        # the port on the other side of a quote, and an incomplete port is not a reason
-        # to call a loopback address remote. vLLM writes that line in every integration
-        # script it has.
-        # From the RIGHT only. `::1` is a loopback address whose leading colons are the
-        # address, and stripping both ends turned it into `1`, which the suite caught.
-        trimmed = [host.rstrip(b":.'\"") for host in hosts]
-        return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
+        def answer() -> bool:
+            line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
+            hosts = (
+                EGRESS_TARGET.findall(line)
+                + SCHEMELESS_TARGET.findall(line)
+                # And hosts written as a bare quoted string. See `QUOTED_TARGET`.
+                + [found.strip(b"\"'`") for found in QUOTED_TARGET.findall(line)]
+            )
+            # Trimmed, because a URL is often assembled out of shell quoting:
+            # `"http://127.0.0.1:'"$port"'/health"` leaves the capture as `127.0.0.1:` with
+            # the port on the other side of a quote, and an incomplete port is not a reason
+            # to call a loopback address remote. vLLM writes that line in every integration
+            # script it has.
+            # From the RIGHT only. `::1` is a loopback address whose leading colons are the
+            # address, and stripping both ends turned it into `1`, which the suite caught.
+            trimmed = [host.rstrip(b":.'\"") for host in hosts]
+            return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
+        return bool(content.once_per_line("local_target", offset, answer))
 
     _JS_EVAL_MAX_BYTES: ClassVar[int] = 100_000
     #: What a file that computes its names contains; without one, there is nothing to evaluate.
@@ -2314,10 +2321,8 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
         """Whether this offset sits on a transcript line rather than on code."""
-        line = content.line_text(content.line_of(offset))
-        if not line:
-            return False
-        return CapabilityDetector.EXAMPLE_PROMPT.match(line.encode("utf-8", "replace")) is not None
+        opens, _ = content.line_bounds(offset)
+        return CapabilityDetector.EXAMPLE_PROMPT.match(content.raw[opens : opens + 4096]) is not None
 
     @staticmethod
     def _is_comment(content: FileContent, offset: int, language: str | None) -> bool:
@@ -2361,6 +2366,10 @@ class CapabilityDetector(BaseDetector):
         suppressed. The distinction is exactly the one that matters, and it falls
         out of the quote test rather than needing a second rule.
         """
+        # The printer opens the line: asked of its first bytes before the line is copied.
+        opens, _ = content.line_bounds(start)
+        if not CapabilityDetector.DIAGNOSTIC_STATEMENT.match(content.raw[opens : opens + 4096]):
+            return False
         line_number = content.line_of(start)
         line = content.line_text(line_number)
         if not line:
@@ -2413,6 +2422,8 @@ class CapabilityDetector(BaseDetector):
         shell or in PHP, which is why the test asks which quote rather than whether there
         is one.
         """
+        if content.raw[start : start + 1] != b"`":
+            return False
         line = content.line_text(content.line_of(start))
         if not line:
             return False
@@ -2713,6 +2724,7 @@ class CapabilityDetector(BaseDetector):
             return []
 
         from cordon_scanner.analysis.shared.ast_providers import AstProviders
+        from cordon_scanner.analysis.shared.segmented_parse import WholeFileCalls
 
         # Rule selection already restricted `candidates` to this file's language,
         # so an ast rule here is one that applies to it. Resolve with the
@@ -2723,7 +2735,14 @@ class CapabilityDetector(BaseDetector):
         if provider is None:
             return []
 
-        calls = provider.resolve_calls(content.text)
+        # A piece of a larger file -- its prefix, a window -- takes its calls from the whole file,
+        # parsed once a statement at a time (`segmented_parse`): a piece cut inside a string parsed
+        # on its own read the string as code, at a hundred times the cost.
+        part = content.part_of
+        whole = None
+        if part is not None and hasattr(provider, "resolve_parts"):
+            whole = WholeFileCalls.view(provider, part[0], part[1], content.raw)
+        calls = provider.resolve_calls(content.text) if whole is None else whole
         if not calls:
             return []
 

@@ -235,6 +235,7 @@ class WindowPass:
                         raw=window.data,
                         size=len(window.data),
                         limits=content.limits,
+                        window_of=(source, window.begin),
                     ),
                     language=unit.language,
                     project=unit.project,

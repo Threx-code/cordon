@@ -24,6 +24,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from cordon_scanner.analysis.python.pyast import AstCall
 
 
@@ -127,49 +129,67 @@ class _TreeSitterProvider:
         self._parser = Parser(Language(grammar))
 
     def resolve_calls(self, source: str) -> list[AstCall]:
+        data = source.encode("utf-8", "surrogatepass")
+        return [call for _, call in self.resolve_parts([(0, 0, 0, data)])]
+
+    def resolve_parts(self, parts: Iterable[tuple[int, int, int, Any]]) -> list[tuple[int, AstCall]]:
+        """The calls of a file given in parts, each `(byte offset, newlines before it, column of
+        its start, its bytes)` -- `bytes`, or a view the parser reads through `read` and the node
+        readers slice (`segmented_parse.SegmentView`) -- with each call's byte offset in the file.
+
+        One walk per part, not two: a walk yields every named node, and aliases and calls are
+        both found during it. Calls are resolved after the last part, because an alias declared
+        further down the file -- in a later part -- still governs a call above it. A part's tree is
+        released before the next is parsed."""
         from cordon_scanner.analysis.python.pyast import AstCall
 
-        data = source.encode("utf-8", "surrogatepass")
-        try:
-            tree = self._parser.parse(data)
-        except (ValueError, RecursionError):
-            return []
-        root = tree.root_node
-
-        # One walk, not two: a walk yields every named node in the file, and
-        # aliases and calls are both found during it. Calls are collected here
-        # and resolved below, after the walk, because an alias declared further
-        # down the file still governs a call above it.
         aliases: dict[str, str] = {}
-        calls: list[Any] = []
-        for node in TreeSitterNodes._descendants(root):
-            kind = node.type
-            if kind == "call_expression":
-                calls.append(node)
-            elif kind == "variable_declarator":
-                self._alias_from_require(node, data, aliases)
-            elif kind == "import_statement":
-                self._alias_from_import(node, data, aliases)
-
-        out: list[AstCall] = []
-        for node in calls:
-            func = node.child_by_field_name("function")
-            args = node.child_by_field_name("arguments")
-            name = self._resolve_callee(func, data, aliases)
-            if name is None:
+        pending: list[tuple[int, int, int, tuple[str, ...], list[str], bool]] = []
+        for offset, line, column, data in parts:
+            try:
+                tree = self._parser.parse(data if isinstance(data, bytes) else data.read)
+            except (ValueError, RecursionError):
                 continue
-            positional, constructed = self._arguments(args, data)
-            out.append(
+            calls: list[Any] = []
+            for node in TreeSitterNodes._descendants(tree.root_node):
+                kind = node.type
+                if kind == "call_expression":
+                    calls.append(node)
+                elif kind == "variable_declarator":
+                    self._alias_from_require(node, data, aliases)
+                elif kind == "import_statement":
+                    self._alias_from_import(node, data, aliases)
+            for node in calls:
+                callee = self._callee(node.child_by_field_name("function"), data)
+                if callee is None:
+                    continue
+                positional, constructed = self._arguments(node.child_by_field_name("arguments"), data)
+                row, col = node.start_point
+                pending.append(
+                    (
+                        offset + node.start_byte,
+                        line + row + 1,
+                        col + (column if row == 0 else 0),
+                        callee,
+                        positional,
+                        constructed,
+                    )
+                )
+            del tree, calls
+        return [
+            (
+                start,
                 AstCall(
-                    name=name,
-                    line=node.start_point[0] + 1,
-                    column=node.start_point[1],
+                    name=self._resolved(callee, aliases),
+                    line=row,
+                    column=col,
                     arguments=tuple(positional),
                     keywords=(),
                     has_constructed_argument=constructed,
-                )
+                ),
             )
-        return out
+            for start, row, col, callee, positional, constructed in pending
+        ]
 
     #: Local name -> the module (or module member) it refers to, built during
     #: the single walk in `resolve_calls`. `const cp = require("child_process")`
@@ -247,23 +267,25 @@ class _TreeSitterProvider:
                             f"{module}.{TreeSitterNodes._text(idents[0], data)}"
                         )
 
-    def _resolve_callee(self, func: Any, data: bytes, aliases: dict[str, str]) -> str | None:
+    def _callee(self, func: Any, data: Any) -> tuple[str, ...] | None:
+        """What a call names, before aliases resolve it: `(name,)` or `(object, property)`."""
         if func is None:
             return None
         if func.type == "identifier":
-            name = TreeSitterNodes._text(func, data)
-            return aliases.get(name, name)
+            return (TreeSitterNodes._text(func, data),)
         if func.type == "member_expression":
             obj = func.child_by_field_name("object")
             prop = func.child_by_field_name("property")
-            if obj is None or prop is None:
+            if obj is None or prop is None or obj.type != "identifier":
                 return None
-            if obj.type == "identifier":
-                base = aliases.get(
-                    TreeSitterNodes._text(obj, data), TreeSitterNodes._text(obj, data)
-                )
-                return f"{base}.{TreeSitterNodes._text(prop, data)}"
+            return (TreeSitterNodes._text(obj, data), TreeSitterNodes._text(prop, data))
         return None
+
+    @staticmethod
+    def _resolved(callee: tuple[str, ...], aliases: dict[str, str]) -> str:
+        if len(callee) == 1:
+            return aliases.get(callee[0], callee[0])
+        return f"{aliases.get(callee[0], callee[0])}.{callee[1]}"
 
     def _arguments(self, args: Any, data: bytes) -> tuple[list[str], bool]:
         if args is None:

@@ -26,7 +26,7 @@ import os
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.engine.samples import SampleKinds
 from cordon_scanner.foundation.comments import SourceComments
@@ -36,7 +36,7 @@ from cordon_scanner.foundation.spill import SpilledBytes
 from cordon_scanner.foundation.windows import BytesWindows, DiskWindows, WindowSource
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 BINARY_SNIFF_BYTES = 8192
 """How much of a file to inspect when deciding whether it is binary.
@@ -285,10 +285,17 @@ class FileContent:
     """The archive member this was read from, kept on disk (`foundation/spill.py`): held so the
     file stays for as long as this content is scanned, and what a worker is given to read."""
 
+    window_of: tuple[WindowSource, int] | None = field(default=None, repr=False, compare=False)
+    """For a window of a larger file (`WindowPass`): that file's source and the window's byte
+    offset in it."""
+
     _comment_columns: dict[tuple[int, str | None], int | None] = field(
         default_factory=dict, repr=False, compare=False
     )
     """Memo for `comment_column`. See that method for what it cost without one."""
+
+    _per_line: dict[tuple[str, int], Any] = field(default_factory=dict, repr=False, compare=False)
+    """Memo for `once_per_line`."""
 
     # -- Construction ----------------------------------------------------
 
@@ -460,6 +467,17 @@ class FileContent:
             if isinstance(loaded, FileContent):
                 return replace(loaded, spill=data)
         return cls.from_bytes(path, data, limits)
+
+    @property
+    def part_of(self) -> tuple[WindowSource, int] | None:
+        """The whole file this content is a piece of, and the piece's byte offset in it: a window,
+        or the prefix of a file past `max_file_bytes` read from its own bytes. None for a whole
+        file. What reads a file as a whole -- a parse -- reads that file, not the piece."""
+        if self.window_of is not None:
+            return self.window_of
+        if self.truncated and self.window_source is not None:
+            return (self.window_source, 0)
+        return None
 
     @property
     def carried(self) -> bytes | str:
@@ -767,6 +785,27 @@ class FileContent:
         # different output -- which breaks the determinism guarantee across
         # platforms rather than merely looking untidy.
         return self.raw[start:end].decode("utf-8", errors="replace").rstrip("\r\n")
+
+    def line_bounds(self, byte_offset: int) -> tuple[int, int]:
+        """Where the line holding `byte_offset` starts and ends, its terminator excluded: for a
+        test of a match's neighbourhood, which reads a few bytes of `raw` around it rather than
+        copying a line that, in a minified bundle, is the whole file -- once per match."""
+        line = self.line_of(byte_offset)
+        starts = self.line_starts
+        start = starts[line - 1]
+        end = starts[line] - 1 if line < len(starts) else len(self.raw)
+        if end > start and self.raw[end - 1 : end] == b"\r":
+            end -= 1
+        return start, end
+
+    def once_per_line(self, name: str, byte_offset: int, compute: Callable[[], Any]) -> Any:
+        """`compute()`'s answer for the line holding `byte_offset`, worked out once per line: a
+        question about a whole line -- every host on it, every command on it -- has the same
+        answer for each match on that line, and a minified bundle is one line of thousands."""
+        key = (name, self.line_of(byte_offset))
+        if key not in self._per_line:
+            self._per_line[key] = compute()
+        return self._per_line[key]
 
     def slice(self, start: int, end: int) -> bytes:
         """Bounded byte slice, for evidence extraction."""

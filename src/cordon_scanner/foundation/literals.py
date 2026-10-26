@@ -79,10 +79,37 @@ class LiteralGate:
         return tuple(core)
 
     def present(self, data: bytes) -> bool:
-        """Whether any of the literals occurs in `data`."""
-        if self.core is not None and not any(piece in data for piece in self.core):
+        """Whether any of the literals occurs in `data`.
+
+        Each literal is looked for once per file, whichever gate asks: three hundred rules share
+        their literals, and asking each afresh scanned a 10 MB file once per rule per literal."""
+        found = LiteralGate._found(data)
+        if self.core is not None and not any(LiteralGate._has(found, data, p) for p in self.core):
             return False
-        return any(literal in data for literal in self.literals)
+        return any(LiteralGate._has(found, data, literal) for literal in self.literals)
+
+    #: The files whose literals were last looked for, by identity, each held so its identity
+    #: cannot be reused: a file's raw bytes and its case-folded copy are both asked of.
+    _recent: ClassVar[dict[int, tuple[bytes, dict[bytes, bool]]]] = {}
+    RECENT: ClassVar[int] = 4
+
+    @staticmethod
+    def _found(data: bytes) -> dict[bytes, bool]:
+        held = LiteralGate._recent.get(id(data))
+        if held is not None and held[0] is data:
+            return held[1]
+        if len(LiteralGate._recent) >= LiteralGate.RECENT:
+            LiteralGate._recent.pop(next(iter(LiteralGate._recent)))
+        found: dict[bytes, bool] = {}
+        LiteralGate._recent[id(data)] = (data, found)
+        return found
+
+    @staticmethod
+    def _has(found: dict[bytes, bool], data: bytes, literal: bytes) -> bool:
+        hit = found.get(literal)
+        if hit is None:
+            hit = found[literal] = literal in data
+        return hit
 
 
 __all__ = ["LiteralGate"]

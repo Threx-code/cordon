@@ -102,6 +102,9 @@ _PUNCT: Final = (
     "<<",
     ">>",
 )
+#: `_PUNCT` by first character, each in its order: the scan tried all seventeen at every bracket
+#: and operator, most of a minified bundle's characters.
+_PUNCT_BY_FIRST: Final = {c: tuple(p for p in _PUNCT if p[0] == c) for c in {p[0] for p in _PUNCT}}
 _NAME_START: Final = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$")
 _NAME_CHAR: Final = _NAME_START | frozenset("0123456789")
 _NUMBER: Final = re.compile(r"0[xX][0-9a-fA-F]{1,16}|\d{1,20}(?:\.\d{1,20})?(?:[eE][-+]?\d{1,4})?")
@@ -116,8 +119,29 @@ class JsEval:
 
     # -- tokens ----------------------------------------------------------------------------------
 
+    #: The tokens of the large text read most recently, by identity -- each text held, so its
+    #: identity cannot be reused: the flow analysis, the folding pass and the intent model each
+    #: tokenized the same 10 MB bundle again (review 98: 87 passes over one package's files).
+    _recent: ClassVar[dict[tuple[int, bool], tuple[str, list[Tok]]]] = {}
+    #: One: a large text's tokens are hundreds of megabytes, and its passes come together.
+    RECENT: ClassVar[int] = 1
+    CACHED_FROM: ClassVar[int] = 256 * 1024
+
     @staticmethod
     def tokens(text: str, templates: bool = False, depth: int = 0) -> list[Tok]:
+        """`_scan`, read once per large text: a caller is given its own list of the same tokens."""
+        if depth or len(text) < JsEval.CACHED_FROM:
+            return JsEval._scan(text, templates, depth)
+        key = (id(text), templates)
+        held = JsEval._recent.get(key)
+        if held is None or held[0] is not text:
+            if len(JsEval._recent) >= JsEval.RECENT:
+                JsEval._recent.pop(next(iter(JsEval._recent)))
+            held = JsEval._recent[key] = (text, JsEval._scan(text, templates, depth))
+        return list(held[1])
+
+    @staticmethod
+    def _scan(text: str, templates: bool = False, depth: int = 0) -> list[Tok]:
         """Tokens by a linear scan: no pattern runs over a string's body, so no input can make the
         tokenizer backtrack.
 
@@ -198,7 +222,7 @@ class JsEval:
                     out.append(Tok("num", value, pos, m.end()))
                     pos = m.end()
                     continue
-            for p in _PUNCT:
+            for p in _PUNCT_BY_FIRST.get(c, ()):
                 if text.startswith(p, pos):
                     out.append(Tok("punct", p, pos, pos + len(p)))
                     pos += len(p)
