@@ -92,6 +92,17 @@ class Ed25519:
         return (x, y, 1, x * y % _P)
 
     @staticmethod
+    def _small_order(p: _Point) -> bool:
+        """Whether `p` is unfit for a key or an `R`: of order dividing 8, or outside the prime-order subgroup. Such a key verifies a
+        signature for any message -- the identity key is a universal forgery -- and such an `R`
+        makes a signature malleable; both are refused (Wycheproof's torsion vectors)."""
+        if Ed25519._point_equal(Ed25519._point_mul(8, p), _NEUTRAL):
+            return True
+        # Not in the prime-order subgroup either: a point with a torsion part, which verifiers
+        # disagree on (cofactored or not) -- an ambiguity, so refused.
+        return not Ed25519._point_equal(Ed25519._point_mul(_L, p), _NEUTRAL)
+
+    @staticmethod
     def verify(public_key: bytes, message: bytes, signature: bytes) -> bool:
         """Whether `signature` is a valid Ed25519 signature of `message` by `public_key`.
 
@@ -102,11 +113,11 @@ class Ed25519:
         if len(public_key) != 32 or len(signature) != 64:
             return False
         a = Ed25519._point_decompress(public_key)
-        if a is None:
+        if a is None or Ed25519._small_order(a):
             return False
         r_bytes = signature[:32]
         r = Ed25519._point_decompress(r_bytes)
-        if r is None:
+        if r is None or Ed25519._small_order(r):
             return False
         s = int.from_bytes(signature[32:], "little")
         if s >= _L:
