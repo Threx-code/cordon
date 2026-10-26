@@ -5,10 +5,12 @@ the scan and never by the repository being scanned, and a report that says wheth
 where a security team keeps the signatures it trusts -- its own, its vendor's, a feed's -- and this
 lets a scan apply them without the team rewriting them as Cordon rules.
 
-`yara-python` is optional and is not a dependency of the package (C1): with it absent, a scan that
-asked for YARA says so in an operational finding rather than reporting nothing, because "no rule
-matched" and "no rule ran" must never look alike. Rules are compiled once per scan; each file is
-matched with a timeout, so a pathological rule cannot hold a scan. A rule's `severity` meta, when
+The YARA language is Cordon's own code (`yara_lang`, with `yara_regex` for the expressions Python's
+`re` must not run): no native library reads a scanned file. Rules that cannot be used -- a file
+that does not compile, a module the engine does not implement -- are reported in an operational
+finding rather than as nothing, because "no rule matched" and "no rule ran" must never look alike.
+Rules are compiled once per scan; each file is matched with a timeout, so a pathological rule
+cannot hold a scan. A rule's `severity` meta, when
 it names one, sets the finding's severity; otherwise a match is HIGH and SUSPICIOUS, because a
 YARA rule asserts a pattern, not a verdict -- unless its meta says `category = "malicious"`.
 """
@@ -56,24 +58,23 @@ BUILTIN_PACK: Final = PackagePaths.root() / "rules" / "yara" / "cordon-builtin.y
 
 
 class YaraEngine:
-    """Compile once, match many. Imported lazily: the module is optional."""
+    """Compile once, match many, with Cordon's own YARA engine."""
 
     def __init__(self, rules_path: str) -> None:
-        import yara  # type: ignore[import-not-found]
+        from cordon_scanner.detect.binary.yara_lang import Rules
 
         path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
         if not path.is_file():
             raise OSError(f"no YARA rules file at {rules_path}")
         if path.stat().st_size > MAX_RULES_BYTES:
             raise OSError(f"the YARA rules file is over {MAX_RULES_BYTES} bytes")
-        # Compiled from the operator's file. `includes=False`: an include directive would let one
-        # rules file pull in others from wherever it names, which is not what was asked for.
-        self.rules = yara.compile(filepath=str(path), includes=False)
-        self.version = getattr(yara, "__version__", "unknown")
-        self.yara = yara
+        # Compiled from the operator's file. `include` is refused: an include directive would let
+        # one rules file pull in others from wherever it names, which is not what was asked for.
+        self.rules = Rules.compile(path.read_text(encoding="utf-8", errors="replace"))
+        self.version = "Cordon's own engine"
 
     def match(self, data: bytes) -> list[Any]:
-        return list(self.rules.match(data=data, timeout=MATCH_TIMEOUT_SECONDS))
+        return list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS))
 
     @staticmethod
     def applies(match: Any, path: str) -> bool:
@@ -143,15 +144,13 @@ class YaraDetector(BaseDetector):
                  "Every file in this scan was also matched against the named YARA rules.", "None needed."),
             rule(UNAVAILABLE_RULE, "YARA was asked for and could not be used", Severity.INFO, Category.OPERATIONAL,
                  "The scan was asked to use YARA and could not, so no file was matched against the rules.",
-                 "Install yara-python and check the rules file compiles: yara-python must be importable."),
+                 "Check the rules file compiles, and that it imports only modules Cordon's engine implements."),
         )  # fmt: skip
 
     def _ensure(self, ctx: ScanContext) -> YaraEngine | None:
         if self._engine is None and self._failed is None:
             try:
                 self._engine = YaraEngine(str(ctx.config.yara))
-            except ImportError:
-                self._failed = "the yara-python module is not installed"
             except Exception as exc:
                 self._failed = (
                     f"the rules could not be loaded: {type(exc).__name__}: {str(exc)[:200]}"
@@ -172,7 +171,7 @@ class YaraDetector(BaseDetector):
             return [
                 self._operational(
                     STATUS_RULE,
-                    f"Files were also matched against YARA rules (yara-python {engine.version}).",
+                    f"Files were also matched against YARA rules ({engine.version}).",
                     ctx,
                 )
             ]

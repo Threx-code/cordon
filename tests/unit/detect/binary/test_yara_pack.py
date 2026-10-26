@@ -30,10 +30,12 @@ class TestThePackShipped:
         for name in manifest["dropped"]:
             assert (PACK_DIRECTORY / "upstream" / name).read_text(encoding="utf-8") not in text
 
-    def test_builtin_names_the_shipped_pack(self) -> None:
-        yara = pytest.importorskip("yara")
+    def test_builtin_names_the_shipped_pack_and_it_compiles(self) -> None:
+        from cordon_scanner.detect.binary.yara_lang import Rules
+
         engine = YaraEngine("builtin")
-        assert engine.version and isinstance(engine.rules, yara.Rules)
+        assert engine.version and isinstance(engine.rules, Rules)
+        assert len(engine.rules.rules) == 40
 
 
 class TestPathInclude:

@@ -10,8 +10,6 @@ is recorded in the commit; these tests pin the parsers and the rules.
 from __future__ import annotations
 
 import struct
-import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -372,49 +370,16 @@ class TestTheDetectorReportsThem:
         ]
 
 
-class FakeYara:
-    """A stand-in for the yara-python module with the surface the detector uses."""
-
-    class Match:
-        def __init__(self, rule: str, meta: dict) -> None:
-            self.rule, self.meta = rule, meta
-
-    def __init__(self, matches: list | Exception, compile_error: Exception | None = None) -> None:
-        self.matches, self.compile_error = matches, compile_error
-        self.compiled_with: dict = {}
-        self.__version__ = "4.5.fake"
-
-    def compile(self, **kwargs):
-        self.compiled_with = kwargs
-        if self.compile_error:
-            raise self.compile_error
-        outer = self
-
-        class Rules:
-            def match(self, data, timeout):
-                if isinstance(outer.matches, Exception):
-                    raise outer.matches
-                return outer.matches if b"EVIL" in data else []
-
-        return Rules()
-
-
 class YaraFixtures:
+    """Real rules, compiled and matched by Cordon's own engine (`detect/binary/yara_lang`)."""
+
     @pytest.fixture
-    def scan(self, tmp_path, monkeypatch):
-        def run(fake: FakeYara | None, files: dict[str, bytes] | None = None):
-            if fake is None:
-                monkeypatch.setitem(sys.modules, "yara", None)
-            else:
-                monkeypatch.setitem(
-                    sys.modules,
-                    "yara",
-                    types.SimpleNamespace(compile=fake.compile, __version__=fake.__version__),
-                )
+    def scan(self, tmp_path):
+        def run(rules_text: str, files: dict[str, bytes] | None = None):
             rules = tmp_path / "rules.yar"
-            rules.write_text("rule x { condition: true }\n", encoding="utf-8")
+            rules.write_text(rules_text, encoding="utf-8")
             target = tmp_path / "repo"
-            target.mkdir()
+            target.mkdir(exist_ok=True)
             for name, data in (files or {"payload.bin": b"\x00EVIL\x00"}).items():
                 (target / name).write_bytes(data)
             config = Config.default().with_overrides(use_cache=False, yara=str(rules))
@@ -422,47 +387,74 @@ class YaraFixtures:
 
         return run
 
+    @staticmethod
+    def rule(name: str, meta: str = "") -> str:
+        return (
+            f'rule {name} {{ meta: {meta} strings: $e = "EVIL" condition: $e }}\n'
+            if meta
+            else (f'rule {name} {{ strings: $e = "EVIL" condition: $e }}\n')
+        )
+
 
 class TestYara(YaraFixtures):
     def test_a_match_is_reported_with_the_rule_name(self, scan) -> None:
-        result = scan(FakeYara([FakeYara.Match("Trojan_Foo", {"description": "loader stub"})]))
+        result = scan(self.rule("Trojan_Foo", 'description = "loader stub"'))
         found = [f for f in result.findings if f.rule_id == "SUSPECT.YARA.MATCH.001"]
         assert found and "Trojan_Foo" in found[0].message and found[0].severity.name == "HIGH"
+        assert "loader stub" in found[0].message
         assert any(f.rule_id == "OPERATIONAL.YARA.STATUS" for f in result.findings)
 
+    def test_a_file_the_rule_does_not_match_is_not_reported(self, scan) -> None:
+        result = scan(self.rule("Trojan_Foo"), {"clean.bin": b"nothing here"})
+        assert not [f for f in result.findings if f.rule_id == "SUSPECT.YARA.MATCH.001"]
+
     def test_a_rule_declared_malicious_is_malware(self, scan) -> None:
-        result = scan(FakeYara([FakeYara.Match("Ransom_X", {"category": "malicious"})]))
+        result = scan(self.rule("Ransom_X", 'category = "malicious"'))
         assert any(
             f.rule_id == "MALWARE.YARA.MATCH.001" and f.severity.name == "CRITICAL"
             for f in result.findings
         )
 
     def test_the_rules_severity_meta_is_honoured(self, scan) -> None:
-        result = scan(FakeYara([FakeYara.Match("Hint", {"severity": "low"})]))
+        result = scan(self.rule("Hint", 'severity = "low"'))
         assert any(
             f.rule_id == "SUSPECT.YARA.MATCH.001" and f.severity.name == "LOW"
             for f in result.findings
         )
 
-    def test_includes_are_refused_at_compile(self, scan) -> None:
-        fake = FakeYara([])
-        scan(fake)
-        assert fake.compiled_with.get("includes") is False
+    def test_includes_are_refused(self, scan) -> None:
+        result = scan('include "/etc/other.yar"\n' + self.rule("x"))
+        assert any(
+            f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE" and "include" in f.message
+            for f in result.findings
+        )
 
-    def test_a_missing_module_is_reported_and_marks_the_scan_incomplete(self, scan) -> None:
-        result = scan(None)
+    def test_a_module_the_engine_does_not_implement_is_reported_and_marks_the_scan_incomplete(
+        self, scan
+    ) -> None:
+        result = scan('import "cuckoo"\nrule x { condition: true }\n')
         note = [f for f in result.findings if f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE"]
-        assert note and "yara-python" in note[0].message and not result.complete
+        assert note and "cuckoo" in note[0].message and not result.complete
 
     def test_rules_that_do_not_compile_are_reported(self, scan) -> None:
-        result = scan(FakeYara([], compile_error=SyntaxError("bad rule")))
+        result = scan("rule broken { condition: }\n")
         assert any(
             f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE" and "could not be loaded" in f.message
             for f in result.findings
         )
 
-    def test_an_engine_error_on_one_file_does_not_end_the_scan(self, scan) -> None:
-        result = scan(FakeYara(TimeoutError("slow rule")), {"a.bin": b"EVIL", "b.txt": b"hello"})
+    def test_an_engine_error_on_one_file_does_not_end_the_scan(self, scan, monkeypatch) -> None:
+        from cordon_scanner.detect.binary import yara_lang
+
+        original = yara_lang.Rules.match
+
+        def match(self, data, timeout=None):
+            if b"EVIL" in data:
+                raise yara_lang.YaraError("matching took longer than the time allowed")
+            return original(self, data, timeout)
+
+        monkeypatch.setattr(yara_lang.Rules, "match", match)
+        result = scan(self.rule("x"), {"a.bin": b"EVIL", "b.txt": b"hello"})
         assert any(f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE" for f in result.findings)
 
     def test_yara_never_runs_unless_the_operator_asks(self, tmp_path) -> None:

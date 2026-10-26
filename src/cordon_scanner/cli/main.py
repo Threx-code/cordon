@@ -425,7 +425,7 @@ class CommandLine:
             metavar="RULES",
             default=os.environ.get("CORDON_YARA") or None,
             help=(
-                "also match every file against a YARA rules file (needs the yara-python module). "
+                "also match every file against a YARA rules file. "
                 "Off by default; never set from a repository's own configuration (env: CORDON_YARA)"
             ),
         )
