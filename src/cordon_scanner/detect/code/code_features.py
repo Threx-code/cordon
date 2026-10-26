@@ -143,7 +143,7 @@ class CodeFeatures:
     _SAFE: ClassVar[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9_.$]")
     SHELL: ClassVar[tuple[str, ...]] = (".sh", ".bash", ".bat", ".cmd", ".ps1")
     _SHELL_TOKEN: ClassVar[re.Pattern[str]] = re.compile(
-        r"""'[^']*'|"(?:\\.|[^"\\])*"|\|\||&&|>>|[|;&<>()`{}$=]|[^\s|;&<>()`{}$='"]+"""
+        r"""'[^']{0,1000}'|"[^"]{0,1000}"|\|\||&&|>>|[|;&<>()`{}$=]|[^\s|;&<>()`{}$='"]{1,1000}"""
     )
     _SHELL_WORD: ClassVar[re.Pattern[str]] = re.compile(
         r"[A-Za-z_][A-Za-z0-9_.-]{0,39}|-{1,2}[A-Za-z][A-Za-z0-9-]{0,30}"

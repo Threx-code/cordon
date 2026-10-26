@@ -173,7 +173,7 @@ class ReachedFlows:
         return windows
 
     _SHEBANG: ClassVar[re.Pattern[bytes]] = re.compile(
-        rb"#![ \t]*\S*?(?:env[ \t]+(?:-\S+[ \t]+)*)?(node|python[0-9.]*|bash|sh|zsh|dash)\b"
+        rb"#![ \t]{0,8}\S{0,128}?(?:env[ \t]{1,8}(?:-\S{1,64}[ \t]{1,8}){0,4})?(node|python[0-9.]{0,8}|bash|sh|zsh|dash)\b"
     )
 
     @staticmethod

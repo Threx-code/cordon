@@ -31,6 +31,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.foundation.spill import SpilledBytes
 from cordon_scanner.sources.archive import ArchiveReader, Rejection
 from support import Support
 
@@ -128,25 +129,30 @@ class TestDecompressionBombs:
         assert result.rejected
         assert result.rejected[0].detail, "a rejection must explain itself"
 
-    def test_oversized_member_is_refused(self) -> None:
-        """Past both the per-file limit and the member limit, a member is refused unread."""
+    def test_an_oversized_member_is_read_from_disk_not_refused(self) -> None:
+        """Past both the per-file limit and the member limit, a member is kept on disk and read
+        whole: refused unread, it was where a payload padded past the limit went unseen."""
         data = HostileHelpers.zip_of({"big.bin": b"A" * 200_000}, compress=False)
         result = ArchiveReader.extract(
             data,
             path="a.zip",
             limits=DEFAULT_LIMITS.merged(max_file_bytes=1000, max_member_bytes=100_000),
         )
-        assert not result.members
-        assert any(r.reason == Rejection.SIZE for r in result.rejected)
+        (member,) = result.members
+        assert isinstance(member.data, SpilledBytes)
+        assert member.data.read_whole() == b"A" * 200_000
+        assert not any(r.reason == Rejection.SIZE for r in result.rejected)
 
     def test_a_member_within_the_stream_ceiling_is_read_for_the_sweep(self) -> None:
-        """Over the per-file limit but within `max_member_bytes`: held whole, so its windows can be
-        read, and still bounded by the expansion cap and the total budget."""
+        """Over the per-file limit: kept on disk whole, so its windows can be read, its prefix in
+        memory, and still bounded by the expansion cap and the total budget."""
         data = HostileHelpers.zip_of({"big.bin": b"A" * 200_000}, compress=False)
         result = ArchiveReader.extract(
             data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000)
         )
-        assert [len(m.data) for m in result.members] == [200_000]
+        assert [(len(m.data), getattr(m.data, "size", None)) for m in result.members] == [
+            (1000, 200_000)
+        ]
 
     def test_total_budget_is_enforced_across_members(self) -> None:
         members = {f"f{i}.bin": b"B" * 50_000 for i in range(20)}
