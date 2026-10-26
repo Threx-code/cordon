@@ -622,46 +622,62 @@ class TestRepositoryGateModes(CloudFixtures):
         assert parsed.gate_mode("github.com/acme/unlisted") == "block"
 
 
-class TestTheSigstoreSurface(CloudFixtures):
-    """Fulcio and Rekor are out of reach in a test, so what is pinned is the sigstore API the
-    signer calls: a rename there fails here instead of on a customer's first CI upload."""
-
-    def test_the_names_the_signer_uses_exist(self) -> None:
-        sigstore = pytest.importorskip("sigstore")
-        from sigstore import dsse
-        from sigstore.oidc import IdentityToken, detect_credential
-        from sigstore.sign import SigningContext
-
-        assert callable(detect_credential) and callable(IdentityToken)
-        statement = {
-            "_type": "https://in-toto.io/Statement/v1",
-            "subject": [{"name": "cordon-results.json", "digest": {"sha256": "0" * 64}}],
-            "predicateType": results.PREDICATE_TYPE,
-            "predicate": {},
-        }
-        assert dsse.Statement(json.dumps(statement).encode()) is not None
-        if not hasattr(SigningContext, "production"):
-            from sigstore.models import ClientTrustConfig
-
-            assert callable(ClientTrustConfig.production)
-            assert callable(SigningContext.from_trust_config)
-        assert sigstore.__version__
+class TestTheKeylessSigner(CloudFixtures):
+    """The CI signer is the project's own (`cloud/keyless`, tested end to end in test_keyless):
+    what is pinned here is when it signs and what it signs."""
 
     def test_without_a_ci_identity_nothing_is_signed(self, monkeypatch) -> None:
-        pytest.importorskip("sigstore")
-        monkeypatch.setattr("sigstore.oidc.detect_credential", lambda: None)
+        from cordon_scanner.cloud import keyless
+
+        monkeypatch.setattr(keyless.OidcToken, "detect", staticmethod(lambda: None))
         assert results.SignedResults.sigstore_signer(None)(b"{}") is None
 
-    def test_sigstore_accepts_the_statement_a_scan_produces(self, tmp_path) -> None:
-        pytest.importorskip("sigstore")
-        from sigstore import dsse
+    def test_a_signing_that_fails_leaves_the_results_unsigned(self, monkeypatch) -> None:
+        from cordon_scanner.cloud import keyless
 
+        def fail(self, payload_type, payload, token):
+            raise keyless.KeylessError("Fulcio could not be reached")
+
+        monkeypatch.setattr(keyless.Keyless, "sign_dsse", fail)
+        token = (
+            ".".join(
+                base64.urlsafe_b64encode(json.dumps(part).encode()).decode().rstrip("=")
+                for part in (
+                    {"alg": "RS256"},
+                    {
+                        "iss": "https://token.actions.githubusercontent.com",
+                        "aud": "sigstore",
+                        "sub": "repo:acme/app:ref:refs/heads/main",
+                        "repository": "acme/app",
+                        "workflow_ref": "acme/app/.github/workflows/ci.yml@refs/heads/main",
+                        "sha": "0" * 40,
+                    },
+                )
+            )
+            + ".sig"
+        )
+        assert results.SignedResults.sigstore_signer(token)(b"{}") is None
+
+    def test_the_statement_a_scan_produces_is_what_is_signed(self, tmp_path, monkeypatch) -> None:
         from cordon_scanner import Scanner
+        from cordon_scanner.cloud import keyless
 
+        signed: list[tuple[str, bytes]] = []
+
+        def capture(self, payload_type, payload, token):
+            signed.append((payload_type, payload))
+            return {"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}
+
+        monkeypatch.setattr(keyless.Keyless, "sign_dsse", capture)
         (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
         result = Scanner().scan(tmp_path)
         document = results.SignedResults.statement(
             result, results.SignedResults.results_bytes(result), exit_code=0, reason="clean"
         )
-        payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
-        assert dsse.Statement(payload) is not None
+        out = results.SignedResults.sign(
+            document,
+            lambda payload: keyless.Keyless().sign_dsse(results.PAYLOAD_TYPE, payload, "t"),
+        )
+        assert out.signing == "sigstore"
+        assert signed and signed[0][0] == results.PAYLOAD_TYPE
+        assert json.loads(signed[0][1])["predicateType"] == results.PREDICATE_TYPE

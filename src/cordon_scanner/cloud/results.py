@@ -5,7 +5,7 @@ in-toto Statement v1 names their SHA-256 as its subject and carries a predicate 
 needs without parsing the results: the target, the verdict, the counts and every finding's
 fingerprint (K1). The statement travels in a DSSE envelope.
 
-In CI with `sigstore` installed (`[attest]`), the envelope is signed keylessly: Fulcio certifies the
+In CI, the envelope is signed keylessly by the project's own code (`keyless`): Fulcio certifies the
 job's OIDC identity -- repository, workflow, commit -- and Rekor logs the signature, so the cloud
 can check that the results came from the run they claim. Elsewhere the envelope is unsigned and
 the upload is vouched for by the sign-in token alone; `signing` in the upload says which, and the
@@ -186,32 +186,22 @@ class SignedResults:
 
     @staticmethod
     def sigstore_signer(identity_token: str | None) -> Signer:
-        """A keyless signer, when `sigstore` is installed. With no token given, sigstore asks the CI
-        for one with its own audience -- a token minted for Cordon is not one Fulcio accepts."""
+        """A keyless signer (`keyless`, the project's own code). With no token given, the CI is
+        asked for one with the audience `sigstore` -- a token minted for Cordon is not one Fulcio
+        accepts."""
 
         def sign(payload: bytes) -> dict[str, Any] | None:
-            try:
-                from sigstore import dsse
-                from sigstore.oidc import IdentityToken, detect_credential
-                from sigstore.sign import SigningContext
-            except ImportError:
-                return None
-            raw = identity_token or detect_credential()
+            from cordon_scanner.cloud.keyless import Keyless, KeylessError, OidcToken
+
+            raw = identity_token or OidcToken.detect()
             if not raw or not CiSigningIdentity.is_pipeline(raw):
                 # Never a person: a keyless certificate puts the identity in Sigstore's public log
                 # for good, and a person's identity is their email address.
                 return None
-            # sigstore 3 builds the public-good context directly; 4 builds it from a trust config.
-            legacy = getattr(SigningContext, "production", None)
-            if legacy is not None:
-                context = legacy()
-            else:
-                from sigstore.models import ClientTrustConfig
-
-                context = SigningContext.from_trust_config(ClientTrustConfig.production())
-            with context.signer(IdentityToken(raw), cache=True) as signer:
-                bundle = signer.sign_dsse(dsse.Statement(payload))
-            return dict(json.loads(bundle.to_json()))
+            try:
+                return Keyless().sign_dsse(PAYLOAD_TYPE, payload, raw)
+            except KeylessError:
+                return None  # unsigned, and the upload says so (`signing: none`)
 
         return sign
 

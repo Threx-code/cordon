@@ -91,7 +91,12 @@ class TestCiSigningIdentity:
         assert not CiSigningIdentity.is_pipeline(raw)
 
     def test_a_personal_token_produces_no_signature(self, monkeypatch):
-        pytest.importorskip("sigstore")
+        from cordon_scanner.cloud import keyless
+
+        def never(*args, **kwargs):
+            raise AssertionError("a person's token must never reach Fulcio")
+
+        monkeypatch.setattr(keyless.Keyless, "sign_dsse", never)
         signer = SignedResults.sigstore_signer(
             Tokens.of({"iss": "https://accounts.google.com", "email": "dev@acme.com"})
         )
