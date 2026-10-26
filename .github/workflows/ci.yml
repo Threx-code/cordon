@@ -44,7 +44,7 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: python -m pip install --upgrade pip
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
       # `-n auto`: the suite is CPU-bound and a runner has four cores. A gate
       # slow enough to be resented is one people learn to merge past.
       #
@@ -74,7 +74,7 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
       - run: ruff check src/ tests/ scripts/ bench/
       - run: ruff format --check src/ tests/ scripts/
       - run: mypy
@@ -346,7 +346,7 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
       # Latency is a security property: a commit-time guard slower than about a
       # second gets `--no-verify`, and a bypassed guard protects nothing. The
       # budgets were written in docs/04-OPERATIONS.md and never measured, which
@@ -378,7 +378,7 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
       # A parser is where untrusted input first meets code, and there are only
       # three outcomes: report the input as unparseable, raise something the
       # caller does not expect, or not return. The second is a blinding

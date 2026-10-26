@@ -6,7 +6,8 @@
 git clone https://github.com/Threx-code/cordon
 cd cordon
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
+pip install --require-hashes -r ci/dev-requirements.txt
+pip install --no-deps -e .
 
 pytest -q
 ruff check src/ tests/

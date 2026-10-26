@@ -51,12 +51,9 @@ class TestEveryTemplate:
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        written = {
-            module.PIN.relative_to(ROOT).as_posix(),
-            module.ATTEST_PIN.relative_to(ROOT).as_posix(),
-        }
+        written = {module.PIN.relative_to(ROOT).as_posix()}
         text = template.read_text(encoding="utf-8")
-        for read in re.findall(r"/v\$\{CORDON_VERSION\}/(\S+?requirements(?:-attest)?\.txt)", text):
+        for read in re.findall(r"/v\$\{CORDON_VERSION\}/(\S+?requirements\.txt)", text):
             assert read in written, (
                 f"{template.name} fetches {read}; the release writes {sorted(written)}"
             )
@@ -140,22 +137,21 @@ class TestCiTemplates:
         scan = action.split("- name: Scan", 1)[1].split("- name: Upload SARIF", 1)[0]
         assert "${{ inputs." not in scan.split("run: |", 1)[1]
 
-    def test_the_signing_lock_pins_every_file_by_hash(self) -> None:
-        """Installed with --require-hashes --no-deps, so it must name every package and hash."""
-        lines = (
-            (ROOT / "action" / "requirements-attest.txt").read_text(encoding="utf-8").splitlines()
-        )
-        packages = [line for line in lines if re.match(r"^[a-z0-9][a-z0-9._-]*==", line)]
-        assert any(line.startswith("sigstore==") for line in packages)
-        assert packages and all(line.rstrip().endswith("\\") for line in packages)
-        hashes = [line for line in lines if "--hash=sha256:" in line]
-        assert len(hashes) >= len(packages)
+    def test_no_template_installs_a_signing_library(self) -> None:
+        """Keyless signing is built into Cordon (`cloud/keyless`): a template that uploads installs
+        Cordon and nothing else."""
+        for path in (
+            "action/action.yml",
+            *(p.relative_to(ROOT).as_posix() for p in (ROOT / "ci").rglob("*.yml")),
+        ):
+            text = (ROOT / path).read_text(encoding="utf-8")
+            assert "requirements-attest" not in text and "pip install sigstore" not in text, path
 
     def test_uploading_templates_sign_and_the_rest_cannot(self) -> None:
         """GitHub, GitLab, CircleCI and Buildkite get a Sigstore identity; Bitbucket, Azure and
         Jenkins have none public Sigstore accepts, which the docs say."""
         for path, needle in (
-            ("action/action.yml", "requirements-attest.txt"),
+            ("action/action.yml", "id-token: write"),
             ("ci/gitlab/cordon.gitlab-ci.yml", "aud: sigstore"),
             ("ci/circleci/orb.yml", '"aud": "sigstore"'),
             ("ci/buildkite/pipeline.yml", "--audience sigstore"),

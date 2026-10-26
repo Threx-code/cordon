@@ -38,17 +38,14 @@ rather than a document.
   cannot avoid is looking like it is hiding something, which is what the
   obfuscation domain reports. Observing the behaviour itself requires an
   isolated sandbox, which is a separate opt-in component.
-- **Cryptographic signature verification** (domain 13) is available as the
-  opt-in `[attest]` extra. The base checks provenance against what the registry
-  publishes -- npm's `dist.attestations`, PyPI's `provenance`, and the lockfile
-  hash against the registry's -- and reconciles an SBOM against the resolved
-  graph. With `[attest]` installed, the provenance detector verifies the
-  sigstore bundle itself: the Fulcio certificate, the Rekor inclusion proof, the
-  DSSE signature over the pinned digest, and the signing identity against the
-  declared source repository. That verification needs a cryptographic library
-  the core will not take, which is why it is an extra; without it, provenance
-  stays at the presence check and the unverifiable case is reported, never
-  passed.
+- **Cryptographic signature verification** (domain 13) is built in. Provenance
+  is checked against what the registry publishes -- npm's `dist.attestations`,
+  PyPI's `provenance`, and the lockfile hash against the registry's -- and an
+  SBOM is reconciled against the resolved graph. Online, the provenance detector
+  verifies the sigstore bundle itself with Cordon's own code: the Fulcio
+  certificate, the Rekor inclusion proof, the DSSE signature over the pinned
+  digest, and the signing identity against the declared source repository. A
+  case it cannot check is reported, never passed.
 - **Reachability** -- whether a vulnerable or malicious symbol is actually
   called -- is modelled at its import tier, behind `--reachability`: a vulnerable
   transitive dependency that first-party code does not import is lowered and

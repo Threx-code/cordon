@@ -50,7 +50,7 @@ python tests/kits/ecosystems.py > docs/07-ECOSYSTEMS.md
                  module or archive the package was built from (docs/05-COVERAGE-MATRIX.md)
   TYPOSQUAT      name-similarity checks against that ecosystem's popular set
   REGISTRY       --online only: withdrawal, version distance, hash agreement
-  PROVENANCE     --online only: attestation presence, and verification with [attest]
+  PROVENANCE     --online only: attestation presence, and its verification
 ```
 
 A dependency whose ecosystem has no advisory feed still gets everything else --

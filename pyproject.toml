@@ -114,28 +114,10 @@ ast-js = [
     "tree-sitter-javascript>=0.21",
     "tree-sitter-typescript>=0.21",
 ]
-# Cryptographic verification of a package's build provenance. The base only sees
-# that a release carries an attestation; this extra verifies it -- the Fulcio
-# certificate, the Rekor inclusion proof, the DSSE signature over the pinned
-# digest, and that the signing identity matches the declared source repository.
-# The work is delegated to `sigstore` (raw npm bundles), `pypi-attestations`
-# (PEP 740 conversion) and `pysequoia` (OpenPGP: Helm provenance files, against the
-# operator's --keyring) rather than reimplemented, because a subtly wrong verifier
-# reports confidence it has not earned. It degrades as promised: without it,
-# provenance stays at the presence check and anything unverifiable is reported as
-# `POLICY.PROVENANCE.UNVERIFIED`, never a crash and never a false pass. The stack
-# is heavy, which is exactly why it is opt-in and never in the base.
-attest = [
-    "sigstore>=3.6,<5",
-    "pypi-attestations>=0.0.19,<0.1",
-    "pysequoia>=0.1.35,<0.2",
-]
-# Cordon Cloud's keyless result signing. `cordon login`, `--upload` and `--cloud-policy` need
-# only the standard library; with this extra, an upload from CI is also signed with the job's
-# OIDC identity through Sigstore. Without it the upload is still made, marked unsigned.
-cloud = [
-    "sigstore>=3.6,<5",
-]
+
+# The development and CI toolchain. Never package metadata: no one installing Cordon can pull these
+# in. CI installs the locked, hash-pinned set (ci/dev-requirements.txt) and Cordon with --no-deps.
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -151,11 +133,6 @@ dev = [
     "tree-sitter>=0.21",
     "tree-sitter-javascript>=0.21",
     "tree-sitter-typescript>=0.21",
-    # And the attestation stack, so the provenance detector and its verifier are
-    # exercised here rather than only where the extra happens to be installed.
-    "sigstore>=3.6,<5",
-    "pypi-attestations>=0.0.19,<0.1",
-    "pysequoia>=0.1.35,<0.2",
 ]
 
 [project.scripts]

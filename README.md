@@ -109,7 +109,7 @@ Python 3.11 / 3.12 / 3.13 on Linux, macOS and Windows.
    ┌────────────────────────────────────────────────────────────────────────┐
    │  base           zero third-party runtime deps                          │
    │  [ast-js]       tree-sitter → JS/TS semantic rules   (tutorial 13)     │
-   │  [attest]       sigstore    → provenance verification (tutorial 05)    │
+   │  provenance     Sigstore and OpenPGP verified by Cordon's own code     │
    └────────────────────────────────────────────────────────────────────────┘
 ```
 

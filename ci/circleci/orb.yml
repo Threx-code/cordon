@@ -69,12 +69,8 @@ commands:
               # trust - so it is neither accepted by Cordon nor ever sent to it.
               CORDON_ID_TOKEN="$(circleci run oidc get --claims '{"aud": "cordon"}')"
               export CORDON_ID_TOKEN
-              # Keyless signing with this job's identity: the hash-locked sigstore stack and a
-              # token for Sigstore's audience.
-              curl -fsSLo /tmp/cordon-attest.txt \
-                "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/action/requirements-attest.txt"
-              python -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
-                -r /tmp/cordon-attest.txt
+              # Keyless signing with this job's identity (built into Cordon): a token for
+              # Sigstore's audience.
               SIGSTORE_ID_TOKEN="$(circleci run oidc get --claims '{"aud": "sigstore"}')"
               export SIGSTORE_ID_TOKEN
               set -- "$@" --upload

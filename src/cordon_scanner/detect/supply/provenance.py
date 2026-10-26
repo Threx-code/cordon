@@ -8,9 +8,9 @@ package declares. The two together are what a stolen-token attack cannot fake --
 the malicious upload still names the honest repository, but it was not built by
 that repository's workflow and cannot produce a certificate that says it was.
 
-The heavy verification is delegated to `intel.attest` (the `[attest]` extra). A
-release that cannot be verified -- the extra is absent, the digest is not
-pinned, the registry serves no usable bundle, or the declared repository is on a
+The verification is `intel.attest`, the project's own code. A release that
+cannot be verified -- the digest is not pinned, the registry serves no usable
+bundle, or the declared repository is on a
 forge the identity policy does not cover -- is reported as unverified, never as
 a failure and never silently: "we did not check" and "we checked and it failed"
 are opposite facts, and only the second is a finding to act on.
@@ -118,9 +118,8 @@ class ProvenanceDetector(BaseDetector):
                 ),
                 references=(references.SLSA_PROVENANCE, references.SIGSTORE),
                 remediation=(
-                    "Install the [attest] extra and pin the dependency's digest so "
-                    "the attestation can be checked, or accept that its provenance "
-                    "is asserted rather than proven."
+                    "Pin the dependency's digest so the attestation can be checked, "
+                    "or accept that its provenance is asserted rather than proven."
                 ),
             ),
             DeclaredRule(
@@ -317,11 +316,7 @@ class ProvenanceDetector(BaseDetector):
         )
         bundles = attest.AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
         if not bundles:
-            reason = (
-                "the [attest] extra is not installed"
-                if not attest.SigstoreVerification.available()
-                else "the registry served no verifiable attestation bundle"
-            )
+            reason = "the registry served no verifiable attestation bundle"
             yield self._finding(
                 UNVERIFIED_RULE,
                 ctx,
@@ -405,14 +400,6 @@ class ProvenanceDetector(BaseDetector):
         """Each bottle against its own GitHub build attestation (`intel/homebrew_provenance`)."""
         from cordon_scanner.intel.provenance.homebrew_provenance import HomebrewProvenance
 
-        if not attest.SigstoreVerification.available():
-            yield self._finding(
-                UNVERIFIED_RULE,
-                ctx,
-                dependency=dependency,
-                detail=f"{dependency.name}'s bottles were not verified: the [attest] extra is not installed",
-            )
-            return
         check = HomebrewProvenance.check(dependency.name, dependency.version)
         label = f"{dependency.name}" + (f"@{check.version}" if check.version else "")
         if check.outcome == "verified":
@@ -456,10 +443,7 @@ class ProvenanceDetector(BaseDetector):
             AnsibleSignatures,
             CollectionCheck,
         )
-        from cordon_scanner.intel.provenance.openpgp import OpenPgp
 
-        if not OpenPgp.available():
-            return
         if dependency.signatures and dependency.signed is not None:
             check = AnsibleSignatures.installed(
                 dependency.name,
@@ -507,11 +491,7 @@ class ProvenanceDetector(BaseDetector):
     def _verify_helm(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A chart's provenance file against the operator's keyring (`intel/helm_provenance`)."""
         from cordon_scanner.intel.provenance.helm_provenance import HelmProvenance
-        from cordon_scanner.intel.provenance.openpgp import OpenPgp
 
-        if not OpenPgp.available():
-            # Without the extra nothing is fetched: whether the chart is signed is not known.
-            return
         check = HelmProvenance.check(
             dependency.name,
             dependency.version or "",
@@ -552,10 +532,6 @@ class ProvenanceDetector(BaseDetector):
         from cordon_scanner.intel.provenance.bazel_provenance import BazelProvenance
 
         label = f"{dependency.name}@{dependency.version}"
-        if not attest.SigstoreVerification.available():
-            # Without the extra nothing is fetched: whether the module is attested at all is
-            # not known, so nothing is claimed about it either way.
-            return
         check = BazelProvenance.check(
             dependency.name, dependency.version or "", dependency.integrity
         )

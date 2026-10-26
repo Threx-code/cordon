@@ -53,7 +53,7 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
 
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:

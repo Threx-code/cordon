@@ -50,7 +50,8 @@ run() {                       # run <label> <image> <extra docker args...>
           cd /w
           git init -q . && git add -A && git -c user.email=p@p -c user.name=p commit -qm base
           python -m pip install --quiet --user --upgrade pip
-          pip install --quiet --user -e \".[dev]\"
+          pip install --quiet --user --require-hashes -r ci/dev-requirements.txt
+          pip install --quiet --user --no-deps -e .
           python -m pytest -q --ignore=tests/fuzz -p no:randomly
         "
       '; then
@@ -70,7 +71,8 @@ echo "==> lint (ruff, format, mypy)"
 if docker run --rm -v "$WORK:/src:ro" python:3.12-slim bash -c '
       set -e
       mkdir -p /w && cp -a /src/. /w/ && cd /w
-      pip install --quiet -e ".[dev]" >/dev/null
+      pip install --quiet --require-hashes -r ci/dev-requirements.txt >/dev/null
+      pip install --quiet --no-deps -e . >/dev/null
       ruff check src/ tests/ scripts/ bench/
       ruff format --check src/ tests/ scripts/
       mypy

@@ -4,9 +4,10 @@ Everything here is opt-in and changes nothing about what a scan finds. A scan wi
 makes no request to the cloud, and one with them still finds the same things -- the cloud receives
 results and supplies an organisation's policy, and never decides a finding.
 
-The contracts are in `schemas/`: K2 (signed results), K3 (policy bundle), K7 (auth). The core
-needs only the standard library; keyless signing uses `sigstore` from the `[attest]` extra when it
-is installed, and without it an upload is authenticated by the sign-in token alone and says so.
+The contracts are in `schemas/`: K2 (signed results), K3 (policy bundle), K7 (auth). Everything
+here is standard library and the project's own code, keyless signing included (`keyless`): in CI
+an upload is signed with the job's identity, and elsewhere it is authenticated by the sign-in
+token alone and says so.
 """
 
 from __future__ import annotations

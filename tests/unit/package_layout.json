@@ -727,7 +727,6 @@
    "scripts/refresh/refresh_extension_intel.py",
    "scripts/refresh/refresh_package_intel.py",
    "scripts/release/key_ceremony.py",
-   "scripts/release/lock_attest_requirements.py",
    "scripts/release/pin_action_requirements.py",
    "scripts/release/pin_doc_links.py",
    "scripts/release/sign_advisory_bundle.py"

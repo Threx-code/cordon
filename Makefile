@@ -30,7 +30,8 @@ help:  ## List the targets
 setup:  ## Create .venv and install the package with its dev extra
 	python3 -m venv .venv
 	$(PY) -m pip install --upgrade pip
-	$(PY) -m pip install -e ".[dev]"
+	$(PY) -m pip install --require-hashes -r ci/dev-requirements.txt
+	$(PY) -m pip install --no-deps -e .
 
 fmt:  ## Format
 	$(PY) -m ruff format src/ tests/ scripts/

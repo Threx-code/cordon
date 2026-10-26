@@ -73,21 +73,19 @@ Decisions, not preferences. Every later section is downstream of them.
 ### C1. The core has zero third-party runtime dependencies
 
 `cordon_scanner.foundation`, `cordon_scanner.analysis`, `cordon_scanner.detect`, `cordon_scanner.decide`, `cordon_scanner.engine`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
-import nothing outside the standard library on a base install. Two runtime extras
-exist. `[ast-js]` adds the tree-sitter grammars for JavaScript and TypeScript so
-`kind: ast` rules resolve calls in those languages; without it those languages
-are reported as unscanned by the AST tier, never silently skipped. `[attest]`
-adds `sigstore` and `pypi-attestations` so the provenance detector can verify a
-dependency's build attestation -- the Fulcio certificate, the Rekor inclusion
-proof, the DSSE signature over the pinned digest, and the signer-to-repository
-identity -- and `pysequoia`, so a Helm chart's OpenPGP provenance file and an
-Ansible collection's signatures are verified against the keys the operator gives
-with `--keyring`; without it a
-package's provenance stays at the presence check and
-anything unverifiable is reported as `POLICY.PROVENANCE.UNVERIFIED`, never an
-error. An extra is opt-in and must degrade to a documented reduced capability,
-never to an error, and its imports are guarded so the base install never touches
-them. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
+import nothing outside the standard library on a base install. Provenance is
+verified by the project's own code (`intel/provenance`): a dependency's Sigstore
+attestation -- the Fulcio certificate and its certificate-transparency timestamp,
+the Rekor inclusion proof and signed checkpoint, the DSSE signature over the
+pinned digest, and the signer-to-repository identity -- and a Helm chart's or an
+Ansible collection's OpenPGP signatures, against the keys the operator gives with
+`--keyring`. Keyless signing of uploaded results is the project's own too
+(`cloud/keyless`). The one runtime extra left, `[ast-js]` (tree-sitter), is being
+replaced the same way by `analysis/javascript/front`; until it is deleted, an
+extra is opt-in and must degrade to a documented reduced capability, never to an
+error, and its imports are guarded so the base install never touches them. The
+`[attest]` and `[cloud]` extras no longer exist: they were removed when their
+verification and signing became Cordon's own code. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
 shipped as two packages nothing imported, and `[intel]` was never declared at
 all -- which is why the extras that do exist are pinned by a test.
 

@@ -173,8 +173,8 @@ Everything here is opt-in and changes nothing about what a scan finds.
 
 - **Uploads** are the JSON results plus a DSSE-wrapped in-toto statement over their SHA-256
   ([K2](https://github.com/Threx-code/cordon/blob/v0.6.0/schemas/cordon-upload-v1.schema.json)). In
-  CI, with the `[cloud]` extra, Sigstore signs it with the job's identity; elsewhere it is marked
-  unsigned. A failed upload never changes the exit code.
+  CI, Cordon signs it keylessly with the job's identity (Fulcio and Rekor, built in); elsewhere it
+  is marked unsigned. A failed upload never changes the exit code.
 - **The policy bundle** is verified with Ed25519 against the key pinned at sign-in, refused if it
   names another organisation or is older than the cached one, and used from cache when the cloud is
   unreachable until it expires. With `--cloud-policy` and no current bundle the scan does not run.

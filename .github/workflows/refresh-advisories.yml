@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
 
       - name: Refresh from OSV's bulk export
         # Talks only to osv-vulnerabilities.storage.googleapis.com (see

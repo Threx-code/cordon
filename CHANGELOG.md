@@ -17,6 +17,21 @@ test or conformance case that fails on the old code.
 
 ### Added
 
+- **No optional runtime dependencies for provenance or signing.** Sigstore bundles (npm, PyPI PEP
+  740, Maven Central, RubyGems, Homebrew, Bazel) and OpenPGP signatures (Helm, Ansible) are
+  verified by Cordon's own code against trust material it pins, and CI uploads are signed
+  keylessly by it too. The `[attest]` and `[cloud]` extras are removed. On 1,934 real npm
+  attestations every one sigstore-python verifies is verified, as are 147 it cannot check (Rekor
+  `intoto` 0.0.2 entries, version-0.1 bundles), and npm's 967 registry-signed publish attestations;
+  none of 25,000 tampered bundles verifies. Every Wycheproof vector for ECDSA, RSA, Ed25519 and DSA
+  passes. Helm provenance that Sequoia refused (overstated MPI bit counts; a key judged as it
+  stands now) verifies as GnuPG and Helm verify it.
+- **Cordon's own JavaScript and TypeScript front end** for the `kind: ast` rules, in the core
+  install: real lexical scopes, aliases through `require`, every `import` form, `createRequire`,
+  dynamic `import()`, TypeScript `import =`, computed members and bundler calls.
+- **The development toolchain is hash-locked** (`ci/dev-requirements.txt`, installed with
+  `--require-hashes`) and is a dependency group, not package metadata.
+
 - **Cordon for AI agents: `cordon-scanner mcp`** (tutorial 30). A Model Context Protocol server,
   inside the package, so coding agents ask before they act: 26 read-only tools for packages,
   install commands, advisories, skills, agent files, MCP servers and their tool descriptions, IDE
@@ -127,6 +142,11 @@ test or conformance case that fails on the old code.
   does; Apache's PHP module, the Composer PHAR and jar groups are named as Syft names them.
 - The home screen and tutorial 11 say what a default scan does on the network (it asks OSV what
   changed since the intel was built) and how to turn that off.
+
+### Security
+
+- The Ed25519 verifier accepted the identity public key, with which any signature verifies
+  (Wycheproof's universal forgery); small-order and mixed-order keys and `R` points are refused.
 
 ## [0.6.0] - 2026-10-08
 

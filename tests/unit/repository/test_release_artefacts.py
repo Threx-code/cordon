@@ -263,9 +263,15 @@ class TestBuildToolchainIsPinned:
         assert not any("pipx run build" in line for line in commands)
 
     def test_security_md_does_not_overclaim(self) -> None:
-        """It said development dependencies were pinned. They are not, and
-        saying so was worse than the gap: a reader who believes it does not
-        check."""
+        """It once said development dependencies were pinned when they were not. They are now,
+        and the claim is held to the lock: every package at one version, every one with hashes,
+        and CI installing from it with --require-hashes."""
         text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
-        assert "Development dependencies are not pinned" in text
+        assert "Development dependencies are pinned by hash" in text
         assert "build toolchain is pinned by hash" in text.lower()
+        lock = (ROOT / "ci" / "dev-requirements.txt").read_text(encoding="utf-8")
+        pins = [line for line in lock.splitlines() if "==" in line and not line.startswith("#")]
+        assert pins and all(line.rstrip().endswith("\\") for line in pins)
+        assert lock.count("--hash=sha256:") >= len(pins)
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        assert "--require-hashes -r ci/dev-requirements.txt" in ci and ".[dev]" not in ci
