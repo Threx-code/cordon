@@ -8,8 +8,7 @@ itself, per place (`install`, `import`, `closure`, as in `ReachedFlows`):
 - `code_<place>_tok_<h>`: hashed counts of each token and each pair of tokens, the top 1,500;
 - `code_<place>_api_<name>`: a call or module on a fixed list of behaviours (`exec`, `fetch`,
   `this.getCredentials`, `child_process`), by name, so a reviewer can read it;
-- `code_<place>_apih_<h>`: any other member call, hashed by the member's name;
-- `code_<place>_truncated`: the place held more text than is read.
+- `code_<place>_apih_<h>`: any other member call, hashed by the member's name.
 
 A string's value is never a feature, hashed or not: every literal becomes its shape (`URL`,
 `BASE64`, `HEX`, `LONG_STRING`, `STRING`). The model learns what code does, not one campaign's
@@ -20,15 +19,14 @@ an install hook's command line (`postinstall` in a `package.json`: most install-
 that one line) are split into words, and a word that is not a plain command, flag or name -- an
 address, a path, a blob -- is a string, its shape.
 
-Deterministic (stable hashes, no clock) and bounded: at most `PLACE_BYTES` of text per place, after
-the caller's per-file limits.
+Every byte is read: a cap on how much of a file is read is where a payload padded past it would
+go. Memory is bounded instead -- a file is read a `WINDOW` at a time and only counts are held -- and
+deterministic (stable hashes, no clock): a file read in windows gives the features it gives whole.
 """
 
 from __future__ import annotations
 
 import hashlib
-import io
-import itertools
 import re
 import tokenize
 from collections import Counter
@@ -37,7 +35,12 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.analysis.javascript.js_eval import JsEval
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+
+    from cordon_scanner.analysis.javascript.js_eval import Tok
+
+    #: A file's bytes, or a callable giving them in order a window at a time.
+    Source = bytes | Callable[[], Iterator[bytes]]
 
 
 class CodeFeatures:
@@ -47,7 +50,15 @@ class CodeFeatures:
     HASH_MOD: ClassVar[int] = 1 << 18
     COUNT_CAP: ClassVar[int] = 20
     TOP: ClassVar[int] = 1500
-    PLACE_BYTES: ClassVar[int] = 2_000_000
+    #: A file is read a window at a time, every byte of it: no file is too large to read.
+    WINDOW: ClassVar[int] = 1 << 20
+    #: A window is cut after its last whole token at least this far from its end; the rest is
+    #: read again with the next window.
+    MARGIN: ClassVar[int] = 1 << 14
+    #: A literal or comment longer than this is skipped to its end rather than carried.
+    CARRY: ClassVar[int] = 4 << 20
+    #: Distinct words whose hash is remembered at once.
+    DIGESTS: ClassVar[int] = 200_000
 
     NAMED_API: ClassVar[frozenset[str]] = frozenset(
         {
@@ -150,8 +161,9 @@ class CodeFeatures:
     )
 
     @staticmethod
-    def of(reached: Mapping[str, Sequence[tuple[str, bytes]]]) -> dict[str, float]:
-        """`reached` maps a place to its files, (path, bytes), already within the per-file limits."""
+    def of(reached: Mapping[str, Sequence[tuple[str, Source]]]) -> dict[str, float]:
+        """`reached` maps a place to its files: (path, bytes), or (path, a callable giving the
+        file's windows in order) for a file too large to hold. Every byte is read either way."""
         out: Counter[str] = Counter()
         for place in CodeFeatures.PLACES:
             files = reached.get(place)
@@ -176,50 +188,164 @@ class CodeFeatures:
 
     @staticmethod
     def hashed(text: str) -> int:
-        digest = hashlib.blake2b(text.encode("utf-8", "replace"), digest_size=4).digest()
-        return int.from_bytes(digest, "big") % CodeFeatures.HASH_MOD
+        return CodeFeatures._digest(text) % CodeFeatures.HASH_MOD
 
     @staticmethod
-    def stream(path: str, text: str) -> list[tuple[str, str]]:
-        """The file as (kind, token): `str` tokens keep their text only for the module check."""
-        if path.lower().endswith(".py"):
-            return CodeFeatures._python(text)
-        if path.lower().endswith(CodeFeatures.SHELL):
-            return CodeFeatures._shell(text)
+    def _digest(text: str) -> int:
+        digest = hashlib.blake2b(text.encode("utf-8", "replace"), digest_size=4).digest()
+        return int.from_bytes(digest, "big")
+
+    @staticmethod
+    def windows(source: Source) -> Iterator[bytes]:
+        """The file's bytes in order, a window at a time."""
+        if isinstance(source, bytes):
+            for start in range(0, max(len(source), 1), CodeFeatures.WINDOW):
+                yield source[start : start + CodeFeatures.WINDOW]
+        else:
+            yield from source()
+
+    @staticmethod
+    def stream(path: str, windows: Iterable[bytes]) -> Iterator[tuple[str, str]]:
+        """The file as (kind, token), window by window: a `str` token keeps its text only for the
+        module check and its shape; `long` is a literal or comment past `CARRY`, skipped to its
+        end -- a blob padding a file reads as one long string, never as code or as nothing."""
+        texts = (window.decode("latin-1") for window in windows)
+        lower = path.lower()
+        if lower.endswith(".py"):
+            return CodeFeatures._python(texts)
+        if lower.endswith(CodeFeatures.SHELL):
+            return CodeFeatures._carried(texts, CodeFeatures._shell_cut)
+        return CodeFeatures._carried(texts, CodeFeatures._js_cut)
+
+    @staticmethod
+    def _carried(
+        texts: Iterable[str], cut_of: Callable[[str, bool], tuple[list[tuple[str, str]], int]]
+    ) -> Iterator[tuple[str, str]]:
+        """Each window's tokens up to its cut (`cut_of(text, last)`); the rest is read again with
+        the next window, so no token is split. When one literal or comment fills more than `CARRY`
+        it is skipped to its closing delimiter instead of carried."""
+        carry, until = "", ""
+        texts = iter(texts)
+        text_now = next(texts, None)
+        while text_now is not None:
+            text_next = next(texts, None)
+            last = text_next is None
+            text = carry + text_now
+            carry, text_now = "", text_next
+            if until:
+                end = CodeFeatures._closing(text, until)
+                if end < 0:
+                    carry = "" if last else text[-CodeFeatures.MARGIN :]
+                    continue
+                text, until = text[end:], ""
+            walk, cut = cut_of(text, last)
+            yield from walk
+            rest = text[cut:]
+            if len(rest) > CodeFeatures.CARRY:
+                opened = rest.lstrip()
+                pair = next((p for p in CodeFeatures._OPEN if opened.startswith(p[0])), None)
+                if pair is None:  # not a literal: read as it stands, whole
+                    yield from cut_of(rest, True)[0]
+                    rest = ""
+                else:
+                    yield ("long", "LONG_STRING")
+                    body = opened[len(pair[0]) :]
+                    end = CodeFeatures._closing(body, pair[1])
+                    rest = body[end:] if end >= 0 else body[-CodeFeatures.MARGIN :]
+                    until = pair[1] if end < 0 else ""
+            carry = rest
+            if last and carry:
+                yield from cut_of(carry, True)[0]
+
+    #: What opens a literal or comment, and what closes it.
+    _OPEN: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("/*", "*/"),
+        ("//", "\n"),
+        ("`", "`"),
+        ('"', '"'),
+        ("'", "'"),
+    )
+
+    @staticmethod
+    def _closing(text: str, until: str) -> int:
+        """One past the first `until` in `text` not escaped by a backslash, or -1."""
+        at = text.find(until)
+        while at >= 0:
+            back = at - 1
+            while until in "`'\"" and back >= 0 and text[back] == "\\":
+                back -= 1
+            if (at - 1 - back) % 2 == 0:
+                return at + len(until)
+            at = text.find(until, at + 1)
+        return -1
+
+    @staticmethod
+    def _js_cut(text: str, last: bool) -> tuple[list[tuple[str, str]], int]:
+        """JavaScript and TypeScript tokens up to the end of the last whole top-level token at
+        least `MARGIN` before the text's end: never inside a string, a comment or a template."""
         try:
             tokens = JsEval.tokens(text, templates=True)
-        except Exception:  # a file the tokenizer cannot read gives no features, never a failure
-            return []
-        out: list[tuple[str, str]] = []
-        for t in tokens:
-            if t.kind in ("str", "longstr", "tmpl"):
-                out.append(("str", str(t.value)))
-            elif t.kind == "num":
-                out.append(("num", "NUM"))
-            elif t.kind == "regex":
-                out.append(("regex", "REGEX"))
-            else:
-                out.append(("name" if t.kind == "name" else "punct", str(t.value)))
-        return out
+        except Exception:  # a text the tokenizer cannot read gives no features, never a failure
+            return [], len(text)
+        limit = len(text) if last else len(text) - CodeFeatures.MARGIN
+        keep = cut = depth = 0
+        for i, t in enumerate(tokens):
+            if t.end > limit:
+                break
+            if t.kind == "punct" and text[t.start : t.start + 1] == "`":
+                depth += 1 if t.value == "(" else -1
+            if depth == 0:
+                keep, cut = i + 1, t.end
+        if last:
+            keep, cut = len(tokens), len(text)
+        return [CodeFeatures._item(t) for t in tokens[:keep]], cut
 
     @staticmethod
-    def _python(text: str) -> list[tuple[str, str]]:
-        out: list[tuple[str, str]] = []
+    def _item(t: Tok) -> tuple[str, str]:
+        if t.kind in ("str", "longstr", "tmpl"):
+            return ("str", str(t.value))
+        if t.kind == "num":
+            return ("num", "NUM")
+        if t.kind == "regex":
+            return ("regex", "REGEX")
+        return ("name" if t.kind == "name" else "punct", str(t.value))
+
+    @staticmethod
+    def _shell_cut(text: str, last: bool) -> tuple[list[tuple[str, str]], int]:
+        cut = len(text) if last else text.rfind("\n", 0, len(text) - CodeFeatures.MARGIN) + 1
+        return CodeFeatures._shell(text[:cut]), cut
+
+    @staticmethod
+    def _python(texts: Iterable[str]) -> Iterator[tuple[str, str]]:
+        """Python tokens across windows: the standard tokenizer reads line by line, so the file is
+        given to it a line at a time. A file it cannot finish keeps what it read."""
+
+        def lines() -> Iterator[str]:
+            rest = ""
+            for text in texts:
+                *whole, rest = (rest + text).split("\n")
+                yield from (line + "\n" for line in whole)
+                if len(rest) > CodeFeatures.CARRY:
+                    yield rest
+                    rest = ""
+            if rest:
+                yield rest
+
+        read = lines()
         try:
-            for t in tokenize.generate_tokens(io.StringIO(text).readline):
+            for t in tokenize.generate_tokens(lambda: next(read, "")):
                 if t.type in CodeFeatures._SKIP:
                     continue
                 if t.type == tokenize.STRING:
-                    out.append(("str", t.string))
+                    yield ("str", t.string)
                 elif t.type == tokenize.NUMBER:
-                    out.append(("num", "NUM"))
+                    yield ("num", "NUM")
                 elif t.type == tokenize.NAME:
-                    out.append(("name", t.string))
+                    yield ("name", t.string)
                 else:
-                    out.append(("punct", t.string))
+                    yield ("punct", t.string)
         except (tokenize.TokenError, SyntaxError, ValueError):
-            return []
-        return out
+            return
 
     @staticmethod
     def _shell(text: str) -> list[tuple[str, str]]:
@@ -240,61 +366,60 @@ class CodeFeatures:
         return value[1:-1] if quoted else value
 
     @staticmethod
-    def _calls(place: str, walk: list[tuple[str, str]], out: Counter[str]) -> None:
-        for i, (kind, value) in enumerate(walk):
-            if kind == "str":
-                before = walk[i - 1][1] if i >= 1 else ""
-                before2 = walk[i - 2][1] if i >= 2 else ""
-                if before in ("from", "import") or (
-                    before == "(" and before2 in ("require", "import")
-                ):
-                    name = CodeFeatures._unquoted(value)
-                    if name in CodeFeatures.NAMED_MODULES:
-                        out[f"code_{place}_api_mod_{CodeFeatures._SAFE.sub('_', name)}"] += 1
-                    elif name[:1] in "./" or CodeFeatures.shape(name) == "URL":
-                        out[f"code_{place}_api_mod_path"] += 1
-                    else:
-                        out[f"code_{place}_api_mod_other"] += 1
-            elif (
-                kind == "name"
-                and i + 2 < len(walk)
-                and walk[i + 1][1] == "."
-                and walk[i + 2][0] == "name"
-            ):
-                member = walk[i + 2][1]
-                chain = f"{value}.{member}"
-                if chain in CodeFeatures.NAMED_API:
-                    out[f"code_{place}_api_{CodeFeatures._SAFE.sub('_', chain)}"] += 1
-                elif member in CodeFeatures.NAMED_API:
-                    out[f"code_{place}_api_{CodeFeatures._SAFE.sub('_', member)}"] += 1
+    def _call(place: str, ring: list[tuple[str, str]], out: Counter[str]) -> None:
+        """The call or import at `ring[2]`, with two tokens either side of it."""
+        kind, value = ring[2]
+        if kind == "str":
+            before, before2 = ring[1][1], ring[0][1]
+            if before in ("from", "import") or (before == "(" and before2 in ("require", "import")):
+                name = CodeFeatures._unquoted(value)
+                if name in CodeFeatures.NAMED_MODULES:
+                    out[f"code_{place}_api_mod_{CodeFeatures._SAFE.sub('_', name)}"] += 1
+                elif name[:1] in "./" or CodeFeatures.shape(name) == "URL":
+                    out[f"code_{place}_api_mod_path"] += 1
                 else:
-                    out[f"code_{place}_apih_{CodeFeatures.hashed('m:' + member)}"] += 1
+                    out[f"code_{place}_api_mod_other"] += 1
+        elif kind == "name" and ring[3][1] == "." and ring[4][0] == "name":
+            member = ring[4][1]
+            chain = f"{value}.{member}"
+            if chain in CodeFeatures.NAMED_API:
+                out[f"code_{place}_api_{CodeFeatures._SAFE.sub('_', chain)}"] += 1
+            elif member in CodeFeatures.NAMED_API:
+                out[f"code_{place}_api_{CodeFeatures._SAFE.sub('_', member)}"] += 1
+            else:
+                out[f"code_{place}_apih_{CodeFeatures.hashed('m:' + member)}"] += 1
 
     @staticmethod
-    def _place(place: str, files: Sequence[tuple[str, bytes]], out: Counter[str]) -> None:
-        words: list[str] = []
-        budget = CodeFeatures.PLACE_BYTES
-        truncated = False
-        for path, data in files:
-            if budget <= 0:
-                truncated = True
-                break
-            whole = data.decode("latin-1")
-            text = whole[:budget]
-            truncated = truncated or len(text) < len(whole)
-            budget -= len(text)
-            walk = CodeFeatures.stream(path, text)
-            CodeFeatures._calls(place, walk, out)
-            words.extend(CodeFeatures.shape(v) if k == "str" else v for k, v in walk)
-        if truncated:
-            out[f"code_{place}_truncated"] = 1
-        grams: Counter[str] = Counter()
-        for w in words:
-            grams[f"code_{place}_tok_{CodeFeatures.hashed('1|' + w)}"] += 1
-        for a, b in itertools.pairwise(words):
-            grams[f"code_{place}_tok_{CodeFeatures.hashed('2|' + a + '|' + b)}"] += 1
+    def _place(place: str, files: Sequence[tuple[str, Source]], out: Counter[str]) -> None:
+        """Every token of every file, counted as it is read: a token and the pair it ends, hashed
+        once per distinct word. Nothing but the counts is held, whatever the files' size."""
+        mod, empty = CodeFeatures.HASH_MOD, ("", "")
+        grams: Counter[int] = Counter()
+        digests: dict[str, int] = {}
+        prev = -1
+        for path, source in files:
+            ring = [empty, empty]
+            for kind, value in CodeFeatures.stream(path, CodeFeatures.windows(source)):
+                ring.append((kind, value))
+                if len(ring) == 5:
+                    CodeFeatures._call(place, ring, out)
+                    del ring[0]
+                word = CodeFeatures.shape(value) if kind == "str" else value
+                digest = digests.get(word)
+                if digest is None:
+                    if len(digests) >= CodeFeatures.DIGESTS:
+                        digests.clear()
+                    digest = digests[word] = CodeFeatures._digest("1|" + word)
+                grams[digest % mod] += 1
+                if prev >= 0:
+                    grams[(((prev * 0x01000193) ^ digest ^ 0x5BD1E995) & 0xFFFFFFFF) % mod] += 1
+                prev = digest
+            ring += [empty, empty]
+            while len(ring) >= 5:
+                CodeFeatures._call(place, ring, out)
+                del ring[0]
         for key, n in sorted(grams.items(), key=lambda kv: (-kv[1], kv[0]))[: CodeFeatures.TOP]:
-            out[key] = min(n, CodeFeatures.COUNT_CAP)
+            out[f"code_{place}_tok_{key}"] = min(n, CodeFeatures.COUNT_CAP)
 
 
 __all__ = ["CodeFeatures"]

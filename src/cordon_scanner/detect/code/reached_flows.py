@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from cordon_scanner.detect.base import FileUnit, ScanContext
+    from cordon_scanner.detect.code.code_features import Source
 
 
 class ReachedFlows:
@@ -116,16 +117,17 @@ class ReachedFlows:
     SOURCE: ClassVar[tuple[str, ...]] = (*CODE, ".ts", ".mts", ".cts", ".tsx", *CodeFeatures.SHELL)
 
     @staticmethod
-    def sources(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, list[tuple[str, bytes]]]:
+    def sources(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, list[tuple[str, Source]]]:
         """Each place's code, as the code features read it: the install hooks' own command lines
-        first (a `postinstall` is often the whole payload, and no file holds it), then the reached
-        JavaScript, TypeScript, Python and shell files. A file past `MAX_SIZE` -- one 27 MB bundle
-        as a package's `main` -- gives its first `CodeFeatures.PLACE_BYTES`, not nothing."""
+        first (a `postinstall` is often the whole payload, and no file holds it), then every
+        reached JavaScript, TypeScript, Python and shell file, whole. No count or size limit: a file
+        past them -- one 27 MB bundle as a package's `main` -- is given as its windows, all of them,
+        so nothing padded past a limit goes unread."""
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
-        out: dict[str, list[tuple[str, bytes]]] = {}
+        out: dict[str, list[tuple[str, Source]]] = {}
         for place, paths in ReachedFlows.places(ctx).items():
-            files: list[tuple[str, bytes]] = []
+            files: list[tuple[str, Source]] = []
             for unit in units:
                 if unit.path not in paths or place != "install":
                     continue
@@ -149,9 +151,26 @@ class ReachedFlows:
                 if path is None and "." not in name.rsplit("/", 1)[-1]:
                     path = ReachedFlows._interpreted(unit.path, unit.content.raw[:128])
                 if path is not None:
-                    files.append((path, unit.content.raw[: CodeFeatures.PLACE_BYTES]))
-            out[place] = files[: ReachedFlows.FILES]
+                    files.append((path, ReachedFlows._whole(unit)))
+            out[place] = files
         return out
+
+    @staticmethod
+    def _whole(unit: FileUnit) -> Source:
+        """The file's bytes, or -- held only as a prefix -- a callable reading all its windows."""
+        source = unit.content.window_source
+        if source is None:
+            return unit.content.raw
+
+        def windows() -> Iterator[bytes]:
+            try:
+                with source.reader() as read:
+                    for offset in range(0, source.size, CodeFeatures.WINDOW):
+                        yield read(offset, CodeFeatures.WINDOW)
+            except WindowSourceChanged:
+                return
+
+        return windows
 
     _SHEBANG: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"#![ \t]*\S*?(?:env[ \t]+(?:-\S+[ \t]+)*)?(node|python[0-9.]*|bash|sh|zsh|dash)\b"

@@ -101,19 +101,33 @@ class TestBounds:
     def test_the_same_input_gives_the_same_features(self) -> None:
         assert Fixture.features(JS) == Fixture.features(JS)
 
-    def test_text_past_the_place_budget_is_cut_and_said(
-        self, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("text", "path"),
+        [(JS * 8, "index.js"), (PY * 8, "setup.py"), ("curl -s x | sh\nnode a.js\n" * 8, "a.sh")],
+    )
+    def test_a_file_read_in_windows_gives_what_it_gives_whole(
+        self, monkeypatch: pytest.MonkeyPatch, text: str, path: str
     ) -> None:
-        monkeypatch.setattr(CodeFeatures, "PLACE_BYTES", 64)
-        keys = Fixture.features(JS)
-        assert keys.get("code_import_truncated") == 1.0
+        whole = Fixture.features(text, path)
+        monkeypatch.setattr(CodeFeatures, "WINDOW", 64)
+        monkeypatch.setattr(CodeFeatures, "MARGIN", 24)
+        assert Fixture.features(text, path) == whole
+
+    def test_a_payload_past_megabytes_of_padding_is_read(self) -> None:
+        padded = "/*" + " " * (3 << 20) + "*/\n" + "cp.exec(x);\n"
+        assert "code_import_api_exec" in Fixture.features(padded)
+
+    def test_a_payload_past_a_literal_longer_than_any_window_is_read(self) -> None:
+        padded = "const blob = '" + "A" * (6 << 20) + "';\ncp.exec(blob);\n"
+        assert "code_import_api_exec" in Fixture.features(padded)
 
     def test_counts_are_capped(self) -> None:
         keys = Fixture.features("a.exec();\n" * 50)
         assert keys["code_import_api_exec"] == CodeFeatures.COUNT_CAP
 
-    def test_unreadable_python_gives_nothing(self) -> None:
-        assert Fixture.features("def (:\n  '''\n", "x.py") == {}
+    def test_unfinished_python_keeps_what_was_read(self) -> None:
+        keys = Fixture.features("import subprocess\ndef (:\n  '''\n", "x.py")
+        assert any(k.startswith("code_import_tok_") for k in keys)
 
     def test_only_known_places_are_read(self) -> None:
         assert CodeFeatures.of({"other": [("index.js", JS.encode())]}) == {}
@@ -172,7 +186,7 @@ class TestSources:
         got = ReachedFlows.sources([unit], TestSources.ctx(entry=frozenset({"bin/tool"})))  # type: ignore[arg-type]
         assert [path for path, _ in got["import"]] == ([read_as] if read_as else [])
 
-    def test_a_file_past_the_size_limit_gives_its_first_bytes(
+    def test_a_file_past_the_size_limit_is_read_whole(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(ReachedFlows, "MAX_SIZE", 8)
