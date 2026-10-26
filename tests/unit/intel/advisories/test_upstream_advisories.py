@@ -1064,8 +1064,17 @@ class TestProtocolTwoRefs:
 
 
 class TestCondaInfoStream:
+    @staticmethod
+    def zstd_stored(data: bytes) -> bytes:
+        """A zstd frame of raw (stored) blocks: valid zstd with no compressor needed."""
+        out = bytearray(b"\x28\xb5\x2f\xfd\x00\x38")  # magic; no size or checksum; 128 KiB window
+        blocks = [data[i : i + (1 << 17)] for i in range(0, len(data), 1 << 17)] or [b""]
+        for n, block in enumerate(blocks):
+            last = int(n == len(blocks) - 1)
+            out += (last | (len(block) << 3)).to_bytes(3, "little") + block
+        return bytes(out)
+
     def test_the_recipe_is_read_past_a_large_info_member(self) -> None:
-        zstandard = pytest.importorskip("zstandard")
         from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage
 
         raw = io.BytesIO()
@@ -1077,7 +1086,7 @@ class TestCondaInfoStream:
                 member = tarfile.TarInfo(name)
                 member.size = len(data)
                 archive.addfile(member, io.BytesIO(data))
-        blob = zstandard.ZstdCompressor().compress(raw.getvalue())
+        blob = self.zstd_stored(raw.getvalue())
         with tarfile.open(fileobj=CondaPackage._zstd_stream(blob), mode="r|") as archive:
             assert CondaPackage._from_tar(archive) == "package:\n  name: x\n"
 
