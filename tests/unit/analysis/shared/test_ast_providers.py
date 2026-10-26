@@ -23,9 +23,11 @@ class TestTheRegistry:
         assert ast_providers.AstProviders.ast_provider_for("ruby") is None
         assert ast_providers.AstProviders.ast_provider_for(None) is None
 
-    def test_no_language_waits_on_an_extra(self) -> None:
-        for language in ("javascript", "typescript", "ruby"):
-            assert ast_providers.AstProviders.missing_provider_language(language) is None
+    def test_javascript_and_typescript_have_the_projects_own_provider(self) -> None:
+        from cordon_scanner.analysis.javascript.front.resolve import CallResolver
+
+        for language in ("javascript", "typescript"):
+            assert isinstance(ast_providers.AstProviders.ast_provider_for(language), CallResolver)
 
 
 class TestTheJavaScriptProvider:

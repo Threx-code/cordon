@@ -42,7 +42,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 12  Vetting a package ........... answer "should I install this?" before you do
     │
   GOING DEEPER
-    ├─ 13  AST rules & capabilities .... how rules see through obfuscation ([ast-js])
+    ├─ 13  AST rules & capabilities .... how rules see through obfuscation
     ├─ 14  Config, policy & baselines .. org ceilings, adopt-incrementally
     ├─ 15  Output formats .............. text | json | sarif | junit | markdown | github
     ├─ 16  The sandbox ................. the one component that executes, and its isolation
@@ -80,9 +80,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 ## Install
 
 ```
-  pip install cordon-scanner            # base: zero third-party runtime deps
-  pip install cordon-scanner[ast-js]    # + JavaScript/TypeScript semantic rules
-  pip install cordon-scanner[attest]    # + sigstore provenance verification
+  pip install cordon-scanner            # everything: zero third-party dependencies
 ```
 
 Every extra is opt-in and degrades to a *stated* limit when absent — never a

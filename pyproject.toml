@@ -40,15 +40,36 @@ keywords = [
     "cyclonedx",
     "spdx",
     "vex",
+    "openvex",
+    "license-compliance",
     "slsa",
     "sigstore",
     "provenance",
+    "attestation",
+    "in-toto",
+    "dsse",
+    "rekor",
+    "openpgp",
+    "code-signing",
     "secrets",
     "secret-scanning",
     "static-analysis",
     "yara",
     "npm",
     "pypi",
+    "cargo",
+    "maven",
+    "gradle",
+    "go-modules",
+    "rubygems",
+    "nuget",
+    "composer",
+    "homebrew",
+    "helm",
+    "ansible",
+    "docker",
+    "oci-images",
+    "vscode-extensions",
     "github-actions",
     "container-security",
     "infrastructure-as-code",
@@ -57,9 +78,18 @@ keywords = [
     "mcp",
     "ai-agents",
     "agent-security",
+    "agent-skills",
+    "ai-bom",
+    "llm-security",
+    "prompt-injection",
+    "model-security",
     "pre-commit",
     "ci-cd",
     "devsecops",
+    "policy-as-code",
+    "zero-dependency",
+    "offline",
+    "air-gapped",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -67,6 +97,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
+    "Natural Language :: English",
     "Operating System :: OS Independent",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
@@ -79,10 +110,13 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Software Distribution",
+    "Topic :: System :: Systems Administration",
     "Typing :: Typed",
 ]
 requires-python = ">=3.11"
@@ -95,25 +129,9 @@ requires-python = ">=3.11"
 # who installs it. It also makes the air-gapped story a single wheel with nothing
 # to vendor, and it makes `pip download` reproducible without a resolver.
 #
-# Everything optional lives in [project.optional-dependencies] and MUST degrade
-# to a documented reduced capability rather than an error. If a feature cannot
-# degrade, it does not belong in an extra.
+# Nothing is optional either: Cordon declares no extras. Every capability is its
+# own standard-library code, so there is nothing to install to get more of it.
 dependencies = []
-
-[project.optional-dependencies]
-# JS/TS semantic resolution for the `kind: ast` match kind. The base install
-# resolves Python calls through the stdlib `ast`; this extra adds a tree-sitter
-# provider so the same `kind: ast` rules resolve JavaScript and TypeScript calls
-# through their imports and aliases too. It degrades as promised: without it, a
-# JS/TS file is still scanned by the regex tier, the ast rules simply add
-# nothing, and `detect/ast_providers` reports the language as having no provider
-# rather than treating it as fully analysed. The dependency lives here, never in
-# the base, so the zero-required-dependency guarantee holds.
-ast-js = [
-    "tree-sitter>=0.21",
-    "tree-sitter-javascript>=0.21",
-    "tree-sitter-typescript>=0.21",
-]
 
 # The development and CI toolchain. Never package metadata: no one installing Cordon can pull these
 # in. CI installs the locked, hash-pinned set (ci/dev-requirements.txt) and Cordon with --no-deps.
@@ -128,11 +146,6 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.6",
     "mypy>=1.11",
-    # The test environment carries the ast-js provider so the bundled JS `kind:
-    # ast` rules are validated here rather than shipping unchecked.
-    "tree-sitter>=0.21",
-    "tree-sitter-javascript>=0.21",
-    "tree-sitter-typescript>=0.21",
 ]
 
 [project.scripts]
@@ -304,7 +317,7 @@ explicit_package_bases = true
 [[tool.mypy.overrides]]
 # yaml: CI tooling only. fetch_agent_configs: a bench module scripts/build/import_atr.py puts on the
 # path at run time.
-module = ["tree_sitter.*", "tree_sitter_languages.*", "yaml", "fetch_agent_configs"]
+module = ["yaml", "fetch_agent_configs"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

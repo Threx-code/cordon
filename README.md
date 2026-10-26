@@ -108,7 +108,7 @@ Python 3.11 / 3.12 / 3.13 on Linux, macOS and Windows.
    OPTIONAL EXTRAS — opt-in, and each degrades to a STATED limit, never a crash
    ┌────────────────────────────────────────────────────────────────────────┐
    │  base           zero third-party runtime deps                          │
-   │  [ast-js]       tree-sitter → JS/TS semantic rules   (tutorial 13)     │
+   │  JS / TS        Cordon's own parser → semantic rules (tutorial 13)     │
    │  provenance     Sigstore and OpenPGP verified by Cordon's own code     │
    └────────────────────────────────────────────────────────────────────────┘
 ```

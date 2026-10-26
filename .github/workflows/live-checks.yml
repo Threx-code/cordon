@@ -47,13 +47,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install with the attestation stack
+      - name: Install
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          # [attest] is the point of one of the checks, so it is not optional
-          # here the way it is for an ordinary install.
-          python -m pip install -e ".[attest]"
+          python -m pip install -e .
 
       - name: Run the live checks
         id: run

@@ -5,7 +5,7 @@ Everything in `make check` runs offline, deliberately: the suite must pass in an
 air-gap and must not go red because PyPI is slow. That leaves a gap, and the gap
 is where the expensive defects live. Four of them shipped at once in 0.3.0:
 
-* the `[attest]` verifier called `verify_artifact` on DSSE bundles, so every
+* the provenance verifier called `verify_artifact` on DSSE bundles, so every
   genuine npm and PyPI attestation was reported as a forgery, at CRITICAL;
 * Yarn Berry's cache checksum was compared against npm's tarball hash, which it
   can never equal, so every dependency of every Berry lockfile was a CRITICAL
@@ -124,11 +124,6 @@ class LiveChecks:
     @staticmethod
     def check_attestation(tmp: Path) -> str:
         """A genuine attestation must verify, and must not be called a forgery."""
-        try:
-            import sigstore  # noqa: F401
-        except ImportError as exc:
-            raise CannotRun("the [attest] extra is not installed") from exc
-
         name, version = ATTESTED_NPM
         work = tmp / "attest"
         work.mkdir()

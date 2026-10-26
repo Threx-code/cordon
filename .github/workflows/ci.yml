@@ -39,8 +39,7 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: ${{ matrix.python }}
-          # The dev extra pulls the sigstore stack and three tree-sitter wheels,
-          # and fifteen jobs install it on every push.
+          # Fifteen jobs install the locked toolchain on every push.
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: python -m pip install --upgrade pip

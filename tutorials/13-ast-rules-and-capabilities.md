@@ -43,22 +43,17 @@ This is how Cordon sees through obfuscation, and how you extend it.
               └─────────────────────────────────────────────┘
                      │ Python           │ JS / TS
                      ▼                  ▼
-              stdlib `ast`         tree-sitter  ([ast-js])
-              (always on)          (opt-in extra)
+              stdlib `ast`         Cordon's own parser
+              (always on)          (always on)
 ```
 
-## The extra, and honest degradation
+## Nothing to install
 
 ```
-   pip install cordon-scanner[ast-js]
-```
-
-```
-   WITH [ast-js]                       WITHOUT it
-   ────────────                        ──────────
-   JS/TS calls resolved by the AST     JS/TS still scanned by the regex tier;
-   tier, same rules as Python          the AST tier reports the language as
-                                       NOT ANALYSED — never pretends it was
+   JS/TS calls are resolved by Cordon's own front end -- real scopes, aliases
+   through require, every import form, createRequire, dynamic import(),
+   TypeScript `import =`, computed members and bundler calls -- in every install.
+   No parser written elsewhere ever reads a scanned file.
 ```
 
 ## Capabilities compose (recap from 02)

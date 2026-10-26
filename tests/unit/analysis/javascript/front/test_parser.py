@@ -125,10 +125,14 @@ class TestRecovery:
         unit = "const a = require('m'); a.f(b, `t${c}`, /r/g, x => ({ y: [1, 2] }));\n"
 
         def cost(n: int) -> float:
+            """The best of five runs: on a loaded machine one run measures the machine."""
             text = unit * n
-            start = time.perf_counter()
-            Parser(text).program()
-            return time.perf_counter() - start
+            best = float("inf")
+            for _ in range(5):
+                start = time.perf_counter()
+                Parser(text).program()
+                best = min(best, time.perf_counter() - start)
+            return best
 
         small, large = cost(500), cost(4_000)
         assert large < small * 8 * 3

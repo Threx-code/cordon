@@ -103,7 +103,6 @@ cordon-scanner scan pkg.tgz --online
 ### 3. Was it built from the source it claims?
 
 ```bash
-pip install 'cordon-scanner[attest]'
 cordon-scanner scan pkg.tgz --online
 ```
 

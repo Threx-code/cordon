@@ -158,7 +158,7 @@ class TestExtras:
         assert not unknown, unknown
 
     def test_the_check_sees_the_real_extras(self) -> None:
-        assert self.declared() == {"ast-js"}, self.declared()
+        assert self.declared() == set(), self.declared()
 
 
 class TestPublicApi:

@@ -1118,7 +1118,7 @@ rules:
         - '// connect(4444, "127.0.0.1") in the docs'
 
   # ---------------------------------------------------------------------
-  # Resolved by parsing rather than by pattern (requires the ast-js extra)
+  # Resolved by parsing rather than by pattern (Cordon's own JS/TS front end)
   #
   # The same capabilities the CAP.JS.* rules above label, asked as a question
   # about the parsed tree. A byte pattern for `child_process.exec` misses the
@@ -1129,11 +1129,9 @@ rules:
   #     const cp = require("child_process");         // cp.execSync(...) does not either
   #     import { spawn as sp } from "child_process";  // sp(...) hides both
   #
-  # The tree-sitter provider resolves the require/import alias back to the
-  # module, so these fire on every spelling and feed the same composites the
-  # regex primitives do. Without the extra installed a JS file is still scanned
-  # by the regex tier; these rules simply add nothing, which the detector
-  # reports as a language without a provider rather than as a clean file.
+  # The front end (`analysis/javascript/front`) resolves the require/import alias
+  # back to the module through real scopes, so these fire on every spelling and
+  # feed the same composites the regex primitives do.
   # ---------------------------------------------------------------------
   - id: CAP.JS.AST.SPAWN.001
     version: 1.0.0

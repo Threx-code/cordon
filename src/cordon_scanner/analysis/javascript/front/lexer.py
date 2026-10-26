@@ -1,7 +1,7 @@
 """The tokens of a JavaScript or TypeScript source: one linear pass, written by this project.
 
 The first stage of Cordon's own JavaScript front end (`reviews/self-improving/08-JS-FRONT-END.md`),
-which replaces the tree-sitter extra: no parser written elsewhere ever reads an attacker's file.
+in every install: no parser written elsewhere ever reads an attacker's file.
 
 A state machine over the characters. The only regular expressions are runs of one character
 class (spaces, a name's ASCII characters, a line's characters, a string's plain characters): each

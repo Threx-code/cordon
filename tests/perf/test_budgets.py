@@ -37,24 +37,6 @@ class BudgetsHelpers:
     """Helpers for test_budgets.py."""
 
     @staticmethod
-    def _ast_tier_present() -> bool:
-        """Whether the optional JS/TS semantic provider is installed here.
-
-        The budgets in `docs/04-OPERATIONS.md` are for what `pip install
-        cordon-scanner` gives you. The dev and CI environments also carry the
-        `[ast-js]` extra so the bundled JS `kind: ast` rules are exercised, and that
-        tier parses every JavaScript file with tree-sitter -- about a third more
-        work on a JavaScript fixture, for a capability the published budget is not
-        about.
-
-        So the ceiling is multiplied when the tier is present, rather than the
-        published number being raised to cover an extra most installs do not have.
-        """
-        from cordon_scanner.analysis.shared.ast_providers import AstProviders
-
-        return AstProviders.ast_provider_for("javascript") is not None
-
-    @staticmethod
     def populate(root: Path, count: int, per_dir: int = 1000) -> Path:
         root.mkdir(parents=True, exist_ok=True)
         for index in range(count):
@@ -86,16 +68,10 @@ class BudgetsHelpers:
 
     @staticmethod
     def report(name: str, seconds: float, target: float, ceiling: float) -> None:
-        """Print the measurement against the budget that applies to this install.
-
-        The published target and ceiling are for the base install, and they are
-        always printed as themselves. What the verdict is judged against is the
-        budget for the environment doing the measuring: the `[ast-js]` tier parses
-        every JavaScript file with tree-sitter, and calling that "OVER CEILING"
-        against a number the extra is not part of would report a regression that is
-        the extra working.
-        """
-        here_target = target * AST_TIER
+        """Print the measurement against the published budget, which is for what every install
+        runs -- Cordon's own JavaScript and TypeScript tier included; only a shared runner's
+        allowance (`CORDON_PERF_ALLOWANCE`) moves the ceiling it is judged against."""
+        here_target = target
         here_ceiling = ceiling * ALLOWANCE
         verdict = (
             "OK"
@@ -110,10 +86,7 @@ class BudgetsHelpers:
         )
 
 
-AST_TIER = 1.35 if BudgetsHelpers._ast_tier_present() else 1.0
-"""Measured cost of the optional `[ast-js]` tier on a JavaScript fixture."""
-
-ALLOWANCE = float(os.environ.get("CORDON_PERF_ALLOWANCE", "1")) * AST_TIER
+ALLOWANCE = float(os.environ.get("CORDON_PERF_ALLOWANCE", "1"))
 """Multiplier applied to the asserted ceiling, not to the reported one.
 
 The targets and ceilings in `docs/04-OPERATIONS.md` are product commitments

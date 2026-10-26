@@ -80,12 +80,10 @@ the Rekor inclusion proof and signed checkpoint, the DSSE signature over the
 pinned digest, and the signer-to-repository identity -- and a Helm chart's or an
 Ansible collection's OpenPGP signatures, against the keys the operator gives with
 `--keyring`. Keyless signing of uploaded results is the project's own too
-(`cloud/keyless`). The one runtime extra left, `[ast-js]` (tree-sitter), is being
-replaced the same way by `analysis/javascript/front`; until it is deleted, an
-extra is opt-in and must degrade to a documented reduced capability, never to an
-error, and its imports are guarded so the base install never touches them. The
-`[attest]` and `[cloud]` extras no longer exist: they were removed when their
-verification and signing became Cordon's own code. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
+(`cloud/keyless`), and so is the JavaScript and TypeScript parser behind the
+`kind: ast` rules (`analysis/javascript/front`). Cordon declares no extras: the
+`[ast-js]`, `[attest]` and `[cloud]` extras do not exist any more, removed when the
+parser, the verification and the signing they carried became Cordon's own code. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
 shipped as two packages nothing imported, and `[intel]` was never declared at
 all -- which is why the extras that do exist are pinned by a test.
 
@@ -565,7 +563,7 @@ without an explicit review trailer.
 | `regex` | Validated safe subset. No backreferences, no unbounded nesting. | 1 |
 | `entropy` | Shannon entropy over a window with a shape guard. | 1 |
 | `structural` | Query over a parsed manifest or configuration. | 2 |
-| `ast` | Grammar query. Python is built in; other languages need the `[ast-js]` extra and degrade with a note. | 3 |
+| `ast` | Resolved calls. Python (stdlib `ast`) and JavaScript/TypeScript (`analysis/javascript/front`) are built in; other languages are scanned by the regex tier. | 3 |
 | `graph` | Predicate over the dependency graph. | 4 |
 | `composite` | Boolean expression over other rules, with a scope. | 5 |
 

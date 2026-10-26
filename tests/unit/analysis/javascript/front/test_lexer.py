@@ -139,11 +139,15 @@ class TestRecovery:
 
     def test_time_is_linear_in_the_input(self) -> None:
         def seconds(n: int) -> float:
+            """The best of five runs: on a loaded machine one run measures the machine."""
             text = "a = `x${b}y` + 'c' / d; // e\n" * n
-            lexer, started = Lexer(text), time.perf_counter()
-            while lexer.next().kind != "eof":
-                pass
-            return time.perf_counter() - started
+            best = float("inf")
+            for _ in range(5):
+                lexer, started = Lexer(text), time.perf_counter()
+                while lexer.next().kind != "eof":
+                    pass
+                best = min(best, time.perf_counter() - started)
+            return best
 
         small, large = seconds(2_000), seconds(20_000)
         assert large < small * 25

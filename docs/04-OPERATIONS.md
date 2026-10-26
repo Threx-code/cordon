@@ -25,13 +25,10 @@ control that runs and one that is routed around. Targets:
 | 50,000-file monorepo, incremental | < 3 s | 10 s | **5.2 s** |
 | Peak RSS, any scan | < 512 MB | 1 GB | 224 MB |
 
-The measured column is a base install on a four-core container. The `[ast-js]`
-extra, which the dev and CI environments carry so the bundled JS `kind: ast`
-rules are exercised, parses every JavaScript file with tree-sitter and costs
-about a third more on a JavaScript-only fixture: 3.0 s becomes 4.0 s on the
-2,000-staged row. `tests/perf/test_budgets.py` multiplies the ceiling when it
-detects the tier rather than publishing a number that covers an extra most
-installs do not have.
+The measured column is an install on a four-core container. JavaScript and
+TypeScript files are parsed by Cordon's own front end for the `kind: ast` rules;
+`tests/perf/test_budgets.py` holds the JavaScript rows to their ceilings with that
+tier on, as every install runs it.
 
 Measured by `pytest -m perf`, which runs in CI on every push and prints each
 number, so a regression is visible before it reaches a ceiling. The ceilings
@@ -494,7 +491,7 @@ zero false typosquat positives across `corpus/benign`.
 ### Phase 5 — Breadth and false-positive control
 `secrets`, `ci`, `container`, `iac`, `script` detectors. Language packs for the
 remaining ecosystems. Baselines, suppression lifecycle, dedup and correlation.
-The `[ast]` extra with tree-sitter.
+Semantic call resolution for JavaScript and TypeScript (Cordon's own parser).
 **Exit criterion:** zero findings above `low` across the whole benign corpus;
 `cordon-scanner baseline` in use.
 

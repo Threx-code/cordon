@@ -1213,8 +1213,8 @@ rules:
       kind: composite
       scope: file
       # The label is the whole construct: a shell named, a stream into a process's stdin,
-      # its output piped back out. Not `capability: spawn` as well -- in JavaScript that
-      # label comes from the optional ast-js tier, and the base install would go silent.
+      # its output piped back out. Not `capability: spawn` as well: the construct is the
+      # finding whichever tier labels the spawn.
       # Ruby's form (STDIN/STDOUT reopened onto a socket, or a spawn redirecting them) is the
       # same construct: CAP.RB.SHELL_STDIO_JOINED.001.
       any:

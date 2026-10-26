@@ -2,7 +2,7 @@
 
 The capability detector's `kind: ast` tier parsed each piece of a large file it was given: the
 prefix every rule reads and each window past it. A piece of a one-line 24 MB bundle starts and
-ends inside a string, and tree-sitter's error recovery on such a piece took 32 seconds for 10 MB
+ends inside a string, and the parser then in use (tree-sitter) took 32 seconds recovering on 10 MB
 where the whole file parses in half a second (review 98: 189 of a 337-second scan). What it
 recovered from was a string read as code: the calls it reported there were not calls.
 
