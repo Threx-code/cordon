@@ -545,7 +545,14 @@ class DependencyDetector(BaseDetector):
                 # keeps it in the report, where a human can confirm the name in
                 # ten seconds, and out of the set that fails a pipeline on a
                 # question the scanner cannot answer offline.
-                severity=(Severity.HIGH if deliberate else Severity.MEDIUM),
+                #
+                # And a transposed or doubled ASCII spelling is the same evidence: the
+                # name alone. `loadsh` and `lodashh` (npm's empty `0.0.1-security`
+                # holding package) failed seven npm packages at high, and no
+                # work-half malware was blocked by this rule at high. What makes a
+                # dependency harmful is a known-malicious version or its own content,
+                # each blocked by its own rule naming it; a name never blocks alone.
+                severity=(Severity.HIGH if confusable else Severity.MEDIUM),
                 confidence=(Confidence.HIGH if confusable else Confidence.MEDIUM),
                 title=(
                     "Dependency name uses look-alike characters"
