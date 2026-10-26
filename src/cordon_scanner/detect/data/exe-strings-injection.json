@@ -1,0 +1,8 @@
+[
+  "CreateRemoteThread",
+  "NtUnmapViewOfSection",
+  "QueueUserAPC",
+  "VirtualAllocEx",
+  "WriteProcessMemory",
+  "process_vm_writev"
+]

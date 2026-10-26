@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
 from cordon_scanner.detect.binary.binary_features import BinaryFeatures
 from cordon_scanner.detect.code.code_features import CodeFeatures
-from cordon_scanner.foundation.windows import WindowSourceChanged
+from cordon_scanner.foundation.windows import BytesWindows, WindowSourceChanged
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -97,8 +97,8 @@ class ReachedFlows:
                 continue
             source = content.window_source
             if source is None:
-                raw = content.raw
-                yield len(raw), lambda offset, length, raw=raw: raw[offset : offset + length]
+                with BytesWindows(content.raw).reader() as read:
+                    yield len(content.raw), read
                 continue
             try:
                 with source.reader() as read:

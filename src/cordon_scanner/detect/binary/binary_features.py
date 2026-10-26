@@ -27,13 +27,18 @@ executable of any size held in a window source costs one pass and bounded memory
 
 from __future__ import annotations
 
+import functools
+import json
 import math
 import re
 from collections import Counter
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.foundation.paths import PackagePaths
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+    from pathlib import Path
 
 
 class BinaryFeatures:
@@ -62,113 +67,20 @@ class BinaryFeatures:
         "pkg": re.compile(rb"PAYLOAD_POSITION|pkg/prelude/bootstrap\.js"),
     }
 
-    #: Names of a behaviour, as the platform and the common languages' libraries spell them.
-    GROUPS: ClassVar[dict[str, tuple[bytes, ...]]] = {
-        "process": (
-            b"CreateProcessA",
-            b"CreateProcessW",
-            b"ShellExecuteA",
-            b"ShellExecuteW",
-            b"WinExec",
-            b"execve",
-            b"posix_spawn",
-            b"os/exec.Command",
-            b"std::process::Command",
-            b"system(",
-        ),
-        "network": (
-            b"WSAStartup",
-            b"InternetOpenA",
-            b"InternetOpenW",
-            b"URLDownloadToFile",
-            b"WinHttpOpen",
-            b"getaddrinfo",
-            b"net/http.(*Client).Do",
-            b"net.Dial",
-            b"reqwest::",
-            b"libcurl",
-        ),
-        "keystrokes": (
-            b"GetAsyncKeyState",
-            b"SetWindowsHookExA",
-            b"SetWindowsHookExW",
-            b"GetKeyboardState",
-            b"CGEventTapCreate",
-            b"XRecordEnableContext",
-        ),
-        "clipboard": (
-            b"GetClipboardData",
-            b"OpenClipboard",
-            b"SetClipboardData",
-            b"NSPasteboard",
-            b"xclip",
-            b"pbpaste",
-        ),
-        "screen": (b"BitBlt", b"GetDesktopWindow", b"CGWindowListCreateImage", b"screencapture"),
-        "credentials": (
-            b"CryptUnprotectData",
-            b"CredEnumerateA",
-            b"CredEnumerateW",
-            b"SecKeychainFind",
-            b"Login Data",
-            b"Local State",
-            b"cookies.sqlite",
-            b"key4.db",
-            b"logins.json",
-        ),
-        "wallets": (
-            b"wallet.dat",
-            b"Exodus",
-            b"Electrum",
-            b"nkbihfbeogaeaoehlefnkodbefgpgknn",
-            b"bfnaelmomeimhlpmgjnjophhpkkoljpa",
-            b"solana/id.json",
-            b"keystore",
-        ),
-        "persistence": (
-            b"CurrentVersion\\Run",
-            b"LaunchAgents",
-            b"LaunchDaemons",
-            b"crontab",
-            b"schtasks",
-            b"systemctl enable",
-            b".bashrc",
-            b"Startup\\",
-        ),
-        "debugger": (
-            b"IsDebuggerPresent",
-            b"CheckRemoteDebuggerPresent",
-            b"NtQueryInformationProcess",
-            b"PTRACE_TRACEME",
-            b"P_TRACED",
-        ),
-        "injection": (
-            b"VirtualAllocEx",
-            b"WriteProcessMemory",
-            b"CreateRemoteThread",
-            b"NtUnmapViewOfSection",
-            b"QueueUserAPC",
-            b"process_vm_writev",
-        ),
-        "discovery": (
-            b"GetComputerNameA",
-            b"GetComputerNameW",
-            b"GetUserNameA",
-            b"GetUserNameW",
-            b"gethostname",
-            b"whoami",
-            b"ipconfig",
-            b"systeminfo",
-        ),
-        "drop_points": (
-            b"api.telegram.org",
-            b"discord.com/api/webhooks",
-            b"discordapp.com/api/webhooks",
-            b"webhook.site",
-            b"pastebin.com",
-            b"ngrok",
-        ),
-    }
+    #: Names of a behaviour, as the platform and the common languages' libraries spell them, kept as
+    #: package data, one file per group (`detect/data/exe-strings-<group>.json`): data, not code --
+    #: one file listing debugger checks beside network and credential names is exactly the
+    #: co-occurrence the anti-analysis rules exist to report.
+    DATA: ClassVar[Path] = PackagePaths.data("detect")
+
+    @classmethod
+    @functools.cache
+    def groups(cls) -> dict[str, tuple[bytes, ...]]:
+        out: dict[str, tuple[bytes, ...]] = {}
+        for path in sorted(cls.DATA.glob("exe-strings-*.json")):
+            names = json.loads(path.read_text(encoding="utf-8"))
+            out[path.stem.removeprefix("exe-strings-")] = tuple(str(n).encode() for n in names)
+        return out
 
     SHAPES: ClassVar[dict[str, re.Pattern[bytes]]] = {
         "url": re.compile(rb"https?://[A-Za-z0-9.-]{3,253}"),
@@ -207,7 +119,7 @@ class BinaryFeatures:
 
     @staticmethod
     def _one(size: int, read: Callable[[int, int], bytes], out: Counter[str]) -> None:
-        names: dict[str, set[bytes]] = {g: set() for g in BinaryFeatures.GROUPS}
+        names: dict[str, set[bytes]] = {g: set() for g in BinaryFeatures.groups()}
         langs: set[str] = set()
         shapes: Counter[str] = Counter()
         packed = False
@@ -224,7 +136,7 @@ class BinaryFeatures:
             new = BinaryFeatures.strings(chunk)
             # A name across the cut is whole in the strings of the bytes around it.
             strings = new + b"\n" + BinaryFeatures.strings(carry + chunk[: BinaryFeatures.OVERLAP])
-            for group, spellings in BinaryFeatures.GROUPS.items():
+            for group, spellings in BinaryFeatures.groups().items():
                 names[group].update(s for s in spellings if s in strings)
             langs.update(n for n, p in BinaryFeatures.LANGUAGES.items() if p.search(strings))
             if offset == 0:

@@ -1,0 +1,12 @@
+[
+  "CreateProcessA",
+  "CreateProcessW",
+  "ShellExecuteA",
+  "ShellExecuteW",
+  "WinExec",
+  "execve",
+  "os/exec.Command",
+  "posix_spawn",
+  "std::process::Command",
+  "system("
+]

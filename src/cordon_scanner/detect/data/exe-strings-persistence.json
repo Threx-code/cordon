@@ -1,0 +1,10 @@
+[
+  ".bashrc",
+  "CurrentVersion\\Run",
+  "LaunchAgents",
+  "LaunchDaemons",
+  "Startup\\",
+  "crontab",
+  "schtasks",
+  "systemctl enable"
+]

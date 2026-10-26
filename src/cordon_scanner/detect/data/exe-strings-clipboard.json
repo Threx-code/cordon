@@ -1,0 +1,8 @@
+[
+  "GetClipboardData",
+  "NSPasteboard",
+  "OpenClipboard",
+  "SetClipboardData",
+  "pbpaste",
+  "xclip"
+]
