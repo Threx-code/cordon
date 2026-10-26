@@ -18,14 +18,11 @@ import urllib.error
 
 import pytest
 
-from support import ROOT as REPO
-
-pytest.importorskip("pysequoia")
-
 from cordon_scanner.ecosystems.infra.ansible import AnsibleGalaxyEcosystem
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.intel.provenance import openpgp
 from cordon_scanner.intel.provenance.ansible_signatures import VERSION, AnsibleSignatures
+from support import ROOT as REPO
 
 DATA = REPO / "tests" / "unit" / "data" / "ansible_signatures"
 MANIFEST = (DATA / "MANIFEST.json").read_bytes()

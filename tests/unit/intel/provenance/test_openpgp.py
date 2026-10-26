@@ -1,31 +1,34 @@
-"""OpenPGP verification (`intel/openpgp`), on real publishers' signatures and keys.
+"""OpenPGP verification (`intel/openpgp`, over `intel/pgp`), on real publishers' signatures and keys.
 
 The files in data/openpgp are public: chart provenance files and their publishers' signing keys,
 exactly as served in October 2026. Each was checked with GnuPG when it was added, and each is here
 for what it showed:
 
-    cert-manager    an RSA signature value of 4094 bits declared as 4096: Sequoia refused it
-    cisco-nso       a DSA `s` of 252 bits declared as 256: the same, for DSA
-    flowable        both of the key's user ID certifications 4095 bits declared as 4096: Sequoia
-                    found no binding, so the key was unusable
+    cert-manager    an RSA signature value of 4094 bits declared as 4096
+    cisco-nso       a DSA `s` of 252 bits declared as 256
+    flowable        both of the key's user ID certifications 4095 bits declared as 4096
     openfga         a key that expired in 2025, signing in 2026 (GnuPG: EXPKEYSIG)
     hivemq          a key whose only self-signature (2026) is later than the chart's signature
-                    (2025): GnuPG and Helm accept it, Sequoia cannot judge it
+                    (2025)
+
+GnuPG and Helm verify the first three and the last; Sequoia, which this replaced, refused all
+four. data/ansible_signatures holds detached signatures GnuPG made over a collection manifest.
 """
 
 from __future__ import annotations
 
+import contextlib
+import random
 from pathlib import Path
 
 import pytest
 
+from cordon_scanner.intel.provenance.openpgp import Canonical, Keybox, OpenPgp, Outcome
+from cordon_scanner.intel.provenance.pgp import Certs, Packets, PgpError, Signature
 from support import ROOT as REPO
 
-pysequoia = pytest.importorskip("pysequoia")
-
-from cordon_scanner.intel.provenance.openpgp import Canonical, Keybox, OpenPgp, Outcome  # noqa: E402
-
 DATA = REPO / "tests" / "unit" / "data" / "openpgp"
+ANSIBLE = REPO / "tests" / "unit" / "data" / "ansible_signatures"
 
 
 class Files:
@@ -34,71 +37,51 @@ class Files:
         return (DATA / name).read_bytes()
 
     @staticmethod
-    def signature_block(text: bytes) -> bytes:
-        return text[text.index(b"-----BEGIN PGP SIGNATURE-----") :]
+    def packets(name: str) -> bytes:
+        blocks = Canonical.blocks(Files.read(name), b"PUBLIC KEY BLOCK")
+        return blocks[0] if blocks else Files.read(name)
 
 
-class TestCanonical:
+class TestArmor:
     def test_crc24_of_nothing_is_its_initial_value(self) -> None:
         assert Canonical.crc24(b"") == 0xB704CE
 
-    @pytest.mark.parametrize("prov", ["cert-manager-v1.21.2.tgz.prov", "cisco-nso-7.6.1.tgz.prov"])
-    def test_an_overstated_value_is_what_sequoia_refuses_and_canonical_makes_readable(
-        self, prov: str
-    ) -> None:
-        raw = Files.read(prov)
-        with pytest.raises(RuntimeError, match="Not a signature"):
-            pysequoia.Sig.from_bytes(Files.signature_block(raw))
-        fixed = Canonical.signed(raw)
-        assert pysequoia.Sig.from_bytes(Files.signature_block(fixed)).issuer_key_id
-        # The signed text is not touched, only the signature block.
-        assert (
-            fixed[: fixed.index(b"-----BEGIN PGP SIGNATURE-----")]
-            == raw[: raw.index(b"-----BEGIN PGP SIGNATURE-----")]
-        )
+    def test_armor_and_dearmor_are_inverse(self) -> None:
+        data = bytes(range(256)) * 3
+        assert Canonical.dearmor(Canonical.armor(data)) == data
 
-    def test_the_value_itself_is_kept(self) -> None:
-        raw = Canonical.dearmor(Files.signature_block(Files.read("cert-manager-v1.21.2.tgz.prov")))
-        assert raw is not None
-        fixed = Canonical.packets(raw)
-        value = lambda packets: int.from_bytes(packets[-512:], "big")  # noqa: E731
-        assert fixed != raw and value(fixed) == value(raw)
-        # Declared 4096, actual 4094: the header now says 4094.
-        assert int.from_bytes(fixed[-514:-512], "big") == 4094
-
-    def test_a_canonical_signature_is_returned_byte_for_byte(self) -> None:
-        key = pysequoia.Tsk.generate("Test <test@example.invalid>")
-        signed = pysequoia.sign(
-            key.signer(), b"files:\n  a.tgz: sha256:00\n", mode=pysequoia.SignatureMode.CLEAR
-        )
-        assert Canonical.signed(signed) == signed
-
-    def test_a_block_with_a_wrong_checksum_is_left_alone(self) -> None:
+    def test_a_block_with_a_wrong_checksum_is_not_read(self) -> None:
         raw = Files.read("cert-manager-v1.21.2.tgz.prov")
-        broken = raw.replace(b"=/4RL", b"=AAAA")
-        assert Canonical.signed(broken) == broken
+        block = raw[raw.index(b"-----BEGIN PGP SIGNATURE-----") :]
+        assert Canonical.dearmor(block) is not None
+        assert Canonical.dearmor(block.replace(b"=/4RL", b"=AAAA")) is None
 
-    def test_not_openpgp_at_all_is_returned_unchanged(self) -> None:
-        assert Canonical.packets(b"\x00not packets") == b"\x00not packets"
-        assert Canonical.signed(b"plain text") == b"plain text"
+
+class TestReadAsGnuPGReadsIt:
+    @pytest.mark.parametrize("prov", ["cert-manager-v1.21.2.tgz.prov", "cisco-nso-7.6.1.tgz.prov"])
+    def test_an_overstated_signature_value_is_the_value_it_is(self, prov: str) -> None:
+        """The bit count is not hashed: a value with leading zero bits is the same value."""
+        raw = Files.read(prov)
+        block = Canonical.dearmor(raw[raw.index(b"-----BEGIN PGP SIGNATURE-----") :].strip())
+        assert block is not None
+        (tag, body), *_ = Packets.read(block)
+        signature = Signature.parse(body)
+        assert tag == 2 and signature.issuer_ids
+
+    def test_a_key_whose_self_signatures_are_overstated_is_usable(self) -> None:
+        keyring = OpenPgp.load((str(DATA / "flowable.asc"),))
+        assert [k.fingerprint for k in keyring.keys] == ["B3B09108406A7DFE92757807A79624786AE252EB"]
+        assert keyring.keys[0].cert.expiration() is not None
 
 
 class TestKeyring:
-    def test_a_key_whose_self_signatures_are_overstated_is_made_usable(self) -> None:
-        raw = Files.read("flowable.asc")
-        with pytest.raises(RuntimeError, match="No binding signature"):
-            _ = pysequoia.Cert.split_bytes(raw)[0].expiration
-        keyring = OpenPgp.load((str(DATA / "flowable.asc"),))
-        assert [k.fingerprint for k in keyring.keys] == ["B3B09108406A7DFE92757807A79624786AE252EB"]
-        assert keyring.keys[0].cert.expiration is not None
-
     def test_concatenated_armored_exports_are_one_keyring(self, tmp_path: Path) -> None:
         both = tmp_path / "ring.asc"
         both.write_bytes(Files.read("flowable.asc") + Files.read("leocolomb.asc"))
         assert len(OpenPgp.load((str(both),)).keys) == 2
 
     def test_a_gnupg_keybox_is_read_as_helm_reads_it(self, tmp_path: Path) -> None:
-        keyblock = bytes(pysequoia.Cert.split_bytes(Files.read("cert-manager.gpg"))[0])
+        keyblock = Certs.split(Files.packets("cert-manager.gpg"))[0].packets
 
         def blob(kind: int, body: bytes, flags: int = 0) -> bytes:
             # u32 length, u8 type, u8 version, u16 flags, u32 offset, u32 length, then the keyblock.
@@ -133,14 +116,9 @@ class TestKeyring:
         assert not keyring and keyring.problems
 
     def test_a_key_with_no_user_id_is_left_out_as_helm_leaves_it_out(self, tmp_path: Path) -> None:
-        raw = Canonical.dearmor(
-            Files.read("leocolomb.asc").replace(b"PUBLIC KEY BLOCK", b"SIGNATURE")
-        )
-        assert raw is not None
-        packets = Canonical._packets(raw)
-        assert packets is not None
+        packets = Packets.read(Files.packets("leocolomb.asc"))
         bare = b"".join(
-            bytes([0xC0 | tag]) + Canonical._length(len(body)) + body
+            bytes([0xC0 | tag, 0xFF]) + len(body).to_bytes(4, "big") + body
             for tag, body in packets
             if tag not in (2, 13)
         )
@@ -152,6 +130,16 @@ class TestKeyring:
         result = OpenPgp.verify(Files.read("cisco-nso-7.6.1.tgz.prov"), keyring)
         assert result.outcome is Outcome.UNVERIFIABLE
         assert "holds no usable key" in result.detail
+
+    def test_hostile_bytes_are_refused_never_crash(self) -> None:
+        rng = random.Random(4880)  # noqa: S311 -- a reproducible fuzz input, not a secret
+        seed = Files.packets("cert-manager.gpg")
+        for _ in range(300):
+            data = bytearray(seed)
+            for _ in range(rng.randint(1, 8)):
+                data[rng.randrange(len(data))] = rng.randrange(256)
+            with contextlib.suppress(PgpError):  # refused is the answer; anything else escapes
+                Certs.split(bytes(data))
 
 
 class TestVerify:
@@ -179,6 +167,14 @@ class TestVerify:
         assert result.signer == fingerprint
         assert b"\n...\nfiles:\n" in result.signed
 
+    def test_a_key_certified_after_it_signed_verifies_as_gnupg_and_helm_judge_it(self) -> None:
+        """Judged as the key stands now, as Helm judges it: its current self-signature binds it."""
+        result = OpenPgp.verify(
+            Files.read("hivemq-operator-0.11.62.tgz.prov"),
+            OpenPgp.load((str(DATA / "hivemq.asc"),)),
+        )
+        assert result.outcome is Outcome.VERIFIED
+
     def test_altered_content_under_a_trusted_key_is_invalid(self) -> None:
         tampered = Files.read("cert-manager-v1.21.2.tgz.prov").replace(
             b"sha256:73a5", b"sha256:73a6"
@@ -186,6 +182,17 @@ class TestVerify:
         result = OpenPgp.verify(tampered, OpenPgp.load((str(DATA / "cert-manager.gpg"),)))
         assert result.outcome is Outcome.INVALID
         assert "altered" in result.detail
+
+    def test_every_altered_line_of_a_signed_provenance_is_invalid(self) -> None:
+        raw = Files.read("cisco-nso-7.6.1.tgz.prov")
+        keyring = OpenPgp.load((str(DATA / "leocolomb.asc"),))
+        text_end = raw.index(b"-----BEGIN PGP SIGNATURE-----")
+        lines = raw[:text_end].split(b"\n")
+        for i, line in enumerate(lines[3:-2], start=3):
+            if not line.strip():
+                continue
+            changed = b"\n".join([*lines[:i], line + b"x", *lines[i + 1 :]]) + raw[text_end:]
+            assert OpenPgp.verify(changed, keyring).outcome is Outcome.INVALID, i
 
     def test_a_signer_the_keyring_does_not_hold_is_invalid_and_named(self) -> None:
         result = OpenPgp.verify(
@@ -201,29 +208,15 @@ class TestVerify:
         assert result.outcome is Outcome.INVALID
         assert "expired on 2025-03-13, before it made this signature on 2026-10-06" in result.detail
 
-    def test_a_key_certified_after_it_signed_is_unverifiable_not_a_forgery(self) -> None:
-        result = OpenPgp.verify(
-            Files.read("hivemq-operator-0.11.62.tgz.prov"),
-            OpenPgp.load((str(DATA / "hivemq.asc"),)),
-        )
-        assert result.outcome is Outcome.UNVERIFIABLE
-        assert (
-            "certified on 2026-05-15, after this signature was made on 2025-12-09" in result.detail
-        )
-
     def test_no_keyring_is_unverifiable(self) -> None:
         result = OpenPgp.verify(Files.read("cert-manager-v1.21.2.tgz.prov"), OpenPgp.load(()))
         assert result.outcome is Outcome.UNVERIFIABLE
         assert "--keyring" in result.detail
 
-    def test_a_detached_signature_verifies_and_is_bound_to_its_data(self, tmp_path: Path) -> None:
-        key = pysequoia.Tsk.generate("Test <test@example.invalid>")
-        ring = tmp_path / "ring.asc"
-        cert = pysequoia.Cert.split_bytes(bytes(key.extract_certificate()))[0]
-        ring.write_bytes(bytes(cert))
-        keyring = OpenPgp.load((str(ring),))
-        manifest = b'{"collection_info": {"name": "x"}}'
-        signature = pysequoia.sign(key.signer(), manifest, mode=pysequoia.SignatureMode.DETACHED)
+    def test_a_detached_signature_verifies_and_is_bound_to_its_data(self) -> None:
+        keyring = OpenPgp.load((str(ANSIBLE / "keyring.asc"),))
+        manifest = (ANSIBLE / "MANIFEST.json").read_bytes()
+        signature = (ANSIBLE / "trusted.asc").read_bytes()
         assert OpenPgp.verify(manifest, keyring, signature=signature).outcome is Outcome.VERIFIED
         assert (
             OpenPgp.verify(manifest + b" ", keyring, signature=signature).outcome is Outcome.INVALID

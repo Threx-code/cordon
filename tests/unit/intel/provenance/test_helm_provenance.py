@@ -15,13 +15,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from support import ROOT as REPO
-
-pytest.importorskip("pysequoia")
-
 from cordon_scanner.intel.provenance import openpgp
 from cordon_scanner.intel.provenance.helm_provenance import HelmProvenance
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from support import ROOT as REPO
 
 DATA = REPO / "tests" / "unit" / "data" / "openpgp"
 PROV = (DATA / "cert-manager-v1.21.2.tgz.prov").read_bytes()

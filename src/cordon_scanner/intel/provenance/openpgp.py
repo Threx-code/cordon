@@ -8,9 +8,10 @@ may sign is whatever keyring the person installing decides -- `helm verify --key
 from the scanned repository's configuration: a repository that chose the keys it is verified
 against would bring its own.
 
-**Why an extra, and why Sequoia.** As with sigstore, an OpenPGP verifier is not a thing to
-reimplement; this delegates to `pysequoia`, Sequoia-PGP's Python binding, behind the `[attest]`
-extra. Without it every answer is `UNVERIFIABLE`, never a pass.
+**Verified by the project's own code** (`pgp`): packets, keys, self-signatures and data
+signatures read and checked from RFC 4880 and RFC 9580, with no third-party verifier, and read as
+Helm and GnuPG read them -- a signature value stated with more bits than it has is the value it
+is, and a key is judged as it stands now -- where Sequoia, which this replaced, refused both.
 
 Three answers, kept apart because they mean different things: the signature verifies under a key
 in the keyring (`VERIFIED`, with the signed bytes, which the caller still has to tie to the
@@ -26,40 +27,29 @@ import base64
 import binascii
 import enum
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
+
+from cordon_scanner.intel.provenance.pgp import (
+    Algorithms,
+    Cert,
+    Certs,
+    Cleartext,
+    Packets,
+    PgpError,
+    Signature,
+)
 
 #: A keyring larger than this is not a keyring.
 MAX_KEYRING_BYTES = 16 << 20
 
 _SIGNATURE: Final = b"SIGNATURE"
 _PUBLIC_KEY: Final = b"PUBLIC KEY BLOCK"
-#: The signature material of each public-key algorithm whose signature is a sequence of MPIs: RSA
-#: (1, 3: m^d mod n; RFC 4880 §5.2.2), DSA (17: r, s; ibid.), ECDSA (19: r, s; RFC 6637 §5) and
-#: the legacy EdDSA (22: r, s; RFC 9580 §5.2.3.3).
-_SIGNATURE_MPIS: Final = {1: 1, 3: 1, 17: 2, 19: 2, 22: 2}
 
 
 class Canonical:
-    """Signature values re-encoded with their exact bit count, as RFC 4880 §3.2 requires.
-
-    Some signers write a signature value's MPI with the key's size as its bit count (4096 for an
-    RSA key, 256 for a DSA `s`) even when the value is shorter, which it is whenever it starts with
-    a zero bit. GnuPG and Helm's Go OpenPGP library read such a signature; Sequoia refuses it --
-    the packet as "Not a signature", or, in a key's own self-signatures, the binding, so the key
-    is unusable. Measured on real charts in October 2026, every one verifying under GnuPG with the
-    publisher's key and none under Sequoia: the provenance files of prometheus-community's
-    alertmanager 2.1.0 (RSA, declared 4096, actual 4095 bits), cert-manager v1.21.2 (4094),
-    opentelemetry-collector 0.175.1 (4091) and LeoColomb's cisco-nso 7.6.1 (DSA `s`, 256 for 252),
-    and flowable's signing key (both user ID certifications 4096 for 4095).
-
-    The bit count is not what is signed (§5.2.4: the hash covers the signed data and the packet's
-    fields up to the hashed subpackets) and the value's bytes are kept, so re-encoding changes
-    nothing a signature check depends on: an invalid signature stays invalid. Anything other than
-    an overstated value in a version 4 signature packet is returned unchanged, byte for byte, for
-    Sequoia to judge.
-    """
+    """ASCII armor (RFC 4880 section 6)."""
 
     @staticmethod
     def crc24(data: bytes) -> int:
@@ -122,144 +112,23 @@ class Canonical:
         return b"\n".join([begin, b"", *lines, b"=" + checksum, end]) + b"\n"
 
     @staticmethod
-    def _length(octets: int) -> bytes:
-        """A new-format packet length (RFC 4880 §4.2.2)."""
-        if octets < 192:
-            return bytes([octets])
-        if octets < 8384:
-            octets -= 192
-            return bytes([(octets >> 8) + 192, octets & 0xFF])
-        return b"\xff" + octets.to_bytes(4, "big")
-
-    @staticmethod
-    def _packets(data: bytes) -> list[tuple[int, bytes]] | None:
-        """`(tag, body)` of each packet (RFC 4880 §4.2), or None for a length this does not read
-        (an indeterminate or partial body length, which neither keys nor signatures use)."""
-        packets: list[tuple[int, bytes]] = []
-        index = 0
-        while index < len(data):
-            ctb = data[index]
-            if not ctb & 0x80:
-                return None
-            if ctb & 0x40:  # new format
-                tag = ctb & 0x3F
-                if index + 1 >= len(data):
-                    return None
-                first = data[index + 1]
-                if first < 192:
-                    header, length = 2, first
-                elif first < 224:
-                    if index + 2 >= len(data):
-                        return None
-                    header, length = 3, ((first - 192) << 8) + data[index + 2] + 192
-                elif first == 255:
-                    header, length = 6, int.from_bytes(data[index + 2 : index + 6], "big")
-                else:
-                    return None
-            else:  # old format
-                tag = (ctb >> 2) & 0x0F
-                kind = ctb & 0x03
-                if kind == 3:
-                    return None
-                size = (1, 2, 4)[kind]
-                header, length = 1 + size, int.from_bytes(data[index + 1 : index + 1 + size], "big")
-            body = data[index + header : index + header + length]
-            if len(body) != length:
-                return None
-            packets.append((tag, body))
-            index += header + length
-        return packets
-
-    @staticmethod
-    def _signature(body: bytes) -> bytes | None:
-        """A version 4 signature packet's body with every overstated MPI made exact, or None to
-        keep it as it is."""
-        if len(body) < 6 or body[0] != 4 or body[2] not in _SIGNATURE_MPIS:
-            return None
-        hashed = int.from_bytes(body[4:6], "big")
-        unhashed_at = 6 + hashed
-        if unhashed_at + 2 > len(body):
-            return None
-        unhashed = int.from_bytes(body[unhashed_at : unhashed_at + 2], "big")
-        at = unhashed_at + 2 + unhashed + 2  # after the hash's left 16 bits
-        values: list[bytes] = []
-        changed = False
-        for _ in range(_SIGNATURE_MPIS[body[2]]):
-            if at + 2 > len(body):
-                return None
-            declared = int.from_bytes(body[at : at + 2], "big")
-            value = body[at + 2 : at + 2 + (declared + 7) // 8]
-            if len(value) != (declared + 7) // 8:
-                return None
-            actual = int.from_bytes(value, "big").bit_length()
-            if actual > declared:
-                return None
-            if actual < declared:
-                changed = True
-                value = value[len(value) - (actual + 7) // 8 :]
-            values.append(actual.to_bytes(2, "big") + value)
-            at += 2 + (declared + 7) // 8
-        if at != len(body) or not changed:
-            return None  # not exactly the algorithm's MPIs to the end of the packet, or exact
-        return body[: unhashed_at + 2 + unhashed + 2] + b"".join(values)
-
-    @staticmethod
-    def packets(data: bytes) -> bytes:
-        """Binary packets -- signatures, or keys with their self-signatures -- with every
-        overstated signature value made exact; unchanged, the same bytes, where none is."""
-        parsed = Canonical._packets(data)
-        if parsed is None:
-            return data
-        changed = False
-        out: list[bytes] = []
-        for tag, body in parsed:
-            fixed = Canonical._signature(body) if tag == 2 else None
-            if fixed is not None:
-                changed = True
-                body = fixed
-            out.append(bytes([0xC0 | tag]) + Canonical._length(len(body)) + body)
-        return b"".join(out) if changed else data
-
-    @staticmethod
-    def _armored(data: bytes, kind: bytes) -> bytes:
-        """Every armored block of `kind` in `data` made canonical, the text around them kept."""
+    def blocks(data: bytes, kind: bytes) -> list[bytes] | None:
+        """The packets of every armored block of `kind` in `data`, or None when one is malformed;
+        an empty list where `data` holds none (it may be binary)."""
         begin, end = Canonical._markers(kind)
-        out = bytearray()
-        index = 0
-        while True:
-            start = data.find(begin, index)
-            stop = data.find(end, start) if start >= 0 else -1
-            if start < 0 or stop < 0:
-                out += data[index:]
-                return bytes(out)
+        out: list[bytes] = []
+        at = 0
+        while (start := data.find(begin, at)) >= 0:
+            stop = data.find(end, start)
+            if stop < 0:
+                return None
             stop += len(end)
             packets = Canonical.dearmor(data[start:stop], kind)
-            fixed = Canonical.packets(packets) if packets is not None else None
-            out += data[index:start]
-            if packets is None or fixed is None or fixed == packets:
-                out += data[start:stop]
-            else:
-                out += Canonical.armor(fixed, kind).rstrip(b"\n")
-            index = stop
-
-    @staticmethod
-    def signature(data: bytes) -> bytes:
-        """A detached signature, armored or binary, canonical; unchanged where nothing needs it."""
-        begin, _ = Canonical._markers(_SIGNATURE)
-        return Canonical._armored(data, _SIGNATURE) if begin in data else Canonical.packets(data)
-
-    @staticmethod
-    def signed(data: bytes) -> bytes:
-        """A cleartext-signed message with its signature block made canonical; the signed text
-        before it is not touched."""
-        return Canonical._armored(data, _SIGNATURE)
-
-    @staticmethod
-    def keyring(data: bytes) -> bytes:
-        """Keys -- armored blocks, one or several, or binary packets -- with their self-signatures
-        made canonical."""
-        begin, _ = Canonical._markers(_PUBLIC_KEY)
-        return Canonical._armored(data, _PUBLIC_KEY) if begin in data else Canonical.packets(data)
+            if packets is None:
+                return None
+            out.append(packets)
+            at = stop
+        return out
 
 
 class Outcome(enum.StrEnum):
@@ -364,30 +233,9 @@ class Keybox:
 
 class OpenPgp:
     @staticmethod
-    def _certifications() -> tuple[Any, ...]:
-        """RFC 4880 §5.2.1: the signature types by which a key certifies itself (0x10-0x13 over a
-        user ID, 0x1F directly over the key)."""
-        import pysequoia
-
-        kind = pysequoia.packet.SignatureType
-        # A tuple: pysequoia's SignatureType compares equal but is not hashable.
-        return (
-            kind.GenericCertification,
-            kind.PersonaCertification,
-            kind.CasualCertification,
-            kind.PositiveCertification,
-            kind.DirectKey,
-        )
-
-    @staticmethod
     def available() -> bool:
-        """Whether the `[attest]` extra's OpenPGP verifier is installed."""
-        from importlib.util import find_spec
-
-        try:
-            return find_spec("pysequoia") is not None
-        except (ImportError, ValueError):  # pragma: no cover - find_spec internals
-            return False
+        """Always: OpenPGP verification is built in."""
+        return True
 
     @staticmethod
     def load(paths: tuple[str, ...]) -> Keyring:
@@ -395,10 +243,8 @@ class OpenPgp:
         (one or several concatenated exports), binary (an export, or GnuPG's legacy pubring.gpg),
         or a GnuPG 2.1 keybox (pubring.kbx). A version 4 key with no user ID is left out, as Helm's
         OpenPGP library leaves it out (go-crypto `ReadEntity`: "entity without any identities")."""
-        if not paths or not OpenPgp.available():
+        if not paths:
             return Keyring(paths=paths)
-        import pysequoia
-
         keys: list[KeyInfo] = []
         problems: list[str] = []
         for path in paths:
@@ -413,98 +259,119 @@ class OpenPgp:
             try:
                 if Keybox.detect(data):
                     data = Keybox.keyblocks(data)
-                data = Canonical.keyring(data)
-                found = pysequoia.Cert.split_bytes(data)
             except ValueError as exc:
                 problems.append(f"{path}: not a keybox this reads ({exc})")
                 continue
-            except Exception as exc:  # pysequoia raises RuntimeError for what it cannot parse
+            armored = Canonical.blocks(data, _PUBLIC_KEY)
+            if armored is None:
+                problems.append(f"{path}: not an OpenPGP keyring (a malformed armored block)")
+                continue
+            try:
+                found = [c for block in (armored or [data]) for c in Certs.split(block)]
+            except PgpError as exc:
                 problems.append(f"{path}: not an OpenPGP keyring ({exc})")
                 continue
             for cert in found:
-                info = OpenPgp._describe(cert)
-                if info is None:
+                if cert.primary.version == 4 and not cert.user_ids:
                     problems.append(
-                        f"{path}: key {str(cert.fingerprint).upper()} has no user ID, so it is left "
-                        "out, as Helm leaves it out"
+                        f"{path}: key {cert.fingerprint} has no user ID, so it is left out, as Helm "
+                        "leaves it out"
                     )
                     continue
-                keys.append(info)
+                problems.extend(f"{path}: key {cert.fingerprint}: {p}" for p in cert.problems)
+                keys.append(
+                    KeyInfo(
+                        cert,
+                        cert.fingerprint,
+                        frozenset(cert.key_ids()),
+                        tuple(cert.certified),
+                        {k: tuple(sorted(v)) for k, v in cert.bindings().items()},
+                    )
+                )
         return Keyring(tuple(keys), paths, tuple(problems))
 
     @staticmethod
-    def _describe(cert: Any) -> KeyInfo | None:
-        """The certificate's key IDs and self-signature times, from its own packets; None for a
-        version 4 key with no user ID."""
-        import pysequoia
-
-        tag = pysequoia.packet.Tag
-        certifications = OpenPgp._certifications()
-        primary = ""
-        ids: set[str] = set()
-        certified: list[datetime] = []
-        bound: dict[str, list[datetime]] = {}
-        user_ids = 0
-        subkey: tuple[str, ...] = ()
-        for packet in pysequoia.packet.PacketPile.from_bytes(bytes(cert)):
-            if packet.tag == tag.PublicKey:
-                primary = str(packet.key_id).upper()
-                ids.update(str(v).upper() for v in (packet.fingerprint, packet.key_id) if v)
-            elif packet.tag == tag.PublicSubkey:
-                subkey = tuple(str(v).upper() for v in (packet.fingerprint, packet.key_id) if v)
-                ids.update(subkey)
-            elif packet.tag == tag.UserID:
-                user_ids += 1
-            elif packet.tag == tag.Signature and packet.signature_created is not None:
-                issuer = str(packet.issuer_key_id or "").upper()
-                if issuer != primary:
-                    continue
-                kind = packet.signature_type
-                if not subkey and kind in certifications:
-                    certified.append(packet.signature_created)
-                elif subkey and kind == pysequoia.packet.SignatureType.SubkeyBinding:
-                    for key_id in subkey:
-                        bound.setdefault(key_id, []).append(packet.signature_created)
-        # RFC 9580 §5.5.4: a version 4 fingerprint is 20 octets, a version 6 one 32; only version 4
-        # keys need a user ID to be usable.
-        if len(str(cert.fingerprint)) == 40 and not user_ids:
+    def _signature(data: bytes, signature: bytes | None) -> tuple[Signature, bytes] | None:
+        """The first signature packet, and the bytes it covers as its type defines them."""
+        if signature is None:
+            try:
+                text, block = Cleartext.split(data)
+            except PgpError:
+                return None
+            packets = Canonical.dearmor(block.strip(), _SIGNATURE)
+            covered = Cleartext.canonical(text)
+        else:
+            armored = Canonical.blocks(signature, _SIGNATURE)
+            packets = armored[0] if armored else (signature if armored == [] else None)
+            covered = data
+        if packets is None:
             return None
-        return KeyInfo(
-            cert,
-            str(cert.fingerprint).upper(),
-            frozenset(ids),
-            tuple(sorted(certified)),
-            {k: tuple(sorted(v)) for k, v in bound.items()},
+        try:
+            sig = next(Signature.parse(body) for tag, body in Packets.read(packets) if tag == 2)
+        except (PgpError, StopIteration):
+            return None
+        if signature is not None and sig.type == 0x01:
+            covered = b"\r\n".join(data.replace(b"\r\n", b"\n").split(b"\n"))
+        elif signature is not None and sig.type != 0x00:
+            return None
+        if signature is None and sig.type != 0x01:
+            return None
+        return sig, covered
+
+    @staticmethod
+    def verify(data: bytes, keyring: Keyring, *, signature: bytes | None = None) -> Result:
+        """A cleartext-signed message (`signature` None), or `data` against a detached signature."""
+        if not keyring:
+            return Result(
+                Outcome.UNVERIFIABLE,
+                "the configured keyring holds no usable key: " + "; ".join(keyring.problems)
+                if keyring.paths
+                else "no keyring is configured (--keyring) to verify its OpenPGP signature against",
+            )
+        read = OpenPgp._signature(data, signature)
+        if read is None:
+            return Result(Outcome.UNVERIFIABLE, "the signature could not be read")
+        sig, covered = read
+        issuers = sorted(f.hex().upper() for f in sig.issuer_fingerprints) or sorted(
+            i.hex().upper() for i in sig.issuer_ids
         )
-
-    @staticmethod
-    def _signature_packet(data: bytes, signature: bytes | None) -> Any:
-        """The (first) signature packet of a cleartext message or a detached signature, made
-        canonical, or None where it cannot be read."""
-        import pysequoia
-
-        source = Canonical.signature(signature) if signature is not None else Canonical.signed(data)
-        start = source.find(b"-----BEGIN PGP SIGNATURE-----")
-        try:
-            return pysequoia.Sig.from_bytes(source[start:] if start >= 0 else source)
-        except Exception:  # RuntimeError "Not a signature"
-            return None
-
-    @staticmethod
-    def _why(key: KeyInfo, issuer: str, made: datetime | None) -> Result | None:
-        """What about the signing key, rather than the content, a refused signature comes down
-        to: None where nothing in the key explains it."""
-        try:
-            expires = key.cert.expiration
-        except Exception:  # RuntimeError "No binding signature at time ..."
+        issuer = issuers[0] if issuers else ""
+        key = next((k for i in issuers if (k := keyring.holding(i)) is not None), None)
+        if key is None:
+            return Result(
+                Outcome.INVALID,
+                f"signed by key {issuer or 'unnamed'}, which the configured keyring does not hold",
+                signer=issuer,
+            )
+        cert: Cert = key.cert
+        expires = cert.expiration()
+        if sig.hash_algorithm in Algorithms.WEAK:
+            return Result(
+                Outcome.UNVERIFIABLE,
+                f"the signature by key {key.fingerprint} uses "
+                f"{Algorithms.HASHES.get(sig.hash_algorithm, 'a broken hash')}, which no longer "
+                "proves who signed",
+                signer=issuer,
+                expires=expires,
+            )
+        if cert.current is None:
             return Result(
                 Outcome.UNVERIFIABLE,
                 f"key {key.fingerprint} has no valid self-signature binding it, so no OpenPGP "
                 "implementation can use it as given",
                 signer=issuer,
             )
-        if key.cert.is_revoked:
+        signers = [k for k in cert.signing_keys() if sig.issued_by(k)]
+        if not any(sig.verified_by(k, covered) for k in signers):
+            return Result(
+                Outcome.INVALID,
+                f"the signature by trusted key {key.fingerprint} does not verify: the signed "
+                "content was altered, or the signature forged",
+                signer=issuer,
+            )
+        if cert.revoked:
             return Result(Outcome.INVALID, f"key {key.fingerprint} is revoked", signer=issuer)
+        made = sig.created
         if made is not None and expires is not None and expires <= made:
             return Result(
                 Outcome.INVALID,
@@ -513,84 +380,18 @@ class OpenPgp:
                 signer=issuer,
                 expires=expires,
             )
-        subkey = issuer if issuer in key.bound else None
-        bindings = key.bound.get(subkey, ()) if subkey else key.certified
-        if made is not None and bindings and min(bindings) > made:
+        if made is not None and not sig.valid_at(datetime.now(UTC)):
             return Result(
-                Outcome.UNVERIFIABLE,
-                f"the keyring's copy of key {key.fingerprint} was certified on "
-                f"{min(bindings):%Y-%m-%d}, after this signature was made on {made:%Y-%m-%d}; "
-                "Sequoia judges a key as it stood when it signed, so this copy cannot vouch for "
-                "it. Helm and GnuPG, which judge the key as it stands now, accept it: export the "
-                "key again with its older self-signatures",
+                Outcome.INVALID,
+                f"the signature by key {key.fingerprint} has expired",
                 signer=issuer,
                 expires=expires,
             )
-        return None
-
-    @staticmethod
-    def verify(data: bytes, keyring: Keyring, *, signature: bytes | None = None) -> Result:
-        """A cleartext-signed message (`signature` None), or `data` against a detached signature."""
-        if not OpenPgp.available():
-            return Result(Outcome.UNVERIFIABLE, "the [attest] extra is not installed")
-        if not keyring:
-            return Result(
-                Outcome.UNVERIFIABLE,
-                "the configured keyring holds no usable key: " + "; ".join(keyring.problems)
-                if keyring.paths
-                else "no keyring is configured (--keyring) to verify its OpenPGP signature against",
-            )
-        import pysequoia
-
-        packet = OpenPgp._signature_packet(data, signature)
-        if packet is None:
-            return Result(Outcome.UNVERIFIABLE, "the signature could not be read")
-        issuer = str(packet.issuer_fingerprint or packet.issuer_key_id or "").upper()
-        made = packet.created
-        key = keyring.holding(issuer) if issuer else None
-
-        def store(ids: list[str]) -> list[Any]:
-            return list(keyring.certs)
-
-        try:
-            if signature is None:
-                verified = pysequoia.verify(bytes=Canonical.signed(data), store=store)
-            else:
-                verified = pysequoia.verify(
-                    bytes=data,
-                    store=store,
-                    signature=pysequoia.Sig.from_bytes(Canonical.signature(signature)),
-                )
-        except RuntimeError:  # "Signature verification failed: no valid signatures found."
-            if key is None:
-                return Result(
-                    Outcome.INVALID,
-                    f"signed by key {issuer or 'unnamed'}, which the configured keyring does not "
-                    "hold",
-                    signer=issuer,
-                )
-            explained = OpenPgp._why(key, issuer, made)
-            if explained is not None:
-                return explained
-            return Result(
-                Outcome.INVALID,
-                f"the signature by trusted key {key.fingerprint} does not verify: the signed "
-                "content was altered, or the signature forged",
-                signer=issuer,
-            )
-        except Exception as exc:  # anything else pysequoia raises: not an answer either way
-            return Result(Outcome.UNVERIFIABLE, f"the signature could not be checked ({exc})")
-        signer = next((str(s.certificate).upper() for s in verified.valid_sigs), "")
-        held = keyring.holding(signer)
-        try:
-            expires = held.cert.expiration if held else None
-        except RuntimeError:
-            expires = None
         return Result(
             Outcome.VERIFIED,
-            f"signed by {signer}",
-            signed=bytes(verified.bytes or b"") if signature is None else data,
-            signer=signer,
+            f"signed by {key.fingerprint}",
+            signed=Cleartext.split(data)[0] + b"\n" if signature is None else data,
+            signer=key.fingerprint,
             expires=expires,
         )
 
