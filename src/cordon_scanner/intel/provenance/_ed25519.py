@@ -7,8 +7,8 @@ constraint, not a preference -- and the standard library has no Ed25519, so the
 one operation that is needed is vendored rather than pulled in as `cryptography`.
 
 Only verification is here. There is no key generation and no signing: this code
-never holds a private key, and the release pipeline that *signs* the artefact
-uses a real, audited library. Verification is not on any hot path -- it runs once
+never holds a private key. The release ceremony that *signs* the artefact uses
+the project's own signer (`_ed25519_signer`), kept apart from this module. Verification is not on any hot path -- it runs once
 when an operator syncs a new database -- so a pure-Python implementation is fast
 enough, and its cost buys keeping the core dependency-free.
 

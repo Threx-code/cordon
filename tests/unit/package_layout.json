@@ -232,6 +232,7 @@
   "intel/provenance/_dsa": "intel/provenance/_dsa",
   "intel/provenance/_ecdsa": "intel/provenance/_ecdsa",
   "intel/provenance/_ed25519": "intel/provenance/_ed25519",
+  "intel/provenance/_ed25519_signer": "intel/provenance/_ed25519_signer",
   "intel/provenance/_rsa": "intel/provenance/_rsa",
   "intel/provenance/ansible_signatures": "intel/provenance/ansible_signatures",
   "intel/provenance/attest": "intel/provenance/attest",

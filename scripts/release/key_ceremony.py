@@ -72,25 +72,16 @@ class KeyCeremony:
 
     @staticmethod
     def _key() -> tuple[bytes, dict[str, str]]:
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 
-        private = Ed25519PrivateKey.generate()
-        seed = private.private_bytes(
-            serialization.Encoding.Raw,
-            serialization.PrivateFormat.Raw,
-            serialization.NoEncryption(),
-        )
-        public = private.public_key().public_bytes(
-            serialization.Encoding.Raw, serialization.PublicFormat.Raw
-        )
-        return seed, {"keytype": "ed25519", "public": public.hex()}
+        key = Ed25519Signer.generate()
+        return key.seed, {"keytype": "ed25519", "public": key.public.hex()}
 
     @staticmethod
     def _sign(seed: bytes, message: bytes) -> str:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 
-        return Ed25519PrivateKey.from_private_bytes(seed).sign(message).hex()
+        return Ed25519Signer(seed).sign(message).hex()
 
     @staticmethod
     def _write_private(path: Path, seed: bytes) -> None:

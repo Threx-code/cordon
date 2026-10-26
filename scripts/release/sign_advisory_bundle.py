@@ -68,12 +68,10 @@ class AdvisoryBundleSigning:
         )
         args = parser.parse_args()
 
-        # Imported here, not at module scope: this is the one release-only third-party
-        # dependency, and it must not be a requirement of the repository's own tests.
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        # Cordon's own signer (RFC 8032, deterministic, each signature verified before use).
+        from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 
-        seed = AdvisoryBundleSigning._load_seed()
-        key = Ed25519PrivateKey.from_private_bytes(seed)
+        key = Ed25519Signer(AdvisoryBundleSigning._load_seed())
 
         archive = AdvisoryBundle.build_bundle(args.data_dir)
         signature = key.sign(archive)
@@ -84,12 +82,7 @@ class AdvisoryBundleSigning:
         print(f"wrote {args.out / BUNDLE_NAME} ({len(archive):,} bytes) and its signature")
 
         if args.print_public_key:
-            from cryptography.hazmat.primitives import serialization
-
-            public_raw = key.public_key().public_bytes(
-                serialization.Encoding.Raw, serialization.PublicFormat.Raw
-            )
-            print(f"public key (pin in dbsync.PUBLIC_KEY_HEX): {public_raw.hex()}")
+            print(f"public key (pin in dbsync.PUBLIC_KEY_HEX): {key.public.hex()}")
         return 0
 
 

@@ -595,18 +595,12 @@ class TestOfflineBundlesProveWhatTheySay:
         assert "none was verified" in report.summary()
 
     def test_a_signature_by_the_pinned_key_authenticates(self, tmp_path, monkeypatch) -> None:
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
         from cordon_scanner.engine.bundle import MANIFEST_NAME, Bundle
+        from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
         from cordon_scanner.intel.store import dbsync
 
-        key = Ed25519PrivateKey.generate()
-        public = (
-            key.public_key()
-            .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-            .hex()
-        )
+        key = Ed25519Signer.generate()
+        public = key.public.hex()
         monkeypatch.setattr(dbsync, "PUBLIC_KEY_HEX", public)
         unsigned = self.make(tmp_path)
         with tarfile.open(unsigned, "r:gz") as archive:

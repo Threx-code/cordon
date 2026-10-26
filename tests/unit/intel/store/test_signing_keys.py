@@ -92,12 +92,12 @@ class TestTheCeremony(CeremonyFixtures):
             FeedRoles.verify_role(document, "root", document["signed"], expected_type="root")
 
     def test_the_advisory_key_verifies_a_bundle_it_signed(self, ran, monkeypatch) -> None:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 
         out, _ = ran
         seed = bytes.fromhex((out / "private/advisories.seed").read_text(encoding="utf-8").strip())
         archive = b"bundle bytes"
-        signature = Ed25519PrivateKey.from_private_bytes(seed).sign(archive)
+        signature = Ed25519Signer(seed).sign(archive)
         monkeypatch.setattr(dbsync, "PUBLIC_KEY_FILE", out / "public/advisory-signing-key.json")
         assert AdvisoryBundle.verify_bundle(archive, signature)
         assert not AdvisoryBundle.verify_bundle(archive + b"!", signature)
