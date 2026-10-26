@@ -4920,6 +4920,17 @@ class CapabilityDetector(BaseDetector):
                 # downloaded is not lowered.
                 ceilinged = "an agent's tool that never runs what it downloads"
                 ceiling = Severity.MEDIUM
+            elif (
+                compiled.rule.id == self.REMOTE_CODE_RULE
+                and content.path in ctx.import_entry_paths
+                and content.path not in ctx.library_entry_paths | ctx.library_closure_paths
+                and not in_hook
+            ):
+                # A command a person runs (`bin`), not code an install or an import runs: a CLI
+                # fetching and starting its own release. npm work half: 20 legitimate, 5 malware
+                # -- all 5 blocked by other rules. Reported, below the gate.
+                ceilinged = "a command a person runs, never run on install or import"
+                ceiling = Severity.MEDIUM
             elif content.path.rpartition("!")[2].endswith(".map"):
                 # A source map carries the original sources as JSON strings for a debugger to
                 # show. Nothing loads it as code, so even a download-and-run construct in it is

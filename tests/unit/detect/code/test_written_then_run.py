@@ -110,3 +110,34 @@ class TestWrittenThenRun:
         # REMOTE_CODE flow, caught without the written-to-disk step.
         found = self._scan(tmp_path, DECODED_RUN)
         assert [r for r, _ in found if r == REMOTE_CODE], found
+
+
+class TestACommandAPersonRuns:
+    """The same fetch-and-run, from a `bin` command and from the package's `main`."""
+
+    @staticmethod
+    def _scan(tmp_path: Path, manifest_extra: dict[str, object], path: str) -> set[str]:
+        manifest = {"name": "example-cli", "version": "1.0.0", **manifest_extra}
+        members = {
+            "package/package.json": json.dumps(manifest).encode(),
+            f"package/{path}": RUN_FETCHED.encode(),
+        }
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for member, data in members.items():
+                info = tarfile.TarInfo(member)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "example-cli-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        return {
+            str(f.severity) for f in Scanner().scan(target).findings if f.rule_id == REMOTE_CODE
+        }
+
+    def test_in_a_command_a_person_runs_it_is_reported_below_the_gate(self, tmp_path: Path) -> None:
+        assert self._scan(tmp_path, {"bin": {"example": "bin/cli.js"}}, "bin/cli.js") == {"medium"}
+
+    def test_in_the_entry_every_importer_runs_it_still_blocks(self, tmp_path: Path) -> None:
+        severities = self._scan(tmp_path, {"main": "index.js"}, "index.js")
+        assert severities
+        assert severities <= {"high", "critical"}
