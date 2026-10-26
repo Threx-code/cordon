@@ -44,13 +44,14 @@ class Parsed:
         return sorted((c.name, c.line, c.column, c.arguments) for _, c in located)
 
 
-@pytest.fixture
-def small(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(Segments, "SIZE", 300)
-    monkeypatch.setattr(Segments, "TAIL", 150)
+class Small:
+    @pytest.fixture
+    def small(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(Segments, "SIZE", 300)
+        monkeypatch.setattr(Segments, "TAIL", 150)
 
 
-class TestSegmented:
+class TestSegmented(Small):
     @pytest.mark.usefixtures("small")
     def test_many_lines_give_the_calls_of_a_whole_parse(self) -> None:
         text = BODY * 12
@@ -100,7 +101,7 @@ class TestSegmented:
         assert ("child_process.exec", 1, 0, ("",)) in Parsed.segmented(text)
 
 
-class TestPieces:
+class TestPieces(Small):
     @pytest.mark.usefixtures("small")
     def test_a_window_takes_its_own_calls_at_its_own_lines(self) -> None:
         data = (BODY * 12).encode()

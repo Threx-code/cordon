@@ -14353,8 +14353,10 @@ class TestHostileArchivesAndEncodings:
         import io
         import zipfile
 
+        from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+
         data = b""
-        for level in range(6):
+        for level in range(DEFAULT_LIMITS.max_archive_depth + 3):
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, "w") as bundle:
                 bundle.writestr(

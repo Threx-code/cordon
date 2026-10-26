@@ -720,6 +720,7 @@ class CapabilityDetector(BaseDetector):
         EVERY occurrence has to be a probe, so `which curl && curl https://x/y | sh` --
         a probe and then the real thing on one line -- is not excused.
         """
+
         def answer() -> bool:
             line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
             commands = list(CapabilityDetector.FETCH_COMMAND.finditer(line))
@@ -729,6 +730,7 @@ class CapabilityDetector(BaseDetector):
                 CapabilityDetector.TOOL_PROBE.search(line[: command.start()]) is not None
                 for command in commands
             )
+
         return bool(content.once_per_line("tool_probe", offset, answer))
 
     @staticmethod
@@ -741,6 +743,7 @@ class CapabilityDetector(BaseDetector):
         so a command that reads metadata and pipes it somewhere real keeps its
         capability.
         """
+
         def answer() -> bool:
             line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
             hosts = (
@@ -758,6 +761,7 @@ class CapabilityDetector(BaseDetector):
             # address, and stripping both ends turned it into `1`, which the suite caught.
             trimmed = [host.rstrip(b":.'\"") for host in hosts]
             return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
+
         return bool(content.once_per_line("local_target", offset, answer))
 
     _JS_EVAL_MAX_BYTES: ClassVar[int] = 100_000
@@ -2322,7 +2326,9 @@ class CapabilityDetector(BaseDetector):
     def _is_example_line(content: FileContent, offset: int) -> bool:
         """Whether this offset sits on a transcript line rather than on code."""
         opens, _ = content.line_bounds(offset)
-        return CapabilityDetector.EXAMPLE_PROMPT.match(content.raw[opens : opens + 4096]) is not None
+        return (
+            CapabilityDetector.EXAMPLE_PROMPT.match(content.raw[opens : opens + 4096]) is not None
+        )
 
     @staticmethod
     def _is_comment(content: FileContent, offset: int, language: str | None) -> bool:

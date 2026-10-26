@@ -3,5 +3,6 @@ description: >
   case the graph used to miss entirely.
 must_find:
   - rule: SUSPECT.DEPENDENCY.TYPOSQUAT.001
-    min_severity: high
+    # Medium: a name alone never blocks; what is tested is that the manifest is read at all.
+    min_severity: medium
     category: suspicious

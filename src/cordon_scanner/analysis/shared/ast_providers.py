@@ -132,7 +132,9 @@ class _TreeSitterProvider:
         data = source.encode("utf-8", "surrogatepass")
         return [call for _, call in self.resolve_parts([(0, 0, 0, data)])]
 
-    def resolve_parts(self, parts: Iterable[tuple[int, int, int, Any]]) -> list[tuple[int, AstCall]]:
+    def resolve_parts(
+        self, parts: Iterable[tuple[int, int, int, Any]]
+    ) -> list[tuple[int, AstCall]]:
         """The calls of a file given in parts, each `(byte offset, newlines before it, column of
         its start, its bytes)` -- `bytes`, or a view the parser reads through `read` and the node
         readers slice (`segmented_parse.SegmentView`) -- with each call's byte offset in the file.
@@ -163,7 +165,9 @@ class _TreeSitterProvider:
                 callee = self._callee(node.child_by_field_name("function"), data)
                 if callee is None:
                     continue
-                positional, constructed = self._arguments(node.child_by_field_name("arguments"), data)
+                positional, constructed = self._arguments(
+                    node.child_by_field_name("arguments"), data
+                )
                 row, col = node.start_point
                 pending.append(
                     (

@@ -132,7 +132,9 @@ class TestPackageTools(Served):
             "check_install_command",
             command="pip install --extra-index-url https://pkgs.example.invalid/simple reqeusts==1.0",
         )["structuredContent"]
-        assert found["verdict"] == "block"
+        # A look-alike name is reported, never a block on its own (aa448b5); the extra index is
+        # still named as the dependency-confusion risk it is.
+        assert found["verdict"] == "warn"
         assert any("dependency confusion" in n for n in found["notes"])
 
     def test_a_pipe_to_shell_blocks(self, session: Session) -> None:
