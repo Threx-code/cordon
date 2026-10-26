@@ -109,7 +109,10 @@ class XXH64Stream:
         v = self.v
         if self.striped:
             acc = (
-                XXH64._rotl(v[0], 1) + XXH64._rotl(v[1], 7) + XXH64._rotl(v[2], 12) + XXH64._rotl(v[3], 18)
+                XXH64._rotl(v[0], 1)
+                + XXH64._rotl(v[1], 7)
+                + XXH64._rotl(v[2], 12)
+                + XXH64._rotl(v[3], 18)
             ) & m
             for lane in v:
                 acc = ((acc ^ XXH64._round(0, lane)) * p1 + p4) & m
@@ -140,7 +143,7 @@ class _Input:
 
     CHUNK: ClassVar[int] = 1 << 20
 
-    def __init__(self, source: bytes | IO[bytes]) -> None:
+    def __init__(self, source: Any) -> None:
         self.stream: IO[bytes] = (
             io.BytesIO(source) if isinstance(source, (bytes, bytearray, memoryview)) else source
         )
@@ -582,7 +585,7 @@ class Frame:
 
 class Zstd:
     @staticmethod
-    def frames(data: bytes | IO[bytes], limit: int | None = None) -> Iterator[bytes]:
+    def frames(data: Any, limit: int | None = None) -> Iterator[bytes]:
         """The decompressed content of every frame in `data` -- bytes, or a stream read as it is
         needed -- a block at a time; with a `limit`, fails once more than that has come out.
         Malformed data is a `ZstdError`, whatever part of the format it breaks."""
@@ -670,7 +673,7 @@ class Zstd:
     class Reader(io.RawIOBase):
         """`frames` as a readable stream."""
 
-        def __init__(self, data: bytes | IO[bytes], limit: int | None = None) -> None:
+        def __init__(self, data: Any, limit: int | None = None) -> None:
             self.blocks: Any = Zstd.frames(data, limit)
             self.pending = b""
 
