@@ -1,0 +1,268 @@
+"""What a package's compiled programs carry, as features the package verdict can read.
+
+Family G of the detection model (`reviews/self-improving/06-DETECTION-MODEL.md`). A platform
+binary is most of what a malicious launcher package ships, and its source is nowhere in the
+package: the scanner's code rules have nothing to read, and the import-table rules
+(`BinaryImports`) name four combinations. These features describe every executable the package
+ships -- what it is, what it was built with, and which behaviours its symbols and strings name --
+and leave the judgement to the model, which weighs them against the legitimate platform binaries
+of the npm work set (esbuild, swc, sharp and their kind).
+
+Keys (`exe_*`, counts across the package's executables, each capped):
+
+- `exe_elf`, `exe_pe`, `exe_macho`, `exe_wasm`: how many of each format;
+- `exe_lang_<go|rust|dotnet|pyinstaller|nexe|pkg>`: what built them, by the builder's own marks;
+- `exe_group_<behaviour>`: how many distinct names of that behaviour the strings carry -- process
+  launch, network, keystroke capture, clipboard, screen capture, credential stores, wallets,
+  persistence, debugger checks, process injection, host discovery, chat-service drop points;
+- `exe_shape_<url|ip|onion|b64|psenc>`: how many strings have that shape;
+- `exe_packed`: a packer's own signature; `exe_high_entropy`: the share of 4 KB blocks (every
+  sixteenth one) above 7.2 bits a byte, in tenths;
+- `exe_log_size`: the largest executable's size, as the number of its decimal digits.
+
+A string's value is never a feature: a group counts names on a fixed list, a shape counts strings
+of that shape. Read in windows of `WINDOW` bytes with `OVERLAP` carried across each cut, so an
+executable of any size held in a window source costs one pass and bounded memory.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from collections import Counter
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+
+class BinaryFeatures:
+    """`of(executables)`: the `exe_*` facts of a package's compiled programs."""
+
+    WINDOW: ClassVar[int] = 4 * 1024 * 1024
+    OVERLAP: ClassVar[int] = 512
+    BLOCK: ClassVar[int] = 4096
+    CAP: ClassVar[int] = 50
+
+    FORMATS: ClassVar[tuple[tuple[bytes, str], ...]] = (
+        (b"\x7fELF", "elf"),
+        (b"MZ", "pe"),
+        (b"\xcf\xfa\xed\xfe", "macho"),
+        (b"\xce\xfa\xed\xfe", "macho"),
+        (b"\xca\xfe\xba\xbe", "macho"),
+        (b"\x00asm", "wasm"),
+    )
+
+    LANGUAGES: ClassVar[dict[str, re.Pattern[bytes]]] = {
+        "go": re.compile(rb"Go build ID: |\bruntime\.goexit\b|\bgo1\.\d{1,2}(?:\.\d{1,2})?$", re.M),
+        "rust": re.compile(rb"/rustc/[0-9a-f]{40}|\brust_panic\b|RUST_BACKTRACE"),
+        "dotnet": re.compile(rb"_CorExeMain|_CorDllMain|mscoree\.dll"),
+        "pyinstaller": re.compile(rb"PYZ-00\.pyz|_MEIPASS|pyi-runtime-tmpdir"),
+        "nexe": re.compile(rb"<nexe~~sentinel>"),
+        "pkg": re.compile(rb"PAYLOAD_POSITION|pkg/prelude/bootstrap\.js"),
+    }
+
+    #: Names of a behaviour, as the platform and the common languages' libraries spell them.
+    GROUPS: ClassVar[dict[str, tuple[bytes, ...]]] = {
+        "process": (
+            b"CreateProcessA",
+            b"CreateProcessW",
+            b"ShellExecuteA",
+            b"ShellExecuteW",
+            b"WinExec",
+            b"execve",
+            b"posix_spawn",
+            b"os/exec.Command",
+            b"std::process::Command",
+            b"system(",
+        ),
+        "network": (
+            b"WSAStartup",
+            b"InternetOpenA",
+            b"InternetOpenW",
+            b"URLDownloadToFile",
+            b"WinHttpOpen",
+            b"getaddrinfo",
+            b"net/http.(*Client).Do",
+            b"net.Dial",
+            b"reqwest::",
+            b"libcurl",
+        ),
+        "keystrokes": (
+            b"GetAsyncKeyState",
+            b"SetWindowsHookExA",
+            b"SetWindowsHookExW",
+            b"GetKeyboardState",
+            b"CGEventTapCreate",
+            b"XRecordEnableContext",
+        ),
+        "clipboard": (
+            b"GetClipboardData",
+            b"OpenClipboard",
+            b"SetClipboardData",
+            b"NSPasteboard",
+            b"xclip",
+            b"pbpaste",
+        ),
+        "screen": (b"BitBlt", b"GetDesktopWindow", b"CGWindowListCreateImage", b"screencapture"),
+        "credentials": (
+            b"CryptUnprotectData",
+            b"CredEnumerateA",
+            b"CredEnumerateW",
+            b"SecKeychainFind",
+            b"Login Data",
+            b"Local State",
+            b"cookies.sqlite",
+            b"key4.db",
+            b"logins.json",
+        ),
+        "wallets": (
+            b"wallet.dat",
+            b"Exodus",
+            b"Electrum",
+            b"nkbihfbeogaeaoehlefnkodbefgpgknn",
+            b"bfnaelmomeimhlpmgjnjophhpkkoljpa",
+            b"solana/id.json",
+            b"keystore",
+        ),
+        "persistence": (
+            b"CurrentVersion\\Run",
+            b"LaunchAgents",
+            b"LaunchDaemons",
+            b"crontab",
+            b"schtasks",
+            b"systemctl enable",
+            b".bashrc",
+            b"Startup\\",
+        ),
+        "debugger": (
+            b"IsDebuggerPresent",
+            b"CheckRemoteDebuggerPresent",
+            b"NtQueryInformationProcess",
+            b"PTRACE_TRACEME",
+            b"P_TRACED",
+        ),
+        "injection": (
+            b"VirtualAllocEx",
+            b"WriteProcessMemory",
+            b"CreateRemoteThread",
+            b"NtUnmapViewOfSection",
+            b"QueueUserAPC",
+            b"process_vm_writev",
+        ),
+        "discovery": (
+            b"GetComputerNameA",
+            b"GetComputerNameW",
+            b"GetUserNameA",
+            b"GetUserNameW",
+            b"gethostname",
+            b"whoami",
+            b"ipconfig",
+            b"systeminfo",
+        ),
+        "drop_points": (
+            b"api.telegram.org",
+            b"discord.com/api/webhooks",
+            b"discordapp.com/api/webhooks",
+            b"webhook.site",
+            b"pastebin.com",
+            b"ngrok",
+        ),
+    }
+
+    SHAPES: ClassVar[dict[str, re.Pattern[bytes]]] = {
+        "url": re.compile(rb"https?://[A-Za-z0-9.-]{3,253}"),
+        "ip": re.compile(rb"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])"),
+        "onion": re.compile(rb"[a-z2-7]{16,56}\.onion"),
+        "b64": re.compile(rb"[A-Za-z0-9+/]{120,}={0,2}"),
+        "psenc": re.compile(rb"(?i)powershell[^\n]{0,40}-e(?:nc|ncodedcommand)?\s"),
+    }
+    #: Read in the first window, where the headers and section names are.
+    PACKERS: ClassVar[re.Pattern[bytes]] = re.compile(rb"UPX!|UPX0\x00|\.MPRESS1|\.themida|\.vmp0")
+    _ASCII: ClassVar[re.Pattern[bytes]] = re.compile(rb"[\x20-\x7e]{5,}")
+    #: Written to start on a printable byte, not on a group: four times faster on a 4 MB window.
+    _WIDE: ClassVar[re.Pattern[bytes]] = re.compile(rb"[\x20-\x7e]\x00(?:[\x20-\x7e]\x00){4,}")
+
+    @staticmethod
+    def format_of(head: bytes) -> str | None:
+        return next(
+            (name for magic, name in BinaryFeatures.FORMATS if head.startswith(magic)), None
+        )
+
+    @staticmethod
+    def of(executables: Iterable[tuple[int, Callable[[int, int], bytes]]]) -> dict[str, float]:
+        """`executables`: each one's size and a reader of (offset, length) -> bytes."""
+        out: Counter[str] = Counter()
+        largest = 0
+        for size, read in executables:
+            kind = BinaryFeatures.format_of(read(0, 4))
+            if kind is None:
+                continue
+            out[f"exe_{kind}"] += 1
+            largest = max(largest, size)
+            BinaryFeatures._one(size, read, out)
+        if largest:
+            out["exe_log_size"] = len(str(largest))
+        return {k: float(min(v, BinaryFeatures.CAP)) for k, v in out.items()}
+
+    @staticmethod
+    def _one(size: int, read: Callable[[int, int], bytes], out: Counter[str]) -> None:
+        names: dict[str, set[bytes]] = {g: set() for g in BinaryFeatures.GROUPS}
+        langs: set[str] = set()
+        shapes: Counter[str] = Counter()
+        packed = False
+        blocks = high = 0
+        carry = b""
+        offset = 0
+        while offset < size:
+            chunk = read(offset, BinaryFeatures.WINDOW)
+            if not chunk:
+                break
+            # Every check reads the printable strings, ASCII and UTF-16, not the raw bytes: a
+            # fortieth of the window on a real platform binary. Names are looked for across the
+            # cut (`carry`); shapes are counted in the new bytes only, so none is counted twice.
+            new = BinaryFeatures.strings(chunk)
+            # A name across the cut is whole in the strings of the bytes around it.
+            strings = new + b"\n" + BinaryFeatures.strings(carry + chunk[: BinaryFeatures.OVERLAP])
+            for group, spellings in BinaryFeatures.GROUPS.items():
+                names[group].update(s for s in spellings if s in strings)
+            langs.update(n for n, p in BinaryFeatures.LANGUAGES.items() if p.search(strings))
+            if offset == 0:
+                packed = BinaryFeatures.PACKERS.search(chunk) is not None
+            for shape, pattern in BinaryFeatures.SHAPES.items():
+                shapes[shape] += len(pattern.findall(new))
+            # Every sixteenth block: the share is what is wanted, and a byte histogram per 4 KB
+            # is the one cost here that grows with the file.
+            for start in range(0, len(chunk) - BinaryFeatures.BLOCK + 1, 16 * BinaryFeatures.BLOCK):
+                blocks += 1
+                high += BinaryFeatures.entropy(chunk[start : start + BinaryFeatures.BLOCK]) > 7.2
+            carry = chunk[-BinaryFeatures.OVERLAP :]
+            offset += len(chunk)
+        for group, found in names.items():
+            if found:
+                out[f"exe_group_{group}"] += len(found)
+        for lang in langs:
+            out[f"exe_lang_{lang}"] += 1
+        for shape, n in shapes.items():
+            if n:
+                out[f"exe_shape_{shape}"] += n
+        if packed:
+            out["exe_packed"] += 1
+        if blocks:
+            out["exe_high_entropy"] = max(out["exe_high_entropy"], round(10 * high / blocks))
+
+    @staticmethod
+    def strings(data: bytes) -> bytes:
+        """The printable runs of `data`, ASCII then UTF-16 with its zero bytes dropped, one a line."""
+        ascii_runs = b"\n".join(BinaryFeatures._ASCII.findall(data))
+        wide_runs = b"\n".join(BinaryFeatures._WIDE.findall(data)).replace(b"\x00", b"")
+        return ascii_runs + b"\n" + wide_runs
+
+    @staticmethod
+    def entropy(block: bytes) -> float:
+        counts = Counter(block)
+        n = len(block)
+        return -sum(c / n * math.log2(c / n) for c in counts.values())
+
+
+__all__ = ["BinaryFeatures"]

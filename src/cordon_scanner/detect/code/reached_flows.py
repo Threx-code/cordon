@@ -30,10 +30,12 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
+from cordon_scanner.detect.binary.binary_features import BinaryFeatures
 from cordon_scanner.detect.code.code_features import CodeFeatures
+from cordon_scanner.foundation.windows import WindowSourceChanged
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from cordon_scanner.detect.base import FileUnit, ScanContext
 
@@ -82,7 +84,27 @@ class ReachedFlows:
                 out.update(ReachedFlows.facts(place, unit.content.text))
         if os.environ.get(ReachedFlows.MEASURE) == "1":
             out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
+            out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
         return out
+
+    @staticmethod
+    def executables(units: Sequence[FileUnit]) -> Iterator[tuple[int, Callable[[int, int], bytes]]]:
+        """Every compiled program the package ships, wherever it sits, whole: an archive member
+        or a large file is read from its window source, past the prefix every rule reads."""
+        for unit in units:
+            content = unit.content
+            if BinaryFeatures.format_of(content.raw[:4]) is None:
+                continue
+            source = content.window_source
+            if source is None:
+                raw = content.raw
+                yield len(raw), lambda offset, length, raw=raw: raw[offset : offset + length]
+                continue
+            try:
+                with source.reader() as read:
+                    yield source.size, read
+            except WindowSourceChanged:
+                continue
 
     #: Set only by measurement runs (`reviews/review-98/tools/rescan_sample.py`'s containers): the
     #: code features (`CodeFeatures`) are computed for the scan records a model is trained on, and a
