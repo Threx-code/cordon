@@ -26,6 +26,7 @@ from cordon_scanner.detect.binary.rule_layout import (
     ImageMap,
     Index,
     Layout,
+    LazySeq,
     Pad,
 )
 from cordon_scanner.detect.binary.rule_values import Record, Scalar, Seq
@@ -404,21 +405,28 @@ class Blob:
 class Heaps:
     """Readers over the metadata heaps (strings, blobs) once their file offsets are known."""
 
-    __slots__ = ("blobs", "cur", "str_size", "strings")
+    __slots__ = ("_cache", "blobs", "cur", "str_size", "strings")
 
     def __init__(self, cur: Cursor, strings: int, str_size: int, blobs: int) -> None:
         self.cur, self.strings, self.str_size, self.blobs = cur, strings, str_size, blobs
+        self._cache: dict[
+            int, bytes | None
+        ] = {}  # one string index is read many times across types
 
     def text(self, index: Any) -> bytes | None:
         if not isinstance(index, int):  # an index read past the end of the file is undefined
             return None
+        if index in self._cache:
+            return self._cache[index]
         start = self.strings + index
+        result: bytes | None
         if not (0 <= start < self.cur.n and index < self.str_size):
-            return None
-        end = self.cur.data.find(b"\x00", start)
-        if end < 0 or end - start > 1024:
-            return None
-        return self.cur.data[start:end]
+            result = None
+        else:
+            end = self.cur.data.find(b"\x00", start)
+            result = None if end < 0 or end - start > 1024 else self.cur.data[start:end]
+        self._cache[index] = result
+        return result
 
     def blob_at(self, index: Any) -> tuple[int, int]:
         """(start-of-bytes, length) for a blob-heap entry; (0, 0) when the prefix does not fit."""
@@ -661,11 +669,12 @@ class Signatures:
 class Names:
     """Type-name resolution over the typedef/typeref/typespec tables and nested-type chains."""
 
-    __slots__ = ("enclosing", "heaps", "interfaces", "signatures", "tables")
+    __slots__ = ("_name_cache", "enclosing", "heaps", "interfaces", "signatures", "tables")
 
     def __init__(self, heaps: Heaps, tables: Tables) -> None:
         self.heaps, self.tables = heaps, tables
         self.signatures = Signatures(heaps, tables, self.coded)
+        self._name_cache: dict[int, bytes | None] = {}  # typedef/typeref name per coded index
         # one pass each, so name resolution is a lookup rather than a per-type table scan
         self.enclosing: dict[int, int] = {}  # a nested type index -> its first enclosing type index
         ng = tables.grid("nestedclass")
@@ -690,21 +699,9 @@ class Names:
         if not index:
             return None
         table = coded & 3
-        if table == 0:
-            row = self._row("typedef", index)
-            if row is None:
-                return None
-            name = self.heaps.text(row["name"])
-            namespace = self.heaps.text(row["namespace"])
-            if Spec.is_nested(row["flags"]):
-                return Spec.qualified(name, Spec.qualified(namespace, self.nesting(index, 1)))
-            return Spec.qualified(name, namespace)
-        if table == 1:
-            row = self._row("typeref", index)
-            if row is None:
-                return None
-            return Spec.qualified(self.heaps.text(row["name"]), self.heaps.text(row["namespace"]))
-        if table == 2:
+        if (
+            table == 2
+        ):  # typespec is a signature: it depends on the generic context, so it is not cached
             row = self._row("typespec", index)
             if row is None:
                 return None
@@ -713,7 +710,29 @@ class Names:
                 return self.signatures.type(
                     Blob(self.heaps.cur, start, length), class_gp, None, depth
                 )
-        return None
+            return None
+        if (
+            coded in self._name_cache
+        ):  # typedef/typeref names are the same whatever the generic context
+            return self._name_cache[coded]
+        name: bytes | None = None
+        if table == 0:
+            row = self._row("typedef", index)
+            if row is not None:
+                nm, ns = self.heaps.text(row["name"]), self.heaps.text(row["namespace"])
+                name = (
+                    Spec.qualified(nm, Spec.qualified(ns, self.nesting(index, 1)))
+                    if Spec.is_nested(row["flags"])
+                    else Spec.qualified(nm, ns)
+                )
+        elif table == 1:
+            row = self._row("typeref", index)
+            if row is not None:
+                name = Spec.qualified(
+                    self.heaps.text(row["name"]), self.heaps.text(row["namespace"])
+                )
+        self._name_cache[coded] = name
+        return name
 
     def _row(self, name: str, index: int) -> dict[str, Any] | None:
         grid = self.tables.grid(name)
@@ -1132,8 +1151,10 @@ class Dotnet:
             return
         names = Names(heaps, tables)
         gparams = Dotnet._generic_params(tables, heaps)
-        classes: dict[int, Any] = {}
-        kept = 0
+        # which typedef rows are real classes is cheap (a name read + the filter); building a class (its
+        # methods and their signatures) is the cost, so classes decode on access -- a rule that reads a
+        # count or a few classes never builds the rest, while yara-python builds them all eagerly.
+        kept: list[int] = []
         for idx in range(typedef.count):
             row = typedef.row(idx)
             if row is None:
@@ -1144,36 +1165,54 @@ class Dotnet:
             tick = name.find(b"`")
             if tick == 0 or name == b"<Module>":
                 continue
-            flags = row["flags"]
-            c: dict[str, Any] = {
-                "name": name[:tick] if tick > 0 else name,
-                "visibility": TYPE_VISIBILITY[flags & 7],
-                "type": {0: b"class", 0x20: b"interface"}[flags & 0x20],
-                "abstract": int(bool(flags & 0x80)),
-                "sealed": int(bool(flags & 0x100)),
-            }
-            namespace = heaps.text(row["namespace"])
-            if Spec.is_nested(flags):
-                namespace = Spec.qualified(namespace, names.nesting(idx + 1, 1))
-            if namespace is not None:
-                c["namespace"] = namespace
-            fn = Spec.qualified(name, namespace)
-            if fn is not None:
-                c["fullname"] = fn
-            gp = gparams.get((0, idx + 1), [])
-            c["number_of_generic_parameters"] = len(gp)
-            c["generic_parameters"] = dict(enumerate(gp))
-            Dotnet._base_types(c, names, tables, row["extends"], idx + 1, gp)
-            c[
-                "methods"
-            ] = {}  # the reference always presents a methods list, even when it stays empty
-            count = Dotnet._method_count(tables, typedef, idx, row["methods"])
-            if count <= MAX_METHODS:
-                Dotnet._build_methods(c, heaps, tables, names, row["methods"], count, gp, gparams)
-            classes[kept] = c
-            kept += 1
-        out["classes"] = classes
-        out["number_of_classes"] = kept
+            kept.append(idx)
+        out["number_of_classes"] = len(kept)
+        out["classes"] = LazySeq(
+            range(len(kept)),
+            lambda ci: Dotnet._decode_class(heaps, tables, names, gparams, typedef, kept[ci]),
+        )
+
+    @staticmethod
+    def _decode_class(
+        heaps: Heaps,
+        tables: Tables,
+        names: Names,
+        gparams: dict[tuple[int, int], list[bytes]],
+        typedef: Grid,
+        idx: int,
+    ) -> dict[str, Any]:
+        row = typedef.row(idx)
+        name = heaps.text(row["name"]) if row is not None else None
+        if (
+            row is None or name is None
+        ):  # the slot was validated when kept, so this is only for the type checker
+            return {}
+        tick = name.find(b"`")
+        flags = row["flags"]
+        c: dict[str, Any] = {
+            "name": name[:tick] if tick > 0 else name,
+            "visibility": TYPE_VISIBILITY[flags & 7],
+            "type": {0: b"class", 0x20: b"interface"}[flags & 0x20],
+            "abstract": int(bool(flags & 0x80)),
+            "sealed": int(bool(flags & 0x100)),
+        }
+        namespace = heaps.text(row["namespace"])
+        if Spec.is_nested(flags):
+            namespace = Spec.qualified(namespace, names.nesting(idx + 1, 1))
+        if namespace is not None:
+            c["namespace"] = namespace
+        fn = Spec.qualified(name, namespace)
+        if fn is not None:
+            c["fullname"] = fn
+        gp = gparams.get((0, idx + 1), [])
+        c["number_of_generic_parameters"] = len(gp)
+        c["generic_parameters"] = dict(enumerate(gp))
+        Dotnet._base_types(c, names, tables, row["extends"], idx + 1, gp)
+        c["methods"] = {}  # the reference always presents a methods list, even when it stays empty
+        count = Dotnet._method_count(tables, typedef, idx, row["methods"])
+        if count <= MAX_METHODS:
+            Dotnet._build_methods(c, heaps, tables, names, row["methods"], count, gp, gparams)
+        return c
 
     @staticmethod
     def _generic_params(tables: Tables, heaps: Heaps) -> dict[tuple[int, int], list[bytes]]:

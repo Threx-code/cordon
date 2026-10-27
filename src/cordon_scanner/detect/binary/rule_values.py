@@ -11,14 +11,15 @@ provide is simply absent (or None) and reads as undefined.
     {"name": b"a.dll", "sections": {0: {"size": 512}, 2: {"size": 64}}}
 
 A `Seq` holds the slots a file filled, by index; the rule-visible length is the highest index plus
-one. A `Call` field holds one callable per signature, in the order declared; a callable returning
+one. A `Seq` or `Keyed` may be any mapping (one that decodes each item when it is read, say), not
+only a dict. A `Call` field holds one callable per signature, in the order declared; a callable returning
 None gives undefined, and a missing field makes every call undefined.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, ClassVar
 
 # The value trees of the readers not yet moved to declared schemas, still imported from here by
@@ -174,7 +175,7 @@ class Data:
             return out
         if isinstance(declared, (Seq, Keyed)):
             key = int if isinstance(declared, Seq) else bytes
-            if not isinstance(data, dict):
+            if not isinstance(data, Mapping):  # a dict, or a mapping that decodes on access
                 return [f"{where or '.'}: not a table"]
             out = []
             for k, v in data.items():

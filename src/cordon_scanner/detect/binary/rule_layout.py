@@ -14,6 +14,7 @@ not how to guard each field — and a format quirk is a commented line in a read
 from __future__ import annotations
 
 import struct
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -219,6 +220,39 @@ class Grid:
                 yield self.layout.read(self.cur, self.offset(i), self.sizes)
 
 
+class LazySeq(Mapping[int, Any]):
+    """A sequence read by index whose values are decoded on first access and cached. The keys are known up
+    front, so a rule reads the length (highest key) and iterates the slots without building any value; a
+    value is decoded only when its slot is read. Full iteration -- as ``Data.conforms`` and the differential
+    harnesses do -- decodes and caches every value, so the result is identical to an eager build, deferred.
+    It is a Mapping, not a dict, because a dict cannot defer: ``dict.items()`` reads stored values, not
+    ``__getitem__``, so the keys could not be known without the values."""
+
+    __slots__ = ("_cache", "_decode", "_keys", "_keyset")
+
+    def __init__(self, keys: Any, decode: Any) -> None:
+        self._keys: tuple[int, ...] = tuple(keys)
+        self._keyset = frozenset(self._keys)
+        self._decode = decode
+        self._cache: dict[int, Any] = {}
+
+    def __getitem__(self, key: int) -> Any:
+        if key not in self._keyset:
+            raise KeyError(key)
+        if key not in self._cache:
+            self._cache[key] = self._decode(key)
+        return self._cache[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._keyset  # membership from keys alone; never decodes a value
+
+    def __iter__(self) -> Any:
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+
 class ImageMap:
     """A PE image's virtual-address space: accepts the header and maps a virtual address (RVA) to a file
     offset through the section table, shared by the PE and .NET readers. Built once from the file."""
@@ -323,6 +357,7 @@ __all__ = [
     "ImageMap",
     "Index",
     "Layout",
+    "LazySeq",
     "Pad",
     "Uint",
 ]

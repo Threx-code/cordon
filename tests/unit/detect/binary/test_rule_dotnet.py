@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from cordon_scanner.detect.binary.rule_dotnet import Dotnet, Tables
-from cordon_scanner.detect.binary.rule_layout import Cursor
+from cordon_scanner.detect.binary.rule_layout import Cursor, LazySeq
 from cordon_scanner.detect.binary.rule_values import Data, Keyed, Record, Scalar, Seq
 from support import ROOT
 
@@ -166,3 +166,19 @@ class TestDotnetRegressions:
         """Guard: a row count over 10,000 cuts the directory walk short, so classes are not read from it."""
         assert Tables.walk(Cursor(Build.tilde_header(20000)), 0, -1, (0, 0)).completed is False
         assert Tables.walk(Cursor(Build.tilde_header(8)), 0, -1, (0, 0)).completed is True
+
+    def test_lazyseq_defers_decoding(self) -> None:
+        """Guard: length, iteration and membership read the keys only; a value is decoded on first access
+        and once, and an absent index reads as None without decoding."""
+        decoded: list[int] = []
+        seq = LazySeq(range(5), lambda i: decoded.append(i) or i * 10)
+        assert len(seq) == 5
+        assert list(seq) == [0, 1, 2, 3, 4]
+        assert Data.length(seq) == 5
+        assert 3 in seq and 9 not in seq
+        assert decoded == []  # nothing decoded by length/iteration/membership
+        assert seq[2] == 20
+        assert seq[2] == 20  # cached: still one decode
+        assert decoded == [2]
+        assert seq.get(99) is None  # absent index: no decode
+        assert decoded == [2]
