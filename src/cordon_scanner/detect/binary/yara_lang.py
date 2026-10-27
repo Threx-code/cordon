@@ -133,11 +133,10 @@ class Lexer:
             return Tok("hex", body, line)
         if c == "/":  # comments were skipped; YARA divides with `\\`, so `/` opens a regex
             return Tok("regex", self._regex(), line)
-        if (
-            c in "$#@!"
-            and (start + 1 < len(t))
-            and (t[start + 1].isalnum() or t[start + 1] in "_*" or c == "$")
-        ):
+        nxt = t[start + 1] if start + 1 < len(t) else ""
+        if c in "$#@" or (c == "!" and nxt != "="):
+            # `#`, `@` and `!` alone are the string a `for ... of` is at, as `$` is; `!=` stays
+            # the operator
             m = re.compile(r"[$#@!][A-Za-z0-9_]*\*?").match(t, start)
             assert m is not None  # noqa: S101 - the first character matched above
             self.pos = m.end()

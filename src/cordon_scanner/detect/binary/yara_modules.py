@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import struct
 import time
 import zlib
 from collections.abc import Callable
@@ -80,13 +81,16 @@ class Values:
             return Struct({k: Values.undefined_like(v) for k, v in proto.fields.items()})
         if isinstance(proto, (Array, Dictionary)):
             return type(proto)(proto.proto)
-        if isinstance(proto, TypedUndefined):
-            return proto
+        if isinstance(proto, (TypedUndefined, Function)):
+            return proto  # a function is a declaration: an undefined structure still has it
         return TypedUndefined(Values.kind_of(proto))
 
     @staticmethod
     def int64(value: Any) -> Any:
-        """A module integer as YARA holds it: signed 64-bit, so a field read as 2**64 - 1 is -1."""
+        """A module value as YARA reads it (`OP_OBJ_VALUE`): an integer signed 64-bit, so a field
+        read as 2**64 - 1 is -1; a float that is NaN undefined, as YARA stores undefined floats."""
+        if isinstance(value, float) and math.isnan(value):
+            return UNDEF_FLOAT
         if (
             isinstance(value, int)
             and not isinstance(value, bool)
@@ -149,7 +153,7 @@ class Function:
     def resolve(self, kinds: tuple[str | None, ...]) -> tuple[Callable[..., Any], str] | None:
         for signature, target in self.overloads.items():
             if len(signature) == len(kinds) and all(
-                want == got or (want == "float" and got == "int") or got is None
+                want == got or got is None  # YARA takes no integer where a float is declared
                 for want, got in zip(signature, kinds, strict=True)
             ):
                 return target
@@ -164,101 +168,181 @@ class Builtin:
 
     @staticmethod
     def _region(data: bytes, offset: int, size: int) -> bytes | None:
-        if offset < 0 or size < 0 or offset > len(data):
+        """The bytes YARA's data functions read for (offset, length) in a file scan: undefined for
+        a negative offset or length, or an offset not inside the data; else clipped to it."""
+        if offset < 0 or size < 0 or offset >= len(data):
             return None
         return data[offset : offset + size]
 
     @staticmethod
+    def _f32(x: float) -> float:
+        """A double rounded to single precision (C's `(float)`)."""
+        return float(struct.unpack("<f", struct.pack("<f", x))[0])
+
+    @staticmethod
+    def _histogram(r: bytes) -> list[int]:
+        counts = [0] * 256
+        for b in r:
+            counts[b] += 1
+        return counts
+
+    @staticmethod
+    def _entropy(counts: list[int]) -> float:
+        total = sum(counts)
+        entropy = 0.0
+        for c in counts:
+            if c:
+                x = c / total
+                entropy -= x * math.log2(x)
+        return entropy
+
+    @staticmethod
+    def _divide(a: float, b: float) -> float:
+        """C's double division, NaN or infinity where the divisor is zero."""
+        if b == 0:
+            return math.nan if a == 0 or math.isnan(a) else math.copysign(math.inf, a)
+        return a / b
+
+    @staticmethod
+    def _serial(r: bytes) -> float:
+        scclast = scct1 = scct2 = scct3 = 0.0
+        for b in r:
+            sccun = float(b)
+            scct1 += scclast * sccun
+            scct2 += sccun
+            scct3 += sccun * sccun
+            scclast = sccun
+        if r:
+            scct1 += scclast * float(r[0])
+        scct2 *= scct2
+        n = len(r)
+        scc = n * scct3 - scct2
+        return -100000.0 if scc == 0 else (n * scct1 - scct2) / scc
+
+    @staticmethod
+    def _monte_carlo(r: bytes) -> Any:
+        incirc = math.pow(math.pow(256.0, 3.0) - 1, 2.0)
+        mcount = inmont = 0
+        for i in range(5, len(r), 6):
+            mx = my = 0.0
+            for j in range(3):
+                mx = mx * 256.0 + r[i - 5 + j]
+                my = my * 256.0 + r[i - 2 + j]
+            mcount += 1
+            if mx * mx + my * my <= incirc:
+                inmont += 1
+        if mcount == 0:
+            return UNDEF_FLOAT
+        return abs((4.0 * (inmont / mcount) - 3.141592653589793) / 3.141592653589793)
+
+    @staticmethod
     def math(data: bytes) -> Struct:
-        def region_or_undef(f: Callable[[bytes], Any], kind: Any = UNDEF_FLOAT) -> Function:
+        """YARA's math module (libyara/modules/math/math.c), operation for operation: sums taken
+        over the byte histogram in byte order, `percentage` divided in single precision, `min`
+        and `max` comparing as unsigned. A string's bytes are read unsigned (C's `char` on the
+        aarch64 build the reference runs; signed on x86 YARA)."""
+        B = Builtin
+
+        def ranged(f: Callable[[bytes], Any]) -> Callable[[int, int], Any]:
             def over(offset: int, size: int) -> Any:
-                r = Builtin._region(data, offset, size)
-                return kind if not r else f(r)
+                r = B._region(data, offset, size)
+                return UNDEF_FLOAT if r is None else f(r)
 
-            def over_string(s: bytes) -> Any:
-                return kind if not s else f(s)
-
-            return Values.fn((("int", "int"), over, "float"), (("str",), over_string, "float"))
-
-        def entropy(r: bytes) -> float:
-            n = len(r)
-            counts = [0] * 256
-            for b in r:
-                counts[b] += 1
-            return -sum(c / n * math.log2(c / n) for c in counts if c)
+            return over
 
         def mean(r: bytes) -> float:
-            return sum(r) / len(r)
+            counts = B._histogram(r)
+            return B._divide(sum(float(i) * c for i, c in enumerate(counts)), float(sum(counts)))
 
-        def serial(r: bytes) -> float:
-            n = len(r)
-            sccun = sum(r[i] * r[(i + 1) % n] for i in range(n))
-            s, s2 = sum(r), sum(b * b for b in r)
-            den = n * s2 - s * s
-            return -100000.0 if den == 0 else (n * sccun - s * s) / den
+        def deviation_of(r: bytes, m: float) -> float:
+            counts = B._histogram(r)
+            total = 0.0
+            for i, c in enumerate(counts):
+                total += abs(float(i) - m) * c
+            return B._divide(total, float(sum(counts)))
 
-        def monte_carlo(r: bytes) -> Any:
-            hits = total = 0
-            for i in range(0, len(r) - 5, 6):
-                x = int.from_bytes(r[i : i + 3], "big") / 16777215.0
-                y = int.from_bytes(r[i + 3 : i + 6], "big") / 16777215.0
-                total += 1
-                hits += x * x + y * y <= 1.0
-            return UNDEF_FLOAT if not total else abs(math.pi - 4.0 * hits / total) / math.pi
+        def deviation_s(s: bytes, m: float) -> float:
+            total = 0.0
+            for b in s:
+                total += abs(float(b) - m)
+            return B._divide(total, float(len(s)))
 
-        def deviation(offset: int, size: int, m: float) -> Any:
-            r = Builtin._region(data, offset, size)
-            return UNDEF_FLOAT if not r else sum(abs(b - m) for b in r) / len(r)
-
-        def deviation_s(s: bytes, m: float) -> Any:
-            return UNDEF_FLOAT if not s else sum(abs(b - m) for b in s) / len(s)
+        def mean_s(s: bytes) -> float:
+            total = 0.0
+            for b in s:
+                total += float(b)
+            return B._divide(total, float(len(s)))
 
         def count(byte: int, offset: int | None = None, size: int | None = None) -> Any:
-            r = data if offset is None else Builtin._region(data, offset, size or 0)
-            if r is None or not 0 <= byte <= 255:
+            if not 0 <= byte <= 255:
                 return UNDEF_INT
-            return r.count(bytes([byte]))
+            r = data if offset is None else B._region(data, offset, size or 0)
+            return UNDEF_INT if r is None else r.count(bytes([byte]))
 
         def percentage(byte: int, offset: int | None = None, size: int | None = None) -> Any:
-            r = data if offset is None else Builtin._region(data, offset, size or 0)
-            if not r or not 0 <= byte <= 255:
+            if not 0 <= byte <= 255:
                 return UNDEF_FLOAT
-            return r.count(bytes([byte])) / len(r)
+            r = data if offset is None else B._region(data, offset, size or 0)
+            if r is None:
+                return UNDEF_FLOAT
+            a, b = B._f32(float(r.count(bytes([byte])))), B._f32(float(len(r)))
+            return B._f32(B._divide(a, b))
 
         def mode(offset: int | None = None, size: int | None = None) -> Any:
-            r = data if offset is None else Builtin._region(data, offset, size or 0)
-            if not r:
+            r = data if offset is None else B._region(data, offset, size or 0)
+            if r is None:
                 return UNDEF_INT
-            counts = [0] * 256
-            for b in r:
-                counts[b] += 1
-            return max(range(256), key=lambda b: (counts[b], -b))
+            counts = B._histogram(r)
+            best = 0
+            for i in range(256):
+                if counts[i] > counts[best]:
+                    best = i
+            return best
+
+        def unsigned(f: Callable[[int, int], bool]) -> Callable[[int, int], int]:
+            return lambda a, b: a if f(a & 0xFFFFFFFFFFFFFFFF, b & 0xFFFFFFFFFFFFFFFF) else b
+
+        def absolute(i: int) -> int:
+            return i if i == -(1 << 63) else abs(i)  # llabs(INT64_MIN) is INT64_MIN
 
         def to_string(value: int, base: int = 10) -> Any:
-            if base not in (2, 8, 10, 16):
-                return UNDEF_STR
             if base == 10:
                 return str(value).encode()
-            digits = {2: "b", 8: "o", 16: "x"}[base]
-            return format(value, digits).encode()
+            if base in (8, 16):
+                return format(value & 0xFFFFFFFFFFFFFFFF, "o" if base == 8 else "x").encode()
+            return UNDEF_STR
 
         return Struct(
             {
                 "MEAN_BYTES": 127.5,
-                "entropy": region_or_undef(entropy),
-                "mean": region_or_undef(mean),
-                "serial_correlation": region_or_undef(serial),
-                "monte_carlo_pi": region_or_undef(monte_carlo),
+                "entropy": Values.fn(
+                    (("int", "int"), ranged(lambda r: B._entropy(B._histogram(r))), "float"),
+                    (("str",), lambda s: B._entropy(B._histogram(s)), "float"),
+                ),
+                "mean": Values.fn(
+                    (("int", "int"), ranged(mean), "float"), (("str",), mean_s, "float")
+                ),
+                "serial_correlation": Values.fn(
+                    (("int", "int"), ranged(B._serial), "float"), (("str",), B._serial, "float")
+                ),
+                "monte_carlo_pi": Values.fn(
+                    (("int", "int"), ranged(B._monte_carlo), "float"),
+                    (("str",), B._monte_carlo, "float"),
+                ),
                 "deviation": Values.fn(
-                    (("int", "int", "float"), deviation, "float"),
+                    (
+                        ("int", "int", "float"),
+                        lambda o, n, m: ranged(lambda r: deviation_of(r, m))(o, n),
+                        "float",
+                    ),
                     (("str", "float"), deviation_s, "float"),
                 ),
                 "in_range": Values.fn(
-                    (("float", "float", "float"), lambda v, lo, hi: lo <= v <= hi, "bool")
+                    (("float", "float", "float"), lambda v, lo, hi: int(lo <= v <= hi), "int")
                 ),
-                "min": Values.fn((("int", "int"), min, "int")),
-                "max": Values.fn((("int", "int"), max, "int")),
-                "abs": Values.fn((("int",), abs, "int")),
+                "min": Values.fn((("int", "int"), unsigned(lambda a, b: a < b), "int")),
+                "max": Values.fn((("int", "int"), unsigned(lambda a, b: a > b), "int")),
+                "abs": Values.fn((("int",), absolute, "int")),
                 "to_number": Values.fn((("bool",), lambda b: int(bool(b)), "int")),
                 "count": Values.fn((("int",), count, "int"), (("int", "int", "int"), count, "int")),
                 "percentage": Values.fn(
@@ -273,6 +357,9 @@ class Builtin:
 
     @staticmethod
     def hash(data: bytes) -> Struct:
+        """YARA's hash module (libyara/modules/hash/hash.c): a range outside the data is
+        undefined, a range running past it is clipped; digests in lower-case hex."""
+
         def digest(name: str) -> Function:
             def over(offset: int, size: int) -> Any:
                 r = Builtin._region(data, offset, size)
@@ -351,12 +438,60 @@ class Builtin:
         )
 
     @staticmethod
+    def strtoll(text: bytes, base: int) -> int | None:
+        """C's `strtoll` over the whole string (YARA's `string_to_int`): leading white space and
+        a sign, `0x` for base 16 or 0, a leading 0 meaning octal in base 0; None for no digits,
+        anything after them, or a value outside 64 bits."""
+        s = text.split(b"\x00", 1)[0]
+        i, n = 0, len(s)
+        while i < n and s[i] in b" \t\n\v\f\r":
+            i += 1
+        negative = False
+        if i < n and s[i] in b"+-":
+            negative = s[i] == 0x2D
+            i += 1
+
+        def digit(c: int) -> int:
+            if 0x30 <= c <= 0x39:
+                return c - 0x30
+            if 0x61 <= c <= 0x7A:
+                return c - 0x61 + 10
+            if 0x41 <= c <= 0x5A:
+                return c - 0x41 + 10
+            return 99
+
+        if (
+            base in (0, 16)
+            and i + 1 < n
+            and s[i] == 0x30
+            and s[i + 1] in b"xX"
+            and i + 2 < n
+            and digit(s[i + 2]) < 16
+        ):
+            i += 2
+            base = 16
+        elif base == 0:
+            base = 8 if i < n and s[i] == 0x30 else 10
+        start, value = i, 0
+        while i < n and digit(s[i]) < base:
+            value = value * base + digit(s[i])
+            i += 1
+        if i == start or i != n:
+            return None
+        value = -value if negative else value
+        if not -(1 << 63) <= value < (1 << 63):
+            return None
+        return value
+
+    @staticmethod
     def string(data: bytes) -> Struct:
+        """YARA's string module (libyara/modules/string/string.c)."""
+
         def to_int(s: bytes, base: int = 0) -> Any:
-            try:
-                return int(s.decode("ascii").strip(), base)
-            except (UnicodeDecodeError, ValueError):
+            if not (base == 0 or 2 <= base <= 36):
                 return UNDEF_INT
+            value = Builtin.strtoll(s, base)
+            return UNDEF_INT if value is None else value
 
         return Struct(
             {
