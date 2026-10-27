@@ -18,7 +18,7 @@ import zlib
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_values import Call, Data, Legacy, Module, Record, Scalar, Sig
+from cordon_scanner.detect.binary.rule_values import Call, Data, Module, Record, Scalar, Sig
 
 INT, FLOAT, TEXT = Scalar.INT, Scalar.FLOAT, Scalar.TEXT
 
@@ -422,7 +422,7 @@ class Builtin:
             "string": Module(StringModule.SCHEMA, lambda file: StringModule.values()),
             "time": Module(Builtin.TIME, lambda file: {"now": (lambda: int(time.time()),)}),
             "console": Builtin.console(),
-            "pe": Legacy.module(Pe.module),
+            "pe": Module(Pe.SCHEMA, Pe.data),
             "elf": Module(Elf.SCHEMA, Elf.data),
             "dotnet": Module(Dotnet.SCHEMA, Dotnet.data),
         }

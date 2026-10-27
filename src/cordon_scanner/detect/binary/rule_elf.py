@@ -184,7 +184,9 @@ class Elf:
             out["sections"] = LazySeq(range(len(srows)), lambda i: Row(srows[i], sec_spec))
             # pick up each SYMTAB(2)/DYNSYM(11)'s linked STRTAB(3); e_shnum read little-endian bounds the link
             raw_off = 36 + 3 * word
-            raw_shnum = int.from_bytes(cur.data[raw_off : raw_off + 2], "little")
+            raw_shnum = cur.uint(
+                raw_off, 2, "little"
+            )  # e_shnum is little-endian regardless of byte order
             for t in srows:
                 if (
                     t[st] in (2, 11)

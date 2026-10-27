@@ -6,6 +6,8 @@ contract so a change to them is caught directly.
 
 from __future__ import annotations
 
+import struct
+
 import pytest
 
 from cordon_scanner.detect.binary.rule_layout import (
@@ -14,6 +16,7 @@ from cordon_scanner.detect.binary.rule_layout import (
     U32,
     Cursor,
     Grid,
+    ImageMap,
     Index,
     Layout,
     LazyRecord,
@@ -153,3 +156,39 @@ class TestLazyRecord:
         assert rec["number_of_methods"] == 3
         assert rec["methods"] == {0: "m"}  # second deferred read: still one build
         assert built == [1]
+
+
+class TestImageMapStrict:
+    """ImageMap's two RVA rules on a truncated section table: rule_pe (strict) fails the whole mapping,
+    rule_dotnet (the default) maps an address below the sections straight through."""
+
+    @staticmethod
+    def truncated_pe() -> bytes:
+        """A PE32 whose COFF header declares one section but whose file ends after the optional header, so
+        the section header does not fit."""
+        nt = 0x40
+        buf = bytearray(0x40)
+        buf[0:2] = b"MZ"
+        buf[0x3C:0x40] = nt.to_bytes(4, "little")
+        buf += b"PE\x00\x00"
+        buf += struct.pack(
+            "<HHIIIHH", 0x14C, 1, 0, 0, 0, 0xE0, 0
+        )  # machine, nsec=1, ..., opt_size=0xE0
+        opt = bytearray(0xE0)
+        opt[0:2] = (0x10B).to_bytes(2, "little")  # PE32 magic
+        opt[32:36] = (0x1000).to_bytes(4, "little")  # section_alignment
+        opt[36:40] = (0x200).to_bytes(4, "little")  # file_alignment
+        opt[92:96] = (0).to_bytes(4, "little")  # number_of_rva_and_sizes
+        buf += opt  # ends here: the one section header at opt+0xE0 is absent
+        return bytes(buf)
+
+    def test_strict_fails_a_non_fitting_section_header(self) -> None:
+        cur = Cursor(TestImageMapStrict.truncated_pe())
+        strict = ImageMap.accept(cur, strict=True)
+        tolerant = ImageMap.accept(cur)
+        assert strict is not None
+        assert tolerant is not None
+        assert strict.to_offset(0x10) == -1  # pe: the truncated section table fails every address
+        assert (
+            tolerant.to_offset(0x10) == 0x10
+        )  # dotnet: below the (empty) sections, straight through

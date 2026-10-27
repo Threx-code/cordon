@@ -16,7 +16,7 @@ from __future__ import annotations
 import struct
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 _FMT = {1: "B", 2: "H", 4: "I", 8: "Q"}
 
@@ -82,10 +82,15 @@ class Cursor:
     def fits(self, at: int, size: int) -> bool:
         return at >= 0 and 0 <= size <= self.n - at
 
-    def uint(self, at: int, width: int) -> Any:
+    def uint(self, at: int, width: int, order: Literal["little", "big"] | None = None) -> Any:
+        """The unsigned integer at ``at``; ``order`` ("little"/"big") overrides the cursor's own byte order
+        for a field whose endianness is fixed regardless of the file's (an ELF's little-endian e_shnum, a
+        .NET blob's big-endian compressed integers)."""
         if at < 0 or at + width > self.n:
             return ABSENT
-        return int.from_bytes(self.data[at : at + width], "big" if self.big else "little")
+        return int.from_bytes(
+            self.data[at : at + width], order or ("big" if self.big else "little")
+        )
 
     def blob(self, at: int, width: int) -> Any:
         if at < 0 or at + width > self.n:
@@ -355,24 +360,30 @@ class LazyRecord(Mapping[str, Any]):
 
 class ImageMap:
     """A PE image's virtual-address space: accepts the header and maps a virtual address (RVA) to a file
-    offset through the section table, shared by the PE and .NET readers. Built once from the file."""
+    offset through the section table, shared by the ``rule_pe`` and ``rule_dotnet`` readers. Built once from
+    the file.
+
+    The two reference modules differ on a truncated section table, so ``to_offset`` takes a ``strict`` mode:
+    ``rule_pe`` (strict) stops at the first section header that does not fit the file and returns -1 for every
+    address; ``rule_dotnet`` (the default) maps through the headers that do fit and ignores the rest."""
 
     MAX_SECTIONS = 96
 
-    __slots__ = ("_sections", "cur", "is64", "n", "nt", "opt")
+    __slots__ = ("_sections", "cur", "is64", "n", "nt", "opt", "strict")
 
-    def __init__(self, cur: Cursor, nt: int, is64: bool) -> None:
+    def __init__(self, cur: Cursor, nt: int, is64: bool, strict: bool = False) -> None:
         self.cur = cur
         self.n = cur.n
         self.nt = nt  # file offset of the PE signature
         self.is64 = is64
         self.opt = nt + 24  # start of the optional header
+        self.strict = strict
         self._sections: list[tuple[int, int, int, int]] | None = None
 
     @staticmethod
-    def accept(cur: Cursor) -> ImageMap | None:
+    def accept(cur: Cursor, strict: bool = False) -> ImageMap | None:
         """Accept the file as a PE: MZ stub, an e_lfanew to a PE\\0\\0 signature, and a COFF + optional
-        header of the magic's width present in the file."""
+        header of the magic's width present in the file. ``strict`` selects the ``rule_pe`` RVA rule."""
         if cur.n < 64 or cur.blob(0, 2) != b"MZ":
             return None
         nt = cur.uint(0x3C, 4)
@@ -386,7 +397,7 @@ class ImageMap:
         is64 = magic == 0x20B
         if cur.n < nt + 24 + (240 if is64 else 224):
             return None
-        return ImageMap(cur, nt, is64)
+        return ImageMap(cur, nt, is64, strict)
 
     def sections(self) -> list[tuple[int, int, int, int]]:
         """(virtual_address, virtual_size, raw_size, raw_offset) for each section header."""
@@ -413,6 +424,16 @@ class ImageMap:
         of the highest-based section that still contains the address and its raw-pointer alignment (the
         quirk that an address below every section maps straight through to the same file offset is kept)."""
         cur = self.cur
+        if (
+            self.strict
+        ):  # rule_pe: a section header that does not fit the file fails the whole mapping
+            count = cur.uint(self.nt + 6, 2)
+            first = self.opt + cur.uint(self.nt + 20, 2)
+            if not isinstance(count, int) or not isinstance(first, int):
+                return -1
+            for i in range(min(count, ImageMap.MAX_SECTIONS)):
+                if not cur.fits(first + 40 * i, 40):
+                    return -1
         file_align = cur.uint(self.opt + 36, 4)
         sect_align = cur.uint(self.opt + 32, 4)
         if ABSENT in (file_align, sect_align):

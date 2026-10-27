@@ -118,213 +118,6 @@ class Spec:
     reader, kept off the module root (repository structure rule)."""
 
     @staticmethod
-    def catalog() -> dict[int, tuple[str | None, Layout]]:
-        """The declarative catalog: table id -> (reader name or None, row Layout)."""
-        s, g, b = Index("string"), Index("guid"), Index("blob")
-        return {
-            0x00: (
-                "module",
-                Layout((("gen", U16), ("name", s), ("mvid", g), ("enc", g), ("encbase", g))),
-            ),
-            0x01: (
-                "typeref",
-                Layout((("scope", Index("resolutionscope")), ("name", s), ("namespace", s))),
-            ),
-            0x02: (
-                "typedef",
-                Layout(
-                    (
-                        ("flags", U32),
-                        ("name", s),
-                        ("namespace", s),
-                        ("extends", Index("typedeforref")),
-                        ("fields", Index("field")),
-                        ("methods", Index("methoddef")),
-                    )
-                ),
-            ),
-            0x03: (None, Layout((("_", Index("field")),))),  # FieldPtr
-            0x04: ("field", Layout((("flags", U16), ("name", s), ("sig", b)))),
-            0x05: (None, Layout((("_", Index("methoddef")),))),  # MethodPtr
-            0x06: (
-                "methoddef",
-                Layout(
-                    (
-                        ("rva", U32),
-                        ("impl", U16),
-                        ("flags", U16),
-                        ("name", s),
-                        ("sig", b),
-                        ("params", Index("param")),
-                    )
-                ),
-            ),
-            0x07: (None, Layout((("_", Index("param")),))),  # ParamPtr
-            0x08: ("param", Layout((("flags", U16), ("seq", U16), ("name", s)))),
-            0x09: (
-                "interfaceimpl",
-                Layout((("cls", Index("typedef")), ("iface", Index("typedeforref")))),
-            ),
-            0x0A: (
-                "memberref",
-                Layout((("cls", Index("memberrefparent")), ("name", s), ("sig", b))),
-            ),
-            0x0B: (
-                "constant",
-                Layout((("type", U8), ("pad", U8), ("parent", Index("hasconstant")), ("value", b))),
-            ),
-            0x0C: (
-                "customattribute",
-                Layout(
-                    (
-                        ("parent", Index("hascustomattribute")),
-                        ("type", Index("customattributetype")),
-                        ("value", b),
-                    )
-                ),
-            ),
-            0x0D: (
-                None,
-                Layout((("parent", Index("hasfieldmarshal")), ("nativetype", b))),
-            ),  # FieldMarshal
-            0x0E: (
-                None,
-                Layout((("action", U16), ("parent", Index("hasdeclsecurity")), ("permset", b))),
-            ),
-            0x0F: (
-                None,
-                Layout((("pack", U16), ("size", U32), ("parent", Index("typedef")))),
-            ),  # ClassLayout
-            0x10: (None, Layout((("offset", U32), ("field", Index("field"))))),  # FieldLayout
-            0x11: (None, Layout((("sig", b),))),  # StandAloneSig
-            0x12: (
-                None,
-                Layout((("parent", Index("typedef")), ("events", Index("event")))),
-            ),  # EventMap
-            0x13: (None, Layout((("_", Index("event")),))),  # EventPtr
-            0x14: (
-                None,
-                Layout((("flags", U16), ("name", s), ("type", Index("typedeforref")))),
-            ),  # Event
-            0x15: (
-                None,
-                Layout((("parent", Index("typedef")), ("props", Index("property")))),
-            ),  # PropertyMap
-            0x16: (None, Layout((("_", Index("property")),))),  # PropertyPtr
-            0x17: (None, Layout((("flags", U16), ("name", s), ("type", b)))),  # Property
-            0x18: (
-                None,
-                Layout(
-                    (("sem", U16), ("method", Index("methoddef")), ("assoc", Index("hassemantics")))
-                ),
-            ),
-            0x19: (
-                None,
-                Layout(
-                    (
-                        ("cls", Index("typedef")),
-                        ("body", Index("methoddeforref")),
-                        ("decl", Index("methoddeforref")),
-                    )
-                ),
-            ),
-            0x1A: ("moduleref", Layout((("name", s),))),
-            0x1B: ("typespec", Layout((("sig", b),))),
-            0x1C: (
-                None,
-                Layout(
-                    (
-                        ("flags", U16),
-                        ("member", Index("memberforwarded")),
-                        ("name", s),
-                        ("scope", Index("moduleref")),
-                    )
-                ),
-            ),
-            0x1D: ("fieldrva", Layout((("rva", U32), ("field", Index("field"))))),
-            0x1E: (None, Layout((("_", Pad(8)),))),  # EncLog (4+4)
-            0x1F: (None, Layout((("_", Pad(4)),))),  # EncMap
-            0x20: (
-                "assembly",
-                Layout(
-                    (
-                        ("hashalg", U32),
-                        ("major", U16),
-                        ("minor", U16),
-                        ("build", U16),
-                        ("rev", U16),
-                        ("flags", U32),
-                        ("pubkey", b),
-                        ("name", s),
-                        ("culture", s),
-                    )
-                ),
-            ),
-            0x21: (None, Layout((("_", Pad(4)),))),  # AssemblyProcessor
-            0x22: (None, Layout((("_", Pad(12)),))),  # AssemblyOS
-            0x23: (
-                "assemblyref",
-                Layout(
-                    (
-                        ("major", U16),
-                        ("minor", U16),
-                        ("build", U16),
-                        ("rev", U16),
-                        ("flags", U32),
-                        ("pubkey", b),
-                        ("name", s),
-                        ("culture", s),
-                        ("hash", b),
-                    )
-                ),
-            ),
-            0x24: (
-                None,
-                Layout((("_", Pad(4)), ("ref", Index("assemblyref")))),
-            ),  # AssemblyRefProcessor
-            0x25: (None, Layout((("_", Pad(12)), ("ref", Index("assemblyref"))))),  # AssemblyRefOS
-            0x26: (None, Layout((("flags", U32), ("name", s), ("hash", b)))),  # File
-            0x27: (
-                None,
-                Layout(
-                    (
-                        ("flags", U32),
-                        ("typedefid", U32),
-                        ("name", s),
-                        ("namespace", s),
-                        ("impl", Index("implementation")),
-                    )
-                ),
-            ),
-            0x28: (
-                "manifestresource",
-                Layout(
-                    (
-                        ("offset", U32),
-                        ("flags", U32),
-                        ("name", s),
-                        ("impl", Index("implementation_resource")),
-                    )
-                ),
-            ),
-            0x29: (
-                "nestedclass",
-                Layout((("nested", Index("typedef")), ("enclosing", Index("typedef")))),
-            ),
-            0x2A: (
-                "genericparam",
-                Layout(
-                    (("number", U16), ("flags", U16), ("owner", Index("typeormethod")), ("name", s))
-                ),
-            ),
-            0x2B: (None, Layout((("method", Index("methoddeforref")), ("sig", b)))),  # MethodSpec
-            0x2C: (
-                None,
-                Layout((("owner", Index("genericparam")), ("constraint", Index("typedeforref")))),
-            ),  # GenericParamConstraint
-        }
-
-    @staticmethod
     def index_sizes(heap_sizes: int, rows: dict[str, int]) -> dict[str, int]:
         """Every index width, computed once (ECMA-335 II.24.2.6). Heaps widen by the heap-size flags; a simple
         index by its own row count; a coded index by the largest of its target tables against (0xFFFF>>bits)."""
@@ -357,7 +150,7 @@ class Spec:
         return value - (1 << 32) if value & 0x80000000 else value
 
 
-CATALOG = Spec.catalog()
+s, g, b = Index("string"), Index("guid"), Index("blob")
 
 
 class Blob:
@@ -369,10 +162,10 @@ class Blob:
         self.cur, self.at, self.left = cur, at, left
 
     def _take(self, width: int) -> int:
-        v = int.from_bytes(self.cur.data[self.at : self.at + width], "big")
+        v = self.cur.uint(self.at, width, "big")  # blob compressed integers are big-endian
         self.at += width
         self.left -= width
-        return v
+        return 0 if v is ABSENT else v
 
     def uvint(self) -> int:
         if self.left < 1:
@@ -488,6 +281,209 @@ class Tables:
 
     __slots__ = ("_bulk", "completed", "cur", "grids", "resource_base", "rows", "sizes")
 
+    CATALOG: ClassVar[dict[int, tuple[str | None, Layout]]] = {
+        0x00: (
+            "module",
+            Layout((("gen", U16), ("name", s), ("mvid", g), ("enc", g), ("encbase", g))),
+        ),
+        0x01: (
+            "typeref",
+            Layout((("scope", Index("resolutionscope")), ("name", s), ("namespace", s))),
+        ),
+        0x02: (
+            "typedef",
+            Layout(
+                (
+                    ("flags", U32),
+                    ("name", s),
+                    ("namespace", s),
+                    ("extends", Index("typedeforref")),
+                    ("fields", Index("field")),
+                    ("methods", Index("methoddef")),
+                )
+            ),
+        ),
+        0x03: (None, Layout((("_", Index("field")),))),  # FieldPtr
+        0x04: ("field", Layout((("flags", U16), ("name", s), ("sig", b)))),
+        0x05: (None, Layout((("_", Index("methoddef")),))),  # MethodPtr
+        0x06: (
+            "methoddef",
+            Layout(
+                (
+                    ("rva", U32),
+                    ("impl", U16),
+                    ("flags", U16),
+                    ("name", s),
+                    ("sig", b),
+                    ("params", Index("param")),
+                )
+            ),
+        ),
+        0x07: (None, Layout((("_", Index("param")),))),  # ParamPtr
+        0x08: ("param", Layout((("flags", U16), ("seq", U16), ("name", s)))),
+        0x09: (
+            "interfaceimpl",
+            Layout((("cls", Index("typedef")), ("iface", Index("typedeforref")))),
+        ),
+        0x0A: (
+            "memberref",
+            Layout((("cls", Index("memberrefparent")), ("name", s), ("sig", b))),
+        ),
+        0x0B: (
+            "constant",
+            Layout((("type", U8), ("pad", U8), ("parent", Index("hasconstant")), ("value", b))),
+        ),
+        0x0C: (
+            "customattribute",
+            Layout(
+                (
+                    ("parent", Index("hascustomattribute")),
+                    ("type", Index("customattributetype")),
+                    ("value", b),
+                )
+            ),
+        ),
+        0x0D: (
+            None,
+            Layout((("parent", Index("hasfieldmarshal")), ("nativetype", b))),
+        ),  # FieldMarshal
+        0x0E: (
+            None,
+            Layout((("action", U16), ("parent", Index("hasdeclsecurity")), ("permset", b))),
+        ),
+        0x0F: (
+            None,
+            Layout((("pack", U16), ("size", U32), ("parent", Index("typedef")))),
+        ),  # ClassLayout
+        0x10: (None, Layout((("offset", U32), ("field", Index("field"))))),  # FieldLayout
+        0x11: (None, Layout((("sig", b),))),  # StandAloneSig
+        0x12: (
+            None,
+            Layout((("parent", Index("typedef")), ("events", Index("event")))),
+        ),  # EventMap
+        0x13: (None, Layout((("_", Index("event")),))),  # EventPtr
+        0x14: (
+            None,
+            Layout((("flags", U16), ("name", s), ("type", Index("typedeforref")))),
+        ),  # Event
+        0x15: (
+            None,
+            Layout((("parent", Index("typedef")), ("props", Index("property")))),
+        ),  # PropertyMap
+        0x16: (None, Layout((("_", Index("property")),))),  # PropertyPtr
+        0x17: (None, Layout((("flags", U16), ("name", s), ("type", b)))),  # Property
+        0x18: (
+            None,
+            Layout(
+                (("sem", U16), ("method", Index("methoddef")), ("assoc", Index("hassemantics")))
+            ),
+        ),
+        0x19: (
+            None,
+            Layout(
+                (
+                    ("cls", Index("typedef")),
+                    ("body", Index("methoddeforref")),
+                    ("decl", Index("methoddeforref")),
+                )
+            ),
+        ),
+        0x1A: ("moduleref", Layout((("name", s),))),
+        0x1B: ("typespec", Layout((("sig", b),))),
+        0x1C: (
+            None,
+            Layout(
+                (
+                    ("flags", U16),
+                    ("member", Index("memberforwarded")),
+                    ("name", s),
+                    ("scope", Index("moduleref")),
+                )
+            ),
+        ),
+        0x1D: ("fieldrva", Layout((("rva", U32), ("field", Index("field"))))),
+        0x1E: (None, Layout((("_", Pad(8)),))),  # EncLog (4+4)
+        0x1F: (None, Layout((("_", Pad(4)),))),  # EncMap
+        0x20: (
+            "assembly",
+            Layout(
+                (
+                    ("hashalg", U32),
+                    ("major", U16),
+                    ("minor", U16),
+                    ("build", U16),
+                    ("rev", U16),
+                    ("flags", U32),
+                    ("pubkey", b),
+                    ("name", s),
+                    ("culture", s),
+                )
+            ),
+        ),
+        0x21: (None, Layout((("_", Pad(4)),))),  # AssemblyProcessor
+        0x22: (None, Layout((("_", Pad(12)),))),  # AssemblyOS
+        0x23: (
+            "assemblyref",
+            Layout(
+                (
+                    ("major", U16),
+                    ("minor", U16),
+                    ("build", U16),
+                    ("rev", U16),
+                    ("flags", U32),
+                    ("pubkey", b),
+                    ("name", s),
+                    ("culture", s),
+                    ("hash", b),
+                )
+            ),
+        ),
+        0x24: (
+            None,
+            Layout((("_", Pad(4)), ("ref", Index("assemblyref")))),
+        ),  # AssemblyRefProcessor
+        0x25: (None, Layout((("_", Pad(12)), ("ref", Index("assemblyref"))))),  # AssemblyRefOS
+        0x26: (None, Layout((("flags", U32), ("name", s), ("hash", b)))),  # File
+        0x27: (
+            None,
+            Layout(
+                (
+                    ("flags", U32),
+                    ("typedefid", U32),
+                    ("name", s),
+                    ("namespace", s),
+                    ("impl", Index("implementation")),
+                )
+            ),
+        ),
+        0x28: (
+            "manifestresource",
+            Layout(
+                (
+                    ("offset", U32),
+                    ("flags", U32),
+                    ("name", s),
+                    ("impl", Index("implementation_resource")),
+                )
+            ),
+        ),
+        0x29: (
+            "nestedclass",
+            Layout((("nested", Index("typedef")), ("enclosing", Index("typedef")))),
+        ),
+        0x2A: (
+            "genericparam",
+            Layout(
+                (("number", U16), ("flags", U16), ("owner", Index("typeormethod")), ("name", s))
+            ),
+        ),
+        0x2B: (None, Layout((("method", Index("methoddeforref")), ("sig", b)))),  # MethodSpec
+        0x2C: (
+            None,
+            Layout((("owner", Index("genericparam")), ("constraint", Index("typedeforref")))),
+        ),  # GenericParamConstraint
+    }
+
     def __init__(
         self,
         cur: Cursor,
@@ -554,7 +550,7 @@ class Tables:
             # a count past the end, or one the reference rejects as too large, cuts the walk short
             if n is ABSENT or n > 10000:
                 return Tables(cur, grids, rows, sizes, resource_base, completed=False)
-            entry = CATALOG.get(bit)
+            entry = Tables.CATALOG.get(bit)
             if entry is None:
                 return Tables(cur, grids, rows, sizes, resource_base, completed=False)
             name, layout = entry
@@ -1294,7 +1290,7 @@ class Dotnet:
         gparams = Dotnet._generic_params(tables, heaps)
         # which typedef rows are real classes is cheap (a name read + the filter); building a class (its
         # methods and their signatures) is the cost, so classes decode on access -- a rule that reads a
-        # count or a few classes never builds the rest, while yara-python builds them all eagerly.
+        # count or a few classes never builds the rest, while the reference engine builds them all eagerly.
         kept: list[int] = []
         for idx in range(typedef.count):
             row = typedef.row(idx)
