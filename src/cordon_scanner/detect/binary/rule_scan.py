@@ -81,6 +81,44 @@ class Part:
     #: The shortest run worth a factor test.
     FACTOR_MIN: ClassVar[int] = 8
 
+    #: The shortest literal run worth looking for before the anchors (`literals_in`).
+    LITERAL_MIN: ClassVar[int] = 3
+
+    @staticmethod
+    def literals_in(root: Term) -> list[bytes]:
+        """Runs of consecutive literal bytes on the terms every match goes through (the root and
+        the sequences under it, never inside an alternative or a repeat), `LITERAL_MIN` long or
+        longer, longest first. A piece of data without one of them holds no match."""
+        flat: list[Term] = []
+        todo = [root]
+        while todo:
+            term = todo.pop()
+            if term.kind == SEQ:
+                todo.extend(reversed(term.kids))
+            else:
+                flat.append(term)
+        runs: list[bytes] = []
+        run = bytearray()
+        for term in [*flat, Term(ANY)]:
+            if term.kind == LIT:
+                run.append(term.value)
+                continue
+            if len(run) >= Part.LITERAL_MIN:
+                runs.append(bytes(run))
+            run = bytearray()
+        return sorted(set(runs), key=lambda r: -len(r))
+
+    @staticmethod
+    def heavy_in(root: Term) -> bool:
+        """Whether a counted repeat or jump in `root` may run `Chain.HEAVY` times or more."""
+        todo = [root]
+        while todo:
+            term = todo.pop()
+            if term.kind in (COUNT, GAP) and term.hi >= Chain.HEAVY:
+                return True
+            todo.extend(term.kids)
+        return False
+
     #: The most runs `factors_of` keeps.
     FACTORS: ClassVar[int] = 4
 
@@ -119,6 +157,11 @@ class Part:
         self.factors: list[tuple[int, int]] = []
         #: The part as a chain of class repeats, when it is one (`rule_chain.Chain`).
         self.chain: Chain | None = None
+        #: Runs of literal bytes every match of the part holds (`Part.literals_in`).
+        self.required: list[bytes] = []
+        #: The part holds a repeat long enough for runs to keep many threads (`Part.heavy_in`):
+        #: only then is gating its anchors on the bytes around them worth its cost.
+        self.heavy = False
         self.anchors: list[AnchorAt] = []
         self.fits = False  # text short enough that an anchor occurrence is the match
         #: Steps the layouts have taken, kept across runs and files (`rule_pattern.Memo`).
@@ -245,6 +288,8 @@ class Search:
         part.root_entry = root.fwd
         part.factors = Part.factors_of(root)
         part.chain = Chain.of(root)
+        part.heavy = Part.heavy_in(root)
+        part.required = Part.literals_in(root)
         chosen, _ = Anchors.of(root)
         self.parts.append(part)
         part.anchors = self._finish(chosen, text=False)
@@ -354,6 +399,8 @@ class Search:
             self._index()
         assert self.needles is not None  # noqa: S101 - set by _index
         seen = {} if seen is None else seen
+        if not self._holds_required(data, seen):
+            return []
         events: list[Event] = []
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
@@ -379,6 +426,30 @@ class Search:
             return []
         events.sort(key=lambda e: (e[0], e[1], e[2]))
         return hunt.run(events)
+
+    def _holds_required(self, data: bytes, seen: dict[Any, Any]) -> bool:
+        """Whether `data` holds every literal run each part's matches must hold
+        (`Part.required`), read case-folded for a `nocase` string; one search of the data each,
+        shared by every string."""
+        f = self.flags
+        if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f:
+            return True
+        folded = "nocase" in f
+        for part in self.parts:
+            for run in part.required:
+                key = ("holds", folded, run)
+                held = seen.get(key)
+                if held is None:
+                    if folded:
+                        lowered = seen.get(("lowered",))
+                        if lowered is None:
+                            lowered = seen[("lowered",)] = data.lower()
+                        held = seen[key] = run.lower() in lowered
+                    else:
+                        held = seen[key] = run in data
+                if not held:
+                    return False
+        return True
 
     @staticmethod
     def _occurred(
@@ -769,8 +840,10 @@ class _Hunt:
         fwd, back = anchor[2], anchor[3]
         if fwd is None:
             return
-        if self.busy.get(p, 0) > _Hunt.BUSY and not (
-            self._viable(p, anchor, offset) and self._factor_near(p, offset)
+        if (
+            part.heavy
+            and self.busy.get(p, 0) > _Hunt.BUSY
+            and not (self._viable(p, anchor, offset) and self._factor_near(p, offset))
         ):
             return  # a run from the anchor dies on the bytes around it, or no match fits there
         for wide in self._widths():

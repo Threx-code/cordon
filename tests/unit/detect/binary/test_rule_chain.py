@@ -72,6 +72,7 @@ class TestWhatIsAChain:
             (r"/ +\s{475}\s{402,}/", True),
             (r"/[^a]{167,}[0-9]*.{513}[0-9]{1,6}/s", True),
             (r"/[ ]{400,}\S/", True),
+            (r"/from\s+os\s+import/", False),  # no long repeat: the anchors' runs are cheaper
             (r"/[0-9]?ab/", False),  # a first term that may read nothing
             (r"/a+?b/", False),  # a lazy repeat
             (r"/(ab)+/", False),  # a repeat of more than one byte
@@ -92,8 +93,8 @@ class TestSameMatchesAsTheRuns:
     def test_random_chains_over_long_runs(self, seed: int) -> None:
         r = random.Random(seed)  # noqa: S311 -- a fixture, not key material
         for _ in range(12):
-            terms = []
-            for i in range(r.randint(1, 4)):
+            terms = [r.choice(self.CLASSES) + f"{{{r.randint(16, 80)},}}"]  # one long repeat
+            for i in range(1, r.randint(1, 4)):
                 reps = ["", "+", f"{{{r.randint(1, 60)}}}", f"{{{r.randint(1, 40)},}}"]
                 reps += ["*", "?", f"{{0,{r.randint(1, 9)}}}"] if i else []
                 terms.append(r.choice(self.CLASSES) + r.choice(reps))
@@ -108,10 +109,10 @@ class TestSameMatchesAsTheRuns:
     @pytest.mark.parametrize(
         ("pattern", "data"),
         [
-            (r"/ +/", b" " * 10000),  # anchors' backward and forward runs each read up to the reach
-            (r"/ +b/", b" " * 5000 + b"b"),
-            (r"/x {2,}/", b"x" + b" " * 5000),
-            (r"/ {2,}x/", b" " * 4097 + b"x"),
+            (r"/ +\s{16,}/", b" " * 10000),  # the backward and forward runs each read to the reach
+            (r"/ +\s{16}b/", b" " * 5000 + b"b"),
+            (r"/x {20,}/", b"x" + b" " * 5000),
+            (r"/ {20,}x/", b" " * 4097 + b"x"),
         ],
     )
     def test_matches_as_long_as_the_reach(self, pattern: str, data: bytes) -> None:

@@ -2,10 +2,11 @@
 worked out from the lengths of class runs instead of thread by thread.
 
 A chain is a sequence of terms each reading one byte from a class, repeated from `lo` to `hi`
-times, greedily -- ` +\\s{475}\\s{402,}`, `[^a]{167,}[0-9]*.{513}[0-9]{1,6}` -- whose first term
-reads at least once. Running such a pattern thread by thread costs a thread for every way the
-bytes read so far could split between the terms, which over long runs of one class is hundreds
-of threads a step; the chain matcher costs a few lookups a match:
+times, greedily, at least one of them `HEAVY` times or more -- ` +\\s{475}\\s{402,}`,
+`[^a]{167,}[0-9]*.{513}[0-9]{1,6}` -- whose first term reads at least once. Running such a
+pattern thread by thread costs a thread for every way the bytes read so far could split between
+the terms, which over long runs of one class is hundreds of threads a step; the chain matcher
+costs a few lookups a match:
 
 - For each term `i`, `feasible[i]` is the set of positions from which terms `i..` can match (any
   lengths), as sorted disjoint intervals, worked out from the last term back over the runs of each
@@ -80,6 +81,9 @@ class Chain:
         }
     )
     RUNS: ClassVar[re.Pattern[bytes]] = re.compile(b"\x01+")
+    #: A repeat at least this long makes runs keep a thread for each way of splitting it: only a
+    #: chain with one is matched here.
+    HEAVY: ClassVar[int] = 16
 
     def __init__(self, terms: list[tuple[Term, int, int]]) -> None:
         self.terms = terms
@@ -119,6 +123,10 @@ class Chain:
             else:
                 return None
         if not terms or terms[0][1] < 1:
+            return None
+        if all(lo < Chain.HEAVY for _, lo, _ in terms):
+            # without a long counted repeat a run keeps few threads, and the anchors' runs are
+            # cheaper than finding every term's class runs through the whole data
             return None
         chain = Chain(terms)
         chain.first_repeats = flat[0].kind == PLUS
