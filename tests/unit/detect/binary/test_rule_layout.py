@@ -14,6 +14,7 @@ from cordon_scanner.detect.binary.rule_layout import (
     U32,
     Cursor,
     Grid,
+    Index,
     Layout,
     LazyRecord,
     LazySeq,
@@ -50,6 +51,20 @@ class TestGridTuples:
         data = bytes(range(7)) + bytes(range(7)) + b"\x00\x00\x00"  # two whole rows + 3 spare bytes
         grid = Build.grid(2, data, count=5)  # the header claims five rows; only two are present
         assert len(grid.tuples()) == 2
+
+    def test_tuples_match_rows_for_an_index_width_table(self) -> None:
+        # a metadata-table shape: heap/table indices whose width comes from the sizes map (like methoddef)
+        row = Layout((("name", Index("str")), ("sig", Index("blob")), ("flags", U16)))
+        sizes = {"str": 2, "blob": 4}  # stride 8
+        data = bytes([5, 0, 9, 0, 0, 0, 0x30, 0, 6, 0, 10, 0, 0, 0, 0x10, 0])  # two rows
+        grid = Grid(Cursor(data), 0, row, 2, sizes)
+        tuples = grid.tuples()
+        assert grid.names == ("name", "sig", "flags")
+        assert tuples == [(5, 9, 0x30), (6, 10, 0x10)]
+        for i, values in enumerate(tuples):
+            assert {name: values[k] for k, name in enumerate(grid.names)} == grid.row(i)
+        clamped = Grid(Cursor(data), 0, row, 5, sizes)  # claims five rows; only two fit
+        assert len(clamped.tuples()) == 2
 
 
 class TestRow:

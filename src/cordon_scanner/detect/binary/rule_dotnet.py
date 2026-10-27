@@ -486,7 +486,7 @@ class Tables:
     """The "#~" stream walked once: the present tables, their row counts, the index sizes, and a Grid per
     table (driven by the catalog). Nothing here interprets a table — it only locates and sizes them."""
 
-    __slots__ = ("completed", "cur", "grids", "resource_base", "rows", "sizes")
+    __slots__ = ("_bulk", "completed", "cur", "grids", "resource_base", "rows", "sizes")
 
     def __init__(
         self,
@@ -507,9 +507,24 @@ class Tables:
         #: whether the directory walk finished every present table; the reference reads the class table
         #: (its post-walk pass) only when it did, so a walk cut short by a huge count yields no classes.
         self.completed = completed
+        #: a table read once in bulk (tuples, name->position, declared count), cached across the classes
+        #: that index into it; a method- or parameter-heavy assembly decodes each table a single time.
+        self._bulk: dict[str, tuple[list[tuple[Any, ...]], dict[str, int], int] | None] = {}
 
     def grid(self, name: str) -> Grid | None:
         return self.grids.get(name)
+
+    def bulk(self, name: str) -> tuple[list[tuple[Any, ...]], dict[str, int], int] | None:
+        """Table `name` read once with ``Grid.tuples`` (one struct call for the whole table), with its
+        name->position map and declared row count; None when the table is absent. Cached per Tables."""
+        if name not in self._bulk:
+            grid = self.grids.get(name)
+            self._bulk[name] = (
+                (grid.tuples(), {n: i for i, n in enumerate(grid.names)}, grid.count)
+                if grid is not None
+                else None
+            )
+        return self._bulk[name]
 
     @staticmethod
     def walk(
@@ -1421,33 +1436,38 @@ class Dotnet:
         reference reports an empty methods list and no count where the method list is absent or too long."""
         if not method_list or count > MAX_METHODS:
             return {"methods": {}}
-        grid = tables.grid("methoddef")
+        block = tables.bulk("methoddef")  # the whole methoddef table read once, rows as tuples
         methods: dict[int, Any] = {}
         kept = 0
-        for off in range(count):
-            idx = method_list - 1 + off
-            if grid is None or not (0 <= idx < grid.count):  # out of range ends the class's methods
-                break
-            row = grid.row(idx)
-            if row is None:  # a row past the end is skipped, as the reference does
-                continue
-            name = heaps.text(row["name"])
-            if not name:
-                continue
-            method_gp = gparams.get((1, method_list + off), [])
-            start, length = heaps.blob_at(row["sig"])
-            if not start or length < 3:
-                continue
-            sig = names.signatures.method(start, length, class_gp, method_gp)
-            if sig is None:  # return type did not decode, or an absurd parameter count
-                continue
-            n_params, ret, ptypes = sig
-            if not Dotnet._params_ok(tables, row["params"], n_params, ptypes):
-                continue  # a parameter type did not decode, or a parameter row does not fit: drop the method
-            # the method is kept; its fields (and especially its parameter list) are built only when read
-            descriptor = (name, row["flags"], method_gp, ret, ptypes, row["params"], n_params)
-            methods[kept] = _Method(descriptor, heaps, tables)
-            kept += 1
+        if block is not None:
+            rows, pos, total = block
+            ni, si, qi, fi = pos["name"], pos["sig"], pos["params"], pos["flags"]
+            for off in range(count):
+                idx = method_list - 1 + off
+                if not 0 <= idx < total:  # out of the declared table ends the class's methods
+                    break
+                if idx >= len(
+                    rows
+                ):  # a row past the fitting region is skipped, as the reference does
+                    continue
+                t = rows[idx]
+                name = heaps.text(t[ni])
+                if not name:
+                    continue
+                method_gp = gparams.get((1, method_list + off), [])
+                start, length = heaps.blob_at(t[si])
+                if not start or length < 3:
+                    continue
+                sig = names.signatures.method(start, length, class_gp, method_gp)
+                if sig is None:  # return type did not decode, or an absurd parameter count
+                    continue
+                n_params, ret, ptypes = sig
+                if not Dotnet._params_ok(tables, t[qi], n_params, ptypes):
+                    continue  # a parameter type did not decode, or a parameter row does not fit
+                # the method is kept; its fields (its parameter list especially) are built only when read
+                descriptor = (name, t[fi], method_gp, ret, ptypes, t[qi], n_params)
+                methods[kept] = _Method(descriptor, heaps, tables)
+                kept += 1
         return {"methods": methods, "number_of_methods": kept}
 
     @staticmethod
@@ -1456,12 +1476,16 @@ class Dotnet:
         has within the table fits) -- the drop test ``_build_params`` applies, without building a dict."""
         if not param_list:
             return True
-        grid = tables.grid("param")
+        block = tables.bulk("param")
+        total = block[2] if block is not None else 0
+        fit = len(block[0]) if block is not None else 0
         for off in range(count):
             if ptypes[off] is None:
                 return False
             idx = param_list - 1 + off
-            if grid is not None and 0 <= idx < grid.count and grid.row(idx) is None:
+            if (
+                0 <= idx < total and idx >= fit
+            ):  # within the declared table but not fitting: drop the method
                 return False
         return True
 
@@ -1471,19 +1495,20 @@ class Dotnet:
     ) -> Any:
         if not param_list:
             return True
-        grid = tables.grid("param")
+        block = tables.bulk("param")
         out: dict[int, Any] = {}
         for off in range(count):
             kind = ptypes[off]  # the type was decoded with the method signature (cached)
             if kind is None:
                 return None
             idx = param_list - 1 + off
-            if grid is not None and 0 <= idx < grid.count:
+            name: bytes | None
+            if block is not None and 0 <= idx < block[2]:
                 # the row is within the table: it must fit, or the reference drops the whole method
-                prow = grid.row(idx)
-                if prow is None:
+                rows, pos, _total = block
+                if idx >= len(rows):
                     return None
-                name = heaps.text(prow["name"])
+                name = heaps.text(rows[idx][pos["name"]])
             else:  # no row for this parameter: a synthetic name, as the reference uses
                 name = b"P_%d" % off
             entry: dict[str, Any] = {"type": kind}
