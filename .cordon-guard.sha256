@@ -7,8 +7,8 @@
 # diff. Code-owner rules on this path are what put a human on that diff.
 b5bef9405a1b16ed37274c11e1652637a0da6ae145e9e90073fc367461e2ba09  .github/workflows/ci.yml
 06a4fd60f830884a756b820a129a2615fbd155c387ce48f2801d9130673fee2d  .github/workflows/refresh-advisories.yml
-1f6a364a3eb35927aba90b29917f9e57a8554fc5574103cc444e0fde81252519  .github/workflows/refresh-iac-policies.yml
-d400f39b2ce5266f09f68d2de9b78477c70ce67211325c27e61de13df872731a  .github/workflows/refresh-intel.yml
+780f65837105fbf623728041037e989b8e1fcc72e8833fae7165fcc1b1fc7259  .github/workflows/refresh-iac-policies.yml
+5558889702d2cb8eeccdc749ca71523049258ceec6370c900cfe88e6891ab05f  .github/workflows/refresh-intel.yml
 02b7c989ba422c82e727641cba48ecdeaa4fee0e027b4a10dfff35658deea56d  .github/workflows/release.yml
 3fb78c694f2444babd21eaa2201b645285dce3e5d89dc30f17e88b45faf61cc8  .github/workflows/verify-refresh.yml
 5f7c9a5df0decccabf4e682859b78e73b2f99a485dc63b235b98c1ac8cd0bc50  cordon-history-baseline.json
