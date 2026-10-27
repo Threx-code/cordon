@@ -171,7 +171,7 @@ class AtrImport:
             while finished < len(pending):
                 try:
                     key, seconds = done.get(timeout=max(2.0, BUDGET_SECONDS * 40))
-                except Exception:
+                except Exception:  # noqa: BLE001
                     break
                 timings[key] = seconds
                 finished += 1

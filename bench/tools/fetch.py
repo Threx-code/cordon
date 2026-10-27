@@ -133,7 +133,7 @@ class BenchmarkData:
                 continue
             try:
                 document = json.loads(BenchmarkData.get(f"https://pypi.org/pypi/{name}/json"))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 print(f"pypi {name}: {exc}", file=sys.stderr)
                 continue
             files = [
@@ -189,7 +189,7 @@ class BenchmarkData:
                     )
                 )
                 blob = BenchmarkData.get(document["dist"]["tarball"])
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 print(f"npm {name}: {exc}", file=sys.stderr)
                 continue
             target = out / "npm" / f"{name.replace('/', '__')}-{document['version']}.tgz"
@@ -237,7 +237,7 @@ class BenchmarkData:
                     data = BenchmarkData.get(
                         f"https://raw.githubusercontent.com/{repo}/HEAD/{path}"
                     )
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     print(f"{repo}/{path}: {exc}", file=sys.stderr)
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)

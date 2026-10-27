@@ -147,7 +147,7 @@ class Check:
             try:
                 Check.write(root, ecosystem, batch)
                 result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 return (
                     ecosystem,
                     0,

@@ -205,7 +205,7 @@ class Agreement:
             try:
                 ours = Agreement.cordon(read)
                 theirs, kinds = Agreement.trivy(read)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 return {**entry, "error": f"{type(exc).__name__}: {exc}"[:300]}
         if not kinds:
             return {**entry, "trivy_types": "", "cordon": len(ours), "trivy_reads_nothing": True}

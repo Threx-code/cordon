@@ -22,7 +22,7 @@ for index in json.loads(Path("/data/actions/index.json").read_text(encoding="utf
             if "pkg:githubactions/" in json.dumps(p.get("externalRefs", []))
         ]
         (folder / "sbom.json").write_text(json.dumps(packages, indent=1), encoding="utf-8")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         (folder / "sbom.json").write_text(
             json.dumps({"error": f"{type(exc).__name__}: {exc}"[:200]}), encoding="utf-8"
         )

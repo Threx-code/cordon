@@ -118,7 +118,7 @@ class LongtailScan:
             )
         except SystemExit as e:
             code = e.code if isinstance(e.code, int) else 1
-        except BaseException:
+        except BaseException:  # noqa: BLE001
             code = 70
         sys.stdout.flush()
         return int(code or 0)
@@ -154,7 +154,7 @@ class LongtailScan:
                 ]
                 for f in rep.get("findings", [])
             ]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             rec["parse_error"] = repr(e)[:120]
         return rec
 

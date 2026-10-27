@@ -18,7 +18,7 @@ for repo in sorted(Path("/data/conan").iterdir()):
                 "tool_requires": list(loader.tool_requirements),
                 "test_requires": list(getattr(loader, "test_requirements", [])),
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             out[rel] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
     for path in repo.rglob("conan.lock"):
         rel = path.relative_to(repo).as_posix()
@@ -34,7 +34,7 @@ for repo in sorted(Path("/data/conan").iterdir()):
             out[rel]["requires"] += [
                 n["ref"] for k, n in nodes.items() if k != "0" and n.get("ref")
             ]
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             out[rel] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
     (repo / ".reference").mkdir(exist_ok=True)
     (repo / ".reference" / "conan.json").write_text(json.dumps(out, indent=1), encoding="utf-8")

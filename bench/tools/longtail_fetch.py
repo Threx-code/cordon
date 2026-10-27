@@ -242,7 +242,7 @@ class Names:
                 break
             try:
                 pk = Http.json(f"https://hex.pm/api/packages?page={p}&sort=name")
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             out += [
                 (x["name"], x.get("latest_stable_version") or x.get("latest_version")) for x in pk
@@ -257,7 +257,7 @@ class Names:
         for page in rng.sample(index, min(len(index), n // 10 + 50)):
             try:
                 items = Http.json(page["@id"])["items"]
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             items = [i for i in items if i.get("@type") == "nuget:PackageDetails"]
             for i in rng.sample(items, min(10, len(items))):
@@ -281,7 +281,7 @@ class Names:
                     .decode()
                     .splitlines()
                 )
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             rows = [json.loads(x) for x in lines if x]
             for r in rng.sample(rows, min(8, len(rows))):
@@ -298,7 +298,7 @@ class Names:
         while len(out) < n:
             try:
                 docs = Http.json(base + str(rng.randrange(0, total - 20)))["response"]["docs"]
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             out += [
                 (d["g"], d["a"], d.get("latestVersion"))
@@ -317,7 +317,7 @@ class Names:
                 ext = Http.json(f"https://open-vsx.org/api/-/search?size=50&offset={off}")[
                     "extensions"
                 ]
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             for e in rng.sample(ext, min(5, len(ext))):
                 key = (e["namespace"], e["name"])
@@ -342,7 +342,7 @@ class Names:
                 pk = Http.json(
                     f"https://artifacthub.io/api/v1/packages/search?kind=0&limit=60&offset={off}"
                 )["packages"]
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             for p in rng.sample(pk, min(5, len(pk))):
                 key = (p["repository"]["name"], p["name"])
@@ -361,7 +361,7 @@ class Names:
         for off in rng.sample(range(0, total, 100), (total + 99) // 100):
             try:
                 data = Http.json(f"{base}?limit=100&offset={off}")["data"]
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             out += [
                 (d["namespace"], d["name"], (d.get("highest_version") or {}).get("version"))
@@ -379,7 +379,7 @@ class Names:
                 mods = Http.json(f"https://registry.terraform.io/v1/modules?limit=50&offset={off}")[
                     "modules"
                 ]
-            except Exception:  # noqa: S112 - a page that fails is skipped; the seeded draw goes on
+            except Exception:  # noqa: BLE001, S112
                 continue
             for m in rng.sample(mods, min(5, len(mods))):
                 if m["id"] not in seen:
@@ -396,7 +396,7 @@ class Names:
             )
             try:
                 d = Http.json(url)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 break
             for s in d.get("servers", []):
                 for p in (s.get("server") or {}).get("packages") or []:
@@ -661,7 +661,7 @@ class Corpus:
                     part = target.with_name(target.name + ".part")
                     part.write_bytes(body)
                     part.replace(target)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 status = "error: " + repr(e)[:150]
             with lock, log.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"file": row["file"], "status": status}) + "\n")
@@ -714,7 +714,7 @@ class Corpus:
                 drawn_file.write_text(json.dumps(items), encoding="utf-8")
                 draws[eco] = items
                 print(f"{eco}: drawn {len(items)}", flush=True)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"{eco}: name source failed: {e!r}", flush=True)
 
         with ThreadPoolExecutor(len(ecos)) as pool:
@@ -763,7 +763,7 @@ class Corpus:
                             fh.write(json.dumps(rec) + "\n")
                     else:  # over target from a concurrent fetch: not part of the draw
                         (a.queue / rec["file"]).unlink(missing_ok=True)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 with lock, failed.open("a", encoding="utf-8") as fh:
                     fh.write(
                         json.dumps(

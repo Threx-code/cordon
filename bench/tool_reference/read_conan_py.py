@@ -56,7 +56,7 @@ for repo in sorted(Path("/data/conan").iterdir()):
             try:
                 for requirement in Conan2.requirements(work / "r" / "conanfile.py", system):
                     found.setdefault(str(requirement["ref"]), requirement)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 errors.append(f"{system}: {traceback.format_exc(limit=1)[-300:]}")
         out[rel] = {"requires": list(found.values()), "errors": errors}
         shutil.rmtree(work, ignore_errors=True)

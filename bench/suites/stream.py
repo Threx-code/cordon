@@ -227,7 +227,7 @@ class BenignStream:
                     row["cordon"] = BenignStream.cordon(target)
                     if item in compared:
                         row["guarddog"] = BenignStream.guarddog(target, ecosystem)
-            except Exception as exc:  # one package failing to fetch is a row, not a stop
+            except Exception as exc:  # one package failing to fetch is a row, not a stop  # noqa: BLE001
                 row["fetch_error"] = f"{type(exc).__name__}: {exc}"[:200]
             with lock:
                 with results.open("a") as handle:

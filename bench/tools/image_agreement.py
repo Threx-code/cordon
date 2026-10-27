@@ -217,7 +217,7 @@ class Image:
             try:
                 theirs = Image.syft(tarball)
                 ours, seconds = Image.cordon(tarball)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 return {"image": reference, "error": f"{type(exc).__name__}: {exc}"[:400]}
         by_type: dict[str, Any] = {}
         for kind in sorted(set(ours) | set(theirs)):

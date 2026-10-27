@@ -610,7 +610,7 @@ class McpPoisoningBench:
     def child(cls, row: dict[str, Any], conn: Any) -> None:
         try:
             conn.send(cls.one(row))
-        except BaseException as exc:  # reported as the unit's error, never swallowed
+        except BaseException as exc:  # reported as the unit's error, never swallowed  # noqa: BLE001
             conn.send({"status": "error", "error": f"{type(exc).__name__}: {exc}"[:500]})
         finally:
             conn.close()

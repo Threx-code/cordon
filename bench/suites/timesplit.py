@@ -103,7 +103,7 @@ class TimeSplit:
             if archive.suffix != ".vsix":
                 try:
                     target = Harness._unzip_datadog(archive, Path(work))
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     return {"sample": relative, "level": "error", "error": type(exc).__name__}
             if target is None:
                 return {"sample": relative, "level": "error", "error": "empty"}

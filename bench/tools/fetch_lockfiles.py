@@ -105,7 +105,7 @@ class Corpus:
         for page in range(1, count // 100 + 2):
             try:
                 rows = Fetch.json(PACKAGES.format(registry=registry, page=page))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 print(f"{registry} page {page}: {exc}", file=sys.stderr)
                 break
             for row in rows if isinstance(rows, list) else []:
@@ -141,7 +141,7 @@ class Corpus:
                     manifests = Fetch.json(
                         MANIFESTS.format(repo=urllib.parse.quote(repo, safe="/"))
                     )
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     print(f"{repo}: {exc}", file=sys.stderr)
                     continue
                 for manifest in manifests if isinstance(manifests, list) else []:
@@ -156,7 +156,7 @@ class Corpus:
                         continue
                     try:
                         body = Fetch.get(RAW.format(repo=repo, path=urllib.parse.quote(path)))
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         print(f"{repo}/{path}: {exc}", file=sys.stderr)
                         continue
                     folder = (
@@ -200,7 +200,7 @@ class Siblings:
                     body = Fetch.get(
                         RAW.format(repo=entry["repo"], path=urllib.parse.quote(sibling))
                     )
-                except Exception:  # noqa: S112 - a sibling file that will not fetch is optional
+                except Exception:  # noqa: BLE001, S112
                     continue
                 (folder / name).write_bytes(body)
                 added += 1
