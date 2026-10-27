@@ -60,6 +60,7 @@ from cordon_scanner.engine.walker import (
     Walker,
     WalkStats,
 )
+from cordon_scanner.foundation.collector import Collector
 from cordon_scanner.foundation.config import Config, Policy
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import ArchiveError, SourceError
@@ -1369,11 +1370,10 @@ class Engine:
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
         try:
-            return self._scan(target)
+            return Collector.during(self._scan, target)  # foundation/collector: GC relaxed
         finally:
-            # In a `finally` because the progress line is a partial line with no
-            # newline on it. Leaving it there puts a traceback or an error
-            # message on the same row as a half-drawn progress bar.
+            # In a `finally`: the progress line is a partial line with no newline, so leaving it
+            # puts a traceback or an error message on the same row as a half-drawn progress bar.
             self.progress.finish()
 
     def scan_host(self, root: str | Path, home: str | Path | None = None) -> ScanResult:

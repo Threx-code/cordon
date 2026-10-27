@@ -302,6 +302,9 @@ class ParallelScanner:
         files and the worker count defaults to the core count, so the default
         configuration on any real repository was the one missing it.
         """
+        from cordon_scanner.foundation.collector import Collector
+
+        Collector.relax()  # a worker only scans: its collector stays relaxed
 
         from cordon_scanner.engine.engine import Engine
         from cordon_scanner.foundation.config import Config as _Config
