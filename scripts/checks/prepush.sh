@@ -19,8 +19,8 @@ mode=""
 
 command -v docker >/dev/null 2>&1 || { echo "prepush: Docker is required" >&2; exit 2; }
 
-# Rebuilt only when the dependencies change: tagged with pyproject.toml's blob hash.
-tag="cordon-prepush:$(git -C "$root" hash-object pyproject.toml | cut -c1-12)"
+# Rebuilt only when the toolchain changes: tagged with its lock file's blob hash.
+tag="cordon-prepush:$(git -C "$root" hash-object ci/dev-requirements.txt | cut -c1-12)"
 if ! docker image inspect "$tag" >/dev/null 2>&1; then
     echo "prepush: building $tag (once per dependency change)"
     docker build -q -t "$tag" -f "$root/scripts/checks/prepush/Dockerfile" "$root" >/dev/null

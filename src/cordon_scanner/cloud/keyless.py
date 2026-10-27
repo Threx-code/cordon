@@ -27,6 +27,7 @@ import urllib.request
 from typing import Any, ClassVar
 
 from cordon_scanner.cloud._p256 import P256Signer
+from cordon_scanner.cloud.ci_agent_token import CiAgentToken
 
 
 class KeylessError(RuntimeError):
@@ -52,31 +53,14 @@ class OidcToken:
         # The CI's own tool, asked for a token with Sigstore's audience (GitLab sets
         # SIGSTORE_ID_TOKEN itself, from the job's `id_tokens`).
         if os.environ.get("BUILDKITE") == "true":
-            return OidcToken._tool(
+            return CiAgentToken.request(
                 ["buildkite-agent", "oidc", "request-token", "--audience", "sigstore"]
             )
         if os.environ.get("CIRCLECI") == "true":
-            return OidcToken._tool(
+            return CiAgentToken.request(
                 ["circleci", "run", "oidc", "get", "--claims", '{"aud": "sigstore"}']
             )
         return None
-
-    @staticmethod
-    def _tool(argv: list[str]) -> str | None:
-        import shutil
-        import subprocess
-
-        path = shutil.which(argv[0])
-        if path is None:
-            return None
-        try:
-            done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
-                [path, *argv[1:]], capture_output=True, text=True, timeout=60, check=False
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
-        token = done.stdout.strip()
-        return token if done.returncode == 0 and token.count(".") == 2 else None
 
     @staticmethod
     def _github(url: str, bearer: str) -> str | None:
