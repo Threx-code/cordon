@@ -420,11 +420,41 @@ class Atoms:
                 return int(b)  # the lower-case letter; the search runs over lowered data
         return None
 
+    MAX_ALTERNATIVES: ClassVar[int] = 64
+
+    @staticmethod
+    def _strings(node: _Node) -> tuple[list[bytes], bool] | None:
+        """The literal strings `node` matches, when they are few and fixed (a literal, a sequence
+        of literals, an alternation of them), and whether any letter is either case."""
+        if node.kind == "set":
+            byte = Atoms._literal(node)
+            return None if byte is None else ([bytes([byte])], len(node.value) == 2)
+        if node.kind == "empty":
+            return [b""], False
+        if node.kind in ("cat", "alt"):
+            parts = [Atoms._strings(c) for c in node.children]
+            if any(p is None for p in parts):
+                return None
+            either = any(p[1] for p in parts if p is not None)
+            if node.kind == "alt":
+                out = [s for p in parts if p is not None for s in p[0]]
+            else:
+                out = [b""]
+                for p in parts:
+                    assert p is not None  # noqa: S101 - checked above
+                    out = [a + b for a in out for b in p[0]]
+                    if len(out) > Atoms.MAX_ALTERNATIVES:
+                        return None
+            return (out, either) if len(out) <= Atoms.MAX_ALTERNATIVES else None
+        return None
+
     @staticmethod
     def find(
         source: str, *, nocase: bool, dotall: bool
-    ) -> tuple[bytes, bool, int, int | None] | None:
-        """(atom, search lowered, fewest bytes before it, most bytes before it or None)."""
+    ) -> tuple[tuple[bytes, ...], bool, int, int | None] | None:
+        """(the atom's alternatives, search lowered, fewest bytes before it, most bytes before it
+        or None): the strongest fixed part every match contains -- a run of literals, or an
+        alternation of literal strings, whose shortest alternative is longest."""
         try:
             tree = _Parse(
                 source, nocase=nocase, dotall=dotall, max_repeat=Syntax.MAX_REPEAT
@@ -432,30 +462,43 @@ class Atoms:
         except RegexError:
             return None
         items = list(tree.children) if tree.kind == "cat" else [tree]
-        best: tuple[int, int] | None = None  # (start index, length)
+        best: tuple[int, int, int] | None = None  # (score, start index, items)
         i = 0
         while i < len(items):
-            if Atoms._literal(items[i]) is None:
-                i += 1
+            if Atoms._literal(items[i]) is not None:
+                j = i
+                while j < len(items) and Atoms._literal(items[j]) is not None:
+                    j += 1
+                if best is None or j - i > best[0]:
+                    best = (j - i, i, j - i)
+                i = j
                 continue
-            j = i
-            while j < len(items) and Atoms._literal(items[j]) is not None:
-                j += 1
-            if best is None or j - i > best[1]:
-                best = (i, j - i)
-            i = j
+            found = Atoms._strings(items[i]) if items[i].kind in ("alt", "cat") else None
+            if found is not None and all(found[0]):
+                score = min(len(s) for s in found[0])
+                if best is None or score > best[0]:
+                    best = (score, i, 1)
+            i += 1
         if best is None:
             return None
-        start, length = best
+        _, start, count = best
+        strings, lowered = [b""], False
+        for node in items[start : start + count]:
+            got = Atoms._strings(node)
+            assert got is not None  # noqa: S101 - every chosen item is fixed
+            strings = [a + b for a in strings for b in got[0]]
+            lowered = lowered or got[1]
+        if (
+            lowered
+        ):  # searched over lowered data: every alternative lowered whole, the match checks the rest
+            strings = [s.lower() for s in strings]
         before_lo: int = 0
         before_hi: int | None = 0
-        lowered = any(len(items[k].value) == 2 for k in range(start, start + length))
-        atom = bytes(Atoms._literal(items[k]) or 0 for k in range(start, start + length))
         for node in items[:start]:
             a, b = Atoms.span(node)
             before_lo += a
             before_hi = None if before_hi is None or b is None else before_hi + b
-        return atom, lowered, before_lo, before_hi
+        return tuple(dict.fromkeys(strings)), lowered, before_lo, before_hi
 
 
 class Syntax:

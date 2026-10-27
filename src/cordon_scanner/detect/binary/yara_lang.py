@@ -35,6 +35,7 @@ import base64
 import binascii
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -1051,7 +1052,7 @@ class Strings:
             Strings._near_atoms(pattern, atom, data, lowered, found, deadline)
             return
         if isinstance(pattern, re.Pattern):
-            look = re.compile(b"(?=(" + pattern.pattern + b"))", pattern.flags)
+            look = Strings._lookahead(pattern)
             for window in range(0, max(n, 1), WINDOW):
                 if deadline is not None and time.monotonic() > deadline:
                     raise YaraError("matching took longer than the time allowed")
@@ -1084,6 +1085,39 @@ class Strings:
                 if len(found) >= MAX_MATCHES:
                     return
 
+    LOOKAHEADS: ClassVar[dict[tuple[bytes, int], re.Pattern[bytes]]] = {}
+    #: below this many allowed starts, anchored matches; above, one scan in C
+    ANCHORED_SPAN: ClassVar[int] = 64
+
+    @staticmethod
+    def _lookahead(pattern: re.Pattern[bytes]) -> re.Pattern[bytes]:
+        """`(?=(pattern))`, compiled once: a zero-width match at a start that reports the length."""
+        key = (pattern.pattern, pattern.flags)
+        look = Strings.LOOKAHEADS.get(key)
+        if look is None:
+            look = Strings.LOOKAHEADS[key] = re.compile(
+                b"(?=(" + pattern.pattern + b"))", pattern.flags
+            )
+        return look
+
+    @staticmethod
+    def _occurrences(hay: bytes, alternatives: tuple[bytes, ...]) -> Iterator[int]:
+        """Every offset where one of the alternatives begins, in order, overlaps included."""
+        if len(alternatives) == 1:
+            literal = alternatives[0]
+            at = hay.find(literal)
+            while at >= 0:
+                yield at
+                at = hay.find(literal, at + 1)
+            return
+        key = (b"|".join(alternatives), 0)
+        finder = Strings.LOOKAHEADS.get(key)
+        if finder is None:
+            joined = b"|".join(re.escape(a) for a in sorted(alternatives, key=len, reverse=True))
+            finder = Strings.LOOKAHEADS[key] = re.compile(b"(?=(?:" + joined + b"))")
+        for m in finder.finditer(hay):
+            yield m.start()
+
     @staticmethod
     def _near_atoms(
         pattern: Any,
@@ -1096,30 +1130,31 @@ class Strings:
         """Every match, tried only from the starts an occurrence of the atom allows."""
         import time
 
-        literal, lower, before_lo, before_hi = atom
+        alternatives, lower, before_lo, before_hi = atom
         hay = lowered if lower else data
         reach = SCAN_LIMIT if before_hi is None else min(before_hi, SCAN_LIMIT)
-        look = (
-            re.compile(b"(?=(" + pattern.pattern + b"))", pattern.flags)
-            if isinstance(pattern, re.Pattern)
-            else None
-        )
+        look = Strings._lookahead(pattern) if isinstance(pattern, re.Pattern) else None
         tried_to = -1  # starts up to here have been tried
-        at = hay.find(literal)
-        hits = 0
-        while at >= 0:
-            hits += 1
+        for hits, at in enumerate(Strings._occurrences(hay, alternatives), 1):
             if hits % 1024 == 0 and deadline is not None and time.monotonic() > deadline:
                 raise YaraError("matching took longer than the time allowed")
             first, last = max(0, at - reach, tried_to + 1), at - before_lo
             if first <= last:
                 if look is not None:
-                    for m in look.finditer(data, first, min(len(data), last + 1 + SCAN_LIMIT)):
-                        if m.start() > last:
-                            break
-                        length = len(m.group(1))
-                        if length <= SCAN_LIMIT:
-                            found.append((m.start(), length))
+                    end = min(len(data), last + 1 + SCAN_LIMIT)
+                    if last - first < Strings.ANCHORED_SPAN:
+                        # A few allowed starts: each tried once, anchored. A scan from `first`
+                        # would go on trying every position up to SCAN_LIMIT past `last`.
+                        for start in range(first, last + 1):
+                            m = look.match(data, start, end)
+                            if m is not None and len(m.group(1)) <= SCAN_LIMIT:
+                                found.append((start, len(m.group(1))))
+                    else:
+                        for m in look.finditer(data, first, end):
+                            if m.start() > last:
+                                break
+                            if len(m.group(1)) <= SCAN_LIMIT:
+                                found.append((m.start(), len(m.group(1))))
                 else:
                     for start in range(first, last + 1):
                         length = pattern.longest(data, start, SCAN_LIMIT)
@@ -1128,7 +1163,6 @@ class Strings:
                 tried_to = last
                 if len(found) >= MAX_MATCHES:
                     return
-            at = hay.find(literal, at + 1)
 
     @staticmethod
     def _whole(data: bytes, at: int, length: int, wide: bool) -> bool:
