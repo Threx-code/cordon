@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_pattern import (
@@ -55,7 +55,14 @@ class Part:
         self.fits = False  # text short enough that an anchor occurrence is the match
         #: Steps the layouts have taken, kept across runs and files (`rule_pattern.Memo`).
         self.memo: dict[tuple[bool, ...], Any] = {}
+        self._runners: tuple[Threads, Threads] | None = None
         self.gap = (0, 0)
+
+    def runners(self) -> tuple[Threads, Threads]:
+        """The forward and backward runners of this part, made once and kept."""
+        if self._runners is None:
+            self._runners = (Threads(self.forward, self.memo), Threads(self.backward, self.memo))
+        return self._runners
 
 
 class Search:
@@ -69,6 +76,7 @@ class Search:
         self.parts: list[Part] = []
         #: The anchors to look for, by distinct bytes (`_index`), and the parts with none.
         self.needles: list[tuple[bytes, int, list[tuple[int, int, AnchorAt]]]] | None = None
+        self.folds: list[tuple[bytes, int, dict[bytes, list[tuple[int, int, AnchorAt]]]]] = []
         self.zeros: list[tuple[int, int, AnchorAt]] = []
         f = self.flags
         if kind == "regex":
@@ -251,7 +259,7 @@ class Search:
         data: bytes,
         fixed: int | None = None,
         deadline: float | None = None,
-        seen: dict[bytes, list[int]] | None = None,
+        seen: dict[Any, Any] | None = None,
     ) -> list[tuple[int, int]]:
         """(offset, length) of each match, by offset. With `fixed`, only a match there counts.
         `seen` holds where each anchor occurs in `data`, shared by every string searched there,
@@ -265,15 +273,19 @@ class Search:
             starts = seen.get(needle)
             if starts is None:
                 starts = seen[needle] = Search.occurrences(data, needle)
-            if not starts:
-                continue
-            for order, p, anchor in owners:
-                back = length + anchor[1]
-                events.extend(
-                    (s + length, -length, -order, p, anchor, s + length - back)
-                    for s in starts
-                    if back <= s + length
-                )
+            if starts:
+                Search._occurred(events, starts, length, owners)
+        for folded, length, spellings in self.folds:
+            # every case spelling of an anchor is present, so one search of the lower-cased data
+            # finds them all; the bytes found say which spelling it was
+            starts = seen.get(("folded", folded))
+            if starts is None:
+                lowered = seen.get(("lowered",))
+                if lowered is None:
+                    lowered = seen[("lowered",)] = data.lower()
+                starts = seen[("folded", folded)] = Search.occurrences(lowered, folded)
+            for s in starts:
+                Search._occurred(events, (s,), length, spellings[data[s : s + length]])
         hunt = _Hunt(self, data, fixed, deadline)
         for order, p, anchor in self.zeros:
             events.extend((at, 0, -order, p, anchor, at) for at in hunt.starts(p))
@@ -282,9 +294,25 @@ class Search:
         events.sort(key=lambda e: (e[0], e[1], e[2]))
         return hunt.run(events)
 
+    @staticmethod
+    def _occurred(
+        events: list[Event],
+        starts: Iterable[int],
+        length: int,
+        owners: list[tuple[int, int, AnchorAt]],
+    ) -> None:
+        for order, p, anchor in owners:
+            back = length + anchor[1]
+            events.extend(
+                (s + length, -length, -order, p, anchor, s + length - back)
+                for s in starts
+                if back <= s + length
+            )
+
     def _index(self) -> None:
         """The anchors of every part, by distinct bytes, numbered in the order they are checked
-        when two end at the same place (a later one first)."""
+        when two end at the same place (a later one first). Anchors that are every case spelling
+        of one run of bytes are looked for together, in the lower-cased data."""
         table: dict[bytes, list[tuple[int, int, AnchorAt]]] = {}
         zeros = []
         order = 0
@@ -295,7 +323,18 @@ class Search:
                 else:
                     zeros.append((order, p, anchor))
                 order += 1
-        self.needles = [(needle, len(needle), owners) for needle, owners in table.items()]
+        spellings: dict[bytes, dict[bytes, list[tuple[int, int, AnchorAt]]]] = {}
+        for needle, owners in table.items():
+            spellings.setdefault(needle.lower(), {})[needle] = owners
+        self.needles, self.folds = [], []
+        for folded, group in spellings.items():
+            letters = sum(1 for b in folded if 0x61 <= b <= 0x7A)
+            if letters and len(group) == 1 << letters:
+                self.folds.append((folded, len(folded), group))
+            else:
+                self.needles.extend(
+                    (needle, len(needle), owners) for needle, owners in group.items()
+                )
         self.zeros = zeros
 
     @staticmethod
@@ -394,7 +433,7 @@ class _Hunt:
             if f.get("plain"):
                 length = Lanes(part.forward).run(fwd, self.data, offset)
             else:
-                length = Threads(part.forward, part.memo).run(
+                length = part.runners()[0].run(
                     fwd,
                     self.data,
                     offset,
@@ -411,7 +450,7 @@ class _Hunt:
                 if f.get("plain"):
                     Lanes(part.backward).run(back, self.data, offset, backwards=True, every=found)
                 else:
-                    Threads(part.backward, part.memo).run(
+                    part.runners()[1].run(
                         back, self.data, offset, backwards=True, wide=wide, nocase=self.nocase,
                         dotall=self.dotall, every=found, masks=self.masks,
                     )  # fmt: skip

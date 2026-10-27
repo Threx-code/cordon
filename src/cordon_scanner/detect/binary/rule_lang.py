@@ -860,7 +860,7 @@ class Strings:
         s: StringDef,
         data: bytes,
         deadline: float | None = None,
-        seen: dict[bytes, list[int]] | None = None,
+        seen: dict[Any, Any] | None = None,
     ) -> list[tuple[int, int]]:
         """(offset, length) of every match of `s`, by offset, at most `rule_scan.MAX_HITS`."""
         from cordon_scanner.detect.binary.rule_pattern import RunError
@@ -945,7 +945,7 @@ class Scan:
         self.roots: dict[str, Struct] = {}
         self.decided: dict[str, bool] = {}
         #: Where each anchor occurs in the data, shared by every string (`Search.find`).
-        self.seen: dict[bytes, list[int]] = {}
+        self.seen: dict[Any, Any] = {}
         self.vars: list[dict[str, Any]] = []
 
     def run(self) -> list[Match]:

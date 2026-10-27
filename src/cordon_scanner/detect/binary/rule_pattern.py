@@ -957,6 +957,7 @@ class Threads:
         memo = self._memo(backwards, wide, nocase, dotall, every is not None)
         state = self._start(memo, entry)
         quiet = Threads.QUIET
+        steps, testing = memo.steps, memo.testing
         steady = 0
         while state:
             if done < reach:
@@ -964,16 +965,21 @@ class Threads:
                 low = not wide or data[pos + 1] == 0
             else:
                 c, low = -1, False
-            if self._testing(memo, state):
+            tested = testing.get(state)
+            if tested is None:
+                tested = self._testing(memo, state)
+            if tested:
                 around = (
                     (at <= done) if backwards else (at == 0 and done == 0),
                     not backwards and n - at <= done,
                     self._word(data, pos - step, width),
                     self._word(data, pos, width),
                 )
+                nxt, hits = self._step(memo, state, c, low, around)
             else:
-                around = quiet
-            nxt, hits = self._step(memo, state, c, low, around)
+                # the common step, looked up inline: the same key `_step` uses
+                went = steps.get((state, c, low))
+                nxt, hits = went if went is not None else self._step(memo, state, c, low, quiet)
             if hits:
                 found = done
                 if every is not None:
