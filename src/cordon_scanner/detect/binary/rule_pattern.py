@@ -675,7 +675,7 @@ class Memo:
         #: from it depend on what surrounds the byte it reads.
         self.testing: dict[int, bool] = {}
         #: For an entry point, a pattern finding where a run from it can do anything (`prefilter`).
-        self.filters: dict[int, re.Pattern[bytes] | None] = {}
+        self.filters: dict[tuple[int, int, int], re.Pattern[bytes] | None] = {}
 
     def state(self, keys: tuple[tuple[Any, ...], ...]) -> int:
         number = self.numbers.get(keys)
@@ -891,17 +891,25 @@ class Threads:
         return firsts
 
     def prefilter(
-        self, entry: int, *, nocase: bool = False, dotall: bool = False, depth: int = 3
+        self,
+        entry: int,
+        *,
+        nocase: bool = False,
+        dotall: bool = False,
+        depth: int = 3,
+        chain: int = 64,
     ) -> re.Pattern[bytes] | None:
         """A pattern that matches (zero-width) at every position a one-byte-wide forward run from
         `entry` can do anything at: the positions it misses are ones where every thread dies
-        within `depth` bytes having matched nothing. None when no such pattern helps (the layout
-        tests positions, or the first step already decides nothing)."""
+        within `depth` branching bytes (`chain` along a single path) having matched nothing.
+        None when no such pattern helps (the layout tests positions, or the first step already
+        decides nothing)."""
         memo = self._memo(False, False, nocase, dotall, False)
-        if entry not in memo.filters:
-            body = self._ahead(memo, self._start(memo, entry), depth)
-            memo.filters[entry] = None if body is None else re.compile(b"(?=" + body + b")")
-        return memo.filters[entry]
+        key = (entry, depth, chain)
+        if key not in memo.filters:
+            body = self._ahead(memo, self._start(memo, entry), depth, chain)
+            memo.filters[key] = None if body is None else re.compile(b"(?=" + body + b")")
+        return memo.filters[key]
 
     def _ahead(self, memo: Memo, state: int, depth: int, chain: int = 64) -> bytes | None:
         """The bytes from `state` that keep some thread alive (or reach a match on the way), as a

@@ -46,6 +46,9 @@ class Part:
     """One piece of a string: plain bytes (`text`) or a pattern (`forward`/`backward` layouts),
     and the anchors that find it. `gap` is the (least, most) distance from the previous part."""
 
+    #: Forward runs from one entry before its gate (`can_start`) is worked out.
+    GATE_AFTER: ClassVar[int] = 256
+
     def __init__(self) -> None:
         self.text: bytes | None = None
         self.forward: list[tuple[int, ...]] = []
@@ -57,6 +60,7 @@ class Part:
         self.memo: dict[tuple[bool, ...], Any] = {}
         self._runners: tuple[Threads, Threads] | None = None
         self._gates: dict[int, Any] = {}  # entry -> its forward gate (None: none helps)
+        self._runs: dict[int, int] = {}  # entry -> forward runs before its gate is built
         self.gap = (0, 0)
 
     def can_start(self, entry: int, data: bytes, at: int, nocase: bool, dotall: bool) -> bool:
@@ -64,8 +68,12 @@ class Part:
         (`Threads.prefilter`) that turns away the occurrences whose run would die at once."""
         gate = self._gates.get(entry, False)
         if gate is False:
+            # built once an entry has run often enough to repay working it out
+            runs = self._runs[entry] = self._runs.get(entry, 0) + 1
+            if runs < Part.GATE_AFTER:
+                return True
             gate = self._gates[entry] = self.runners()[0].prefilter(
-                entry, nocase=nocase, dotall=dotall
+                entry, nocase=nocase, dotall=dotall, depth=2, chain=8
             )
         return gate is None or gate.match(data, at) is not None
 
