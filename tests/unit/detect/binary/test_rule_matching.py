@@ -64,17 +64,19 @@ class TestRegexArguments:
     def test_a_function_taking_a_regular_expression_gets_one(self) -> None:
         rules = Rules.compile(
             'import "tests" rule r { condition: tests.match(/b+c/, "abbbcd") == 5 }',
-            modules={"tests": TestRegexArguments.module},
+            modules={"tests": TestRegexArguments.module()},
         )
         assert rules.match(b"")
 
     @staticmethod
-    def module(data: bytes) -> Any:
-        from cordon_scanner.detect.binary.rule_values import Struct, Values
+    def module() -> Any:
+        from cordon_scanner.detect.binary.rule_values import Call, Module, Record, Scalar, Sig
 
-        return Struct(
-            {"match": Values.fn((("r", "str"), lambda m, s: m.run(s.split(b"\x00", 1)[0]), "int"))}
-        )
+        def match(m: Any, s: bytes) -> int:
+            return int(m.run(s.split(b"\x00", 1)[0]))
+
+        schema = Record({"match": Call(Sig(("regex", "text"), Scalar.INT))})
+        return Module(schema, lambda file: {"match": (match,)})
 
 
 class TestPatternsRefused:

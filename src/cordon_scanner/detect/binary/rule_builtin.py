@@ -16,16 +16,11 @@ import struct
 import time
 import zlib
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_values import (
-    UNDEF_FLOAT,
-    UNDEF_INT,
-    UNDEF_STR,
-    Function,
-    Struct,
-    Values,
-)
+from cordon_scanner.detect.binary.rule_values import Call, Data, Legacy, Module, Record, Scalar, Sig
+
+INT, FLOAT, TEXT = Scalar.INT, Scalar.FLOAT, Scalar.TEXT
 
 INT64_BITS = (1 << 64) - 1
 
@@ -130,7 +125,7 @@ class ByteStats:
             if x * x + y * y <= radius_squared:
                 inside += 1
         if points == 0:
-            return UNDEF_FLOAT
+            return None
         return abs((4.0 * (inside / points) - math.pi) / math.pi)
 
     def most_common(self) -> int:
@@ -144,13 +139,33 @@ class ByteStats:
 class MathModule:
     """`math`: statistics of the data or of a string, and integer helpers."""
 
+    SCHEMA: ClassVar[Record] = Record(
+        {
+            "MEAN_BYTES": FLOAT,
+            **{
+                name: Call(Sig(("int", "int"), FLOAT), Sig(("text",), FLOAT))
+                for name in ("entropy", "mean", "serial_correlation", "monte_carlo_pi")
+            },
+            "deviation": Call(Sig(("int", "int", "float"), FLOAT), Sig(("text", "float"), FLOAT)),
+            "in_range": Call(Sig(("float", "float", "float"), INT)),
+            "min": Call(Sig(("int", "int"), INT)),
+            "max": Call(Sig(("int", "int"), INT)),
+            "abs": Call(Sig(("int",), INT)),
+            "to_number": Call(Sig(("bool",), INT)),
+            "count": Call(Sig(("int",), INT), Sig(("int", "int", "int"), INT)),
+            "percentage": Call(Sig(("int",), FLOAT), Sig(("int", "int", "int"), FLOAT)),
+            "mode": Call(Sig((), INT), Sig(("int", "int"), INT)),
+            "to_string": Call(Sig(("int",), TEXT), Sig(("int", "int"), TEXT)),
+        }
+    )
+
     def __init__(self, data: bytes) -> None:
         self.data = data
 
-    def _region_stat(self, stat: Callable[[ByteStats], Any]) -> Callable[[int, int], Any]:
+    def _region(self, stat: Callable[[ByteStats], Any]) -> Callable[[int, int], Any]:
         def over(offset: int, length: int) -> Any:
             run = Region.of(self.data, offset, length)
-            return UNDEF_FLOAT if run is None else stat(ByteStats(run))
+            return None if run is None else stat(ByteStats(run))
 
         return over
 
@@ -160,20 +175,20 @@ class MathModule:
     def count(self, byte: int, offset: int | None = None, length: int | None = None) -> Any:
         run = self._run(offset, length)
         if not 0 <= byte <= 255 or run is None:
-            return UNDEF_INT
+            return None
         return run.count(bytes([byte]))
 
     def percentage(self, byte: int, offset: int | None = None, length: int | None = None) -> Any:
         """The share of `byte` in the run, in single precision."""
         run = self._run(offset, length)
         if not 0 <= byte <= 255 or run is None:
-            return UNDEF_FLOAT
+            return None
         hits = Arith.single(float(run.count(bytes([byte]))))
         return Arith.single(Arith.divide(hits, Arith.single(float(len(run)))))
 
     def mode(self, offset: int | None = None, length: int | None = None) -> Any:
         run = self._run(offset, length)
-        return UNDEF_INT if run is None else ByteStats(run).most_common()
+        return None if run is None else ByteStats(run).most_common()
 
     @staticmethod
     def smaller(a: int, b: int) -> int:
@@ -193,87 +208,72 @@ class MathModule:
             return str(value).encode()
         if base in (8, 16):
             return format(value & INT64_BITS, "o" if base == 8 else "x").encode()
-        return UNDEF_STR
+        return None
 
-    def struct(self) -> Struct:
-        f = Values.fn
-        stat = self._region_stat
-        return Struct(
-            {
-                "MEAN_BYTES": 127.5,
-                "entropy": f(
-                    (("int", "int"), stat(ByteStats.entropy), "float"),
-                    (("str",), lambda s: ByteStats(s).entropy(), "float"),
-                ),
-                "mean": f(
-                    (("int", "int"), stat(ByteStats.mean), "float"),
-                    (("str",), lambda s: ByteStats(s).mean_in_order(), "float"),
-                ),
-                "serial_correlation": f(
-                    (("int", "int"), stat(ByteStats.serial_correlation), "float"),
-                    (("str",), lambda s: ByteStats(s).serial_correlation(), "float"),
-                ),
-                "monte_carlo_pi": f(
-                    (("int", "int"), stat(ByteStats.pi_error), "float"),
-                    (("str",), lambda s: ByteStats(s).pi_error(), "float"),
-                ),
-                "deviation": f(
-                    (
-                        ("int", "int", "float"),
-                        lambda o, n, c: stat(lambda b: b.deviation(c))(o, n),
-                        "float",
-                    ),
-                    (("str", "float"), lambda s, c: ByteStats(s).deviation_in_order(c), "float"),
-                ),
-                "in_range": f(
-                    (("float", "float", "float"), lambda v, lo, hi: int(lo <= v <= hi), "int")
-                ),
-                "min": f((("int", "int"), MathModule.smaller, "int")),
-                "max": f((("int", "int"), MathModule.larger, "int")),
-                "abs": f((("int",), MathModule.magnitude, "int")),
-                "to_number": f((("bool",), lambda b: int(bool(b)), "int")),
-                "count": f(
-                    (("int",), self.count, "int"), (("int", "int", "int"), self.count, "int")
-                ),
-                "percentage": f(
-                    (("int",), self.percentage, "float"),
-                    (("int", "int", "int"), self.percentage, "float"),
-                ),
-                "mode": f(((), self.mode, "int"), (("int", "int"), self.mode, "int")),
-                "to_string": f(
-                    (("int",), MathModule.text_of, "str"),
-                    (("int", "int"), MathModule.text_of, "str"),
-                ),
-            }
-        )
+    def values(self) -> dict[str, Any]:
+        region = self._region
+
+        def per_text(stat: Callable[[ByteStats], Any]) -> Callable[[bytes], Any]:
+            return lambda s: stat(ByteStats(s))
+
+        return {
+            "MEAN_BYTES": 127.5,
+            "entropy": (region(ByteStats.entropy), per_text(ByteStats.entropy)),
+            "mean": (region(ByteStats.mean), per_text(ByteStats.mean_in_order)),
+            "serial_correlation": (
+                region(ByteStats.serial_correlation),
+                per_text(ByteStats.serial_correlation),
+            ),
+            "monte_carlo_pi": (region(ByteStats.pi_error), per_text(ByteStats.pi_error)),
+            "deviation": (
+                lambda o, n, c: region(lambda b: b.deviation(c))(o, n),
+                lambda s, c: ByteStats(s).deviation_in_order(c),
+            ),
+            "in_range": (lambda v, lo, hi: int(lo <= v <= hi),),
+            "min": (MathModule.smaller,),
+            "max": (MathModule.larger,),
+            "abs": (MathModule.magnitude,),
+            "to_number": (lambda b: int(bool(b)),),
+            "count": (self.count, self.count),
+            "percentage": (self.percentage, self.percentage),
+            "mode": (self.mode, self.mode),
+            "to_string": (MathModule.text_of, MathModule.text_of),
+        }
 
 
 class HashModule:
     """`hash`: digests and checksums of a data region or a string, digests in lower-case hex."""
 
+    NAMES: ClassVar[tuple[str, ...]] = ("md5", "sha1", "sha256")
+    SCHEMA: ClassVar[Record] = Record(
+        {
+            **{n: Call(Sig(("int", "int"), TEXT), Sig(("text",), TEXT)) for n in NAMES},
+            **{
+                n: Call(Sig(("int", "int"), INT), Sig(("text",), INT))
+                for n in ("crc32", "checksum32")
+            },
+        }
+    )
+
     def __init__(self, data: bytes) -> None:
         self.data = data
 
-    def _both(self, of: Callable[[bytes], Any], undefined: Any, kind: str) -> Function:
+    def _both(self, of: Callable[[bytes], Any]) -> tuple[Callable[..., Any], ...]:
         def over(offset: int, length: int) -> Any:
             run = Region.of(self.data, offset, length)
-            return undefined if run is None else of(run)
+            return None if run is None else of(run)
 
-        return Values.fn((("int", "int"), over, kind), (("str",), of, kind))
+        return (over, of)
 
-    def struct(self) -> Struct:
-        def digest(name: str) -> Function:
-            return self._both(lambda b: hashlib.new(name, b).hexdigest().encode(), UNDEF_STR, "str")
+    def values(self) -> dict[str, Any]:
+        def digest(name: str) -> tuple[Callable[..., Any], ...]:
+            return self._both(lambda b: hashlib.new(name, b).hexdigest().encode())
 
-        return Struct(
-            {
-                "md5": digest("md5"),
-                "sha1": digest("sha1"),
-                "sha256": digest("sha256"),
-                "crc32": self._both(lambda b: zlib.crc32(b) & 0xFFFFFFFF, UNDEF_INT, "int"),
-                "checksum32": self._both(lambda b: sum(b) & 0xFFFFFFFF, UNDEF_INT, "int"),
-            }
-        )
+        return {
+            **{n: digest(n) for n in HashModule.NAMES},
+            "crc32": self._both(lambda b: zlib.crc32(b) & 0xFFFFFFFF),
+            "checksum32": self._both(lambda b: sum(b) & 0xFFFFFFFF),
+        }
 
 
 class Integers:
@@ -324,25 +324,22 @@ class Integers:
 class StringModule:
     """`string`: a string's integer value and its length."""
 
+    SCHEMA: ClassVar[Record] = Record(
+        {
+            "to_int": Call(Sig(("text",), INT), Sig(("text", "int"), INT)),
+            "length": Call(Sig(("text",), INT)),
+        }
+    )
+
     @staticmethod
     def to_int(s: bytes, base: int = 0) -> Any:
         if not (base == 0 or 2 <= base <= 36):
-            return UNDEF_INT
-        value = Integers.parse(s, base)
-        return UNDEF_INT if value is None else value
+            return None
+        return Integers.parse(s, base)
 
     @staticmethod
-    def struct() -> Struct:
-        f = Values.fn
-        return Struct(
-            {
-                "to_int": f(
-                    (("str",), StringModule.to_int, "int"),
-                    (("str", "int"), StringModule.to_int, "int"),
-                ),
-                "length": f((("str",), len, "int")),
-            }
-        )
+    def values() -> dict[str, Any]:
+        return {"to_int": (StringModule.to_int, StringModule.to_int), "length": (len,)}
 
 
 class ConsoleModule:
@@ -367,70 +364,67 @@ class ConsoleModule:
     def lead(m: bytes) -> str:
         return m.split(b"\x00", 1)[0].decode("latin-1")
 
-    def struct(self) -> Struct:
-        f, say, lead, shown = Values.fn, self.emit, ConsoleModule.lead, ConsoleModule.shown
+    SCHEMA: ClassVar[Record] = Record(
+        {
+            "log": Call(
+                Sig(("text",), INT),
+                Sig(("text", "text"), INT),
+                Sig(("int",), INT),
+                Sig(("text", "int"), INT),
+                Sig(("float",), INT),
+                Sig(("text", "float"), INT),
+            ),
+            "hex": Call(Sig(("int",), INT), Sig(("text", "int"), INT)),
+        }
+    )
+
+    def values(self) -> dict[str, Any]:
+        say, lead, shown = self.emit, ConsoleModule.lead, ConsoleModule.shown
 
         def as_int(i: int) -> str:
-            return str(Values.int64(i))
+            return str(Data.signed(i))
 
         def as_hex(i: int) -> str:
             return f"0x{i & INT64_BITS:x}"
 
-        return Struct(
-            {
-                "log": f(
-                    (("str",), lambda s: say(shown(s)), "int"),
-                    (("str", "str"), lambda m, s: say(lead(m) + shown(s)), "int"),
-                    (("int",), lambda i: say(as_int(i)), "int"),
-                    (("str", "int"), lambda m, i: say(lead(m) + as_int(i)), "int"),
-                    (("float",), lambda x: say(f"{float(x):f}"), "int"),
-                    (("str", "float"), lambda m, x: say(lead(m) + f"{float(x):f}"), "int"),
-                ),
-                "hex": f(
-                    (("int",), lambda i: say(as_hex(i)), "int"),
-                    (("str", "int"), lambda m, i: say(lead(m) + as_hex(i)), "int"),
-                ),
-            }
-        )
+        return {
+            "log": (
+                lambda s: say(shown(s)),
+                lambda m, s: say(lead(m) + shown(s)),
+                lambda i: say(as_int(i)),
+                lambda m, i: say(lead(m) + as_int(i)),
+                lambda x: say(f"{float(x):f}"),
+                lambda m, x: say(lead(m) + f"{float(x):f}"),
+            ),
+            "hex": (lambda i: say(as_hex(i)), lambda m, i: say(lead(m) + as_hex(i))),
+        }
 
 
 class Builtin:
-    """Factories `name -> (data -> Struct)` for the modules every install has."""
+    """The modules every install has, as the engine loads them."""
+
+    TIME: ClassVar[Record] = Record({"now": Call(Sig((), INT))})
 
     @staticmethod
-    def math(data: bytes) -> Struct:
-        return MathModule(data).struct()
+    def console(sink: Callable[[str], Any] | None = None) -> Module:
+        """`console`, handing each message to `sink`."""
+        return Module(ConsoleModule.SCHEMA, lambda file: ConsoleModule(sink).values())
 
     @staticmethod
-    def hash(data: bytes) -> Struct:
-        return HashModule(data).struct()
-
-    @staticmethod
-    def string(data: bytes) -> Struct:
-        return StringModule.struct()
-
-    @staticmethod
-    def time_(data: bytes) -> Struct:
-        return Struct({"now": Values.fn(((), lambda: int(time.time()), "int"))})
-
-    @staticmethod
-    def console(data: bytes, sink: Callable[[str], Any] | None = None) -> Struct:
-        return ConsoleModule(sink).struct()
-
-    @staticmethod
-    def modules() -> dict[str, Callable[[bytes], Struct]]:
+    def modules() -> dict[str, Module]:
+        from cordon_scanner.detect.binary.rule_elf import Elf
+        from cordon_scanner.detect.binary.rule_pe import Pe
         from cordon_scanner.detect.binary.yara_dotnet import Dotnet
-        from cordon_scanner.detect.binary.yara_pe import Elf, Pe
 
         return {
-            "math": Builtin.math,
-            "hash": Builtin.hash,
-            "time": Builtin.time_,
-            "console": Builtin.console,
-            "string": Builtin.string,
-            "pe": Pe.module,
-            "elf": Elf.module,
-            "dotnet": Dotnet.module,
+            "math": Module(MathModule.SCHEMA, lambda file: MathModule(file).values()),
+            "hash": Module(HashModule.SCHEMA, lambda file: HashModule(file).values()),
+            "string": Module(StringModule.SCHEMA, lambda file: StringModule.values()),
+            "time": Module(Builtin.TIME, lambda file: {"now": (lambda: int(time.time()),)}),
+            "console": Builtin.console(),
+            "pe": Legacy.module(Pe.module),
+            "elf": Legacy.module(Elf.module),
+            "dotnet": Legacy.module(Dotnet.module),
         }
 
 

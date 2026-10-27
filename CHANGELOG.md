@@ -146,7 +146,13 @@ test or conformance case that fails on the old code.
   working through this release, the flag and variable with a deprecation warning, and are removed
   in the next. Findings keep the fingerprints they had, so baselines and code-scanning alerts carry
   over. Its string matching is held to the format's reference behaviour by a differential over
-  100,000 generated rules (every match compared offset by offset, no difference).
+  125,000 generated rules (every match compared offset by offset, no difference).
+- **A rule file is checked whole when it loads.** Every part of every condition is type-checked
+  against the modules' declarations, including branches a file would never reach, so a rule that
+  compares text with a number, names an identifier that does not exist, or divides a constant by
+  zero is refused with `OPERATIONAL.RULEFILE.UNAVAILABLE` instead of loading. A quantity worked out
+  from the file (`filesize of them`, `(#a - 3)% of them`) is taken as it is rather than refused.
+  Both match the reference behaviour of the format, over a battery of 20,007 typed cases.
 - Images list a distribution's own Python and npm packages under their language too, as Syft
   does; Apache's PHP module, the Composer PHAR and jar groups are named as Syft names them.
 - The home screen and tutorial 11 say what a default scan does on the network (it asks OSV what

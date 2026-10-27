@@ -1,156 +1,266 @@
-"""cordon-rule values: what a condition reads from a module.
+"""cordon-rule values: the types a module declares, and the data one file gives it.
 
-A module is a tree of typed values: structures with declared fields, arrays and dictionaries that
-know the type of what they hold, and functions with typed signatures (several, overloaded). Types
-are checked when rules compile -- a field no module declares, a string compared with a number, a
-loop over a dictionary with one variable is refused then, not discovered on some file. A value a
-module declares but a file does not provide is *undefined*, and typed, so a comparison with it is
-still checked; undefined propagates through arithmetic and is false as a condition.
+A module declares its types once, as data: a `Record` of named fields, a `Seq` (read by index), a
+`Keyed` table (read by text key), a `Scalar`, or a `Call` with one or more signatures. For each
+file it returns plain data shaped by that declaration -- dicts of Python values -- and nothing in
+the data says what type it is: the declaration does. So a rule is checked against declarations
+alone, before any file is read, and the data carries no bookkeeping. Whatever a file does not
+provide is simply absent (or None) and reads as undefined.
+
+    Record({"name": Scalar.TEXT, "sections": Seq(Record({"size": Scalar.INT}))})
+    {"name": b"a.dll", "sections": {0: {"size": 512}, 2: {"size": 64}}}
+
+A `Seq` holds the slots a file filled, by index; the rule-visible length is the highest index plus
+one. A `Call` field holds one callable per signature, in the order declared; a callable returning
+None gives undefined, and a missing field makes every call undefined.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+# The value trees of the readers not yet moved to declared schemas, still imported from here by
+# them until they are (`Legacy` loads them as modules).
+from cordon_scanner.detect.binary.rule_legacy import (
+    UNDEF_FLOAT,
+    UNDEF_INT,
+    UNDEF_STR,
+    UNDEFINED,
+    Array,
+    Dictionary,
+    Function,
+    Struct,
+    TypedUndefined,
+    Values,
+)
 
-class TypedUndefined:
-    """An undefined value of a known type: `int`, `float`, `str`, `bool` or None (any type)."""
 
-    __slots__ = ("kind",)
+class Scalar:
+    """A single value's type: `Scalar.INT`, `FLOAT`, `TEXT` (bytes) or `BOOL`."""
 
-    def __init__(self, kind: str | None) -> None:
-        self.kind = kind
+    __slots__ = ("name",)
+
+    INT: ClassVar[Scalar]
+    FLOAT: ClassVar[Scalar]
+    TEXT: ClassVar[Scalar]
+    BOOL: ClassVar[Scalar]
+    #: The Python types each scalar's data may have.
+    HOLDS: ClassVar[dict[str, tuple[type, ...]]] = {
+        "int": (int,),
+        "float": (float, int),
+        "text": (bytes,),
+        "bool": (bool,),
+    }
+
+    def __init__(self, name: str) -> None:
+        self.name = name
 
     def __repr__(self) -> str:
-        return f"undefined {self.kind}" if self.kind else "undefined"
+        return f"Scalar.{self.name.upper()}"
 
 
-UNDEFINED = TypedUndefined(None)
-UNDEF_INT = TypedUndefined("int")
-UNDEF_FLOAT = TypedUndefined("float")
-UNDEF_STR = TypedUndefined("str")
-
-INT64_BITS = (1 << 64) - 1
-
-
-@dataclass
-class Struct:
-    """Declared fields, each a value, a typed undefined, a container or a function."""
-
-    fields: dict[str, Any]
-
-    def get(self, name: str) -> Any:
-        if name not in self.fields:
-            raise KeyError(name)
-        return self.fields[name]
+Scalar.INT, Scalar.FLOAT, Scalar.TEXT, Scalar.BOOL = (
+    Scalar("int"),
+    Scalar("float"),
+    Scalar("text"),
+    Scalar("bool"),
+)
 
 
-@dataclass
-class Array:
-    """Values by index; `proto` is the type of an element (a typed undefined or a Struct)."""
+class Record:
+    """Named fields, each with its type."""
 
-    proto: Any
-    items: dict[int, Any] = field(default_factory=dict)
+    __slots__ = ("fields",)
 
-    def element(self, index: int) -> Any:
-        return self.items.get(index, Values.undefined_like(self.proto))
-
-    def values(self) -> list[Any]:
-        if not self.items:
-            return []
-        return [self.element(i) for i in range(max(self.items) + 1)]
+    def __init__(self, fields: dict[str, Any]) -> None:
+        self.fields = fields
 
 
-@dataclass
-class Dictionary:
-    """Values by string key; `proto` is the type of a value."""
+class Seq:
+    """Items read by integer index, all of one type."""
 
-    proto: Any
-    items: dict[bytes, Any] = field(default_factory=dict)
+    __slots__ = ("item",)
 
-    def element(self, key: bytes) -> Any:
-        return self.items.get(key, Values.undefined_like(self.proto))
+    def __init__(self, item: Any) -> None:
+        self.item = item
 
 
-@dataclass
-class Function:
-    """Overloads by argument types, `{("int", "int"): (callable, "int")}`; `r` is a regular
-    expression. An argument of unknown type (undefined) fits any; an integer never fits a
-    float parameter."""
+class Keyed:
+    """Items read by a text key, all of one type."""
 
-    overloads: dict[tuple[str, ...], tuple[Callable[..., Any], str]]
+    __slots__ = ("item",)
 
-    def resolve(self, kinds: tuple[str | None, ...]) -> tuple[Callable[..., Any], str] | None:
-        for signature, target in self.overloads.items():
-            if len(signature) == len(kinds) and all(
-                want == got or got is None for want, got in zip(signature, kinds, strict=True)
+    def __init__(self, item: Any) -> None:
+        self.item = item
+
+
+class Sig:
+    """One way to call a function: the kinds of its parameters (`int`, `float`, `text`,
+    `bool`, `regex`) and the scalar it returns."""
+
+    __slots__ = ("params", "result")
+
+    def __init__(self, params: tuple[str, ...], result: Scalar) -> None:
+        self.params, self.result = params, result
+
+
+class Call:
+    """A function with its signatures, in the order its data holds their callables."""
+
+    __slots__ = ("sigs",)
+
+    def __init__(self, *sigs: Sig) -> None:
+        self.sigs = sigs
+
+    def pick(self, kinds: tuple[str | None, ...]) -> int | None:
+        """The first signature arguments of these kinds fit, by position: an argument of no
+        known kind fits any parameter, and an integer never stands in for a float."""
+        for i, sig in enumerate(self.sigs):
+            if len(sig.params) == len(kinds) and all(
+                got is None or got == want for want, got in zip(sig.params, kinds, strict=True)
             ):
-                return target
+                return i
         return None
 
 
-class Values:
-    """What a value is: undefined or not, its type, the undefined of its type; and functions."""
+class Module:
+    """A module as the engine loads it: its declared `schema` (a Record) and `data`, which
+    gives one file's values."""
 
-    KINDS: ClassVar[tuple[tuple[str, type], ...]] = (
-        ("bool", bool),
-        ("int", int),
-        ("float", float),
-        ("str", bytes),
-        ("struct", Struct),
-        ("array", Array),
-        ("dict", Dictionary),
-        ("function", Function),
-    )
+    __slots__ = ("data", "schema")
 
-    @staticmethod
-    def undefined(value: Any) -> bool:
-        return isinstance(value, TypedUndefined)
+    def __init__(self, schema: Record, data: Callable[[bytes], dict[str, Any]]) -> None:
+        self.schema, self.data = schema, data
+
+
+class Data:
+    """What a value read from module data means to a condition, and whether data fits its
+    declaration."""
 
     @staticmethod
-    def kind_of(value: Any) -> str | None:
-        """`int`, `float`, `str`, `bool`, `struct`, `array`, `dict`, `function`, or None."""
-        if isinstance(value, TypedUndefined):
-            return value.kind
-        for kind, types in Values.KINDS:
-            if isinstance(value, types):
-                return kind
-        return None
-
-    @staticmethod
-    def undefined_like(proto: Any) -> Any:
-        """The undefined value of `proto`'s type: a typed undefined, or a structure of them.
-        A function stays itself: it is part of a structure's declaration, defined or not."""
-        if isinstance(proto, Struct):
-            return Struct({k: Values.undefined_like(v) for k, v in proto.fields.items()})
-        if isinstance(proto, (Array, Dictionary)):
-            return type(proto)(proto.proto)
-        if isinstance(proto, (TypedUndefined, Function)):
-            return proto
-        return TypedUndefined(Values.kind_of(proto))
-
-    @staticmethod
-    def int64(value: Any) -> Any:
-        """A value as a condition reads it from a module: an integer as a signed 64-bit number (a
-        field holding 2**64 - 1 reads as -1), a NaN float as undefined."""
-        if isinstance(value, float) and math.isnan(value):
-            return UNDEF_FLOAT
-        if (
-            isinstance(value, int)
-            and not isinstance(value, bool)
-            and not -(1 << 63) <= value < (1 << 63)
-        ):
-            value &= INT64_BITS
+    def signed(value: Any) -> Any:
+        """An integer as a condition reads it: two's-complement 64 bits, so a field holding
+        2**64 - 1 reads as -1. A NaN reads as undefined (None)."""
+        if type(value) is int and not -(1 << 63) <= value < (1 << 63):
+            value &= (1 << 64) - 1
             return value - (1 << 64) if value >> 63 else value
+        if type(value) is float and math.isnan(value):
+            return None
         return value
 
     @staticmethod
-    def fn(*overloads: tuple[tuple[str, ...], Callable[..., Any], str]) -> Function:
-        """A function from its overloads: (argument types, implementation, result type)."""
-        return Function({sig: (call, ret) for sig, call, ret in overloads})
+    def length(items: dict[int, Any]) -> int:
+        """How many items a sequence holds as a rule sees it: up to its highest filled slot."""
+        return max(items) + 1 if items else 0
+
+    @staticmethod
+    def conforms(declared: Any, data: Any, where: str = "") -> list[str]:
+        """Every place `data` does not fit `declared`, as readable paths; empty when it fits."""
+        if data is None:
+            return []
+        if isinstance(declared, Scalar):
+            holds = Scalar.HOLDS[declared.name]
+            fits = isinstance(data, holds) and (declared is Scalar.BOOL or type(data) is not bool)
+            return [] if fits else [f"{where or '.'}: {type(data).__name__}, not {declared.name}"]
+        if isinstance(declared, Record):
+            if not isinstance(data, dict):
+                return [f"{where or '.'}: not a record"]
+            out = [f"{where}.{k}: not declared" for k in data if k not in declared.fields]
+            for name, kind in declared.fields.items():
+                if name in data:
+                    out += Data.conforms(kind, data[name], f"{where}.{name}")
+            return out
+        if isinstance(declared, (Seq, Keyed)):
+            key = int if isinstance(declared, Seq) else bytes
+            if not isinstance(data, dict):
+                return [f"{where or '.'}: not a table"]
+            out = []
+            for k, v in data.items():
+                if not isinstance(k, key) or (isinstance(k, int) and k < 0):
+                    out.append(f"{where}[{k!r}]: a key of the wrong kind")
+                else:
+                    out += Data.conforms(declared.item, v, f"{where}[{k!r}]")
+            return out
+        if isinstance(declared, Call):
+            ok = isinstance(data, tuple) and len(data) == len(declared.sigs)
+            return [] if ok and all(callable(f) for f in data) else [f"{where}: not callables"]
+        return [f"{where or '.'}: an unknown declaration"]
+
+
+class Legacy:
+    """A schema and plain data from a value tree of the readers not yet rewritten
+    (`rule_legacy`), so they load as modules meanwhile."""
+
+    KINDS: ClassVar[dict[str, str]] = {
+        "int": "int", "float": "float", "str": "text", "bool": "bool", "r": "regex",
+    }  # fmt: skip
+
+    @staticmethod
+    def module(build: Callable[[bytes], Any]) -> Module:
+        empty = build(b"")
+        if not isinstance(empty, Struct):
+            raise TypeError("a module builds a structure")
+        return Module(Legacy.declared(empty), lambda file: Legacy.data(build(file)))
+
+    @staticmethod
+    def declared(tree: Any) -> Any:
+        if isinstance(tree, Struct):
+            return Record({k: Legacy.declared(v) for k, v in tree.fields.items()})
+        if isinstance(tree, Array):
+            return Seq(Legacy.declared(tree.proto))
+        if isinstance(tree, Dictionary):
+            return Keyed(Legacy.declared(tree.proto))
+        if isinstance(tree, Function):
+            return Call(
+                *(
+                    Sig(tuple(Legacy.KINDS[p] for p in params), Legacy.scalar(ret))
+                    for params, (_, ret) in tree.overloads.items()
+                )
+            )
+        if isinstance(tree, TypedUndefined):
+            return Legacy.scalar(tree.kind or "int")
+        if isinstance(tree, bool):
+            return Scalar.BOOL
+        if isinstance(tree, int):
+            return Scalar.INT
+        if isinstance(tree, float):
+            return Scalar.FLOAT
+        if isinstance(tree, bytes):
+            return Scalar.TEXT
+        raise TypeError(f"a value of no known type: {type(tree).__name__}")
+
+    @staticmethod
+    def scalar(kind: str) -> Scalar:
+        return {"int": Scalar.INT, "float": Scalar.FLOAT, "str": Scalar.TEXT}.get(kind, Scalar.BOOL)
+
+    @staticmethod
+    def data(tree: Any) -> Any:
+        if isinstance(tree, TypedUndefined):
+            return None
+        if isinstance(tree, Struct):
+            out = {}
+            for k, v in tree.fields.items():
+                d = Legacy.data(v)
+                if d is not None:
+                    out[k] = d
+            return out
+        if isinstance(tree, (Array, Dictionary)):
+            return {k: Legacy.data(v) for k, v in tree.items.items()}
+        if isinstance(tree, Function):
+            return tuple(Legacy.call(call) for call, _ in tree.overloads.values())
+        return tree
+
+    @staticmethod
+    def call(impl: Callable[..., Any]) -> Callable[..., Any]:
+        """A function of the old trees, its typed undefined result read as None."""
+
+        def plain(*args: Any) -> Any:
+            v = impl(*args)
+            return None if isinstance(v, TypedUndefined) else v
+
+        return plain
 
 
 __all__ = [
@@ -159,8 +269,17 @@ __all__ = [
     "UNDEF_INT",
     "UNDEF_STR",
     "Array",
+    "Call",
+    "Data",
     "Dictionary",
     "Function",
+    "Keyed",
+    "Legacy",
+    "Module",
+    "Record",
+    "Scalar",
+    "Seq",
+    "Sig",
     "Struct",
     "TypedUndefined",
     "Values",
