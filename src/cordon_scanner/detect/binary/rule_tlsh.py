@@ -128,7 +128,11 @@ class Tlsh:
 
     @classmethod
     def _ratio(cls, q: int, q3: int) -> int:
-        """`(unsigned)((float)(q*100) / (float)q3)`: single-precision throughout, then truncated."""
+        """The percentage q/q3 in IEEE-754 single precision throughout, truncated toward zero: the
+        value the hash records before its modulo. Each operand and the quotient round to the nearest
+        single, ties to even."""
+        # The count is a 32-bit unsigned quantity; the mask keeps that wrap explicit. It only bites
+        # for very large (multi-megabyte) inputs, where q * 100 passes 2**32, and is deliberate.
         numerator = cls._to_single((q * 100) & 0xFFFFFFFF)
         denominator = cls._to_single(q3)
         return int(cls._to_single(numerator / denominator))
