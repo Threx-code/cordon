@@ -10,7 +10,6 @@ longer anchors first, later-declared anchors first.
 
 from __future__ import annotations
 
-import heapq
 import re
 import time
 from collections.abc import Iterator
@@ -68,6 +67,9 @@ class Search:
     def __init__(self, kind: str, value: Any, modifiers: dict[str, Any]) -> None:
         self.flags: dict[str, Any] = dict(modifiers)
         self.parts: list[Part] = []
+        #: The anchors to look for, by distinct bytes (`_index`), and the parts with none.
+        self.needles: list[tuple[bytes, int, list[tuple[int, int, AnchorAt]]]] | None = None
+        self.zeros: list[tuple[int, int, AnchorAt]] = []
         f = self.flags
         if kind == "regex":
             source, marks = value
@@ -245,10 +247,66 @@ class Search:
     # -- searching ---------------------------------------------------------------
 
     def find(
-        self, data: bytes, fixed: int | None = None, deadline: float | None = None
+        self,
+        data: bytes,
+        fixed: int | None = None,
+        deadline: float | None = None,
+        seen: dict[bytes, list[int]] | None = None,
     ) -> list[tuple[int, int]]:
-        """(offset, length) of each match, by offset. With `fixed`, only a match there counts."""
-        return _Hunt(self, data, fixed, deadline).run()
+        """(offset, length) of each match, by offset. With `fixed`, only a match there counts.
+        `seen` holds where each anchor occurs in `data`, shared by every string searched there,
+        so each distinct anchor is looked for once per piece of data."""
+        if self.needles is None:
+            self._index()
+        assert self.needles is not None  # noqa: S101 - set by _index
+        seen = {} if seen is None else seen
+        events: list[Event] = []
+        for needle, length, owners in self.needles:
+            starts = seen.get(needle)
+            if starts is None:
+                starts = seen[needle] = Search.occurrences(data, needle)
+            if not starts:
+                continue
+            for order, p, anchor in owners:
+                back = length + anchor[1]
+                events.extend(
+                    (s + length, -length, -order, p, anchor, s + length - back)
+                    for s in starts
+                    if back <= s + length
+                )
+        hunt = _Hunt(self, data, fixed, deadline)
+        for order, p, anchor in self.zeros:
+            events.extend((at, 0, -order, p, anchor, at) for at in hunt.starts(p))
+        if not events:
+            return []
+        events.sort(key=lambda e: (e[0], e[1], e[2]))
+        return hunt.run(events)
+
+    def _index(self) -> None:
+        """The anchors of every part, by distinct bytes, numbered in the order they are checked
+        when two end at the same place (a later one first)."""
+        table: dict[bytes, list[tuple[int, int, AnchorAt]]] = {}
+        zeros = []
+        order = 0
+        for p, part in enumerate(self.parts):
+            for anchor in part.anchors:
+                if anchor[0]:
+                    table.setdefault(anchor[0], []).append((order, p, anchor))
+                else:
+                    zeros.append((order, p, anchor))
+                order += 1
+        self.needles = [(needle, len(needle), owners) for needle, owners in table.items()]
+        self.zeros = zeros
+
+    @staticmethod
+    def occurrences(data: bytes, needle: bytes) -> list[int]:
+        """Every offset `needle` begins at, overlapping ones included."""
+        out = []
+        at = data.find(needle)
+        while at >= 0:
+            out.append(at)
+            at = data.find(needle, at + 1)
+        return out
 
 
 class _Hunt:
@@ -269,9 +327,10 @@ class _Hunt:
         #: The data translated for each set of bytes a run may carry a thread list past.
         self.masks: dict[bytes, bytes] = {}
 
-    def run(self) -> list[tuple[int, int]]:
+    def run(self, events: list[Event]) -> list[tuple[int, int]]:
+        """Checks each anchor occurrence, in the order `events` gives."""
         n = len(self.data)
-        for count, (_, _, _, part, anchor, offset) in enumerate(self._events()):
+        for count, (_, _, _, part, anchor, offset) in enumerate(events):
             if count % 4096 == 0 and self.deadline is not None and time.monotonic() > self.deadline:
                 raise TimeoutError("matching took longer than the time allowed")
             if offset >= n or self.full:
@@ -281,53 +340,18 @@ class _Hunt:
             self._check(part, anchor, offset)
         return sorted(self.hits.items())
 
-    def _events(self) -> Iterator[Event]:
-        """Every anchor occurrence as (end, -length, -order, part, anchor, offset), in order."""
-        streams = []
-        order = 0
-        by_length: dict[int, dict[bytes, list[tuple[int, int, AnchorAt]]]] = {}
-        for p, part in enumerate(self.s.parts):
-            for anchor in part.anchors:
-                by_length.setdefault(len(anchor[0]), {}).setdefault(anchor[0], []).append(
-                    (order, p, anchor)
-                )
-                order += 1
-        for length, table in by_length.items():
-            for needle, owners in table.items():
-                for order_, p, anchor in owners:
-                    streams.append(self._stream(needle, length, order_, p, anchor))
-        return heapq.merge(*streams)
-
-    def _stream(
-        self, needle: bytes, length: int, order: int, part: int, anchor: AnchorAt
-    ) -> Iterator[Event]:
+    def starts(self, p: int) -> list[int]:
+        """Where a part with no anchor is run from: every position, less those no run from
+        there can do anything at."""
         data = self.data
-        total = length + anchor[1]
-        if length == 0:
-            # every position, less those no run from here can do anything at
-            ahead = self._ahead(part)
-            if ahead is not None:
-                for m in ahead.finditer(data):
-                    yield m.start(), 0, -order, part, anchor, m.start()
-                return
-            firsts = self._firsts(part)
-            if firsts is None:
-                for end in range(len(data)):
-                    yield end, 0, -order, part, anchor, end
-                return
-            table = bytes(1 if b in firsts else 0 for b in range(256))
-            mask = data.translate(table)
-            at = mask.find(b"\x01")
-            while at >= 0:
-                yield at, 0, -order, part, anchor, at
-                at = mask.find(b"\x01", at + 1)
-            return
-        at = data.find(needle)
-        while at >= 0:
-            end = at + length
-            if total <= end:
-                yield end, -length, -order, part, anchor, end - total
-            at = data.find(needle, at + 1)
+        ahead = self._ahead(p)
+        if ahead is not None:
+            return [m.start() for m in ahead.finditer(data)]
+        firsts = self._firsts(p)
+        if firsts is None:
+            return list(range(len(data)))
+        mask = data.translate(bytes(1 if b in firsts else 0 for b in range(256)))
+        return Search.occurrences(mask, b"\x01")
 
     def _ahead(self, p: int) -> re.Pattern[bytes] | None:
         """For a part searched for only one byte wide, `Threads.prefilter` of its start."""

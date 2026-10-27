@@ -831,12 +831,17 @@ class Strings:
             raise YaraError(f"a regular expression that does not compile: {exc}") from exc
 
     @staticmethod
-    def find(s: StringDef, data: bytes, deadline: float | None = None) -> list[tuple[int, int]]:
+    def find(
+        s: StringDef,
+        data: bytes,
+        deadline: float | None = None,
+        seen: dict[bytes, list[int]] | None = None,
+    ) -> list[tuple[int, int]]:
         """(offset, length) of every match of `s`, by offset, at most `rule_scan.MAX_HITS`."""
         from cordon_scanner.detect.binary.rule_pattern import RunError
 
         try:
-            found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline)
+            found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
             return found
         except TimeoutError as exc:
             raise YaraError("matching took longer than the time allowed") from exc
@@ -914,6 +919,8 @@ class Scan:
         self.factories: dict[str, Any] = {}
         self.roots: dict[str, Struct] = {}
         self.decided: dict[str, bool] = {}
+        #: Where each anchor occurs in the data, shared by every string (`Search.find`).
+        self.seen: dict[bytes, list[int]] = {}
         self.vars: list[dict[str, Any]] = []
 
     def run(self) -> list[Match]:
@@ -922,7 +929,9 @@ class Scan:
         found_by_rule: dict[str, dict[str, list[tuple[int, int]]]] = {}
         for rule in self.rules:
             self.rule = rule
-            self.found = {s.name: Strings.find(s, self.data, self.deadline) for s in rule.strings}
+            self.found = {
+                s.name: Strings.find(s, self.data, self.deadline, self.seen) for s in rule.strings
+            }
             found_by_rule[rule.name] = self.found
             result = Scan.truth(self.eval(rule.condition))
             self.decided[rule.name] = result

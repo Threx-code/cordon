@@ -671,6 +671,9 @@ class Memo:
         self.loops: dict[int, bytes | None] = {}
         #: For an entry point, the first bytes that can lead anywhere (None: any byte can).
         self.firsts: dict[int, frozenset[int] | None] = {}
+        #: For a thread list, whether a thread in it is at a position test: only then does a step
+        #: from it depend on what surrounds the byte it reads.
+        self.testing: dict[int, bool] = {}
         #: For an entry point, a pattern finding where a run from it can do anything (`prefilter`).
         self.filters: dict[int, re.Pattern[bytes] | None] = {}
 
@@ -701,7 +704,6 @@ class Threads:
         self.live = 0
         #: Steps already worked out, by run mode; kept by whoever owns the layout.
         self.memo: dict[tuple[bool, ...], Memo] = {} if memo is None else memo
-        self.tests = any(op[0] in Op.TESTS for op in ops)
         #: Whether this run reports each match rather than letting the first end the step.
         self.every = False
         self.flags = (False, False)  # nocase, dotall of the current run
@@ -813,10 +815,20 @@ class Threads:
             state = memo.starts[entry] = memo.state(Threads._keys(self._settle(self._new(entry))))
         return state
 
+    def _testing(self, memo: Memo, state: int) -> bool:
+        tested = memo.testing.get(state)
+        if tested is None:
+            tested = memo.testing[state] = any(
+                self.ops[k[0]][0] in Op.TESTS for k in memo.states[state]
+            )
+        return tested
+
     def _step(
         self, memo: Memo, state: int, c: int, low: bool, around: tuple[bool, bool, bool, bool]
     ) -> tuple[int, int]:
-        key: tuple[Any, ...] = (state, c, low, around) if self.tests else (state, c, low)
+        key: tuple[Any, ...] = (
+            (state, c, low, around) if self._testing(memo, state) else (state, c, low)
+        )
         went = memo.steps.get(key)
         if went is None:
             threads = [list(k) for k in memo.states[state]]
@@ -830,7 +842,7 @@ class Threads:
         """The bytes that bring `state` back to itself with no match, in every surrounding."""
         if state in memo.loops:
             return memo.loops[state]
-        arounds = Threads.AROUND if self.tests else [Threads.QUIET]
+        arounds = Threads.AROUND if self._testing(memo, state) else [Threads.QUIET]
         table = bytearray(b"\x01" * 256)
         for c in range(256):
             try:
@@ -852,7 +864,7 @@ class Threads:
         if entry in memo.firsts:
             return memo.firsts[entry]
         start = self._start(memo, entry)
-        arounds = Threads.AROUND if self.tests else [Threads.QUIET]
+        arounds = Threads.AROUND if self._testing(memo, start) else [Threads.QUIET]
         lows = (True, False) if wide else (True,)
         live: set[int] | None = set()
         for c in range(-1, 256):
@@ -879,40 +891,48 @@ class Threads:
         `entry` can do anything at: the positions it misses are ones where every thread dies
         within `depth` bytes having matched nothing. None when no such pattern helps (the layout
         tests positions, or the first step already decides nothing)."""
-        if self.tests:
-            return None
         memo = self._memo(False, False, nocase, dotall, False)
         if entry not in memo.filters:
             body = self._ahead(memo, self._start(memo, entry), depth)
             memo.filters[entry] = None if body is None else re.compile(b"(?=" + body + b")")
         return memo.filters[entry]
 
-    def _ahead(self, memo: Memo, state: int, depth: int) -> bytes | None:
-        """The bytes from `state` that keep some thread alive `depth` more steps (or reach a
-        match on the way), as a regular expression; None for "any bytes at all"."""
-        if depth == 0:
+    def _ahead(self, memo: Memo, state: int, depth: int, chain: int = 64) -> bytes | None:
+        """The bytes from `state` that keep some thread alive (or reach a match on the way), as a
+        regular expression; None for "any bytes at all". It looks `depth` steps ahead where the
+        bytes lead to different thread lists, and up to `chain` steps along a single path."""
+        if depth == 0 or chain == 0 or self._testing(memo, state):
             return None
         try:
             if self._step(memo, state, -1, False, Threads.QUIET) != (0, 0):
                 return None
-            groups: dict[bytes | None, list[int]] = {}
+            leads: dict[int, list[int]] = {}  # next thread list -> the bytes that lead to it
+            matched: list[int] = []
             for c in range(256):
                 nxt, hits = self._step(memo, state, c, True, Threads.QUIET)
-                if (nxt, hits) == (0, 0):
-                    continue
-                rest = None if hits else self._ahead(memo, nxt, depth - 1)
-                groups.setdefault(rest, []).append(c)
-                if len(groups) > 16:
-                    return None
+                if hits:
+                    matched.append(c)
+                elif nxt:
+                    leads.setdefault(nxt, []).append(c)
+            if len(leads) > 16:
+                return None
+            single = len(leads) == 1 and not matched
+            groups: dict[bytes | None, list[int]] = {}
+            if matched:
+                groups[None] = matched
+            for nxt, cs in leads.items():
+                rest = self._ahead(memo, nxt, depth if single else depth - 1, chain - 1)
+                groups.setdefault(rest, []).extend(cs)
         except RunError:
             return None
         if not groups:
             return b"(?!)"
         parts = []
         for rest, cs in groups.items():
-            members = b"".join(re.escape(bytes([c])) for c in cs)
+            members = b"".join(re.escape(bytes([c])) for c in sorted(cs))
             parts.append(b"[" + members + b"]" + (b"" if rest is None else rest))
-        return b"(?:" + b"|".join(parts) + b")"
+        body = b"(?:" + b"|".join(parts) + b")"
+        return None if len(body) > 1 << 16 else body
 
     def run(self, entry: int, data: bytes, at: int, *, backwards: bool = False,
             wide: bool = False, nocase: bool = False, dotall: bool = False,
@@ -944,7 +964,7 @@ class Threads:
                 low = not wide or data[pos + 1] == 0
             else:
                 c, low = -1, False
-            if self.tests:
+            if self._testing(memo, state):
                 around = (
                     (at <= done) if backwards else (at == 0 and done == 0),
                     not backwards and n - at <= done,
