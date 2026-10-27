@@ -16,6 +16,7 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_chain import Chain
 from cordon_scanner.detect.binary.rule_pattern import (
     ANY,
     CLASS,
@@ -116,6 +117,8 @@ class Part:
         #: Runs every match of the part holds: (the forward entry of the term read, at least how
         #: many of it in a row), longest first (`Part.factors_of`).
         self.factors: list[tuple[int, int]] = []
+        #: The part as a chain of class repeats, when it is one (`rule_chain.Chain`).
+        self.chain: Chain | None = None
         self.anchors: list[AnchorAt] = []
         self.fits = False  # text short enough that an anchor occurrence is the match
         #: Steps the layouts have taken, kept across runs and files (`rule_pattern.Memo`).
@@ -241,6 +244,7 @@ class Search:
         part.forward, part.backward = forward.ops, backward.ops
         part.root_entry = root.fwd
         part.factors = Part.factors_of(root)
+        part.chain = Chain.of(root)
         chosen, _ = Anchors.of(root)
         self.parts.append(part)
         part.anchors = self._finish(chosen, text=False)
@@ -509,6 +513,17 @@ class _Hunt:
         busy = self.busy
         for event in events:
             busy[event[3]] = busy.get(event[3], 0) + 1
+        chained = self._chained(events)
+        if chained is not None:
+            for start, length in chained:
+                if self.full:
+                    break
+                self._found(0, start, length, False)
+            return sorted(self.hits.items())
+        self._run_events(events, n)
+        return sorted(self.hits.items())
+
+    def _run_events(self, events: list[Event], n: int) -> None:
         for count, (_, _, _, part, anchor, offset) in enumerate(events):
             if count % 4096 == 0 and self.deadline is not None and time.monotonic() > self.deadline:
                 raise TimeoutError("matching took longer than the time allowed")
@@ -517,7 +532,30 @@ class _Hunt:
             if self.fixed is not None and part == 0 and offset != self.fixed:
                 continue
             self._check(part, anchor, offset)
-        return sorted(self.hits.items())
+
+    def _chained(self, events: list[Event]) -> list[tuple[int, int]] | None:
+        """Every match of a string that is one chain of class repeats (`rule_chain`), worked out
+        directly from its anchors' offsets when they occur often enough to make running them
+        dear; None to run them as usual (as for an anchor outside the chain's first term)."""
+        parts, f = self.s.parts, self.s.flags
+        part = parts[0]
+        if len(parts) != 1 or part.chain is None or len(events) <= _Hunt.BUSY:
+            return None
+        if f.get("plain") or "fullword" in f or self._widths() != [False] or self.fixed is not None:
+            return None
+        if any(anchor[2] != part.root_entry for anchor in part.anchors):
+            return None
+        backward = any(anchor[3] is not None for anchor in part.anchors)
+        n = len(self.data)
+        offsets = sorted({e[5] for e in events if e[5] < n})
+        return part.chain.matches(
+            self.data,
+            offsets,
+            backward=backward,
+            nocase=self.nocase,
+            dotall=self.dotall,
+            deadline=self.deadline,
+        )
 
     def starts(self, p: int) -> list[int]:
         """Where a part with no anchor is run from: every position, less those no run from

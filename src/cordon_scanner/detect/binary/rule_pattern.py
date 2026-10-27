@@ -656,12 +656,13 @@ class Program:
 class Memo:
     """The steps one layout has taken in one run mode: thread lists numbered as they are first
     seen, and for each (list, byte, surroundings) the list it led to and the matches it reached.
-    Past `Memo.LIMIT` steps, or once its lists hold `Memo.WEIGHT` threads between them, it starts
+    Past `Memo.LIMIT` steps, or once its lists weigh `Memo.WEIGHT` pointers (`weight`), it starts
     afresh: its size is bounded whatever the pattern and the data (a list can hold up to
-    `MAX_THREADS` threads, so a count of lists alone does not bound it)."""
+    `MAX_THREADS` threads, so a count of lists alone does not bound it). `WEIGHT` is about 64 MB.
+    """
 
     LIMIT: ClassVar[int] = 1 << 16
-    WEIGHT: ClassVar[int] = 1 << 19
+    WEIGHT: ClassVar[int] = 1 << 23
 
     def __init__(self) -> None:
         self.states: list[tuple[tuple[Any, ...], ...]] = [()]
@@ -681,7 +682,9 @@ class Memo:
         self.paths: dict[tuple[int, int, int], list[bytes]] = {}
         #: For an entry point, a pattern finding where a run from it can do anything (`prefilter`).
         self.filters: dict[tuple[int, int, int], re.Pattern[bytes] | None] = {}
-        #: The threads the lists in `states` hold between them.
+        #: Every thread the lists in `states` hold, each kept once.
+        self.threads: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+        #: The size of `states`, in pointers: one per thread a list holds, a dozen per thread kept.
         self.weight = 0
 
     def full(self) -> bool:
@@ -690,9 +693,13 @@ class Memo:
     def state(self, keys: tuple[tuple[Any, ...], ...]) -> int:
         number = self.numbers.get(keys)
         if number is None:
+            # each thread is kept once, shared by every list holding it: a list costs a pointer
+            # a thread, and a thread first seen costs about a dozen more (`WEIGHT` counts both)
+            shared, before = self.threads, len(self.threads)
+            keys = tuple([shared.setdefault(k, k) for k in keys])
             number = self.numbers[keys] = len(self.states)
             self.states.append(keys)
-            self.weight += len(keys) + 1
+            self.weight += len(keys) + 1 + 12 * (len(shared) - before)
         return number
 
     def remember(self, key: tuple[Any, ...], went: tuple[int, int]) -> None:
