@@ -284,6 +284,8 @@ select = [
     "TID",  # tidy imports
     "FA",   # postponed annotations where they are needed
     "Q",    # one quoting style
+    "BLE",  # a blind `except Exception` must say why with `noqa: BLE001`: each one here reports the
+            # failure as an operational finding or contains it where a later step reports it
 ]
 ignore = [
     "E501",  # line length is the formatter's job

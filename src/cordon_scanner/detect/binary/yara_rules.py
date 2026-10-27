@@ -151,7 +151,7 @@ class YaraDetector(BaseDetector):
         if self._engine is None and self._failed is None:
             try:
                 self._engine = YaraEngine(str(ctx.config.yara))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self._failed = (
                     f"the rules could not be loaded: {type(exc).__name__}: {str(exc)[:200]}"
                 )
@@ -179,7 +179,7 @@ class YaraDetector(BaseDetector):
             return ()
         try:
             matches = engine.match(unit.content.raw)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return [
                 self._operational(
                     UNAVAILABLE_RULE,

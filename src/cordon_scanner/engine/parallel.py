@@ -445,7 +445,7 @@ class ParallelScanner:
             ) -> list[Any]:
                 try:
                     return list(detector.inspect(part, ctx))
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     # A detector that fails in a worker must not silently reduce
                     # coverage. It is reported the same way the serial path reports
                     # it, so a broken detector looks identical either way.
@@ -624,7 +624,7 @@ class ParallelScanner:
                         completed.append(index)
                     if on_batch is not None:
                         on_batch(completed)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
 
         # Restored to input order. Completion order depends on scheduling, and

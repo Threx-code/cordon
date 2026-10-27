@@ -165,7 +165,7 @@ class IncomingCommand:
                 undone = "the merge was undone (git reset --merge ORIG_HEAD)"
             else:
                 return int(ExitCode.CLEAN)
-        except Exception as exc:  # a hook must report, never crash the git command
+        except Exception as exc:  # a hook must report, never crash the git command  # noqa: BLE001
             print(
                 f"\nWARNING: {PROGRAM} could not check the code this {hook} brought in: {exc}",
                 file=sys.stderr,

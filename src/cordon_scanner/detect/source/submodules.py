@@ -122,7 +122,7 @@ class Submodules:
 
         try:
             output = GitRepository(directory).run(["ls-files", "--stage"], check=False)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return {}
         links: dict[str, str] = {}
         for line in output.splitlines():

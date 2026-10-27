@@ -136,7 +136,7 @@ class ReachedFlows:
                 )
                 try:
                     hooks = ecosystem.parse_manifest(unit.content).hooks if ecosystem else ()
-                except Exception:  # noqa: S112 -- a feature is evidence, never a scan failure
+                except Exception:  # noqa: BLE001, S112
                     continue
                 files += [
                     (f"{unit.path}#{hook.name}.sh", hook.command.encode())
@@ -202,7 +202,7 @@ class ReachedFlows:
             return out
         try:
             flows = JsFlow.flows(text)
-        except Exception:  # a fact is evidence, never a scan failure
+        except Exception:  # a fact is evidence, never a scan failure  # noqa: BLE001
             flows = []
         for flow in flows:
             for source in sorted(flow.sources):

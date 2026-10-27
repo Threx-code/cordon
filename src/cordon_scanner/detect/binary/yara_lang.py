@@ -952,7 +952,7 @@ class Strings:
         try:
             PatternCompiler.validate_pattern(source, rule_id="yara")
             safe = True
-        except Exception:
+        except Exception:  # noqa: BLE001
             safe = False
         try:
             if safe:

@@ -224,7 +224,7 @@ class VcsDetector(BaseDetector):
 
         try:
             changed = self.recent_paths(repository.root)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # Reported rather than swallowed. A scan that could not read the
             # history and a scan that read it and found nothing must not look
             # the same, which is the invariant this whole project is built

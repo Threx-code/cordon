@@ -3056,7 +3056,7 @@ class Engine:
             if tree is not None and hooks_from_tree is not None:
                 manifest = hooks_from_tree(manifest, tree)
             return list(manifest.hooks)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return []
 
     @staticmethod
@@ -4182,7 +4182,7 @@ class Engine:
         if unit.path not in cache:
             try:
                 cache[unit.path] = detector.labelled(unit, ctx)
-            except Exception as error:  # re-raised to each caller below
+            except Exception as error:  # re-raised to each caller below  # noqa: BLE001
                 cache[unit.path] = error
         held = cache[unit.path]
         if isinstance(held, Exception):
@@ -4253,7 +4253,7 @@ class Engine:
                 read += 1
                 try:
                     labelled = Engine._labelled_once(detector, unit, ctx, labels)
-                except Exception:  # noqa: S112 -- a profile is evidence, never a scan failure
+                except Exception:  # noqa: BLE001, S112
                     continue
                 if labelled is not None:
                     held |= {hit.capability.value for hit in labelled[0]}
@@ -5550,7 +5550,7 @@ class Engine:
                     graph = in_tree(unit.content, tree)
                 else:
                     graph = ecosystem.parse_lockfile(unit.content)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 acc.complete = False
                 acc.append(
                     Engine._operational(
@@ -5879,7 +5879,7 @@ class Engine:
                 continue
             try:
                 manifest = Engine._manifest_of(ecosystem, unit, contents)
-            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+            except Exception:  # noqa: BLE001, S112
                 continue
             owner = manifest.locked_by
             if owner is not None and (owner, ecosystem_id) in locked:
@@ -5918,7 +5918,7 @@ class Engine:
                 ecosystem = EcosystemRegistry.get(ecosystem_id)
                 try:
                     manifest = ecosystem.parse_manifest(unit.content) if ecosystem else None
-                except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+                except Exception:  # noqa: BLE001, S112
                     continue
                 if manifest is not None and manifest.name and manifest.name.lower() in names:
                     found[(project, ecosystem_id)] = lock_project
@@ -5938,7 +5938,7 @@ class Engine:
                 continue
             try:
                 manifest = ecosystem.parse_manifest(unit.content)
-            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+            except Exception:  # noqa: BLE001, S112
                 continue
             for source in manifest.sources:
                 # A URL inside the description loses its userinfo and query: a token in an
@@ -5997,7 +5997,7 @@ class Engine:
                     if parse
                     else ecosystem.parse_manifest(by_path[resolved].content)
                 )
-            except Exception:  # noqa: S112 - an unreadable include is reported where it is parsed
+            except Exception:  # noqa: BLE001, S112
                 continue
             out.append((kind, resolved, included))
             if depth + 1 < Engine.MAX_INCLUDE_DEPTH:
@@ -6163,7 +6163,7 @@ class Engine:
                 continue
             try:
                 manifest = Engine._manifest_of(ecosystem, unit, contents)
-            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+            except Exception:  # noqa: BLE001, S112
                 continue
             for shared_name, shared_spec in manifest.shared_specs.items():
                 shared.setdefault(
@@ -6485,7 +6485,7 @@ class Engine:
                 # With the build in view: a Gradle project's name is in its settings script, a
                 # Maven module's group in its parent POM.
                 manifest = Engine._manifest_of(ecosystem, unit, contents)
-            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+            except Exception:  # noqa: BLE001, S112
                 continue
             if manifest.name:
                 members.add((ecosystem_id, ecosystem.normalize_name(manifest.name)))
@@ -6540,7 +6540,7 @@ class Engine:
 
             try:
                 manifest = Engine._manifest_of(ecosystem, unit, contents)
-            except Exception:  # noqa: S112
+            except Exception:  # noqa: BLE001, S112
                 # Deliberately silent here, and not a swallowed failure.
                 # `_manifest_hook_paths` parses the same file, under the same
                 # predicate, in the same scan, and reports
@@ -7129,7 +7129,7 @@ class Engine:
                 continue
             try:
                 hooks = ecosystem.parse_manifest(unit.content).hooks
-            except Exception:  # noqa: S112 -- `_manifest_hook_paths` reports the failure
+            except Exception:  # noqa: BLE001, S112
                 continue
             for hook in hooks:
                 if not hook.command or hook.name.lower() in AUTHOR_TIME_HOOKS:
@@ -7202,7 +7202,7 @@ class Engine:
                 hooks_from_tree = getattr(ecosystem, "hooks_from_tree", None)
                 if hooks_from_tree is not None:
                     manifest = hooks_from_tree(manifest, known)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # Same containment as the lockfile path, and reported for the
                 # same reason. Catching it and moving on quietly would trade one
                 # failure mode (the scan dies) for the worse one (the manifest
@@ -7778,7 +7778,7 @@ class Engine:
         """
         try:
             produced = list(detector.inspect(unit, ctx))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             acc.complete = False
             return [
                 Engine._operational(

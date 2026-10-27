@@ -285,7 +285,7 @@ class CodeFeatures:
         least `MARGIN` before the text's end: never inside a string, a comment or a template."""
         try:
             tokens = JsEval.tokens(text, templates=True)
-        except Exception:  # a text the tokenizer cannot read gives no features, never a failure
+        except Exception:  # a text the tokenizer cannot read gives no features, never a failure  # noqa: BLE001
             return [], len(text)
         limit = len(text) if last else len(text) - CodeFeatures.MARGIN
         keep = cut = depth = 0

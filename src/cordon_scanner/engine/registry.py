@@ -349,7 +349,7 @@ class Registry:
             return known
         try:
             dist = entry.dist
-        except Exception:  # pragma: no cover - importlib.metadata internals
+        except Exception:  # pragma: no cover - importlib.metadata internals  # noqa: BLE001
             return "<unknown>"
         name = getattr(dist, "name", None) if dist is not None else None
         _PROVIDERS[key] = name or "<unknown>"

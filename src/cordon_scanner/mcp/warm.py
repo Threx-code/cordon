@@ -205,7 +205,7 @@ class WarmHelper:
             code = CommandLine.main(list(request["argv"]))
         except SystemExit as exc:
             code = exc.code if isinstance(exc.code, int) else 1
-        except BaseException:  # the child reports; it never takes the helper down
+        except BaseException:  # the child reports; it never takes the helper down  # noqa: BLE001
             import traceback
 
             traceback.print_exc()

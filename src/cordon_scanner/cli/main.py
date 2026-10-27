@@ -1482,7 +1482,7 @@ class CommandLine:
         except CloudError as exc:
             print(f"{cls.PROGRAM}: upload failed: {exc}", file=sys.stderr)
             return
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(
                 f"{cls.PROGRAM}: upload failed while signing: {type(exc).__name__}", file=sys.stderr
             )
@@ -2701,7 +2701,7 @@ class CommandLine:
                     continue
                 try:
                     manifest = ecosystem.parse_manifest(loaded)
-                except Exception:  # noqa: S112 - an unreadable manifest is one fewer answer
+                except Exception:  # noqa: BLE001, S112
                     continue
                 if manifest.parse_error or not manifest.name:
                     continue
@@ -3101,7 +3101,7 @@ class CommandLine:
         except BrokenPipeError:
             # `cordon scan . | head` is a normal thing to do.
             return int(ExitCode.CLEAN)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # An untyped exception reaching here is a bug in Cordon, and is reported
             # as one rather than dressed up as a scan result. Reporting it as
             # "findings" would be worse than useless: it would look like the code

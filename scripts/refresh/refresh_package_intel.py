@@ -779,7 +779,7 @@ class PackageIntelRefresh:
             print(f"{ecosystem}:")
             try:
                 ranked, source = fetcher()
-            except Exception as exc:  # a broken source must not abort the rest
+            except Exception as exc:  # a broken source must not abort the rest  # noqa: BLE001
                 print(f"  FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
                 failed.append(ecosystem)
                 continue

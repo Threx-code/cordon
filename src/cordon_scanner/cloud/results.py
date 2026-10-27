@@ -119,7 +119,7 @@ class SignedResults:
                 root_version=(repository.revision if repository else None) or "unversioned",
                 tool_version=__version__,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
 
     @staticmethod

@@ -162,7 +162,7 @@ class Server:
                 if line.strip():
                     try:
                         self.receive(line)
-                    except Exception as exc:  # one message must never end the server
+                    except Exception as exc:  # one message must never end the server  # noqa: BLE001
                         print(
                             f"cordon-scanner mcp: could not handle a message: {type(exc).__name__}",
                             file=sys.stderr,
@@ -260,7 +260,7 @@ class Server:
         except RpcError as exc:
             if not token.cancelled:
                 self.send(self.error(ident, exc.code, exc.message, exc.data))
-        except Exception as exc:  # one request's failure must not end the server
+        except Exception as exc:  # one request's failure must not end the server  # noqa: BLE001
             print(
                 f"cordon-scanner mcp: internal error in {method}: {type(exc).__name__}: {exc}",
                 file=sys.stderr,

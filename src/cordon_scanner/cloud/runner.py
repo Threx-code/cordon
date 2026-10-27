@@ -438,7 +438,7 @@ class CloudRunner:
             return {"status": "refused", "error": str(exc)}
         except CloudError as exc:
             return {"status": "failed", "error": str(exc)}
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # The detail stays on the runner. The exception type was returned to the control
             # plane, which made a failed fetch an oracle for what is reachable from here.
             print(
@@ -526,7 +526,7 @@ class CloudRunner:
             return {"status": "refused", "error": str(exc)[:500]}
         except CloudError as exc:
             return {"status": "failed", "error": str(exc)[:500]}
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return {"status": "failed", "error": f"{type(exc).__name__} while making the fix"}
         finally:
             Trees.remove(workspace)

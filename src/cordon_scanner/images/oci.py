@@ -696,7 +696,7 @@ class ImageLayers:
                     blobs = pkgdb.PackageDatabases.rpm_sqlite_blobs(
                         files[path], files.get(path + "-wal")
                     )
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     inventory.problems.append(
                         f"the RPM database at {path} was not read ({type(exc).__name__})"
                     )

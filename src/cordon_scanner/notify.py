@@ -179,7 +179,7 @@ class Notifier:
         for channel in channels:
             try:
                 deliveries.append(self._send_one(channel, summary))
-            except Exception as exc:  # a notifier must not take the scan down with it
+            except Exception as exc:  # a notifier must not take the scan down with it  # noqa: BLE001
                 deliveries.append(Delivery(channel, False, type(exc).__name__))
         return deliveries
 

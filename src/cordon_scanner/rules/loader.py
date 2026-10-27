@@ -207,7 +207,7 @@ class PatternCompiler:
             # An unparseable pattern is reported by the compile below, which
             # produces a better message than anything reconstructable here.
             return None
-        except Exception:  # pragma: no cover - parser internals changed
+        except Exception:  # pragma: no cover - parser internals changed  # noqa: BLE001
             return None
 
     @staticmethod
@@ -466,7 +466,7 @@ class PatternCompiler:
             sre = importlib.import_module("re._constants")
             parser = importlib.import_module("re._parser")
             tree = parser.parse(pattern.encode("utf-8"))
-        except Exception:  # any doubt means no prefilter, never a wrong one
+        except Exception:  # any doubt means no prefilter, never a wrong one  # noqa: BLE001
             return ()
         ignorecase = sre.SRE_FLAG_IGNORECASE
         if not fold and tree.state.flags & ignorecase:

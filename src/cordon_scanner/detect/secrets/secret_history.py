@@ -200,7 +200,7 @@ class HistorySecretScan:
                 members = list(
                     ArchiveReader.walk_archive(data, path=path, limits=self.config.limits)
                 )
-            except Exception:  # a malformed archive is read as bytes instead
+            except Exception:  # a malformed archive is read as bytes instead  # noqa: BLE001
                 members = []
             if members:
                 return [item for name, payload in members for item in as_text(name, payload)]

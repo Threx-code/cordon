@@ -110,7 +110,7 @@ for label, samples in TECHNIQUE.items():
         )
         try:
             fs = json.loads(out.read_text(encoding="utf-8"))["findings"]
-        except Exception:
+        except Exception:  # noqa: BLE001
             fs = []
         if any(f.get("category") in ("malicious", "suspicious") for f in fs):
             hit += 1

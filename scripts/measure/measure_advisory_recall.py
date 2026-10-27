@@ -180,7 +180,7 @@ for eco in sorted(by_eco):
     )
     try:
         findings = json.loads(out.read_text(encoding="utf-8"))["findings"]
-    except Exception:
+    except Exception:  # noqa: BLE001
         findings = []
     # Distinct packages reported, not string matching on the purl: a name
     # written with homoglyphs is percent-encoded there and will not compare

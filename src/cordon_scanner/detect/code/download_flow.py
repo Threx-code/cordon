@@ -420,7 +420,7 @@ class PythonDownloads:
     def _name(node: ast.AST) -> str:
         try:
             return ast.unparse(node)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return ""
 
     def _callee(self, call: ast.Call) -> tuple[str, str]:

@@ -453,7 +453,7 @@ class IntentObserver:
                 continue
             try:
                 effects = list(label(unit) or ())
-            except Exception:  # a file not read is reported, never a scan failure
+            except Exception:  # a file not read is reported, never a scan failure  # noqa: BLE001
                 if running:
                     out.unexamined.append(f"{name}: could not be analysed")
                 continue

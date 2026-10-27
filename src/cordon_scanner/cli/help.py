@@ -338,7 +338,7 @@ class Environment:
         for label, probe in probes:
             try:
                 value, state = probe()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 value, state = "unavailable", "warn"
             out.append(Fact(label, value, state))
         return out
