@@ -49,6 +49,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.addresses import PublicAddress
+from cordon_scanner.detect.code.capability_memo import CapabilityMemo
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
 from cordon_scanner.detect.code.install_payload import InstallPayload
@@ -429,7 +430,7 @@ class CapabilityDetector(BaseDetector):
             # code carries, read by the shell rules as commands written in source are.
             hits: list[CapabilityHit] = []
         else:
-            hits = self._match_capabilities(matched_content, candidates, language)
+            hits = CapabilityMemo.hits(self, matched_content, candidates, language)
             hits.extend(self._folded_capabilities(matched_content, candidates, language, hits))
         resolved, commands = self._resolved_capabilities(unit, content, ctx)
         commands = commands + dotnet_commands
@@ -824,7 +825,7 @@ class CapabilityDetector(BaseDetector):
                 starts.append(index + 1)
         extra: list[CapabilityHit] = []
         view = FileContent.from_bytes(content.path, folded.encode("utf-8"))
-        for hit in self._match_capabilities(view, candidates, language):
+        for hit in CapabilityMemo.hits(self, view, candidates, language):
             if (hit.rule_id, hit.line) in already or hit.line > len(starts):
                 continue
             begin = starts[hit.line - 1]

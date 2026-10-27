@@ -32,10 +32,13 @@ class ContentMemo:
         self._held = 0
 
     @staticmethod
-    def digest(text: str) -> bytes:
+    def digest(text: str | bytes) -> bytes:
+        """A text's digest, or a byte string's (the two never collide: each is marked)."""
+        if isinstance(text, bytes):
+            return hashlib.blake2b(text, digest_size=16, person=b"bytes").digest()
         return hashlib.blake2b(text.encode("utf-8", "surrogatepass"), digest_size=16).digest()
 
-    def get(self, key: Hashable, text: str, work: Callable[[], Sequence[T]]) -> list[T]:
+    def get(self, key: Hashable, text: str | bytes, work: Callable[[], Sequence[T]]) -> list[T]:
         """`work()`'s result for `text`, worked out the first time and kept; a fresh list each
         time, so a caller may change the list it gets."""
         if len(text) < self.smallest:
@@ -54,4 +57,26 @@ class ContentMemo:
         return list(kept)
 
 
-__all__ = ["ContentMemo"]
+class Same:
+    """A key part standing for these very objects (by identity, not value), and holding them,
+    so their identities cannot pass to others while the key is kept: for objects that are not
+    hashable, or whose equality would cost more than the work it saves."""
+
+    __slots__ = ("_hash", "items")
+
+    def __init__(self, items: Sequence[object]) -> None:
+        self.items = tuple(items)
+        self._hash = hash(tuple(map(id, self.items)))
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, Same)
+            and len(other.items) == len(self.items)
+            and all(a is b for a, b in zip(self.items, other.items, strict=True))
+        )
+
+
+__all__ = ["ContentMemo", "Same"]

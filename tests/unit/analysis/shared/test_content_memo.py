@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from cordon_scanner.analysis.javascript.front.resolve import CallResolver
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
-from cordon_scanner.analysis.shared.content_memo import ContentMemo
+from cordon_scanner.analysis.shared.content_memo import ContentMemo, Same
 
 
 class Counting:
@@ -62,6 +62,25 @@ class TestContentMemo:
         memo, work = ContentMemo(smallest=1), Counting()
         memo.get("k", "a\udc80b", work)
         memo.get("k", "a\udc81b", work)
+        assert work.runs == 2
+
+
+class TestKeysOfBytesAndOfIdentity:
+    def test_bytes_and_text_of_the_same_characters_are_different_keys(self) -> None:
+        memo, work = ContentMemo(smallest=1), Counting()
+        memo.get("k", "abc", work)
+        memo.get("k", b"abc", work)
+        memo.get("k", b"abc", work)
+        assert work.runs == 2
+
+    def test_same_stands_for_the_very_objects(self) -> None:
+        a, b = [1], [1]  # equal but different objects
+        assert Same([a]) == Same([a]) and hash(Same([a])) == hash(Same([a]))
+        assert Same([a]) != Same([b])
+        memo, work = ContentMemo(smallest=1), Counting()
+        memo.get(Same([a]), "text", work)
+        memo.get(Same([b]), "text", work)
+        memo.get(Same([a]), "text", work)
         assert work.runs == 2
 
 
