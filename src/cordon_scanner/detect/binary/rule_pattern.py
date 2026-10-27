@@ -656,9 +656,12 @@ class Program:
 class Memo:
     """The steps one layout has taken in one run mode: thread lists numbered as they are first
     seen, and for each (list, byte, surroundings) the list it led to and the matches it reached.
-    Past `Memo.LIMIT` steps it starts afresh, so its size is bounded whatever the data."""
+    Past `Memo.LIMIT` steps, or once its lists hold `Memo.WEIGHT` threads between them, it starts
+    afresh: its size is bounded whatever the pattern and the data (a list can hold up to
+    `MAX_THREADS` threads, so a count of lists alone does not bound it)."""
 
     LIMIT: ClassVar[int] = 1 << 16
+    WEIGHT: ClassVar[int] = 1 << 19
 
     def __init__(self) -> None:
         self.states: list[tuple[tuple[Any, ...], ...]] = [()]
@@ -674,14 +677,22 @@ class Memo:
         #: For a thread list, whether a thread in it is at a position test: only then does a step
         #: from it depend on what surrounds the byte it reads.
         self.testing: dict[int, bool] = {}
+        #: For an entry point, the single path its runs start along (`Threads.path`).
+        self.paths: dict[tuple[int, int, int], list[bytes]] = {}
         #: For an entry point, a pattern finding where a run from it can do anything (`prefilter`).
         self.filters: dict[tuple[int, int, int], re.Pattern[bytes] | None] = {}
+        #: The threads the lists in `states` hold between them.
+        self.weight = 0
+
+    def full(self) -> bool:
+        return len(self.states) > Memo.LIMIT or self.weight > Memo.WEIGHT
 
     def state(self, keys: tuple[tuple[Any, ...], ...]) -> int:
         number = self.numbers.get(keys)
         if number is None:
             number = self.numbers[keys] = len(self.states)
             self.states.append(keys)
+            self.weight += len(keys) + 1
         return number
 
     def remember(self, key: tuple[Any, ...], went: tuple[int, int]) -> None:
@@ -803,11 +814,11 @@ class Threads:
     def _memo(self, backwards: bool, wide: bool, nocase: bool, dotall: bool, every: bool) -> Memo:
         mode = (backwards, wide, nocase, dotall, every)
         last = self._last
-        if last is not None and last[0] == mode and len(last[1].states) <= Memo.LIMIT:
+        if last is not None and last[0] == mode and not last[1].full():
             self.flags, self.every = (nocase, dotall), every
             return last[1]
         memo = self.memo.get(mode)
-        if memo is None or len(memo.states) > Memo.LIMIT:
+        if memo is None or memo.full():
             memo = self.memo[mode] = Memo()
         self._last = (mode, memo)
         self.flags = (nocase, dotall)
@@ -910,6 +921,52 @@ class Threads:
             body = self._ahead(memo, self._start(memo, entry), depth, chain)
             memo.filters[key] = None if body is None else re.compile(b"(?=" + body + b")")
         return memo.filters[key]
+
+    def path(
+        self,
+        entry: int,
+        *,
+        nocase: bool = False,
+        dotall: bool = False,
+        longest: int = 512,
+        backwards: bool = False,
+    ) -> list[bytes]:
+        """The single path a one-byte-wide run from `entry` starts along (forwards, or with
+        `backwards` the bytes read going back): for each of its first steps, the bytes (as a
+        translate table: 1 for each, 0 for the rest) that keep a thread alive, as long as only
+        one list of threads can follow, none tests a position, no match is reached, and running
+        out of data ends the run. Empty when no such path starts there. A position whose bytes
+        leave the path is one where the run dies on it."""
+        memo = self._memo(backwards, False, nocase, dotall, False)
+        key = (entry, -2 if backwards else -1, longest)
+        if key in memo.paths:
+            return memo.paths[key]
+        out: list[bytes] = []
+        state = self._start(memo, entry)
+        try:
+            while len(out) < longest and not self._testing(memo, state):
+                if self._step(memo, state, -1, False, Threads.QUIET) != (0, 0):
+                    break
+                table = bytearray(256)
+                follows: set[int] = set()
+                for c in range(256):
+                    nxt, hits = self._step(memo, state, c, True, Threads.QUIET)
+                    if hits:
+                        follows = {-1}
+                        break
+                    if nxt:
+                        table[c] = 1
+                        follows.add(nxt)
+                if len(follows) != 1 or -1 in follows:
+                    if -1 not in follows and len(follows) > 1:
+                        out.append(bytes(table))  # this step still narrows the starts
+                    break
+                out.append(bytes(table))
+                state = follows.pop()
+        except RunError:
+            pass
+        memo.paths[key] = out
+        return out
 
     def _ahead(self, memo: Memo, state: int, depth: int, chain: int = 64) -> bytes | None:
         """The bytes from `state` that keep some thread alive (or reach a match on the way), as a
@@ -1025,7 +1082,20 @@ class Threads:
             else:
                 steady = 0
             state = nxt
+            if memo.weight > Memo.WEIGHT:
+                # the cache outgrew its bound within this run: carry on with a fresh one, the
+                # current threads its first list
+                memo, state = self._renew(
+                    memo, state, (backwards, wide, nocase, dotall, every is not None)
+                )
+                steps, testing = memo.steps, memo.testing
         return found
+
+    def _renew(self, memo: Memo, state: int, mode: tuple[bool, ...]) -> tuple[Memo, int]:
+        keys = memo.states[state]
+        fresh = self.memo[mode] = Memo()
+        self._last = (mode, fresh)
+        return fresh, fresh.state(keys)
 
     @staticmethod
     def _keys(threads: list[list[Any]]) -> tuple[tuple[Any, ...], ...]:

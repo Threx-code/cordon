@@ -90,7 +90,7 @@ silent gap, never a crash. See tutorials 09 and 05.
 ## New in 0.7.0
 
 - **31 · Rule files** -- `--rule-file`: your own signatures, matched against every file with
-  cordon-rule, Cordon's own rule engine (it reads rule files in the YARA format, `.yar`).
+  cordon-rule, Cordon's own rule engine.
 - **30 · The MCP server** -- `cordon-scanner mcp`: coding agents ask Cordon before they install a
   package, run an install command, load a skill or add an MCP server, over the Model Context
   Protocol, with every tool read-only and every online name kept to the public internet.

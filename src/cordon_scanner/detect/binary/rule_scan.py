@@ -10,16 +10,30 @@ longer anchors first, later-declared anchors first.
 
 from __future__ import annotations
 
+import bisect
 import re
 import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_pattern import (
+    ANY,
+    CLASS,
+    COUNT,
+    DIGIT,
     GAP,
     LINK_GAP,
     LIT,
+    MASKED,
+    NON_DIGIT,
+    NON_SPACE,
+    NON_WORD,
+    NOT,
+    NOT_MASKED,
+    REACH,
     SEQ,
+    SPACE,
+    WORD,
     Anchor,
     Anchors,
     Bytes,
@@ -46,6 +60,51 @@ class Part:
     """One piece of a string: plain bytes (`text`) or a pattern (`forward`/`backward` layouts),
     and the anchors that find it. `gap` is the (least, most) distance from the previous part."""
 
+    #: The terms that read one byte: a run of one of them repeated is a factor (`factor_of`).
+    SINGLE: ClassVar[frozenset[int]] = frozenset(
+        {
+            LIT,
+            MASKED,
+            ANY,
+            NOT,
+            NOT_MASKED,
+            CLASS,
+            WORD,
+            NON_WORD,
+            SPACE,
+            NON_SPACE,
+            DIGIT,
+            NON_DIGIT,
+        }
+    )
+    #: The shortest run worth a factor test.
+    FACTOR_MIN: ClassVar[int] = 8
+
+    #: The most runs `factors_of` keeps.
+    FACTORS: ClassVar[int] = 4
+
+    @staticmethod
+    def factors_of(root: Term) -> list[tuple[int, int]]:
+        """Runs every match must hold: a term that reads one byte, repeated at least `lo` times
+        in a row, among the terms every match goes through (the root and the sequences under it,
+        never inside an alternative or an optional repeat). Each is (its forward entry, `lo`);
+        the longest `FACTORS` of those of `FACTOR_MIN` or more, longest first. Each one alone
+        rules out the places it does not occur, so a run the data has everywhere costs a test and
+        a rarer one does the work."""
+        found: list[tuple[int, int]] = []
+        todo = [root]
+        while todo:
+            term = todo.pop()
+            if term.kind == SEQ:
+                todo.extend(term.kids)
+                continue
+            if term.kind != COUNT or term.lo < Part.FACTOR_MIN or term.fwd is None:
+                continue
+            if len(term.kids) == 1 and term.kids[0].kind in Part.SINGLE:
+                found.append((term.fwd, term.lo))
+        found.sort(key=lambda f: -f[1])
+        return found[: Part.FACTORS]
+
     #: Forward runs from one entry before its gate (`can_start`) is worked out.
     GATE_AFTER: ClassVar[int] = 256
 
@@ -54,6 +113,9 @@ class Part:
         self.forward: list[tuple[int, ...]] = []
         self.backward: list[tuple[int, ...]] = []
         self.root_entry: int | None = None
+        #: Runs every match of the part holds: (the forward entry of the term read, at least how
+        #: many of it in a row), longest first (`Part.factors_of`).
+        self.factors: list[tuple[int, int]] = []
         self.anchors: list[AnchorAt] = []
         self.fits = False  # text short enough that an anchor occurrence is the match
         #: Steps the layouts have taken, kept across runs and files (`rule_pattern.Memo`).
@@ -178,6 +240,7 @@ class Search:
         backward = Program(root, backwards=True)
         part.forward, part.backward = forward.ops, backward.ops
         part.root_entry = root.fwd
+        part.factors = Part.factors_of(root)
         chosen, _ = Anchors.of(root)
         self.parts.append(part)
         part.anchors = self._finish(chosen, text=False)
@@ -412,6 +475,11 @@ class AnchorIndex:
 class _Hunt:
     """One string searched for in one piece of data."""
 
+    #: Anchor occurrences of one part above which `_viable` is worth working out.
+    BUSY: ClassVar[int] = 64
+    #: Runs of one byte class `_viable` reads from each path, at most.
+    SEGMENTS: ClassVar[int] = 16
+
     def __init__(
         self, search: Search, data: bytes, fixed: int | None, deadline: float | None
     ) -> None:
@@ -426,10 +494,21 @@ class _Hunt:
         self.greedy = bool(f.get("greedy"))
         #: The data translated for each set of bytes a run may carry a thread list past.
         self.masks: dict[bytes, bytes] = {}
+        #: Per (part, entries), where an anchor's runs can find anything (`_viable`), or None.
+        self.feasible: dict[tuple[int, Any, Any], Any] = {}
+        #: The data as an integer of 0/1 bytes, for each set of bytes a path step reads.
+        self.masks_int: dict[bytes, int] = {}
+        #: Per part, where each of its factors' runs starts, with its length (`_factor_near`).
+        self.factor_runs: dict[int, list[tuple[list[int], int]]] = {}
+        #: Per part, how many anchor occurrences the data has.
+        self.busy: dict[int, int] = {}
 
     def run(self, events: list[Event]) -> list[tuple[int, int]]:
         """Checks each anchor occurrence, in the order `events` gives."""
         n = len(self.data)
+        busy = self.busy
+        for event in events:
+            busy[event[3]] = busy.get(event[3], 0) + 1
         for count, (_, _, _, part, anchor, offset) in enumerate(events):
             if count % 4096 == 0 and self.deadline is not None and time.monotonic() > self.deadline:
                 raise TimeoutError("matching took longer than the time allowed")
@@ -444,6 +523,9 @@ class _Hunt:
         """Where a part with no anchor is run from: every position, less those no run from
         there can do anything at."""
         data = self.data
+        along = self._along(p)
+        if along is not None:
+            return along
         ahead = self._ahead(p)
         if ahead is not None:
             return [m.start() for m in ahead.finditer(data)]
@@ -452,6 +534,58 @@ class _Hunt:
             return list(range(len(data)))
         mask = data.translate(bytes(1 if b in firsts else 0 for b in range(256)))
         return Search.occurrences(mask, b"\x01")
+
+    def _along(self, p: int, segments: int | None = None) -> list[int] | None:
+        """The starts whose bytes follow a part's single starting path, found for the whole data
+        at once: each step's bytes become a 0/1 mask, the masks are shifted into line and ANDed
+        as integers (in C), and what survives is every position the path runs on from. None
+        when the part starts along no path of two steps or more. With `segments`, only that many
+        runs of one byte class from the path's start are used: fewer starts are ruled out, at a
+        bounded cost."""
+        part = self.s.parts[p]
+        if self.s.flags.get("plain") or part.root_entry is None or self._widths() != [False]:
+            return None
+        steps = part.runners()[0].path(part.root_entry, nocase=self.nocase, dotall=self.dotall)
+        if len(steps) < 2:
+            return None
+        data, n = self.data, len(self.data)
+        if n == 0:
+            return []
+        masks: dict[bytes, int] = {}
+
+        def mask(table: bytes) -> int:
+            m = masks.get(table)
+            if m is None:
+                m = masks[table] = int.from_bytes(data.translate(table), "little")
+            return m
+
+        alive = mask(steps[0])
+        i, used = 1, 1
+        while i < len(steps) and alive:
+            if segments is not None and used >= segments:
+                break
+            used += 1
+            same = 1  # how many steps from i ask for the same bytes
+            while i + same < len(steps) and steps[i + same] == steps[i]:
+                same += 1
+            if same >= 4:
+                # one byte class `same` times over: AND windows that double in length until one
+                # covers half the run, then close it with one more, overlapping
+                run, covered = mask(steps[i]), 1
+                while covered * 2 <= same:
+                    run &= run >> (8 * covered)
+                    covered *= 2
+                if covered < same:
+                    run &= run >> (8 * (same - covered))
+                alive &= run >> (8 * i)
+                i += same
+            else:
+                alive &= mask(steps[i]) >> (8 * i)
+                i += 1
+        if not alive:
+            return []
+        found = alive.to_bytes(n, "little")
+        return Search.occurrences(found, b"\x01")
 
     def _ahead(self, p: int) -> re.Pattern[bytes] | None:
         """For a part searched for only one byte wide, `Threads.prefilter` of its start."""
@@ -481,6 +615,113 @@ class _Hunt:
 
     # -- checking one occurrence --------------------------------------------------
 
+    def _factor_near(self, p: int, offset: int) -> bool:
+        """Whether each run every match of part `p` holds (`Part.factors`) occurs where a match
+        holding an anchor at `offset` could reach: no match reads more than `REACH` bytes either
+        side of its anchor."""
+        runs = self.factor_runs.get(p)
+        if runs is None:
+            runs = self.factor_runs[p] = [
+                (found, length)
+                for entry, length in self.s.parts[p].factors
+                if (found := self._factor_runs(p, entry, length)) is not None
+            ]
+        for found, length in runs:
+            i = bisect.bisect_left(found, offset - REACH)
+            if i == len(found) or found[i] > offset + REACH - length:
+                return False
+        return True
+
+    def _factor_runs(self, p: int, entry: int, length: int) -> list[int] | None:
+        """Where a run of `length` bytes the term at `entry` reads starts in the data, in order;
+        None when it cannot be told."""
+        if self.s.flags.get("plain") or self._widths() != [False]:
+            return None
+        reads = (
+            self.s.parts[p].runners()[0].first_reads(entry, nocase=self.nocase, dotall=self.dotall)
+        )
+        if reads is None:
+            return None
+        table = bytes(1 if b in reads else 0 for b in range(256))
+        run, covered = int.from_bytes(self.data.translate(table), "little"), 1
+        while covered * 2 <= length:
+            run &= run >> (8 * covered)
+            covered *= 2
+        if covered < length:
+            run &= run >> (8 * (length - covered))
+        if not run:
+            return []
+        return Search.occurrences(run.to_bytes(len(self.data), "little"), b"\x01")
+
+    def _viable(self, p: int, anchor: AnchorAt, offset: int) -> bool:
+        """Whether the runs `_check` makes from an anchor at `offset` can find anything: the
+        bytes from the anchor must follow its forward run's starting path, and the bytes before
+        it its backward run's. Both are worked out for the whole data at once, for each pair of
+        entries, and only for a part whose anchors occur often enough to repay it."""
+        key = (p, anchor[2], anchor[3])
+        ok = self.feasible.get(key, False)
+        if ok is False:
+            ok = self.feasible[key] = self._viable_at(p, anchor[2], anchor[3])
+        return ok is None or bool(ok[offset])
+
+    def _viable_at(self, p: int, fwd: int | None, back: int | None) -> bytearray | None:
+        part = self.s.parts[p]
+        if self.s.flags.get("plain") or self._widths() != [False] or fwd is None:
+            return None
+        runners = part.runners()
+        ahead = runners[0].path(fwd, nocase=self.nocase, dotall=self.dotall)
+        behind = (
+            []
+            if back is None
+            else runners[1].path(back, nocase=self.nocase, dotall=self.dotall, backwards=True)
+        )
+        if len(ahead) < 2 and len(behind) < 2:
+            return None
+        n = len(self.data)
+        alive = (1 << (8 * (n + 1))) - 1  # one byte for each position, 0 to n
+        if len(ahead) >= 2:
+            alive &= self._path_mask(ahead, backwards=False)
+        if len(behind) >= 2:
+            alive &= self._path_mask(behind, backwards=True)
+        return bytearray(alive.to_bytes(n + 1, "little"))
+
+    def _path_mask(self, steps: list[bytes], *, backwards: bool) -> int:
+        """Positions (as one byte each of an integer, 1 for yes) where a run reading `steps`
+        survives: forwards, step i reads the byte i after the position; backwards, the byte
+        i + 1 before it. Only the first `_Hunt.SEGMENTS` runs of one byte class are used."""
+        data = self.data
+        cache = self.masks_int
+
+        def mask(table: bytes) -> int:
+            m = cache.get(table)
+            if m is None:
+                m = cache[table] = int.from_bytes(data.translate(table), "little")
+            return m
+
+        def placed(m: int, i: int) -> int:
+            return m << (8 * (i + 1)) if backwards else m >> (8 * i)
+
+        alive = placed(mask(steps[0]), 0)
+        i, used = 1, 1
+        while i < len(steps) and alive and used < _Hunt.SEGMENTS:
+            used += 1
+            same = 1
+            while i + same < len(steps) and steps[i + same] == steps[i]:
+                same += 1
+            run, covered = mask(steps[i]), 1
+            # one byte class `same` times over: windows doubled until one covers half the run,
+            # then one more, overlapping, closes it (forwards a window reaches on from the
+            # position, backwards it reaches back)
+            while covered * 2 <= same:
+                run &= (run << (8 * covered)) if backwards else (run >> (8 * covered))
+                covered *= 2
+            if covered < same:
+                extra = 8 * (same - covered)
+                run &= (run << extra) if backwards else (run >> extra)
+            alive &= placed(run, i)  # the window starts at the run's first step
+            i += same
+        return alive
+
     def _check(self, p: int, anchor: AnchorAt, offset: int) -> None:
         part = self.s.parts[p]
         if part.text is not None:
@@ -490,6 +731,10 @@ class _Hunt:
         fwd, back = anchor[2], anchor[3]
         if fwd is None:
             return
+        if self.busy.get(p, 0) > _Hunt.BUSY and not (
+            self._viable(p, anchor, offset) and self._factor_near(p, offset)
+        ):
+            return  # a run from the anchor dies on the bytes around it, or no match fits there
         for wide in self._widths():
             if f.get("plain"):
                 length = Lanes(part.forward).run(fwd, self.data, offset)
