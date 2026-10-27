@@ -17,7 +17,18 @@ from __future__ import annotations
 import hashlib
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_layout import U8, U16, U32, U64, Cursor, Grid, Index, Layout
+from cordon_scanner.detect.binary.rule_layout import (
+    U8,
+    U16,
+    U32,
+    U64,
+    Cursor,
+    Grid,
+    Index,
+    Layout,
+    LazySeq,
+    Row,
+)
 from cordon_scanner.detect.binary.rule_tables import Tables
 from cordon_scanner.detect.binary.rule_tlsh import Tlsh
 from cordon_scanner.detect.binary.rule_values import Call, Record, Scalar, Seq, Sig
@@ -152,50 +163,46 @@ class Elf:
             and shoff < n
             and shoff + shnum * sec_size <= n
         ):
-            names_row = sections.row(shstrndx)
-            names_at = names_row["offset"] if names_row is not None else n
+            srows = sections.tuples()  # the whole section header table in one struct call
+            sp = {name: i for i, name in enumerate(sections.names)}
+            sn, st, sf, sa, so, ssz, sl = (
+                sp[k] for k in ("name", "type", "flags", "addr", "offset", "size", "link")
+            )
+            names_at = srows[shstrndx][so] if shstrndx < len(srows) else n
             shstr = Strings(cur, names_at, n) if names_at < n else None
-            sec_out: dict[int, Any] = {}
-            for i in range(shnum):
-                row = sections.row(i)
-                if row is None:
-                    break
-                entry: dict[str, Any] = {k: row[k] for k in ("type", "flags", "size", "offset")}
-                entry["address"] = row["addr"]
-                if row["name"] < n and shstr is not None and shstr.base > 0:
-                    name = shstr.at(row["name"])
-                    if name is not None:
-                        entry["name"] = name
-                sec_out[i] = entry
-                if row["type"] in (2, 11):  # SYMTAB / DYNSYM: pick up its linked string table
-                    picked = Elf._linked(cur, row, sections, word, mask)
-                    if picked is not None and row["type"] == 2:
+
+            def section_name(
+                t: tuple[Any, ...],
+            ) -> bytes | None:  # resolved only when a rule reads it
+                return (
+                    shstr.at(t[sn]) if t[sn] < n and shstr is not None and shstr.base > 0 else None
+                )
+
+            sec_spec: dict[str, Any] = {
+                "type": st, "flags": sf, "size": ssz, "offset": so, "address": sa, "name": section_name,
+            }  # fmt: skip
+            out["sections"] = LazySeq(range(len(srows)), lambda i: Row(srows[i], sec_spec))
+            # pick up each SYMTAB(2)/DYNSYM(11)'s linked STRTAB(3); e_shnum read little-endian bounds the link
+            raw_off = 36 + 3 * word
+            raw_shnum = int.from_bytes(cur.data[raw_off : raw_off + 2], "little")
+            for t in srows:
+                if (
+                    t[st] in (2, 11)
+                    and t[sl] < raw_shnum
+                    and t[sl] < len(srows)
+                    and srows[t[sl]][st] == 3
+                ):
+                    picked = (t[so], t[ssz] & mask, srows[t[sl]][so], srows[t[sl]][ssz] & mask)
+                    if t[st] == 2:
                         symtab = picked
-                    elif picked is not None:
+                    else:
                         dynsym = picked
-            out["sections"] = sec_out
-            symbols: dict[str, list[Any]] = {}
+            symbols: dict[str, tuple[Any, ...]] = {}
             for kind, chosen in (("symtab", symtab), ("dynsym", dynsym)):
                 Elf._symbols(out, cur, cls, kind, chosen, n, symbols)
             Elf._digests(out, symbols)
         if 0 < phnum < Elf.PN_XNUM and phoff < n and phoff + phnum * (32 if cls == 1 else 56) <= n:
             Elf._segments(out, cur, cls, phoff, phnum, sizes, n)
-
-    @staticmethod
-    def _linked(
-        cur: Cursor, row: dict[str, Any], sections: Grid, word: int, mask: int
-    ) -> tuple[int, int, int, int] | None:
-        """The (symbols offset, size, strings offset, size) when the section's link is a STRTAB (3). The
-        link is bounded by e_shnum read little-endian here, a reference quirk independent of byte order."""
-        raw_off = 36 + 3 * word  # e_shnum within the file header
-        raw_shnum = int.from_bytes(cur.data[raw_off : raw_off + 2], "little")
-        link = row["link"]
-        if link >= raw_shnum:
-            return None
-        linked = sections.row(link)
-        if linked is None or linked["type"] != 3:
-            return None
-        return row["offset"], row["size"] & mask, linked["offset"], linked["size"] & mask
 
     @staticmethod
     def _symbols(
@@ -205,7 +212,7 @@ class Elf:
         kind: str,
         chosen: tuple[int, int, int, int] | None,
         n: int,
-        symbols: dict[str, list[Any]],
+        symbols: dict[str, tuple[Any, ...]],
     ) -> None:
         if chosen is None:
             return
@@ -216,23 +223,20 @@ class Elf:
         sym_size = 16 if cls == 1 else 24
         strtab = Strings(cur, str_at, str_at + str_len)
         grid = Grid(cur, sym_at, layout, sym_len // sym_size, {"w": 4 if cls == 1 else 8})
-        collected: list[Any] = []
-        seq: dict[int, Any] = {}
-        for j in range(grid.count):
-            row = grid.row(j)
-            if row is None:
-                break
-            info = row["info"]
-            entry: dict[str, Any] = {"bind": info >> 4, "type": info & 0xF, "shndx": row["shndx"],
-                                     "value": row["value"], "size": row["size"]}  # fmt: skip
-            name = strtab.at(row["name"])
-            if name is not None:
-                entry["name"] = name
-            seq[j] = entry
-            collected.append((name, info >> 4, info & 0xF, row["shndx"], row["other"] & 3))
-        out[kind] = seq
-        out[kind + "_entries"] = len(collected)
-        symbols[kind] = collected
+        rows = (
+            grid.tuples()
+        )  # the whole table in one struct call; no per-row dict (a 100k symtab is one call)
+        pos = {name: i for i, name in enumerate(grid.names)}
+        ni, vi, zi, ii, xi = (pos[k] for k in ("name", "value", "size", "info", "shndx"))
+        spec: dict[str, Any] = {
+            "bind": lambda t: t[ii] >> 4,
+            "type": lambda t: t[ii] & 0xF,
+            "shndx": xi, "value": vi, "size": zi,
+            "name": lambda t: strtab.at(t[ni]),  # the string-table name, resolved only when a rule reads it
+        }  # fmt: skip
+        out[kind] = LazySeq(range(len(rows)), lambda j: Row(rows[j], spec))
+        out[kind + "_entries"] = len(rows)
+        symbols[kind] = (rows, pos, strtab)
 
     @staticmethod
     def _segments(
@@ -244,28 +248,20 @@ class Elf:
         sizes: dict[str, int],
         n: int,
     ) -> None:
-        layout = Shape.PHDR32 if cls == 1 else Shape.PHDR64
-        grid = Grid(cur, phoff, layout, phnum, sizes)
-        order = ("type", "flags", "offset", "vaddr", "paddr", "filesz", "memsz", "align")
+        grid = Grid(cur, phoff, Shape.PHDR32 if cls == 1 else Shape.PHDR64, phnum, sizes)
+        prows = grid.tuples()  # the whole program header table in one struct call
+        pp = {name: i for i, name in enumerate(grid.names)}
         names = (
-            "type",
-            "flags",
-            "offset",
-            "virtual_address",
-            "physical_address",
-            "file_size",
-            "memory_size",
-            "alignment",
-        )
-        seq: dict[int, Any] = {}
-        for i in range(phnum):
-            row = grid.row(i)
-            if row is None:
-                break
-            seq[i] = {name: row[key] for name, key in zip(names, order, strict=True)}
-            if row["type"] == 2:  # PT_DYNAMIC
-                Elf._dynamic(out, cur, row["offset"], sizes, n, cls)
-        out["segments"] = seq
+            "type", "flags", "offset", "virtual_address", "physical_address", "file_size",
+            "memory_size", "alignment",
+        )  # fmt: skip
+        keys = ("type", "flags", "offset", "vaddr", "paddr", "filesz", "memsz", "align")
+        seg_spec: dict[str, Any] = {nm: pp[k] for nm, k in zip(names, keys, strict=True)}
+        out["segments"] = LazySeq(range(len(prows)), lambda i: Row(prows[i], seg_spec))
+        ti, offi = pp["type"], pp["offset"]
+        for t in prows:
+            if t[ti] == 2:  # PT_DYNAMIC: parse the dynamic array from this segment
+                Elf._dynamic(out, cur, t[offi], sizes, n, cls)
 
     @staticmethod
     def _dynamic(
@@ -329,27 +325,35 @@ class Elf:
         return None
 
     @staticmethod
-    def _digests(out: dict[str, Any], symbols: dict[str, list[Any]]) -> None:
-        """telfhash() and import_md5() over the dynamic symbols, else the static ones."""
-        syms = symbols.get("dynsym", symbols.get("symtab"))
-        if syms is None:
+    def _digests(out: dict[str, Any], symbols: dict[str, tuple[Any, ...]]) -> None:
+        """telfhash() and import_md5() over the dynamic symbols, else the static ones -- computed only when
+        the rule calls them, over the symbol tuples, resolving a name only for a symbol that passes the
+        cheap tuple filter first."""
+        chosen = symbols.get("dynsym", symbols.get("symtab"))
+        if chosen is None:
             return
-        clean = sorted(
-            Elf._fold(name)
-            for name, bind, kind, _shndx, visibility in syms
-            if name is not None and bind == 1 and kind == 2 and visibility == 0
-            and not name.startswith((b".", b"_")) and not name.endswith(b"64")
-            and not name.startswith((b"str", b"mem")) and name not in Elf.EXCLUDED
-        )  # fmt: skip
-        telfhash = Tlsh.digest(b",".join(clean)) if clean else None
-        imports = sorted(Elf._fold(name) for name, _b, _k, shndx, _v in syms if name and shndx == 0)
-        md5 = hashlib.md5(b",".join(imports)).hexdigest().encode() if imports else None  # noqa: S324
-        out["telfhash"] = (lambda: telfhash,)
-        out["import_md5"] = (lambda: md5,)
+        rows, pos, strtab = chosen
+        ni, ii, xi, oi = pos["name"], pos["info"], pos["shndx"], pos["other"]
 
-    @staticmethod
-    def _fold(name: bytes) -> bytes:
-        return bytes(c + 32 if 0x41 <= c <= 0x5A else c for c in name)
+        def telfhash() -> bytes | None:
+            clean = sorted(  # name.lower() is the reference's case fold (ASCII A-Z only), in C
+                name.lower()
+                for t in rows
+                if (t[ii] >> 4) == 1 and (t[ii] & 0xF) == 2 and (t[oi] & 3) == 0
+                for name in (strtab.at(t[ni]),)
+                if name is not None and not name.startswith((b".", b"_")) and not name.endswith(b"64")
+                and not name.startswith((b"str", b"mem")) and name not in Elf.EXCLUDED
+            )  # fmt: skip
+            return Tlsh.digest(b",".join(clean)) if clean else None
+
+        def import_md5() -> bytes | None:
+            imports = sorted(
+                name.lower() for t in rows if t[xi] == 0 for name in (strtab.at(t[ni]),) if name
+            )
+            return hashlib.md5(b",".join(imports)).hexdigest().encode() if imports else None  # noqa: S324
+
+        out["telfhash"] = (telfhash,)
+        out["import_md5"] = (import_md5,)
 
 
 __all__ = ["Elf"]

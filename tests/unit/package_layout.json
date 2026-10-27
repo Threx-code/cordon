@@ -639,6 +639,7 @@
   "test_rule_dotnet.py": "detect/binary",
   "test_rule_elf.py": "detect/binary",
   "test_rule_lang.py": "detect/binary",
+  "test_rule_layout.py": "detect/binary",
   "test_rule_matching.py": "detect/binary",
   "test_rule_modules.py": "detect/binary",
   "test_rule_pack.py": "detect/binary",

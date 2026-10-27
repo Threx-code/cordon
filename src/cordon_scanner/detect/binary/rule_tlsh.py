@@ -66,22 +66,19 @@ class Tlsh:
         (49, 1, 2), (12, 1, 3), (178, 2, 3), (166, 2, 4), (84, 1, 4), (230, 3, 4),
     )  # fmt: skip
 
+    #: Per-salt 256-byte substitution tables (``x -> PEARSON[salt ^ x]``), built once on first use.
+    _salt_cache: ClassVar[dict[int, bytes] | None] = None
+    #: Deletion sets for the histogram's value splits, cached by range across calls.
+    _delete_cache: ClassVar[dict[tuple[int, int], bytes]] = {}
+    #: Bucket values TLSH discards (>= 128), deleted in one pass before the histogram.
+    _HIGH: ClassVar[bytes] = bytes(range(128, 256))
+
     @classmethod
     def digest(cls, data: bytes) -> bytes:
         """The "T1..." digest of `data`, or b"" when the data is too short or too uniform to hash."""
         if len(data) < cls.MIN_LEN:
             return b""
-        table = cls.PEARSON
-        counts = [0] * 256
-        checksum = 0
-        for i in range(4, len(data)):
-            newest = data[i]
-            window = (newest, data[i - 1], data[i - 2], data[i - 3], data[i - 4])
-            checksum = table[table[table[1 ^ newest] ^ window[1]] ^ checksum]
-            for salt, j, k in cls.WINDOW_TRIPLETS:
-                counts[table[table[table[salt ^ newest] ^ window[j]] ^ window[k]]] += 1
-
-        active = counts[: cls.BUCKET_COUNT]
+        active, checksum = cls._tally(data)
         ranked = sorted(active)
         q1 = ranked[cls.BUCKET_COUNT // 4 - 1]
         q2 = ranked[cls.BUCKET_COUNT // 2 - 1]
@@ -116,6 +113,72 @@ class Tlsh:
             )
         )
         return b"T1" + (header + bytes(reversed(body))).hex().upper().encode()
+
+    @classmethod
+    def _tally(cls, data: bytes) -> tuple[list[int], int]:
+        """The kept bucket counts and the one-byte checksum, over the whole input. Each triplet's bucket at
+        every window position is three Pearson substitutions of XORed byte slices, applied to the entire
+        slice at once with ``bytes.translate`` and big-integer XOR (C speed); only the checksum, a running
+        one-byte fold, is sequential, and its per-position prefix is still formed by the vectorised step."""
+        table = cls.PEARSON
+        length = len(data)
+        newest = data[4:length]  # the window's newest byte at every position
+        back = {offset: data[4 - offset : length - offset] for offset in (1, 2, 3, 4)}
+        salted = cls._salt_tables()
+        buckets = []
+        for salt, j, k in cls.WINDOW_TRIPLETS:
+            votes = newest.translate(salted[salt])
+            votes = cls._xor(votes, back[j]).translate(table)
+            votes = cls._xor(votes, back[k]).translate(table)
+            buckets.append(votes)
+        active = [0] * cls.BUCKET_COUNT
+        kept = b"".join(buckets).translate(None, cls._HIGH)  # TLSH keeps only buckets 0..127
+        cls._partition(kept, 0, cls.BUCKET_COUNT, active)
+        prefix = cls._xor(newest.translate(salted[1]), back[1]).translate(table)
+        checksum = 0
+        for byte in prefix:
+            checksum = table[byte ^ checksum]
+        return active, checksum
+
+    @classmethod
+    def _partition(cls, data: bytes, lo: int, hi: int, active: list[int]) -> None:
+        """Tally the bucket values in ``[lo, hi)`` occurring in ``data`` into ``active`` by recursive halving:
+        ``bytes.translate`` (a C pass) keeps only the bytes in each half, so a leaf's count is just the length
+        of the bytes that reached it. Each tree level touches the whole input once, ~7 levels for 128 values."""
+        if not data:
+            return
+        if hi - lo == 1:
+            active[lo] = len(data)
+            return
+        mid = (lo + hi) // 2
+        cls._partition(data.translate(None, cls._delete_for(lo, mid)), lo, mid, active)
+        cls._partition(data.translate(None, cls._delete_for(mid, hi)), mid, hi, active)
+
+    @classmethod
+    def _delete_for(cls, lo: int, hi: int) -> bytes:
+        """The ``translate`` deletion set that keeps only byte values in ``[lo, hi)`` -- cached, as it depends
+        only on the split, not the data."""
+        table = cls._delete_cache.get((lo, hi))
+        if table is None:
+            table = bytes(v for v in range(256) if not lo <= v < hi)
+            cls._delete_cache[(lo, hi)] = table
+        return table
+
+    @staticmethod
+    def _xor(left: bytes, right: bytes) -> bytes:
+        """The byte-wise XOR of two equal-length byte strings as a single big-integer operation."""
+        value = int.from_bytes(left, "little") ^ int.from_bytes(right, "little")
+        return value.to_bytes(len(left), "little")
+
+    @classmethod
+    def _salt_tables(cls) -> dict[int, bytes]:
+        """A 256-byte table per salt in use (the checksum's 1 and the six triplets'), mapping ``x`` to
+        ``PEARSON[salt ^ x]`` so the first Pearson step applies to a whole slice in one ``translate``."""
+        if cls._salt_cache is None:
+            table = cls.PEARSON
+            salts = {1, *(salt for salt, _, _ in cls.WINDOW_TRIPLETS)}
+            cls._salt_cache = {salt: bytes(table[salt ^ x] for x in range(256)) for salt in salts}
+        return cls._salt_cache
 
     @staticmethod
     def _swap_nibbles(byte: int) -> int:

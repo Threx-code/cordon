@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import time
+from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
 import pytest
@@ -249,6 +250,49 @@ class TestMatches:
         rule = Rules.compile('rule r { strings: $a = "This program cannot" base64 condition: $a }')
         for prefix in (b"", b"z", b"zz"):
             assert rule.match(base64.b64encode(prefix + b"This program cannot be run"))
+
+
+class Counted(Mapping[int, Any]):
+    """An array that counts the items read from it, as a table that decodes on access would."""
+
+    def __init__(self, items: dict[int, Any]) -> None:
+        self.items, self.reads = items, 0
+
+    def __getitem__(self, i: int) -> Any:
+        value = self.items[i]  # an absent slot raises before it counts as read
+        self.reads += 1
+        return value
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(self.items)
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+
+class TestLoopsOverLazyArrays:
+    @staticmethod
+    def module(items: Counted) -> Module:
+        schema = Record({"items": Seq(Scalar.INT)})
+        return Module(schema, lambda file: {"items": items})
+
+    def test_each_element_is_read_once_and_only_by_the_loop(self) -> None:
+        items = Counted({0: 1, 1: 2, 3: 4})  # slot 2 not filled: undefined
+        rules = Rules.compile(
+            'import "lazy" rule r { condition: for 3 x in lazy.items : (x > 0) }',
+            modules={"lazy": TestLoopsOverLazyArrays.module(items)},
+        )
+        assert rules.match(b"")  # 1, 2 and 4 count; the empty slot is undefined, not true
+        assert items.reads == 3  # each filled slot read once, the gap never decoded
+
+    def test_a_long_loop_reads_each_element_once(self) -> None:
+        items = Counted({i: i for i in range(1000)})
+        rules = Rules.compile(
+            'import "lazy" rule r { condition: for 0 x in lazy.items : (false) }',
+            modules={"lazy": TestLoopsOverLazyArrays.module(items)},
+        )
+        assert rules.match(b"")
+        assert items.reads == 1000  # the loop reads each element as it reaches it, once
 
 
 class TestHostileInput:

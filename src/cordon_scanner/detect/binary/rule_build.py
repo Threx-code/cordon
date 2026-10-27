@@ -15,7 +15,7 @@ Undefined is None. It propagates through arithmetic and comparisons, and a test 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_syntax import (
@@ -85,6 +85,26 @@ class Frame:
         if data is None:
             data = self.loaded[name] = self.modules[name].data(self.data)
         return data
+
+
+class Elements:
+    """An array's elements as a loop goes through them, index 0 up to its length: each read as
+    the loop reaches it, so a table that decodes its rows on access decodes each once, in turn,
+    and none is held after the loop has moved past it."""
+
+    __slots__ = ("convert", "items", "length")
+
+    def __init__(self, items: Any, convert: Callable[[Any], Any]) -> None:
+        self.items, self.convert = items, convert
+        self.length = Data.length(items)
+
+    def __len__(self) -> int:
+        return int(self.length)
+
+    def __iter__(self) -> Iterator[Any]:
+        get, convert = self.items.get, self.convert
+        for i in range(self.length):
+            yield convert(get(i))
 
 
 class Fold:
@@ -871,7 +891,7 @@ class Builder:
                 d = source(f)
                 if d is None:
                     return None
-                return [convert(d.get(i)) for i in range(Data.length(d))]
+                return Elements(d, convert)
 
             return seq, [item]
         raise RuleError("a for loop iterates over a range, a list, an array or a dictionary")

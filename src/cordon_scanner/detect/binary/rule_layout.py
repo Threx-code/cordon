@@ -219,6 +219,23 @@ class Grid:
             else:
                 yield self.layout.read(self.cur, self.offset(i), self.sizes)
 
+    def tuples(self) -> list[tuple[Any, ...]]:
+        """Every row that fits, decoded in one ``struct.iter_unpack`` over the contiguous table slice --
+        the whole table in one C call, as value tuples aligned to ``names``, with no per-row dict. Empty
+        when the Layout did not compile (a caller then falls back to ``row``)."""
+        if self._reader is None or self._stride <= 0:
+            return []
+        fit = min(self.count, max(0, (self.cur.n - self.base) // self._stride))
+        if fit <= 0:
+            return []
+        end = self.base + fit * self._stride
+        return list(self._reader.struct.iter_unpack(self.cur.data[self.base : end]))
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Field names positionally aligned with each tuple from ``tuples()``."""
+        return self._reader.names if self._reader is not None else ()
+
 
 class LazySeq(Mapping[int, Any]):
     """A sequence read by index whose values are decoded on first access and cached. The keys are known up
@@ -251,6 +268,51 @@ class LazySeq(Mapping[int, Any]):
 
     def __len__(self) -> int:
         return len(self._keys)
+
+
+class Row(Mapping[str, Any]):
+    """A read-only record view over one decoded tuple, so a table a rule only probes never builds a dict per
+    row. A shared spec maps each declared field to how it is read -- an ``int`` position in the tuple, or a
+    callable over the tuple for a derived field (``info >> 4``) or a string-table name resolved on access.
+    A field resolves on first read and is cached; only fields that resolve to a value are present, so an
+    unresolved name is absent exactly as the eager reader omitted it. It is a Mapping so ``Data.conforms``
+    and the differential read it through ``__getitem__`` like any record."""
+
+    __slots__ = ("_cache", "_spec", "_t")
+
+    def __init__(self, t: tuple[Any, ...], spec: Mapping[str, Any]) -> None:
+        self._t = t
+        self._spec = (
+            spec  # field -> int position, or callable(tuple) -> value; shared across a table's rows
+        )
+        self._cache: dict[str, Any] = {}
+
+    def _value(self, key: str) -> Any:
+        if key in self._cache:
+            return self._cache[key]
+        how = self._spec.get(key)
+        value = how(self._t) if callable(how) else (self._t[how] if how is not None else None)
+        self._cache[key] = value
+        return value
+
+    def __getitem__(self, key: str) -> Any:
+        value = self._value(key)
+        if value is None:
+            raise KeyError(key)
+        return value
+
+    def get(self, key: str, default: Any = None) -> Any:
+        value = self._value(key)
+        return default if value is None else value
+
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, str) and key in self._spec and self._value(key) is not None
+
+    def __iter__(self) -> Any:
+        return (key for key in self._spec if self._value(key) is not None)
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
 
 
 class ImageMap:
@@ -359,5 +421,6 @@ __all__ = [
     "Layout",
     "LazySeq",
     "Pad",
+    "Row",
     "Uint",
 ]

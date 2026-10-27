@@ -11,8 +11,8 @@ provide is simply absent (or None) and reads as undefined.
     {"name": b"a.dll", "sections": {0: {"size": 512}, 2: {"size": 64}}}
 
 A `Seq` holds the slots a file filled, by index; the rule-visible length is the highest index plus
-one. A `Seq` or `Keyed` may be any mapping (one that decodes each item when it is read, say), not
-only a dict. A `Call` field holds one callable per signature, in the order declared; a callable returning
+one. A `Record`, `Seq` or `Keyed` may be any mapping (one that decodes each item, or reads each
+field, when it is read, say), not only a dict. A `Call` field holds one callable per signature, in the order declared; a callable returning
 None gives undefined, and a missing field makes every call undefined.
 """
 
@@ -166,7 +166,7 @@ class Data:
             fits = isinstance(data, holds) and (declared is Scalar.BOOL or type(data) is not bool)
             return [] if fits else [f"{where or '.'}: {type(data).__name__}, not {declared.name}"]
         if isinstance(declared, Record):
-            if not isinstance(data, dict):
+            if not isinstance(data, Mapping):  # a dict, or a view that reads its fields lazily
                 return [f"{where or '.'}: not a record"]
             out = [f"{where}.{k}: not declared" for k in data if k not in declared.fields]
             for name, kind in declared.fields.items():
