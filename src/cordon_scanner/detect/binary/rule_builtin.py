@@ -423,7 +423,7 @@ class Builtin:
             "time": Module(Builtin.TIME, lambda file: {"now": (lambda: int(time.time()),)}),
             "console": Builtin.console(),
             "pe": Legacy.module(Pe.module),
-            "elf": Legacy.module(Elf.module),
+            "elf": Module(Elf.SCHEMA, Elf.data),
             "dotnet": Module(Dotnet.SCHEMA, Dotnet.data),
         }
 

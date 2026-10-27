@@ -1,28 +1,79 @@
 """The ELF reader for cordon-rule: the `elf` module's values as a condition sees them.
 
 An ELF object is read from its identification bytes (class 32/64, little- or big-endian) through the file
-header, the section headers (with the section-header string table for names), the symbol and dynamic-symbol
-tables, the program headers, and the dynamic array taken from the PT_DYNAMIC segment. Each table is read
-with the entry sizes the format fixes and only where the whole table fits the file. Virtual addresses map to
-offsets through the program headers for an executable and through the sections otherwise.
+header, the section headers (named through the section-header string table), the symbol and dynamic-symbol
+tables, the program headers, and the dynamic array of the PT_DYNAMIC segment. Each structure is described
+once as a Layout; the one word-width that 32- and 64-bit ELF differ in is a single entry in a sizes map, so
+most structures need only one Layout and the Cursor carries the byte order. The two structures whose field
+*order* differs between the classes (program header, symbol) have a Layout per class. A Grid walks each
+table, reading only where the whole of a row fits, and the readers turn rows into the rule-visible values.
 
-The import digest ("telfhash") and import MD5 are built from the dynamic symbols (static otherwise): the
-exported, defined, default-visibility function names, lower-cased, with a fixed exclusion list, the common
-library prefixes and the 64-suffixed names dropped. Named constants come from ``rule_tables``; the digest
-from ``rule_tlsh``. Values follow the published ELF layout; a file that is not an ELF answers every field
-undefined.
+telfhash and import_md5 are built from the dynamic symbols (static otherwise) through rule_tlsh, unchanged
+from the reference; the named constants come from rule_tables. A file that is not an ELF answers undefined.
 """
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
-import struct
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_layout import U8, U16, U32, U64, Cursor, Grid, Index, Layout
 from cordon_scanner.detect.binary.rule_tables import Tables
 from cordon_scanner.detect.binary.rule_tlsh import Tlsh
-from cordon_scanner.detect.binary.rule_values import UNDEF_INT, UNDEF_STR, Array, Struct, Values
+from cordon_scanner.detect.binary.rule_values import Call, Record, Scalar, Seq, Sig
+
+INT, TEXT = Scalar.INT, Scalar.TEXT
+_W = Index("w")  # the ELF word: 4 bytes for a 32-bit object, 8 for a 64-bit one
+
+
+class Shape:
+    """Every ELF structure described once (ECMA-less: the published ELF layout). Word-width fields use the
+    sizes map; the two structures whose field order differs by class carry a 32- and a 64-bit form."""
+
+    EHDR: ClassVar[Layout] = Layout((
+        ("type", U16), ("machine", U16), ("version", U32), ("entry", _W), ("phoff", _W), ("shoff", _W),
+        ("flags", U32), ("ehsize", U16), ("phentsize", U16), ("phnum", U16), ("shentsize", U16),
+        ("shnum", U16), ("shstrndx", U16),
+    ))  # fmt: skip
+    SHDR: ClassVar[Layout] = Layout((
+        ("name", U32), ("type", U32), ("flags", _W), ("addr", _W), ("offset", _W), ("size", _W),
+        ("link", U32), ("info", U32), ("addralign", _W), ("entsize", _W),
+    ))  # fmt: skip
+    PHDR32: ClassVar[Layout] = Layout((
+        ("type", U32), ("offset", U32), ("vaddr", U32), ("paddr", U32), ("filesz", U32), ("memsz", U32),
+        ("flags", U32), ("align", U32),
+    ))  # fmt: skip
+    PHDR64: ClassVar[Layout] = Layout((
+        ("type", U32), ("flags", U32), ("offset", U64), ("vaddr", U64), ("paddr", U64), ("filesz", U64),
+        ("memsz", U64), ("align", U64),
+    ))  # fmt: skip
+    SYM32: ClassVar[Layout] = Layout((
+        ("name", U32), ("value", U32), ("size", U32), ("info", U8), ("other", U8), ("shndx", U16),
+    ))  # fmt: skip
+    SYM64: ClassVar[Layout] = Layout((
+        ("name", U32), ("info", U8), ("other", U8), ("shndx", U16), ("value", U64), ("size", U64),
+    ))  # fmt: skip
+    DYN: ClassVar[Layout] = Layout((("tag", _W), ("val", _W)))
+
+
+class Strings:
+    """A string table: the NUL-terminated name at an index, when the table starts with NUL and fits."""
+
+    __slots__ = ("base", "cur", "limit")
+
+    def __init__(self, cur: Cursor, base: int, limit: int) -> None:
+        self.cur, self.base, self.limit = cur, base, limit
+
+    def at(self, index: Any) -> bytes | None:
+        if not isinstance(index, int) or self.base >= self.limit or index >= 1 << 31:
+            return None
+        if self.cur.data[self.base] != 0:
+            return None
+        start = self.base + index
+        if start >= self.limit:
+            return None
+        end = self.cur.data.find(b"\x00", start, self.limit)
+        return None if end < 0 else self.cur.data[start:end]
 
 
 class Elf:
@@ -30,234 +81,274 @@ class Elf:
 
     SHN_LORESERVE: ClassVar[int] = 0xFF00
     PN_XNUM: ClassVar[int] = 0xFFFF
+    MASK64: ClassVar[int] = (1 << 64) - 1
+    EXCLUDED: ClassVar[frozenset[bytes]] = frozenset({
+        b"__libc_start_main", b"main", b"abort", b"cachectl", b"cacheflush", b"puts", b"atol", b"malloc_trim",
+    })  # fmt: skip
+
+    _section = Record(
+        {"type": INT, "flags": INT, "address": INT, "name": TEXT, "size": INT, "offset": INT}
+    )
+    _segment = Record(dict.fromkeys(
+        ("type", "flags", "offset", "virtual_address", "physical_address", "file_size", "memory_size", "alignment"), INT
+    ))  # fmt: skip
+    _symbol = Record(
+        {"name": TEXT, "value": INT, "size": INT, "type": INT, "bind": INT, "shndx": INT}
+    )
+    SCHEMA: ClassVar[Record] = Record({
+        **dict.fromkeys(Tables.ELF, INT),
+        **dict.fromkeys(
+            ("type", "machine", "entry_point", "number_of_sections", "sh_offset", "sh_entry_size",
+             "number_of_segments", "ph_offset", "ph_entry_size", "dynamic_section_entries",
+             "symtab_entries", "dynsym_entries"), INT,
+        ),
+        "sections": Seq(_section), "segments": Seq(_segment),
+        "dynamic": Seq(Record({"type": INT, "val": INT})),
+        "symtab": Seq(_symbol), "dynsym": Seq(_symbol),
+        "telfhash": Call(Sig((), TEXT)), "import_md5": Call(Sig((), TEXT)),
+    })  # fmt: skip
+
+    ARRAYS: ClassVar[tuple[str, ...]] = ("sections", "segments", "dynamic", "symtab", "dynsym")
 
     @staticmethod
-    def schema() -> Struct:
-        u, s = UNDEF_INT, UNDEF_STR
-        section = Struct({"type": u, "flags": u, "address": u, "name": s, "size": u, "offset": u})
-        segment = Struct(dict.fromkeys(("type", "flags", "offset", "virtual_address", "physical_address", "file_size", "memory_size", "alignment"), u))  # fmt: skip
-        symbol = Struct({"name": s, "value": u, "size": u, "type": u, "bind": u, "shndx": u})
-        fields: dict[str, Any] = dict(Tables.ELF)
-        fields |= dict.fromkeys(("type", "machine", "entry_point", "number_of_sections", "sh_offset", "sh_entry_size", "number_of_segments", "ph_offset", "ph_entry_size", "dynamic_section_entries", "symtab_entries", "dynsym_entries"), u)  # fmt: skip
-        fields |= {
-            "sections": Array(section), "segments": Array(segment),
-            "dynamic": Array(Struct({"type": u, "val": u})),
-            "symtab": Array(symbol), "dynsym": Array(symbol),
-            "telfhash": Values.fn(((), lambda: UNDEF_STR, "str")),
-            "import_md5": Values.fn(((), lambda: UNDEF_STR, "str")),
-        }  # fmt: skip
-        return Struct(fields)
+    def data(file: bytes) -> dict[str, Any]:
+        out: dict[str, Any] = dict(Tables.ELF)  # the module constants are present for every file
+        for name in (
+            Elf.ARRAYS
+        ):  # the reference always presents these arrays, empty when nothing fills them
+            out[name] = {}
+        Elf._read(out, file)
+        return out
 
     @staticmethod
-    def module(data: bytes) -> Struct:
-        root = Elf.schema()
-        with contextlib.suppress(IndexError, ValueError, struct.error):
-            Elf._parse(root, data)
-        return root
-
-    @staticmethod
-    def _parse(root: Struct, data: bytes) -> None:
-        """The header, section and symbol tables each read with the format's fixed entry sizes when the
-        whole table fits; the last symbol table of each kind wins; the dynamic array comes from the
-        PT_DYNAMIC segment."""
-        f = root.fields
-        n = len(data)
-        if n < 16 or data[:4] != b"\x7fELF":
+    def _read(out: dict[str, Any], file: bytes) -> None:
+        n = len(file)
+        if n < 16 or file[:4] != b"\x7fELF":
             return
-        cls, endian = data[4], data[5]
+        cls, endian = file[4], file[5]
         if cls not in (1, 2) or endian not in (1, 2) or n <= (52 if cls == 1 else 64):
             return
-        e = "<" if endian == 1 else ">"
-        bits = 32 if cls == 1 else 64
-        mask = (1 << bits) - 1
-        word = "I" if cls == 1 else "Q"
-        (etype, machine, _, entry, phoff, shoff, _, _, phentsize, phnum, shentsize, shnum, shstrndx) = struct.unpack_from(e + "HHI" + word * 3 + "IHHHHHH", data, 16)  # fmt: skip
-        # the section-header count is also compared in its raw little-endian form in one place
-        raw_shnum = struct.unpack_from(
-            "<H", data, 16 + 2 + 2 + 4 + 3 * (bits // 8) + 4 + 2 + 2 + 2 + 2
-        )[0]
-        f.update(type=etype, machine=machine, sh_offset=shoff, sh_entry_size=shentsize, number_of_sections=shnum,
-                 ph_offset=phoff, ph_entry_size=phentsize, number_of_segments=phnum)  # fmt: skip
-        sec_size, seg_size, sym_size, dyn_size = (40, 32, 16, 8) if cls == 1 else (64, 56, 24, 16)
-        sec_fmt = e + ("IIIIIIIIII" if cls == 1 else "IIQQQQIIQQ")
-        seg_fmt = e + ("IIIIIIII" if cls == 1 else "IIQQQQQQ")
-
-        def section(i: int) -> tuple[int, ...]:
-            return struct.unpack_from(sec_fmt, data, shoff + i * sec_size)
-
-        def segment(i: int) -> tuple[int, ...]:
-            p = struct.unpack_from(seg_fmt, data, phoff + i * seg_size)
-            # normalise 32-bit (type, offset, vaddr, paddr, filesz, memsz, flags, align) to the 64-bit order
-            return (p[0], p[6], p[1], p[2], p[3], p[4], p[5], p[7]) if cls == 1 else p
-
-        if entry:
-            f["entry_point"] = Elf._rva_to_offset(
-                data, etype, entry, phoff, phnum, shoff, shnum, section, segment, mask
-            )
-        symtab: tuple[int, int, int, int] | None = None
-        dynsym: tuple[int, int, int, int] | None = None
+        cur = Cursor(file, big_endian=endian == 2)
+        word = 4 if cls == 1 else 8
+        sizes = {"w": word}
+        mask = (1 << (32 if cls == 1 else 64)) - 1
+        h = Shape.EHDR.read(cur, 16, sizes)
+        shoff, shnum, shstrndx = h["shoff"], h["shnum"], h["shstrndx"]
+        phoff, phnum = h["phoff"], h["phnum"]
+        out.update(
+            type=h["type"], machine=h["machine"], sh_offset=shoff, sh_entry_size=h["shentsize"],
+            number_of_sections=shnum, ph_offset=phoff, ph_entry_size=h["phentsize"], number_of_segments=phnum,
+        )  # fmt: skip
+        sec_size = 40 if cls == 1 else 64
+        sections = Grid(cur, shoff, Shape.SHDR, shnum, sizes)
+        if h["entry"]:
+            ep = Elf._to_offset(cur, h["type"], h["entry"], phoff, phnum, shoff, shnum, sizes, mask)
+            if ep is not None:
+                out["entry_point"] = ep
+        symtab = dynsym = None
         if (
             shnum < Elf.SHN_LORESERVE
             and shstrndx < shnum
             and shoff < n
             and shoff + shnum * sec_size <= n
         ):
-            names_at = section(shstrndx)[4]
-            str_table = names_at if names_at < n else None
+            names_row = sections.row(shstrndx)
+            names_at = names_row["offset"] if names_row is not None else n
+            shstr = Strings(cur, names_at, n) if names_at < n else None
+            sec_out: dict[int, Any] = {}
             for i in range(shnum):
-                name, stype, flags, addr, offset, size, link, _, _, _ = section(i)
-                fields: dict[str, Any] = {
-                    "type": stype,
-                    "flags": flags,
-                    "address": addr,
-                    "size": size,
-                    "offset": offset,
-                }
-                if name < n and str_table is not None and str_table > 0:
-                    fields["name"] = Elf._string(data, str_table, n, name)
-                f["sections"].items[i] = Struct(
-                    f["sections"].proto.fields | {k: v for k, v in fields.items() if v is not None}
-                )
-                if stype in (2, 11) and link < raw_shnum:
-                    at = shoff + link * sec_size
-                    if at + sec_size <= n:
-                        linked = struct.unpack_from(sec_fmt, data, at)
-                        if linked[1] == 3:
-                            table = (offset, size & mask, linked[4], linked[5] & mask)
-                            if stype == 2:
-                                symtab = table
-                            else:
-                                dynsym = table
-            lists: dict[str, list[tuple[bytes | None, int, int, int, int]]] = {}
+                row = sections.row(i)
+                if row is None:
+                    break
+                entry: dict[str, Any] = {k: row[k] for k in ("type", "flags", "size", "offset")}
+                entry["address"] = row["addr"]
+                if row["name"] < n and shstr is not None and shstr.base > 0:
+                    name = shstr.at(row["name"])
+                    if name is not None:
+                        entry["name"] = name
+                sec_out[i] = entry
+                if row["type"] in (2, 11):  # SYMTAB / DYNSYM: pick up its linked string table
+                    picked = Elf._linked(cur, row, sections, word, mask)
+                    if picked is not None and row["type"] == 2:
+                        symtab = picked
+                    elif picked is not None:
+                        dynsym = picked
+            out["sections"] = sec_out
+            symbols: dict[str, list[Any]] = {}
             for kind, chosen in (("symtab", symtab), ("dynsym", dynsym)):
-                if chosen is None:
-                    continue
-                sym_at, sym_len, str_at, str_len = chosen
-                if not (
-                    str_len <= n
-                    and str_at + str_len <= n
-                    and sym_len <= n
-                    and sym_at + sym_len <= n
-                ):
-                    continue
-                symbols = lists[kind] = []
-                for j in range(sym_len // sym_size):
-                    at = sym_at + j * sym_size
-                    if cls == 1:
-                        st_name, value, size, info, other, shndx = struct.unpack_from(
-                            e + "IIIBBH", data, at
-                        )
-                    else:
-                        st_name, info, other, shndx, value, size = struct.unpack_from(
-                            e + "IBBHQQ", data, at
-                        )
-                    sym_name = Elf._symbol_name(data, str_at, str_at + str_len, st_name)
-                    entry_fields: dict[str, Any] = {
-                        "bind": info >> 4,
-                        "type": info & 0xF,
-                        "shndx": shndx,
-                        "value": value,
-                        "size": size,
-                    }
-                    if sym_name is not None:
-                        entry_fields["name"] = sym_name
-                    f[kind].items[j] = Struct(f[kind].proto.fields | entry_fields)
-                    symbols.append((sym_name, info >> 4, info & 0xF, shndx, other & 3))
-                f[kind + "_entries"] = len(symbols)
-            Elf._functions(f, lists)
-        if 0 < phnum < Elf.PN_XNUM and phoff < n and phoff + phnum * seg_size <= n:
-            for i in range(phnum):
-                seg = segment(i)
-                f["segments"].items[i] = Struct(dict(zip(("type", "flags", "offset", "virtual_address", "physical_address", "file_size", "memory_size", "alignment"), seg, strict=True)))  # fmt: skip
-                if seg[0] == 2:
-                    at = seg[2]
-                    j = 0
-                    # d_tag and d_val are both read unsigned (the reader reports the raw word, not sign-extended)
-                    tag_fmt = e + (word + word)
-                    while dyn_size <= n and at + dyn_size <= n:
-                        tag, val = struct.unpack_from(tag_fmt, data, at)
-                        f["dynamic"].items[j] = Struct({"type": tag, "val": val})
-                        j += 1
-                        at += dyn_size
-                        if tag == 0:
-                            break
-                    f["dynamic_section_entries"] = j
+                Elf._symbols(out, cur, cls, kind, chosen, n, symbols)
+            Elf._digests(out, symbols)
+        if 0 < phnum < Elf.PN_XNUM and phoff < n and phoff + phnum * (32 if cls == 1 else 56) <= n:
+            Elf._segments(out, cur, cls, phoff, phnum, sizes, n)
 
     @staticmethod
-    def _rva_to_offset(data: bytes, etype: int, rva: int, phoff: int, phnum: int, shoff: int, shnum: int,
-                       section: Any, segment: Any, mask: int) -> Any:  # fmt: skip
-        """Through the program headers for an executable, otherwise the sections that hold data; undefined
-        where none holds the address."""
-        n = len(data)
-        if etype == 2:
-            if (
-                phoff == 0
-                or phoff > n
-                or phoff + phnum * (32 if mask == 0xFFFFFFFF else 56) > n
-                or phnum == 0
-            ):
-                return UNDEF_INT
-            for i in range(phnum):
-                _, _, offset, vaddr, _, _, msize, _ = segment(i)
-                if vaddr <= rva < (vaddr + msize) & mask:
-                    return (offset + (rva - vaddr)) & ((1 << 64) - 1)
-            return UNDEF_INT
-        if (
-            shoff == 0
-            or shoff > n
-            or shoff + shnum * (40 if mask == 0xFFFFFFFF else 64) > n
-            or shnum == 0
-        ):
-            return UNDEF_INT
-        for i in range(shnum):
-            _, stype, _, addr, offset, size, _, _, _, _ = section(i)
-            if stype not in (0, 8) and addr <= rva < (addr + size) & mask:
-                return (offset + (rva - addr)) & ((1 << 64) - 1)
-        return UNDEF_INT
-
-    @staticmethod
-    def _string(data: bytes, base: int, limit: int, index: int) -> bytes | None:
-        """The NUL-terminated string at `index`, when the table starts with NUL and the string ends before
-        `limit`."""
-        if base >= limit or data[base] != 0 or index >= 1 << 31:
+    def _linked(
+        cur: Cursor, row: dict[str, Any], sections: Grid, word: int, mask: int
+    ) -> tuple[int, int, int, int] | None:
+        """The (symbols offset, size, strings offset, size) when the section's link is a STRTAB (3). The
+        link is bounded by e_shnum read little-endian here, a reference quirk independent of byte order."""
+        raw_off = 36 + 3 * word  # e_shnum within the file header
+        raw_shnum = int.from_bytes(cur.data[raw_off : raw_off + 2], "little")
+        link = row["link"]
+        if link >= raw_shnum:
             return None
-        at = base + index
-        if at >= limit:
+        linked = sections.row(link)
+        if linked is None or linked["type"] != 3:
             return None
-        end = data.find(b"\x00", at, limit)
-        return None if end < 0 else data[at:end]
+        return row["offset"], row["size"] & mask, linked["offset"], linked["size"] & mask
 
     @staticmethod
-    def _symbol_name(data: bytes, base: int, limit: int, index: int) -> bytes | None:
-        return Elf._string(data, base, limit, index)
-
-    @staticmethod
-    def _functions(
-        f: dict[str, Any], lists: dict[str, list[tuple[bytes | None, int, int, int, int]]]
+    def _symbols(
+        out: dict[str, Any],
+        cur: Cursor,
+        cls: int,
+        kind: str,
+        chosen: tuple[int, int, int, int] | None,
+        n: int,
+        symbols: dict[str, list[Any]],
     ) -> None:
-        """`telfhash()` and `import_md5()` over the dynamic symbols, else the static ones."""
-        symbols = lists.get("dynsym", lists.get("symtab"))
-        if symbols is None:
+        if chosen is None:
             return
-        excluded = {
-            b"__libc_start_main", b"main", b"abort", b"cachectl", b"cacheflush", b"puts", b"atol", b"malloc_trim",
-        }  # fmt: skip
+        sym_at, sym_len, str_at, str_len = chosen
+        if not (str_len <= n and str_at + str_len <= n and sym_len <= n and sym_at + sym_len <= n):
+            return
+        layout = Shape.SYM32 if cls == 1 else Shape.SYM64
+        sym_size = 16 if cls == 1 else 24
+        strtab = Strings(cur, str_at, str_at + str_len)
+        grid = Grid(cur, sym_at, layout, sym_len // sym_size, {"w": 4 if cls == 1 else 8})
+        collected: list[Any] = []
+        seq: dict[int, Any] = {}
+        for j in range(grid.count):
+            row = grid.row(j)
+            if row is None:
+                break
+            info = row["info"]
+            entry: dict[str, Any] = {"bind": info >> 4, "type": info & 0xF, "shndx": row["shndx"],
+                                     "value": row["value"], "size": row["size"]}  # fmt: skip
+            name = strtab.at(row["name"])
+            if name is not None:
+                entry["name"] = name
+            seq[j] = entry
+            collected.append((name, info >> 4, info & 0xF, row["shndx"], row["other"] & 3))
+        out[kind] = seq
+        out[kind + "_entries"] = len(collected)
+        symbols[kind] = collected
+
+    @staticmethod
+    def _segments(
+        out: dict[str, Any],
+        cur: Cursor,
+        cls: int,
+        phoff: int,
+        phnum: int,
+        sizes: dict[str, int],
+        n: int,
+    ) -> None:
+        layout = Shape.PHDR32 if cls == 1 else Shape.PHDR64
+        grid = Grid(cur, phoff, layout, phnum, sizes)
+        order = ("type", "flags", "offset", "vaddr", "paddr", "filesz", "memsz", "align")
+        names = (
+            "type",
+            "flags",
+            "offset",
+            "virtual_address",
+            "physical_address",
+            "file_size",
+            "memory_size",
+            "alignment",
+        )
+        seq: dict[int, Any] = {}
+        for i in range(phnum):
+            row = grid.row(i)
+            if row is None:
+                break
+            seq[i] = {name: row[key] for name, key in zip(names, order, strict=True)}
+            if row["type"] == 2:  # PT_DYNAMIC
+                Elf._dynamic(out, cur, row["offset"], sizes, n, cls)
+        out["segments"] = seq
+
+    @staticmethod
+    def _dynamic(
+        out: dict[str, Any], cur: Cursor, at: int, sizes: dict[str, int], n: int, cls: int
+    ) -> None:
+        dyn_size = 8 if cls == 1 else 16
+        # a later PT_DYNAMIC overwrites low indices but leaves an earlier, longer one's higher entries, so
+        # accumulate into the one array rather than replacing it; the count reported is this segment's.
+        seq = out["dynamic"]
+        j = 0
+        while dyn_size <= n and at + dyn_size <= n:
+            row = Shape.DYN.read(
+                cur, at, sizes
+            )  # tag and val both read unsigned, as the reference reports
+            seq[j] = {"type": row["tag"], "val": row["val"]}
+            j += 1
+            at += dyn_size
+            if row["tag"] == 0:
+                break
+        out["dynamic_section_entries"] = j
+
+    @staticmethod
+    def _to_offset(
+        cur: Cursor,
+        etype: int,
+        rva: int,
+        phoff: int,
+        phnum: int,
+        shoff: int,
+        shnum: int,
+        sizes: dict[str, int],
+        mask: int,
+    ) -> int | None:
+        """A virtual address to a file offset: through the program headers for an executable, otherwise the
+        sections that hold data; None where none holds the address."""
+        n = cur.n
+        cls32 = sizes["w"] == 4
+        if etype == 2:
+            if phoff == 0 or phoff > n or phoff + phnum * (32 if cls32 else 56) > n or phnum == 0:
+                return None
+            grid = Grid(cur, phoff, Shape.PHDR32 if cls32 else Shape.PHDR64, phnum, sizes)
+            for i in range(phnum):
+                row = grid.row(i)
+                if row is None:
+                    break
+                if row["vaddr"] <= rva < (row["vaddr"] + row["memsz"]) & mask:
+                    return int((row["offset"] + (rva - row["vaddr"])) & Elf.MASK64)
+            return None
+        if shoff == 0 or shoff > n or shoff + shnum * (40 if cls32 else 64) > n or shnum == 0:
+            return None
+        grid = Grid(cur, shoff, Shape.SHDR, shnum, sizes)
+        for i in range(shnum):
+            row = grid.row(i)
+            if row is None:
+                break
+            if (
+                row["type"] not in (0, 8)
+                and row["addr"] <= rva < (row["addr"] + row["size"]) & mask
+            ):
+                return int((row["offset"] + (rva - row["addr"])) & Elf.MASK64)
+        return None
+
+    @staticmethod
+    def _digests(out: dict[str, Any], symbols: dict[str, list[Any]]) -> None:
+        """telfhash() and import_md5() over the dynamic symbols, else the static ones."""
+        syms = symbols.get("dynsym", symbols.get("symtab"))
+        if syms is None:
+            return
         clean = sorted(
-            Elf._lower(name) for name, bind, kind, _, visibility in symbols
+            Elf._fold(name)
+            for name, bind, kind, _shndx, visibility in syms
             if name is not None and bind == 1 and kind == 2 and visibility == 0
             and not name.startswith((b".", b"_")) and not name.endswith(b"64")
-            and not name.startswith((b"str", b"mem")) and name not in excluded
+            and not name.startswith((b"str", b"mem")) and name not in Elf.EXCLUDED
         )  # fmt: skip
-        telfhash: Any = Tlsh.digest(b",".join(clean)) if clean else UNDEF_STR
-        imports = sorted(
-            Elf._lower(name) for name, _, _, shndx, _ in symbols if name and shndx == 0
-        )
-        md5: Any = hashlib.md5(b",".join(imports)).hexdigest().encode() if imports else UNDEF_STR  # noqa: S324 - the digest is defined as MD5
-        f["telfhash"] = Values.fn(((), lambda: telfhash, "str"))
-        f["import_md5"] = Values.fn(((), lambda: md5, "str"))
+        telfhash = Tlsh.digest(b",".join(clean)) if clean else None
+        imports = sorted(Elf._fold(name) for name, _b, _k, shndx, _v in syms if name and shndx == 0)
+        md5 = hashlib.md5(b",".join(imports)).hexdigest().encode() if imports else None  # noqa: S324
+        out["telfhash"] = (lambda: telfhash,)
+        out["import_md5"] = (lambda: md5,)
 
     @staticmethod
-    def _lower(name: bytes) -> bytes:
+    def _fold(name: bytes) -> bytes:
         return bytes(c + 32 if 0x41 <= c <= 0x5A else c for c in name)
 
 
