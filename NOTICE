@@ -70,8 +70,7 @@ SOFTWARE.
 -------------------------------------------------------------------------------
 TLSH
 
-src/cordon_scanner/detect/binary/rule_tlsh.py (and yara_tlsh.py, which it replaces) computes
-the TLSH locality-sensitive hash
+src/cordon_scanner/detect/binary/rule_tlsh.py computes the TLSH locality-sensitive hash
 (https://github.com/trendmicro/tlsh), Copyright Trend Micro Incorporated, and carries its
 fixed Pearson permutation and length-code tables. They are used under the Apache License,
 Version 2.0, the licence above.

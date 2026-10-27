@@ -412,9 +412,9 @@ class Builtin:
 
     @staticmethod
     def modules() -> dict[str, Module]:
+        from cordon_scanner.detect.binary.rule_dotnet import Dotnet
         from cordon_scanner.detect.binary.rule_elf import Elf
         from cordon_scanner.detect.binary.rule_pe import Pe
-        from cordon_scanner.detect.binary.yara_dotnet import Dotnet
 
         return {
             "math": Module(MathModule.SCHEMA, lambda file: MathModule(file).values()),
@@ -424,7 +424,7 @@ class Builtin:
             "console": Builtin.console(),
             "pe": Legacy.module(Pe.module),
             "elf": Legacy.module(Elf.module),
-            "dotnet": Legacy.module(Dotnet.module),
+            "dotnet": Module(Dotnet.SCHEMA, Dotnet.data),
         }
 
 
