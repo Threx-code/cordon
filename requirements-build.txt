@@ -5,7 +5,7 @@
 # publishing identity. Without it, `pipx run build` and
 # `requires = ["setuptools>=77"]` resolved from PyPI unpinned at release time,
 # which for this project specifically is the whole attack. The build backend itself is
-# Cordon's own (build_backend/cordon_build.py), so setuptools is no longer installed.
+# Cordon's own (scripts/backend/cordon_build.py), so setuptools is no longer installed.
 #
 # Regenerate with:
 #   pip download --no-deps -d /tmp/bt build packaging pyproject_hooks

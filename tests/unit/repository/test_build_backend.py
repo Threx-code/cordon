@@ -1,4 +1,4 @@
-"""Cordon's own build backend (`build_backend/cordon_build.py`): what it puts in a wheel, and that it
+"""Cordon's own build backend (`scripts/backend/cordon_build.py`): what it puts in a wheel, and that it
 builds the same bytes twice. Checked against setuptools when it replaced it: identical contents and
 metadata, file for file, less the third-party YARA sources setuptools had shipped without their
 licence (now sdist only)."""
@@ -22,7 +22,7 @@ from support import ROOT
 class Built:
     @staticmethod
     def backend() -> Any:
-        sys.path.insert(0, str(ROOT / "build_backend"))
+        sys.path.insert(0, str(ROOT / "scripts" / "backend"))
         try:
             import cordon_build
         finally:

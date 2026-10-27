@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.yara_modules import (
+from cordon_scanner.detect.binary.rule_values import (
     UNDEF_INT,
     UNDEF_STR,
     Array,

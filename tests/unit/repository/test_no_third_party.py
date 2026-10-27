@@ -20,9 +20,9 @@ class Imports:
     OWN = frozenset({"cordon_scanner", "cordon_sandbox"})
     #: `compression` is the standard library from Python 3.14 (PEP 784): read where it exists.
     ALLOWED = frozenset(sys.stdlib_module_names) | {"__future__", "compression"} | OWN
-    #: What ships (`src`), what builds it (`build_backend`) and what signs a release
+    #: What ships (`src`), what builds it (`scripts/backend`) and what signs a release
     #: (`scripts/release`).
-    TREES = ("src/cordon_scanner", "src/cordon_sandbox", "build_backend", "scripts/release")
+    TREES = ("src/cordon_scanner", "src/cordon_sandbox", "scripts/backend", "scripts/release")
 
     @staticmethod
     def of(path: Path) -> list[tuple[int, str]]:

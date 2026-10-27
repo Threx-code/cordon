@@ -14,10 +14,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.binary.yara_authenticode import Asn1Time, AsnError, Ber, Name
-from cordon_scanner.detect.binary.yara_dotnet import Dotnet
-from cordon_scanner.detect.binary.yara_lang import Rules
-from cordon_scanner.detect.binary.yara_modules import (
+from cordon_scanner.detect.binary.rule_values import (
     Array,
     Dictionary,
     Function,
@@ -25,6 +22,9 @@ from cordon_scanner.detect.binary.yara_modules import (
     TypedUndefined,
     Values,
 )
+from cordon_scanner.detect.binary.yara_authenticode import Asn1Time, AsnError, Ber, Name
+from cordon_scanner.detect.binary.yara_dotnet import Dotnet
+from cordon_scanner.detect.binary.yara_lang import Rules
 from cordon_scanner.detect.binary.yara_pe import Elf, Pe
 from cordon_scanner.detect.binary.yara_tlsh import Tlsh
 from support import ROOT

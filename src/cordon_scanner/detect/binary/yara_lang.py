@@ -31,18 +31,17 @@ expressions are checked by the engine's own pattern validator before use.
 
 from __future__ import annotations
 
-import base64
 import binascii
 import math
 import re
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.yara_modules import (
+from cordon_scanner.detect.binary.rule_builtin import Builtin
+from cordon_scanner.detect.binary.rule_values import (
     UNDEFINED,
     Array,
-    Builtin,
     Dictionary,
     Function,
     Struct,
@@ -79,6 +78,11 @@ class Lexer:
         "..", "<<", ">>", "<=", ">=", "==", "!=", "(", ")", "{", "}", "[", "]", ":", ",", "=",
         "+", "-", "*", "\\", "%", "&", "|", "^", "~", "<", ">", ".",
     )  # fmt: skip
+
+    #: A hex string: hex digits, its punctuation, white space and comments, between braces.
+    HEX: ClassVar[re.Pattern[str]] = re.compile(
+        r"\{(?:(?:[0-9a-fA-F]|[ \-|~?\[\]()\n\r\t]|/\*(?:/|\**[^*/])*\*+/)+|//[^\n]*\n)+\}"
+    )
 
     def __init__(self, text: str) -> None:
         self.text, self.pos, self.line = text, 0, 1
@@ -123,14 +127,13 @@ class Lexer:
         line = self.line
         if c == '"':
             return Tok("string", self._string(), line)
-        if c == "{" and before and before[-1].kind == "punct" and before[-1].value == "=":
-            end = t.find("}", start)
-            if end < 0:
-                raise self.error("an unterminated hex string")
-            body = t[start + 1 : end]
-            self.line += body.count("\n")
-            self.pos = end + 1
-            return Tok("hex", body, line)
+        if c == "{":
+            m = Lexer.HEX.match(t, start)
+            if m is not None:
+                body = m.group()[1:-1]
+                self.line += body.count("\n")
+                self.pos = m.end()
+                return Tok("hex", body, line)
         if c == "/":  # comments were skipped; YARA divides with `\\`, so `/` opens a regex
             return Tok("regex", self._regex(), line)
         nxt = t[start + 1] if start + 1 < len(t) else ""
@@ -227,11 +230,10 @@ class StringDef:
     kind: str  # text, hex, regex
     value: Any
     modifiers: dict[str, Any]
-    #: Each a `re` pattern the validator accepts, or a `yara_regex.Program` for one it refuses.
-    patterns: list[Any] = field(default_factory=list)
-    #: For each pattern, its atom (`yara_regex.Atoms.find`), or None.
-    atoms: list[Any] = field(default_factory=list)
-    literals: list[tuple[bytes, bool]] = field(default_factory=list)  # (bytes, nocase)
+    #: The string ready to be searched for (`rule_scan.Search`).
+    search: Any = None
+    #: The one offset the string can count at, when the condition only asks `$a at <constant>`.
+    fixed: int | None = None
 
     @property
     def private(self) -> bool:
@@ -379,7 +381,9 @@ class Parser:
         for s in strings:
             if s.name not in self.referenced:
                 raise YaraError(f"rule {name}: the string {s.name} is never used")
-        return Rule(name, tags, meta, strings, cond, private, is_global)
+        rule = Rule(name, tags, meta, strings, cond, private, is_global)
+        Strings.place_fixed(rule)
+        return rule
 
     def _meta_value(self) -> Any:
         tok = self.tok
@@ -486,7 +490,7 @@ class Parser:
                 if tok.kind != "regex":
                     raise YaraError(f"line {tok.line}: matches needs a regular expression")
                 self.i += 1
-                left = ("matches", left, Strings.regex(tok.value[0], tok.value[1]))
+                left = ("matches", left, Strings.matcher(tok.value[0], tok.value[1]))
                 continue
             left = (op, left, self._bitor())
         return left
@@ -614,7 +618,7 @@ class Parser:
                 args: list[Any] = []
                 while not self.at(")"):
                     if self.tok.kind == "regex":
-                        args.append(("regex", Strings.regex(self.tok.value[0], self.tok.value[1])))
+                        args.append(("regex", Strings.matcher(*self.tok.value)))
                         self.i += 1
                     else:
                         args.append(self.expr())
@@ -806,375 +810,84 @@ class Strings:
             raise YaraError(f"string {name}: xor and nocase together")
 
     @staticmethod
-    def widen(data: bytes) -> bytes:
-        return b"".join(bytes([b, 0]) for b in data)
-
-    @staticmethod
     def compile(s: StringDef) -> None:
-        if s.kind == "text":
-            Strings._text(s)
-        elif s.kind == "hex":
-            from cordon_scanner.detect.binary.yara_regex import Atoms
-
-            source = Strings.hex(s.value)
-            s.patterns.append(re.compile(source.encode("latin-1"), re.DOTALL))
-            s.atoms.append(Atoms.find(source, nocase=False, dotall=True))
-        else:
-            source, flags = s.value
-            Strings._regex(s, source, flags)
-
-    @staticmethod
-    def _text(s: StringDef) -> None:
-        value: bytes = s.value
-        mods = s.modifiers
-        forms: list[bytes] = []
-        wide, ascii_ = "wide" in mods, "ascii" in mods or "wide" not in mods
-        if "base64" in mods or "base64wide" in mods:
-            alphabet = mods.get("base64") if isinstance(mods.get("base64"), bytes) else None
-            alphabet = alphabet or (
-                mods.get("base64wide") if isinstance(mods.get("base64wide"), bytes) else None
-            )
-            encodings = Strings.base64_forms(value, alphabet)
-            if "base64" in mods:
-                forms += encodings
-            if "base64wide" in mods:
-                forms += [Strings.widen(e) for e in encodings]
-            s.literals = [(f, False) for f in forms if f]
-            return
-        if ascii_:
-            forms.append(value)
-        if wide:
-            forms.append(Strings.widen(value))
-        if "xor" in mods:
-            lo, hi = mods["xor"]
-            xored = []
-            for form in forms:
-                for key in range(lo, hi + 1):
-                    xored.append(bytes(b ^ key for b in form))
-            forms = list(dict.fromkeys(xored))
-        s.literals = [(f, "nocase" in mods) for f in forms]
-
-    @staticmethod
-    def base64_forms(value: bytes, alphabet: bytes | None) -> list[bytes]:
-        """YARA's three base64 forms of `value`: encoded at each offset modulo 3, without the
-        leading characters that depend on the unknown byte before it (two at offset 1, three at
-        offset 2) and the trailing one that depends on the byte after it."""
-        out = []
-        for shift in range(3):
-            padded = b"\x00" * shift + value
-            enc = base64.b64encode(padded).rstrip(b"=")
-            if len(padded) % 3:
-                enc = enc[:-1]
-            piece = enc[(0, 2, 3)[shift] :]
-            if alphabet is not None:
-                standard = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-                piece = piece.translate(bytes.maketrans(standard, alphabet))
-            out.append(piece)
-        return [p for p in dict.fromkeys(out) if p]
-
-    @staticmethod
-    def hex(body: str) -> str:
-        """A YARA hex string as a Python bytes regex (latin-1 text, one char per byte)."""
-        tokens = re.findall(
-            r"\?\?|~?[0-9A-Fa-f?]{2}|\[[^\]]*\]|[()|]",
-            re.sub(r"//[^\n]*|/\*.*?\*/", "", body, flags=re.DOTALL),
-        )
-        if "".join(tokens).replace(" ", "") != re.sub(
-            r"\s+|//[^\n]*|/\*.*?\*/", "", body, flags=re.DOTALL
-        ):
-            raise YaraError(f"a malformed hex string {{{body.strip()[:40]}}}")
-        out = []
-        depth = 0
-        for tok in tokens:
-            if tok in ("(", ")", "|"):
-                depth += {"(": 1, ")": -1, "|": 0}[tok]
-                if depth < 0:
-                    raise YaraError("a hex string with an unbalanced parenthesis")
-                out.append({"(": "(?:", ")": ")", "|": "|"}[tok])
-                continue
-            if tok.startswith("["):
-                inner = tok[1:-1].replace(" ", "")
-                if inner in ("0", "0-0"):
-                    raise YaraError("a hex jump of length 0")
-                if depth and (inner == "-" or inner.endswith("-")):
-                    raise YaraError("an unbounded hex jump inside an alternative")
-            if tok == "??":
-                out.append(".")
-            elif tok.startswith("["):
-                inner = tok[1:-1].replace(" ", "")
-                if inner == "-":
-                    out.append(".*?")
-                elif "-" in inner:
-                    lo, hi = inner.split("-")
-                    out.append(
-                        f".{{{int(lo or 0)},{hi}}}" + "?" if hi else f".{{{int(lo or 0)},}}?"
-                    )
-                else:
-                    out.append(f".{{{int(inner)}}}")
-            else:
-                neg = tok.startswith("~")
-                pair = tok[1:] if neg else tok
-                if neg and pair == "??":
-                    raise YaraError("a hex string negating a full wildcard (~??)")
-                options = [
-                    n
-                    for n in range(256)
-                    if all(
-                        p == "?" or int(p, 16) == (n >> (4 * (1 - i))) & 0xF
-                        for i, p in enumerate(pair)
-                    )
-                ]
-                if neg:
-                    options = [n for n in range(256) if n not in options]
-                if len(options) == 1:
-                    out.append(re.escape(chr(options[0])))
-                else:
-                    out.append("[" + "".join(re.escape(chr(o)) for o in options) + "]")
-        if not tokens or tokens[0].startswith("[") or tokens[-1].startswith("["):
-            raise YaraError("a hex string cannot begin or end with a jump")
-        return "".join(out)
-
-    @staticmethod
-    def regex(source: str, flags: str) -> Any:
-        """A rule's regular expression: Python's `re` where the engine's own validator
-        (`rules/loader.PatternCompiler`) accepts the shape, and Cordon's non-backtracking engine
-        (`yara_regex.Program`) where it refuses it -- so no expression can backtrack without bound."""
-        from cordon_scanner.detect.binary.yara_regex import Program, RegexError, Syntax
-        from cordon_scanner.rules.loader import PatternCompiler
+        from cordon_scanner.detect.binary.rule_pattern import PatternError
+        from cordon_scanner.detect.binary.rule_scan import Search
 
         try:
-            Syntax.check(source, nocase="i" in flags, dotall="s" in flags)
-        except RegexError as exc:
-            raise YaraError(f"a regular expression YARA refuses: {exc}") from exc
-        f = re.DOTALL if "s" in flags else 0
-        f |= re.IGNORECASE if "i" in flags else 0
+            s.search = Search(s.kind, s.value, s.modifiers)
+        except PatternError as exc:
+            raise YaraError(f"string {s.name}: {exc}") from exc
+
+    @staticmethod
+    def matcher(source: str, marks: str) -> Any:
+        """A regular expression a condition tests text with (`matches`, a function argument)."""
+        from cordon_scanner.detect.binary.rule_pattern import PatternError
+        from cordon_scanner.detect.binary.rule_scan import Matcher
+
         try:
-            PatternCompiler.validate_pattern(source, rule_id="yara")
-            safe = True
-        except Exception:  # noqa: BLE001
-            safe = False
-        try:
-            if safe:
-                return re.compile(source.encode("latin-1", "backslashreplace"), f)
-            return Program(source, nocase="i" in flags, dotall="s" in flags)
-        except (re.error, RegexError) as exc:
+            return Matcher(source.encode("utf-8", "surrogateescape"), marks)
+        except PatternError as exc:
             raise YaraError(f"a regular expression that does not compile: {exc}") from exc
 
     @staticmethod
-    def _regex(s: StringDef, source: str, flags: str) -> None:
-        if "nocase" in s.modifiers:
-            flags += "i"
-        from cordon_scanner.detect.binary.yara_regex import Atoms
+    def find(s: StringDef, data: bytes, deadline: float | None = None) -> list[tuple[int, int]]:
+        """(offset, length) of every match of `s`, by offset, at most `rule_scan.MAX_HITS`."""
+        from cordon_scanner.detect.binary.rule_pattern import RunError
 
-        forms = []
-        if "wide" in s.modifiers:
-            # Each byte the expression matches followed by a zero byte: compiled from the source
-            # with every literal and class widened.
-            forms.append(Strings._widen_source(source))
-            if "ascii" in s.modifiers:
-                forms.append(source)
-        else:
-            forms.append(source)
-        for form in forms:
-            s.patterns.append(Strings.regex(form, flags))
-            s.atoms.append(Atoms.find(form, nocase="i" in flags, dotall="s" in flags))
+        try:
+            found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline)
+            return found
+        except TimeoutError as exc:
+            raise YaraError("matching took longer than the time allowed") from exc
+        except RunError as exc:
+            raise YaraError(f"string {s.name}: {exc}") from exc
 
     @staticmethod
-    def _widen_source(source: str) -> str:
-        out, i = [], 0
-        while i < len(source):
-            c = source[i]
-            if c == "\\" and i + 1 < len(source):
-                pair = source[i : i + 4] if source[i + 1] == "x" else source[i : i + 2]
-                out.append("(?:" + pair + "\\x00)")
-                i += len(pair)
-            elif c == "[":
-                j = source.index("]", i + 1)
-                out.append("(?:" + source[i : j + 1] + "\\x00)")
-                i = j + 1
-            elif c == "{":
-                j = source.index("}", i)
-                out.append(source[i : j + 1])
-                i = j + 1
-            elif c in "()|*+?^$":
-                out.append(c)
-                i += 1
-            elif c == ".":
-                out.append("(?:.\\x00)")
-                i += 1
-            else:
-                out.append("(?:" + re.escape(c) + "\\x00)")
-                i += 1
-        return "".join(out)
+    def place_fixed(rule: Rule) -> None:
+        """Marks each string whose first part is plain bytes and whose every use is `$a at
+        <constant>` (one constant): it counts only there, as the search records it only there."""
+        fixed: dict[str, Any] = {s.name: None for s in rule.strings}
+        cleared: set[str] = set()
 
-    @staticmethod
-    def find(
-        s: StringDef, data: bytes, lowered: bytes, deadline: float | None = None
-    ) -> list[tuple[int, int]]:
-        """(offset, length) of every match of `s`, at every start, overlapping, as YARA reports
-        them; at most MAX_MATCHES. Literals are searched in C; regular expressions and hex strings
-        at each start within SCAN_LIMIT, a window at a time, with `deadline` checked between."""
-        found: list[tuple[int, int]] = []
-        wide = "wide" in s.modifiers
-        for literal, nocase in s.literals:
-            if not literal:
-                continue
-            hay = lowered if nocase else data
-            needle = literal.lower() if nocase else literal
-            at = hay.find(needle)
-            while at >= 0 and len(found) < MAX_MATCHES:
-                if "fullword" not in s.modifiers or Strings._whole(
-                    data, at, len(needle), wide and literal[1:2] == b"\x00"
-                ):
-                    found.append((at, len(needle)))
-                at = hay.find(needle, at + 1)
-        for pattern, atom in zip(s.patterns, s.atoms, strict=True):
-            Strings._starts(pattern, atom, data, lowered, found, deadline)
-            if "fullword" in s.modifiers:
-                found = [(o, n) for o, n in found if Strings._whole(data, o, n, False)]
-        found.sort()
-        return list(dict.fromkeys(found))[:MAX_MATCHES]
+        def at(name: str, where: Any) -> None:
+            value = where[1] if where[0] == "num" and isinstance(where[1], int) else None
+            names = [s.name for s in rule.strings] if name == "$" else [name]
+            for n in names:
+                if n not in fixed:
+                    continue
+                if fixed[n] is None:
+                    fixed[n] = value
+                if value is None or fixed[n] != value:
+                    cleared.add(n)
 
-    @staticmethod
-    def _starts(
-        pattern: Any,
-        atom: Any,
-        data: bytes,
-        lowered: bytes,
-        found: list[tuple[int, int]],
-        deadline: float | None,
-    ) -> None:
-        import time
-
-        n = len(data)
-        if atom is not None:
-            Strings._near_atoms(pattern, atom, data, lowered, found, deadline)
-            return
-        if isinstance(pattern, re.Pattern):
-            look = Strings._lookahead(pattern)
-            for window in range(0, max(n, 1), WINDOW):
-                if deadline is not None and time.monotonic() > deadline:
-                    raise YaraError("matching took longer than the time allowed")
-                for m in look.finditer(data, window, min(n, window + WINDOW + SCAN_LIMIT)):
-                    if m.start() >= window + WINDOW and window + WINDOW < n:
-                        break
-                    length = len(m.group(1))
-                    if length <= SCAN_LIMIT:
-                        found.append((m.start(), length))
-                    if len(found) >= MAX_MATCHES:
-                        return
-            return
-        first = pattern.first
-        candidates = (
-            (
-                m.start()
-                for m in re.finditer(
-                    b"[" + b"".join(re.escape(bytes([c])) for c in sorted(first)) + b"]", data
-                )
-            )
-            if first is not None
-            else iter(range(n + 1))
-        )
-        for count, at in enumerate(candidates):
-            if count % 4096 == 0 and deadline is not None and time.monotonic() > deadline:
-                raise YaraError("matching took longer than the time allowed")
-            length = pattern.longest(data, at, SCAN_LIMIT)
-            if length >= 0:
-                found.append((at, length))
-                if len(found) >= MAX_MATCHES:
+        def walk(node: Any) -> None:
+            if isinstance(node, tuple):
+                if node and node[0] == "at" and isinstance(node[1], str):
+                    at(node[1], node[2])
+                    walk(node[2])
                     return
-
-    LOOKAHEADS: ClassVar[dict[tuple[bytes, int], re.Pattern[bytes]]] = {}
-    #: below this many allowed starts, anchored matches; above, one scan in C
-    ANCHORED_SPAN: ClassVar[int] = 64
-
-    @staticmethod
-    def _lookahead(pattern: re.Pattern[bytes]) -> re.Pattern[bytes]:
-        """`(?=(pattern))`, compiled once: a zero-width match at a start that reports the length."""
-        key = (pattern.pattern, pattern.flags)
-        look = Strings.LOOKAHEADS.get(key)
-        if look is None:
-            look = Strings.LOOKAHEADS[key] = re.compile(
-                b"(?=(" + pattern.pattern + b"))", pattern.flags
-            )
-        return look
-
-    @staticmethod
-    def _occurrences(hay: bytes, alternatives: tuple[bytes, ...]) -> Iterator[int]:
-        """Every offset where one of the alternatives begins, in order, overlaps included."""
-        if len(alternatives) == 1:
-            literal = alternatives[0]
-            at = hay.find(literal)
-            while at >= 0:
-                yield at
-                at = hay.find(literal, at + 1)
-            return
-        key = (b"|".join(alternatives), 0)
-        finder = Strings.LOOKAHEADS.get(key)
-        if finder is None:
-            joined = b"|".join(re.escape(a) for a in sorted(alternatives, key=len, reverse=True))
-            finder = Strings.LOOKAHEADS[key] = re.compile(b"(?=(?:" + joined + b"))")
-        for m in finder.finditer(hay):
-            yield m.start()
-
-    @staticmethod
-    def _near_atoms(
-        pattern: Any,
-        atom: Any,
-        data: bytes,
-        lowered: bytes,
-        found: list[tuple[int, int]],
-        deadline: float | None,
-    ) -> None:
-        """Every match, tried only from the starts an occurrence of the atom allows."""
-        import time
-
-        alternatives, lower, before_lo, before_hi = atom
-        hay = lowered if lower else data
-        reach = SCAN_LIMIT if before_hi is None else min(before_hi, SCAN_LIMIT)
-        look = Strings._lookahead(pattern) if isinstance(pattern, re.Pattern) else None
-        tried_to = -1  # starts up to here have been tried
-        for hits, at in enumerate(Strings._occurrences(hay, alternatives), 1):
-            if hits % 1024 == 0 and deadline is not None and time.monotonic() > deadline:
-                raise YaraError("matching took longer than the time allowed")
-            first, last = max(0, at - reach, tried_to + 1), at - before_lo
-            if first <= last:
-                if look is not None:
-                    end = min(len(data), last + 1 + SCAN_LIMIT)
-                    if last - first < Strings.ANCHORED_SPAN:
-                        # A few allowed starts: each tried once, anchored. A scan from `first`
-                        # would go on trying every position up to SCAN_LIMIT past `last`.
-                        for start in range(first, last + 1):
-                            m = look.match(data, start, end)
-                            if m is not None and len(m.group(1)) <= SCAN_LIMIT:
-                                found.append((start, len(m.group(1))))
-                    else:
-                        for m in look.finditer(data, first, end):
-                            if m.start() > last:
-                                break
-                            if len(m.group(1)) <= SCAN_LIMIT:
-                                found.append((m.start(), len(m.group(1))))
+                if node and node[0] == "them":
+                    cleared.update(fixed)
+                for item in node:
+                    walk(item)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+            elif isinstance(node, str) and node.startswith("$"):
+                if node == "$":
+                    cleared.update(fixed)
+                elif node.endswith("*"):
+                    cleared.update(n for n in fixed if n.startswith(node[:-1]))
                 else:
-                    for start in range(first, last + 1):
-                        length = pattern.longest(data, start, SCAN_LIMIT)
-                        if length >= 0:
-                            found.append((start, length))
-                tried_to = last
-                if len(found) >= MAX_MATCHES:
-                    return
+                    cleared.add(node)
 
-    @staticmethod
-    def _whole(data: bytes, at: int, length: int, wide: bool) -> bool:
-        """A `fullword` match: no letter or digit adjoins it (YARA counts only those as word
-        characters -- an underscore or a dot does not join a word)."""
-        step = 2 if wide else 1
-        before = data[at - step] if at - step >= 0 else None
-        after = data[at + length] if at + length < len(data) else None
-
-        def word(b: int | None) -> bool:
-            return b is not None and (0x30 <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x61 <= b <= 0x7A)
-
-        return not word(before) and not word(after)
+        walk(rule.condition)
+        for s in rule.strings:
+            # a linked string counts from its first part, so that part decides
+            text_like = s.search is not None and s.search.parts[0].text is not None
+            if text_like and s.name not in cleared and fixed[s.name] is not None:
+                s.fixed = fixed[s.name]
 
 
 # -- evaluation ---------------------------------------------------------------
@@ -1200,7 +913,6 @@ class Scan:
         self.compiling = compiling
         self.factories: dict[str, Any] = {}
         self.roots: dict[str, Struct] = {}
-        self.lowered = data.lower()
         self.decided: dict[str, bool] = {}
         self.vars: list[dict[str, Any]] = []
 
@@ -1210,10 +922,7 @@ class Scan:
         found_by_rule: dict[str, dict[str, list[tuple[int, int]]]] = {}
         for rule in self.rules:
             self.rule = rule
-            self.found = {
-                s.name: Strings.find(s, self.data, self.lowered, self.deadline)
-                for s in rule.strings
-            }
+            self.found = {s.name: Strings.find(s, self.data, self.deadline) for s in rule.strings}
             found_by_rule[rule.name] = self.found
             result = Scan.truth(self.eval(rule.condition))
             self.decided[rule.name] = result
@@ -1407,10 +1116,12 @@ class Scan:
             v = self.eval(node[1])
             if not isinstance(v, bytes):
                 return UNDEFINED
-            pattern = node[2]
-            if isinstance(pattern, re.Pattern):
-                return bool(pattern.search(v))
-            return any(pattern.longest(v, i, len(v)) >= 0 for i in range(len(v) + 1))
+            from cordon_scanner.detect.binary.rule_pattern import RunError
+
+            try:
+                return node[2].test(v)
+            except RunError as exc:
+                raise YaraError(f"rule {self.rule.name}: {exc}") from exc
         if op == "neg":
             v = self.eval(node[1])
             if Values.undefined(v):
@@ -1551,12 +1262,9 @@ class Scan:
                 if not isinstance(value, Function):
                     raise YaraError("only a function can be called")
                 args = [self.eval(a) for a in step[1]]
-                kinds = tuple(
-                    "r"
-                    if isinstance(a, (re.Pattern,)) or hasattr(a, "longest")
-                    else Values.kind_of(a)
-                    for a in args
-                )
+                from cordon_scanner.detect.binary.rule_scan import Matcher
+
+                kinds = tuple("r" if isinstance(a, Matcher) else Values.kind_of(a) for a in args)
                 target = value.resolve(kinds)
                 if target is None:
                     raise YaraError(f"no function takes arguments of types {kinds}")

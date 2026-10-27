@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.yara_modules import UNDEF_INT, UNDEF_STR, Array, Struct, Values
+from cordon_scanner.detect.binary.rule_values import UNDEF_INT, UNDEF_STR, Array, Struct, Values
 from cordon_scanner.detect.binary.yara_oids import Oids
 from cordon_scanner.intel.provenance._dsa import Dsa
 from cordon_scanner.intel.provenance._ecdsa import Ecdsa

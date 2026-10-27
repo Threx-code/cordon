@@ -19,9 +19,7 @@ import re
 import struct
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.yara_authenticode import Authenticode
-from cordon_scanner.detect.binary.yara_constants import Constants
-from cordon_scanner.detect.binary.yara_modules import (
+from cordon_scanner.detect.binary.rule_values import (
     UNDEF_INT,
     UNDEF_STR,
     Array,
@@ -29,6 +27,8 @@ from cordon_scanner.detect.binary.yara_modules import (
     Struct,
     Values,
 )
+from cordon_scanner.detect.binary.yara_authenticode import Authenticode
+from cordon_scanner.detect.binary.yara_constants import Constants
 from cordon_scanner.detect.binary.yara_tlsh import Tlsh
 
 
@@ -883,16 +883,8 @@ class Pe:
 
     @staticmethod
     def _search(pattern: Any, text: bytes) -> int:
-        """`yr_re_match` over a C string: the length of the first match, or -1."""
-        text = text.split(b"\x00", 1)[0]
-        if hasattr(pattern, "search"):
-            found = pattern.search(text)
-            return -1 if found is None else found.end() - found.start()
-        for i in range(len(text) + 1):
-            length = pattern.longest(text, i, len(text))
-            if length >= 0:
-                return int(length)
-        return -1
+        """A regular expression run over a C string: where its match ends, or -1."""
+        return int(pattern.run(text.split(b"\x00", 1)[0]))
 
     @staticmethod
     def _c(text: bytes) -> bytes:

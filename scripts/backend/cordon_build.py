@@ -359,8 +359,10 @@ class Backend:
             (project.root / "src" / n).relative_to(project.root).as_posix()
             for n in project.wheel_files()
         }
-        files |= {
-            p.relative_to(project.root).as_posix() for p in project.root.glob("build_backend/*.py")
+        files |= {  # the backend itself, so the sdist builds with nothing installed
+            p.relative_to(project.root).as_posix()
+            for where in project.config["build-system"].get("backend-path", [])
+            for p in (project.root / where).glob("*.py")
         }
         entries = [(f, (project.root / f).read_bytes()) for f in sorted(files)]
         entries.append(("PKG-INFO", project.metadata().encode()))

@@ -1,10 +1,10 @@
 [build-system]
-# Cordon's own backend (build_backend/cordon_build.py): the standard library alone, so building
+# Cordon's own backend (scripts/backend/cordon_build.py): the standard library alone, so building
 # the wheel, the sdist or an editable install runs no third-party code. The release still drives
 # it through the hash-pinned `build` frontend (requirements-build.txt) with --no-isolation.
 requires = []
 build-backend = "cordon_build"
-backend-path = ["build_backend"]
+backend-path = ["scripts/backend"]
 
 [project]
 name = "cordon-scanner"

@@ -5,8 +5,8 @@ the scan and never by the repository being scanned, and a report that says wheth
 where a security team keeps the signatures it trusts -- its own, its vendor's, a feed's -- and this
 lets a scan apply them without the team rewriting them as Cordon rules.
 
-The YARA language is Cordon's own code (`yara_lang`, with `yara_regex` for the expressions Python's
-`re` must not run): no native library reads a scanned file. Rules that cannot be used -- a file
+The rule language is Cordon's own code (`yara_lang`, with `rule_pattern` and `rule_scan` for the
+strings): no native library reads a scanned file. Rules that cannot be used -- a file
 that does not compile, a module the engine does not implement -- are reported in an operational
 finding rather than as nothing, because "no rule matched" and "no rule ran" must never look alike.
 Rules are compiled once per scan; each file is matched with a timeout, so a pathological rule

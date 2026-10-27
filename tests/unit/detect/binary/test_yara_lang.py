@@ -14,8 +14,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.binary.yara_lang import Rules, YaraError
-from cordon_scanner.detect.binary.yara_modules import (
+from cordon_scanner.detect.binary.rule_values import (
     UNDEF_FLOAT,
     UNDEF_INT,
     UNDEF_STR,
@@ -24,6 +23,7 @@ from cordon_scanner.detect.binary.yara_modules import (
     Struct,
     Values,
 )
+from cordon_scanner.detect.binary.yara_lang import Rules, YaraError
 from support import ROOT
 
 
@@ -45,14 +45,8 @@ class YaraTests:
     @staticmethod
     def module(data: bytes) -> Struct:
         def match(pattern: Any, s: bytes) -> int:
-            if hasattr(pattern, "search"):
-                found = pattern.search(s)
-                return found.end() - found.start() if found else -1
-            for i in range(len(s) + 1):
-                n = pattern.longest(s, i, len(s))
-                if n >= 0:
-                    return n
-            return -1
+            # the text up to its first zero byte, as the tests module reads it
+            return int(pattern.run(s.split(b"\x00", 1)[0]))
 
         proto = Struct({"i": UNDEF_INT, "s": UNDEF_STR})
         inner = Struct(
