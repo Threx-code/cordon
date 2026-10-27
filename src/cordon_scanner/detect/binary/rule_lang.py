@@ -973,6 +973,9 @@ class Strings:
 class Scan:
     """One file's evaluation: the matches of every string, rules decided in order."""
 
+    #: Each condition node's evaluator, by its tag (filled in below the class).
+    HANDLERS: ClassVar[dict[str, Callable[[Scan, Any], Any]]] = {}
+
     def __init__(
         self,
         rules: list[Rule],
@@ -993,6 +996,8 @@ class Scan:
         self.decided: dict[str, bool] = {}
         #: Where each anchor occurs in the data, shared by every string (`Search.find`).
         self.seen: dict[Any, Any] = {}
+        #: String and rule sets as names, by (rule, set) (`names`); kept by the rule set.
+        self.name_cache: dict[tuple[int, int], list[str]] = {}
         #: The rule set's `rule_scan.AnchorIndex` and the strings it numbers, when there is one.
         self.index: tuple[Any, list[StringDef]] | None = None
         self.vars: list[dict[str, Any]] = []
@@ -1048,6 +1053,15 @@ class Scan:
         return bool(v)
 
     def names(self, target: Any) -> list[str]:
+        """The names a string or rule set stands for in the current rule, resolved once per rule
+        and set for every file the rules scan."""
+        key = (id(self.rule), id(target))
+        cached = self.name_cache.get(key)
+        if cached is None:
+            cached = self.name_cache[key] = self._resolve(target)
+        return cached
+
+    def _resolve(self, target: Any) -> list[str]:
         if target[0] == "them":
             return [s.name for s in self.rule.strings]
         out: list[str] = []
@@ -1102,138 +1116,159 @@ class Scan:
         return count >= n if n > 0 else count == 0
 
     def eval(self, node: Any) -> Any:
-        op = node[0]
-        if op == "num":
-            return node[1]
-        if op == "str":
-            return node[1]
-        if op == "bool":
-            return node[1]
-        if op == "undefined":
-            return UNDEFINED
-        if op == "ext":
-            return self.externals[node[1]]
-        if op == "filesize":
-            return len(self.data)
-        if op == "or":
-            return Scan.truth(self.eval(node[1])) or Scan.truth(self.eval(node[2]))
-        if op == "and":
-            return Scan.truth(self.eval(node[1])) and Scan.truth(self.eval(node[2]))
-        if op == "not":
-            v = self.eval(node[1])
-            return UNDEFINED if Values.undefined(v) else not Scan.truth(v)
-        if op == "defined":
-            return not Values.undefined(self.eval(node[1]))
-        if op == "found":
-            return bool(self._hits(node[1]))
-        if op == "count":
-            return len(self._hits(node[1]))
-        if op == "count_in":
-            lo, hi = self.eval(node[2][0]), self.eval(node[2][1])
-            if Values.undefined(lo) or Values.undefined(hi):
-                return UNDEFINED
-            return sum(1 for o, _ in self._hits(node[1]) if lo <= o <= hi)
-        if op == "at":
-            at = self.eval(node[2])
-            return (
-                UNDEFINED if Values.undefined(at) else any(o == at for o, _ in self._hits(node[1]))
-            )
-        if op == "in":
-            lo, hi = self.eval(node[2][0]), self.eval(node[2][1])
-            if Values.undefined(lo) or Values.undefined(hi):
-                return UNDEFINED
-            return any(lo <= o <= hi for o, _ in self._hits(node[1]))
-        if op in ("offset", "length"):
-            i = self.eval(node[2])
-            hits = self._hits(node[1])
-            if Values.undefined(i) or not isinstance(i, int) or not 1 <= i <= len(hits):
-                return UNDEFINED
-            return hits[i - 1][0] if op == "offset" else hits[i - 1][1]
-        if op == "read":
-            return self._read(node[1], self.eval(node[2]))
-        if op == "rule":
-            if node[1] in self.decided:
-                return self.decided[node[1]]
-            for scope in reversed(self.vars):
-                if node[1] in scope:
-                    return scope[node[1]]
-            raise RuleError(f"an undefined identifier {node[1]}")
-        if op == "rules":
-            return any(
-                self.decided.get(r.name, False) for r in self.rules if r.name.startswith(node[1])
-            )
-        if op in ("of", "of_at", "of_in"):
-            names = self._items(node[2])
-            at = rng = None
-            if op == "of_at":
-                at = self.eval(node[3])
-                if Values.undefined(at):
-                    return False
-                if not isinstance(at, int):
-                    raise RuleError("'at' needs an integer offset")
-            if op == "of_in":
-                rng = (self.eval(node[3][0]), self.eval(node[3][1]))
-                if any(Values.undefined(v) for v in rng):
-                    return False
-            count = sum(1 for n in names if self._item_true(n, at, rng))
-            return self._quant_ok(node[1], count, len(names))
-        if op == "for_of":
-            names = self.names(node[2])
-            count = 0
-            for n in names:
-                self.vars.append({"$": n})
-                try:
-                    if Scan.truth(self.eval(node[3])):
-                        count += 1
-                finally:
-                    self.vars.pop()
-            return self._quant_ok(node[1], count, len(names))
-        if op == "for_in":
-            values = self._domain(node[3], len(node[2]))
-            if Values.undefined(values):
-                return False
-            if not values and self.compiling and node[3][0] == "iter":
-                # An empty collection still has a type: the body is checked against one undefined
-                # element of it, so `i == "foo"` over integers is refused here.
-                self._check_body(node, self._prototype(node[3][1], len(node[2])))
-            count = 0
-            for value in values:
-                scope = dict(
-                    zip(node[2], value if isinstance(value, tuple) else (value,), strict=False)
-                )
-                self.vars.append(scope)
-                try:
-                    if Scan.truth(self.eval(node[4])):
-                        count += 1
-                finally:
-                    self.vars.pop()
-            return self._quant_ok(node[1], count, len(values))
-        if op == "chain":
-            return self._chain(node)
-        if op == "regex":
-            return node[1]
-        if op == "matches":
-            v = self.eval(node[1])
-            if not isinstance(v, bytes):
-                return UNDEFINED
-            from cordon_scanner.detect.binary.rule_pattern import RunError
+        handler = Scan.HANDLERS.get(node[0])
+        return handler(self, node) if handler is not None else self._arith(node)
 
+    def _num(self, node: Any) -> Any:
+        return node[1]
+
+    def _undefined(self, node: Any) -> Any:
+        return UNDEFINED
+
+    def _ext(self, node: Any) -> Any:
+        return self.externals[node[1]]
+
+    def _filesize(self, node: Any) -> Any:
+        return len(self.data)
+
+    def _or(self, node: Any) -> Any:
+        return Scan.truth(self.eval(node[1])) or Scan.truth(self.eval(node[2]))
+
+    def _and(self, node: Any) -> Any:
+        return Scan.truth(self.eval(node[1])) and Scan.truth(self.eval(node[2]))
+
+    def _not(self, node: Any) -> Any:
+        v = self.eval(node[1])
+        return UNDEFINED if Values.undefined(v) else not Scan.truth(v)
+
+    def _defined(self, node: Any) -> Any:
+        return not Values.undefined(self.eval(node[1]))
+
+    def _found(self, node: Any) -> Any:
+        return bool(self._hits(node[1]))
+
+    def _count(self, node: Any) -> Any:
+        return len(self._hits(node[1]))
+
+    def _count_in(self, node: Any) -> Any:
+        lo, hi = self.eval(node[2][0]), self.eval(node[2][1])
+        if Values.undefined(lo) or Values.undefined(hi):
+            return UNDEFINED
+        return sum(1 for o, _ in self._hits(node[1]) if lo <= o <= hi)
+
+    def _at(self, node: Any) -> Any:
+        at = self.eval(node[2])
+        return UNDEFINED if Values.undefined(at) else any(o == at for o, _ in self._hits(node[1]))
+
+    def _in(self, node: Any) -> Any:
+        lo, hi = self.eval(node[2][0]), self.eval(node[2][1])
+        if Values.undefined(lo) or Values.undefined(hi):
+            return UNDEFINED
+        return any(lo <= o <= hi for o, _ in self._hits(node[1]))
+
+    def _offset(self, node: Any) -> Any:
+        i = self.eval(node[2])
+        hits = self._hits(node[1])
+        if Values.undefined(i) or not isinstance(i, int) or not 1 <= i <= len(hits):
+            return UNDEFINED
+        return hits[i - 1][0] if node[0] == "offset" else hits[i - 1][1]
+
+    def _read_node(self, node: Any) -> Any:
+        return self._read(node[1], self.eval(node[2]))
+
+    def _rule(self, node: Any) -> Any:
+        if node[1] in self.decided:
+            return self.decided[node[1]]
+        for scope in reversed(self.vars):
+            if node[1] in scope:
+                return scope[node[1]]
+        raise RuleError(f"an undefined identifier {node[1]}")
+
+    def _rules(self, node: Any) -> Any:
+        return any(
+            self.decided.get(r.name, False) for r in self.rules if r.name.startswith(node[1])
+        )
+
+    def _of(self, node: Any) -> Any:
+        op = node[0]
+        names = self._items(node[2])
+        at = rng = None
+        if op == "of_at":
+            at = self.eval(node[3])
+            if Values.undefined(at):
+                return False
+            if not isinstance(at, int):
+                raise RuleError("'at' needs an integer offset")
+        if op == "of_in":
+            rng = (self.eval(node[3][0]), self.eval(node[3][1]))
+            if any(Values.undefined(v) for v in rng):
+                return False
+        count = sum(1 for n in names if self._item_true(n, at, rng))
+        return self._quant_ok(node[1], count, len(names))
+
+    def _for_of(self, node: Any) -> Any:
+        names = self.names(node[2])
+        count = 0
+        for n in names:
+            self.vars.append({"$": n})
             try:
-                return node[2].test(v)
-            except RunError as exc:
-                raise RuleError(f"rule {self.rule.name}: {exc}") from exc
-        if op == "neg":
-            v = self.eval(node[1])
-            if Values.undefined(v):
-                return UNDEFINED
-            if isinstance(v, int) and -v > INT64_MAX:
-                if self.compiling and Scan.constant(node):
-                    raise RuleError("integer overflow in a constant expression")
-                return UNDEFINED
-            return -v
-        if op == "bnot":
-            v = self.eval(node[1])
-            return UNDEFINED if Values.undefined(v) else ~int(v)
+                if Scan.truth(self.eval(node[3])):
+                    count += 1
+            finally:
+                self.vars.pop()
+        return self._quant_ok(node[1], count, len(names))
+
+    def _for_in(self, node: Any) -> Any:
+        values = self._domain(node[3], len(node[2]))
+        if Values.undefined(values):
+            return False
+        if not values and self.compiling and node[3][0] == "iter":
+            # An empty collection still has a type: the body is checked against one undefined
+            # element of it, so `i == "foo"` over integers is refused here.
+            self._check_body(node, self._prototype(node[3][1], len(node[2])))
+        count = 0
+        for value in values:
+            scope = dict(
+                zip(node[2], value if isinstance(value, tuple) else (value,), strict=False)
+            )
+            self.vars.append(scope)
+            try:
+                if Scan.truth(self.eval(node[4])):
+                    count += 1
+            finally:
+                self.vars.pop()
+        return self._quant_ok(node[1], count, len(values))
+
+    def _chain_node(self, node: Any) -> Any:
+        return self._chain(node)
+
+    def _matches(self, node: Any) -> Any:
+        v = self.eval(node[1])
+        if not isinstance(v, bytes):
+            return UNDEFINED
+        from cordon_scanner.detect.binary.rule_pattern import RunError
+
+        try:
+            return node[2].test(v)
+        except RunError as exc:
+            raise RuleError(f"rule {self.rule.name}: {exc}") from exc
+
+    def _neg(self, node: Any) -> Any:
+        v = self.eval(node[1])
+        if Values.undefined(v):
+            return UNDEFINED
+        if isinstance(v, int) and -v > INT64_MAX:
+            if self.compiling and Scan.constant(node):
+                raise RuleError("integer overflow in a constant expression")
+            return UNDEFINED
+        return -v
+
+    def _bnot(self, node: Any) -> Any:
+        v = self.eval(node[1])
+        return UNDEFINED if Values.undefined(v) else ~int(v)
+
+    def _arith(self, node: Any) -> Any:
+        op = node[0]
         left, right = self.eval(node[1]), self.eval(node[2])
         if (
             op in ("<<", ">>")
@@ -1477,6 +1512,19 @@ class Scan:
         raise RuleError(f"an unknown operator {op}")
 
 
+#: Each condition node's evaluator, by its tag; any other tag is an operator (`Scan._arith`).
+Scan.HANDLERS.update({
+    "num": Scan._num, "str": Scan._num, "bool": Scan._num, "regex": Scan._num,
+    "undefined": Scan._undefined, "ext": Scan._ext, "filesize": Scan._filesize,
+    "or": Scan._or, "and": Scan._and, "not": Scan._not, "defined": Scan._defined,
+    "found": Scan._found, "count": Scan._count, "count_in": Scan._count_in, "at": Scan._at,
+    "in": Scan._in, "offset": Scan._offset, "length": Scan._offset, "read": Scan._read_node,
+    "rule": Scan._rule, "rules": Scan._rules, "of": Scan._of, "of_at": Scan._of,
+    "of_in": Scan._of, "for_of": Scan._for_of, "for_in": Scan._for_in,
+    "chain": Scan._chain_node, "matches": Scan._matches, "neg": Scan._neg, "bnot": Scan._bnot,
+})  # fmt: skip
+
+
 class Rules:
     """Compiled rules: `Rules.compile(text)`, then `rules.match(data)`."""
 
@@ -1489,6 +1537,7 @@ class Rules:
         self.rules, self.externals = rules, dict(externals or {})
         self.modules = modules or {}
         self.anchor_index: tuple[Any, list[StringDef]] | None = None
+        self.name_cache: dict[tuple[int, int], list[str]] = {}
 
     def _scan(
         self, data: bytes, deadline: float | None, *, compiling: bool = False, console: Any = None
@@ -1496,6 +1545,7 @@ class Rules:
         scan = Scan(self.rules, data, deadline, self.externals, compiling=compiling)
         scan.factories = self.modules
         scan.index = self._anchors()
+        scan.name_cache = self.name_cache
         if console is not None:
             scan.factories = {**self.modules, "console": lambda d: Builtin.console(d, console)}
         return scan
