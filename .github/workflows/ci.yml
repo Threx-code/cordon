@@ -74,8 +74,8 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
-      - run: ruff check src/ tests/ scripts/ bench/
-      - run: ruff format --check src/ tests/ scripts/
+      - run: ruff check src/ tests/ scripts/ bench/ build_backend/
+      - run: ruff format --check src/ tests/ scripts/ build_backend/
       - run: mypy
 
   rules:

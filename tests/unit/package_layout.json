@@ -630,7 +630,8 @@
   "test_yara_modules.py": "detect/binary",
   "test_yara_pack.py": "detect/binary",
   "test_zip_views_agree.py": "sources",
-  "test_zstd.py": "intel/store"
+  "test_zstd.py": "intel/store",
+  "test_build_backend.py": "repository"
  },
  "shims": {},
  "frozen": {

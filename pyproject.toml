@@ -1,9 +1,10 @@
 [build-system]
-# Floor only. The release installs an exact, hash-pinned toolchain from
-# requirements-build.txt and builds with --no-isolation, so this range is
-# what an ordinary `pip install .` uses rather than what ships a release.
-requires = ["setuptools>=77"]
-build-backend = "setuptools.build_meta"
+# Cordon's own backend (build_backend/cordon_build.py): the standard library alone, so building
+# the wheel, the sdist or an editable install runs no third-party code. The release still drives
+# it through the hash-pinned `build` frontend (requirements-build.txt) with --no-isolation.
+requires = []
+build-backend = "cordon_build"
+backend-path = ["build_backend"]
 
 [project]
 name = "cordon-scanner"
@@ -213,14 +214,17 @@ Security = "https://github.com/Threx-code/cordon/blob/main/SECURITY.md"
 Tutorials = "https://github.com/Threx-code/cordon/tree/main/tutorials"
 Architecture = "https://github.com/Threx-code/cordon/blob/main/docs/01-ARCHITECTURE.md"
 
-[tool.setuptools.dynamic]
-version = { attr = "cordon_scanner.version.__version__" }
+[tool.cordon-build]
+version-file = "src/cordon_scanner/version.py"
+source = "src"
+# Every directory under these is a package, `__init__.py` or not, as setuptools' namespace
+# discovery had it; the wheel carries each one's modules plus the package data below.
+packages = ["cordon_scanner", "cordon_sandbox"]
+# Build inputs, not run-time data: the third-party rules the built-in YARA pack is assembled from.
+# They ship in the sdist with their licence (MANIFEST.in), not in the wheel without it.
+exclude = ["cordon_scanner/rules/yara/upstream"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["cordon_scanner*", "cordon_sandbox*"]
-
-[tool.setuptools.package-data]
+[tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
 "cordon_scanner.rules.builtin" = ["*.yaml"]

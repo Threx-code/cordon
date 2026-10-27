@@ -4,10 +4,11 @@
 # release of any of these cannot execute inside the job that holds the
 # publishing identity. Without it, `pipx run build` and
 # `requires = ["setuptools>=77"]` resolved from PyPI unpinned at release time,
-# which for this project specifically is the whole attack.
+# which for this project specifically is the whole attack. The build backend itself is
+# Cordon's own (build_backend/cordon_build.py), so setuptools is no longer installed.
 #
 # Regenerate with:
-#   pip download --no-deps -d /tmp/bt build setuptools packaging pyproject_hooks
+#   pip download --no-deps -d /tmp/bt build packaging pyproject_hooks
 #   then record each sha256 below.
 
 build==1.2.2.post1 \
@@ -16,5 +17,3 @@ packaging==26.3 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
 pyproject-hooks==1.2.0 \
     --hash=sha256:9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913
-setuptools==84.0.0 \
-    --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670

@@ -65,7 +65,7 @@ class TestPackagePaths:
         declared = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
         globs = [
             PACKAGE.joinpath(*package.split(".")[1:]) / pattern
-            for package, patterns in declared["tool"]["setuptools"]["package-data"].items()
+            for package, patterns in declared["tool"]["cordon-build"]["package-data"].items()
             for pattern in patterns
         ]
         data = [
