@@ -378,8 +378,10 @@ class Blob:
         if self.left < 1:
             return 0
         first = self.cur.data[self.at]
-        if not first & 0x80:
-            return self._take(1)
+        if not first & 0x80:  # the one-byte form (the common case): the byte is already in hand
+            self.at += 1
+            self.left -= 1
+            return first
         if first & 0xC0 == 0x80 and self.left >= 2:
             return self._take(2) & 0x3FFF
         if first & 0xE0 == 0xC0 and self.left >= 4:
@@ -408,13 +410,16 @@ class Blob:
 class Heaps:
     """Readers over the metadata heaps (strings, blobs) once their file offsets are known."""
 
-    __slots__ = ("_cache", "blobs", "cur", "str_size", "strings")
+    __slots__ = ("_blob_cache", "_cache", "blobs", "cur", "str_size", "strings")
 
     def __init__(self, cur: Cursor, strings: int, str_size: int, blobs: int) -> None:
         self.cur, self.strings, self.str_size, self.blobs = cur, strings, str_size, blobs
         self._cache: dict[
             int, bytes | None
         ] = {}  # one string index is read many times across types
+        self._blob_cache: dict[
+            int, tuple[int, int]
+        ] = {}  # likewise one blob index (shared signatures)
 
     def text(self, index: Any) -> bytes | None:
         if not isinstance(index, int):  # an index read past the end of the file is undefined
@@ -435,6 +440,14 @@ class Heaps:
         """(start-of-bytes, length) for a blob-heap entry; (0, 0) when the prefix does not fit."""
         if not isinstance(index, int):
             return 0, 0
+        hit = self._blob_cache.get(index)
+        if hit is not None:
+            return hit
+        result = self._locate_blob(index)
+        self._blob_cache[index] = result
+        return result
+
+    def _locate_blob(self, index: int) -> tuple[int, int]:
         at = self.blobs + index
         cur = self.cur
         if not cur.fits(at, 1):
