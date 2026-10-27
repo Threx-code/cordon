@@ -274,6 +274,52 @@ class Rule:
     condition: Any
     private: bool = False
     is_global: bool = False
+    #: The condition is false whenever none of the rule's strings matched, and calls nothing:
+    #: it needs no evaluating then (`Needs.match`).
+    needs_match: bool = False
+
+
+class Needs:
+    """What a condition needs to be true, read from its tree once."""
+
+    @staticmethod
+    def match(node: Any) -> bool:
+        """Whether `node` is false whenever no string of the rule has a match: a string found,
+        `at` or `in`, or `any`/`all`/`n >= 1` of a set of strings; `and` when either side needs
+        one, `or` when both do. Anything else -- a count, a loop, `none of` -- may be true
+        without a match."""
+        if not isinstance(node, tuple) or not node:
+            return False
+        op = node[0]
+        if op in ("found", "at", "in"):
+            return True
+        if op == "and":
+            return Needs.match(node[1]) or Needs.match(node[2])
+        if op == "or":
+            return Needs.match(node[1]) and Needs.match(node[2])
+        if op in ("of", "of_at", "of_in"):
+            quant, target = node[1], node[2]
+            strings = target == ("them",) or (
+                target[0] == "set" and all(str(i).startswith("$") for i in target[1])
+            )
+            some = (
+                quant in (("quant", "any"), ("quant", "all"))
+                or (quant[0] == "num" and isinstance(quant[1], int) and quant[1] >= 1)
+                or quant[0] == "percent"
+            )
+            return strings and some
+        return False
+
+    @staticmethod
+    def calls(node: Any) -> bool:
+        """Whether evaluating `node` calls a function (which may do something, as `console`)."""
+        if isinstance(node, tuple):
+            if node and node[0] == "call":
+                return True
+            return any(Needs.calls(n) for n in node)
+        if isinstance(node, list):
+            return any(Needs.calls(n) for n in node)
+        return False
 
 
 @dataclass
@@ -407,6 +453,7 @@ class Parser:
             if s.name not in self.referenced:
                 raise RuleError(f"rule {name}: the string {s.name} is never used")
         rule = Rule(name, tags, meta, strings, cond, private, is_global)
+        rule.needs_match = bool(strings) and Needs.match(cond) and not Needs.calls(cond)
         Strings.place_fixed(rule)
         return rule
 
@@ -972,7 +1019,12 @@ class Scan:
                 for s in rule.strings
             }
             found_by_rule[rule.name] = self.found
-            result = Scan.truth(self.eval(rule.condition))
+            if rule.needs_match and not self.compiling and not any(self.found.values()):
+                # the condition cannot hold with nothing matched (the compile-time check, which
+                # refuses what a condition cannot evaluate, still evaluates every one)
+                result = False
+            else:
+                result = Scan.truth(self.eval(rule.condition))
             self.decided[rule.name] = result
             if rule.is_global and not result:
                 global_ok = False
