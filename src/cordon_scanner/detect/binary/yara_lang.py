@@ -35,7 +35,7 @@ import base64
 import binascii
 import math
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -1682,9 +1682,13 @@ class Rules:
         self.rules, self.externals = rules, dict(externals or {})
         self.modules = modules or {}
 
-    def _scan(self, data: bytes, deadline: float | None, *, compiling: bool = False) -> Scan:
+    def _scan(
+        self, data: bytes, deadline: float | None, *, compiling: bool = False, console: Any = None
+    ) -> Scan:
         scan = Scan(self.rules, data, deadline, self.externals, compiling=compiling)
         scan.factories = self.modules
+        if console is not None:
+            scan.factories = {**self.modules, "console": lambda d: Builtin.console(d, console)}
         return scan
 
     @staticmethod
@@ -1717,12 +1721,15 @@ class Rules:
             raise YaraError(f"the rules do not compile: {type(exc).__name__}: {exc}") from exc
         return compiled
 
-    def match(self, data: bytes, timeout: float | None = None) -> list[Match]:
-        """The rules `data` matches; a `YaraError` once `timeout` seconds have passed."""
+    def match(
+        self, data: bytes, timeout: float | None = None, console: Callable[[str], Any] | None = None
+    ) -> list[Match]:
+        """The rules `data` matches; a `YaraError` once `timeout` seconds have passed. `console`
+        receives each `console.log`/`console.hex` message, as yara-python's `console_callback`."""
         import time
 
         deadline = time.monotonic() + timeout if timeout is not None else None
-        return self._scan(data, deadline).run()
+        return self._scan(data, deadline, console=console).run()
 
 
 __all__ = ["UNDEFINED", "Match", "Rules", "YaraError"]

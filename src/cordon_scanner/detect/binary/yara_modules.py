@@ -312,22 +312,40 @@ class Builtin:
         return Struct({"now": Values.fn(((), lambda: int(time.time()), "int"))})
 
     @staticmethod
-    def console(data: bytes) -> Struct:
-        """`console.log` and `console.hex` write nothing here and are true, as YARA's are when no
-        callback prints them: a rule's condition must not depend on where its log goes."""
-        always = Values.fn(
-            (("str",), lambda *_: True, "bool"),
-            (("str", "str"), lambda *_: True, "bool"),
-            (("int",), lambda *_: True, "bool"),
-            (("str", "int"), lambda *_: True, "bool"),
-            (("float",), lambda *_: True, "bool"),
-            (("str", "float"), lambda *_: True, "bool"),
-        )
+    def console(data: bytes, sink: Callable[[str], Any] | None = None) -> Struct:
+        """`console.log` and `console.hex`, as YARA's console module: each returns 1 and hands
+        its message to `sink` (yara-python's `console_callback`) when there is one. A string is
+        logged with each byte outside printable ASCII as `\\xHH`; an integer in decimal; a float
+        as C's `%f`; `hex` as `0x` and lower-case hex of the 64-bit value."""
+
+        def emit(text: str) -> int:
+            if sink is not None:
+                sink(text)
+            return 1
+
+        def shown(s: bytes) -> str:
+            return "".join(chr(b) if 0x20 <= b <= 0x7E else f"\\x{b:02x}" for b in s)
+
+        def prefix(m: bytes) -> str:
+            return m.split(b"\x00", 1)[0].decode("latin-1")
+
         return Struct(
             {
-                "log": always,
+                "log": Values.fn(
+                    (("str",), lambda s: emit(shown(s)), "int"),
+                    (("str", "str"), lambda m, s: emit(prefix(m) + shown(s)), "int"),
+                    (("int",), lambda i: emit(str(Values.int64(i))), "int"),
+                    (("str", "int"), lambda m, i: emit(prefix(m) + str(Values.int64(i))), "int"),
+                    (("float",), lambda f: emit(f"{float(f):f}"), "int"),
+                    (("str", "float"), lambda m, f: emit(prefix(m) + f"{float(f):f}"), "int"),
+                ),
                 "hex": Values.fn(
-                    (("int",), lambda *_: True, "bool"), (("str", "int"), lambda *_: True, "bool")
+                    (("int",), lambda i: emit(f"0x{i & 0xFFFFFFFFFFFFFFFF:x}"), "int"),
+                    (
+                        ("str", "int"),
+                        lambda m, i: emit(prefix(m) + f"0x{i & 0xFFFFFFFFFFFFFFFF:x}"),
+                        "int",
+                    ),
                 ),
             }
         )
