@@ -707,6 +707,7 @@ class Threads:
         #: Whether this run reports each match rather than letting the first end the step.
         self.every = False
         self.flags = (False, False)  # nocase, dotall of the current run
+        self._last: tuple[tuple[bool, ...], Memo] | None = None  # the mode and memo used last
 
     def _new(self, pc: int, counts: tuple[int, ...] = (), skipped: int = -1) -> list[Any]:
         if self.live >= MAX_THREADS:
@@ -801,9 +802,14 @@ class Threads:
 
     def _memo(self, backwards: bool, wide: bool, nocase: bool, dotall: bool, every: bool) -> Memo:
         mode = (backwards, wide, nocase, dotall, every)
+        last = self._last
+        if last is not None and last[0] == mode and len(last[1].states) <= Memo.LIMIT:
+            self.flags, self.every = (nocase, dotall), every
+            return last[1]
         memo = self.memo.get(mode)
         if memo is None or len(memo.states) > Memo.LIMIT:
             memo = self.memo[mode] = Memo()
+        self._last = (mode, memo)
         self.flags = (nocase, dotall)
         self.every = every
         return memo

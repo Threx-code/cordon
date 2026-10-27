@@ -946,16 +946,30 @@ class Scan:
         self.decided: dict[str, bool] = {}
         #: Where each anchor occurs in the data, shared by every string (`Search.find`).
         self.seen: dict[Any, Any] = {}
+        #: The rule set's `rule_scan.AnchorIndex` and the strings it numbers, when there is one.
+        self.index: tuple[Any, list[StringDef]] | None = None
         self.vars: list[dict[str, Any]] = []
+
+    def searched(self) -> set[int] | None:
+        """The strings (by `id`) worth searching this data for: those with an anchor in it, or
+        none (every string) when no index was given."""
+        if self.index is None:
+            return None
+        index, strings = self.index
+        return {id(strings[i]) for i in index.live(self.data, self.seen)}
 
     def run(self) -> list[Match]:
         out: list[Match] = []
         global_ok = True
         found_by_rule: dict[str, dict[str, list[tuple[int, int]]]] = {}
+        searched = self.searched()
         for rule in self.rules:
             self.rule = rule
             self.found = {
-                s.name: Strings.find(s, self.data, self.deadline, self.seen) for s in rule.strings
+                s.name: Strings.find(s, self.data, self.deadline, self.seen)
+                if searched is None or id(s) in searched
+                else []
+                for s in rule.strings
             }
             found_by_rule[rule.name] = self.found
             result = Scan.truth(self.eval(rule.condition))
@@ -1422,15 +1436,26 @@ class Rules:
     ) -> None:
         self.rules, self.externals = rules, dict(externals or {})
         self.modules = modules or {}
+        self.anchor_index: tuple[Any, list[StringDef]] | None = None
 
     def _scan(
         self, data: bytes, deadline: float | None, *, compiling: bool = False, console: Any = None
     ) -> Scan:
         scan = Scan(self.rules, data, deadline, self.externals, compiling=compiling)
         scan.factories = self.modules
+        scan.index = self._anchors()
         if console is not None:
             scan.factories = {**self.modules, "console": lambda d: Builtin.console(d, console)}
         return scan
+
+    def _anchors(self) -> tuple[Any, list[StringDef]]:
+        """One index of every string's anchors, built once for the rule set."""
+        if self.anchor_index is None:
+            from cordon_scanner.detect.binary.rule_scan import AnchorIndex
+
+            strings = [s for r in self.rules for s in r.strings]
+            self.anchor_index = (AnchorIndex([s.search for s in strings]), strings)
+        return self.anchor_index
 
     @staticmethod
     def compile(

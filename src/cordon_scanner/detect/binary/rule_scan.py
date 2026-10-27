@@ -56,7 +56,18 @@ class Part:
         #: Steps the layouts have taken, kept across runs and files (`rule_pattern.Memo`).
         self.memo: dict[tuple[bool, ...], Any] = {}
         self._runners: tuple[Threads, Threads] | None = None
+        self._gates: dict[int, Any] = {}  # entry -> its forward gate (None: none helps)
         self.gap = (0, 0)
+
+    def can_start(self, entry: int, data: bytes, at: int, nocase: bool, dotall: bool) -> bool:
+        """Whether a one-byte-wide forward run from `entry` at `at` can do anything: a check in C
+        (`Threads.prefilter`) that turns away the occurrences whose run would die at once."""
+        gate = self._gates.get(entry, False)
+        if gate is False:
+            gate = self._gates[entry] = self.runners()[0].prefilter(
+                entry, nocase=nocase, dotall=dotall
+            )
+        return gate is None or gate.match(data, at) is not None
 
     def runners(self) -> tuple[Threads, Threads]:
         """The forward and backward runners of this part, made once and kept."""
@@ -348,6 +359,48 @@ class Search:
         return out
 
 
+class AnchorIndex:
+    """Every anchor of a rule set, looked for once per piece of data: which strings have one
+    that occurs there. Only those (and strings with no anchor, which run everywhere) need
+    searching; every other string has no match without being looked at."""
+
+    def __init__(self, searches: list[Search]) -> None:
+        self.exact: dict[bytes, list[int]] = {}
+        self.folded: dict[bytes, list[int]] = {}
+        self.always: set[int] = set()
+        for i, s in enumerate(searches):
+            if s.needles is None:
+                s._index()
+            for needle, _, _ in s.needles or ():
+                self.exact.setdefault(needle, []).append(i)
+            for folded, _, _ in s.folds:
+                self.folded.setdefault(folded, []).append(i)
+            if s.zeros:
+                self.always.add(i)
+
+    def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
+        """The strings with an anchor in `data`; `seen` keeps where each anchor occurs, for
+        `Search.find` to use."""
+        out = set(self.always)
+        for needle, users in self.exact.items():
+            starts = seen.get(needle)
+            if starts is None:
+                starts = seen[needle] = Search.occurrences(data, needle)
+            if starts:
+                out.update(users)
+        if self.folded:
+            lowered = seen.get(("lowered",))
+            if lowered is None:
+                lowered = seen[("lowered",)] = data.lower()
+            for folded, users in self.folded.items():
+                starts = seen.get(("folded", folded))
+                if starts is None:
+                    starts = seen[("folded", folded)] = Search.occurrences(lowered, folded)
+                if starts:
+                    out.update(users)
+        return out
+
+
 class _Hunt:
     """One string searched for in one piece of data."""
 
@@ -432,6 +485,8 @@ class _Hunt:
         for wide in self._widths():
             if f.get("plain"):
                 length = Lanes(part.forward).run(fwd, self.data, offset)
+            elif not wide and not part.can_start(fwd, self.data, offset, self.nocase, self.dotall):
+                length = -1  # every thread dies within the gate's reach having matched nothing
             else:
                 length = part.runners()[0].run(
                     fwd,
