@@ -315,6 +315,44 @@ class Row(Mapping[str, Any]):
         return sum(1 for _ in self)
 
 
+class LazyRecord(Mapping[str, Any]):
+    """A record whose cheap fields are ready and whose costly fields are produced together by ``build`` on
+    the first read of any of them, then cached -- so a rule that reads only a cheap field never pays for the
+    costly ones. The costly field names are declared up front, so membership and iteration never trigger the
+    build; ``build`` must return exactly those names. It is a Mapping so ``Data.conforms`` and the differential
+    read it like any record (materialising the costly fields, off the hot path)."""
+
+    __slots__ = ("_build", "_deferred", "_eager", "_resolved")
+
+    def __init__(self, eager: dict[str, Any], deferred: tuple[str, ...], build: Any) -> None:
+        self._eager = eager
+        self._deferred = deferred  # field names produced lazily by build()
+        self._build = build  # () -> dict providing exactly the deferred names
+        self._resolved: dict[str, Any] | None = None
+
+    def _fields(self) -> dict[str, Any]:
+        if self._resolved is None:
+            self._resolved = self._build()
+        return self._resolved
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self._eager:
+            return self._eager[key]
+        if key in self._deferred:
+            return self._fields()[key]
+        raise KeyError(key)
+
+    def __iter__(self) -> Any:
+        yield from self._eager
+        yield from self._deferred
+
+    def __len__(self) -> int:
+        return len(self._eager) + len(self._deferred)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._eager or key in self._deferred
+
+
 class ImageMap:
     """A PE image's virtual-address space: accepts the header and maps a virtual address (RVA) to a file
     offset through the section table, shared by the PE and .NET readers. Built once from the file."""
@@ -419,6 +457,7 @@ __all__ = [
     "ImageMap",
     "Index",
     "Layout",
+    "LazyRecord",
     "LazySeq",
     "Pad",
     "Row",

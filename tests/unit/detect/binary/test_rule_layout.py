@@ -15,6 +15,7 @@ from cordon_scanner.detect.binary.rule_layout import (
     Cursor,
     Grid,
     Layout,
+    LazyRecord,
     LazySeq,
     Row,
 )
@@ -106,3 +107,34 @@ class TestLazySeqOverRows:
         assert built == []  # nothing decoded by length, iteration or membership
         assert seq[2].get("value") == 2  # the slot's Row is built on first access
         assert built == [2]
+
+
+class TestLazyRecord:
+    """A record whose costly fields are produced together on the first read of any of them."""
+
+    def test_cheap_fields_never_trigger_the_build(self) -> None:
+        built: list[int] = []
+
+        def build() -> dict[str, object]:
+            built.append(1)
+            return {"number_of_methods": 3, "methods": {0: "m"}}
+
+        rec = LazyRecord({"name": b"C", "sealed": 1}, ("number_of_methods", "methods"), build)
+        assert rec["name"] == b"C"
+        assert rec.get("sealed") == 1
+        assert set(rec) == {"name", "sealed", "number_of_methods", "methods"}  # all keys, no build
+        assert "methods" in rec and "absent" not in rec
+        assert len(rec) == 4
+        assert built == []  # reading a cheap field, membership and iteration never build
+
+    def test_a_deferred_field_builds_once(self) -> None:
+        built: list[int] = []
+
+        def build() -> dict[str, object]:
+            built.append(1)
+            return {"number_of_methods": 3, "methods": {0: "m"}}
+
+        rec = LazyRecord({"name": b"C"}, ("number_of_methods", "methods"), build)
+        assert rec["number_of_methods"] == 3
+        assert rec["methods"] == {0: "m"}  # second deferred read: still one build
+        assert built == [1]

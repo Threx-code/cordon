@@ -14,6 +14,8 @@ so a truncated or corrupt assembly yields a defined, partial result rather than 
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from functools import partial
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_layout import (
@@ -26,6 +28,7 @@ from cordon_scanner.detect.binary.rule_layout import (
     ImageMap,
     Index,
     Layout,
+    LazyRecord,
     LazySeq,
     Pad,
 )
@@ -536,10 +539,44 @@ class Tables:
 class Signatures:
     """The element-type decoder (ECMA-335 II.23.2.12): one type from a signature blob, spelled as C#."""
 
-    __slots__ = ("heaps", "resolve_name", "tables")
+    __slots__ = ("_method_cache", "heaps", "resolve_name", "tables")
 
     def __init__(self, heaps: Heaps, tables: Tables, resolve_name: Any) -> None:
         self.heaps, self.tables, self.resolve_name = heaps, tables, resolve_name
+        #: decoded method signatures keyed by (blob start, class/method generic context): methods that
+        #: share a signature blob decode it once.
+        self._method_cache: dict[
+            tuple[int, tuple[bytes, ...], tuple[bytes, ...]],
+            tuple[int, bytes, list[bytes | None]] | None,
+        ] = {}
+
+    def method(
+        self, start: int, length: int, class_gp: list[bytes], method_gp: list[bytes]
+    ) -> tuple[int, bytes, list[bytes | None]] | None:
+        """A method signature decoded once per (blob, generic context): the parameter count, the return
+        type, and each parameter's type. None when the return type does not decode or the count is absurd."""
+        key = (start, tuple(class_gp), tuple(method_gp))
+        if key in self._method_cache:
+            return self._method_cache[key]
+        blob = Blob(self.heaps.cur, start, length)
+        sig_flags = self.heaps.cur.data[blob.at]
+        blob.at += 1
+        blob.left -= 1
+        if sig_flags & 0x10:  # a generic method: the generic-parameter count, which the names skip
+            blob.uvint()
+        n_params = blob.uvint()
+        ret = self.type(blob, class_gp, method_gp, 0)
+        result: tuple[int, bytes, list[bytes | None]] | None
+        if ret is None or n_params > MAX_PARAMS:
+            result = None
+        else:
+            result = (
+                n_params,
+                ret,
+                [self.type(blob, class_gp, method_gp, 0) for _ in range(n_params)],
+            )
+        self._method_cache[key] = result
+        return result
 
     #: element kinds that wrap one inner type in a fixed prefix/suffix (ECMA-335 II.23.2.12)
     WRAP: ClassVar[dict[int, tuple[bytes, bytes]]] = {
@@ -754,6 +791,82 @@ class Names:
         if Spec.is_nested(outer["flags"]) and enc != nested_idx:
             return Spec.qualified(name, Spec.qualified(namespace, self.nesting(enc, depth + 1)))
         return Spec.qualified(name, namespace)
+
+
+class _Method(Mapping[str, Any]):
+    """A method record resolved field by field on access, so a rule that reads one method field (a name, a
+    count) never builds the rest, and especially not the parameter list. The filter that kept the method
+    already decoded its signature and checked its parameters fit; only the parameter dict and the trivial
+    flag fields are deferred to the read. Which fields are present follows from the descriptor alone (a
+    parameter list, and a return type for all but the constructors), so iteration never builds a value."""
+
+    __slots__ = ("_cache", "_d", "_heaps", "_keys", "_tables")
+
+    _BASE: ClassVar[tuple[str, ...]] = (
+        "name", "visibility", "static", "virtual", "final", "abstract",
+        "number_of_generic_parameters", "generic_parameters",
+    )  # fmt: skip
+
+    # descriptor: (name, flags, method_gp, return_type, param_types, param_list, parameter_count)
+    def __init__(self, descriptor: tuple[Any, ...], heaps: Heaps, tables: Tables) -> None:
+        self._d = descriptor
+        self._heaps = heaps
+        self._tables = tables
+        self._cache: dict[str, Any] = {}
+        name, _flags, _gp, _ret, _pt, param_list, _n = descriptor
+        keys: tuple[str, ...] = _Method._BASE
+        if param_list:
+            keys += ("number_of_parameters", "parameters")
+        if name not in (b".ctor", b".cctor"):
+            keys += ("return_type",)
+        self._keys = keys  # the present fields, fixed by the descriptor and built once
+
+    def _value(self, key: str) -> Any:
+        name, flags, method_gp, ret, ptypes, param_list, n_params = self._d
+        if key == "name":
+            return name
+        if key == "visibility":
+            return METHOD_VISIBILITY.get(flags & 7, b"private")
+        if key == "static":
+            return int(bool(flags & 0x10))
+        if key == "virtual":
+            return int(bool(flags & 0x40))
+        if key == "final":
+            return int(bool(flags & 0x20))
+        if key == "abstract":
+            return int(bool(flags & 0x400))
+        if key == "number_of_generic_parameters":
+            return len(method_gp)
+        if key == "generic_parameters":
+            return dict(enumerate(method_gp))
+        if key == "number_of_parameters":
+            return n_params if param_list else None
+        if key == "parameters":
+            return (
+                Dotnet._build_params(self._heaps, self._tables, param_list, n_params, ptypes)
+                if param_list
+                else None
+            )
+        if key == "return_type":
+            return ret if name not in (b".ctor", b".cctor") else None
+        return None
+
+    def __getitem__(self, key: str) -> Any:
+        if key not in self._cache:
+            self._cache[key] = self._value(key)
+        value = self._cache[key]
+        if value is None:
+            raise KeyError(key)
+        return value
+
+    def __iter__(self) -> Any:
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._keys
 
 
 class Dotnet:
@@ -1180,7 +1293,7 @@ class Dotnet:
         gparams: dict[tuple[int, int], list[bytes]],
         typedef: Grid,
         idx: int,
-    ) -> dict[str, Any]:
+    ) -> Mapping[str, Any]:
         row = typedef.row(idx)
         name = heaps.text(row["name"]) if row is not None else None
         if (
@@ -1208,11 +1321,20 @@ class Dotnet:
         c["number_of_generic_parameters"] = len(gp)
         c["generic_parameters"] = dict(enumerate(gp))
         Dotnet._base_types(c, names, tables, row["extends"], idx + 1, gp)
-        c["methods"] = {}  # the reference always presents a methods list, even when it stays empty
-        count = Dotnet._method_count(tables, typedef, idx, row["methods"])
-        if count <= MAX_METHODS:
-            Dotnet._build_methods(c, heaps, tables, names, row["methods"], count, gp, gparams)
-        return c
+        # the reference always presents a methods list; building it (signatures, parameters) is the cost, so
+        # defer it -- a rule reading a class name or a count never parses any method, while a count or a method
+        # read triggers the one filter pass. ``number_of_methods`` is present only where the reference sets it.
+        method_list = row["methods"]
+        count = Dotnet._method_count(tables, typedef, idx, method_list)
+        deferred = (
+            ("number_of_methods", "methods")
+            if method_list and count <= MAX_METHODS
+            else ("methods",)
+        )
+        build = partial(
+            Dotnet._methods_block, heaps, tables, names, method_list, count, gp, gparams
+        )
+        return LazyRecord(c, deferred, build)
 
     @staticmethod
     def _generic_params(tables: Tables, heaps: Heaps) -> dict[tuple[int, int], list[bytes]]:
@@ -1273,8 +1395,7 @@ class Dotnet:
         return total + 1 - method_list if total >= method_list else 0
 
     @staticmethod
-    def _build_methods(
-        c: dict[str, Any],
+    def _methods_block(
         heaps: Heaps,
         tables: Tables,
         names: Names,
@@ -1282,11 +1403,11 @@ class Dotnet:
         count: int,
         class_gp: list[bytes],
         gparams: dict[tuple[int, int], list[bytes]],
-    ) -> None:
-        if (
-            not method_list
-        ):  # a class with no method list reports no method count, as the reference does
-            return
+    ) -> dict[str, Any]:
+        """The class's methods and their post-filter count, built on first access (see _decode_class). The
+        reference reports an empty methods list and no count where the method list is absent or too long."""
+        if not method_list or count > MAX_METHODS:
+            return {"methods": {}}
         grid = tables.grid("methoddef")
         methods: dict[int, Any] = {}
         kept = 0
@@ -1304,58 +1425,45 @@ class Dotnet:
             start, length = heaps.blob_at(row["sig"])
             if not start or length < 3:
                 continue
-            blob = Blob(heaps.cur, start, length)
-            sig_flags = heaps.cur.data[blob.at]
-            blob.at += 1
-            blob.left -= 1
-            if sig_flags & 0x10:
-                blob.uvint()
-            n_params = blob.uvint()
-            ret = names.signatures.type(blob, class_gp, method_gp, 0)
-            if ret is None or n_params > MAX_PARAMS:
+            sig = names.signatures.method(start, length, class_gp, method_gp)
+            if sig is None:  # return type did not decode, or an absurd parameter count
                 continue
-            params = Dotnet._build_params(
-                heaps, tables, names, row["params"], n_params, blob, class_gp, method_gp
-            )
-            if params is None:
-                continue
-            flags = row["flags"]
-            m: dict[str, Any] = {
-                "name": name,
-                "visibility": METHOD_VISIBILITY.get(flags & 7, b"private"),
-                "static": int(bool(flags & 0x10)),
-                "virtual": int(bool(flags & 0x40)),
-                "final": int(bool(flags & 0x20)),
-                "abstract": int(bool(flags & 0x400)),
-                "number_of_generic_parameters": len(method_gp),
-                "generic_parameters": dict(enumerate(method_gp)),
-            }
-            if isinstance(params, dict):
-                m["number_of_parameters"] = n_params
-                m["parameters"] = params
-            if name not in (b".ctor", b".cctor"):
-                m["return_type"] = ret
-            methods[kept] = m
+            n_params, ret, ptypes = sig
+            if not Dotnet._params_ok(tables, row["params"], n_params, ptypes):
+                continue  # a parameter type did not decode, or a parameter row does not fit: drop the method
+            # the method is kept; its fields (and especially its parameter list) are built only when read
+            descriptor = (name, row["flags"], method_gp, ret, ptypes, row["params"], n_params)
+            methods[kept] = _Method(descriptor, heaps, tables)
             kept += 1
-        c["methods"] = methods
-        c["number_of_methods"] = kept
+        return {"methods": methods, "number_of_methods": kept}
+
+    @staticmethod
+    def _params_ok(tables: Tables, param_list: int, count: int, ptypes: list[bytes | None]) -> bool:
+        """Whether every parameter the signature declares is representable (its type decoded, and any row it
+        has within the table fits) -- the drop test ``_build_params`` applies, without building a dict."""
+        if not param_list:
+            return True
+        grid = tables.grid("param")
+        for off in range(count):
+            if ptypes[off] is None:
+                return False
+            idx = param_list - 1 + off
+            if grid is not None and 0 <= idx < grid.count and grid.row(idx) is None:
+                return False
+        return True
 
     @staticmethod
     def _build_params(
-        heaps: Heaps,
-        tables: Tables,
-        names: Names,
-        param_list: int,
-        count: int,
-        blob: Blob,
-        class_gp: list[bytes],
-        method_gp: list[bytes],
+        heaps: Heaps, tables: Tables, param_list: int, count: int, ptypes: list[bytes | None]
     ) -> Any:
         if not param_list:
             return True
         grid = tables.grid("param")
         out: dict[int, Any] = {}
         for off in range(count):
+            kind = ptypes[off]  # the type was decoded with the method signature (cached)
+            if kind is None:
+                return None
             idx = param_list - 1 + off
             if grid is not None and 0 <= idx < grid.count:
                 # the row is within the table: it must fit, or the reference drops the whole method
@@ -1365,9 +1473,6 @@ class Dotnet:
                 name = heaps.text(prow["name"])
             else:  # no row for this parameter: a synthetic name, as the reference uses
                 name = b"P_%d" % off
-            kind = names.signatures.type(blob, class_gp, method_gp, 0)
-            if kind is None:
-                return None
             entry: dict[str, Any] = {"type": kind}
             if name is not None:
                 entry["name"] = name
