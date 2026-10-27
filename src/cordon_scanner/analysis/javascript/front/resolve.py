@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.javascript.front.parser import Parser
 from cordon_scanner.analysis.javascript.front.syntax import Node, Syntax
+from cordon_scanner.analysis.shared.content_memo import ContentMemo
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -113,7 +114,15 @@ class CallResolver:
         return root, tuple(rest)
 
     def resolve_calls(self, source: str) -> list[AstCall]:
-        return [call for _, call in self.resolve_parts([(0, 0, 0, source)])]
+        """The file's calls, worked out once per process for each distinct text
+        (`analysis.shared.content_memo`): they depend on the text and on `typescript` alone."""
+        return CallResolver.MEMO.get(
+            ("calls", self.typescript),
+            source,
+            lambda: [call for _, call in self.resolve_parts([(0, 0, 0, source)])],
+        )
+
+    MEMO: ClassVar[ContentMemo] = ContentMemo()
 
     def resolve_parts(
         self, parts: Iterable[tuple[int, int, int, Any]]

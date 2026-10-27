@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.javascript.js_eval import JsEval, Tok
+from cordon_scanner.analysis.shared.content_memo import ContentMemo
 
 #: Files above this are not analysed: bundles of that size are third-party code concatenated, and
 #: the analysis is linear but not free.
@@ -381,6 +382,13 @@ class JsFlow:
     def flows(cls, text: str) -> list[Flow]:
         if len(text) > MAX_BYTES:
             return []
+        return JsFlow.MEMO.get("flows", text, lambda: JsFlow._flows(text))
+
+    #: Each distinct text's flows, worked out once per process (`analysis.shared.content_memo`).
+    MEMO: ClassVar[ContentMemo] = ContentMemo()
+
+    @staticmethod
+    def _flows(text: str) -> list[Flow]:
         try:
             return _Analysis(text).run()
         except RecursionError:
