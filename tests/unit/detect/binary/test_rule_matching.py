@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
+from cordon_scanner.detect.binary.rule_lang import RuleError, Rules
 from cordon_scanner.detect.binary.rule_pattern import Memo, PatternError, RegexReader
-from cordon_scanner.detect.binary.yara_lang import Rules, YaraError
 
 DOTS = b"."
 
@@ -94,7 +94,7 @@ class TestPatternsRefused:
         ],
     )
     def test_refused(self, spec: str) -> None:
-        with pytest.raises(YaraError):
+        with pytest.raises(RuleError):
             Rules.compile("rule r { strings: $a = " + spec + " condition: $a }")
 
     def test_the_reader_names_the_problem(self) -> None:

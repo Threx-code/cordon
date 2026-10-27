@@ -1,4 +1,4 @@
-"""G12: import tables read from ELF, PE and Mach-O, the verdicts drawn from them, and YARA.
+"""G12: import tables read from ELF, PE and Mach-O, the verdicts drawn from them, and rule files.
 
 The binaries are built here, byte by byte, with exactly the imports each test needs: a minimal
 but structurally valid ELF64 (dynsym, dynstr, dynamic), PE32 (one section holding the import
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import struct
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -370,8 +371,8 @@ class TestTheDetectorReportsThem:
         ]
 
 
-class YaraFixtures:
-    """Real rules, compiled and matched by Cordon's own engine (`detect/binary/yara_lang`)."""
+class RuleFileFixtures:
+    """Real rules, compiled and matched by Cordon's own engine (`detect/binary/rule_lang`)."""
 
     @pytest.fixture
     def scan(self, tmp_path):
@@ -382,7 +383,7 @@ class YaraFixtures:
             target.mkdir(exist_ok=True)
             for name, data in (files or {"payload.bin": b"\x00EVIL\x00"}).items():
                 (target / name).write_bytes(data)
-            config = Config.default().with_overrides(use_cache=False, yara=str(rules))
+            config = Config.default().with_overrides(use_cache=False, rule_file=str(rules))
             return Scanner(config).scan(target)
 
         return run
@@ -396,36 +397,36 @@ class YaraFixtures:
         )
 
 
-class TestYara(YaraFixtures):
+class TestRuleFile(RuleFileFixtures):
     def test_a_match_is_reported_with_the_rule_name(self, scan) -> None:
         result = scan(self.rule("Trojan_Foo", 'description = "loader stub"'))
-        found = [f for f in result.findings if f.rule_id == "SUSPECT.YARA.MATCH.001"]
+        found = [f for f in result.findings if f.rule_id == "SUSPECT.RULEFILE.MATCH.001"]
         assert found and "Trojan_Foo" in found[0].message and found[0].severity.name == "HIGH"
         assert "loader stub" in found[0].message
-        assert any(f.rule_id == "OPERATIONAL.YARA.STATUS" for f in result.findings)
+        assert any(f.rule_id == "OPERATIONAL.RULEFILE.STATUS" for f in result.findings)
 
     def test_a_file_the_rule_does_not_match_is_not_reported(self, scan) -> None:
         result = scan(self.rule("Trojan_Foo"), {"clean.bin": b"nothing here"})
-        assert not [f for f in result.findings if f.rule_id == "SUSPECT.YARA.MATCH.001"]
+        assert not [f for f in result.findings if f.rule_id == "SUSPECT.RULEFILE.MATCH.001"]
 
     def test_a_rule_declared_malicious_is_malware(self, scan) -> None:
         result = scan(self.rule("Ransom_X", 'category = "malicious"'))
         assert any(
-            f.rule_id == "MALWARE.YARA.MATCH.001" and f.severity.name == "CRITICAL"
+            f.rule_id == "MALWARE.RULEFILE.MATCH.001" and f.severity.name == "CRITICAL"
             for f in result.findings
         )
 
     def test_the_rules_severity_meta_is_honoured(self, scan) -> None:
         result = scan(self.rule("Hint", 'severity = "low"'))
         assert any(
-            f.rule_id == "SUSPECT.YARA.MATCH.001" and f.severity.name == "LOW"
+            f.rule_id == "SUSPECT.RULEFILE.MATCH.001" and f.severity.name == "LOW"
             for f in result.findings
         )
 
     def test_includes_are_refused(self, scan) -> None:
         result = scan('include "/etc/other.yar"\n' + self.rule("x"))
         assert any(
-            f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE" and "include" in f.message
+            f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE" and "include" in f.message
             for f in result.findings
         )
 
@@ -433,41 +434,117 @@ class TestYara(YaraFixtures):
         self, scan
     ) -> None:
         result = scan('import "cuckoo"\nrule x { condition: true }\n')
-        note = [f for f in result.findings if f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE"]
+        note = [f for f in result.findings if f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE"]
         assert note and "cuckoo" in note[0].message and not result.complete
 
     def test_rules_that_do_not_compile_are_reported(self, scan) -> None:
         result = scan("rule broken { condition: }\n")
         assert any(
-            f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE" and "could not be loaded" in f.message
+            f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE" and "could not be loaded" in f.message
             for f in result.findings
         )
 
     def test_an_engine_error_on_one_file_does_not_end_the_scan(self, scan, monkeypatch) -> None:
-        from cordon_scanner.detect.binary import yara_lang
+        from cordon_scanner.detect.binary import rule_lang
 
-        original = yara_lang.Rules.match
+        original = rule_lang.Rules.match
 
         def match(self, data, timeout=None):
             if b"EVIL" in data:
-                raise yara_lang.YaraError("matching took longer than the time allowed")
+                raise rule_lang.RuleError("matching took longer than the time allowed")
             return original(self, data, timeout)
 
-        monkeypatch.setattr(yara_lang.Rules, "match", match)
+        monkeypatch.setattr(rule_lang.Rules, "match", match)
         result = scan(self.rule("x"), {"a.bin": b"EVIL", "b.txt": b"hello"})
-        assert any(f.rule_id == "OPERATIONAL.YARA.UNAVAILABLE" for f in result.findings)
+        assert any(f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE" for f in result.findings)
 
-    def test_yara_never_runs_unless_the_operator_asks(self, tmp_path) -> None:
+    def test_a_rule_file_never_runs_unless_the_operator_asks(self, tmp_path) -> None:
         (tmp_path / "x.bin").write_bytes(b"EVIL")
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
-        assert not any("YARA" in f.rule_id for f in result.findings)
+        assert not any("RULEFILE" in f.rule_id for f in result.findings)
 
     def test_a_repository_config_cannot_name_the_rules(self, tmp_path) -> None:
         (tmp_path / "cordon.yaml").write_text(
-            "version: 1\nyara: /tmp/rules.yar\n", encoding="utf-8"
+            "version: 1\nrule_file: /tmp/rules.yar\n", encoding="utf-8"
         )
         from cordon_scanner.foundation.config import ConfigResolver
         from cordon_scanner.foundation.errors import ConfigError
 
         with pytest.raises(ConfigError):
             ConfigResolver.resolve(root=Path(tmp_path))
+
+
+class TestRenamedNames:
+    """The names this detector had before 0.7.0 keep working for a release."""
+
+    def test_the_old_flag_still_names_the_rule_file_and_warns(self, tmp_path, capsys) -> None:
+        from cordon_scanner.cli.main import CommandLine
+
+        rules = tmp_path / "rules.yar"
+        rules.write_text('rule x { strings: $e = "EVIL" condition: $e }\n', encoding="utf-8")
+        target = tmp_path / "repo"
+        target.mkdir()
+        (target / "a.bin").write_bytes(b"EVIL")
+        out = tmp_path / "out.json"
+        CommandLine.main(
+            ["scan", str(target), "--yara", str(rules), "--no-cache", "-q", "--format", "json",
+             "--output", str(out), "--progress", "never"]
+        )  # fmt: skip
+        assert "--yara and CORDON_YARA are deprecated" in capsys.readouterr().err
+        assert "SUSPECT.RULEFILE.MATCH.001" in out.read_text(encoding="utf-8")
+
+    def test_an_old_rule_id_still_suppresses_its_finding(self) -> None:
+        from cordon_scanner.decide.policy import SuppressionMatcher
+        from cordon_scanner.foundation.models import Suppression
+
+        finding = TestRenamedNames.finding("SUSPECT.RULEFILE.MATCH.001")
+        old = Suppression(
+            rule="SUSPECT.YARA.MATCH.001", path="a.bin", justification="x" * 40,
+            expires="2099-01-01",
+        )  # fmt: skip
+        assert SuppressionMatcher._matches(finding, old)
+
+    def test_a_renamed_rule_keeps_its_fingerprints(self) -> None:
+        new = TestRenamedNames.finding("SUSPECT.RULEFILE.MATCH.001")
+        old = TestRenamedNames.finding("SUSPECT.YARA.MATCH.001")
+        assert new.fingerprint == old.fingerprint
+
+    def test_an_old_detector_id_in_a_config_names_the_new_detector(self, tmp_path) -> None:
+        from cordon_scanner.foundation.config import ConfigResolver
+
+        (tmp_path / "cordon.yaml").write_text(
+            "version: 1\nscan:\n  detectors:\n    yara: false\n", encoding="utf-8"
+        )
+        config = ConfigResolver.resolve(root=Path(tmp_path))
+        assert config.detectors.get("rule-file") is False and "yara" not in config.detectors
+
+    @staticmethod
+    def finding(rule_id: str) -> Any:
+        from cordon_scanner.foundation.models import (
+            Category,
+            Confidence,
+            Evidence,
+            EvidenceKind,
+            Explanation,
+            Finding,
+            Location,
+            RedactionMode,
+            RiskScore,
+            Severity,
+        )
+
+        return Finding(
+            rule_id=rule_id,
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            message="m",
+            location=Location(path="a.bin"),
+            evidence=Evidence(
+                kind=EvidenceKind.HASH, match_hash="ab", redaction=RedactionMode.HASH_ONLY
+            ),
+            risk=RiskScore(value=50, base=50, confidence_multiplier=1.0),
+            remediation="r",
+            explanation=Explanation(summary="s", matched_rule=rule_id),
+            detector="rule-file",
+        )

@@ -42,7 +42,7 @@ OVERLAP = 64 * 1024
 """How far each window reaches back into the one before: a construct that straddles a cut -- a
 command and the prompt it carries, a key split across two lines -- is whole in one of them."""
 
-WINDOW_DETECTORS = frozenset({"capability", "secrets", "obfuscation", "agents", "yara"})
+WINDOW_DETECTORS = frozenset({"capability", "secrets", "obfuscation", "agents", "rule-file"})
 """Detectors that judge the text in front of them, and so read a window as they read a file."""
 
 

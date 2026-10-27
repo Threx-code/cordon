@@ -1,32 +1,32 @@
-"""The YARA rule language, compiled and matched by the project's own code.
+"""cordon-rule's language: rule files compiled and matched by Cordon's own code.
 
-`--yara` matches every file against a rules file: Cordon's own pack, or an operator's. A native
-library reading attacker-supplied bytes is the attack surface this project refuses, so the
-language is implemented here, from the YARA documentation, and held to YARA's own behaviour by its
-test suite's cases and by a differential over the measured corpus
-(`tests/unit/detect/binary/test_yara_lang.py`).
+`--rule-file` matches every file against a rule file: Cordon's own pack, or an operator's. A native
+library reading attacker-supplied bytes is the attack surface this project refuses, so the language
+is implemented here and held to its reference behaviour by a conformance suite of cases
+(`tests/unit/detect/binary/test_rule_lang.py`) and by differentials over generated rules and the
+measured corpus.
 
 What is read:
 
 - **Rules**: `global` and `private` rules, tags, `meta`, `strings`, `condition`, rule references
-  (including `prefix*` sets of rules), `include` refused unless asked (it is not, by `YaraEngine`).
+  (including `prefix*` sets of rules); `include` is refused.
 - **Strings**: text with the modifiers `nocase`, `wide`, `ascii`, `fullword`, `private`,
   `xor[(lo-hi)]`, `base64[("alphabet")]` and `base64wide`; hex strings with `??`, nibble
   wildcards, `~` negation, jumps `[n]`, `[n-m]`, `[n-]`, `[-]` and alternatives; regular
-  expressions with `i` and `s`, and the text modifiers that apply to them.
+  expressions with `i` and `s`, and the text modifiers that apply to them (`rule_scan`).
 - **Conditions**: `and`/`or`/`not`, comparisons, the arithmetic and bitwise operators, `$a`,
   `#a`, `#a in (lo..hi)`, `@a[i]`, `!a[i]`, `$a at x`, `$a in (lo..hi)`, `filesize`, the integer
   readers (`uint32be(x)` and the rest), `true`/`false`, string sets (`them`, `($a, $b*)`),
   quantifiers (`any`, `all`, `none`, a number, a percentage) `of` a set, with `at`/`in`, and both
   `for` loops; `defined`; the string operators `contains`, `icontains`, `startswith`,
   `istartswith`, `endswith`, `iendswith`, `iequals`, `matches`.
-- **Undefined values** propagate as YARA's do: an out-of-range read or a missing match is
-  undefined, undefined in arithmetic stays undefined, and is false as a condition.
-- **Modules**: `math` and `hash`. A rule that imports any other module is refused when the rules
-  load, by name -- never compiled to something that silently cannot match.
+- **Undefined values** propagate: an out-of-range read or a missing match is undefined,
+  undefined in arithmetic stays undefined, and is false as a condition.
+- **Modules**: `math`, `hash`, `string`, `console` and `time` (`rule_builtin`); `pe`, `elf` and
+  `dotnet` for executables. A rule that imports any other module is refused when the rules load.
 
-Matching is bounded: at most `MAX_MATCHES` matches per string, as YARA bounds them, and regular
-expressions are checked by the engine's own pattern validator before use.
+Matching is bounded: at most `MAX_MATCHES` matches per string, every run of a pattern within
+`rule_pattern.REACH` bytes of where it starts, and a deadline checked as it goes.
 """
 
 from __future__ import annotations
@@ -50,14 +50,14 @@ from cordon_scanner.detect.binary.rule_values import (
 )
 
 
-class YaraError(ValueError):
+class RuleError(ValueError):
     """The rules do not compile."""
 
 
 INT64_MAX, INT64_MIN = 2**63 - 1, -(2**63)
 MAX_MATCHES = 1_000_000
-#: The longest match a regular expression or a hex string may make from one start, as YARA's own
-#: scan limit bounds it: no file can make one start cost more than this.
+#: The longest match a regular expression or a hex string may make from one start: no file can
+#: make one start cost more than this.
 SCAN_LIMIT = 4096
 #: Matching walks the file in windows of this size, checking the deadline between them.
 WINDOW = 1 << 16
@@ -79,17 +79,42 @@ class Lexer:
         "+", "-", "*", "\\", "%", "&", "|", "^", "~", "<", ">", ".",
     )  # fmt: skip
 
-    #: A hex string: hex digits, its punctuation, white space and comments, between braces.
-    HEX: ClassVar[re.Pattern[str]] = re.compile(
-        r"\{(?:(?:[0-9a-fA-F]|[ \-|~?\[\]()\n\r\t]|/\*(?:/|\**[^*/])*\*+/)+|//[^\n]*\n)+\}"
-    )
+    #: What a hex string holds between its braces, besides comments.
+    HEX_CHARS: ClassVar[frozenset[str]] = frozenset("0123456789abcdefABCDEF -|~?[]()\n\r\t")
 
     def __init__(self, text: str) -> None:
         self.text, self.pos, self.line = text, 0, 1
         self.hex_next = False
 
-    def error(self, what: str) -> YaraError:
-        return YaraError(f"line {self.line}: {what}")
+    @staticmethod
+    def _hex_end(t: str, start: int) -> int | None:
+        """Where a hex string opening at `start` ends (just past its `}`), or None when the brace
+        opens something else: hex digits, the hex punctuation, white space, `/* */` comments and
+        `//` comments ended by a newline, at least one of them, up to the first `}` outside a
+        comment."""
+        i, n, chars = start + 1, len(t), Lexer.HEX_CHARS
+        while i < n:
+            c = t[i]
+            if c == "}":
+                return i + 1 if i > start + 1 else None
+            if c in chars:
+                i += 1
+            elif t.startswith("/*", i):
+                close = t.find("*/", i + 2)
+                if close < 0:
+                    return None
+                i = close + 2
+            elif t.startswith("//", i):
+                close = t.find("\n", i + 2)
+                if close < 0:
+                    return None
+                i = close + 1
+            else:
+                return None
+        return None
+
+    def error(self, what: str) -> RuleError:
+        return RuleError(f"line {self.line}: {what}")
 
     def _skip(self) -> None:
         t, n = self.text, len(self.text)
@@ -128,13 +153,13 @@ class Lexer:
         if c == '"':
             return Tok("string", self._string(), line)
         if c == "{":
-            m = Lexer.HEX.match(t, start)
-            if m is not None:
-                body = m.group()[1:-1]
+            end = Lexer._hex_end(t, start)
+            if end is not None:
+                body = t[start + 1 : end - 1]
                 self.line += body.count("\n")
-                self.pos = m.end()
+                self.pos = end
                 return Tok("hex", body, line)
-        if c == "/":  # comments were skipped; YARA divides with `\\`, so `/` opens a regex
+        if c == "/":  # comments were skipped; the language divides with `\\`, so `/` opens a regex
             return Tok("regex", self._regex(), line)
         nxt = t[start + 1] if start + 1 < len(t) else ""
         if c in "$#@" or (c == "!" and nxt != "="):
@@ -253,7 +278,7 @@ class Rule:
 
 @dataclass
 class Match:
-    """What a matching rule reports, in the shape yara-python's match object has."""
+    """What a matching rule reports: its name, tags, meta, and each string instance."""
 
     rule: str
     tags: list[str]
@@ -281,7 +306,7 @@ class Parser:
         self.strings: list[StringDef] = []
         self.referenced: set[str] = set()
         #: Rule-name patterns (`a*`) conditions have used: a rule defined later that matches one
-        #: is refused, as YARA refuses it.
+        #: is refused.
         self.rule_patterns: list[str] = []
         self.current = ""
 
@@ -300,14 +325,14 @@ class Parser:
 
     def expect(self, value: str) -> Tok:
         if not self.at(value):
-            raise YaraError(f"line {self.tok.line}: expected {value!r}, found {self.tok.value!r}")
+            raise RuleError(f"line {self.tok.line}: expected {value!r}, found {self.tok.value!r}")
         tok = self.tok
         self.i += 1
         return tok
 
     def name(self) -> str:
         if self.tok.kind != "name":
-            raise YaraError(f"line {self.tok.line}: expected a name, found {self.tok.value!r}")
+            raise RuleError(f"line {self.tok.line}: expected a name, found {self.tok.value!r}")
         self.i += 1
         return str(self.toks[self.i - 1].value)
 
@@ -316,19 +341,19 @@ class Parser:
             if self.eat("import"):
                 module = self.tok.value
                 if self.tok.kind != "string":
-                    raise YaraError(f"line {self.tok.line}: import needs a module name")
+                    raise RuleError(f"line {self.tok.line}: import needs a module name")
                 self.i += 1
                 name = module.decode()
                 if name not in self.modules:
-                    raise YaraError(f"the {name!r} module is not supported by Cordon's YARA engine")
+                    raise RuleError(f"the {name!r} module is not one cordon-rule provides")
                 self.imports.add(name)
                 continue
             if self.at("include"):
-                raise YaraError(f"line {self.tok.line}: include is not allowed")
+                raise RuleError(f"line {self.tok.line}: include is not allowed")
             self.rules.append(self.rule())
         names = [r.name for r in self.rules]
         if len(set(names)) != len(names):
-            raise YaraError("a rule name defined twice")
+            raise RuleError("a rule name defined twice")
         return self.rules
 
     def rule(self) -> Rule:
@@ -342,13 +367,13 @@ class Parser:
         name = self.name()
         self.current = name
         if any(name.startswith(p) for p in self.rule_patterns):
-            raise YaraError(f"rule {name} matches a rule set an earlier rule already used")
+            raise RuleError(f"rule {name} matches a rule set an earlier rule already used")
         tags: list[str] = []
         if self.eat(":"):
             while self.tok.kind == "name" and not self.at("{"):
                 tag = self.name()
                 if tag in tags:
-                    raise YaraError(f"rule {name}: the tag {tag} twice")
+                    raise RuleError(f"rule {name}: the tag {tag} twice")
                 tags.append(tag)
         self.expect("{")
         meta: dict[str, Any] = {}
@@ -372,7 +397,7 @@ class Parser:
                 strings.append(self._string_def(sname))
             seen = [s.name for s in strings]
             if len(set(seen)) != len(seen):
-                raise YaraError(f"rule {name}: a string defined twice")
+                raise RuleError(f"rule {name}: a string defined twice")
         self.strings, self.referenced = strings, set()
         self.expect("condition")
         self.expect(":")
@@ -380,7 +405,7 @@ class Parser:
         self.expect("}")
         for s in strings:
             if s.name not in self.referenced:
-                raise YaraError(f"rule {name}: the string {s.name} is never used")
+                raise RuleError(f"rule {name}: the string {s.name} is never used")
         rule = Rule(name, tags, meta, strings, cond, private, is_global)
         Strings.place_fixed(rule)
         return rule
@@ -398,7 +423,7 @@ class Parser:
         if self.at("true") or self.at("false"):
             self.i += 1
             return tok.value == "true"
-        raise YaraError(f"line {tok.line}: a meta value must be a string, number or boolean")
+        raise RuleError(f"line {tok.line}: a meta value must be a string, number or boolean")
 
     def _int(self) -> bool:
         if self.tok.kind == "int":
@@ -415,7 +440,7 @@ class Parser:
         elif tok.kind == "regex":
             kind, value = "regex", tok.value
         else:
-            raise YaraError(f"line {tok.line}: a string definition must be text, hex or a regex")
+            raise RuleError(f"line {tok.line}: a string definition must be text, hex or a regex")
         self.i += 1
         mods: dict[str, Any] = {}
         while self.tok.kind == "name" and self.tok.value in (
@@ -432,7 +457,7 @@ class Parser:
                     self.i += 1
                 self.expect(")")
                 if not 0 <= lo <= hi <= 255:
-                    raise YaraError(f"string {name}: an xor range out of 0-255")
+                    raise RuleError(f"string {name}: an xor range out of 0-255")
                 arg = (lo, hi)
             elif mod == "xor":
                 arg = (0, 255)
@@ -441,14 +466,14 @@ class Parser:
                 self.i += 1
                 self.expect(")")
                 if not isinstance(alphabet, bytes) or len(alphabet) != 64:
-                    raise YaraError(f"string {name}: a base64 alphabet must be 64 bytes")
+                    raise RuleError(f"string {name}: a base64 alphabet must be 64 bytes")
                 arg = alphabet
             if mod in mods:
-                raise YaraError(f"string {name}: the modifier {mod} twice")
+                raise RuleError(f"string {name}: the modifier {mod} twice")
             mods[mod] = arg
         b64 = [mods.get(m) for m in ("base64", "base64wide") if m in mods]
         if len(b64) == 2 and b64[0] != b64[1]:
-            raise YaraError(f"string {name}: base64 and base64wide with different alphabets")
+            raise RuleError(f"string {name}: base64 and base64wide with different alphabets")
         Strings.check(name, kind, mods)
         s = StringDef(name, kind, value, mods)
         Strings.compile(s)
@@ -488,7 +513,7 @@ class Parser:
             if op == "matches":
                 tok = self.tok
                 if tok.kind != "regex":
-                    raise YaraError(f"line {tok.line}: matches needs a regular expression")
+                    raise RuleError(f"line {tok.line}: matches needs a regular expression")
                 self.i += 1
                 left = ("matches", left, Strings.matcher(tok.value[0], tok.value[1]))
                 continue
@@ -533,7 +558,7 @@ class Parser:
     def _unary(self) -> Any:
         if self.eat("-"):
             if self.tok.kind in ("int", "float") and self.toks[self.i + 1].value == "of":
-                raise YaraError(f"line {self.tok.line}: a negative quantifier")
+                raise RuleError(f"line {self.tok.line}: a negative quantifier")
             return ("neg", self._unary())
         if self.eat("~"):
             return ("bnot", self._unary())
@@ -602,7 +627,7 @@ class Parser:
             if self.at("of"):
                 return self._of(("rule", v))  # a loop variable or rule as the quantity
             return ("rule", v)
-        raise YaraError(f"line {tok.line}: an unexpected {tok.value!r} in a condition")
+        raise RuleError(f"line {tok.line}: an unexpected {tok.value!r} in a condition")
 
     def _ops(self) -> list[Any]:
         """`.field`, `[index]` and `(arguments)`, as many as follow."""
@@ -635,7 +660,7 @@ class Parser:
         sigil, name = tok.value[0], "$" + tok.value[1:]
         if name != "$":
             if name not in {s.name for s in self.strings}:
-                raise YaraError(f"line {tok.line}: an undefined string {name}")
+                raise RuleError(f"line {tok.line}: an undefined string {name}")
             self.referenced.add(name)
         if sigil == "$":
             if self.eat("at"):
@@ -660,15 +685,15 @@ class Parser:
         hi = self.expr()
         self.expect(")")
         if (lo[0] == "neg" and lo[1][0] == "num") or (lo[0] == "num" and lo[1] < 0):
-            raise YaraError("a range whose lower bound is negative")
+            raise RuleError("a range whose lower bound is negative")
         if lo[0] == "num" and hi[0] == "num" and lo[1] > hi[1]:
-            raise YaraError("a range whose lower bound is above its upper")
+            raise RuleError("a range whose lower bound is above its upper")
         return (lo, hi)
 
     def _set(self) -> Any:
         if self.eat("them"):
             if not self.strings:
-                raise YaraError(f"line {self.tok.line}: 'them' in a rule with no strings")
+                raise RuleError(f"line {self.tok.line}: 'them' in a rule with no strings")
             self.referenced.update(s.name for s in self.strings)
             return ("them",)
         self.expect("(")
@@ -688,7 +713,7 @@ class Parser:
             else:
                 hits = [s.name for s in self.strings if s.name == item]
             if not hits:
-                raise YaraError(f"line {tok.line}: {item} names no string of the rule")
+                raise RuleError(f"line {tok.line}: {item} names no string of the rule")
             self.referenced.update(hits)
             return item
         if tok.kind == "name":
@@ -699,22 +724,22 @@ class Parser:
                 r for r in defined if (r.startswith(item[:-1]) if item.endswith("*") else r == item)
             ]
             if not hits:
-                raise YaraError(f"line {tok.line}: {item} names no rule defined before it")
+                raise RuleError(f"line {tok.line}: {item} names no rule defined before it")
             if item.endswith("*"):
                 self.rule_patterns.append(item[:-1])
             return str(item)
-        raise YaraError(f"line {tok.line}: a string set holds string or rule names")
+        raise RuleError(f"line {tok.line}: a string set holds string or rule names")
 
     @staticmethod
     def _quantity(quant: Any) -> Any:
-        """A constant quantifier checked as YARA checks it: a whole number of at least 0, or a
+        """A constant quantifier checked when the rules compile: a whole number of at least 0, or a
         percentage from 1 to 100."""
         if quant[0] == "num" and (not isinstance(quant[1], int) or quant[1] < 0):
-            raise YaraError(f"a quantifier must be a whole number of at least 0, not {quant[1]}")
+            raise RuleError(f"a quantifier must be a whole number of at least 0, not {quant[1]}")
         if quant[0] == "neg" and quant[1][0] == "num":
-            raise YaraError("a negative quantifier")
+            raise RuleError("a negative quantifier")
         if quant[0] == "percent" and quant[1][0] == "num" and not 1 <= quant[1][1] <= 100:
-            raise YaraError(f"a percentage must be from 1 to 100, not {quant[1][1]}")
+            raise RuleError(f"a percentage must be from 1 to 100, not {quant[1][1]}")
         return quant
 
     def _of(self, quant: Any) -> Any:
@@ -770,9 +795,9 @@ class Parser:
                     if bound[0] in ("str", "bool") or (
                         bound[0] == "num" and not isinstance(bound[1], int)
                     ):
-                        raise YaraError("a for range needs integer bounds")
+                        raise RuleError("a for range needs integer bounds")
                 if first[0] == "num" and hi[0] == "num" and first[1] > hi[1]:
-                    raise YaraError("a for range whose lower bound is above its upper")
+                    raise RuleError("a for range whose lower bound is above its upper")
                 domain: Any = ("range", first, hi)
             else:
                 items = [first]
@@ -781,10 +806,10 @@ class Parser:
                 self.expect(")")
                 kinds = {"str" if i[0] == "str" else "int" for i in items}
                 if len(kinds) > 1 or any(i[0] == "bool" for i in items):
-                    raise YaraError("a for list holds integers, or strings, not both")
+                    raise RuleError("a for list holds integers, or strings, not both")
                 domain = ("enum", items)
         else:
-            raise YaraError(f"line {self.tok.line}: a for loop iterates over a range or a list")
+            raise RuleError(f"line {self.tok.line}: a for loop iterates over a range or a list")
         self.expect(":")
         self.expect("(")
         body = self.expr()
@@ -799,15 +824,15 @@ class Strings:
     @staticmethod
     def check(name: str, kind: str, mods: dict[str, Any]) -> None:
         if kind == "hex" and set(mods) - {"private"}:
-            raise YaraError(f"string {name}: a hex string takes no modifier but private")
+            raise RuleError(f"string {name}: a hex string takes no modifier but private")
         if kind == "regex" and set(mods) & {"xor", "base64", "base64wide"}:
-            raise YaraError(f"string {name}: a regular expression takes no xor or base64")
+            raise RuleError(f"string {name}: a regular expression takes no xor or base64")
         if set(mods) & {"base64", "base64wide"} and set(mods) & {"nocase", "xor", "fullword"}:
-            raise YaraError(
+            raise RuleError(
                 f"string {name}: base64 cannot be combined with nocase, xor or fullword"
             )
         if "xor" in mods and "nocase" in mods:
-            raise YaraError(f"string {name}: xor and nocase together")
+            raise RuleError(f"string {name}: xor and nocase together")
 
     @staticmethod
     def compile(s: StringDef) -> None:
@@ -817,7 +842,7 @@ class Strings:
         try:
             s.search = Search(s.kind, s.value, s.modifiers)
         except PatternError as exc:
-            raise YaraError(f"string {s.name}: {exc}") from exc
+            raise RuleError(f"string {s.name}: {exc}") from exc
 
     @staticmethod
     def matcher(source: str, marks: str) -> Any:
@@ -828,7 +853,7 @@ class Strings:
         try:
             return Matcher(source.encode("utf-8", "surrogateescape"), marks)
         except PatternError as exc:
-            raise YaraError(f"a regular expression that does not compile: {exc}") from exc
+            raise RuleError(f"a regular expression that does not compile: {exc}") from exc
 
     @staticmethod
     def find(
@@ -844,9 +869,9 @@ class Strings:
             found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
             return found
         except TimeoutError as exc:
-            raise YaraError("matching took longer than the time allowed") from exc
+            raise RuleError("matching took longer than the time allowed") from exc
         except RunError as exc:
-            raise YaraError(f"string {s.name}: {exc}") from exc
+            raise RuleError(f"string {s.name}: {exc}") from exc
 
     @staticmethod
     def place_fixed(rule: Rule) -> None:
@@ -914,7 +939,7 @@ class Scan:
         self.externals = {
             k: v.encode() if isinstance(v, str) else v for k, v in (externals or {}).items()
         }
-        #: The check `Rules.compile` runs: a constant expression YARA refuses is refused here.
+        #: The check `Rules.compile` runs: a constant expression that cannot be valid is refused.
         self.compiling = compiling
         self.factories: dict[str, Any] = {}
         self.roots: dict[str, Struct] = {}
@@ -967,7 +992,7 @@ class Scan:
                 elif item in self.found:
                     out.append(item)
                 else:
-                    raise YaraError(f"rule {self.rule.name}: an undefined string {item}")
+                    raise RuleError(f"rule {self.rule.name}: an undefined string {item}")
             else:
                 prefix = item[:-1] if item.endswith("*") else None
                 out += [
@@ -1001,13 +1026,13 @@ class Scan:
             if Values.undefined(pct):
                 return False
             if not isinstance(pct, int) or not 0 < pct <= 100:
-                raise YaraError(f"a percentage must be from 1 to 100, not {pct}")
+                raise RuleError(f"a percentage must be from 1 to 100, not {pct}")
             return total > 0 and count * 100 >= pct * total
         n = self.eval(quant)
         if Values.undefined(n):
             return False
         if not isinstance(n, int) or isinstance(n, bool) or n < 0:
-            raise YaraError(f"a quantifier must be a whole number of at least 0, not {n}")
+            raise RuleError(f"a quantifier must be a whole number of at least 0, not {n}")
         return count >= n if n > 0 else count == 0
 
     def eval(self, node: Any) -> Any:
@@ -1066,7 +1091,7 @@ class Scan:
             for scope in reversed(self.vars):
                 if node[1] in scope:
                     return scope[node[1]]
-            raise YaraError(f"an undefined identifier {node[1]}")
+            raise RuleError(f"an undefined identifier {node[1]}")
         if op == "rules":
             return any(
                 self.decided.get(r.name, False) for r in self.rules if r.name.startswith(node[1])
@@ -1079,7 +1104,7 @@ class Scan:
                 if Values.undefined(at):
                     return False
                 if not isinstance(at, int):
-                    raise YaraError("'at' needs an integer offset")
+                    raise RuleError("'at' needs an integer offset")
             if op == "of_in":
                 rng = (self.eval(node[3][0]), self.eval(node[3][1]))
                 if any(Values.undefined(v) for v in rng):
@@ -1103,7 +1128,7 @@ class Scan:
                 return False
             if not values and self.compiling and node[3][0] == "iter":
                 # An empty collection still has a type: the body is checked against one undefined
-                # element of it, so `i == "foo"` over integers is refused here, as YARA refuses it.
+                # element of it, so `i == "foo"` over integers is refused here.
                 self._check_body(node, self._prototype(node[3][1], len(node[2])))
             count = 0
             for value in values:
@@ -1130,14 +1155,14 @@ class Scan:
             try:
                 return node[2].test(v)
             except RunError as exc:
-                raise YaraError(f"rule {self.rule.name}: {exc}") from exc
+                raise RuleError(f"rule {self.rule.name}: {exc}") from exc
         if op == "neg":
             v = self.eval(node[1])
             if Values.undefined(v):
                 return UNDEFINED
             if isinstance(v, int) and -v > INT64_MAX:
                 if self.compiling and Scan.constant(node):
-                    raise YaraError("integer overflow in a constant expression")
+                    raise RuleError("integer overflow in a constant expression")
                 return UNDEFINED
             return -v
         if op == "bnot":
@@ -1151,18 +1176,18 @@ class Scan:
             and self.compiling
             and Scan.constant(node)
         ):
-            raise YaraError("a negative shift count")
+            raise RuleError("a negative shift count")
         value = Scan._binary(op, left, right)
-        low = INT64_MIN + 1 if op == "*" else INT64_MIN  # YARA's multiplication check is symmetric
+        low = INT64_MIN + 1 if op == "*" else INT64_MIN  # the multiplication check is symmetric
         if isinstance(value, int) and not isinstance(value, bool) and not low <= value <= INT64_MAX:
             if self.compiling and Scan.constant(node):
-                raise YaraError("integer overflow in a constant expression")
+                raise RuleError("integer overflow in a constant expression")
             return UNDEFINED
         return value
 
     @staticmethod
     def constant(node: Any) -> bool:
-        """Whether `node` is computed from literals alone, as YARA folds it when it compiles."""
+        """Whether `node` is computed from literals alone, folded when the rules compile."""
         if node[0] in ("num", "str", "bool"):
             return True
         if node[0] in ("neg", "bnot"):
@@ -1177,13 +1202,13 @@ class Scan:
                 if "$" in scope:
                     return self.found.get(scope["$"], [])
         if name not in self.found:
-            raise YaraError(f"rule {self.rule.name}: an undefined string {name}")
+            raise RuleError(f"rule {self.rule.name}: an undefined string {name}")
         return self.found[name]
 
     def _domain(self, node: Any, names: int = 1) -> Any:
         if node[0] == "range":
             if names != 1:
-                raise YaraError("a for loop over a range takes one variable")
+                raise RuleError("a for loop over a range takes one variable")
             lo, hi = self.eval(node[1]), self.eval(node[2])
             if Values.undefined(lo) or Values.undefined(hi):
                 return UNDEFINED
@@ -1192,17 +1217,17 @@ class Scan:
             value = self.eval(node[1])
             if isinstance(value, Dictionary):
                 if names != 2:
-                    raise YaraError("a for loop over a dictionary takes a key and a value")
+                    raise RuleError("a for loop over a dictionary takes a key and a value")
                 return [(k, Values.int64(v)) for k, v in value.items.items()]
             if isinstance(value, Array):
                 if names != 1:
-                    raise YaraError("a for loop over an array takes one variable")
+                    raise RuleError("a for loop over an array takes one variable")
                 return [Values.int64(v) for v in value.values()]
             if Values.undefined(value):
                 return UNDEFINED
-            raise YaraError("a for loop iterates over a range, a list, an array or a dictionary")
+            raise RuleError("a for loop iterates over a range, a list, an array or a dictionary")
         if names != 1:
-            raise YaraError("a for loop over a list takes one variable")
+            raise RuleError("a for loop over a list takes one variable")
         return [self.eval(e) for e in node[1]]
 
     def _prototype(self, target: Any, names: int) -> Any:
@@ -1240,16 +1265,16 @@ class Scan:
                     try:
                         value = value.get(step[1])
                     except KeyError:
-                        raise YaraError(f"an undefined identifier {step[1]}") from None
+                        raise RuleError(f"an undefined identifier {step[1]}") from None
                 elif Values.undefined(value):
                     return UNDEFINED
                 else:
-                    raise YaraError(f"{step[1]} is not a field of a {Values.kind_of(value)}")
+                    raise RuleError(f"{step[1]} is not a field of a {Values.kind_of(value)}")
             elif step[0] == "index":
                 key = self.eval(step[1])
                 if isinstance(value, Array):
                     if Values.kind_of(key) not in ("int", None):
-                        raise YaraError("an array is indexed with an integer")
+                        raise RuleError("an array is indexed with an integer")
                     value = (
                         Values.undefined_like(value.proto)
                         if Values.undefined(key)
@@ -1257,7 +1282,7 @@ class Scan:
                     )
                 elif isinstance(value, Dictionary):
                     if Values.kind_of(key) not in ("str", None):
-                        raise YaraError("a dictionary is indexed with a string")
+                        raise RuleError("a dictionary is indexed with a string")
                     value = (
                         Values.undefined_like(value.proto)
                         if Values.undefined(key)
@@ -1266,17 +1291,17 @@ class Scan:
                 elif Values.undefined(value):
                     return UNDEFINED
                 else:
-                    raise YaraError(f"a {Values.kind_of(value)} cannot be indexed")
+                    raise RuleError(f"a {Values.kind_of(value)} cannot be indexed")
             else:
                 if not isinstance(value, Function):
-                    raise YaraError("only a function can be called")
+                    raise RuleError("only a function can be called")
                 args = [self.eval(a) for a in step[1]]
                 from cordon_scanner.detect.binary.rule_scan import Matcher
 
                 kinds = tuple("r" if isinstance(a, Matcher) else Values.kind_of(a) for a in args)
                 target = value.resolve(kinds)
                 if target is None:
-                    raise YaraError(f"no function takes arguments of types {kinds}")
+                    raise RuleError(f"no function takes arguments of types {kinds}")
                 call, returns = target
                 if any(Values.undefined(a) for a in args):
                     return TypedUndefined(returns)
@@ -1301,14 +1326,14 @@ class Scan:
         ka, kb = Values.kind_of(a), Values.kind_of(b)
         numbers = ("int", "float", "bool")
         if ka and kb and ((ka == "str") != (kb == "str")) and {ka, kb} <= {"str", *numbers}:
-            raise YaraError(f"{op} combines a string with a number")
+            raise RuleError(f"{op} combines a string with a number")
         if ka in ("struct", "array", "dict", "function") or kb in (
             "struct",
             "array",
             "dict",
             "function",
         ):
-            raise YaraError(
+            raise RuleError(
                 f"{op} on a {ka if ka in ('struct', 'array', 'dict', 'function') else kb}"
             )
         if Values.undefined(a) or Values.undefined(b):
@@ -1323,7 +1348,7 @@ class Scan:
             "iequals",
         ):
             if not isinstance(a, bytes) or not isinstance(b, bytes):
-                raise YaraError(f"{op} compares strings")
+                raise RuleError(f"{op} compares strings")
             if op.startswith("i"):
                 a, b = a.lower(), b.lower()
                 op = op[1:] if op != "iequals" else "equals"
@@ -1336,7 +1361,7 @@ class Scan:
         if op in ("==", "!=", "<", ">", "<=", ">=") and isinstance(a, bytes) != isinstance(
             b, bytes
         ):
-            raise YaraError(f"{op} compares a string with a number")
+            raise RuleError(f"{op} compares a string with a number")
         if op == "==":
             return a == b
         if op == "!=":
@@ -1383,7 +1408,7 @@ class Scan:
             return (int(a) << int(b)) & ((1 << 64) - 1) if b < 64 else 0
         if op == ">>":
             return int(a) >> int(b) if b < 64 else 0
-        raise YaraError(f"an unknown operator {op}")
+        raise RuleError(f"an unknown operator {op}")
 
 
 class Rules:
@@ -1416,15 +1441,15 @@ class Rules:
         try:
             rules = Parser(text, externals, frozenset(factories)).parse()
         except (IndexError, ValueError, binascii.Error) as exc:
-            if isinstance(exc, YaraError):
+            if isinstance(exc, RuleError):
                 raise
-            raise YaraError(f"the rules do not parse: {exc}") from exc
+            raise RuleError(f"the rules do not parse: {exc}") from exc
         compiled = Rules(rules, externals, factories)
-        # Every identifier a condition names must exist, and every constant expression YARA would
-        # refuse is refused: checked once, on empty data.
+        # Every identifier a condition names must exist, and every constant expression that cannot
+        # be valid is refused: checked once, on empty data.
         try:
             compiled._scan(b"", None, compiling=True).run()
-        except YaraError:
+        except RuleError:
             raise
         except (
             ValueError,
@@ -1434,18 +1459,18 @@ class Rules:
             OverflowError,
             ZeroDivisionError,
         ) as exc:
-            raise YaraError(f"the rules do not compile: {type(exc).__name__}: {exc}") from exc
+            raise RuleError(f"the rules do not compile: {type(exc).__name__}: {exc}") from exc
         return compiled
 
     def match(
         self, data: bytes, timeout: float | None = None, console: Callable[[str], Any] | None = None
     ) -> list[Match]:
-        """The rules `data` matches; a `YaraError` once `timeout` seconds have passed. `console`
-        receives each `console.log`/`console.hex` message, as yara-python's `console_callback`."""
+        """The rules `data` matches; a `RuleError` once `timeout` seconds have passed. `console`
+        receives each `console.log`/`console.hex` message."""
         import time
 
         deadline = time.monotonic() + timeout if timeout is not None else None
         return self._scan(data, deadline, console=console).run()
 
 
-__all__ = ["UNDEFINED", "Match", "Rules", "YaraError"]
+__all__ = ["UNDEFINED", "Match", "RuleError", "Rules"]

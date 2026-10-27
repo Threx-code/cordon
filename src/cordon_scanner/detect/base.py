@@ -512,8 +512,8 @@ class RuleSelector:
         Filtering here rather than inside the match loop means a rule that cannot
         apply never costs a regex execution.
 
-        A YARA rules file is none: its strings are the indicators it detects -- mining pools, drop
-        points, credential paths -- written down to be matched, and nothing runs them but a YARA
+        A rule file (`.yar`) is none: its strings are the indicators it detects -- mining pools, drop
+        points, credential paths -- written down to be matched, and nothing runs them but a rule
         engine. Read as code, every repository keeping detection rules reported the malware they
         describe. The secret rules, which are not capability rules, still read it. (`.rules` stays
         in: a udev rules file runs commands.)

@@ -1,18 +1,18 @@
-"""Hand every file to YARA, with rules the operator names (`--yara RULES`).
+"""Match every file against a rule file the operator names (`--rule-file RULES`), with cordon-rule.
 
 The same arrangement as the ClamAV hand-off: off unless asked for, the rules chosen by whoever runs
-the scan and never by the repository being scanned, and a report that says whether it ran. YARA is
-where a security team keeps the signatures it trusts -- its own, its vendor's, a feed's -- and this
-lets a scan apply them without the team rewriting them as Cordon rules.
+the scan and never by the repository being scanned, and a report that says whether they ran. A rule
+file is where a security team keeps the signatures it trusts -- its own, its vendor's, a feed's --
+and this applies them to a scan as they are written.
 
-The rule language is Cordon's own code (`yara_lang`, with `rule_pattern` and `rule_scan` for the
-strings): no native library reads a scanned file. Rules that cannot be used -- a file
-that does not compile, a module the engine does not implement -- are reported in an operational
-finding rather than as nothing, because "no rule matched" and "no rule ran" must never look alike.
-Rules are compiled once per scan; each file is matched with a timeout, so a pathological rule
-cannot hold a scan. A rule's `severity` meta, when
-it names one, sets the finding's severity; otherwise a match is HIGH and SUSPICIOUS, because a
-YARA rule asserts a pattern, not a verdict -- unless its meta says `category = "malicious"`.
+The rule language is Cordon's own code (`rule_lang`, with `rule_pattern` and `rule_scan` for the
+strings): no native library reads a scanned file. Rules that cannot be used -- a file that does not
+compile, a module the engine does not implement -- are reported in an operational finding rather
+than as nothing, because "no rule matched" and "no rule ran" must never look alike. Rules are
+compiled once per scan; each file is matched with a timeout, so a pathological rule cannot hold a
+scan. A rule's `severity` meta, when it names one, sets the finding's severity; otherwise a match is
+HIGH and SUSPICIOUS, because a rule asserts a pattern, not a verdict -- unless its meta says
+`category = "malicious"`.
 """
 
 from __future__ import annotations
@@ -44,34 +44,34 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.paths import PackagePaths
 
-MATCH_RULE: Final = "SUSPECT.YARA.MATCH.001"
-MALICIOUS_RULE: Final = "MALWARE.YARA.MATCH.001"
-STATUS_RULE: Final = "OPERATIONAL.YARA.STATUS"
-UNAVAILABLE_RULE: Final = "OPERATIONAL.YARA.UNAVAILABLE"
-REFERENCE: Final = "https://yara.readthedocs.io/en/stable/writingrules.html"
+MATCH_RULE: Final = "SUSPECT.RULEFILE.MATCH.001"
+MALICIOUS_RULE: Final = "MALWARE.RULEFILE.MATCH.001"
+STATUS_RULE: Final = "OPERATIONAL.RULEFILE.STATUS"
+UNAVAILABLE_RULE: Final = "OPERATIONAL.RULEFILE.UNAVAILABLE"
+REFERENCE: Final = "https://github.com/Threx-code/cordon/blob/main/tutorials/31-rule-files.md"
 MATCH_TIMEOUT_SECONDS: Final = 10
 MAX_RULES_BYTES: Final = 16 << 20
-#: `--yara builtin`: the pack shipped with Cordon (`rules/yara/`), DataDog GuardDog's `threat-*`
+#: `--rule-file builtin`: the pack shipped with Cordon (`rules/rule_files/`), DataDog GuardDog's `threat-*`
 #: source-code rules at a pinned commit, Apache-2.0, less any that fired on the benign corpus.
 BUILTIN: Final = "builtin"
-BUILTIN_PACK: Final = PackagePaths.root() / "rules" / "yara" / "cordon-builtin.yar"
+BUILTIN_PACK: Final = PackagePaths.root() / "rules" / "rule_files" / "cordon-builtin.yar"
 
 
-class YaraEngine:
-    """Compile once, match many, with Cordon's own YARA engine."""
+class RuleFileEngine:
+    """Compile once, match many, with cordon-rule."""
 
     def __init__(self, rules_path: str) -> None:
-        from cordon_scanner.detect.binary.yara_lang import Rules
+        from cordon_scanner.detect.binary.rule_lang import Rules
 
         path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
         if not path.is_file():
-            raise OSError(f"no YARA rules file at {rules_path}")
+            raise OSError(f"no rule file at {rules_path}")
         if path.stat().st_size > MAX_RULES_BYTES:
-            raise OSError(f"the YARA rules file is over {MAX_RULES_BYTES} bytes")
+            raise OSError(f"the rule file is over {MAX_RULES_BYTES} bytes")
         # Compiled from the operator's file. `include` is refused: an include directive would let
         # one rules file pull in others from wherever it names, which is not what was asked for.
         self.rules = Rules.compile(path.read_text(encoding="utf-8", errors="replace"))
-        self.version = "Cordon's own engine"
+        self.version = "cordon-rule"
 
     def match(self, data: bytes) -> list[Any]:
         return list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS))
@@ -94,8 +94,8 @@ class YaraEngine:
         )
 
 
-class YaraDetector(BaseDetector):
-    id = "yara"
+class RuleFileDetector(BaseDetector):
+    id = "rule-file"
     version = "0.1.0"
     operator_enabled = True
     """Runs only when the operator names a rules file; exercised against a fake engine in tests."""
@@ -103,11 +103,11 @@ class YaraDetector(BaseDetector):
     requires = DetectorRequirements(content=True, repository=True)
 
     def __init__(self) -> None:
-        self._engine: YaraEngine | None = None
+        self._engine: RuleFileEngine | None = None
         self._failed: str | None = None
 
     def applicable(self, ctx: ScanContext) -> bool:
-        return bool(getattr(ctx.config, "yara", None))
+        return bool(getattr(ctx.config, "rule_file", None))
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -127,30 +127,30 @@ class YaraDetector(BaseDetector):
                 if category is not Category.OPERATIONAL
                 else Confidence.CONFIRMED,
                 category=category,
-                detector=YaraDetector.id,
+                detector=RuleFileDetector.id,
                 message=message,
                 references=(REFERENCE,),
                 remediation=remediation,
             )
 
         return (
-            rule(MATCH_RULE, "An operator's YARA rule matched this file", Severity.HIGH, Category.SUSPICIOUS,
-                 "A rule from the YARA rules file named with --yara matched this file.",
+            rule(MATCH_RULE, "An operator's rule matched this file", Severity.HIGH, Category.SUSPICIOUS,
+                 "A rule from the rule file named with --rule-file matched this file.",
                  "Read the rule that matched and decide; the rule's author states what it detects."),
-            rule(MALICIOUS_RULE, "An operator's YARA rule identifies this file as malware", Severity.CRITICAL, Category.MALICIOUS,
-                 "A YARA rule whose metadata declares it a malware signature matched this file.",
+            rule(MALICIOUS_RULE, "An operator's rule identifies this file as malware", Severity.CRITICAL, Category.MALICIOUS,
+                 "A rule whose metadata declares it a malware signature matched this file.",
                  "Remove the file and find out how it entered the repository."),
-            rule(STATUS_RULE, "YARA examined the scan's files", Severity.INFO, Category.OPERATIONAL,
-                 "Every file in this scan was also matched against the named YARA rules.", "None needed."),
-            rule(UNAVAILABLE_RULE, "YARA was asked for and could not be used", Severity.INFO, Category.OPERATIONAL,
-                 "The scan was asked to use YARA and could not, so no file was matched against the rules.",
+            rule(STATUS_RULE, "The rule file examined the scan's files", Severity.INFO, Category.OPERATIONAL,
+                 "Every file in this scan was also matched against the named rule file.", "None needed."),
+            rule(UNAVAILABLE_RULE, "A rule file was asked for and could not be used", Severity.INFO, Category.OPERATIONAL,
+                 "The scan was asked to use a rule file and could not, so no file was matched against it.",
                  "Check the rules file compiles, and that it imports only modules Cordon's engine implements."),
         )  # fmt: skip
 
-    def _ensure(self, ctx: ScanContext) -> YaraEngine | None:
+    def _ensure(self, ctx: ScanContext) -> RuleFileEngine | None:
         if self._engine is None and self._failed is None:
             try:
-                self._engine = YaraEngine(str(ctx.config.yara))
+                self._engine = RuleFileEngine(str(ctx.config.rule_file))
             except Exception as exc:  # noqa: BLE001
                 self._failed = (
                     f"the rules could not be loaded: {type(exc).__name__}: {str(exc)[:200]}"
@@ -164,14 +164,14 @@ class YaraDetector(BaseDetector):
                 return [
                     self._operational(
                         UNAVAILABLE_RULE,
-                        f"YARA was requested and could not be used: {self._failed}.",
+                        f"A rule file was requested and could not be used: {self._failed}.",
                         ctx,
                     )
                 ]
             return [
                 self._operational(
                     STATUS_RULE,
-                    f"Files were also matched against YARA rules ({engine.version}).",
+                    f"Files were also matched against the rule file ({engine.version}).",
                     ctx,
                 )
             ]
@@ -183,14 +183,14 @@ class YaraDetector(BaseDetector):
             return [
                 self._operational(
                     UNAVAILABLE_RULE,
-                    f"YARA could not match {unit.content.path}: {type(exc).__name__}.",
+                    f"The rule file could not be matched against {unit.content.path}: {type(exc).__name__}.",
                     ctx,
                 )
             ]
         return [
             self._finding(unit, match, ctx)
             for match in matches
-            if YaraEngine.applies(match, unit.content.path)
+            if RuleFileEngine.applies(match, unit.content.path)
         ]
 
     @staticmethod
@@ -214,17 +214,17 @@ class YaraDetector(BaseDetector):
             category=category,
             severity=severity,
             confidence=Confidence.HIGH,
-            message=f"The YARA rule {name} matched this file."
+            message=f"The rule {name} matched this file."
             + (f" {str(meta['description'])[:300]}" if meta.get("description") else ""),
             location=Location(path=unit.content.path, project=unit.project),
             evidence=Evidence(
                 kind=EvidenceKind.HASH,
                 match_hash=Evidence.hash_bytes(f"{name}:".encode() + unit.content.raw[:65536]),
                 redaction=RedactionMode.HASH_ONLY,
-                metadata=(("yara_rule", name),),
+                metadata=(("rule", name),),
             ),
             remediation=next(r.remediation for r in self.declared_rules() if r.id == rule_id),
-            explanation=Explanation(summary=f"YARA rule {name} matched", matched_rule=rule_id),
+            explanation=Explanation(summary=f"rule {name} matched", matched_rule=rule_id),
             risk=ctx.scorer.score(severity, Confidence.HIGH),
             detector=self.id,
             references=(REFERENCE,),
@@ -252,4 +252,4 @@ class YaraDetector(BaseDetector):
         )
 
 
-__all__ = ["YaraDetector", "YaraEngine"]
+__all__ = ["RuleFileDetector", "RuleFileEngine"]

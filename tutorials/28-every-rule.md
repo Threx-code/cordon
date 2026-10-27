@@ -1756,6 +1756,17 @@ rule's own samples.
 | `MALWARE.REVERSE_SHELL.001` | critical | A shell piped to a socket |
 | `MALWARE.REVERSE_SHELL.002` | critical | A shell's input and output joined to a stream |
 
+## Rule files
+
+4 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.RULEFILE.MATCH.001` | critical | An operator's rule identifies this file as malware |
+| `OPERATIONAL.RULEFILE.STATUS` | info | The rule file examined the scan's files |
+| `OPERATIONAL.RULEFILE.UNAVAILABLE` | info | A rule file was asked for and could not be used |
+| `SUSPECT.RULEFILE.MATCH.001` | high | An operator's rule matched this file |
+
 ## SBOMs
 
 3 rules.
@@ -1893,17 +1904,6 @@ rule's own samples.
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.VERDICT.MODEL.001` | high | The package's findings together look malicious |
-
-## YARA
-
-4 rules.
-
-| Rule | Severity | What it catches |
-|---|---|---|
-| `MALWARE.YARA.MATCH.001` | critical | An operator's YARA rule identifies this file as malware |
-| `OPERATIONAL.YARA.STATUS` | info | YARA examined the scan's files |
-| `OPERATIONAL.YARA.UNAVAILABLE` | info | YARA was asked for and could not be used |
-| `SUSPECT.YARA.MATCH.001` | high | An operator's YARA rule matched this file |
 
 ## Agent Threat Rules
 

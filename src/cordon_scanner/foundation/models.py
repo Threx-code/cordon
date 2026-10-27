@@ -32,6 +32,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.foundation.taxonomy import AttackCategory, Taxonomy, ThreatDomain
 
 if TYPE_CHECKING:
@@ -842,7 +843,7 @@ class Finding:
             normalized_match = self.evidence.match_hash
 
         parts = (
-            self.rule_id,
+            Renamed.first(self.rule_id),  # a renamed rule keeps the fingerprints it had
             self.location.package or self.location.path,
             self.location.symbol or "",
             normalized_match,

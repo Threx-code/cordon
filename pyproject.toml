@@ -55,7 +55,6 @@ keywords = [
     "secrets",
     "secret-scanning",
     "static-analysis",
-    "yara",
     "npm",
     "pypi",
     "cargo",
@@ -170,7 +169,7 @@ recipe-digest = "cordon_scanner.detect.supply.recipe_digests:RecipeDigestDetecto
 binary = "cordon_scanner.detect.binary.binary:BinaryDetector"
 capability = "cordon_scanner.detect.code.capability:CapabilityDetector"
 clamav = "cordon_scanner.detect.binary.clamav:ClamavDetector"
-yara = "cordon_scanner.detect.binary.yara_rules:YaraDetector"
+rule-file = "cordon_scanner.detect.binary.rule_files:RuleFileDetector"
 config = "cordon_scanner.detect.infra.config_files:ConfigDetector"
 dependency = "cordon_scanner.detect.supply.dependency:DependencyDetector"
 formats = "cordon_scanner.detect.binary.formats:FormatDetector"
@@ -220,18 +219,18 @@ source = "src"
 # Every directory under these is a package, `__init__.py` or not, as setuptools' namespace
 # discovery had it; the wheel carries each one's modules plus the package data below.
 packages = ["cordon_scanner", "cordon_sandbox"]
-# Build inputs, not run-time data: the third-party rules the built-in YARA pack is assembled from.
+# Build inputs, not run-time data: the third-party rules the built-in rule pack is assembled from.
 # They ship in the sdist with their licence (MANIFEST.in), not in the wheel without it.
-exclude = ["cordon_scanner/rules/yara/upstream"]
+exclude = ["cordon_scanner/rules/rule_files/upstream"]
 
 [tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
 "cordon_scanner.rules.builtin" = ["*.yaml"]
-# The built-in YARA pack (`--yara builtin`, detect/binary/yara_rules.py) and the records of where
+# The built-in rule pack (`--rule-file builtin`, detect/binary/rule_files.py) and the records of where
 # its rules came from and how they measured. Missing from the wheel before 2026-10-20: an install
 # from PyPI had no pack to load.
-"cordon_scanner.rules" = ["yara/*.yar", "yara/*.json"]
+"cordon_scanner.rules" = ["rule_files/*.yar", "rule_files/*.json"]
 # Syft's artifact-to-group map for jars named only by their file (scripts/build/syft_java_groups.py).
 "cordon_scanner.images" = ["data/*.json"]
 # The detection model's feature patterns (`cordon_scanner.model`).

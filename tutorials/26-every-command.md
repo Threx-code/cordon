@@ -166,9 +166,11 @@ Scan a directory, file or archive.
 │                           repository's own configuration (env:             │
 │                           CORDON_KEYRINGS, separated by the path           │
 │                           separator)                                       │
-│ --yara RULES              also match every file against a YARA rules file. │
-│                           Off by default; never set from a repository's    │
-│                           own configuration (env: CORDON_YARA)             │
+│ --rule-file RULES         also match every file against a cordon-rule rule │
+│                           file (`builtin` for the pack shipped with        │
+│                           Cordon). Off by default; never set from a        │
+│                           repository's own configuration (env:             │
+│                           CORDON_RULE_FILE)                                │
 │ --clamav SOCKET           also hand each file to a local ClamAV daemon: a  │
 │                           Unix socket path, or tcp://127.0.0.1:3310. Off   │
 │                           by default; the report says whether it ran.      │

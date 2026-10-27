@@ -378,5 +378,10 @@ class TestTheJudgeReadsTheGreyBandOnly:
 
         from cordon_scanner.detect.agents.agent_judge import JudgeGate
 
-        ids = [SimpleNamespace(id=i) for i in ("advisory", "agent-judge", "agents", "yara")]
-        assert [d.id for d in JudgeGate.last(ids)] == ["advisory", "agents", "yara", "agent-judge"]
+        ids = [SimpleNamespace(id=i) for i in ("advisory", "agent-judge", "agents", "rule-file")]
+        assert [d.id for d in JudgeGate.last(ids)] == [
+            "advisory",
+            "agents",
+            "rule-file",
+            "agent-judge",
+        ]

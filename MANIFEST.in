@@ -37,7 +37,7 @@ recursive-include action *.yml
 recursive-include scripts *.py
 
 recursive-include src/cordon_scanner/rules/builtin *.yaml
-recursive-include src/cordon_scanner/rules/yara *.yar *.json COMMIT
+recursive-include src/cordon_scanner/rules/rule_files *.yar *.json COMMIT
 recursive-include src/cordon_scanner/detect/data *.json *.json.gz
 recursive-include src/cordon_scanner/images/data *.json
 recursive-include src/cordon_scanner/model/data *.json

@@ -1,8 +1,9 @@
-"""Cordon's YARA engine (`detect/binary/yara_lang`), held to YARA's own test suite.
+"""cordon-rule's language (`detect/binary/rule_lang`), held to the reference suite.
 
-`data/yara/yara-4.5.1-test-rules.json` is every case of YARA's `tests/test-rules.c` whose rule
-and data are literals: it matches, it does not, or it does not compile. Each is run here with the
-external variables and the `tests` module YARA's harness provides, and must come out as YARA says.
+`data/rule_reference/reference-suite-rules.json` holds the reference suite's cases whose rule and
+data are literals (where they come from: that directory's README): each rule matches, does not, or
+does not compile. Each is run here with the external variables and the `tests` module the suite's
+harness provides, and must come out as the suite says.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any, ClassVar
 
 import pytest
 
+from cordon_scanner.detect.binary.rule_lang import RuleError, Rules
 from cordon_scanner.detect.binary.rule_values import (
     UNDEF_FLOAT,
     UNDEF_INT,
@@ -23,12 +25,11 @@ from cordon_scanner.detect.binary.rule_values import (
     Struct,
     Values,
 )
-from cordon_scanner.detect.binary.yara_lang import Rules, YaraError
 from support import ROOT
 
 
-class YaraTests:
-    """YARA's `tests` module (`libyara/modules/tests/tests.c`, v4.5.1), as its harness loads it."""
+class ReferenceSuite:
+    """The `tests` module the reference suite's harness loads, and its external variables."""
 
     EXTERNALS: ClassVar[dict[str, Any]] = {
         "var_zero": 0,
@@ -37,9 +38,9 @@ class YaraTests:
         "var_false": False,
     }
     CASES: ClassVar[list[dict[str, str]]] = json.loads(
-        (ROOT / "tests" / "unit" / "data" / "yara" / "yara-4.5.1-test-rules.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            ROOT / "tests" / "unit" / "data" / "rule_reference" / "reference-suite-rules.json"
+        ).read_text(encoding="utf-8")
     )
 
     @staticmethod
@@ -90,22 +91,22 @@ class YaraTests:
     @staticmethod
     def outcome(rule: str, data: bytes) -> str:
         try:
-            rules = Rules.compile(rule, YaraTests.EXTERNALS, {"tests": YaraTests.module})
-        except YaraError:
+            rules = Rules.compile(rule, ReferenceSuite.EXTERNALS, {"tests": ReferenceSuite.module})
+        except RuleError:
             return "error"
         return "true" if rules.match(data, timeout=20) else "false"
 
 
-class TestYarasOwnSuite:
-    @pytest.mark.parametrize("index", range(len(YaraTests.CASES)))
-    def test_each_case_comes_out_as_yara_says(self, index: int) -> None:
-        case = YaraTests.CASES[index]
-        got = YaraTests.outcome(case["rule"], base64.b64decode(case["data"]))
+class TestTheReferenceSuite:
+    @pytest.mark.parametrize("index", range(len(ReferenceSuite.CASES)))
+    def test_each_case_comes_out_as_the_suite_says(self, index: int) -> None:
+        case = ReferenceSuite.CASES[index]
+        got = ReferenceSuite.outcome(case["rule"], base64.b64decode(case["data"]))
         assert got == case["expect"], case["rule"]
 
 
 class TestMatches:
-    """Behaviour checked against yara-python 4.5.1 when this was written."""
+    """Behaviour checked against the reference engine when this was written."""
 
     @pytest.mark.parametrize(
         ("rule", "data", "offsets"),
@@ -138,7 +139,7 @@ class TestMatches:
             ),
         ],
     )
-    def test_every_start_is_a_match_as_yara_reports(
+    def test_every_start_is_a_match_as_the_reference_reports(
         self, rule: str, data: bytes, offsets: list
     ) -> None:
         (match,) = Rules.compile(rule).match(data)
@@ -165,9 +166,9 @@ class TestHostileInput:
 
     def test_the_deadline_stops_matching(self) -> None:
         rules = Rules.compile("rule r { strings: $a = { 61 [-] 62 } condition: $a }")
-        with pytest.raises(YaraError, match="longer than the time allowed"):
+        with pytest.raises(RuleError, match="longer than the time allowed"):
             rules.match(b"a" * 3_000_000, timeout=0.001)
 
     def test_includes_are_refused(self) -> None:
-        with pytest.raises(YaraError, match="include"):
+        with pytest.raises(RuleError, match="include"):
             Rules.compile('include "x.yar"\nrule r { condition: true }')

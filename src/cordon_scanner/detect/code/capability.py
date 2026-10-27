@@ -2950,7 +2950,7 @@ class CapabilityDetector(BaseDetector):
     def _rule_pack(cls, content: FileContent) -> bool:
         """A detection rule pack -- Cordon's, Semgrep's, Sigma's.
 
-        It writes down the attacks it detects as patterns and sample lines, as a YARA file does
+        It writes down the attacks it detects as patterns and sample lines, as a rule file does
         (`RuleSelector.select_rules`): nothing runs them, and read as code every such file reports
         the malware it describes.
         """

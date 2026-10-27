@@ -1,6 +1,6 @@
 """Measures every fetched GuardDog rule on the benchmark datasets: how many benign PyPI packages it
 fires on (noise) and how many known-malicious npm and PyPI packages (value). The result is written
-beside the pack as MEASUREMENT.json, which `yara_select.py` chooses from.
+beside the pack as MEASUREMENT.json, which `rule_pack_select.py` chooses from.
 
 Reads archives in memory only -- the malicious samples are password-protected zips, opened with
 the dataset's published password and never written out or run. Every tenth package of each set,
@@ -8,7 +8,7 @@ Every package of every set, across every core. Run inside Docker only, with the 
 read-only:
 
     docker run --rm -v cordon-bench-data:/data:ro -v "$PWD:/pkg" -w /pkg python:3.12-slim sh -c \\
-      "pip install -q yara-python==4.5.1 && python tests/conformance/generate/yara_evaluate.py"
+      "pip install -q yara-python==4.5.1 && python tests/conformance/generate/rule_pack_evaluate.py"
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import ClassVar
 
 import yara  # type: ignore[import-not-found]
 
-PACK = Path("/pkg/src/cordon_scanner/rules/yara/cordon-builtin.yar")
+PACK = Path("/pkg/src/cordon_scanner/rules/rule_files/cordon-builtin.yar")
 UPSTREAM = PACK.parent / "upstream"
 MEASUREMENT = PACK.parent / "MEASUREMENT.json"
 DATA = Path("/data")

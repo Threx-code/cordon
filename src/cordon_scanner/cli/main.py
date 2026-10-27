@@ -33,6 +33,7 @@ from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.engine.audit import AuditLog
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.foundation.models import Confidence, Severity
+from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
 from cordon_scanner.version import __version__
 
@@ -421,14 +422,14 @@ class CommandLine:
             ),
         )
         execution.add_argument(
-            "--yara",
+            "--rule-file",
             metavar="RULES",
-            default=os.environ.get("CORDON_YARA") or None,
-            help=(
-                "also match every file against a YARA rules file. "
-                "Off by default; never set from a repository's own configuration (env: CORDON_YARA)"
-            ),
+            default=os.environ.get("CORDON_RULE_FILE") or None,
+            help="also match every file against a cordon-rule rule file (`builtin` for the pack "
+            "shipped with Cordon). Off by default; never set from a repository's own "
+            "configuration (env: CORDON_RULE_FILE)",
         )
+        execution.add_argument("--yara", dest="rule_file_old", help=argparse.SUPPRESS)
         execution.add_argument(
             "--clamav",
             metavar="SOCKET",
@@ -1178,8 +1179,8 @@ class CommandLine:
             overrides["clamav"] = args.clamav
         if getattr(args, "keyrings", None):
             overrides["keyrings"] = tuple(args.keyrings)
-        if getattr(args, "yara", None):
-            overrides["yara"] = args.yara
+        if rule_file := Renamed.rule_file(args, cls.PROGRAM):
+            overrides["rule_file"] = rule_file
         if getattr(args, "registry_tokens", None):
             from cordon_scanner.intel.registries.private_registries import PrivateRegistries
 

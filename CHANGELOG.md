@@ -83,7 +83,7 @@ test or conformance case that fails on the old code.
 ### Fixed
 
 - **The wheel shipped without two files the scanner loads.** An install from PyPI had no built-in
-  YARA pack (`rules/yara/`), so `--yara builtin` found nothing to load, and no bundled EPSS scores
+  rule pack (`rules/rule_files/`), so `--rule-file builtin` found nothing to load, and no bundled EPSS scores
   (`intel/data/epss.csv.gz`). Both are packaged now, and a test fails when any data file in the
   package is not declared for the wheel. A source checkout was never affected.
 - **Scans that refused a whole file** now read it, each found in a real repository:
@@ -138,6 +138,15 @@ test or conformance case that fails on the old code.
 
 ### Changed
 
+- **Rule files run on cordon-rule, Cordon's own rule engine**, and are named for it: `--rule-file`
+  (env `CORDON_RULE_FILE`), the `rule_file` setting, the `rule-file` detector and the rules
+  `SUSPECT.RULEFILE.MATCH.001`, `MALWARE.RULEFILE.MATCH.001`, `OPERATIONAL.RULEFILE.STATUS` and
+  `OPERATIONAL.RULEFILE.UNAVAILABLE` (tutorial 31). The previous names -- `--yara`, `CORDON_YARA`,
+  the `yara` detector in `scan.detectors`, and the `*.YARA.*` rule IDs in suppressions -- keep
+  working through this release, the flag and variable with a deprecation warning, and are removed
+  in the next. Findings keep the fingerprints they had, so baselines and code-scanning alerts carry
+  over. Its string matching is held to the format's reference behaviour by a differential over
+  100,000 generated rules (every match compared offset by offset, no difference).
 - Images list a distribution's own Python and npm packages under their language too, as Syft
   does; Apache's PHP module, the Composer PHAR and jar groups are named as Syft names them.
 - The home screen and tutorial 11 say what a default scan does on the network (it asks OSV what

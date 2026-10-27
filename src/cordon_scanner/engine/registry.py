@@ -76,11 +76,11 @@ BUILTIN_DETECTORS = (
     "provenance",
     "recipe-digest",
     "registry",
+    "rule-file",
     "sbom",
     "secrets",
     "slopsquat",
     "vcs",
-    "yara",
 )
 """The names a built-in may claim. An allowlist, so it stays alphabetical."""
 
@@ -111,8 +111,8 @@ DETECTOR_RUN_ORDER = (
     "capability",
     # ClamAV reads every byte of every file, over a socket: after the sweeps, so a budget cuts it first.
     "clamav",
-    # YARA reads every byte too, with the operator's rules: beside ClamAV, for the same reason.
-    "yara",
+    # A rule file reads every byte too, with the operator's rules: beside ClamAV, for the same reason.
+    "rule-file",
     # A language model call per piece of agent-facing text: after everything local.
     "agent-judge",
     # Tier 4: network, only with --online. Fetches and scans a package per MCP server; matches

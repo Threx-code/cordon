@@ -1085,7 +1085,7 @@ class Engine:
                 (f"{SWEPT_NOTE} " if reach >= content.size else "")
                 + f"The first {len(content.raw)} bytes of this {content.size}-byte file were "
                 f"examined by every rule, and {rest} in windows by every rule that reads text: "
-                "secrets, obfuscation, code capabilities, agent instructions and YARA."
+                "secrets, obfuscation, code capabilities, agent instructions and rule files."
             )
         else:
             message = f"Only the first {len(content.raw)} bytes of this {content.size}-byte file were examined."

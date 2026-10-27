@@ -1,14 +1,14 @@
 #!/bin/sh
-# Fetches the YARA rules shipped as Cordon's built-in pack (`--yara builtin`): DataDog GuardDog's
+# Fetches the rules shipped as Cordon's built-in pack (`--rule-file builtin`): DataDog GuardDog's
 # `threat-*` source-code rules, Apache-2.0, at the commit pinned here, with the licence. The
 # rules are detection signatures, not samples. Which of them ship is decided by
-# tests/conformance/generate/yara_select.py against the benign corpus. Run inside Docker only:
+# tests/conformance/generate/rule_pack_select.py against the benign corpus. Run inside Docker only:
 #
-#   docker run --rm -v "$PWD/src/cordon_scanner/rules:/rules" curlimages/curl:latest sh /rules/../../../tests/conformance/generate/yara_pack.sh
+#   docker run --rm -v "$PWD/src/cordon_scanner/rules:/rules" curlimages/curl:latest sh /rules/../../../tests/conformance/generate/rule_pack_fetch.sh
 set -eu
 COMMIT=1f4a66c064fb2087c224750507f3b65c7633deeb
 BASE="https://raw.githubusercontent.com/DataDog/guarddog/$COMMIT"
-OUT=/rules/yara/upstream
+OUT=/rules/rule_files/upstream
 rm -rf "$OUT" && mkdir -p "$OUT"
 curl -fsSL "$BASE/LICENSE" -o "$OUT/LICENSE"
 curl -fsSL "https://api.github.com/repos/DataDog/guarddog/contents/guarddog/analyzer/sourcecode?ref=$COMMIT" \

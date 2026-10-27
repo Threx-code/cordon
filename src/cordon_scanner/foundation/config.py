@@ -50,6 +50,7 @@ from cordon_scanner.foundation.models import (
     Severity,
     Suppression,
 )
+from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.foundation.taxonomy import ThreatDomain
 from cordon_scanner.version import PROGRAM
 
@@ -397,10 +398,10 @@ class Config:
     variable (`--registry-token URL=VAR`, `CORDON_REGISTRY_TOKENS`). Set only by the operator,
     never from any configuration file: a repository naming one could send a credential to a host
     it chose. See `intel/private_registries`."""
-    yara: str | None = None
-    """A YARA rules file to match every file against (`--yara`). Set only by the operator, for the
-    reason `clamav` is: a repository that chose the rules run against it would choose rules that
-    never match. See `detect/yara_rules`."""
+    rule_file: str | None = None
+    """A cordon-rule rule file to match every file against (`--rule-file`). Set only by the
+    operator, for the reason `clamav` is: a repository that chose the rules run against it would
+    choose rules that never match. See `detect/binary/rule_files`."""
     keyrings: tuple[str, ...] = ()
     """OpenPGP keyrings whose keys a Helm chart's provenance file may be signed by (`--keyring`,
     `CORDON_KEYRINGS`), as `helm verify --keyring` takes them. Set only by the operator, never
@@ -952,7 +953,7 @@ class Config:
             # demand fresher intel; a repository can do neither the other way.
             intel_feed=self.intel_feed and org.intel_feed,
             clamav=self.clamav or org.clamav,
-            yara=self.yara or org.yara,
+            rule_file=self.rule_file or org.rule_file,
             keyrings=self.keyrings or org.keyrings,
             judge=self.judge or org.judge,
             judge_blocks=self.judge_blocks or org.judge_blocks,
@@ -1049,7 +1050,7 @@ class Config:
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
-            "yara": bool(self.yara),
+            "rule_file": bool(self.rule_file),
             "keyrings": bool(self.keyrings),
             "judge": bool(self.judge),
             "evidence": str(self.evidence),
@@ -1137,7 +1138,7 @@ class Config:
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
-            "yara": bool(self.yara),
+            "rule_file": bool(self.rule_file),
             "keyrings": bool(self.keyrings),
             "judge": bool(self.judge),
             "detectors": dict(sorted(self.detectors.items())),
@@ -1710,6 +1711,8 @@ class ConfigParser:
             isinstance(v, bool) for v in detectors_raw.values()
         ):
             raise ConfigError(f"{source}: scan.detectors must map detector ids to booleans")
+        # a detector named by the ID it had before a rename is the detector it became
+        detectors_raw = {Renamed.detector(k): v for k, v in detectors_raw.items()}
 
         limits_raw = scan.get("limits") or {}
         if not isinstance(limits_raw, dict):

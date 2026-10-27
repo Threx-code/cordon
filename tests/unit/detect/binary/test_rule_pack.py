@@ -1,4 +1,4 @@
-"""The built-in YARA pack (`--yara builtin`) and the `path_include` a rule states."""
+"""The built-in rule pack (`--rule-file builtin`) and the `path_include` a rule states."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cordon_scanner.detect.binary.yara_rules import BUILTIN_PACK, YaraEngine
+from cordon_scanner.detect.binary.rule_files import BUILTIN_PACK, RuleFileEngine
 
 PACK_DIRECTORY = BUILTIN_PACK.parent
 
@@ -31,9 +31,9 @@ class TestThePackShipped:
             assert (PACK_DIRECTORY / "upstream" / name).read_text(encoding="utf-8") not in text
 
     def test_builtin_names_the_shipped_pack_and_it_compiles(self) -> None:
-        from cordon_scanner.detect.binary.yara_lang import Rules
+        from cordon_scanner.detect.binary.rule_lang import Rules
 
-        engine = YaraEngine("builtin")
+        engine = RuleFileEngine("builtin")
         assert engine.version and isinstance(engine.rules, Rules)
         assert len(engine.rules.rules) == 40
 
@@ -55,11 +55,11 @@ class TestPathInclude:
         ],
     )
     def test_a_rule_counts_only_for_the_files_it_names(self, path, applies) -> None:
-        assert YaraEngine.applies(self.match("*.py,*.js"), path) is applies
+        assert RuleFileEngine.applies(self.match("*.py,*.js"), path) is applies
 
     def test_a_rule_that_names_none_counts_everywhere(self) -> None:
-        assert YaraEngine.applies(self.match(None), "anything.bin")
-        assert YaraEngine.applies(self.match(""), "anything.bin")
+        assert RuleFileEngine.applies(self.match(None), "anything.bin")
+        assert RuleFileEngine.applies(self.match(""), "anything.bin")
 
     def test_the_shipped_pack_exists(self) -> None:
         assert Path(BUILTIN_PACK).is_file()

@@ -384,7 +384,7 @@ class TestEverySettingReachesTheWorkers:
             internal_namespaces=("@acme",),
             judge="model-x",
             clamav="tcp://127.0.0.1:3310",
-            yara="/rules.yar",
+            rule_file="/rules.yar",
             max_intel_age=7,
             reachability=True,
             allow_plugins=True,

@@ -51,6 +51,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 19  Release comparison .......... what changed since the version you trust
     ├─ 20  In the editor ............... findings on the line, in VS Code and JetBrains IDEs
     ├─ 30  The MCP server .............. AI agents check packages, skills and servers first
+    ├─ 31  Rule files .................. your own signatures, matched against every file
     │
   ACROSS A TEAM
     ├─ 21  Dependency review ........... what an update adds, on every pull request
@@ -88,6 +89,8 @@ silent gap, never a crash. See tutorials 09 and 05.
 
 ## New in 0.7.0
 
+- **31 · Rule files** -- `--rule-file`: your own signatures, matched against every file with
+  cordon-rule, Cordon's own rule engine (it reads rule files in the YARA format, `.yar`).
 - **30 · The MCP server** -- `cordon-scanner mcp`: coding agents ask Cordon before they install a
   package, run an install command, load a skill or add an MCP server, over the Model Context
   Protocol, with every tool read-only and every online name kept to the public internet.

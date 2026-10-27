@@ -7,7 +7,7 @@
   serial scan did not make.
 * Two of the 249,646 known-malicious records were missed: a 213-character npm name and a
   74-character version, both cut short before they were looked up.
-* YARA rules files were read as code, so a repository keeping detection rules was reported as
+* Rule files (`.yar`) were read as code, so a repository keeping detection rules was reported as
   the malware the rules describe.
 """
 
@@ -125,7 +125,7 @@ class TestKnownMaliciousRecordsAtFullLength:
 
 
 class TestDetectionRulesAreData:
-    def test_a_yara_rules_file_is_not_the_malware_it_describes(self, tmp_path) -> None:
+    def test_a_rule_files_file_is_not_the_malware_it_describes(self, tmp_path) -> None:
         (tmp_path / "rules").mkdir()
         (tmp_path / "rules" / "miners.yar").write_text(
             'rule miner { strings: $a = "stratum+tcp://pool.minexmr.com:4444" $b = "xmrig --donate-level" '
@@ -149,7 +149,7 @@ class TestDetectionRulesAreData:
         )
 
     def test_the_manifest_records_the_measurement(self) -> None:
-        from cordon_scanner.detect.binary.yara_rules import BUILTIN_PACK
+        from cordon_scanner.detect.binary.rule_files import BUILTIN_PACK
 
         measurement = BUILTIN_PACK.parent / "MEASUREMENT.json"
         if measurement.exists():

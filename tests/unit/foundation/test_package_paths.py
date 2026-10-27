@@ -14,7 +14,7 @@ from typing import ClassVar
 import cordon_scanner
 from cordon_scanner.decide import intent, verdict
 from cordon_scanner.detect.agents import mcp_model
-from cordon_scanner.detect.binary import binary_imports, yara_rules
+from cordon_scanner.detect.binary import binary_imports, rule_files
 from cordon_scanner.detect.infra import iac_policies
 from cordon_scanner.engine import registry
 from cordon_scanner.foundation.paths import PackagePaths
@@ -37,7 +37,7 @@ class TestPackagePaths:
             mcp_model.MODEL_PATH,
             mcp_model.SKILL_MODEL_PATH,
             intent.MODEL_PATH,
-            yara_rules.BUILTIN_PACK,
+            rule_files.BUILTIN_PACK,
         ]
         for path in files:
             assert path.is_file(), path
@@ -54,13 +54,13 @@ class TestPackagePaths:
         assert feed.ROOT_FILE.parent == PACKAGE / "intel" / "data"
         assert dbsync.PUBLIC_KEY_FILE.parent == PACKAGE / "intel" / "data"
 
-    #: Not loaded at run time, so not in the wheel: the third-party rules the built-in YARA pack is
+    #: Not loaded at run time, so not in the wheel: the third-party rules the built-in rule pack is
     #: assembled from, shipped in the sdist with their licence record (MANIFEST.in).
-    NOT_IN_WHEEL: ClassVar[tuple[str, ...]] = ("rules/yara/upstream/",)
+    NOT_IN_WHEEL: ClassVar[tuple[str, ...]] = ("rules/rule_files/upstream/",)
 
     def test_every_bundled_file_is_declared_for_the_wheel(self) -> None:
         """Every data file in the package must match pyproject's package-data, or an install from
-        PyPI runs without it, quietly: until 2026-10-20 the wheel lacked the YARA pack and the
+        PyPI runs without it, quietly: until 2026-10-20 the wheel lacked the rule pack and the
         bundled EPSS scores (`intel/data/epss.csv.gz`)."""
         declared = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
         globs = [

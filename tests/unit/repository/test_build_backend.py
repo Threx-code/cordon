@@ -1,6 +1,6 @@
 """Cordon's own build backend (`scripts/backend/cordon_build.py`): what it puts in a wheel, and that it
 builds the same bytes twice. Checked against setuptools when it replaced it: identical contents and
-metadata, file for file, less the third-party YARA sources setuptools had shipped without their
+metadata, file for file, less the third-party rule sources setuptools had shipped without their
 licence (now sdist only)."""
 
 from __future__ import annotations
@@ -53,8 +53,8 @@ class TestWheel:
             if "__pycache__" not in p.parts
         }
         assert modules and modules <= names
-        assert "cordon_scanner/rules/yara/cordon-builtin.yar" in names
-        assert not any(n.startswith("cordon_scanner/rules/yara/upstream/") for n in names)
+        assert "cordon_scanner/rules/rule_files/cordon-builtin.yar" in names
+        assert not any(n.startswith("cordon_scanner/rules/rule_files/upstream/") for n in names)
         assert not any("__pycache__" in n or n.endswith(".pyc") for n in names)
 
     def test_the_record_hashes_every_file(

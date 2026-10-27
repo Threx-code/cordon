@@ -32,6 +32,7 @@ from cordon_scanner.foundation.models import (
     Severity,
     Suppression,
 )
+from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.version import PROGRAM
 
 if TYPE_CHECKING:
@@ -285,7 +286,7 @@ class SuppressionMatcher:
         also exempt that script from every other rule, nor exempt every file
         from the spawn rule.
         """
-        if finding.rule_id != suppression.rule:
+        if finding.rule_id != Renamed.rule(suppression.rule):  # an old rule ID still suppresses
             return False
         return cls._path_matches(finding.location.path, suppression.path)
 

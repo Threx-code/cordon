@@ -268,7 +268,7 @@ rather than a document.
 | `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.002` | critical | `composites` | malicious_code |
-| `MALWARE.YARA.MATCH.001` | critical | `yara` | malicious_code |
+| `MALWARE.RULEFILE.MATCH.001` | critical | `rule-file` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
 | `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | `composites` | malicious_code |
@@ -301,9 +301,9 @@ rather than a document.
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | `composites` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
+| `SUSPECT.RULEFILE.MATCH.001` | high | `rule-file` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |
-| `SUSPECT.YARA.MATCH.001` | high | `yara` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion
 
@@ -715,12 +715,12 @@ rather than a document.
 | `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.NO_SOURCE.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
+| `OPERATIONAL.RULEFILE.STATUS` | info | `rule-file` | coverage |
+| `OPERATIONAL.RULEFILE.UNAVAILABLE` | info | `rule-file` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
 | `OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001` | low | `secrets` | coverage |
 | `OPERATIONAL.SECRET_LIVENESS.UNCHECKED.001` | low | `secrets` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
-| `OPERATIONAL.YARA.STATUS` | info | `yara` | coverage |
-| `OPERATIONAL.YARA.UNAVAILABLE` | info | `yara` | coverage |
 
 ### Domain 15 — The agent chain
 

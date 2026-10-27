@@ -603,7 +603,7 @@ class RuleTutorial:
         "VCS": "Source and history",
         "SBOM": "SBOMs",
         "VEX": "VEX",
-        "YARA": "YARA",
+        "RULEFILE": "Rule files",
         "CLAMAV": "ClamAV",
         "DOCKERFILE": "Dockerfiles",
         "COMPOSE": "Compose files",

@@ -74,13 +74,13 @@ MAX_WORKERS = 16
 
 #: Settings a worker needs that `Config.to_dict()` does not carry, because `to_dict()` is the
 #: repository schema and these come only from the operator or the organisation policy: where a
-#: scan may send bytes (`clamav`, `yara`, `judge`), how the judge reports and its budget, and the
+#: scan may send bytes (`clamav`, `rule_file`, `judge`), how the judge reports and its budget, and the
 #: policy lists per-file rules read. Each one missing here made a parallel scan disagree with a
 #: serial one; `tests/unit/engine/test_parallel.py` fails when a new field is in neither this nor
 #: `PARENT_ONLY_SETTINGS`.
 CARRIED_SETTINGS: tuple[str, ...] = (
     "clamav",
-    "yara",
+    "rule_file",
     "judge",
     "judge_blocks",
     "judge_max_calls",
@@ -308,12 +308,12 @@ class ParallelScanner:
 
         config = _Config.from_dict(config_payload, source="<worker>")
         if operator:
-            # The operator-only settings (`--clamav`, `--yara`) are not in `to_dict()` on
+            # The operator-only settings (`--clamav`, `--rule-file`) are not in `to_dict()` on
             # purpose: it is the repository schema, and a scan target must never choose where its
             # own bytes are sent. So they cross to the workers separately. Without this every
             # worker ran the ClamAV detector with no daemon address: above the parallel threshold
             # a `--clamav` scan reported "clamd at  could not be reached" and came back
-            # incomplete, and `--yara` matched nothing.
+            # incomplete, and `--rule-file` matched nothing.
             from dataclasses import replace as _replace_operator
 
             config = _replace_operator(config, **operator)

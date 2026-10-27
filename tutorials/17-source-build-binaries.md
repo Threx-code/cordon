@@ -125,11 +125,11 @@ Networking plus process creation plus registry writes is every installer, so it 
 them. Measured on 342 Debian binaries and the 30 PE files of the Windows Python build: no
 verdicts.
 
-`--yara RULES` also matches every file against a YARA rules file the operator names, on Cordon's
-own YARA engine: nothing to install, and the `math`, `hash`, `time`, `console`, `string`, `pe`,
-`elf` and `dotnet` modules -- every module yara-python 4.5.1 ships -- give the values YARA gives.
-A rule whose metadata says `category = "malicious"` is reported as malware; a `severity` meta
-sets the severity. A repository's own config cannot name the rules.
+`--rule-file RULES` also matches every file against a rule file the operator names, with
+cordon-rule, Cordon's own rule engine: nothing to install, and the `math`, `hash`, `time`,
+`console`, `string`, `pe`, `elf` and `dotnet` modules. A rule whose metadata says
+`category = "malicious"` is reported as malware; a `severity` meta sets the severity. A
+repository's own config cannot name the rules. See **[31 · Rule files](31-rule-files.md)**.
 
 ## Licences
 

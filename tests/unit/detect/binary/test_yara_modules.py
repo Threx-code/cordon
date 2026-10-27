@@ -14,6 +14,7 @@ from typing import Any, ClassVar
 
 import pytest
 
+from cordon_scanner.detect.binary.rule_lang import Rules
 from cordon_scanner.detect.binary.rule_values import (
     Array,
     Dictionary,
@@ -24,7 +25,6 @@ from cordon_scanner.detect.binary.rule_values import (
 )
 from cordon_scanner.detect.binary.yara_authenticode import Asn1Time, AsnError, Ber, Name
 from cordon_scanner.detect.binary.yara_dotnet import Dotnet
-from cordon_scanner.detect.binary.yara_lang import Rules
 from cordon_scanner.detect.binary.yara_pe import Elf, Pe
 from cordon_scanner.detect.binary.yara_tlsh import Tlsh
 from support import ROOT
@@ -141,7 +141,7 @@ class TestIntegers:
 class RealFiles:
     """The fixtures under `data/yara/modules` and yara-python's values for them."""
 
-    DIR: ClassVar[Path] = ROOT / "tests" / "unit" / "data" / "yara" / "modules"
+    DIR: ClassVar[Path] = ROOT / "tests" / "unit" / "data" / "rule_reference" / "modules"
     EXPECTED: ClassVar[dict[str, Any]] = json.loads(
         (DIR / "expected.json").read_text(encoding="utf-8")
     )

@@ -47,7 +47,7 @@
  ],
  "dropped": {
   "threat-process-download-exec.yar": "matched 1 benign file(s), first corpus/benign/python-startup/tools/fetch_tool.py",
-  "threat-process-sysinfo.yar": "does not compile with yara-python 4.5.1: /pkg/src/cordon_scanner/rules/yara/upstream/threat-process-sysinfo.yar(18): undefined identifier \"lolbas_sysinfo\"",
+  "threat-process-sysinfo.yar": "does not compile with the reference engine: /pkg/src/cordon_scanner/rules/rule_files/upstream/threat-process-sysinfo.yar(18): undefined identifier \"lolbas_sysinfo\"",
   "threat-runtime-environment-read.yar": "matched 1 benign file(s), first corpus/benign/python/settings.py"
  }
 }
