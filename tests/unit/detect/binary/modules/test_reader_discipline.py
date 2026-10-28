@@ -4,8 +4,9 @@ Layout, Grid, ImageMap) is that a structure is declared once and read in one pla
 past it is a regression. ``modules.layout`` itself holds the one allowed ``struct``/``int.from_bytes``;
 ``modules.tlsh`` is a hash transform, not a format reader, so it is out of scope.
 
-Scoped to the format readers by name: modules.pe, modules.elf, modules.dotnet, modules.signature (and modules.oids once it
-lands). A new reader is added to READERS here.
+Scoped to the format readers by name: modules.pe, modules.elf, modules.dotnet with dotnet_metadata and
+dotnet_signatures, and modules.signature with x509 and der (the parts those two split into). A new
+reader is added to READERS here.
 """
 
 from __future__ import annotations
@@ -15,7 +16,16 @@ from pathlib import Path
 
 from support import ROOT
 
-READERS = ("pe", "elf", "dotnet", "signature")
+READERS = (
+    "pe",
+    "elf",
+    "dotnet",
+    "dotnet_metadata",
+    "dotnet_signatures",
+    "signature",
+    "x509",
+    "der",
+)
 BINARY = ROOT / "src" / "cordon_scanner" / "detect" / "binary" / "modules"
 
 
