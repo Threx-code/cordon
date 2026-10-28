@@ -165,6 +165,25 @@ class Environment:
         pip_section = any(
             isinstance(i, dict) and isinstance(i.get("pip"), list) for i in dependencies
         )
+        Environment._implied_pip(pip_section, declared)
+        channels = data.get("channels")
+        sources = tuple(
+            f"channel {i + 1}: {c}"
+            for i, c in enumerate(channels if isinstance(channels, list) else [])
+        )
+        variables = data.get("variables")
+        sources = Environment._variables(variables, sources)
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            name=BaseEcosystem._s(data.get("name")),
+            dependencies=tuple(declared),
+            sources=sources,
+        )
+
+    @staticmethod
+    def _implied_pip(pip_section: bool, declared: list[DeclaredDependency]) -> None:
+        """The pip conda installs for a pip: subsection that does not list it."""
         if pip_section and not any(d.name == "pip" and d.ecosystem is None for d in declared):
             # conda installs pip itself for a pip: subsection that does not list it ("I'm adding
             # one for you, but still nagging you"), from the environment's channels.
@@ -177,12 +196,10 @@ class Environment:
                     note="not listed: conda installs pip itself to install the pip: subsection",
                 )
             )
-        channels = data.get("channels")
-        sources = tuple(
-            f"channel {i + 1}: {c}"
-            for i, c in enumerate(channels if isinstance(channels, list) else [])
-        )
-        variables = data.get("variables")
+
+    @staticmethod
+    def _variables(variables: Any | None, sources: tuple[str, ...]) -> tuple[str, ...]:
+        """The variables the environment sets when activated, named and never valued."""
         if isinstance(variables, dict) and variables:
             # Set in the environment when it is activated. Named, never valued: a value here is as
             # likely a token as a path, and the secret detectors read the file for those.
@@ -190,13 +207,7 @@ class Environment:
                 *sources,
                 f"sets {', '.join(sorted(str(k) for k in variables))} on activation",
             )
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            name=BaseEcosystem._s(data.get("name")),
-            dependencies=tuple(declared),
-            sources=sources,
-        )
+        return sources
 
 
 class Condarc:
@@ -355,6 +366,17 @@ class CondaLock:
                 else:
                     slot["edges"].add(str(name))
         entries: list[LockEntry] = []
+        CondaLock._entries(groups, platforms, entries)
+        CondaLock._virtual_entries(virtual, entries)
+        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
+
+    @staticmethod
+    def _entries(
+        groups: dict[tuple[str, str, str, str | None], dict[str, Any]],
+        platforms: list[str],
+        entries: list[LockEntry],
+    ) -> None:
+        """One entry per conda or pip package of the lock, with its build, channel and hashes."""
         for (manager, name, version, build), slot in sorted(
             groups.items(), key=lambda item: str(item[0])
         ):
@@ -390,6 +412,10 @@ class CondaLock:
                     ecosystem="pypi" if manager == "pip" else None,
                 )
             )
+
+    @staticmethod
+    def _virtual_entries(virtual: dict[str, str], entries: list[LockEntry]) -> None:
+        """The virtual packages (__glibc, __osx, __cuda): the system the environment needs, never installed."""
         for name, requirement in sorted(virtual.items()):
             # A virtual package (`__glibc`, `__osx`, `__cuda`) is the system the environment
             # needs, never installed.
@@ -401,7 +427,6 @@ class CondaLock:
                     platform=(f"requires {requirement}",),
                 )
             )
-        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
 
 
 class ExplicitExport:
