@@ -131,6 +131,7 @@
   "detect/binary/rule_engine/pattern": "detect/binary/rule_engine/pattern",
   "detect/binary/modules/pe": "detect/binary/modules/pe",
   "detect/binary/modules/pe_functions": "detect/binary/modules/pe_functions",
+  "detect/binary/modules/pe_imports": "detect/binary/modules/pe_imports",
   "detect/binary/rule_engine/search_parts": "detect/binary/rule_engine/search_parts",
   "detect/binary/rule_engine/scan": "detect/binary/rule_engine/scan",
   "detect/binary/modules/der": "detect/binary/modules/der",
