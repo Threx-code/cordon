@@ -11,7 +11,8 @@ from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.models import Severity
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 
 class ScanEnrichment:

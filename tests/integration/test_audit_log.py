@@ -21,7 +21,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.audit import AuditLog
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError
 from support import Support
 
@@ -141,7 +141,7 @@ class TestSuppressionsAreTheAuditableFact:
         return root
 
     def test_a_suppressed_finding_is_named_with_its_reason(self, tmp_path: Path) -> None:
-        from cordon_scanner.foundation.config_resolver import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
 
         root = self.configured(tmp_path)
         config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)

@@ -27,7 +27,8 @@ from cordon_scanner.version import __version__
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 ANSI = re.compile(r"\033\[[0-9;]*m")
 

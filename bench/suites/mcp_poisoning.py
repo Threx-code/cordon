@@ -551,7 +551,7 @@ class McpPoisoningBench:
         """Every LOW+ finding on a target: rule, severity, file, line, and whether it blocks."""
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         overrides: dict[str, Any] = {"use_cache": False}
         # `--judge` (the operator's model, as `cordon-scanner --judge`): set once in the parent

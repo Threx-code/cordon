@@ -16,28 +16,30 @@ import dataclasses
 
 import pytest
 
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Confidence,
-    Dependency,
     Evidence,
     EvidenceKind,
     Explanation,
     Finding,
     Hook,
-    LanguageStat,
     Location,
-    Project,
     RedactionMode,
-    Repository,
     RiskFactor,
     RiskScore,
-    ScanResult,
-    ScanStats,
     Scope,
     Severity,
     Suppression,
+)
+from cordon_scanner.foundation.results import (
+    Dependency,
+    LanguageStat,
+    Project,
+    Repository,
+    ScanResult,
+    ScanStats,
 )
 
 

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
 from cordon_scanner.engine.pipeline.operational import OperationalFinding
-from cordon_scanner.foundation.models import Dependency
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     pass

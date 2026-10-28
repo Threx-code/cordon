@@ -24,13 +24,8 @@ from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.operational import OperationalFinding
-from cordon_scanner.foundation.models import (
-    Category,
-    Confidence,
-    Dependency,
-    Finding,
-    Severity,
-)
+from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

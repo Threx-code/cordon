@@ -21,7 +21,8 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
-from cordon_scanner.foundation.models import Dependency, Scope
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
 
 MAX_COMPONENTS: Final = 50_000
 

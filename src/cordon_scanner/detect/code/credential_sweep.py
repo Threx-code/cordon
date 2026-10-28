@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.code.capability.hits import CapabilityHit

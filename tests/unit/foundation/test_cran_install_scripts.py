@@ -8,7 +8,7 @@ import tarfile
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 DESCRIPTION = (
     "Package: demo\n"

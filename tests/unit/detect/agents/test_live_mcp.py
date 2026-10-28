@@ -19,9 +19,9 @@ from cordon_scanner.detect.agents.live_mcp import (
     LiveMcpDetector,
 )
 from cordon_scanner.detect.base import FileUnit, ScanContext
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Repository
+from cordon_scanner.foundation.results import Repository
 from cordon_scanner.intel.store.live_mcp import LiveMcp, LiveMcpError, McpApprovals, ServedTool
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 

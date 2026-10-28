@@ -25,9 +25,10 @@ from cordon_scanner.detect.supply.registry import (
     RegistryEvidence,
 )
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Dependency, Scope
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.registries import more_registries
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
 from cordon_scanner.intel.registries.registry_client import (

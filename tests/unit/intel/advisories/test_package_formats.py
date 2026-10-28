@@ -23,7 +23,7 @@ from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import HONOURED_PINS
 from cordon_scanner.engine.pipeline.publisher import Publisher
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories import exploited

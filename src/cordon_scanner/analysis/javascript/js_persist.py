@@ -24,7 +24,7 @@ from bisect import bisect_right
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Final, TypeVar
 
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
     from cordon_scanner.analysis.javascript.js_flow import _Analysis

@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.provenance.openpgp import Keyring
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"

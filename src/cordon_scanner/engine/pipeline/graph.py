@@ -16,11 +16,8 @@ from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, Lock
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.operational import OperationalFinding
-from cordon_scanner.foundation.models import (
-    Dependency,
-    Scope,
-    Severity,
-)
+from cordon_scanner.foundation.models import Scope, Severity
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

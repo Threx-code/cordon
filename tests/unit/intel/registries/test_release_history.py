@@ -12,7 +12,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.engine.pipeline.history import History
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.intel.registries.release_history import Baseline, ReleaseHistory

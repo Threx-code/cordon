@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.foundation.capabilities import Capability
 
 
 class LineRanges:

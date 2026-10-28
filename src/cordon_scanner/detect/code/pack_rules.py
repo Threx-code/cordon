@@ -24,14 +24,8 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     Unit,
 )
-from cordon_scanner.foundation.models import (
-    Category,
-    Explanation,
-    Finding,
-    Location,
-    MatchKind,
-    Severity,
-)
+from cordon_scanner.foundation.capabilities import MatchKind
+from cordon_scanner.foundation.models import Category, Explanation, Finding, Location, Severity
 from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:

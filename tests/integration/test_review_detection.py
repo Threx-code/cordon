@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 PRIVILEGED_POD = """apiVersion: v1
 kind: Pod
@@ -256,7 +256,7 @@ class TestReportedLocationsAreExact:
 
     def scan(self, root):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
 

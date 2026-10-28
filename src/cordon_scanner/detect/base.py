@@ -42,9 +42,11 @@ from cordon_scanner.foundation.models import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from cordon_scanner.foundation.config import Config
+    from cordon_scanner.foundation.capabilities import Capability
+    from cordon_scanner.foundation.config.settings import Config
     from cordon_scanner.foundation.content import FileContent
-    from cordon_scanner.foundation.models import Capability, Dependency, Repository, Rule
+    from cordon_scanner.foundation.results import Dependency, Repository
+    from cordon_scanner.foundation.rule_model import Rule
     from cordon_scanner.rules.loader import CompiledRule, RuleSet
 
 

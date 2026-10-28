@@ -32,10 +32,10 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import (
     AUTHOR_TIME_HOOKS,
     INSTALL_TIME_HOOKS,
-    Capability,
     Category,
     Confidence,
     Evidence,

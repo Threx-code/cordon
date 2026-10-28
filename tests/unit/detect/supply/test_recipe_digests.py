@@ -15,7 +15,7 @@ from cordon_scanner.detect.supply.recipe_digests import (
     RecipeDigestDetector,
     RecipeDigests,
 )
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.intel.advisories import advisories
 from cordon_scanner.intel.malware.feed import FeedRoles
 from kits.feedkit import FeedKit, SignedFeed

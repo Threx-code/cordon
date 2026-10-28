@@ -23,9 +23,9 @@ from cordon_scanner.cli.completion import CommandTree, CompletionScript
 from cordon_scanner.cli.deps import DependencyView
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cli.suppressions import SuppressCommand, SuppressionFile, SuppressionRules
+from cordon_scanner.foundation.config.policy import OrgConstraints
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.models import Category, Suppression
-from cordon_scanner.foundation.policy import OrgConstraints
 from cordon_scanner.intel.registries import more_registries, registry_client
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
 from cordon_scanner.intel.registries.registry_client import (
@@ -535,7 +535,7 @@ class TestDeps:
         assert [d["name"] for d in payload["dependencies"]] == ["express"]
 
     def test_no_lockfile_says_so(self, tmp_path) -> None:
-        from cordon_scanner.foundation.models import ScanResult
+        from cordon_scanner.foundation.results import ScanResult
 
         assert (
             DependencyView(ScanResult())
@@ -549,7 +549,7 @@ class TestDeps:
         # Found by running `deps --online` on axios: an advisory source that covers no package
         # of an ecosystem leaves the scan incomplete, and deps answered 2 -- "a bug in Cordon".
         import cordon_scanner
-        from cordon_scanner.foundation.models import ScanResult
+        from cordon_scanner.foundation.results import ScanResult
 
         monkeypatch.setattr(
             cordon_scanner.Scanner, "scan", lambda self, target: ScanResult(complete=False)

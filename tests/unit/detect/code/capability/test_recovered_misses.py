@@ -13,7 +13,7 @@ from __future__ import annotations
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.agent_intent import InstructionIntent
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
 

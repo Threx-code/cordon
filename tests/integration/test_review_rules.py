@@ -20,8 +20,8 @@ from cordon_scanner import Scanner
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.detect.catalogue import RuleCatalogue
 from cordon_scanner.engine.registry import Registry
-from cordon_scanner.foundation.config import Config
-from cordon_scanner.foundation.config_resolver import ConfigResolver
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
 from support import Support
 
 SECRET_LINE = Support.assemble("API_SECRET=", "k3JHd82", "hdKJHd82", "hKJHd8\n")

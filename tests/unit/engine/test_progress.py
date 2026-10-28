@@ -24,7 +24,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.cli.progress import MAX_PATH, TerminalProgress, TerminalText
 from cordon_scanner.engine.engine import Engine
 from cordon_scanner.engine.progress import NullProgress, Progress
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 PAYLOAD = 'eval(atob("cGF5bG9hZA=="))\n'
 

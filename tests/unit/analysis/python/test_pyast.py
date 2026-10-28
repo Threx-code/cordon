@@ -21,7 +21,7 @@ import ast
 import pytest
 
 from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.foundation.capabilities import Capability
 
 # Primitive names are assembled rather than written out. Cordon scans its own
 # repository, and a file carrying decode, execute, spawn and egress primitives
@@ -285,7 +285,7 @@ class TestImportByCall:
     )
     def test_decode_then_execute_is_seen_through_the_call(self, tmp_path, source) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(
             source + "\nfrom setuptools import setup\nsetup(name='x')\n", encoding="utf-8"

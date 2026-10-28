@@ -8,7 +8,7 @@ text by construction, beside the guard's own tests.
 from __future__ import annotations
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 GUARD = (
     "import base64\n"

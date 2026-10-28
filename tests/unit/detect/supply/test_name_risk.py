@@ -21,7 +21,7 @@ from cordon_scanner.detect.supply.name_risk import (
     NameSignals,
     PackageIdentity,
 )
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 
 class Identities:

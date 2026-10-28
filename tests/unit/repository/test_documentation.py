@@ -388,7 +388,7 @@ class TestConfigurationFilename:
         return names
 
     def test_every_documented_name_is_accepted(self) -> None:
-        from cordon_scanner.foundation.config import CONFIG_FILENAMES
+        from cordon_scanner.foundation.config.settings import CONFIG_FILENAMES
 
         unknown = self.documented() - set(CONFIG_FILENAMES)
         assert not unknown, unknown
@@ -398,7 +398,7 @@ class TestConfigurationFilename:
         assert "cordon.yaml" in self.documented()
 
     def test_the_accepted_names_are_what_they_should_be(self) -> None:
-        from cordon_scanner.foundation.config import CONFIG_FILENAMES
+        from cordon_scanner.foundation.config.settings import CONFIG_FILENAMES
 
         assert set(CONFIG_FILENAMES) == {
             "cordon.yaml",
@@ -410,7 +410,7 @@ class TestConfigurationFilename:
     def test_a_documented_config_is_actually_discovered(self, tmp_path) -> None:
         """The end-to-end form. The names agreeing is not the same as discovery
         working."""
-        from cordon_scanner.foundation.config_resolver import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
 
         (tmp_path / "cordon.yaml").write_text(
             "scan:\n  severity_threshold: critical\n", encoding="utf-8"

@@ -34,7 +34,8 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
-from cordon_scanner.foundation.models import Dependency, Severity
+from cordon_scanner.foundation.models import Severity
+from cordon_scanner.foundation.results import Dependency
 
 #: Files read from the base revision: at most this many, each at most this size.
 MAX_BASE_FILES = 2_000
@@ -134,7 +135,7 @@ class GraphDiff:
     def graph(target: Path) -> tuple[Dependency, ...]:
         """The resolved graph only: lockfiles and manifests read, no detector run."""
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return (
             Scanner(Config.default().with_overrides(use_cache=False), detectors=())
@@ -231,7 +232,7 @@ class ChangeReview:
 
         from cordon_scanner import Scanner
         from cordon_scanner.detect.supply import release_diff
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         candidates = [c for c in changes if c.new is not None]

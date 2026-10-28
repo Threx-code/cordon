@@ -24,19 +24,19 @@ from cordon_scanner.foundation.taxonomy import ThreatDomain
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from cordon_scanner.foundation.config import (
+from cordon_scanner.foundation.config.policy import (
+    DEFAULT_ADVISORY_DOMAINS,
+    DEFAULT_MAX_MAJOR_DRIFT,
+    OrgConstraints,
+    Policy,
+)
+from cordon_scanner.foundation.config.settings import (
     CONFIG_VERSION,
     LICENSE_UNKNOWN_ORDER,
     MIN_JUSTIFICATION_CHARS,
     TOP_LEVEL_KEYS,
     Config,
     Provenance,
-)
-from cordon_scanner.foundation.policy import (
-    DEFAULT_ADVISORY_DOMAINS,
-    DEFAULT_MAX_MAJOR_DRIFT,
-    OrgConstraints,
-    Policy,
 )
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

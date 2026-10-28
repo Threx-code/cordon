@@ -11,7 +11,8 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
-from cordon_scanner.foundation.models import Category, Dependency, Scope
+from cordon_scanner.foundation.models import Category, Scope
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping

@@ -14,7 +14,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.registry import Registry
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 
 class GitlabAndVexHelpers:

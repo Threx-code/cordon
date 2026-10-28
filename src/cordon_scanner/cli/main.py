@@ -40,7 +40,7 @@ from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.engine.audit import AuditLog
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
-from cordon_scanner.foundation.models import Confidence, Severity
+from cordon_scanner.foundation.models import Confidence, Finding, Severity
 from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
 from cordon_scanner.version import __version__
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from cordon_scanner.engine.progress import Progress
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.results import ScanResult
     from cordon_scanner.sources.base import FileSource
 
 EPILOG = f"""\
@@ -826,7 +826,7 @@ class CommandLine:
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import PolicyGate
         from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.config_resolver import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
         from cordon_scanner.foundation.models import RedactionMode
         from cordon_scanner.report.base import ReportOptions
         from cordon_scanner.sources.package import PackageTarget
@@ -1155,7 +1155,7 @@ class CommandLine:
     @staticmethod
     def _with_cloud_suppressions(config: Any, suppressions: tuple[Any, ...]) -> Any:
         """Add the organisation's approved suppressions, held to the same rules as any other."""
-        from cordon_scanner.foundation.config_parser import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         problems = [
             f"{s.rule} at {s.path}: {problem}"
@@ -1781,7 +1781,7 @@ class CommandLine:
         """
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import Baseline
-        from cordon_scanner.foundation.config_resolver import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
 
         target = Path(args.target)
         if not target.exists():

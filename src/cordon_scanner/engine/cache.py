@@ -232,8 +232,8 @@ class ScanCache:
         one everywhere downstream. That is what makes the equivalence test between a
         cold scan and a warm one meaningful.
         """
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.models import (
-            Capability,
             Category,
             Confidence,
             Evidence,

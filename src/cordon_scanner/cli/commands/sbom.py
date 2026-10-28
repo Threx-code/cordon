@@ -113,7 +113,7 @@ class SbomCommand:
             from cordon_scanner.detect.supply.advisory import AdvisoryDetector
 
             detectors = (AdvisoryDetector(),)
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default()
         if getattr(args, "exclude", None):

@@ -408,7 +408,7 @@ class TestMavenCentralSignatures:
     def test_a_classified_artefact_is_not_checked_against_the_plain_jar(self, monkeypatch) -> None:
         from cordon_scanner.detect.base import GraphUnit
         from cordon_scanner.detect.supply.provenance import ProvenanceDetector
-        from cordon_scanner.foundation.models import Dependency
+        from cordon_scanner.foundation.results import Dependency
         from cordon_scanner.intel.registries.registry_client import RegistryClient
 
         asked: list[str] = []

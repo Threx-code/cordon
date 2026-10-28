@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.report.base import ReportOptions
 from cordon_scanner.report.text import TextReporter
 

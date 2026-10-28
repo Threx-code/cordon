@@ -26,7 +26,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.foundation.models import Dependency, Hook, Scope
+from cordon_scanner.foundation.models import Hook, Scope
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping

@@ -40,7 +40,7 @@ from cordon_scanner.report.sbom import TOOL_NAME, SbomDocument
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 SPEC_VERSION: Final = "1.6"
 MAX_READ: Final = 1 << 20

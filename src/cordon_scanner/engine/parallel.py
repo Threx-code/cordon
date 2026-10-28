@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from concurrent.futures._base import Future
 
     from cordon_scanner.detect.base import ScanContext
-    from cordon_scanner.foundation.config import Config
+    from cordon_scanner.foundation.config.settings import Config
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.models import Finding
 
@@ -309,7 +309,7 @@ class ParallelScanner:
         Collector.relax()  # a worker only scans: its collector stays relaxed
 
         from cordon_scanner.engine.engine import Engine
-        from cordon_scanner.foundation.config import Config as _Config
+        from cordon_scanner.foundation.config.settings import Config as _Config
 
         config = _Config.from_dict(config_payload, source="<worker>")
         if operator:

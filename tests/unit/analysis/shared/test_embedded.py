@@ -201,8 +201,8 @@ class TestCommandsSentToAnotherMachine:
     def test_capabilities_inside_a_command_sent_over_ssh_are_not_this_files(self) -> None:
         from cordon_scanner.detect.code.capability.hits import CapabilityHit
         from cordon_scanner.detect.code.capability.text_position import TextPosition
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.foundation.models import Capability
 
         inside = 'unit += "WantedBy=multi-user.target";\n'
         text = self.SESSION + "await ssh.exec([\n  `x`,\n].join());\n" + inside
@@ -219,8 +219,8 @@ class TestCommandsSentToAnotherMachine:
     def test_without_an_ssh_client_every_hit_stays(self) -> None:
         from cordon_scanner.detect.code.capability.hits import CapabilityHit
         from cordon_scanner.detect.code.capability.text_position import TextPosition
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.foundation.models import Capability
 
         text = "await ssh.exec([\n  `x`,\n].join());\n"
         content = FileContent.from_bytes("deploy.js", text.encode())

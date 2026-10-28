@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
 from cordon_scanner.intel.registries.registry_client import PackageArchive
 from cordon_scanner.sources.package import PackageTarget

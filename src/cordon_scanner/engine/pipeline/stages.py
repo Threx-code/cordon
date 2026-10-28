@@ -38,12 +38,8 @@ from cordon_scanner.engine.walker import (
     WalkEntry,
     Walker,
 )
-from cordon_scanner.foundation.models import (
-    Dependency,
-    Finding,
-    Repository,
-    Severity,
-)
+from cordon_scanner.foundation.models import Finding, Severity
+from cordon_scanner.foundation.results import Dependency, Repository
 
 if TYPE_CHECKING:
     from cordon_scanner.engine.engine import Engine

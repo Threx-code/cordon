@@ -691,7 +691,7 @@ class Cordon:
         files: set[str] | None = None,
     ) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default().with_overrides(
             use_cache=False, offline=True, exclude=(".reference/**",)

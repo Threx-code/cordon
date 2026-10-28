@@ -36,7 +36,8 @@ import re
 import threading
 from typing import TYPE_CHECKING, Final
 
-from cordon_scanner.foundation.models import Dependency, Scope
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     pass

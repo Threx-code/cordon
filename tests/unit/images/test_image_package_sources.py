@@ -20,7 +20,7 @@ import json
 from test_binmeta import BinaryFixtures
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.images import oci
 from cordon_scanner.images.binmeta import BinaryMetadata
 from cordon_scanner.images.langpkgs import LanguagePackages

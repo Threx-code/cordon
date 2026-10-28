@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
-from cordon_scanner.foundation.config_resolver import ConfigResolver
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser

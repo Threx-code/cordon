@@ -22,7 +22,7 @@ from cordon_scanner.detect.infra.iac_policies import (
     GENERATED_META,
     GENERATED_NAME,
 )
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 TERRAFORM = 'resource "aws_db_instance" "main" {\n  identifier = "prod"\n}\n'
 

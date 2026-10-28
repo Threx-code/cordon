@@ -9,7 +9,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents import agent_config
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
 HOST = "x.invalid"

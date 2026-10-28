@@ -28,18 +28,18 @@ from cordon_scanner.foundation.models import (
     Location,
     RedactionMode,
     RiskScore,
-    ScanResult,
     Severity,
     Suppression,
 )
 from cordon_scanner.foundation.renames import Renamed
+from cordon_scanner.foundation.results import ScanResult
 from cordon_scanner.version import PROGRAM
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from cordon_scanner.foundation.config import Config
-    from cordon_scanner.foundation.policy import Policy
+    from cordon_scanner.foundation.config.policy import Policy
+    from cordon_scanner.foundation.config.settings import Config
 
 
 @dataclass(frozen=True, slots=True)

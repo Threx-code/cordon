@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence

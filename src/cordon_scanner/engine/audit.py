@@ -39,7 +39,7 @@ from cordon_scanner.foundation.text.redact import Redactor
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import ScanResult
+    from cordon_scanner.foundation.results import ScanResult
 
 
 @dataclass(frozen=True, slots=True)

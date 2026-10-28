@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from cordon_scanner.detect.catalogue import DeclaredRule
-    from cordon_scanner.foundation.models import Rule
+    from cordon_scanner.foundation.rule_model import Rule
     from cordon_scanner.rules.loader import RulePack, RuleSet, RuleTestFailure
 
 
@@ -43,7 +43,7 @@ class RulesCommand:
     def run(cls, args: argparse.Namespace) -> int:
         from cordon_scanner.detect.catalogue import RuleCatalogue
         from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.config_resolver import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         packs = RuleLoader.load_builtin()

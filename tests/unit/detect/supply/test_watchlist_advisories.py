@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.supply.advisory import MALICIOUS_RULE, AdvisoryDetector
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
 
 DIGEST = "sha256:" + "c" * 64

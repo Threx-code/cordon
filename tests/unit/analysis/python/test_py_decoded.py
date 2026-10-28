@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.py_decoded import PythonDecodedRun
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 DECODE = "b64" + "decode"
 RUN = "r" + "un"

@@ -21,8 +21,8 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.local_seal import LocalSeal
-from cordon_scanner.foundation.config import Config
-from cordon_scanner.foundation.config_resolver import ConfigResolver
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.foundation.models import Evidence, RedactionMode

@@ -18,11 +18,13 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from cordon_scanner.foundation.models import Capability, Category, Severity
+from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.foundation.taxonomy import AttackCategory
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 RELEASE_NEW_HOOK = "SUSPECT.RELEASE.NEW_INSTALL_HOOK.001"
 RELEASE_NEW_CAPABILITY = "SUSPECT.RELEASE.NEW_CAPABILITY.001"

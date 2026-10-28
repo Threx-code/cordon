@@ -45,9 +45,9 @@ from cordon_scanner.detect.infra.ci_exfil import (
 )
 from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Confidence,
     Evidence,

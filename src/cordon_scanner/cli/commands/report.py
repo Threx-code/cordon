@@ -53,7 +53,7 @@ class ReportCommand:
 
         from cordon_scanner.engine.cache import ScanCache
         from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.models import Repository, ScanResult, ScanStats
+        from cordon_scanner.foundation.results import Repository, ScanResult, ScanStats
         from cordon_scanner.report.base import ReportOptions
 
         if (args.report_command or "convert") != "convert":

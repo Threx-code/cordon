@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import ScanContext, Unit
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 COPYLEFT_RULE = "POLICY.LICENSE.COPYLEFT.001"
 WEAK_COPYLEFT_RULE = "POLICY.LICENSE.WEAK_COPYLEFT.001"

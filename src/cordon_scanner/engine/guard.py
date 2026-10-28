@@ -464,7 +464,7 @@ class Guard:
         # `.cordon.yml`, two of the four names config discovery accepts -- so a
         # repository using either got a manifest that did not cover its
         # configuration while `guard verify` reported the guard intact.
-        from cordon_scanner.foundation.config import CONFIG_FILENAMES
+        from cordon_scanner.foundation.config.settings import CONFIG_FILENAMES
 
         candidates = [
             *CONFIG_FILENAMES,

@@ -19,7 +19,8 @@ from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 MAX_DETAILED = 10
 

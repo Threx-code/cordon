@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import ScanContext, Unit
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 PACKAGE_DENIED_RULE = "POLICY.PACKAGE.DENIED.001"
 PACKAGE_NOT_ALLOWED_RULE = "POLICY.PACKAGE.NOT_ALLOWED.001"

@@ -62,14 +62,13 @@ from cordon_scanner.detect.code.publish_reach import PublishReach
 from cordon_scanner.detect.code.store_flow import StoreFlow
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
 from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
+from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Evidence,
     Explanation,
     Finding,
     Location,
-    MatchKind,
     Severity,
 )
 from cordon_scanner.foundation.samples import SampleKinds

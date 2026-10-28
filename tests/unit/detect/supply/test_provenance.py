@@ -18,8 +18,9 @@ from cordon_scanner.detect.supply.provenance import (
     UNVERIFIED_RULE,
     ProvenanceDetector,
 )
-from cordon_scanner.foundation.config import Config
-from cordon_scanner.foundation.models import Dependency, Scope
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.provenance import attest
 from cordon_scanner.intel.provenance.attest import Outcome, Result
 from cordon_scanner.intel.registries.registry_client import PackageFacts, RegistryError

@@ -30,7 +30,8 @@ from cordon_scanner.report.base import BaseReporter
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
     from cordon_scanner.report.base import ReportOptions
 
 #: Code Climate's five words, which are all GitLab renders.

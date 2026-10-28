@@ -42,7 +42,7 @@ from cordon_scanner.intel.advisories.advisories import Advisory
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 OSV_QUERYBATCH: Final = "https://api.osv.dev/v1/querybatch"
 OSV_VULN: Final = "https://api.osv.dev/v1/vulns/"

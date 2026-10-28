@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 RULE = "SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001"
 

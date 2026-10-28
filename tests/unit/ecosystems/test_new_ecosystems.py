@@ -398,7 +398,7 @@ class TestAHyphenatedHexPackage:
 
     def test_a_hyphenated_dependency_reaches_the_advisory_match(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "mix.lock").write_text(self.LOCK, encoding="utf-8")
         findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings

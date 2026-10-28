@@ -13,7 +13,7 @@ import urllib.parse
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import ScanResult
+    from cordon_scanner.foundation.results import ScanResult
 
 
 class TargetName:

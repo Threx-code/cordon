@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.code.install_payload import InstallPayload
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Capability
 
 CONSUMER_CODE = "MALWARE.INSTALL.CONSUMER_CODE.001"
 

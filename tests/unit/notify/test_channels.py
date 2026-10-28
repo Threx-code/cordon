@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from cordon_scanner.foundation.models import Repository, ScanResult
+from cordon_scanner.foundation.results import Repository, ScanResult
 from cordon_scanner.notify.channel import Channel
 from cordon_scanner.notify.channels.slack import SlackChannel
 from cordon_scanner.notify.channels.teams import TeamsChannel

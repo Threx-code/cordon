@@ -38,6 +38,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.foundation.config.policy import OrgConstraints, Policy
 from cordon_scanner.foundation.errors import ConfigError, PolicyViolationError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.models import (
@@ -46,7 +47,6 @@ from cordon_scanner.foundation.models import (
     Severity,
     Suppression,
 )
-from cordon_scanner.foundation.policy import OrgConstraints, Policy
 from cordon_scanner.version import PROGRAM
 
 if TYPE_CHECKING:
@@ -339,7 +339,7 @@ class Config:
         Raises :class:`ConfigError` on any unknown key, malformed value, or
         invalid suppression. Nothing is coerced silently.
         """
-        from cordon_scanner.foundation.config_parser import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         return ConfigParser._parse_config(data, source=source, layer=layer)
 
@@ -412,7 +412,7 @@ class Config:
         return config._withhold_untrusted_powers()
 
     def _withhold_untrusted_powers(self) -> Config:
-        from cordon_scanner.foundation.config_parser import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         clamped: list[str] = []
         reduced: list[str] = []
@@ -492,7 +492,7 @@ class Config:
         self, clamped: list[str]
     ) -> tuple[bool, bool, bool, bool, int | None, tuple[str, ...]]:
         """The switches an untrusted layer may only turn towards safety: offline, plugins, archives, the intel feed, its age, minified paths."""
-        from cordon_scanner.foundation.config_parser import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         # Going online is an operator's decision, never the scan target's.
         #
@@ -590,7 +590,7 @@ class Config:
         and a justification are demanded of the repository by the tool, not by
         anybody's policy.
         """
-        from cordon_scanner.foundation.config_parser import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         violations = [
             f"suppression {s.rule} at {s.path}: {problem}"
@@ -661,7 +661,7 @@ class Config:
         One error listing every conflict, rather than one per run: an operator
         fixing these is otherwise made to rediscover them one at a time.
         """
-        from cordon_scanner.foundation.config_parser import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         violations: list[str] = []
 
@@ -742,7 +742,7 @@ class Config:
 
     def _merged_under(self, org: Config, constraints: OrgConstraints) -> Config:
         """Take the stricter value of each pair. Called only after checking."""
-        from cordon_scanner.foundation.config_parser import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         return replace(
             self,

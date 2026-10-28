@@ -9,7 +9,7 @@ from pathlib import Path
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.supply import release_diff
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 
 class ReleaseDiffHelpers:

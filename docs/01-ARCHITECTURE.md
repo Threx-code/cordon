@@ -63,7 +63,7 @@ product requires:
 | Pipeline / phases | `engine/engine.py` | Each phase has one input type and one output type, so a phase can be replaced, parallelised or cached in isolation. |
 | Immutable value objects | the whole domain | Safe to share across processes, impossible to mutate a result post hoc, and free hashability for deduplication. |
 | Specification | `decide/policy.py` | Failure policy is a composable predicate over findings, so gate logic is testable without running a scan. |
-| Layered configuration with a ceiling | `foundation/config.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
+| Layered configuration with a ceiling | `foundation/config/settings.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
 | Streaming iterators | sources, reporters | Bounds memory on inputs of unknown size, which is a security requirement, not just an efficiency one. |
 
 ---

@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 SPEC_VERSION_CYCLONEDX = "1.5"
 SPEC_VERSION_SPDX = "SPDX-2.3"

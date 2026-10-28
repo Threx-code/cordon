@@ -18,7 +18,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.supply.advisory import AdvisoryDetector
 from cordon_scanner.engine.registry import Registry
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.models import Category, Confidence
 from cordon_scanner.intel.advisories.advisories import BUNDLED, Advisory, AdvisoryDatabase

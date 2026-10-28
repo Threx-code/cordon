@@ -14,7 +14,7 @@ import hashlib
 import pytest
 
 from cordon_scanner.cli.main import CommandLine
-from cordon_scanner.foundation.config_resolver import ConfigResolver
+from cordon_scanner.foundation.config.resolver import ConfigResolver
 from cordon_scanner.foundation.distribution import PolicyDistribution
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 

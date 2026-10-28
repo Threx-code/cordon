@@ -18,7 +18,8 @@ from cordon_scanner.notify.events import EventEnvelope
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 
 @dataclass(frozen=True)

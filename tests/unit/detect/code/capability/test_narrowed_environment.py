@@ -9,7 +9,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.code.capability.labelling import Labelling
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 SEND = (
     "\nconst https = require('https');\n"

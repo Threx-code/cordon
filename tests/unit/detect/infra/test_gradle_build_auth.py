@@ -12,7 +12,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 SIGNING_BUILD = """plugins { id("com.android.application") }
 

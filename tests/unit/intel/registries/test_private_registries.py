@@ -274,7 +274,7 @@ class TestTheScanAsksThem:
         self, tmp_path, monkeypatch
     ) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.intel.registries.registry_client import PackageFacts
 
         asked: list[str] = []
@@ -311,7 +311,7 @@ class TestTheScanAsksThem:
     @pytest.mark.conformance("x", "x.private-registries")
     def test_the_option_is_the_operators_alone(self, tmp_path) -> None:
         from cordon_scanner.cli.main import CommandLine
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         assert (
             CommandLine.run(

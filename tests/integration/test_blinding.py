@@ -28,11 +28,11 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.decide.policy import PolicyGate
-from cordon_scanner.foundation.config import Config
-from cordon_scanner.foundation.config_resolver import ConfigResolver
+from cordon_scanner.foundation.config.policy import OrgConstraints, Policy
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.foundation.models import Category, Confidence, Severity
-from cordon_scanner.foundation.policy import OrgConstraints, Policy
 
 # A suppression must expire within the tool's own ceiling, which applies whether
 # or not an organisation policy is configured.

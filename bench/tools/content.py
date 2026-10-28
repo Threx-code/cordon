@@ -101,7 +101,7 @@ class Content:
         """Whether a finding as emitted trips the default failure gate (`PolicyGate`): the same
         test the scan's exit status made, per finding, so a block can be attributed to the
         findings that caused it."""
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Category, Confidence, Severity
         from cordon_scanner.foundation.taxonomy import Taxonomy
 

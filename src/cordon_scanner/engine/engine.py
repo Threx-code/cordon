@@ -56,19 +56,18 @@ from cordon_scanner.engine.walker import (
     Walker,
 )
 from cordon_scanner.foundation.collector import Collector
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import SourceError
-from cordon_scanner.foundation.models import (
-    Hook,
+from cordon_scanner.foundation.models import Hook, Severity
+from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.results import (
     LanguageStat,
     Project,
     Repository,
     ScanResult,
     ScanStats,
-    Severity,
 )
-from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource

@@ -31,12 +31,8 @@ from cordon_scanner.engine.walker import (
 )
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import ArchiveError
-from cordon_scanner.foundation.models import (
-    AUTHOR_TIME_HOOKS,
-    Category,
-    Repository,
-    Severity,
-)
+from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Category, Severity
+from cordon_scanner.foundation.results import Repository
 from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.sources.base import Rejection
 

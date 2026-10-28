@@ -25,7 +25,7 @@ from cordon_scanner.notify.transport import HttpsTransport, Reply, RetryPolicy
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from cordon_scanner.foundation.models import ScanResult
+    from cordon_scanner.foundation.results import ScanResult
     from cordon_scanner.notify.channel import Channel, Message
     from cordon_scanner.notify.transport import Transport
 

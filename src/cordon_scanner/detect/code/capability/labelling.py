@@ -27,10 +27,7 @@ from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilit
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.secrets import SourceSpans
-from cordon_scanner.foundation.models import (
-    Capability,
-    MatchKind,
-)
+from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:

@@ -37,9 +37,9 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Confidence,
     Evidence,

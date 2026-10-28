@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.foundation.config import MIN_JUSTIFICATION_CHARS, Config
-from cordon_scanner.foundation.config_resolver import ConfigResolver
+from cordon_scanner.foundation.config.policy import OrgConstraints, Policy
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import MIN_JUSTIFICATION_CHARS, Config
 from cordon_scanner.foundation.errors import ConfigError, PolicyViolationError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.foundation.models import Category, Confidence, Severity
-from cordon_scanner.foundation.policy import OrgConstraints, Policy
 
 
 class ConfigHelpers:

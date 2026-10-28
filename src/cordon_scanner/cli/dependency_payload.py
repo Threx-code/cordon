@@ -38,7 +38,8 @@ from cordon_scanner.foundation.models import Category, Confidence, Severity
 if TYPE_CHECKING:
     import argparse
 
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 RULE_ID = "MALWARE.DEPENDENCY.PAYLOAD.001"
 #: Declared with the manifest rules (`ManifestDetector`), as the release-comparison rules are.

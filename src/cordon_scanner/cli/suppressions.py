@@ -23,18 +23,18 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from cordon_scanner.foundation.config import (
+from cordon_scanner.foundation.config.parser import ConfigParser
+from cordon_scanner.foundation.config.policy import OrgConstraints
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import (
     CONFIG_FILENAMES,
     CONFIG_VERSION,
     MIN_JUSTIFICATION_CHARS,
     Config,
 )
-from cordon_scanner.foundation.config_parser import ConfigParser
-from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Suppression
-from cordon_scanner.foundation.policy import OrgConstraints
 
 
 @dataclass(frozen=True, slots=True)

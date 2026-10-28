@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
-from cordon_scanner.foundation.config_parser import ConfigParser
+from cordon_scanner.foundation.config.parser import ConfigParser
+from cordon_scanner.foundation.config.policy import Policy
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
-from cordon_scanner.foundation.policy import Policy
 
 WORKFLOW = (
     "on:\n  push:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"

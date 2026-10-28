@@ -8,7 +8,7 @@ import urllib.error
 
 import pytest
 
-from cordon_scanner.foundation.models import Repository, ScanResult
+from cordon_scanner.foundation.results import Repository, ScanResult
 from cordon_scanner.notify.channel import Message
 from cordon_scanner.notify.events import EventSignature
 from cordon_scanner.notify.notifier import Notifier

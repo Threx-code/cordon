@@ -8,7 +8,7 @@ import tarfile
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 RULE = "MALWARE.INSTALL.PERSIST.001"
 

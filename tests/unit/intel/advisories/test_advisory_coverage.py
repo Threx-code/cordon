@@ -246,7 +246,7 @@ class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
 
     def _advice(self, ecosystem: str, name: str, version: str) -> str:
         from cordon_scanner.detect.supply.advisory import AdvisoryDetector
-        from cordon_scanner.foundation.models import Dependency
+        from cordon_scanner.foundation.results import Dependency
 
         dependency = Dependency(
             purl=f"pkg:{ecosystem}/{name}@{version}",

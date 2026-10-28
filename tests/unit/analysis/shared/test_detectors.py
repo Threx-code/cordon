@@ -18,9 +18,11 @@ from cordon_scanner.detect.secrets.secrets import SecretDetector
 from cordon_scanner.detect.supply.dependency import DependencyDetector
 from cordon_scanner.detect.supply.lockfile import LockfileDetector
 from cordon_scanner.detect.supply.manifest import ManifestDetector
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Capability, Category, Dependency, Scope, Severity
+from cordon_scanner.foundation.models import Category, Scope, Severity
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
 
