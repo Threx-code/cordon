@@ -33,6 +33,7 @@ from cordon_scanner.cli.commands.bundle import BundleCommand
 from cordon_scanner.cli.commands.config import ConfigCommand
 from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
+from cordon_scanner.cli.commands.inventory import InventoryCommand
 from cordon_scanner.cli.commands.report import ReportCommand
 from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.sbom import SbomCommand
@@ -488,12 +489,7 @@ class CommandLine:
             ),
         )
 
-        # -- inventory -------------------------------------------------------
-        inventory = sub.add_parser(
-            "inventory", help="print what the repository is, and the evidence for it"
-        )
-        inventory.add_argument("target", nargs="?", default=".")
-        inventory.add_argument("--format", "-f", default="text", choices=["text", "json"])
+        InventoryCommand.add_parser(sub)
 
         RulesCommand.add_parser(sub)
 
@@ -1384,41 +1380,6 @@ class CommandLine:
                 buffer.flush()
 
     @classmethod
-    def cmd_inventory(cls, args: argparse.Namespace) -> int:
-        import json
-
-        from cordon_scanner import Scanner
-
-        inventory = Scanner().inventory(args.target)
-
-        if args.format == "json":
-            print(json.dumps(inventory.to_dict(), indent=2, sort_keys=True))
-            return int(ExitCode.CLEAN)
-
-        print(f"{inventory.root}")
-        print(f"{inventory.file_count} files, {inventory.total_bytes:,} bytes\n")
-
-        if inventory.languages:
-            print("languages")
-            for stat in inventory.languages:
-                evidence = ", ".join(stat.evidence[:4])
-                print(
-                    f"  {stat.language:<14}{stat.share * 100:5.1f}%  {stat.files:>5} files   {evidence}"
-                )
-            print()
-
-        if inventory.hooks:
-            # Listed prominently because execution context is the largest multiplier
-            # in the risk model: these are the paths where ordinary capabilities
-            # become mechanisms.
-            print("install and build hooks (code that runs before any other control)")
-            for hook in inventory.hooks:
-                print(f"  {hook.kind:<10}{hook.path}")
-            print()
-
-        return int(ExitCode.CLEAN)
-
-    @classmethod
     def cmd_login(cls, args: argparse.Namespace) -> int:
         from cordon_scanner.cloud import CloudError, auth
 
@@ -1639,7 +1600,7 @@ class CommandLine:
 
         commands: dict[str, Callable[[argparse.Namespace], int]] = {
             "scan": cls.cmd_scan,
-            "inventory": cls.cmd_inventory,
+            "inventory": InventoryCommand.run,
             "rules": RulesCommand.run,
             "config": ConfigCommand.run,
             "guard": GuardCommand.run,
