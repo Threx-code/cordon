@@ -5,15 +5,12 @@ the dependencies each declares, and the files the image carries that no package 
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
 from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.results import Dependency
-
-if TYPE_CHECKING:
-    pass
 
 
 class Images:

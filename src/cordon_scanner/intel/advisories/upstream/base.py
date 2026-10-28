@@ -7,11 +7,7 @@ from __future__ import annotations
 import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Final
-
-if TYPE_CHECKING:
-    pass
-
+from typing import Any, ClassVar, Final
 
 VCPKG_RAW: Final = "https://raw.githubusercontent.com/microsoft/vcpkg"
 

@@ -4,20 +4,12 @@ already resolved.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from cordon_scanner.intel.advisories.upstream.base import (
     Unnamed,
     Upstream,
 )
-
-if TYPE_CHECKING:
-    pass
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source
-    pass
 
 
 class Fetch:

@@ -7,22 +7,12 @@ reflective names resolution treats specially.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source
-    pass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source  # from the source
-    pass
-
 
 REFLECTIVE = frozenset({"getattr", "__import__", "globals", "vars", "locals"})
+"""Names whose whole purpose is to reach something by a computed name.
+
+Resolved when the name is constant, and reported as dynamic dispatch when it is
+not."""
 
 
 BUILTIN_MODULES = frozenset({"builtins", "__builtin__", "__builtins__"})

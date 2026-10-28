@@ -70,9 +70,6 @@ DEPENDENCY_BUILD_FILENAMES = frozenset(
         "Setup.lhs",
     }
 )
-DEPENDENCY_BUILD_SUFFIXES = (".nimble",)
-"""Nimble evaluates a package's `.nimble` file -- NimScript, top-level code and hooks -- when
-the package is installed as a dependency."""
 """Build files that run when somebody installs the package as a DEPENDENCY.
 
 This is the install-hook condition, and the word install is doing the work. `pip
@@ -81,6 +78,9 @@ crate by executing its `build.rs`; `npm install` of a native module runs
 `binding.gyp`. Nobody asked for any of it, and it happens on the machine of
 whoever pulled the dependency in.
 """
+DEPENDENCY_BUILD_SUFFIXES = (".nimble",)
+"""Nimble evaluates a package's `.nimble` file -- NimScript, top-level code and hooks -- when
+the package is installed as a dependency."""
 
 PROJECT_BUILD_FILENAMES = frozenset(
     {

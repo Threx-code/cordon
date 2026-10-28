@@ -5,7 +5,6 @@ through them, callees resolved through aliases, and hits recorded. Its flows bui
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
 from cordon_scanner.analysis.python.pyfacts import (
@@ -19,18 +18,6 @@ from cordon_scanner.analysis.python.vocabulary import (
     REFLECTIVE,
 )
 from cordon_scanner.foundation.capabilities import Capability
-
-if TYPE_CHECKING:
-    pass
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source
-    pass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source  # from the source
-    pass
 
 
 class AnalyzerCore:

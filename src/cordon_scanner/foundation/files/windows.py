@@ -33,10 +33,6 @@ import os
 import stat as stat_module
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 
 OVERLAP = 64 * 1024
 """How far each window reaches back into the one before: a construct that straddles a cut -- a

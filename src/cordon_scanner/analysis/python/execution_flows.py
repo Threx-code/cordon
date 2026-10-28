@@ -37,16 +37,8 @@ from cordon_scanner.foundation.capabilities import Capability
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source
-    pass
-from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
-
-if TYPE_CHECKING:  # from the source  # from the source
-    pass
 
 
 class ExecutionFlows(AnalyzerCore):

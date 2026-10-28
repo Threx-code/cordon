@@ -6,7 +6,6 @@ reported as lost coverage rather than skipped silently.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
 
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_ESCAPE_RULE,
@@ -26,9 +25,6 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.sources.base import Rejection
-
-if TYPE_CHECKING:
-    pass
 
 
 class ArchiveMembers:

@@ -6,7 +6,7 @@ import http.client
 import json
 import re
 import urllib.parse
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from cordon_scanner.intel.advisories.upstream.base import (
     VCPKG_RAW,
@@ -17,9 +17,6 @@ from cordon_scanner.intel.advisories.upstream.base import (
 )
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.inference import Inference
-
-if TYPE_CHECKING:
-    pass
 
 
 class VcpkgVersions:

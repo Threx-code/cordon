@@ -8,8 +8,6 @@ inferred, and no reporting threshold may hide it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from cordon_scanner.engine.pipeline.constants import NO_RISK
 from cordon_scanner.foundation.models import (
     Category,
@@ -22,9 +20,6 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-
-if TYPE_CHECKING:
-    pass
 
 
 class OperationalFinding:
