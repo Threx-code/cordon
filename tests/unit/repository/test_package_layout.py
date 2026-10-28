@@ -293,18 +293,23 @@ class Structure:
                 sizes[p.parent.relative_to(REPO).as_posix()] += 1
         return dict(sizes)
 
+    #: An adapter layer's port: its protocols (`base`) and the discovery of its implementations
+    #: (`registry`, which hands back objects typed by those protocols and names none).
+    PORTS: ClassVar[frozenset[str]] = frozenset({"", "base", "registry"})
+
     @classmethod
     def engine_adapters(cls) -> set[str]:
-        """`engine/x -> adapter` for each import of a concrete adapter by the engine; an adapter
-        layer's `base` (its protocol) is the way in and is not counted."""
+        """`engine -> adapter` for each concrete adapter module the engine imports, from any of its
+        modules: the rule is about the engine as a whole, so moving code between the engine's own
+        modules neither adds nor removes an entry. An adapter layer's port is not counted."""
         out = set()
         for m in Layout.modules():
             if not m.startswith("engine/"):
                 continue
             for dep in cls.imports(m):
                 layer, _, rest = dep.partition("/")
-                if layer in Layout.ADAPTERS and rest not in ("", "base"):
-                    out.add(f"{m} -> {dep}")
+                if layer in Layout.ADAPTERS and rest not in cls.PORTS:
+                    out.add(f"engine -> {dep}")
         return out
 
     @staticmethod
