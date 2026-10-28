@@ -10,8 +10,8 @@ import tarfile
 
 import pytest
 
+from cordon_scanner.ecosystems.infra.compose import Compose
 from cordon_scanner.ecosystems.infra.image import (
-    Compose,
     Dockerfile,
     ImageEcosystem,
     ImageReference,
