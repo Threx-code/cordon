@@ -203,8 +203,8 @@ class ArchiveStages:
         """What runs at install, at import and when an agent calls it, among the archive's members."""
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
-        units.extend(self.engine._inline_hook_units(units))
-        units.extend(self.engine._deobfuscated_units(units))
+        units.extend(self.engine.units.inline_hooks(units))
+        units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the

@@ -76,13 +76,13 @@ class ScanStages:
         # against the completed picture.
         self.progress.phase("reading")
         units = []
-        for unit in self.engine._units(
+        for unit in self.engine.units.read(
             root, inventory, acc, deadline, walked=walked, walker=walker
         ):
             units.append(unit)
             self.progress.advance(unit.path)
-        units.extend(self.engine._inline_hook_units(units))
-        units.extend(self.engine._deobfuscated_units(units))
+        units.extend(self.engine.units.inline_hooks(units))
+        units.extend(self.engine.units.deobfuscated(units))
         return units
 
     def dependencies(
