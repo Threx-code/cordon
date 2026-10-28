@@ -23,9 +23,9 @@ from cordon_scanner.foundation.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
-    from cordon_scanner.ecosystems.base import DeclaredDependency, Manifest
+    from cordon_scanner.ecosystems.base import DeclaredDependency, Ecosystem, Manifest
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.rule_ids import (
     CLEARTEXT_SOURCE_RULE,
@@ -551,175 +551,216 @@ class SourceFindings:
         yield from cls._composer_branch_findings(manifest, unit, ctx)
         ecosystem = EcosystemRegistry.get(manifest.ecosystem)
         for declared in manifest.dependencies:
-            if not declared.is_non_registry:
-                continue
-            kind = DeclaredSource.kind(declared.spec, unit.path)
-            if kind == "inside":
-                # `file:packages/util`, `workspace:*`, `../shared` within this repository: the
-                # project's own code, reviewed here as source. Reporting it reported every
-                # monorepo's members as packages from outside the registry.
-                continue
-            if (
-                manifest.ecosystem == "image"
-                and declared.field_name.startswith("ADD (line")
-                and declared.spec.startswith(("http", "git+http"))
-            ):
-                # `ADD https://...` with no flags: the Dockerfile rule for remote ADD reports this
-                # line, and two findings for one download say nothing a second time.
-                continue
-            locked_inputs = str(getattr(ecosystem, "locked_inputs", None) or "")
-            if kind == "mutable" and declared.field_name in getattr(ecosystem, "index_fields", ()):
-                # A package index (a Homebrew tap) follows its branch by design: what matters is
-                # whose index it is, which the source rule below reports.
-                kind = "index"
-            if (
-                kind == "mutable"
-                and locked_inputs
-                and declared.field_name.startswith(locked_inputs)
-            ):
-                # A flake input's ref is the channel `nix flake update` follows; flake.lock, which
-                # Nix writes and every build of the flake reads, pins it to a commit and a hash.
-                continue
-            if kind == "mutable":
-                yield ManifestFinding.finding(
-                    rule_id=MUTABLE_REF_RULE,
-                    category=Category.POLICY,
-                    severity=Severity.MEDIUM,
-                    confidence=Confidence.CONFIRMED,
-                    title="Git dependency on a reference that can move",
-                    message=(
-                        f"{declared.name!r} is declared as {declared.spec!r}: a branch, a tag or "
-                        f"no reference at all, any of which a push can re-point. What installs "
-                        f"tomorrow need not be what was reviewed today, and no registry hash, "
-                        f"advisory match or release-age delay applies to it."
-                    ),
-                    remediation="Pin it to a full commit SHA, or depend on a registry release.",
-                    unit=unit,
-                    ctx=ctx,
-                    detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
-                    capabilities=(),
-                    reasons=[f"declared in {declared.field_name}", "mutable git reference"],
-                )
-                continue
-            # A commit pins a git source; a checksum the declaration records pins an archive the
-            # same way -- what is fetched cannot change under the project.
-            checksummed = (
-                kind == "url"
-                and bool(declared.integrity)
-                and not (declared.integrity or "").startswith("malformed:")
+            yield from SourceFindings._declared_source_findings(
+                ctx, declared, ecosystem, manifest, unit
             )
-            pinned = kind == "pinned" or checksummed
-            if getattr(ecosystem, "registryless", False):
-                # No registry exists to depart from (Nix): every source is a repository or an
-                # archive. Plain HTTP is the cleartext rule's to report.
-                continue
-            remote = ManifestScripts._remote_tarball(declared.spec, unit.path, ctx, checksummed)
-            if remote is not None:
-                # A published package whose dependency is a URL (review 98, REC-3): 339 malicious
-                # npm samples declare one, and in 58 it is the entire package.
-                rule_id, host, severity = remote
-                malicious = rule_id == MALICIOUS_REMOTE_TARBALL_RULE
-                yield ManifestFinding.finding(
-                    rule_id=rule_id,
-                    category=Category.MALICIOUS if malicious else Category.SUSPICIOUS,
-                    severity=severity,
-                    confidence=Confidence.HIGH if malicious else Confidence.MEDIUM,
-                    title=(
-                        "A published package installs a dependency from a drop-point host"
-                        if malicious
-                        else "A published package installs a dependency from an arbitrary URL"
-                    ),
-                    message=(
-                        f"{declared.name!r} is declared as {declared.spec!r}: every install of "
-                        f"this package fetches it from {host} and runs it, unpinned and unreviewed"
-                        + (
-                            ", and that host is a raw address or a paste, webhook or tunnel "
-                            "service, which no package is distributed from."
-                            if malicious
-                            else "."
-                        )
-                    ),
-                    remediation=(
-                        "Do not install it. Treat any machine that did as having run untrusted code."
-                        if malicious
-                        else "Do not install it until the URL's content has been examined."
-                    ),
-                    unit=unit,
-                    ctx=ctx,
-                    detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
-                    capabilities=(),
-                    reasons=[f"declared in {declared.field_name}", f"fetched from {host}"],
-                )
-                continue
-            foreign = (
-                ManifestScripts._foreign_commit(declared.name, declared.spec, unit.path, ctx)
-                if manifest.ecosystem == "npm"
-                else None
-            )
-            if foreign is not None:
-                yield ManifestFinding.finding(
-                    rule_id=FOREIGN_COMMIT_RULE,
-                    category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
-                    confidence=Confidence.HIGH,
-                    title="A published package installs a dependency from another project's commit",
-                    message=(
-                        f"{declared.name!r} is declared as {declared.spec!r}: one commit of "
-                        f"{foreign}, a repository that is not that package's. A full commit hash "
-                        f"reaches any commit in the repository's fork network, including one pushed "
-                        f"to a fork that no branch of it holds, and npm runs that commit's install "
-                        f"scripts on every machine that installs this package."
-                    ),
-                    remediation=(
-                        "Do not install it. Find the commit's origin; a dependency the publisher "
-                        "meant to ship has a registry release or a repository of its own name."
-                    ),
-                    unit=unit,
-                    ctx=ctx,
-                    detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
-                    capabilities=(),
-                    reasons=[f"declared in {declared.field_name}", f"commit of {foreign}"],
-                    # Only a published package's own manifest is judged here, and that is never a
-                    # test fixture -- a test helper's own release is still a release (review 98:
-                    # jest-date-mock 1.0.11, a mocking library, was capped as test material).
-                    fixture_ceiling=False,
-                )
-                continue
-            if pinned and getattr(ecosystem, "git_distribution", False):
-                # Where git is how the ecosystem distributes every package (SwiftPM), a commit
-                # pin is its most immutable form, not a departure from a registry.
-                continue
+
+    @staticmethod
+    def _declared_source_findings(
+        ctx: ScanContext,
+        declared: DeclaredDependency,
+        ecosystem: Ecosystem | None,
+        manifest: Manifest,
+        unit: FileUnit,
+    ) -> Iterator[Finding]:
+        """The findings for one dependency a manifest declares from somewhere other than its registry: a path inside the project, a mutable git reference, a remote tarball, another project's commit, a git dependency the ecosystem does not distribute."""
+        if not declared.is_non_registry:
+            return
+        kind = DeclaredSource.kind(declared.spec, unit.path)
+        if kind == "inside":
+            # `file:packages/util`, `workspace:*`, `../shared` within this repository: the
+            # project's own code, reviewed here as source. Reporting it reported every
+            # monorepo's members as packages from outside the registry.
+            return
+        if (
+            manifest.ecosystem == "image"
+            and declared.field_name.startswith("ADD (line")
+            and declared.spec.startswith(("http", "git+http"))
+        ):
+            # `ADD https://...` with no flags: the Dockerfile rule for remote ADD reports this
+            # line, and two findings for one download say nothing a second time.
+            return
+        locked_inputs = str(getattr(ecosystem, "locked_inputs", None) or "")
+        if kind == "mutable" and declared.field_name in getattr(ecosystem, "index_fields", ()):
+            # A package index (a Homebrew tap) follows its branch by design: what matters is
+            # whose index it is, which the source rule below reports.
+            kind = "index"
+        if kind == "mutable" and locked_inputs and declared.field_name.startswith(locked_inputs):
+            # A flake input's ref is the channel `nix flake update` follows; flake.lock, which
+            # Nix writes and every build of the flake reads, pins it to a commit and a hash.
+            return
+        if kind == "mutable":
             yield ManifestFinding.finding(
-                rule_id="POLICY.DEPENDENCY.SOURCE.001",
+                rule_id=MUTABLE_REF_RULE,
                 category=Category.POLICY,
-                severity=Severity.LOW if pinned else Severity.MEDIUM,
+                severity=Severity.MEDIUM,
                 confidence=Confidence.CONFIRMED,
-                title="Dependency resolved from outside the registry",
+                title="Git dependency on a reference that can move",
                 message=(
-                    f"{declared.name!r} is declared as {declared.spec!r}, which does not "
-                    f"resolve from the {manifest.ecosystem} registry"
-                    + (
-                        ", pinned by its checksum, so it cannot change under the project"
-                        if checksummed
-                        else ", pinned to a commit, so it cannot change under the project"
-                        if pinned
-                        else ""
-                    )
-                    + ". Lockfile integrity hashes, advisory matching and any release-age delay "
-                    "apply to registry packages and none of them apply here. The dependency may "
-                    "be entirely legitimate; the safety net is simply absent."
+                    f"{declared.name!r} is declared as {declared.spec!r}: a branch, a tag or "
+                    f"no reference at all, any of which a push can re-point. What installs "
+                    f"tomorrow need not be what was reviewed today, and no registry hash, "
+                    f"advisory match or release-age delay applies to it."
                 ),
-                remediation=(
-                    "Publish the package to a registry the organisation controls, or "
-                    "vendor it into the repository where it is reviewed like any other "
-                    "code."
-                ),
+                remediation="Pin it to a full commit SHA, or depend on a registry release.",
                 unit=unit,
                 ctx=ctx,
                 detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
                 capabilities=(),
-                reasons=[f"declared in {declared.field_name}", "commit-pinned" if pinned else kind],
+                reasons=[f"declared in {declared.field_name}", "mutable git reference"],
             )
+            return
+        # A commit pins a git source; a checksum the declaration records pins an archive the
+        # same way -- what is fetched cannot change under the project.
+        checksummed = (
+            kind == "url"
+            and bool(declared.integrity)
+            and not (declared.integrity or "").startswith("malformed:")
+        )
+        pinned = kind == "pinned" or checksummed
+        if getattr(ecosystem, "registryless", False):
+            # No registry exists to depart from (Nix): every source is a repository or an
+            # archive. Plain HTTP is the cleartext rule's to report.
+            return
+        remote = ManifestScripts._remote_tarball(declared.spec, unit.path, ctx, checksummed)
+        if remote is not None:
+            # A published package whose dependency is a URL (review 98, REC-3): 339 malicious
+            # npm samples declare one, and in 58 it is the entire package.
+            yield from SourceFindings._remote_tarball_finding(ctx, declared, remote, unit)
+            return
+        foreign = (
+            ManifestScripts._foreign_commit(declared.name, declared.spec, unit.path, ctx)
+            if manifest.ecosystem == "npm"
+            else None
+        )
+        if foreign is not None:
+            yield from SourceFindings._foreign_commit_finding(ctx, declared, foreign, unit)
+            return
+        if pinned and getattr(ecosystem, "git_distribution", False):
+            # Where git is how the ecosystem distributes every package (SwiftPM), a commit
+            # pin is its most immutable form, not a departure from a registry.
+            return
+        yield from SourceFindings._git_dependency_finding(
+            checksummed, ctx, declared, kind, manifest, pinned, unit
+        )
+
+    @staticmethod
+    def _remote_tarball_finding(
+        ctx: ScanContext,
+        declared: DeclaredDependency,
+        remote: tuple[str, str, Severity],
+        unit: FileUnit,
+    ) -> Iterator[Finding]:
+        """The finding for a dependency fetched as an archive from an outside host, graded by whether it is checksummed and whether the host is known for malware."""
+        rule_id, host, severity = remote
+        malicious = rule_id == MALICIOUS_REMOTE_TARBALL_RULE
+        yield ManifestFinding.finding(
+            rule_id=rule_id,
+            category=Category.MALICIOUS if malicious else Category.SUSPICIOUS,
+            severity=severity,
+            confidence=Confidence.HIGH if malicious else Confidence.MEDIUM,
+            title=(
+                "A published package installs a dependency from a drop-point host"
+                if malicious
+                else "A published package installs a dependency from an arbitrary URL"
+            ),
+            message=(
+                f"{declared.name!r} is declared as {declared.spec!r}: every install of "
+                f"this package fetches it from {host} and runs it, unpinned and unreviewed"
+                + (
+                    ", and that host is a raw address or a paste, webhook or tunnel "
+                    "service, which no package is distributed from."
+                    if malicious
+                    else "."
+                )
+            ),
+            remediation=(
+                "Do not install it. Treat any machine that did as having run untrusted code."
+                if malicious
+                else "Do not install it until the URL's content has been examined."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
+            capabilities=(),
+            reasons=[f"declared in {declared.field_name}", f"fetched from {host}"],
+        )
+
+    @staticmethod
+    def _foreign_commit_finding(
+        ctx: ScanContext, declared: DeclaredDependency, foreign: str, unit: FileUnit
+    ) -> Iterator[Finding]:
+        """The finding for a dependency installed from a commit of another project's repository: the hash reaches commits pushed to any fork, and npm runs the commit's install scripts."""
+        yield ManifestFinding.finding(
+            rule_id=FOREIGN_COMMIT_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            title="A published package installs a dependency from another project's commit",
+            message=(
+                f"{declared.name!r} is declared as {declared.spec!r}: one commit of "
+                f"{foreign}, a repository that is not that package's. A full commit hash "
+                f"reaches any commit in the repository's fork network, including one pushed "
+                f"to a fork that no branch of it holds, and npm runs that commit's install "
+                f"scripts on every machine that installs this package."
+            ),
+            remediation=(
+                "Do not install it. Find the commit's origin; a dependency the publisher "
+                "meant to ship has a registry release or a repository of its own name."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
+            capabilities=(),
+            reasons=[f"declared in {declared.field_name}", f"commit of {foreign}"],
+            # Only a published package's own manifest is judged here, and that is never a
+            # test fixture -- a test helper's own release is still a release (review 98:
+            # jest-date-mock 1.0.11, a mocking library, was capped as test material).
+            fixture_ceiling=False,
+        )
+
+    @staticmethod
+    def _git_dependency_finding(
+        checksummed: bool,
+        ctx: ScanContext,
+        declared: DeclaredDependency,
+        kind: str,
+        manifest: Manifest,
+        pinned: bool,
+        unit: FileUnit,
+    ) -> Iterator[Finding]:
+        """The finding for a dependency installed from git that its ecosystem would otherwise distribute: graded by whether the reference is pinned."""
+        yield ManifestFinding.finding(
+            rule_id="POLICY.DEPENDENCY.SOURCE.001",
+            category=Category.POLICY,
+            severity=Severity.LOW if pinned else Severity.MEDIUM,
+            confidence=Confidence.CONFIRMED,
+            title="Dependency resolved from outside the registry",
+            message=(
+                f"{declared.name!r} is declared as {declared.spec!r}, which does not "
+                f"resolve from the {manifest.ecosystem} registry"
+                + (
+                    ", pinned by its checksum, so it cannot change under the project"
+                    if checksummed
+                    else ", pinned to a commit, so it cannot change under the project"
+                    if pinned
+                    else ""
+                )
+                + ". Lockfile integrity hashes, advisory matching and any release-age delay "
+                "apply to registry packages and none of them apply here. The dependency may "
+                "be entirely legitimate; the safety net is simply absent."
+            ),
+            remediation=(
+                "Publish the package to a registry the organisation controls, or "
+                "vendor it into the repository where it is reviewed like any other "
+                "code."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=f"{declared.field_name}.{declared.name} = {declared.spec}",
+            capabilities=(),
+            reasons=[f"declared in {declared.field_name}", "commit-pinned" if pinned else kind],
+        )
 
 
 __all__ = ["SourceFindings"]
