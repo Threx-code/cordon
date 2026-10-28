@@ -261,10 +261,12 @@ class TestC05PerFileTimeout:
     documented at length, and referenced nowhere."""
 
     def test_the_limit_is_read_by_the_engine(self) -> None:
-        source = (ROOT / "src" / "cordon_scanner" / "engine" / "engine.py").read_text(
-            encoding="utf-8"
+        """Somewhere in the engine package, not in one named module: the phases move."""
+        engine = ROOT / "src" / "cordon_scanner" / "engine"
+        assert any(
+            "limits.per_file_timeout" in path.read_text(encoding="utf-8")
+            for path in engine.rglob("*.py")
         )
-        assert "per_file_timeout" in source
 
     def test_an_exhausted_budget_marks_the_scan_incomplete(self, tmp_path) -> None:
         """A partial file must not be reported as a clean one."""
