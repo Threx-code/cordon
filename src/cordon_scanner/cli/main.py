@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.cli.commands.account.login import LoginCommand
 from cordon_scanner.cli.commands.account.logout import LogoutCommand
+from cordon_scanner.cli.commands.account.whoami import WhoamiCommand
 from cordon_scanner.cli.commands.advisories import AdvisoriesCommand
 from cordon_scanner.cli.commands.agent import AgentCommand
 from cordon_scanner.cli.commands.baseline import BaselineCommand
@@ -511,7 +512,7 @@ class CommandLine:
         RunnerCommand.add_parser(sub)
         AgentCommand.add_parser(sub)
         LogoutCommand.add_parser(sub)
-        sub.add_parser("whoami", help="show the Cordon Cloud sign-in in use")
+        WhoamiCommand.add_parser(sub)
 
         IntelCommand.add_parser(sub)
         SbomCommand.add_parser(sub)
@@ -1318,25 +1319,6 @@ class CommandLine:
                 buffer.flush()
 
     @classmethod
-    def cmd_whoami(cls, args: argparse.Namespace) -> int:
-        import time
-
-        from cordon_scanner.cloud import auth
-
-        stored = auth.CloudAuth.load()
-        if stored is None:
-            print(f"Not signed in. Run `{cls.PROGRAM} login`.")
-            return int(ExitCode.CONFIG_ERROR)
-        remaining = int(stored.expires_at - time.time())
-        state = (
-            f"token valid for {remaining // 60} min"
-            if remaining > 0
-            else "token expired, renews on next use"
-        )
-        print(f"{stored.subject or 'this device'} at {stored.org} ({stored.url}); {state}")
-        return int(ExitCode.CLEAN)
-
-    @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
         from cordon_scanner.cli.completion import CompletionCommand
         from cordon_scanner.cli.deps import DepsCommand
@@ -1381,7 +1363,7 @@ class CommandLine:
             "logout": LogoutCommand.run,
             "runner": RunnerCommand.run,
             "agent": AgentCommand.run,
-            "whoami": cls.cmd_whoami,
+            "whoami": WhoamiCommand.run,
             "sbom": SbomCommand.run,
             "deps": DepsCommand.run,
             "review": ReviewCommand.run,
