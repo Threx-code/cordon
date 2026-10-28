@@ -13,6 +13,7 @@
   "analysis/javascript/front/grammar/stream": "analysis/javascript/front/grammar/stream",
   "analysis/javascript/front/grammar/dialects": "analysis/javascript/front/grammar/dialects",
   "analysis/javascript/front/grammar/expressions": "analysis/javascript/front/grammar/expressions",
+  "analysis/javascript/front/grammar/statements": "analysis/javascript/front/grammar/statements",
   "analysis/javascript/front/grammar/declarations": "analysis/javascript/front/grammar/declarations",
   "analysis/javascript/front/resolve": "analysis/javascript/front/resolve",
   "analysis/javascript/front/syntax": "analysis/javascript/front/syntax",
@@ -909,7 +910,6 @@
   ],
   "long_classes": {},
   "long_functions": {
-   "analysis/javascript/front/parser:Parser._statement": 107,
    "rules/loader:PatternCompiler._reject_unsafe": 121,
    "rules/loader:PatternCompiler._reject_unsafe.walk": 102,
    "rules/loader:PatternCompiler.required_literals": 181,
