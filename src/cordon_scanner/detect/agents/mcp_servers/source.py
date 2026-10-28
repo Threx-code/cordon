@@ -558,11 +558,12 @@ class McpServerSource:
 
     @staticmethod
     def _scan_path(target: Path, ctx: ScanContext) -> tuple[Finding, ...]:
-        """Scan a path with the same engine, offline, and return its findings."""
-        from cordon_scanner.engine.engine import Engine
-
+        """Scan a path with the same engine, offline, and return its findings: through the scan's
+        `nested_scan`, which the engine provides; outside a scan there is nothing to scan with."""
+        if ctx.nested_scan is None:
+            return ()
         config = ctx.config.with_overrides(offline=True, intel_feed=False, use_cache=False)
-        return Engine(config).scan(target).findings
+        return ctx.nested_scan(target, config)
 
     @staticmethod
     def _scan_archive_bytes(filename: str, data: bytes, ctx: ScanContext) -> tuple[Finding, ...]:

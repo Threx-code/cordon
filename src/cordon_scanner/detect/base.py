@@ -40,7 +40,7 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
     from typing import Any
 
@@ -196,6 +196,10 @@ class ScanContext:
 
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
+    nested_scan: Callable[[Path, Config], tuple[Finding, ...]] | None = None
+    """How a detector scans something it fetched (an MCP server's package): set by the engine to
+    scan the target with the same engine under the configuration given, so a detector never names
+    the engine. None outside a scan (a detector run on its own), where nothing is scanned."""
 
     deadline: float | None = None
     """`time.monotonic()` after which a detector must stop, or `None` for no bound.

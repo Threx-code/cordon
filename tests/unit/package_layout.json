@@ -856,8 +856,7 @@
    "sources/archive": 1062
   },
   "outward_imports": [
-   "detect/agents/language_model_judge -> judge",
-   "detect/agents/mcp_servers/source -> engine/engine"
+   "detect/agents/language_model_judge -> judge"
   ],
   "file_relative_paths": [
    "src/cordon_scanner/rules/loader.py"

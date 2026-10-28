@@ -77,6 +77,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
     from cordon_scanner.detect.base import Detector
+    from cordon_scanner.foundation.models import Finding
 
 
 class Engine:
@@ -664,7 +665,14 @@ class Engine:
             ci_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind == "ci"),
             scorer=self.scorer,
             offline=self.config.offline,
+            nested_scan=Engine._nested_scan,
         )
+
+    @staticmethod
+    def _nested_scan(target: Path, config: Config) -> tuple[Finding, ...]:
+        """A scan a detector asks for (`ScanContext.nested_scan`): this engine, the configuration
+        it gives."""
+        return Engine(config).scan(target).findings
 
     # -- Dependency graph ------------------------------------------------
 
