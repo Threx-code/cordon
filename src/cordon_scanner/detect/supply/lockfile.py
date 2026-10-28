@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
-    from cordon_scanner.ecosystems.base import Ecosystem, LockGraph
+    from cordon_scanner.ecosystems.base import Ecosystem, LockEntry, LockGraph
 
 # Reporting one finding per unverified package turns a single misconfiguration
 # into hundreds of alerts, which is how a useful signal becomes a suppressed
@@ -344,6 +344,29 @@ class LockfileDetector(BaseDetector):
         total = len(candidates)
         share = len(missing) / total
 
+        message, severity = LockfileDetector._missing_hash_message(missing, share, total)
+
+        yield self._finding(
+            rule_id="POLICY.LOCKFILE.INTEGRITY.001",
+            category=Category.POLICY,
+            severity=severity,
+            confidence=Confidence.CONFIRMED,
+            title="Lockfile entries without integrity hashes",
+            message=message,
+            remediation=(
+                "Regenerate the lockfile with the package manager so every entry "
+                "carries a hash, and verify the regenerated file in review."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=f"{len(missing)}/{total} unhashed",
+        )
+
+    @staticmethod
+    def _missing_hash_message(
+        missing: list[LockEntry], share: float, total: int
+    ) -> tuple[str, Severity]:
+        """What the finding says about the entries recorded without a hash: a lockfile that hashes almost nothing, or the entries it left out, by name, with what they share."""
         # An ecosystem whose lockfile format carries no hashes at all is a
         # different statement from one where a few entries lost theirs. The
         # first is a property of the format; the second is a real anomaly.
@@ -396,22 +419,7 @@ class LockfileDetector(BaseDetector):
             # always reported at medium -- so the partial case being the harsher of the
             # two was backwards as well.
             severity = Severity.MEDIUM
-
-        yield self._finding(
-            rule_id="POLICY.LOCKFILE.INTEGRITY.001",
-            category=Category.POLICY,
-            severity=severity,
-            confidence=Confidence.CONFIRMED,
-            title="Lockfile entries without integrity hashes",
-            message=message,
-            remediation=(
-                "Regenerate the lockfile with the package manager so every entry "
-                "carries a hash, and verify the regenerated file in review."
-            ),
-            unit=unit,
-            ctx=ctx,
-            detail=f"{len(missing)}/{total} unhashed",
-        )
+        return message, severity
 
     # -- Provenance ------------------------------------------------------
 

@@ -72,7 +72,7 @@ from cordon_scanner.foundation.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
@@ -522,6 +522,14 @@ class RegistryDetector(BaseDetector):
                 "SUSPECT.DEPENDENCY.UNVETTED.001", ctx, dependency=dependency, detail=unvetted
             )
 
+        yield from self._status_findings(ctx, dependency, observed)
+
+        yield from self._release_findings(ctx, dependency, observed)
+
+    def _status_findings(
+        self, ctx: ScanContext, dependency: Dependency, observed: PackageFacts
+    ) -> Iterator[Finding]:
+        """What the registry says about the package's standing: a withdrawn release, a repository borrowed from a popular project, a deprecation."""
         if observed.yanked and self._withdrawal_applies(dependency):
             # Who withdrew it is the registry's to say: "archived by CRAN" is CRAN's act, and "not
             # a version CRAN published" is no withdrawal at all. Only a bare yank (npm, PyPI) is
@@ -578,6 +586,10 @@ class RegistryDetector(BaseDetector):
                 ),
             )
 
+    def _release_findings(
+        self, ctx: ScanContext, dependency: Dependency, observed: PackageFacts
+    ) -> Iterator[Finding]:
+        """What the registry says about the release itself: its digest against the recorded hash, attestation its siblings have and it lacks, a newer version."""
         # What the comparison concluded, for the dependency's record: a match is a positive
         # result no finding states.
         verdict = self._digest_verdict(dependency, observed.digests)
