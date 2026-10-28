@@ -26,7 +26,6 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.dependency_rules import ABANDONED_RULE, DECLARED_RULES, DETECTOR
@@ -44,6 +43,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.intel.registries.popular import PackageIntel
 
 if TYPE_CHECKING:

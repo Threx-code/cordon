@@ -188,7 +188,7 @@ class Config:
     """A language model to judge agent-facing text (`--judge`): `ollama:<model>`,
     `openai:<model>`, `anthropic[:<model>]` or `cordon-cloud`. Set only by the operator, for the
     reason `clamav` is: the scan target must not choose where its own text is sent. See
-    `detect/agents/language_model_judge`."""
+    `detect/agents/language_model/detector`."""
     judge_blocks: bool = False
     """Whether a malicious verdict from the judge is HIGH, inside the default gate (`--judge-blocks`).
     Off, it warns: a model's reading is weaker evidence than a rule's match."""
@@ -210,6 +210,16 @@ class Config:
     extra_rule_paths: tuple[str, ...] = ()
 
     disabled_rules: frozenset[str] = frozenset()
+    """Rule ids that must not produce findings.
+
+    Applies to pack rules and to rules declared by a detector alike. Without it
+    the second kind could only be turned off by patching the installed package,
+    which meant an organisation could not tune the secret, container, CI and IaC
+    rules -- the ones that fire most often in practice.
+
+    Disabling is reported, like every other reduction in coverage, so a rule
+    that was turned off and a rule that found nothing do not look the same.
+    """
 
     allowed_action_owners: tuple[str, ...] = ()
     """Owners whose CI actions this project accepts.
@@ -237,16 +247,6 @@ class Config:
     attacker achieves by setting it is noise in the scan of their own package
     -- so it needs no clamping, and the default of none means the check is off
     until somebody supplies the fact."""
-    """Rule ids that must not produce findings.
-
-    Applies to pack rules and to rules declared by a detector alike. Without it
-    the second kind could only be turned off by patching the installed package,
-    which meant an organisation could not tune the secret, container, CI and IaC
-    rules -- the ones that fire most often in practice.
-
-    Disabling is reported, like every other reduction in coverage, so a rule
-    that was turned off and a rule that found nothing do not look the same.
-    """
 
     profile: str = "balanced"
     cache_dir: str | None = None

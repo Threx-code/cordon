@@ -7,15 +7,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass(frozen=True, slots=True)

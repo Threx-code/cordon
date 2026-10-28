@@ -11,27 +11,27 @@ model reads meaning. `--judge` names one:
     --judge cordon-cloud          Cordon Cloud's hosted judge (`cordon login`)
 
 `providers` holds the backends, on the standard library alone; `review` the prompt, the verdict,
-the cache and the budget. `detect/agents/language_model_judge.py` decides what text is judged and what a verdict
+the cache and the budget. `detect/agents/language_model/detector.py` decides what text is judged and what a verdict
 becomes.
 """
 
-from cordon_scanner.judge.providers import (
-    BaseProvider,
-    JudgeError,
-    ProviderFactory,
-    ProviderRefused,
-    ProviderUnavailable,
-)
-from cordon_scanner.judge.review import (
+from cordon_scanner.detect.agents.language_model.review import (
     DEFAULT_MAX_CALLS,
     PROMPT_VERSION,
     BudgetExhausted,
     Chunker,
     Judge,
+    JudgeError,
     Prompt,
     Verdict,
     VerdictCache,
     VerdictParser,
+)
+from cordon_scanner.judge.providers import (
+    BaseProvider,
+    ProviderFactory,
+    ProviderRefused,
+    ProviderUnavailable,
 )
 
 __all__ = [

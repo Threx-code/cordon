@@ -36,14 +36,10 @@ import functools
 import re
 import threading
 from importlib.metadata import entry_points
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import Final, Protocol
 
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
-
-if TYPE_CHECKING:
-    pass
-
 
 ARCHIVE_SUFFIXES: Final = (
     ".tgz",

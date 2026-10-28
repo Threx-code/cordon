@@ -10,11 +10,6 @@ from __future__ import annotations
 import base64
 import binascii
 import urllib.parse
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 
 FORGE_SHORTHANDS = {
     "github": "github.com",

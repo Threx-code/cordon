@@ -6,8 +6,6 @@ other detectors that report from manifests (the registry review, advisories, bin
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.rule_ids import (
@@ -26,9 +24,6 @@ from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
-
-if TYPE_CHECKING:
-    pass
 
 DECLARED_RULES: tuple[DeclaredRule, ...] = (
     DeclaredRule(

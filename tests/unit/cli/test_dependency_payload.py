@@ -13,10 +13,9 @@ import pytest
 
 import cordon_scanner
 from cordon_scanner.cli.dependency_payload import RULE_ID, DependencyPayload, NpmRange
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Category, Confidence, Severity
-from cordon_scanner.foundation.results import ScanResult
+from cordon_scanner.foundation.results import OperationalFinding, ScanResult
 
 
 class DependencyKit:

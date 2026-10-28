@@ -9,11 +9,6 @@ trigger or destination, a secret beside egress.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 
 VERIFIED_FETCH = re.compile(
     rb"(?i)(?:"

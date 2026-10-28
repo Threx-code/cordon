@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import posixpath
 import re
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.supply.manifests.rule_ids import (
@@ -19,9 +19,6 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
 from cordon_scanner.foundation.models import (
     Severity,
 )
-
-if TYPE_CHECKING:
-    pass
 
 RAW_IP_HOST = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,45}\]")
 

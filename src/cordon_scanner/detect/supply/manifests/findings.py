@@ -5,10 +5,9 @@ needs, and the operational finding a manifest that cannot be read reports instea
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import (
@@ -23,10 +22,8 @@ from cordon_scanner.foundation.models import (
     RiskScore,
     Severity,
 )
+from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.foundation.text.redact import Redactor
-
-if TYPE_CHECKING:
-    pass
 
 
 class ManifestFinding:

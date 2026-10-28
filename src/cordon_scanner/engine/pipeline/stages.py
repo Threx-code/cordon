@@ -20,7 +20,7 @@ from cordon_scanner.detect.base import (
     RepositoryUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks
+from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.engine.cache import ScanCache
 from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -30,7 +30,6 @@ from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.engine.pipeline.hooks import Hooks
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.engine.pipeline.results import ResultFolding
@@ -39,7 +38,7 @@ from cordon_scanner.foundation.files.walk import (
     Walker,
 )
 from cordon_scanner.foundation.models import Finding, Severity
-from cordon_scanner.foundation.results import Dependency, Repository
+from cordon_scanner.foundation.results import Dependency, OperationalFinding, Repository
 
 if TYPE_CHECKING:
     from cordon_scanner.engine.engine import Engine
@@ -130,7 +129,7 @@ class ScanStages:
         # the trust boundary an install hook has (review 98: a skill script reading files and
         # posting them out was graded as a library's, at MEDIUM).
         skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ReleaseChecks.mcp_server_sources(units)
+        agent_run = skill_scripts | ServerSources.of(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or

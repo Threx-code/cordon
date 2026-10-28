@@ -65,8 +65,6 @@ from cordon_scanner.foundation.paths import PackagePaths
 DATA_DIR: Final = PackagePaths.data("intel")
 
 DIGESTS_NAME: Final = "advisories-digests.json"
-_REFUSED_SYNCED: set[str] = set()
-"""Synced files refused for want of this install's seal. Reported; never blocks the shipped copy."""
 """A manifest of the advisory files' SHA-256 digests, written when they are.
 
 Why this exists. `MALWARE.DEPENDENCY.KNOWN.001` is the only rule in the pack
@@ -87,6 +85,8 @@ a data file after the fact has to also edit a manifest inside a signed
 artefact. That is the same argument `Guard`'s `.cordon-guard.sha256` makes for
 hooks in a scanned repository -- tampering is not prevented, it is made unable
 to be silent -- applied here to the tool's own most-trusted data."""
+_REFUSED_SYNCED: set[str] = set()
+"""Synced files refused for want of this install's seal. Reported; never blocks the shipped copy."""
 
 
 class DigestMismatch(Exception):

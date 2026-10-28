@@ -62,19 +62,10 @@ from cordon_scanner.foundation.capabilities import Capability
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source
-    pass
-from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.data_flows import DataFlows
 from cordon_scanner.analysis.python.execution_flows import ExecutionFlows
-
-if TYPE_CHECKING:  # from the source  # from the source
-    pass
-
 
 CREDENTIAL_VARIABLE = re.compile(
     r"""(?ix)
@@ -175,11 +166,6 @@ class PythonSource:
         """Capabilities this source resolves to. Convenience over `PythonAnalyzer`."""
         yield from PythonAnalyzer.analyse(source)
 
-
-"""Names whose whole purpose is to reach something by a computed name.
-
-Resolved when the name is constant, and reported as dynamic dispatch when it is
-not."""
 
 DANGEROUS_NAMESPACES = frozenset({"os", "subprocess", "sys", "builtins", "__builtins__", "shutil"})
 """Namespaces where reflective access with a computed name has no benign

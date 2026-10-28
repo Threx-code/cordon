@@ -8,10 +8,7 @@ install time, and the ones that run only on request."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
-
-if TYPE_CHECKING:
-    pass
+from typing import ClassVar
 
 
 class CompositeRuleIds:

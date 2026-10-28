@@ -255,7 +255,7 @@ class TestANewYoungDependency:
     def found(units, root) -> list[str]:
         from types import SimpleNamespace
 
-        from cordon_scanner.decide.scoring import RiskScorer
+        from cordon_scanner.foundation.scoring import RiskScorer
 
         ctx = SimpleNamespace(scorer=RiskScorer())
         return [

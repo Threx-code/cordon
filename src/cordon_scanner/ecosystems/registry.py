@@ -45,8 +45,6 @@ if TYPE_CHECKING:
     from cordon_scanner.ecosystems.packages import homebrew as _ecosystems_packages_homebrew
     from cordon_scanner.ecosystems.packages import npm as _ecosystems_packages_npm
 
-    # Each implementation, as the engine sees it: by its protocol (the type checker proves the
-    # implementation conforms) or, for a plain value, by the value's type.
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
     LockScopes: LockScoping = _ecosystems_packages_npm.LockScopes
     NotRunAtInstall: InstallTimeSpans = _ecosystems_packages_homebrew.NotRunAtInstall
@@ -309,11 +307,6 @@ ROLES: dict[str, tuple[str, str]] = {
     "LockScopes": ("cordon_scanner.ecosystems.packages.npm", "LockScopes"),
     "NotRunAtInstall": ("cordon_scanner.ecosystems.packages.homebrew", "NotRunAtInstall"),
 }
-
-if TYPE_CHECKING:
-    from cordon_scanner.ecosystems.infra.image import ImageReference
-    from cordon_scanner.ecosystems.packages.homebrew import NotRunAtInstall
-    from cordon_scanner.ecosystems.packages.npm import LockScopes
 
 
 def __getattr__(name: str) -> object:

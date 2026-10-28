@@ -13,11 +13,8 @@ from typing import Final
 
 from cordon_scanner.foundation.models import (
     Confidence,
-    RiskScore,
     Severity,
 )
-
-NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
 
 ALWAYS_RUN = frozenset({"capability", "obfuscation", "secrets", "binary"})
 """Detectors the per-file budget never skips: the ones that find malware, hidden code, secrets and
@@ -70,9 +67,6 @@ DEPENDENCY_BUILD_FILENAMES = frozenset(
         "Setup.lhs",
     }
 )
-DEPENDENCY_BUILD_SUFFIXES = (".nimble",)
-"""Nimble evaluates a package's `.nimble` file -- NimScript, top-level code and hooks -- when
-the package is installed as a dependency."""
 """Build files that run when somebody installs the package as a DEPENDENCY.
 
 This is the install-hook condition, and the word install is doing the work. `pip
@@ -81,6 +75,9 @@ crate by executing its `build.rs`; `npm install` of a native module runs
 `binding.gyp`. Nobody asked for any of it, and it happens on the machine of
 whoever pulled the dependency in.
 """
+DEPENDENCY_BUILD_SUFFIXES = (".nimble",)
+"""Nimble evaluates a package's `.nimble` file -- NimScript, top-level code and hooks -- when
+the package is installed as a dependency."""
 
 PROJECT_BUILD_FILENAMES = frozenset(
     {
@@ -450,7 +447,6 @@ __all__ = [
     "NATIVE_IN_PURE_WHEEL_RULE",
     "NATIVE_LOAD",
     "NATIVE_MAGIC",
-    "NO_RISK",
     "NPM_PLACEHOLDER_VERSION",
     "PACKAGED_BUILD_FILENAMES",
     "POLYGLOT_CORPUS",

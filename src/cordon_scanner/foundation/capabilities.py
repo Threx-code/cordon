@@ -7,11 +7,6 @@ it covers and what it deliberately does not. Also how a rule's pattern is matche
 from __future__ import annotations
 
 import enum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 
 # ---------------------------------------------------------------------------
 # Enumerations

@@ -6,7 +6,7 @@ import contextlib
 import http.client
 import re
 import urllib.parse
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
@@ -16,9 +16,6 @@ from cordon_scanner.intel.advisories.upstream.base import (
 )
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.inference import Inference
-
-if TYPE_CHECKING:
-    pass
 
 
 class ConanCenter:

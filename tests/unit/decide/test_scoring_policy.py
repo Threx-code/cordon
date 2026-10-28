@@ -19,10 +19,6 @@ from cordon_scanner.decide.policy import (
     PolicyGate,
     SuppressionMatcher,
 )
-from cordon_scanner.decide.scoring import (
-    RiskScorer,
-    ScoringContext,
-)
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.config.policy import Policy
 from cordon_scanner.foundation.config.settings import Config
@@ -43,6 +39,10 @@ from cordon_scanner.foundation.models import (
     Suppression,
 )
 from cordon_scanner.foundation.results import ScanResult
+from cordon_scanner.foundation.scoring import (
+    RiskScorer,
+    ScoringContext,
+)
 
 
 class ScoringPolicyHelpers:

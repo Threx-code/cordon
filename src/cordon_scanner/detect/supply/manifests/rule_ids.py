@@ -2,12 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
-
 MUTABLE_REF_RULE = "POLICY.DEPENDENCY.MUTABLE_REF.001"
 
 REMOTE_TARBALL_RULE = "SUSPECT.DEPENDENCY.REMOTE_TARBALL.001"

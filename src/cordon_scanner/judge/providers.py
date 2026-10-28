@@ -27,16 +27,14 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Protocol
 
+from cordon_scanner.detect.agents.language_model.review import JudgeError
+
 TIMEOUT_SECONDS: Final = 90.0
 LOCAL_TIMEOUT_SECONDS: Final = 300.0
 """A model on the developer's own machine, often on a CPU, takes minutes where a hosted API takes
 seconds. `CORDON_JUDGE_TIMEOUT` overrides either."""
 MAX_RESPONSE_BYTES: Final = 1 << 20
 LOCAL_HOSTS: Final = frozenset({"localhost", "127.0.0.1", "::1", "[::1]", "host.docker.internal"})
-
-
-class JudgeError(Exception):
-    """The judge could not be asked. The message is safe to show and never holds a key."""
 
 
 class ProviderUnavailable(JudgeError):
@@ -232,6 +230,9 @@ class BaseProvider:
                 return self.environ[name]
         raise ProviderUnavailable(f"set {' or '.join(names)} to use the {self.NAME} judge")
 
+    def context(self, prompt_version: str, kind: str, path: str, text: str) -> None:
+        """What is being judged. A backend that is sent the prompt needs none of it."""
+
     def complete(self, system: str, user: str) -> Completion:
         text = self._exchange(system, user)
         if not text.strip():
@@ -376,6 +377,10 @@ class CordonCloudProvider(BaseProvider):
     def family(self) -> str:
         return "cordon-cloud"
 
+    def context(self, prompt_version: str, kind: str, path: str, text: str) -> None:
+        """The cloud runs the prompt itself, so it is sent what is judged, not the prompt."""
+        self.prompt_version, self.kind, self.path, self.text = prompt_version, kind, path, text
+
     def _exchange(self, system: str, user: str) -> str:
         from cordon_scanner.cloud import CloudError, auth
 
@@ -516,7 +521,6 @@ __all__ = [
     "CordonCloudProvider",
     "DeterministicProvider",
     "HttpTransport",
-    "JudgeError",
     "ModelFamilies",
     "OllamaProvider",
     "OpenAIProvider",

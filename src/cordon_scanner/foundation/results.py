@@ -16,7 +16,23 @@ if TYPE_CHECKING:
 # Enumerations
 # ---------------------------------------------------------------------------
 
-from cordon_scanner.foundation.models import Category, Confidence, Finding, Hook, Scope, Severity
+
+from typing import TYPE_CHECKING
+
+from cordon_scanner.foundation.models import (
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Hook,
+    Location,
+    RedactionMode,
+    RiskScore,
+    Scope,
+    Severity,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,7 +473,7 @@ class ScanResult:
     a Cargo registry or source replacement, a Composer repository, a NuGet feed -- with any
     credentials removed. Where resolution looks is what dependency confusion turns on."""
     image: dict[str, Any] | None = None
-    """The scanned image's identity (`images.oci.ImageIdentity`): its ID and manifest digest, the
+    """The scanned image's identity (`images.identity.ImageIdentity`): its ID and manifest digest, the
     names it was saved under, its layers, its platform and the base image its labels name."""
     target_kind: str = "source"
     """What was scanned: ``source`` (a directory or repository), ``image`` (a container image
@@ -531,4 +547,103 @@ class ScanResult:
         )
 
 
-__all__ = ["Dependency", "LanguageStat", "Project", "Repository", "ScanResult", "ScanStats"]
+NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
+
+
+class OperationalFinding:
+    """Builds a finding about the scan itself: a file that could not be read, an archive member
+    refused, a check that could not run.
+
+    Every degradation produces one of these. A file that was not examined is indistinguishable in the
+    output from one that was examined and found clean, so coverage loss is always stated, never
+    inferred, and no reporting threshold may hide it."""
+
+    @staticmethod
+    def build(
+        *,
+        path: str,
+        rule_id: str,
+        message: str,
+        remediation: str,
+        category: Category = Category.OPERATIONAL,
+        severity: Severity = Severity.INFO,
+    ) -> Finding:
+        """Build a finding about the scan itself.
+
+        Every degradation produces one of these. A file that was not examined is
+        indistinguishable in the output from one that was examined and found clean,
+        so coverage loss must always be stated rather than inferred.
+        """
+        return Finding(
+            rule_id=rule_id,
+            category=category,
+            severity=severity,
+            confidence=Confidence.CONFIRMED,
+            message=message,
+            location=Location(path=path),
+            evidence=Evidence(
+                kind=EvidenceKind.METADATA,
+                match_hash=Evidence.hash_bytes(f"{rule_id}:{path}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            remediation=remediation,
+            # No reporting threshold may hide a finding that says coverage was
+            # lost. See PolicyGate.filter_for_reporting.
+            always_report=True,
+            explanation=Explanation(
+                summary="Reported so that reduced coverage is never silent.",
+                matched_rule=rule_id,
+            ),
+            risk=NO_RISK,
+            detector="engine",
+        )
+
+    @staticmethod
+    def release_change(*, path: str, rule_id: str, message: str, severity: Severity) -> Finding:
+        """A finding about what this release added relative to the previous one."""
+        return replace(
+            OperationalFinding.build(
+                path=path,
+                rule_id=rule_id,
+                message=message,
+                remediation=(
+                    "Read what changed between the two releases before installing this one. "
+                    "If the change is not in the project's own release notes, treat the "
+                    "release as compromised."
+                ),
+                category=Category.SUSPICIOUS,
+                severity=severity,
+            ),
+            confidence=Confidence.MEDIUM,
+            always_report=False,
+        )
+
+    @staticmethod
+    def package_check(
+        *, path: str, rule_id: str, message: str, severity: Severity, remediation: str
+    ) -> Finding:
+        """A finding about the published package as its registry describes it, not about a file."""
+        return replace(
+            OperationalFinding.build(
+                path=path,
+                rule_id=rule_id,
+                message=message,
+                remediation=remediation,
+                category=Category.SUSPICIOUS,
+                severity=severity,
+            ),
+            confidence=Confidence.HIGH,
+            always_report=False,
+        )
+
+
+__all__ = [
+    "NO_RISK",
+    "Dependency",
+    "LanguageStat",
+    "OperationalFinding",
+    "Project",
+    "Repository",
+    "ScanResult",
+    "ScanStats",
+]

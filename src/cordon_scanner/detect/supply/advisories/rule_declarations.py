@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.advisories.findings import (
     EXPLOITED_RULE,
@@ -21,9 +19,6 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.intel.advisories import exploited
-
-if TYPE_CHECKING:
-    pass
 
 DECLARED_RULES: tuple[DeclaredRule, ...] = (
     DeclaredRule(
