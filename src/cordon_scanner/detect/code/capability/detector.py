@@ -1011,22 +1011,6 @@ class CapabilityDetector(BaseDetector):
         return LoadPath.skill_script(path, ctx)
 
     @staticmethod
-    def _agent_run(content: FileContent, ctx: ScanContext | None) -> bool:
-        """A skill's script or an MCP server's own source: code an agent runs as a tool."""
-        if LoadPath.skill_script(content.path, ctx):
-            return True
-        if ctx is not None and content.path in ctx.agent_run_paths:
-            return True
-        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
-
-        member = content.path.rpartition("!")[2]
-        return (
-            member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
-            and not ReleaseChecks.NOT_A_SERVER_PATH.search(member)
-            and ReleaseChecks.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
-        )
-
-    @staticmethod
     def _tool_runs_nothing_downloaded(unit: FileUnit, ctx: ScanContext) -> bool:
         """An agent's tool script that fetches and runs, but never runs what it fetched.
 
@@ -1038,9 +1022,7 @@ class CapabilityDetector(BaseDetector):
         from cordon_scanner.detect.code.download_flow import DownloadFlow
 
         content = unit.content
-        if content.path in ctx.consumer_install_paths or not CapabilityDetector._agent_run(
-            content, ctx
-        ):
+        if content.path in ctx.consumer_install_paths or not LoadPath.agent_run(content, ctx):
             return False
         return DownloadFlow.runs_download(content.text, unit.language) == []
 
@@ -1744,7 +1726,7 @@ class CapabilityDetector(BaseDetector):
 
         if (
             rule.id == "MALWARE.EXFIL.001"
-            and CapabilityDetector._agent_run(content, ctx)
+            and LoadPath.agent_run(content, ctx)
             and not CapabilityDetector._names_untrusted_destination(content.raw)
             and not CapabilityDetector._ENVIRONMENT_DUMP.search(content.raw)
         ):
@@ -1811,14 +1793,12 @@ class CapabilityDetector(BaseDetector):
                 # (review 98). A drop point, a raw address or the whole environment still is not;
                 # nor is a credential store, a beacon or a drop point, each its own composite.
                 compiled.rule.id in ("SUSPECT.EXFIL.001", "MALWARE.EXFIL.001")
-                and CapabilityDetector._agent_run(content, ctx)
+                and LoadPath.agent_run(content, ctx)
                 and trusted_destination
             )
             # Not raised back by the install escalation below: agent-run code is in the install
             # set for what no tool needs, and this is what a tool is for.
-            agent_tool_client = own_credential_client and CapabilityDetector._agent_run(
-                content, ctx
-            )
+            agent_tool_client = own_credential_client and LoadPath.agent_run(content, ctx)
             # A shell, PowerShell, Vagrant, Docker, Nix or patch file that enables a service,
             # writes a unit or appends `export PATH=...` to `~/.bashrc` is provisioning a person
             # runs, persisting configuration rather than anything it fetched. In the long tail
@@ -1867,7 +1847,7 @@ class CapabilityDetector(BaseDetector):
                 compiled.rule.id == self.CREDENTIAL_STORE_RULE
                 and not in_hook
                 and not ctx.in_consumer_install(content.path)
-                and not CapabilityDetector._agent_run(content, ctx)
+                and not LoadPath.agent_run(content, ctx)
                 # Nor code a published package runs when it is imported (REC-2).
                 and content.path not in ctx.import_entry_paths
                 # A paste site, a webhook, a chat API or a bare address beside the store keeps
@@ -1897,7 +1877,7 @@ class CapabilityDetector(BaseDetector):
                 compiled.rule.id in InertLiterals.CAP
                 and not in_hook
                 and not ctx.in_consumer_install(content.path)
-                and not CapabilityDetector._agent_run(content, ctx)
+                and not LoadPath.agent_run(content, ctx)
                 and InertLiterals.all_inert(
                     content.path,
                     content.text,

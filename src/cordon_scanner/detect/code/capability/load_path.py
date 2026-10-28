@@ -491,5 +491,21 @@ class LoadPath:
                         break
         return [(start, end) for start, end, _ in unreached]
 
+    @staticmethod
+    def agent_run(content: FileContent, ctx: ScanContext | None) -> bool:
+        """A skill's script or an MCP server's own source: code an agent runs as a tool."""
+        if LoadPath.skill_script(content.path, ctx):
+            return True
+        if ctx is not None and content.path in ctx.agent_run_paths:
+            return True
+        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+
+        member = content.path.rpartition("!")[2]
+        return (
+            member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
+            and not ReleaseChecks.NOT_A_SERVER_PATH.search(member)
+            and ReleaseChecks.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
+        )
+
 
 __all__ = ["LoadPath"]
