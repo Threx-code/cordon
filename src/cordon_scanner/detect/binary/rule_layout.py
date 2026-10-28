@@ -366,6 +366,49 @@ class LazyRecord(Mapping[str, Any]):
         return key in self._eager or key in self._deferred
 
 
+class LazyGroups(Mapping[str, Any]):
+    """A record whose costly fields come in independent groups, each built by its own function on the first
+    read of one of its names and then kept, so a rule that reads one group never pays for another. A group
+    declares its names up front, but its build may leave some out (the field is then absent): asking whether
+    such a field is present builds its group. Iterating builds every group, off the hot path."""
+
+    __slots__ = ("_built", "_eager", "_groups", "_owner")
+
+    def __init__(self, eager: dict[str, Any], groups: list[tuple[tuple[str, ...], Any]]) -> None:
+        self._eager = eager  # holds none of the groups' names
+        self._groups = groups  # (names, build): build() -> the group's present fields
+        self._owner = {name: i for i, (names, _) in enumerate(groups) for name in names}
+        self._built: dict[int, dict[str, Any]] = {}
+
+    def _group(self, i: int) -> dict[str, Any]:
+        built = self._built.get(i)
+        if built is None:
+            built = self._built[i] = self._groups[i][1]()
+        return built
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self._eager:
+            return self._eager[key]
+        i = self._owner.get(key)
+        if i is None:
+            raise KeyError(key)
+        return self._group(i)[key]
+
+    def __contains__(self, key: object) -> bool:
+        if key in self._eager:
+            return True
+        i = self._owner.get(key) if isinstance(key, str) else None
+        return i is not None and key in self._group(i)
+
+    def __iter__(self) -> Any:
+        yield from self._eager
+        for i in range(len(self._groups)):
+            yield from self._group(i)
+
+    def __len__(self) -> int:
+        return len(self._eager) + sum(len(self._group(i)) for i in range(len(self._groups)))
+
+
 class ImageMap:
     """A PE image's virtual-address space: accepts the header and maps a virtual address (RVA) to a file
     offset through the section table, shared by the ``rule_pe`` and ``rule_dotnet`` readers. Built once from
@@ -377,7 +420,7 @@ class ImageMap:
 
     MAX_SECTIONS = 96
 
-    __slots__ = ("_sections", "cur", "is64", "n", "nt", "opt", "strict")
+    __slots__ = ("_map", "_sections", "cur", "is64", "n", "nt", "opt", "strict")
 
     def __init__(self, cur: Cursor, nt: int, is64: bool, strict: bool = False) -> None:
         self.cur = cur
@@ -387,6 +430,8 @@ class ImageMap:
         self.opt = nt + 24  # start of the optional header
         self.strict = strict
         self._sections: list[tuple[int, int, int, int]] | None = None
+        #: What every address lookup shares, worked out once (`_mapping`); None until then.
+        self._map: tuple[bool, int, list[tuple[int, int, int, int]]] | None = None
 
     @staticmethod
     def accept(cur: Cursor, strict: bool = False) -> ImageMap | None:
@@ -431,38 +476,57 @@ class ImageMap:
         """The file offset of a virtual address, or -1 when no section maps it. Follows the loader's choice
         of the highest-based section that still contains the address and its raw-pointer alignment (the
         quirk that an address below every section maps straight through to the same file offset is kept)."""
-        cur = self.cur
-        if (
-            self.strict
-        ):  # rule_pe: a section header that does not fit the file fails the whole mapping
-            count = cur.uint(self.nt + 6, 2)
-            first = self.opt + cur.uint(self.nt + 20, 2)
-            if not isinstance(count, int) or not isinstance(first, int):
-                return -1
-            for i in range(min(count, ImageMap.MAX_SECTIONS)):
-                if not cur.fits(first + 40 * i, 40):
-                    return -1
-        file_align = cur.uint(self.opt + 36, 4)
-        sect_align = cur.uint(self.opt + 32, 4)
-        if ABSENT in (file_align, sect_align):
+        usable, lowest, table = self._mapping()
+        if not usable:
             return -1
-        lowest = 0xFFFFFFFF
         hit_rva = hit_off = hit_raw = 0
-        for vaddr, vsize, rsize, roff in self.sections():
-            lowest = min(lowest, vaddr)
-            if vaddr <= rva and rva - vaddr < max(vsize, rsize) and hit_rva <= vaddr:
-                align = min(file_align, 0x200)
-                hit_rva, hit_off, hit_raw = vaddr, roff, rsize
-                if align and hit_off % align:
-                    hit_off -= hit_off % align
-                if sect_align >= 0x1000:
-                    hit_off &= ~0x1FF
+        for vaddr, span, off, rsize in table:
+            if vaddr <= rva and rva - vaddr < span and hit_rva <= vaddr:
+                hit_rva, hit_off, hit_raw = vaddr, off, rsize
         if rva < lowest:  # below every section: the loader reads it straight from the file start
             hit_rva, hit_off, hit_raw = 0, 0, self.n
         if rva < hit_rva or rva - hit_rva >= hit_raw:
             return -1
         result = hit_off + (rva - hit_rva)
         return result if result < self.n else -1
+
+    def _mapping(self) -> tuple[bool, int, list[tuple[int, int, int, int]]]:
+        """What does not depend on the address, worked out on the first lookup and kept: whether any address
+        maps at all (in `strict` mode every section header must fit; both alignments must be present), the
+        lowest section address, and each section as (address, extent, aligned file offset, raw size)."""
+        if self._map is None:
+            cur = self.cur
+            usable = True
+            if (
+                self.strict
+            ):  # rule_pe: a section header that does not fit the file fails the whole mapping
+                count = cur.uint(self.nt + 6, 2)
+                first = self.opt + cur.uint(self.nt + 20, 2)
+                if not isinstance(count, int) or not isinstance(first, int):
+                    usable = False
+                else:
+                    usable = all(
+                        cur.fits(first + 40 * i, 40)
+                        for i in range(min(count, ImageMap.MAX_SECTIONS))
+                    )
+            file_align = cur.uint(self.opt + 36, 4)
+            sect_align = cur.uint(self.opt + 32, 4)
+            if ABSENT in (file_align, sect_align):
+                usable = False
+            lowest = 0xFFFFFFFF
+            table: list[tuple[int, int, int, int]] = []
+            if usable:
+                align = min(file_align, 0x200)
+                for vaddr, vsize, rsize, roff in self.sections():
+                    lowest = min(lowest, vaddr)
+                    off = roff
+                    if align and off % align:
+                        off -= off % align
+                    if sect_align >= 0x1000:
+                        off &= ~0x1FF
+                    table.append((vaddr, max(vsize, rsize), off, rsize))
+            self._map = (usable, lowest, table)
+        return self._map
 
     def directory(self, entry: int) -> tuple[int, int] | None:
         """(virtual_address, size) of data directory ``entry``, read where the optional header puts it."""
@@ -486,6 +550,7 @@ __all__ = [
     "ImageMap",
     "Index",
     "Layout",
+    "LazyGroups",
     "LazyRecord",
     "LazySeq",
     "Pad",

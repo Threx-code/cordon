@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary import rule_signature
@@ -30,6 +31,7 @@ from cordon_scanner.detect.binary.rule_layout import (
     Grid,
     ImageMap,
     Layout,
+    LazyGroups,
 )
 from cordon_scanner.detect.binary.rule_tables import Tables
 from cordon_scanner.detect.binary.rule_values import (
@@ -194,7 +196,7 @@ class Pe:
     })  # fmt: skip
 
     @staticmethod
-    def data(file: bytes) -> dict[str, Any]:
+    def data(file: bytes) -> Mapping[str, Any]:
         out: dict[str, Any] = dict(Tables.PE)  # the module constants are present for every file
         for name in Pe.ARRAYS:
             out[name] = {}
@@ -205,17 +207,85 @@ class Pe:
         ) in Pe.CALLS.items():  # undefined until a PE fills them (each callable returns None)
             out[name] = tuple((lambda *_a: None) for _ in sigs)
         out["is_pe"] = 0  # set for every file scanned, before a header is looked for
-        Pe._read(out, file)
-        return out
+        context = Pe._read(out, file)
+        if context is None:
+            return out
+        # The signatures, the imports and the exports are the costly parts of a PE to read (an Authenticode
+        # parse with each signature verified; an address lookup per import and per export), and most rules
+        # read at most one of them: each is read on the first access of one of its fields, and never
+        # otherwise. A group is read on a copy of the rest of the record with its own starting values, so
+        # it sees what it saw when everything was read at once.
+        defaults = {
+            name: out.pop(name) for name in Pe.IMPORT_FIELDS + Pe.EXPORT_FIELDS if name in out
+        }
+        for name in Pe.SIGNATURE_FIELDS:
+            out.pop(name, None)
+        base = dict(out)
+        cur, img, is64, header = context
+
+        def group(names: tuple[str, ...], *steps: Any) -> Any:
+            def build() -> dict[str, Any]:
+                part = {**base, **{k: defaults[k] for k in names if k in defaults}}
+                for step in steps:
+                    step(part)
+                return {k: part[k] for k in names if k in part}
+
+            return build
+
+        imports = group(
+            Pe.IMPORT_FIELDS,
+            lambda part: Pe._read_imports(part, cur, img, is64, header),
+            Pe._import_calls,
+            Pe._import_rva_calls,
+        )
+        exports = group(
+            Pe.EXPORT_FIELDS,
+            lambda part: Pe._exports(part, cur, img),
+            Pe._export_calls,
+        )
+        return LazyGroups(
+            out,
+            [
+                (Pe.SIGNATURE_FIELDS, lambda: Pe._signature_fields(file)),
+                (Pe.IMPORT_FIELDS, imports),
+                (Pe.EXPORT_FIELDS, exports),
+            ],
+        )
+
+    #: The fields of a PE's imports and exports, each group read when a rule reads one of its fields.
+    IMPORT_FIELDS: ClassVar[tuple[str, ...]] = (
+        "import_details",
+        "delayed_import_details",
+        "number_of_imports",
+        "number_of_imported_functions",
+        "number_of_delayed_imports",
+        "number_of_delayed_imported_functions",
+        "imports",
+        "import_rva",
+        "delayed_import_rva",
+        "imphash",
+    )
+    EXPORT_FIELDS: ClassVar[tuple[str, ...]] = (
+        "export_details",
+        "number_of_exports",
+        "dll_name",
+        "export_timestamp",
+        "exports",
+        "exports_index",
+    )
 
     @staticmethod
-    def _read(out: dict[str, Any], file: bytes) -> None:
+    def _read(
+        out: dict[str, Any], file: bytes
+    ) -> tuple[Cursor, ImageMap, bool, dict[str, Any]] | None:
+        """The header, sections, resources, debug entry and Rich stub into `out`; the reader's state for the
+        groups read later (`data`), or None when the file is not a PE."""
         cur = Cursor(file)
         img = ImageMap.accept(
             cur, strict=True
         )  # the pe RVA rule: a non-fitting section header fails the map
         if img is None:
-            return
+            return None
         opt = img.opt
         is64 = img.is64
         coff = Shape.COFF.read(cur, img.nt + 4)
@@ -282,21 +352,21 @@ class Pe:
             }
         out["data_directories"] = directories
         Pe._sections(out, cur, img, coff)
-        Pe._read_imports(out, cur, img, is64, header)
-        out["number_of_exports"] = 0
-        directory = img.directory(0)
-        if directory is not None and directory[0]:
-            Pe._read_exports(out, cur, img, directory)
         Pe._read_resources(out, cur, img)
         out["number_of_version_infos"] = len(out["version_info_list"])
         Pe._read_pdb(out, cur, img)
         Pe._read_rich(out, cur)
-        Pe._read_signatures(out, cur)
-        Pe._import_calls(out)
-        Pe._import_rva_calls(out)
-        Pe._export_calls(out)
         Pe._section_calls(out, cur, img, Pe._int(coff["characteristics"]))
         Pe._resource_calls(out)
+        return cur, img, is64, header
+
+    @staticmethod
+    def _exports(out: dict[str, Any], cur: Cursor, img: ImageMap) -> None:
+        """The export directory, when there is one: its count is 0 otherwise."""
+        out["number_of_exports"] = 0
+        directory = img.directory(0)
+        if directory is not None and directory[0]:
+            Pe._read_exports(out, cur, img, directory)
 
     @staticmethod
     def _int(value: Any) -> int:
@@ -845,14 +915,19 @@ class Pe:
             )
         out["rich_signature"] = rich_signature
 
+    #: The fields a PE's signatures give, read together and only when a rule reads one of them.
+    SIGNATURE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "number_of_signatures",
+        "is_signed",
+        "signatures",
+    )
+
     @staticmethod
-    def _read_signatures(out: dict[str, Any], cur: Cursor) -> None:
+    def _signature_fields(file: bytes) -> dict[str, Any]:
         """pe.signatures and pe.is_signed: the file's Authenticode signatures, read by rule_signature from
         the certificate table (it locates and bounds-checks the security directory itself)."""
-        found, signed = rule_signature.Signatures.signature_values(cur.data)
-        out["number_of_signatures"] = len(found)
-        out["is_signed"] = signed
-        out["signatures"] = found
+        found, signed = rule_signature.Signatures.signature_values(file)
+        return {"number_of_signatures": len(found), "is_signed": signed, "signatures": found}
 
     @staticmethod
     def _as_details(libraries: list[Any]) -> dict[int, Any]:

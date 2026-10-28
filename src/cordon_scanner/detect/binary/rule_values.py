@@ -117,7 +117,7 @@ class Module:
 
     __slots__ = ("data", "schema")
 
-    def __init__(self, schema: Record, data: Callable[[bytes], dict[str, Any]]) -> None:
+    def __init__(self, schema: Record, data: Callable[[bytes], Mapping[str, Any]]) -> None:
         self.schema, self.data = schema, data
 
 
