@@ -16,7 +16,9 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 REPOSITORY = "https://github.com/Threx-code/cordon"
 LINK = re.compile(re.escape(REPOSITORY) + r"/(blob|tree)/([^/\s)\"'>]+)/")
 FILES = ("README.md", "CHANGELOG.md", "docs/*.md", "tutorials/*.md", "editors/vscode/README.md")

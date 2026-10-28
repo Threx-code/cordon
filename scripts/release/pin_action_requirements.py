@@ -35,7 +35,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 PIN = ROOT / "action" / "requirements.txt"
 """The one pin every template installs from: the GitHub Action reads it from its own checkout, and
 the GitLab, CircleCI, Bitbucket, Azure and Jenkins templates fetch it from the release tag."""

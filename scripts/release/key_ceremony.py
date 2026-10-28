@@ -35,6 +35,10 @@ import time
 from pathlib import Path
 from typing import cast
 
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
+
 ROLE_LIFETIME_DAYS = 365
 
 
@@ -90,7 +94,7 @@ class KeyCeremony:
             handle.write(seed.hex() + "\n")
 
     def run(self) -> dict[str, object]:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+        sys.path.insert(0, str(ROOT / "src"))
         from cordon_scanner.intel.malware.feed import SPEC, FeedRoles
 
         private, public = self._prepare()

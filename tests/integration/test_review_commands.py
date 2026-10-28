@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cli.main import CommandLine
+from support import ROOT
 
 PAYLOAD = "const p = atob(B);\neval(p);\n"
 
@@ -226,8 +227,6 @@ class TestRulesDiff(ReviewCommandsFixtures):
         assert "weakened" in capsys.readouterr().out
 
     def test_it_defaults_to_the_installed_packs(self, tmp_path, capsys) -> None:
-        builtin = (
-            Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "rules" / "builtin"
-        )
+        builtin = ROOT / "src" / "cordon_scanner" / "rules" / "builtin"
         assert CommandLine.main(["rules", "diff", str(builtin)]) == 0
         assert "no rule changes" in capsys.readouterr().out

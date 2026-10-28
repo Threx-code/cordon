@@ -36,8 +36,9 @@ from pathlib import Path
 from typing import Any
 
 from cordon_scanner.foundation.formats.datayaml import DataYaml
+from support import ROOT
 
-CASES = Path(__file__).parent.parent / "conformance" / "cases"
+CASES = ROOT / "tests" / "conformance" / "cases"
 EXPECT = "expect.yaml"
 ADVISORIES = "advisories.json"
 CONTROL_FILES = frozenset({EXPECT, ADVISORIES, "authoritative.json", "README.md"})

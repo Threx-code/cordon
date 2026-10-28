@@ -28,9 +28,9 @@ import zipfile
 import zlib
 from collections.abc import Mapping
 from dataclasses import replace
-from pathlib import Path
 from typing import IO, Final
 
+from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.images.langpkgs import LanguagePackage
 
 GO_MAGIC: Final = b"\xff Go buildinf:"
@@ -556,7 +556,7 @@ class KnownGroups:
     @functools.lru_cache(maxsize=1)
     def _curated() -> dict[str, str]:
         """Syft's artifact-to-group map (`scripts/build/syft_java_groups.py`; NOTICE has the source)."""
-        path = Path(__file__).parent / "data" / "java-groups.json"
+        path = PackagePaths.data("images") / "java-groups.json"
         try:
             groups = json.loads(path.read_text(encoding="utf-8")).get("groups", {})
         except (OSError, ValueError):

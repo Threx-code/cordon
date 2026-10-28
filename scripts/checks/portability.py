@@ -23,7 +23,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 SCANNED = ("src", "tests", "scripts", "bench")
 SKIPPED_PARTS = {"cases", "corpus", "__pycache__", "data", ".dist", "results"}
 

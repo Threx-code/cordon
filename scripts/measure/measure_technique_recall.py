@@ -13,6 +13,15 @@ import subprocess
 import sys
 import tempfile
 
+ROOT = next(
+    (
+        p
+        for p in (pathlib.Path.cwd(), *pathlib.Path.cwd().parents)
+        if (p / "src" / "cordon_scanner").is_dir()
+    ),
+    None,
+) or sys.exit("run this from inside the Cordon repository")
+
 TECHNIQUE = {
     "Install-hook attacks": [
         "exfil-python-install-hook",
@@ -83,7 +92,7 @@ TECHNIQUE = {
     ],
 }
 
-root = pathlib.Path(__file__).resolve().parents[2] / "corpus" / "malicious"
+root = ROOT / "corpus" / "malicious"
 rows = {}
 for label, samples in TECHNIQUE.items():
     hit = total = 0

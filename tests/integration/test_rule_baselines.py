@@ -24,11 +24,11 @@ import pytest
 
 from cordon_scanner.foundation.capabilities import MatchKind
 from cordon_scanner.rules.loader import RuleLoader, RuleTester
-from support import requires_corpus
+from support import ROOT, requires_corpus
 
 pytestmark = requires_corpus
 
-BENIGN = Path(__file__).resolve().parents[2] / "corpus" / "benign"
+BENIGN = ROOT / "corpus" / "benign"
 
 
 class RuleBaselinesHelpers:
@@ -104,7 +104,7 @@ class TestDeclaredBaselines:
         `test_benign_corpus_produces_nothing_significant`, which scans the whole
         benign corpus and requires nothing above `low`.
         """
-        corpus = (Path(__file__).parent / "test_corpus.py").read_text(encoding="utf-8")
+        corpus = (ROOT / "tests/integration" / "test_corpus.py").read_text(encoding="utf-8")
         assert "test_benign_corpus_produces_nothing_significant" in corpus
 
     @pytest.mark.parametrize("compiled", ALL_RULES, ids=lambda c: c.rule.id)

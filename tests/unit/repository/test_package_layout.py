@@ -312,14 +312,23 @@ class Structure:
                     out.add(f"engine -> {dep}")
         return out
 
-    @staticmethod
-    def file_relative() -> set[str]:
+    #: The one place a path may be found from a file's own position: the tests' anchor, which every
+    #: test reaches the repository through (`support.ROOT`). The package finds its data through
+    #: `PackagePaths` and the scripts find the checkout from where they run.
+    ANCHORS: ClassVar[frozenset[str]] = frozenset({"tests/support.py"})
+
+    @classmethod
+    def file_relative(cls) -> set[str]:
         """Source files that locate something from their own position (`__file__`)."""
         out = set()
         for folder in ("src", "tests", "scripts"):
             for p in (REPO / folder).rglob("*.py"):
                 rel = p.relative_to(REPO).as_posix()
-                if "__pycache__" in p.parts or rel.startswith("tests/conformance/cases/"):
+                if (
+                    "__pycache__" in p.parts
+                    or rel.startswith("tests/conformance/cases/")
+                    or rel in cls.ANCHORS
+                ):
                     continue
                 tree = ast.parse(p.read_text(encoding="utf-8"))
                 if any(isinstance(n, ast.Name) and n.id == "__file__" for n in ast.walk(tree)):

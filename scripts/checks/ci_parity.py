@@ -34,7 +34,9 @@ from typing import Any, cast
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 #: The CI jobs, in the order they are worth failing fast on. `test` is the matrix suite.

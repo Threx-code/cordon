@@ -26,11 +26,11 @@ from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Severity
-from support import requires_corpus, requires_malicious_corpus
+from support import ROOT, requires_corpus, requires_malicious_corpus
 
 pytestmark = requires_corpus
 
-CORPUS = Path(__file__).resolve().parents[2] / "corpus"
+CORPUS = ROOT / "corpus"
 BENIGN = CORPUS / "benign"
 MALICIOUS = CORPUS / "malicious"
 
@@ -345,7 +345,7 @@ class TestSelfScan(CorpusFixtures):
     """
 
     def test_the_repository_scans_clean(self, scanner: Scanner) -> None:
-        repository = Path(__file__).resolve().parents[2]
+        repository = ROOT
         result = self._scan_tracked(repository, scanner)
 
         offending = [
@@ -487,15 +487,12 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
         return declared
 
     def test_no_finding_exceeds_its_declaration(self) -> None:
-        from pathlib import Path
 
         from cordon_scanner import Scanner
         from cordon_scanner.foundation.config.settings import Config
 
         declared = self._declared()
-        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
-            Path(__file__).resolve().parents[2] / "corpus"
-        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(ROOT / "corpus")
         over = [
             (f.rule_id, f.severity.name, declared[f.rule_id].name, f.location.path)
             for f in result.findings
