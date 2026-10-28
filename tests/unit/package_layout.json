@@ -292,6 +292,7 @@
   "ecosystems/packages/julia": "ecosystems/packages/julia",
   "ecosystems/packages/nix": "ecosystems/packages/nix",
   "ecosystems/packages/npm": "ecosystems/packages/npm",
+  "foundation/scopes": "foundation/scopes",
   "ecosystems/packages/javascript/deno": "ecosystems/packages/javascript/deno",
   "ecosystems/packages/javascript/bun": "ecosystems/packages/javascript/bun",
   "ecosystems/packages/javascript/yarn": "ecosystems/packages/javascript/yarn",
@@ -891,9 +892,7 @@
   ],
   "orphaned_docstrings": [
    "cloud/runner.py: Take fix jobs too (`--make-fixes`): move one dependency to a",
-   "ecosystems/base.py: This file records facts about another file's resolution, not",
    "ecosystems/packages/jvm/gradle_scripts.py: `resolutionStrategy.force` versions: unlike a constraint, th",
-   "ecosystems/registry.py: For each residual pattern, what its last segment fixes about",
    "mcp/tools/base.py: Worker processes per scan; 0 lets the scanner choose.",
    "sources/git.py: Environment overrides applied to every invocation. Deliberat"
   ],

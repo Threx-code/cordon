@@ -9,8 +9,9 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
 )
-from cordon_scanner.ecosystems.packages.npm import LockScopes, NpmEcosystem
+from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.scopes import LockScopes
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent

@@ -431,6 +431,10 @@ class LockGraph:
     here is not missing, and is judged after the companion is applied."""
 
     companion: bool = False
+    """This file records facts about another file's resolution, not a resolution of its own:
+    `go.sum` holds hashes for what `go.mod` selects (and for versions it no longer does), and
+    `vendor/modules.txt` says which of them were vendored. Its entries complete the matching
+    entries of the resolving file -- integrity, a vendored source -- and add none of their own."""
 
     completed_by_companion: bool = False
     """The resolving file lists only what the project requires directly -- a `go.mod` written
@@ -452,10 +456,6 @@ class LockGraph:
     """How many directories above the file the project it belongs to is: 2 for Maven's
     `.mvn/checksums/` and Gradle's legacy `gradle/dependency-locks/`, 1 for Gradle's
     `gradle/verification-metadata.xml`. 0: the file's own directory."""
-    """This file records facts about another file's resolution, not a resolution of its own:
-    `go.sum` holds hashes for what `go.mod` selects (and for versions it no longer does), and
-    `vendor/modules.txt` says which of them were vendored. Its entries complete the matching
-    entries of the resolving file -- integrity, a vendored source -- and add none of their own."""
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -801,15 +801,6 @@ class InstallTimeSpans(Protocol):
     def spans(self, text: str) -> list[tuple[int, int]]: ...
 
 
-class LockScoping(Protocol):
-    """What the engine uses of the class `LockScopes`."""
-
-    def propagate(
-        self, roots: dict[str, set[Scope]], edges: dict[str, set[str]], limit: int = ...
-    ) -> dict[str, Scope]: ...
-    def rank(self, scope: Scope) -> int: ...
-
-
 __all__ = [
     "BaseEcosystem",
     "DeclaredDependency",
@@ -819,6 +810,5 @@ __all__ = [
     "InstallTimeSpans",
     "LockEntry",
     "LockGraph",
-    "LockScoping",
     "Manifest",
 ]

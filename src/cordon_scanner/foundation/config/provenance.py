@@ -4,10 +4,7 @@ command line) and the file, as `config explain` reports them."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 
 class Layer:

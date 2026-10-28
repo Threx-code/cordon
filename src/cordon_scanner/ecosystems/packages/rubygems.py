@@ -195,7 +195,7 @@ class Gemfile:
         known = {"development": Scope.DEV, "test": Scope.TEST}
         scopes = [known[g] for g in groups if g in known]
         if len(scopes) == len(groups):
-            from cordon_scanner.ecosystems.packages.npm import LockScopes
+            from cordon_scanner.foundation.scopes import LockScopes
 
             return min(scopes, key=LockScopes.rank), ()
         # A custom group (`:production`, `:assets`) installs by default unless excluded.

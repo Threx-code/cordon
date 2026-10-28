@@ -975,11 +975,11 @@ class _BudgetedStream:
         # Not context-managed: the decompressor is the stream tarfile reads for as long as the
         # archive is open, over bytes already in memory, so there is no descriptor to leak.
         if data[:2] == b"\x1f\x8b":
-            inner: Any = gzip.GzipFile(fileobj=cast(Any, raw), mode="rb")
+            inner: Any = gzip.GzipFile(fileobj=cast("Any", raw), mode="rb")
         elif data[:3] == b"BZh":
-            inner = bz2.BZ2File(cast(Any, raw), mode="rb")
+            inner = bz2.BZ2File(cast("Any", raw), mode="rb")
         elif data[:6] == b"\xfd7zXZ\x00":
-            inner = lzma.LZMAFile(cast(Any, raw), mode="rb")  # noqa: SIM115
+            inner = lzma.LZMAFile(cast("Any", raw), mode="rb")  # noqa: SIM115
         elif data[:4] == ZSTD_MAGIC:
             # Past the budget by a read's worth, so `read` reports the budget, not the decoder.
             inner = _BudgetedStream._zstd(raw, limits.max_uncompressed_bytes + READ_CHUNK * 16)

@@ -371,7 +371,7 @@ class Graph:
         runner read as runtime. With the direct dependencies' scopes known from the manifest,
         a transitive one reached only through dev dependencies is dev, only through optional
         ones optional -- npm's own rule for its `dev` and `optional` flags."""
-        from cordon_scanner.ecosystems.registry import LockScopes
+        from cordon_scanner.foundation.scopes import LockScopes
 
         groups: dict[tuple[str | None, str], list[Dependency]] = {}
         for dependency in collected:
