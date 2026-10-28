@@ -280,6 +280,7 @@
   "images/osv": "images/osv",
   "images/packages": "images/packages",
   "intel/advisories/advisories": "intel/advisories/advisories",
+  "intel/advisories/shipped": "intel/advisories/shipped",
   "intel/advisories/advisory_index": "intel/advisories/advisory_index",
   "intel/advisories/advisory_text": "intel/advisories/advisory_text",
   "intel/advisories/cve_list": "intel/advisories/cve_list",
@@ -787,7 +788,6 @@
    "ecosystems/packages/opam": 1004,
    "ecosystems/packages/pypi": 1319,
    "images/oci": 1074,
-   "intel/advisories/advisories": 1153,
    "mcp/tools": 1802,
    "rules/loader": 1642,
    "sources/archive": 1062

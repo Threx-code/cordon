@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
-from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase, ShippedAdvisories
+from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
 
 class TestAdvisorySharing:

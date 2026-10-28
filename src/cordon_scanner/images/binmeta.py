@@ -521,7 +521,7 @@ class KnownGroups:
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def _index() -> dict[str, frozenset[str]]:
-        from cordon_scanner.intel.advisories.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         groups: dict[str, set[str]] = {}
         try:

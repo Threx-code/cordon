@@ -122,7 +122,7 @@ class TestNoEcosystemHasCollapsed(AdvisoryCoverageFixtures):
         sorted(MINIMUM_VULNERABILITIES.items()),
     )
     def test_the_vulnerability_count_clears_its_floor(self, ecosystem: str, floor: int) -> None:
-        from cordon_scanner.intel.advisories.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         records = ShippedAdvisories._shipped(ecosystem)
         vulnerabilities = sum(1 for r in records if not r.malicious)
@@ -140,7 +140,7 @@ class TestNoEcosystemHasCollapsed(AdvisoryCoverageFixtures):
         so 'plenty of records, none of them ranged' is precisely the shape the
         npm data had while its CVE coverage was missing.
         """
-        from cordon_scanner.intel.advisories.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         for ecosystem in ("npm", "cargo", "gomod"):
             ranged = sum(1 for r in ShippedAdvisories._shipped(ecosystem) if r.is_range)
@@ -201,7 +201,7 @@ class TestOneAdvisoryCanNameSeveralPackages(AdvisoryCoverageFixtures):
     def test_every_window_of_a_split_advisory_survives(self, database: AdvisoryDatabase) -> None:
         """Django's records carry far fewer identifiers than records: an
         advisory becomes one record per affected window."""
-        from cordon_scanner.intel.advisories.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         django = [a for a in ShippedAdvisories._shipped("pypi") if a.name == "django"]
         identifiers = {a.identifier for a in django}
