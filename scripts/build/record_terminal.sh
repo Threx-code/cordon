@@ -16,7 +16,7 @@ mkdir -p "$OUT"
 BIN=$(mktemp -d)
 printf '#!/bin/sh\nexec python -m cordon_scanner "$@"\n' > "$BIN/cordon-scanner"
 chmod +x "$BIN/cordon-scanner"
-export PATH=$BIN:$PATH PYTHONPATH=$REPO/src COLORTERM=truecolor TERM=xterm-256color COLUMNS=112 LINES=42
+export PATH=$BIN:$PATH PYTHONPATH=$REPO/src COLORTERM=truecolor TERM=xterm-256color COLUMNS=112 LINES=26
 
 C=$REPO/corpus
 R=$(mktemp -d)/acme-platform
@@ -49,7 +49,7 @@ record() {  # name, directory, command
   (cd "$2" && script -q -T "$OUT/$1.timing" -c "$3" "$OUT/$1.typescript" >/dev/null 2>&1) || true
   echo "$1: $(wc -l < "$OUT/$1.timing") writes"
 }
-record home "$R" "cordon-scanner"
+record home "$R" "FORCE_COLOR=1 cordon-scanner | head -n 13"  # the banner and its environment; FORCE_COLOR keeps a pipe in colour
 record repo "$R" "cordon-scanner scan ."
 record npm "$R" "cordon-scanner scan pkg:npm/express --online"
 record image "$R" "cordon-scanner scan pkg:docker/nginx@1.27 --online"

@@ -640,19 +640,20 @@ class TestDocumentationIsPinnedToThisVersion:
         spec.loader.exec_module(module)
         raw = "https://raw.githubusercontent.com/Threx-code/cordon"
         text = (
-            '<img src="docs/assets/readme/hero.svg">'
+            '<source srcset="docs/assets/logo-dark.svg"><img src="docs/assets/logo-light.svg">'
             f'<img src="{raw}/release/0.7.0/docs/assets/terminal.svg">'
             '<img src="https://img.shields.io/badge/rules-1-blue">'
         )
         pinned = module.DocLinks.pinned(text, "v9.9.9", images=True)
         assert pinned == (
-            f'<img src="{raw}/v9.9.9/docs/assets/readme/hero.svg">'
+            f'<source srcset="{raw}/v9.9.9/docs/assets/logo-dark.svg">'
+            f'<img src="{raw}/v9.9.9/docs/assets/logo-light.svg">'
             f'<img src="{raw}/v9.9.9/docs/assets/terminal.svg">'
             '<img src="https://img.shields.io/badge/rules-1-blue">'
         )
         assert module.DocLinks.pinned(text, "v9.9.9", images=False) == text
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        for path in re.findall(r'src="(docs/assets/[^"]+)"', readme):
+        for path in re.findall(r'(?:src|srcset)="(docs/assets/[^"]+)"', readme):
             assert (REPO / path).is_file(), (
                 f"the README shows {path}, which is not in the repository"
             )
