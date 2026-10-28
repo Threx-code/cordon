@@ -46,7 +46,6 @@ from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.pipeline.units import Units
 from cordon_scanner.engine.progress import NullProgress, Progress
@@ -62,6 +61,7 @@ from cordon_scanner.foundation.models import Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import (
     LanguageStat,
+    OperationalFinding,
     Project,
     Repository,
     ScanResult,

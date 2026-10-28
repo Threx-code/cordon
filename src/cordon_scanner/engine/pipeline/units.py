@@ -23,7 +23,6 @@ from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
 from cordon_scanner.engine.pipeline.hooks import Hooks
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.files.walk import (
@@ -32,7 +31,7 @@ from cordon_scanner.foundation.files.walk import (
     Walker,
 )
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Category, Severity
-from cordon_scanner.foundation.results import Repository
+from cordon_scanner.foundation.results import OperationalFinding, Repository
 from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader
 

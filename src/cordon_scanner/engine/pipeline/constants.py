@@ -13,11 +13,8 @@ from typing import Final
 
 from cordon_scanner.foundation.models import (
     Confidence,
-    RiskScore,
     Severity,
 )
-
-NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
 
 ALWAYS_RUN = frozenset({"capability", "obfuscation", "secrets", "binary"})
 """Detectors the per-file budget never skips: the ones that find malware, hidden code, secrets and
@@ -450,7 +447,6 @@ __all__ = [
     "NATIVE_IN_PURE_WHEEL_RULE",
     "NATIVE_LOAD",
     "NATIVE_MAGIC",
-    "NO_RISK",
     "NPM_PLACEHOLDER_VERSION",
     "PACKAGED_BUILD_FILENAMES",
     "POLYGLOT_CORPUS",

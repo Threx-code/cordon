@@ -40,10 +40,9 @@ from cordon_scanner.engine.pipeline.constants import (
     PRINTING_COMMANDS,
     PROJECT_BUILD_FILENAMES,
 )
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.results import Repository
+from cordon_scanner.foundation.results import OperationalFinding, Repository
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence

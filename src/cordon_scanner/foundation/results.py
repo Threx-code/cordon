@@ -16,7 +16,21 @@ if TYPE_CHECKING:
 # Enumerations
 # ---------------------------------------------------------------------------
 
-from cordon_scanner.foundation.models import Category, Confidence, Finding, Hook, Scope, Severity
+
+from cordon_scanner.foundation.models import (
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Hook,
+    Location,
+    RedactionMode,
+    RiskScore,
+    Scope,
+    Severity,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -531,4 +545,60 @@ class ScanResult:
         )
 
 
-__all__ = ["Dependency", "LanguageStat", "Project", "Repository", "ScanResult", "ScanStats"]
+NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
+
+
+class OperationalFinding:
+    """Builds a finding about the scan itself."""
+
+    @staticmethod
+    def build(
+        *,
+        path: str,
+        rule_id: str,
+        message: str,
+        remediation: str,
+        category: Category = Category.OPERATIONAL,
+        severity: Severity = Severity.INFO,
+    ) -> Finding:
+        """Build a finding about the scan itself.
+
+        Every degradation produces one of these. A file that was not examined is
+        indistinguishable in the output from one that was examined and found clean,
+        so coverage loss must always be stated rather than inferred.
+        """
+        return Finding(
+            rule_id=rule_id,
+            category=category,
+            severity=severity,
+            confidence=Confidence.CONFIRMED,
+            message=message,
+            location=Location(path=path),
+            evidence=Evidence(
+                kind=EvidenceKind.METADATA,
+                match_hash=Evidence.hash_bytes(f"{rule_id}:{path}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            remediation=remediation,
+            # No reporting threshold may hide a finding that says coverage was
+            # lost. See PolicyGate.filter_for_reporting.
+            always_report=True,
+            explanation=Explanation(
+                summary="Reported so that reduced coverage is never silent.",
+                matched_rule=rule_id,
+            ),
+            risk=NO_RISK,
+            detector="engine",
+        )
+
+
+__all__ = [
+    "NO_RISK",
+    "Dependency",
+    "LanguageStat",
+    "OperationalFinding",
+    "Project",
+    "Repository",
+    "ScanResult",
+    "ScanStats",
+]

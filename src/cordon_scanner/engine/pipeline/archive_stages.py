@@ -33,14 +33,13 @@ from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.models import Finding, Scope, Severity
-from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.foundation.results import Dependency, OperationalFinding
 from cordon_scanner.intel.registry import ReleaseHistory
 from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader

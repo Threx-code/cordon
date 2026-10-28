@@ -31,7 +31,6 @@ from cordon_scanner.engine.pipeline.constants import (
     STANDALONE_SCRIPTS,
 )
 from cordon_scanner.engine.pipeline.hooks import Hooks
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.config.policy import Policy
 from cordon_scanner.foundation.models import (
     Category,
@@ -40,6 +39,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

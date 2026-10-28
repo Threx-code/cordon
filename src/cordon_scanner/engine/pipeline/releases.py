@@ -27,13 +27,13 @@ from cordon_scanner.engine.pipeline.constants import (
     SWEPT_NOTE,
     UNEXAMINED_INSTALL_RULE,
 )
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
     Finding,
     Severity,
 )
+from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

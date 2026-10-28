@@ -9,8 +9,7 @@ from typing import Any
 
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
-from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 
 class Images:

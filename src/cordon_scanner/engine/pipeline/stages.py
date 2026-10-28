@@ -30,7 +30,6 @@ from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.engine.pipeline.hooks import Hooks
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.engine.pipeline.results import ResultFolding
@@ -39,7 +38,7 @@ from cordon_scanner.foundation.files.walk import (
     Walker,
 )
 from cordon_scanner.foundation.models import Finding, Severity
-from cordon_scanner.foundation.results import Dependency, Repository
+from cordon_scanner.foundation.results import Dependency, OperationalFinding, Repository
 
 if TYPE_CHECKING:
     from cordon_scanner.engine.engine import Engine
