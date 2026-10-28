@@ -12,13 +12,8 @@ from typing import Any
 
 from cordon_scanner.foundation.config.parser import ConfigParser
 from cordon_scanner.foundation.config.policy import MAX_SUPPRESSION_DAYS, OrgConstraints
-from cordon_scanner.foundation.config.settings import (
-    CONFIG_VERSION,
-    TOP_LEVEL_KEYS,
-    Config,
-    Layer,
-    Provenance,
-)
+from cordon_scanner.foundation.config.provenance import Layer, Provenance
+from cordon_scanner.foundation.config.settings import CONFIG_VERSION, TOP_LEVEL_KEYS, Config
 from cordon_scanner.foundation.distribution import PolicyDistribution
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser

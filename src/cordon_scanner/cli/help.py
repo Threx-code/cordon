@@ -493,7 +493,7 @@ class HelpScreen:
             "SCAN AND INSPECT",
             ("scan", "clone", "pull", "inventory", "deps", "review", "sbom", "report"),
         ),
-        ("POLICY", ("rules", "config", "baseline", "suppress", "guard")),
+        ("POLICY", ("rules", "config", "baseline", "suppress", "guard", "notify")),
         ("THREAT INTEL", ("advisories", "intel", "bundle")),
         ("AI AGENTS", ("mcp",)),
         ("CORDON CLOUD", ("login", "logout", "whoami", "runner", "agent")),
@@ -516,6 +516,7 @@ class HelpScreen:
         "baseline": "record findings, adopt gradually",
         "suppress": "reviewed, expiring exceptions",
         "guard": "git hooks and self-integrity",
+        "notify": "test the notification channels",
         "advisories": "the advisory database",
         "intel": "the signed threat-intel feed",
         "bundle": "offline bundle for air-gapped use",
@@ -836,6 +837,7 @@ class GroupHelp:
         "advisories": "advisories_command",
         "agent": "agent_command",
         "intel": "intel_command",
+        "notify": "notify_command",
         "sbom": "sbom_command",
     }
     """Groups with no sensible default action. Before this, a bare `config`, `report` or

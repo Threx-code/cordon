@@ -76,6 +76,7 @@ environment:
 | No network at all, including the intel feed | `--offline` | `CORDON_OFFLINE=1` |
 | Intel feed location | | `CORDON_FEED_URL` |
 | Notification channels | `--notify slack,teams,webhook` | `CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`, `CORDON_NOTIFY_WEBHOOK`, `CORDON_NOTIFY_WEBHOOK_SECRET` |
+| When to notify ([14-NOTIFICATIONS.md](14-NOTIFICATIONS.md)) | `--notify-on failed,incomplete,passed`; `notify.channels` and `notify.on` in the config file | |
 | Cordon Cloud API | `--cloud-url` | `CORDON_CLOUD_URL` |
 | CI identity token to exchange (audience `cordon`) | | `CORDON_ID_TOKEN`; GitHub, Bitbucket and CircleCI tokens are found automatically |
 | Runner token | | `CORDON_RUNNER_TOKEN` |

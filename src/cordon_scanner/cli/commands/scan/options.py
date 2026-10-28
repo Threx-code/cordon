@@ -278,10 +278,19 @@ class ScanOptions:
             "--notify",
             metavar="CHANNELS",
             help=(
-                "when the gate fails, post one message to each channel: webhook, slack, "
-                "teams (comma-separated). URLs come only from CORDON_NOTIFY_WEBHOOK, "
-                "CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS; the webhook is signed with "
-                "CORDON_NOTIFY_WEBHOOK_SECRET. A failed delivery never changes the exit code"
+                "post one message to each channel: webhook, slack, teams (comma-separated; "
+                "or notify.channels in the config file). URLs come only from "
+                "CORDON_NOTIFY_WEBHOOK, CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS; the webhook "
+                "is signed with CORDON_NOTIFY_WEBHOOK_SECRET. A failed delivery never changes "
+                "the exit code"
+            ),
+        )
+        execution.add_argument(
+            "--notify-on",
+            metavar="WHEN",
+            help=(
+                "when to post: failed, incomplete, passed (comma-separated; or notify.on in the "
+                "config file). Default failed,incomplete: when the gate fails"
             ),
         )
         execution.add_argument(
