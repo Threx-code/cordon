@@ -466,7 +466,7 @@ class Dependencies:
         # one repository that each require the same module each depend on it, and each needs
         # its own fix -- one record for both left the second service's use out of the inventory.
         # Within a project, one record however many times the lockfile lists it.
-        from cordon_scanner.ecosystems.packages.npm import LockScopes
+        from cordon_scanner.ecosystems.registry import LockScopes
 
         unique: dict[tuple[str | None, str], Dependency] = {}
         for dependency in collected:

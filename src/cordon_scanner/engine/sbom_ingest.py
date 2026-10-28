@@ -214,7 +214,7 @@ class SbomDocument:
     @staticmethod
     def named(path: str) -> bool:
         """Named as a bill of materials is: `bom.json`, `sbom.json`, `*.cdx.json`, `*.spdx.json`."""
-        from cordon_scanner.detect.supply.sbom import SBOM_NAMES, SBOM_SUFFIXES
+        from cordon_scanner.detect.registry import SBOM_NAMES, SBOM_SUFFIXES
 
         base = path.rpartition("/")[2].rpartition("!")[2].lower()
         return base in SBOM_NAMES or base.endswith(SBOM_SUFFIXES)

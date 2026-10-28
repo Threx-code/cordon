@@ -143,6 +143,7 @@
   "detect/infra/gradle_auth": "detect/infra/gradle_auth",
   "detect/infra/iac": "detect/infra/iac",
   "detect/infra/iac_policies": "detect/infra/iac_policies",
+  "detect/registry": "detect/registry",
   "detect/secrets/secret_history": "detect/secrets/secret_history",
   "detect/secrets/secrets": "detect/secrets/secrets",
   "analysis/shared/source_paths": "analysis/shared/source_paths",
@@ -356,6 +357,7 @@
   "intel/registries/known/pypi": "intel/registries/known/pypi",
   "intel/registries/known/rubygems": "intel/registries/known/rubygems",
   "intel/registries/removed": "intel/registries/removed",
+  "intel/registry": "intel/registry",
   "intel/registries/registry_client": "intel/registries/registry_client",
   "intel/registries/registry_image": "intel/registries/registry_image",
   "intel/registries/registry_record": "intel/registries/registry_record",
@@ -407,6 +409,7 @@
   "sources/history": "sources/history",
   "sources/package": "sources/package",
   "sources/previous": "sources/previous",
+  "sources/registry": "sources/registry",
   "version": "version"
  },
  "tests": {
@@ -970,34 +973,6 @@
    "sources/archive:ArchiveReader._extract_zip": 94
   },
   "large_directories": {},
-  "engine_adapter_imports": [
-   "engine -> intel/provenance",
-   "engine -> intel/store/dbsync",
-   "engine -> sources/archive",
-   "engine -> detect/agents/agent_judge",
-   "engine -> detect/agents/agents",
-   "engine -> detect/binary/binary",
-   "engine -> detect/code/capability/detector",
-   "engine -> detect/code/download_flow",
-   "engine -> detect/code/reached_flows",
-   "engine -> detect/source/submodules",
-   "engine -> detect/supply",
-   "engine -> detect/supply/composer_plugins",
-   "engine -> detect/supply/manifest",
-   "engine -> ecosystems/infra/image",
-   "engine -> ecosystems/packages/homebrew",
-   "engine -> ecosystems/packages/npm",
-   "engine -> intel/advisories/advisories",
-   "engine -> intel/advisories/ranges",
-   "engine -> intel/advisories/versions",
-   "engine -> intel/malware",
-   "engine -> intel/registries/more_registries",
-   "engine -> intel/registries/registry_client",
-   "engine -> intel/registries/registry_record",
-   "engine -> intel/registries/release_history",
-   "engine -> sources/git",
-   "engine -> intel/store/licenses",
-   "engine -> detect/supply/sbom"
-  ]
+  "engine_adapter_imports": []
  }
 }

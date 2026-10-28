@@ -44,7 +44,7 @@ class TreeFacts:
         the ordinary case, not a degraded scan, and it is already visible in the
         report as an absent revision.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         try:
             info = GitRepository.discover(root)
@@ -64,7 +64,7 @@ class TreeFacts:
     @staticmethod
     def shipped_native(units: Iterable[FileUnit]) -> frozenset[str]:
         """Paths whose bytes begin with ELF, PE or Mach-O magic: a binary the package ships (census A)."""
-        from cordon_scanner.detect.binary.binary import NATIVE_FORMATS, BinaryDetector
+        from cordon_scanner.detect.registry import NATIVE_FORMATS, BinaryDetector
 
         ids = ((u.path, BinaryDetector.identify(u.content.raw)) for u in units if u.content)
         return frozenset(p for p, f in ids if f is not None and f.name in NATIVE_FORMATS)
@@ -81,16 +81,16 @@ class TreeFacts:
 
     @staticmethod
     def skill_scripts(units: Sequence[FileUnit]) -> set[str]:
-        """Scripts an agent skill ships (`CapabilityDetector._skill_script`)."""
+        """Scripts an agent skill ships (`LoadPath.skill_script`)."""
         from types import SimpleNamespace
 
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
+        from cordon_scanner.detect.registry import LoadPath
 
         tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units))
         return {
             u.path
             for u in units
-            if CapabilityDetector._skill_script(u.path, tree)  # type: ignore[arg-type]
+            if LoadPath.skill_script(u.path, tree)  # type: ignore[arg-type]
         }
 
     @staticmethod

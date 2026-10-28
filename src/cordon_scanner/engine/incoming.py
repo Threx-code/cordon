@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.foundation.models import Finding
     from cordon_scanner.foundation.results import ScanResult
-    from cordon_scanner.sources.git import GitRepository
+    from cordon_scanner.sources.registry import GitRepository
 
 INCOMING_ENV: Final = "CORDON_INCOMING"
 """Set while `clone` or `pull` checks out or merges code it has already scanned, so the hooks
@@ -144,7 +144,7 @@ class Incoming:
         from the object store.
         """
         from cordon_scanner import Scanner
-        from cordon_scanner.sources.git import GitTreeSource
+        from cordon_scanner.sources.registry import GitTreeSource
 
         with tempfile.TemporaryDirectory(prefix="cordon-incoming-") as scratch:
             source = GitTreeSource(repository, rev)
@@ -161,7 +161,7 @@ class Incoming:
         Hooks this command would fire for code it has just scanned are told so through
         `INCOMING_ENV`; `ext::` remote helpers, which run a program named in a URL, are refused.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         env = {**os.environ, INCOMING_ENV: "1"}
         return subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
@@ -204,7 +204,7 @@ class Incoming:
 
         Returns None for a repository with no commits, which has nothing to check.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         for value, what in ((url, "repository URL"), (branch or "", "branch")):
             if value.startswith("-"):
@@ -291,7 +291,7 @@ class Incoming:
         Fast-forward only unless `merge`, so a pull never makes a merge commit the developer did
         not ask for.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         for value, what in ((remote or "", "remote"), (branch or "", "branch")):
             if value.startswith("-"):
@@ -357,7 +357,7 @@ class Incoming:
         checked. A blocked switch goes back to where it was; a blocked clone has its files
         removed from the working tree.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         if os.environ.get(INCOMING_ENV) or branch_switch != "1" or previous == current:
             return None
@@ -378,7 +378,7 @@ class Incoming:
     def after_merge(cls, root: Path, config: Config) -> IncomingCheck | None:
         """The `post-merge` hook, after `git pull` or `git merge`: a blocked merge is undone with
         `git reset --merge ORIG_HEAD`, which keeps uncommitted work the merge did not touch."""
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         if os.environ.get(INCOMING_ENV):
             return None

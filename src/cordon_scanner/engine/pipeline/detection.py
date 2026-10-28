@@ -12,12 +12,12 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cordon_scanner.detect.agents.agent_judge import JudgeGate
 from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
     Unit,
 )
+from cordon_scanner.detect.registry import JudgeGate
 from cordon_scanner.engine.cache import CacheKey
 from cordon_scanner.engine.parallel import ParallelScanner, WorkItem
 from cordon_scanner.engine.pipeline.accumulator import Accumulator

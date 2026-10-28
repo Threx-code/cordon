@@ -74,7 +74,7 @@ class Graph:
         """The indirect modules a pre-1.17 `go.mod` leaves out, from the `go.sum` beside it: each
         module hashed and not already in the graph, at the highest version hashed (what minimal
         version selection settles on), marked indirect and declared in `go.sum`."""
-        from cordon_scanner.intel.advisories.versions import Versions
+        from cordon_scanner.intel.registry import Versions
 
         present = {(d.project, d.ecosystem, d.name) for d in collected}
         resolved = {(d.project, d.ecosystem) for d in collected}
@@ -283,7 +283,7 @@ class Graph:
         `file:packages/util`): the project's own code, not a package from anywhere."""
         if not spec.startswith(("path:", "file:", "link:", "./", "../", "workspace:")):
             return False
-        from cordon_scanner.detect.supply.manifest import DeclaredSource
+        from cordon_scanner.detect.registry import DeclaredSource
 
         return DeclaredSource.kind(spec, manifest_path) == "inside"
 
@@ -372,7 +372,7 @@ class Graph:
         runner read as runtime. With the direct dependencies' scopes known from the manifest,
         a transitive one reached only through dev dependencies is dev, only through optional
         ones optional -- npm's own rule for its `dev` and `optional` flags."""
-        from cordon_scanner.ecosystems.packages.npm import LockScopes
+        from cordon_scanner.ecosystems.registry import LockScopes
 
         groups: dict[tuple[str | None, str], list[Dependency]] = {}
         for dependency in collected:
@@ -414,10 +414,12 @@ class Graph:
         """A Maven or Gradle range (`[1.2,2.0)`) a pom declares with no lockfile to pin it,
         resolved online to the highest release Maven Central lists inside it -- what Maven itself
         picks -- so its advisories can be matched. Offline it stays unresolved, and says why."""
-        from cordon_scanner.intel.advisories.ranges import VersionRanges
-        from cordon_scanner.intel.advisories.versions import Versions
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
-        from cordon_scanner.intel.registries.registry_client import RegistryError
+        from cordon_scanner.intel.registry import (
+            MoreRegistries,
+            RegistryError,
+            VersionRanges,
+            Versions,
+        )
 
         listed: dict[str, list[str]] = {}
         out: list[Dependency] = []

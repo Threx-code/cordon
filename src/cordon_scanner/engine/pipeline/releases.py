@@ -430,7 +430,7 @@ class ReleaseChecks:
         `*.dist-info/METADATA`. A repository's root `package.json` is not a release, so a project
         that shares a name with a malicious package is never matched by name alone.
         """
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.registry import AdvisoryDatabase
 
         identities, placeholders = ReleaseChecks.release_identities(units)
         if not identities:
@@ -608,12 +608,12 @@ class ReleaseChecks:
         never on a run the user chose -- the boundary an install hook has. Graded as application
         code, a server reading the environment's secrets and posting them out was a warning
         (review 98, mcp-variants: 12 of 177 malicious servers blocked by their code)."""
-        from cordon_scanner.detect.agents.agents import _SERVER_SOURCE_SUFFIXES
+        from cordon_scanner.detect.registry import SERVER_SOURCE_SUFFIXES
 
         return {
             u.path
             for u in units
-            if u.path.endswith(_SERVER_SOURCE_SUFFIXES)
+            if u.path.endswith(SERVER_SOURCE_SUFFIXES)
             and "/node_modules/" not in u.path
             and "site-packages/" not in u.path
             and not ReleaseChecks.NOT_A_SERVER_PATH.search(u.path.rpartition("!")[2])

@@ -183,7 +183,7 @@ class Images:
         identity = inventory.identity
         base: tuple[Dependency, ...] = ()
         if identity.base_name:
-            from cordon_scanner.ecosystems.infra.image import ImageReference
+            from cordon_scanner.ecosystems.registry import ImageReference
 
             reference = ImageReference.parse(identity.base_name)
             if reference is not None:

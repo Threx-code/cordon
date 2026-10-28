@@ -17,7 +17,7 @@ from cordon_scanner.detect.base import (
     GraphUnit,
     ScanContext,
 )
-from cordon_scanner.detect.supply.composer_plugins import ComposerPluginHooks
+from cordon_scanner.detect.registry import ComposerPluginHooks
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.parallel import ParallelScanner
@@ -41,9 +41,9 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.models import Finding, Scope, Severity
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.registries.release_history import ReleaseHistory
-from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.intel.registry import ReleaseHistory
 from cordon_scanner.sources.base import Rejection
+from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator

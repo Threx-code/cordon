@@ -43,7 +43,7 @@ class History:
         nothing acquired, nothing added -- and `reg_known` absent tells the verdict so. These are
         second-review facts: the trainer keeps them out of the content-only measure.
         """
-        from cordon_scanner.intel.registries.registry_record import ECOSYSTEMS, RegistryRecord
+        from cordon_scanner.intel.registry import ECOSYSTEMS, RegistryRecord
 
         files = [u for u in units if isinstance(u, FileUnit)]
         distribution = History.history_distribution(files)
@@ -164,10 +164,7 @@ class History:
         """
         from datetime import datetime, timedelta
 
-        from cordon_scanner.intel.registries.release_history import (
-            YOUNG_DEPENDENCY_DAYS,
-            ReleaseHistory,
-        )
+        from cordon_scanner.intel.registry import YOUNG_DEPENDENCY_DAYS, ReleaseHistory
 
         identity = History.history_identity(units, distribution)
         if identity is None:
@@ -255,7 +252,7 @@ class History:
         its payload. Nothing acquired, nothing changed: this reads a file, never the network. A
         MALICIOUS finding is never lowered.
         """
-        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+        from cordon_scanner.intel.registry import ReleaseHistory
 
         identity = History.history_identity(units, distribution)
         if identity is None:

@@ -200,8 +200,11 @@ class Structure:
     #: The files a directory may hold at its top; everything else lives in a subdirectory.
     TOP_FILES: ClassVar[dict[str, frozenset[str]]] = {
         "src/cordon_scanner": frozenset({"__init__.py", "__main__.py", "version.py", "py.typed"}),
-        "src/cordon_scanner/detect": frozenset({"__init__.py", "base.py", "catalogue.py"}),
-        "src/cordon_scanner/intel": frozenset({"__init__.py"}),
+        # An adapter layer's top holds its ports: `base` (the protocols) and `registry`.
+        "src/cordon_scanner/detect": frozenset(
+            {"__init__.py", "base.py", "catalogue.py", "registry.py"}
+        ),
+        "src/cordon_scanner/intel": frozenset({"__init__.py", "base.py", "registry.py"}),
         "tests": frozenset({"conftest.py", "support.py"}),
         "tests/unit": frozenset({"package_layout.json"}),
         "scripts": frozenset(),

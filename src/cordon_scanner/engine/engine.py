@@ -69,8 +69,8 @@ from cordon_scanner.foundation.results import (
     ScanStats,
 )
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
-from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
+from cordon_scanner.sources.registry import ArchiveReader
 from cordon_scanner.version import SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
@@ -305,12 +305,12 @@ class Engine:
         Stale intel is not a clean scan: a package that turned malicious since the intel was
         built matches nothing. So past `max_intel_age` the scan says so and is incomplete.
         """
-        from cordon_scanner.intel.malware import feed
+        from cordon_scanner.intel.registry import FeedClient
 
-        use_feed = self.config.intel_feed and not feed.FeedClient.offline_requested()
+        use_feed = self.config.intel_feed and not FeedClient.offline_requested()
         if use_feed:
             self.progress.phase("intel")
-        status = feed.FeedClient.status(use_feed=use_feed, max_age=self.config.max_intel_age)
+        status = FeedClient.status(use_feed=use_feed, max_age=self.config.max_intel_age)
         if status.stale:
             acc.advisory_complete = False
             age = (
@@ -698,8 +698,7 @@ class Engine:
         """When each effect of the package runs, and what hides it (`core/intent.py`); None for a
         package the intent layer does not read."""
         from cordon_scanner.decide.intent import IntentObserver
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
-        from cordon_scanner.detect.code.download_flow import DownloadFlow
+        from cordon_scanner.detect.registry import CapabilityDetector, DownloadFlow
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
         if detector is None or not IntentObserver.applies(ctx):
@@ -732,9 +731,7 @@ class Engine:
         repository and runs a script from it raised nothing). The verdict weighs the profile with
         everything else; on its own it blocks nothing.
         """
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
-        from cordon_scanner.detect.code.download_flow import DownloadFlow
-        from cordon_scanner.detect.code.reached_flows import ReachedFlows
+        from cordon_scanner.detect.registry import CapabilityDetector, DownloadFlow, ReachedFlows
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
         if detector is None:

@@ -514,7 +514,7 @@ class ParallelScanner:
                 )
                 return []
 
-        from cordon_scanner.detect.agents.agent_judge import JudgeGate
+        from cordon_scanner.detect.registry import JudgeGate
 
         active = []
         for detector in JudgeGate.last(list(detectors)):

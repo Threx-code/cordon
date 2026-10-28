@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from cordon_scanner.foundation.models import Finding
-    from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+    from cordon_scanner.intel.registry import AdvisoryDatabase
 
 from cordon_scanner.foundation.dependencies import (
     INSTALLED_MARKERS,
@@ -202,7 +202,7 @@ class DependencyRecords:
             return "policy_violation"
         if not dependency.license:
             return "unknown"
-        from cordon_scanner.intel.store.licenses import LicenseCategory, LicenseClassifier
+        from cordon_scanner.intel.registry import LicenseCategory, LicenseClassifier
 
         declared = [p for p in re.split(r"\s*;\s*", dependency.license) if p]
         categories = {LicenseClassifier.classify(p) for p in declared}

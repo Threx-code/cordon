@@ -624,8 +624,7 @@ class Hooks:
         `core.reachability.CallReachability` for what is and is not treated as
         reachable, and why every approximation there keeps the finding.
         """
-        from cordon_scanner.ecosystems.packages.homebrew import NotRunAtInstall
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry, NotRunAtInstall
         from cordon_scanner.engine.reachability import CallReachability
 
         # A formula or cask is a hook as a whole; its `service`, `test` and `caveats` blocks are

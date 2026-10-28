@@ -20,7 +20,7 @@ from cordon_scanner.detect.base import (
     RepositoryUnit,
     ScanContext,
 )
-from cordon_scanner.detect.supply.composer_plugins import ComposerPluginHooks
+from cordon_scanner.detect.registry import ComposerPluginHooks
 from cordon_scanner.engine.cache import ScanCache
 from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -91,7 +91,7 @@ class ScanStages:
         # compare with what the tree resolves (`detect/sbom.py`), never counted twice.
         ingested = self.engine.dependencies.sbom(units, acc) if root.is_file() else ()
         # Repositories checked out as git submodules, at the commits their gitlinks pin.
-        from cordon_scanner.detect.source.submodules import Submodules
+        from cordon_scanner.detect.registry import Submodules
 
         submodules, unreadable = Submodules.dependencies(
             units, root if root.is_dir() else root.parent
@@ -260,11 +260,9 @@ class ScanStages:
         # every source file. It only ever lowers or tags a finding, never removes
         # one, so it is safe to run over the accumulator in place.
         if self.config.reachability and dependencies:
-            from cordon_scanner.detect.supply import reachability
+            from cordon_scanner.detect.registry import ImportReachability
 
-            acc.findings[:] = reachability.ImportReachability.annotate(
-                acc.findings, units, dependencies
-            )
+            acc.findings[:] = ImportReachability.annotate(acc.findings, units, dependencies)
 
         acc.findings[:] = Ceilings.person_run_ceiling(acc.findings, units, ctx)
         acc.findings[:] = Ceilings.graded_by_what_it_does(acc.findings, ctx)

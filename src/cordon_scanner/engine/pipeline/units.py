@@ -33,8 +33,8 @@ from cordon_scanner.foundation.files.walk import (
 )
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Category, Severity
 from cordon_scanner.foundation.results import Repository
-from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.sources.base import Rejection
+from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Iterator, Sequence

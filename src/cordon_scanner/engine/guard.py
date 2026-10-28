@@ -341,7 +341,7 @@ class Guard:
         `install_hooks` preserves them. Repositories that already exist get the hooks with
         `guard install` in each.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         git = GitRepository.binary()
         configured = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
@@ -386,7 +386,7 @@ class Guard:
         silently never run -- the worst of both outcomes, because the guard reads as
         present in review while doing nothing.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         repository = Path(root).resolve()
         git_dir = cls._git_dir(repository)
@@ -556,7 +556,7 @@ class Guard:
         Setting it is the cheapest way to disable every installed shim while leaving
         them on disk, so the guard looks present and does nothing.
         """
-        from cordon_scanner.sources.git import GitRepository
+        from cordon_scanner.sources.registry import GitRepository
 
         try:
             configured = (
