@@ -27,7 +27,6 @@ after `cordon-scanner advisories sync`. Read offline; nothing here uses the netw
 
 from __future__ import annotations
 
-import functools
 import gzip
 import json
 import re
@@ -38,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.intel.advisories.advisories import DATA_DIR, Advisory, AdvisoryFiles
 from cordon_scanner.intel.advisories.versions import LibVersion
 
@@ -274,7 +274,7 @@ class NvdData:
         return best[1] if best else None
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def load(name: str) -> dict[str, Any]:
         path = NvdData._path(name)
         if path is None:

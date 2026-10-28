@@ -22,7 +22,6 @@ because a pattern that can hang the scanner must never reach a worker.
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import re
 from dataclasses import dataclass, field
@@ -33,6 +32,7 @@ from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Confidence, RedactionMode, Severity
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.version import ENGINE_API_VERSION
@@ -1416,10 +1416,10 @@ class RuleLoader:
         ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
         return bundled + FeedRules.packs(loader or cls(), ids)
 
-    @classmethod
-    @functools.cache
-    def _builtin_once(cls, directory: str) -> tuple[RulePack, ...]:
-        return cls._load_builtin(cls(), Path(directory))
+    @staticmethod
+    @OneOff.cache
+    def _builtin_once(directory: str) -> tuple[RulePack, ...]:
+        return RuleLoader._load_builtin(RuleLoader(), Path(directory))
 
     @classmethod
     def _load_builtin(cls, ldr: RuleLoader, directory: Path) -> tuple[RulePack, ...]:

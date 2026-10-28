@@ -96,6 +96,12 @@ test or conformance case that fails on the old code.
 
 ### Fixed
 
+- **A two-line agent configuration no longer comes back incomplete on a busy machine.** The first
+  file that needed the agent threat catalogue paid for compiling all 3,407 rules inside its own
+  five-second budget: about two seconds idle, past five under load, so `.mcp.json` scans (and the
+  MCP server's `check_mcp_server`) reported `OPERATIONAL.FILE.TIMEOUT` at random. Every bundled
+  catalogue and rule set (24 loaders) now records its first load as the process's cost, and the
+  per-file budget leaves it out; the file's own detector time is still charged in full.
 - **The wheel shipped without two files the scanner loads.** An install from PyPI had no built-in
   rule pack (`rules/rule_files/`), so `--rule-file builtin` found nothing to load, and no bundled EPSS scores
   (`intel/data/epss.csv.gz`). Both are packaged now, and a test fails when any data file in the

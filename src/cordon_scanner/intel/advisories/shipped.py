@@ -5,11 +5,11 @@ look-up by ecosystem and name.
 
 from __future__ import annotations
 
-import functools
 import gzip
 from collections.abc import Mapping
 from pathlib import Path
 
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.intel.advisories.advisories import (
     _REFUSED_SYNCED,
     _SHARED_DATA,
@@ -98,7 +98,7 @@ class ShippedAdvisories:
         return [raw for raw in data if isinstance(raw, dict) and raw.get("name")]
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def _shipped_raw(ecosystem: str) -> Mapping[str, tuple[dict[str, object], ...]]:
         """One ecosystem's generated records, grouped by normalised package name.
 
@@ -154,7 +154,7 @@ class ShippedAdvisories:
             AdvisoryDatabase.shared = None
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
         """Every generated record for one ecosystem, as `Advisory` objects.
 

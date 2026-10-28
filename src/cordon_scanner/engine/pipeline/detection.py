@@ -28,10 +28,11 @@ from cordon_scanner.engine.pipeline.constants import (
 )
 from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.models import Category, Finding, Severity
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from cordon_scanner.detect.base import Detector
     from cordon_scanner.engine.engine import Engine
@@ -77,11 +78,19 @@ class Detection:
         # failure that made `--timeout 0` a no-op there. perf_counter is the
         # high-resolution timer and is what a sub-second budget needs.
         started = time.perf_counter()
+        # A catalogue loaded for the first time while this file was inspected is the process's
+        # cost, not the file's (`foundation/once.py`): left out, a loaded machine no longer turns a
+        # two-line agent configuration into an incomplete scan.
+        loads = OneOff.spent()
+
+        def elapsed() -> float:
+            return time.perf_counter() - started - (OneOff.spent() - loads)
+
         skipped: list[str] = []
         skipped_judge = False
 
         skipped_judge = self.each_detector(
-            detectors, budget, started, skipped, produced, unit, ctx, acc, skipped_judge
+            detectors, budget, elapsed, skipped, produced, unit, ctx, acc, skipped_judge
         )
 
         # The rest of an oversized file, a window at a time (`core/windows.py`). The workers make
@@ -126,7 +135,7 @@ class Detection:
         self,
         detectors: list[Detector],
         budget: float,
-        started: float,
+        elapsed: Callable[[], float],
         skipped: list[str],
         produced: list[Finding],
         unit: FileUnit,
@@ -155,11 +164,7 @@ class Detection:
             # passing scan. Those detectors' patterns are validated linear at load and the file is
             # capped in size, so their cost is bounded without the budget; the total timeout still
             # ends the scan. What the budget cuts now is everything else, and it says which.
-            if (
-                budget > 0
-                and time.perf_counter() - started >= budget
-                and detector.id not in ALWAYS_RUN
-            ):
+            if budget > 0 and elapsed() >= budget and detector.id not in ALWAYS_RUN:
                 skipped.append(detector.id)
                 continue
 

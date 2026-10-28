@@ -15,7 +15,6 @@ yields what was read before it went wrong rather than an exception.
 
 from __future__ import annotations
 
-import functools
 import json
 import re
 import struct
@@ -23,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
 
 MAX_SYMBOLS = 20_000
@@ -250,11 +250,11 @@ class ImportCapabilities:
     #: the co-occurrence the anti-analysis rules exist to report.
     DATA: ClassVar[Path] = PackagePaths.data("detect")
 
-    @classmethod
-    @functools.cache
-    def groups(cls) -> dict[str, frozenset[str]]:
+    @staticmethod
+    @OneOff.cache
+    def groups() -> dict[str, frozenset[str]]:
         out: dict[str, frozenset[str]] = {}
-        for path in sorted(cls.DATA.glob("imports-*.json")):
+        for path in sorted(ImportCapabilities.DATA.glob("imports-*.json")):
             names = json.loads(path.read_text(encoding="utf-8"))
             out[path.stem.removeprefix("imports-")] = frozenset(str(n) for n in names)
         return out
@@ -295,13 +295,15 @@ class ImportCapabilities:
         {"IsDebuggerPresent", "OutputDebugStringA"}
     )
 
-    @classmethod
-    @functools.cache
-    def browser_stores(cls) -> tuple[bytes, ...]:
+    @staticmethod
+    @OneOff.cache
+    def browser_stores() -> tuple[bytes, ...]:
         """Names of the stores a stealer reads a browser's saved logins from. Data, for the
         reason the import groups are: beside this file's anti-debugging names they would read
         as the stealer they describe."""
-        names = json.loads((cls.DATA / "browser-stores.json").read_text(encoding="utf-8"))
+        names = json.loads(
+            (ImportCapabilities.DATA / "browser-stores.json").read_text(encoding="utf-8")
+        )
         return tuple(str(n).encode() for n in names)
 
     @staticmethod

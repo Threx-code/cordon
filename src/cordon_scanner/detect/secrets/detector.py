@@ -23,7 +23,6 @@ fixture that must look real is precise; exempting the file it lives in is not.
 
 from __future__ import annotations
 
-import functools
 import re
 from typing import TYPE_CHECKING
 
@@ -59,6 +58,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.foundation.text.comments import SourceComments
@@ -174,7 +174,7 @@ class SecretDetector(BaseDetector):
         return True
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def provider_gate() -> LiteralGate | None:
         """Any provider pattern's literal at all; None if some pattern has no prefilter."""
         if not all(spec.prefilter for spec in PROVIDER_PATTERNS):
