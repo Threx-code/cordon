@@ -35,7 +35,7 @@ from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Generator, Iterator, Sequence
 
 # Directories that are never source and are always large. Excluding them is not
 # a security decision, it is an acknowledgement that they are build output or a
@@ -310,124 +310,147 @@ class Walker:
                 dirnames[:] = []
                 continue
 
-            # Prune in place so os.walk does not descend. This is what makes a
-            # repository with a large dependency directory fast rather than
-            # merely correct.
-            kept: list[str] = []
-            for name in sorted(dirnames):
-                child_rel = f"{rel_dir}/{name}" if rel_dir else name
-                if self._prune(name, child_rel):
-                    self.stats.dirs_pruned += 1
-                    # A user exclusion covering an already-pruned directory is
-                    # redundant, not wrong. Recording it as matched keeps the
-                    # unmatched-exclusion check from reporting correct
-                    # configuration as a suspicious hole, which would teach
-                    # people to delete it.
-                    covering = self._excluded_by(f"{child_rel}/")
-                    if covering:
-                        matched_patterns.add(covering)
-                    continue
-                pattern = self._excluded_by(f"{child_rel}/")
-                if pattern:
-                    matched_patterns.add(pattern)
-                    self.stats.excluded_by_pattern[pattern] = (
-                        self.stats.excluded_by_pattern.get(pattern, 0) + 1
-                    )
-                    self.stats.dirs_pruned += 1
-                    # Count what the exclusion removed. Without this the tree is
-                    # pruned before its files are ever seen, so `exclude:
-                    # ["src/**"]` reports a share of zero and a scan that
-                    # examined almost nothing looks fully covered. Counting is a
-                    # readdir pass with no stat and no file read -- far cheaper
-                    # than scanning -- and it is capped, so a hostile pattern
-                    # covering an enormous tree cannot turn the accounting into
-                    # the denial of service it is meant to expose.
-                    hidden = self._count_files(current / name)
-                    self.stats.files_seen += hidden
-                    self.stats.files_excluded += hidden
-                    continue
-                kept.append(name)
-            dirnames[:] = kept
+            self._keep_directories(dirnames, rel_dir, matched_patterns, current)
 
-            for name in sorted(filenames):
-                rel = f"{rel_dir}/{name}" if rel_dir else name
-                self.stats.files_seen += 1
-
-                # A declared limit that was never checked. An absurdly long path
-                # is not a normal repository, and every downstream consumer --
-                # the cache key, SARIF, a terminal -- carries it.
-                if len(rel.encode("utf-8", "surrogateescape")) > self.limits.max_path_bytes:
-                    self.stats.errors.append((rel[:120], "path exceeds max_path_bytes"))
-                    continue
-
-                if self.stats.files_yielded >= self.limits.max_files:
-                    self.stats.limit_hit = (
-                        f"max_files ({self.limits.max_files}) reached; "
-                        f"traversal stopped with files remaining"
-                    )
-                    return
-
-                # Inside a tree entered only to reach a wanted directory, yield
-                # only what is actually under it. Entering `.git` to reach
-                # `hooks` otherwise also yields `.git/HEAD`, `.git/config` and
-                # every other loose file at that level.
-                if (
-                    self._inside_pruned(rel_dir)
-                    and not any(rel.startswith(f"{wanted}/") for wanted in self.descend_into)
-                    # An explicit include reaches inside a pruned tree. Without
-                    # this, `--include 'node_modules/**'` walked into the
-                    # directory and then dropped every file in it, scanning
-                    # nothing and reporting NOTHING_SCANNED -- a default that
-                    # cannot be overridden, which is not a default.
-                    and not (self.include and self._included(rel))
-                ):
-                    continue
-
-                pattern = self._excluded_by(rel)
-                if pattern:
-                    matched_patterns.add(pattern)
-                    self.stats.excluded_by_pattern[pattern] = (
-                        self.stats.excluded_by_pattern.get(pattern, 0) + 1
-                    )
-                    self.stats.files_excluded += 1
-                    continue
-
-                if self.include and not self._included(rel):
-                    self.stats.files_not_included += 1
-                    continue
-
-                full = current / name
-                try:
-                    stat = full.lstat()
-                except OSError as exc:
-                    self.stats.errors.append((rel, str(exc)))
-                    continue
-
-                import stat as stat_module
-
-                if stat_module.S_ISLNK(stat.st_mode) and not self.follow_symlinks:
-                    self.stats.symlinks_skipped += 1
-                    yield WalkEntry(full, rel, 0, is_symlink=True)
-                    continue
-
-                if not stat_module.S_ISREG(stat.st_mode):
-                    continue
-
-                total_bytes += stat.st_size
-                if total_bytes > self.limits.max_total_bytes:
-                    self.stats.limit_hit = (
-                        f"max_total_bytes ({self.limits.max_total_bytes}) reached; "
-                        f"traversal stopped with files remaining"
-                    )
-                    return
-
-                self.stats.files_yielded += 1
-                yield WalkEntry(full, rel, stat.st_size)
+            stopped, total_bytes = yield from self._walk_files(
+                current, rel_dir, filenames, matched_patterns, total_bytes
+            )
+            if stopped:
+                return
 
         # An exclusion that matched nothing is reported. It is either a mistake
         # in the configuration or a hole held open for a file that does not
         # exist yet, and both are worth surfacing.
         self.stats.unmatched_patterns = tuple(p for p in self.exclude if p not in matched_patterns)
+
+    def _walk_files(
+        self,
+        current: Path,
+        rel_dir: str,
+        filenames: list[str],
+        matched_patterns: set[str],
+        total_bytes: int,
+    ) -> Generator[WalkEntry, None, tuple[bool, int]]:
+        """One directory's files, each a `WalkEntry` unless a limit, an exclusion or its type says
+        otherwise. Returns whether the walk must stop (a limit reached), and the bytes so far."""
+        for name in sorted(filenames):
+            rel = f"{rel_dir}/{name}" if rel_dir else name
+            self.stats.files_seen += 1
+
+            # A declared limit that was never checked. An absurdly long path
+            # is not a normal repository, and every downstream consumer --
+            # the cache key, SARIF, a terminal -- carries it.
+            if len(rel.encode("utf-8", "surrogateescape")) > self.limits.max_path_bytes:
+                self.stats.errors.append((rel[:120], "path exceeds max_path_bytes"))
+                continue
+
+            if self.stats.files_yielded >= self.limits.max_files:
+                self.stats.limit_hit = (
+                    f"max_files ({self.limits.max_files}) reached; "
+                    f"traversal stopped with files remaining"
+                )
+                return True, total_bytes
+
+            # Inside a tree entered only to reach a wanted directory, yield
+            # only what is actually under it. Entering `.git` to reach
+            # `hooks` otherwise also yields `.git/HEAD`, `.git/config` and
+            # every other loose file at that level.
+            if (
+                self._inside_pruned(rel_dir)
+                and not any(rel.startswith(f"{wanted}/") for wanted in self.descend_into)
+                # An explicit include reaches inside a pruned tree. Without
+                # this, `--include 'node_modules/**'` walked into the
+                # directory and then dropped every file in it, scanning
+                # nothing and reporting NOTHING_SCANNED -- a default that
+                # cannot be overridden, which is not a default.
+                and not (self.include and self._included(rel))
+            ):
+                continue
+
+            pattern = self._excluded_by(rel)
+            if pattern:
+                matched_patterns.add(pattern)
+                self.stats.excluded_by_pattern[pattern] = (
+                    self.stats.excluded_by_pattern.get(pattern, 0) + 1
+                )
+                self.stats.files_excluded += 1
+                continue
+
+            if self.include and not self._included(rel):
+                self.stats.files_not_included += 1
+                continue
+
+            full = current / name
+            try:
+                stat = full.lstat()
+            except OSError as exc:
+                self.stats.errors.append((rel, str(exc)))
+                continue
+
+            import stat as stat_module
+
+            if stat_module.S_ISLNK(stat.st_mode) and not self.follow_symlinks:
+                self.stats.symlinks_skipped += 1
+                yield WalkEntry(full, rel, 0, is_symlink=True)
+                continue
+
+            if not stat_module.S_ISREG(stat.st_mode):
+                continue
+
+            total_bytes += stat.st_size
+            if total_bytes > self.limits.max_total_bytes:
+                self.stats.limit_hit = (
+                    f"max_total_bytes ({self.limits.max_total_bytes}) reached; "
+                    f"traversal stopped with files remaining"
+                )
+                return True, total_bytes
+
+            self.stats.files_yielded += 1
+            yield WalkEntry(full, rel, stat.st_size)
+        return False, total_bytes
+
+    def _keep_directories(
+        self, dirnames: list[str], rel_dir: str, matched_patterns: set[str], current: Path
+    ) -> None:
+        """The directories the walk goes on into: pruned and excluded ones are dropped, and said."""
+        # Prune in place so os.walk does not descend. This is what makes a
+        # repository with a large dependency directory fast rather than
+        # merely correct.
+        kept: list[str] = []
+        for name in sorted(dirnames):
+            child_rel = f"{rel_dir}/{name}" if rel_dir else name
+            if self._prune(name, child_rel):
+                self.stats.dirs_pruned += 1
+                # A user exclusion covering an already-pruned directory is
+                # redundant, not wrong. Recording it as matched keeps the
+                # unmatched-exclusion check from reporting correct
+                # configuration as a suspicious hole, which would teach
+                # people to delete it.
+                covering = self._excluded_by(f"{child_rel}/")
+                if covering:
+                    matched_patterns.add(covering)
+                continue
+            pattern = self._excluded_by(f"{child_rel}/")
+            if pattern:
+                matched_patterns.add(pattern)
+                self.stats.excluded_by_pattern[pattern] = (
+                    self.stats.excluded_by_pattern.get(pattern, 0) + 1
+                )
+                self.stats.dirs_pruned += 1
+                # Count what the exclusion removed. Without this the tree is
+                # pruned before its files are ever seen, so `exclude:
+                # ["src/**"]` reports a share of zero and a scan that
+                # examined almost nothing looks fully covered. Counting is a
+                # readdir pass with no stat and no file read -- far cheaper
+                # than scanning -- and it is capped, so a hostile pattern
+                # covering an enormous tree cannot turn the accounting into
+                # the denial of service it is meant to expose.
+                hidden = self._count_files(current / name)
+                self.stats.files_seen += hidden
+                self.stats.files_excluded += hidden
+                continue
+            kept.append(name)
+        dirnames[:] = kept
 
     def _walk_single_file(self, path: Path) -> Iterator[WalkEntry]:
         """Yield one named file.

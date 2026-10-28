@@ -968,7 +968,6 @@
    "ecosystems/packages/vcpkg:VcpkgManifest.parse": 99,
    "engine/parallel:ParallelScanner._inspect_batch": 117,
    "engine/parallel:ParallelScanner.run": 101,
-   "engine/walker:Walker.walk": 167,
    "foundation/config:Config._withhold_untrusted_powers": 115,
    "foundation/config:ConfigParser._parse_config": 108,
    "foundation/config:ConfigParser._parse_policy": 137,
