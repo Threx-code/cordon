@@ -32,6 +32,8 @@ from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from re import Match
+    from typing import Any
 
     from cordon_scanner.foundation.content import FileContent
 
@@ -471,20 +473,7 @@ class BundlerLock:
                 if setting:
                     key, value = setting.groups()
                     if key == "remote":
-                        # Older locks list several remotes in one GEM section (multi-remote
-                        # resolution): which one served a gem is then unknown. With rubygems.org
-                        # among them the section stays the public registry -- the ambiguity is the
-                        # Gemfile's several global sources, reported there -- otherwise the first.
-                        if remote and section == "GEM":
-                            remote = (
-                                remote
-                                if "rubygems.org" in remote
-                                else value
-                                if "rubygems.org" in value
-                                else remote
-                            )
-                        else:
-                            remote = value
+                        remote = BundlerLock._source_setting(remote, section, value)
                     elif key == "revision":
                         revision = value
                     elif key in ("tag", "branch", "ref"):
@@ -494,24 +483,7 @@ class BundlerLock:
                     continue
                 spec = BundlerLock.SPEC.match(raw)
                 if spec:
-                    version, platform = BundlerLock.split(spec.group(2))
-                    current = (spec.group(1), version)
-                    slot = specs.setdefault(
-                        current,
-                        {
-                            "platforms": [],
-                            "plain": False,
-                            "edges": set(),
-                            "section": section,
-                            "remote": remote,
-                            "revision": revision,
-                            "reference": reference,
-                        },
-                    )
-                    if platform:
-                        slot["platforms"].append(platform)  # type: ignore[attr-defined]
-                    else:
-                        slot["plain"] = True
+                    current = BundlerLock._spec(spec, specs, section, remote, revision, reference)
                     continue
                 edge = BundlerLock.EDGE.match(raw)
                 if edge and current is not None:
@@ -550,6 +522,80 @@ class BundlerLock:
         for (_, _), slot in specs.items():
             if slot["section"] == "PATH" and slot["remote"] == ".":
                 direct.update(str(e).lower() for e in slot["edges"])  # type: ignore[attr-defined]
+        entries = BundlerLock._entries(specs, own_names, checksums, direct)
+        BundlerLock._tool_entries(bundler, entries, ruby)
+        return LockGraph(
+            path=content.path,
+            ecosystem=ecosystem,
+            entries=tuple(entries),
+            integrity_elsewhere=not checksums,
+        )
+
+    @staticmethod
+    def _tool_entries(
+        bundler: str | None, entries: list[LockEntry], ruby: str | Any | None
+    ) -> None:
+        """The Bundler and Ruby versions the lock records, as tool and platform entries."""
+        if bundler:
+            entries.append(
+                LockEntry(name="bundler", version=bundler, scope=Scope.TOOL, direct=True)
+            )
+        if ruby:
+            entries.append(LockEntry(name="ruby", version=ruby, scope=Scope.PLATFORM, direct=True))
+
+    @staticmethod
+    def _source_setting(remote: str, section: str, value: str | Any) -> str:
+        """A source section's remote, revision or git reference."""
+        # Older locks list several remotes in one GEM section (multi-remote
+        # resolution): which one served a gem is then unknown. With rubygems.org
+        # among them the section stays the public registry -- the ambiguity is the
+        # Gemfile's several global sources, reported there -- otherwise the first.
+        if remote and section == "GEM":
+            remote = (
+                remote if "rubygems.org" in remote else value if "rubygems.org" in value else remote
+            )
+        else:
+            remote = value
+        return remote
+
+    @staticmethod
+    def _spec(
+        spec: Match[str],
+        specs: dict[tuple[str, str], dict[str, object]],
+        section: str,
+        remote: str,
+        revision: str,
+        reference: str,
+    ) -> tuple[str, str]:
+        """A spec line: the gem and version it opens, and the platform it is locked for."""
+        version, platform = BundlerLock.split(spec.group(2))
+        current = (spec.group(1), version)
+        slot = specs.setdefault(
+            current,
+            {
+                "platforms": [],
+                "plain": False,
+                "edges": set(),
+                "section": section,
+                "remote": remote,
+                "revision": revision,
+                "reference": reference,
+            },
+        )
+        if platform:
+            slot["platforms"].append(platform)  # type: ignore[attr-defined]
+        else:
+            slot["plain"] = True
+        return current
+
+    @staticmethod
+    def _entries(
+        specs: dict[tuple[str, str], dict[str, object]],
+        own_names: frozenset[str],
+        checksums: dict[tuple[str, str], dict[str, str]],
+        direct: set[str],
+    ) -> list[LockEntry]:
+        """One entry per spec: its source, platforms, conditions and checksum."""
         entries: list[LockEntry] = []
         for (name, version), slot in sorted(specs.items()):
             if slot["section"] == "PATH" and slot["remote"] == "." and name.lower() in own_names:
@@ -586,18 +632,7 @@ class BundlerLock:
                     platform=tuple(conditions),
                 )
             )
-        if bundler:
-            entries.append(
-                LockEntry(name="bundler", version=bundler, scope=Scope.TOOL, direct=True)
-            )
-        if ruby:
-            entries.append(LockEntry(name="ruby", version=ruby, scope=Scope.PLATFORM, direct=True))
-        return LockGraph(
-            path=content.path,
-            ecosystem=ecosystem,
-            entries=tuple(entries),
-            integrity_elsewhere=not checksums,
-        )
+        return entries
 
 
 class RubyGemsEcosystem(BaseEcosystem):

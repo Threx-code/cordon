@@ -924,7 +924,6 @@
    "ecosystems/packages/pypi:PypiEcosystem._parse_pep_style_lock": 124,
    "ecosystems/packages/pypi:PypiEcosystem._parse_pyproject": 98,
    "ecosystems/packages/pypi:PypiEcosystem._parse_setup_py": 97,
-   "ecosystems/packages/rubygems:BundlerLock.parse": 156,
    "ecosystems/packages/rubygems:RubyGemsEcosystem.parse_in_tree": 118,
    "ecosystems/packages/swift:SwiftManifest.parse": 127,
    "ecosystems/packages/vcpkg:VcpkgManifest.parse": 99,
