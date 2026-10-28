@@ -25,7 +25,7 @@ from cordon_scanner.ecosystems.packages.hackage import HackageEcosystem
 from cordon_scanner.ecosystems.packages.homebrew import HomebrewEcosystem
 from cordon_scanner.ecosystems.packages.julia import JuliaEcosystem
 from cordon_scanner.ecosystems.packages.nix import NixEcosystem
-from cordon_scanner.ecosystems.packages.opam import OpamEcosystem
+from cordon_scanner.ecosystems.packages.ocaml.opam import OpamEcosystem
 from cordon_scanner.ecosystems.packages.vcpkg import VcpkgEcosystem
 
 INFRA_ECOSYSTEMS = (

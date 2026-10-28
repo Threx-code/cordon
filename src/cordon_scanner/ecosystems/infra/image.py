@@ -445,90 +445,31 @@ class Dockerfile:
                     content, ecosystem, f"line {line}: {keyword} before the first FROM"
                 )
             if keyword == "ARG" and not stages:
-                # A global build argument: visible to every FROM line, with its default.
-                # Each default expanded with the arguments declared before it, as BuildKit
-                # expands them: `ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-..."`. One
-                # naming an argument with no value is left unset, so a FROM using it says so.
-                for name, value in Dockerfile.arguments(arguments):
-                    if value is None:
-                        continue
-                    expanded, missing = Interpolation.word(value, defaults)
-                    if missing:
-                        defaults.pop(name, None)
-                    else:
-                        defaults[name] = expanded
+                Dockerfile._global_arguments(arguments, defaults)
                 continue
             if keyword == "FROM":
-                flags, rest = Dockerfile.flags(arguments)
-                words = rest.split()
-                if (
-                    not words
-                    or (len(words) not in (1, 3))
-                    or (len(words) == 3 and words[1].upper() != "AS")
-                ):
-                    return BaseEcosystem._err(
-                        content,
-                        ecosystem,
-                        f"line {line}: FROM takes an image and an optional AS name",
-                    )
-                written, missing = Interpolation.word(words[0], defaults)
-                platform: tuple[str, ...] = ()
-                if "platform" in flags:
-                    expanded, _ = Interpolation.word(flags["platform"], defaults)
-                    platform = (f"platform {expanded}",)
-                stages.append(words[2].lower() if len(words) == 3 else None)
-                if missing:
-                    sources.append(
-                        f"FROM on line {line} takes its image from the build argument {missing[0]}, which has no default: --build-arg chooses it"
-                    )
-                    bases.append(("unknown",))
-                elif written.lower() == "scratch":
-                    bases.append(("scratch",))
-                elif written.lower() in stages[:-1]:
-                    bases.append(("stage", str(stages.index(written.lower()))))
-                else:
-                    if ImageReference.parse(written) is None:
-                        return BaseEcosystem._err(
-                            content,
-                            ecosystem,
-                            f"line {line}: {written[:80]!r} is not an image reference",
-                        )
-                    bases.append(("image", written, str(line), *platform))
+                failed = Dockerfile._from_line(
+                    content, ecosystem, line, arguments, defaults, stages, sources, bases
+                )
+                if failed is not None:
+                    return failed
                 continue
             stage = len(stages) - 1
             label = stages[stage] or str(stage)
             if keyword in ("COPY", "ADD", "RUN"):
-                flags, rest = Dockerfile.flags(arguments)
-                sources_from = (
-                    [flags["from"]] if keyword in ("COPY", "ADD") and "from" in flags else []
+                Dockerfile._copy_add_run(
+                    arguments,
+                    keyword,
+                    defaults,
+                    stages,
+                    pulls,
+                    line,
+                    hooks,
+                    content,
+                    label,
+                    ecosystem,
+                    added,
                 )
-                if keyword == "RUN":
-                    for mount in re.findall(r"--mount=(\S+)", arguments):
-                        found = re.search(r"(?:^|,)from=([^,\s]+)", mount)
-                        if found:
-                            sources_from.append(found.group(1))
-                for value in sources_from:
-                    written, missing = Interpolation.word(value, defaults)
-                    if (
-                        missing
-                        or written.isdigit()
-                        or written.lower() in stages
-                        or written.lower() == "scratch"
-                    ):
-                        continue
-                    pulls.append((written, line, (), f"{keyword} --from"))
-                if keyword == "RUN":
-                    hooks.append(
-                        Hook(
-                            kind="build",
-                            path=content.path,
-                            name=f"RUN in stage {label}",
-                            command=rest[:300],
-                            ecosystem=ecosystem,
-                        )
-                    )
-                if keyword == "ADD":
-                    added.extend(Dockerfile.remote_sources(rest, flags, line, defaults))
             elif keyword == "ONBUILD":
                 hooks.append(
                     Hook(
@@ -539,6 +480,141 @@ class Dockerfile:
                         ecosystem=ecosystem,
                     )
                 )
+        declared = Dockerfile._base_images(bases, stages)
+        for written, line, platform, how in pulls:
+            dependency = ImageReference.declare(
+                written, scope=Scope.BUILD, field_name=f"{how} (line {line})", platform=platform
+            )
+            if dependency is None:
+                return BaseEcosystem._err(
+                    content, ecosystem, f"line {line}: {written[:80]!r} is not an image reference"
+                )
+            declared.append(dependency)
+        declared.extend(added)
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            dependencies=tuple(declared),
+            hooks=tuple(hooks),
+            sources=tuple(sources),
+        )
+
+    @staticmethod
+    def _global_arguments(arguments: str, defaults: dict[str, str]) -> None:
+        """Each global build argument's default, expanded with the arguments declared before it."""
+        # A global build argument: visible to every FROM line, with its default.
+        # Each default expanded with the arguments declared before it, as BuildKit
+        # expands them: `ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-..."`. One
+        # naming an argument with no value is left unset, so a FROM using it says so.
+        for name, value in Dockerfile.arguments(arguments):
+            if value is None:
+                continue
+            expanded, missing = Interpolation.word(value, defaults)
+            if missing:
+                defaults.pop(name, None)
+            else:
+                defaults[name] = expanded
+
+    @staticmethod
+    def _copy_add_run(
+        arguments: str,
+        keyword: str,
+        defaults: dict[str, str],
+        stages: list[str | None],
+        pulls: list[tuple[str, int, tuple[str, ...], str]],
+        line: int,
+        hooks: list[Hook],
+        content: FileContent,
+        label: str,
+        ecosystem: str,
+        added: list[DeclaredDependency],
+    ) -> None:
+        """What a COPY, ADD or RUN reads from another image or the network, and what it runs at build time."""
+        flags, rest = Dockerfile.flags(arguments)
+        sources_from = [flags["from"]] if keyword in ("COPY", "ADD") and "from" in flags else []
+        if keyword == "RUN":
+            for mount in re.findall(r"--mount=(\S+)", arguments):
+                found = re.search(r"(?:^|,)from=([^,\s]+)", mount)
+                if found:
+                    sources_from.append(found.group(1))
+        for value in sources_from:
+            written, missing = Interpolation.word(value, defaults)
+            if (
+                missing
+                or written.isdigit()
+                or written.lower() in stages
+                or written.lower() == "scratch"
+            ):
+                continue
+            pulls.append((written, line, (), f"{keyword} --from"))
+        if keyword == "RUN":
+            hooks.append(
+                Hook(
+                    kind="build",
+                    path=content.path,
+                    name=f"RUN in stage {label}",
+                    command=rest[:300],
+                    ecosystem=ecosystem,
+                )
+            )
+        if keyword == "ADD":
+            added.extend(Dockerfile.remote_sources(rest, flags, line, defaults))
+
+    @staticmethod
+    def _from_line(
+        content: FileContent,
+        ecosystem: str,
+        line: int,
+        arguments: str,
+        defaults: dict[str, str],
+        stages: list[str | None],
+        sources: list[str],
+        bases: list[tuple[str, ...]],
+    ) -> Manifest | None:
+        """A FROM line: its stage, and the base it names -- an image, a stage, scratch, or one a
+        build argument chooses. The manifest refusing the file when the line is malformed."""
+        flags, rest = Dockerfile.flags(arguments)
+        words = rest.split()
+        if (
+            not words
+            or (len(words) not in (1, 3))
+            or (len(words) == 3 and words[1].upper() != "AS")
+        ):
+            return BaseEcosystem._err(
+                content,
+                ecosystem,
+                f"line {line}: FROM takes an image and an optional AS name",
+            )
+        written, missing = Interpolation.word(words[0], defaults)
+        platform: tuple[str, ...] = ()
+        if "platform" in flags:
+            expanded, _ = Interpolation.word(flags["platform"], defaults)
+            platform = (f"platform {expanded}",)
+        stages.append(words[2].lower() if len(words) == 3 else None)
+        if missing:
+            sources.append(
+                f"FROM on line {line} takes its image from the build argument {missing[0]}, which has no default: --build-arg chooses it"
+            )
+            bases.append(("unknown",))
+        elif written.lower() == "scratch":
+            bases.append(("scratch",))
+        elif written.lower() in stages[:-1]:
+            bases.append(("stage", str(stages.index(written.lower()))))
+        else:
+            if ImageReference.parse(written) is None:
+                return BaseEcosystem._err(
+                    content,
+                    ecosystem,
+                    f"line {line}: {written[:80]!r} is not an image reference",
+                )
+            bases.append(("image", written, str(line), *platform))
+        return None
+
+    @staticmethod
+    def _base_images(
+        bases: list[tuple[str, ...]], stages: list[str | None]
+    ) -> list[DeclaredDependency]:
+        """The base image of each stage, the one the last stage runs on scoped as runtime and the rest as build."""
         # The image the target (the last stage) runs on: follow stage-to-stage bases down to one.
         runtime: int | None = len(bases) - 1
         seen: set[int] = set()
@@ -558,23 +634,7 @@ class Dockerfile:
             )
             if dependency is not None:
                 declared.append(dependency)
-        for written, line, platform, how in pulls:
-            dependency = ImageReference.declare(
-                written, scope=Scope.BUILD, field_name=f"{how} (line {line})", platform=platform
-            )
-            if dependency is None:
-                return BaseEcosystem._err(
-                    content, ecosystem, f"line {line}: {written[:80]!r} is not an image reference"
-                )
-            declared.append(dependency)
-        declared.extend(added)
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            dependencies=tuple(declared),
-            hooks=tuple(hooks),
-            sources=tuple(sources),
-        )
+        return declared
 
     @staticmethod
     def remote_sources(
@@ -631,335 +691,6 @@ class Dockerfile:
                     )
                 )
         return out
-
-
-class ComposeLines:
-    """Compose YAML read by indentation: anchors, aliases and merge keys followed by name, which
-    the hostile-input YAML reader elsewhere refuses on principle."""
-
-    #: A `key:` line (or a list item, which a mapping does not hold but `children` reports).
-    KEY: ClassVar[re.Pattern[str]] = re.compile(
-        r"""^(?:"[^"]*"|'[^']*'|[^"'\s][^:]*?)\s*:(?:\s|$)|^-(?:\s|$)"""
-    )
-
-    @staticmethod
-    def logical(text: str) -> tuple[list[tuple[int, int, str]], str | None]:
-        """`(line, indent, content)` of each non-blank line, comments dropped."""
-        out: list[tuple[int, int, str]] = []
-        block: int | None = None  # the indentation of a block scalar's header, while inside it
-        for number, raw in enumerate(text.splitlines(), start=1):
-            if not out and re.fullmatch(r"---[ \t]*(?:#.*)?", raw.rstrip("\r")):
-                # YAML's document-start marker, which Compose accepts before the document.
-                continue
-            if block is not None:
-                # A block scalar's lines are its text, however they look: vulhub's
-                # `command: >` script holds `members: [...]` and then a shallower line, which
-                # were read as a key and a malformed line after it.
-                if not raw.strip() or len(raw) - len(raw.lstrip(" ")) > block:
-                    continue
-                block = None
-            if "\t" in raw[: len(raw) - len(raw.lstrip())]:
-                return out, f"line {number}: a tab in the indentation, which YAML does not allow"
-            content = ComposeLines.uncomment(raw).rstrip()
-            if content.strip():
-                indent = len(content) - len(content.lstrip())
-                out.append((number, indent, content.strip()))
-                if re.search(r"(?:^-|:)[ \t]+[|>][-+1-9]*$", content.strip()):
-                    block = indent
-        return out, None
-
-    @staticmethod
-    def malformed(lines: list[tuple[int, int, str]]) -> str | None:
-        """A line YAML refuses: neither `key: value`, a `- item`, nor a plain scalar continued
-        deeper than the key it belongs to (`    volumes` where a key was due is a file cut short)."""
-        anchor: int | None = None
-        for number, indent, text in lines:
-            if (
-                text.startswith("- ")
-                or text == "-"
-                or re.match(r"""^(?:"[^"]*"|'[^']*'|[^"'\s][^:]*?)\s*:(?:\s|$)""", text)
-            ):
-                anchor = indent
-                continue
-            if anchor is not None and indent > anchor:
-                continue
-            return f"line {number}: {text[:40]!r} is neither a key nor a list item"
-        return None
-
-    @staticmethod
-    def uncomment(line: str) -> str:
-        quote = ""
-        for index, char in enumerate(line):
-            if quote:
-                if char == quote:
-                    quote = ""
-            elif char in "\"'":
-                quote = char
-            elif char == "#" and (index == 0 or line[index - 1] in " \t"):
-                return line[:index]
-        return line
-
-    @staticmethod
-    def scalar(value: str) -> str:
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            return value[1:-1]
-        return value
-
-    @staticmethod
-    def block(
-        lines: list[tuple[int, int, str]], start: int
-    ) -> tuple[list[tuple[int, int, str]], int]:
-        """The lines indented under `lines[start]`, and the index after them."""
-        indent = lines[start][1]
-        end = start + 1
-        while end < len(lines) and lines[end][1] > indent:
-            end += 1
-        return lines[start + 1 : end], end
-
-    @staticmethod
-    def children(
-        lines: list[tuple[int, int, str]],
-    ) -> list[tuple[str, str, list[tuple[int, int, str]], int]]:
-        """`(key, inline value, nested lines, line)` for each key at the block's first indent."""
-        if not lines:
-            return []
-        indent = lines[0][1]
-        out: list[tuple[str, str, list[tuple[int, int, str]], int]] = []
-        index = 0
-        while index < len(lines):
-            number, level, content = lines[index]
-            if level != indent:
-                index += 1
-                continue
-            nested, index = ComposeLines.block(lines, index)
-            if content.startswith("- ") or content == "-":
-                # A list item, whatever colons it holds (`- base=docker-image://python:3.12`).
-                out.append(("-", content[2:].strip(), nested, number))
-                continue
-            key, colon, value = (
-                content.partition(":")
-                if not content.startswith(('"', "'"))
-                else ComposeLines.quoted_key(content)
-            )
-            if colon:
-                out.append((ComposeLines.scalar(key), value.strip(), nested, number))
-        return out
-
-    @staticmethod
-    def quoted_key(content: str) -> tuple[str, str, str]:
-        quote = content[0]
-        end = content.find(quote, 1)
-        if end < 0 or not content[end + 1 :].lstrip().startswith(":"):
-            return content, "", ""
-        return content[1:end], ":", content[end + 1 :].lstrip()[1:]
-
-
-class Compose:
-    """compose.yaml and docker-compose.yml."""
-
-    @staticmethod
-    def parse(content: FileContent, ecosystem: str, environment: Mapping[str, str]) -> Manifest:
-        lines, error = ComposeLines.logical(content.text)
-        if error:
-            return BaseEcosystem._err(content, ecosystem, error)
-        if not lines or lines[0][1] != 0:
-            return BaseEcosystem._err(content, ecosystem, "a Compose file must be a mapping")
-        problem = ComposeLines.malformed(lines)
-        if problem:
-            return BaseEcosystem._err(content, ecosystem, problem)
-        # A scalar anchor (`x-node-image: &node-image node:22@sha256:...`) and the aliases that
-        # name it (`image: *node-image`, `NODE_IMAGE: *node-image`): each alias reads as the value
-        # it names, as YAML reads it. An alias was taken for an image reference and refused the
-        # whole file.
-        scalars: dict[str, str] = {}
-        for _number, _level, text in lines:
-            found = re.search(r"^(?:-\s+)?[^\s:][^:]*:\s*&([A-Za-z0-9_.-]+)\s+(\S.*)$", text)
-            if found:
-                scalars[found.group(1)] = found.group(2)
-        if scalars:
-            resolved: list[tuple[int, int, str]] = []
-            for number, level, text in lines:
-                alias = re.match(r"^(.*?(?::\s+|^-\s+))\*([A-Za-z0-9_.-]+)\s*$", text)
-                if alias and alias.group(2) in scalars:
-                    text = alias.group(1) + scalars[alias.group(2)]
-                resolved.append((number, level, text))
-            lines = resolved
-        top = ComposeLines.children(lines)
-        # Anchors anywhere: `x-common: &common` and its children, to follow `<<: *common` by name.
-        anchors: dict[str, list[tuple[int, int, str]]] = {}
-        for index, (_number, _level, text) in enumerate(lines):
-            found = re.search(r":\s*&([A-Za-z0-9_.-]+)\s*$", text)
-            if found:
-                anchors[found.group(1)] = ComposeLines.block(lines, index)[0]
-        services = next((nested for key, _value, nested, _n in top if key == "services"), None)
-        includes = next((nested for key, _value, nested, _n in top if key == "include"), None)
-        sources: list[str] = []
-        for _key, value, nested, _n in ComposeLines.children(includes or []):
-            path = (
-                ComposeLines.scalar(value)
-                if value
-                else next(
-                    (
-                        ComposeLines.scalar(v)
-                        for k, v, _, _ in ComposeLines.children(nested)
-                        if k == "path"
-                    ),
-                    "",
-                )
-            )
-            if path.startswith("path:"):
-                path = ComposeLines.scalar(path[5:])
-            if path:
-                sources.append(f"includes {path}")
-        if services is None:
-            if sources:
-                return Manifest(path=content.path, ecosystem=ecosystem, sources=tuple(sources))
-            return BaseEcosystem._err(content, ecosystem, "a Compose file without services")
-        declared: list[DeclaredDependency] = []
-        for service, _value, body, number in ComposeLines.children(services):
-            stray = next(
-                (
-                    (line, text)
-                    for line, level, text in body
-                    if level == body[0][1] and not ComposeLines.KEY.match(text)
-                ),
-                None,
-            )
-            if stray is not None:
-                # A service is a mapping, and Compose refuses one that is not. This is what a
-                # file cut inside a key leaves (`sidecar:` then `ima`), and since a service with
-                # no image is not refused per file, it is the line that says the file is damaged.
-                return BaseEcosystem._err(
-                    content,
-                    ecosystem,
-                    f"line {stray[0]}: service {service} holds {stray[1][:40]!r}, not a key",
-                )
-            fields = {
-                key: (value, nested) for key, value, nested, _n in ComposeLines.children(body)
-            }
-            merge = fields.get("<<")
-            if merge is not None:
-                # `<<: *common` or `<<: [*a, *b]`: the service's own keys win over the merged ones.
-                for alias in re.findall(r"\*([A-Za-z0-9_.-]+)", merge[0]):
-                    for key, value, nested, _n in ComposeLines.children(anchors.get(alias, [])):
-                        fields.setdefault(key, (value, nested))
-            conditions: list[str] = []
-            profiles = fields.get("profiles")
-            if profiles is not None:
-                names = (
-                    re.findall(r"[A-Za-z0-9_.-]+", profiles[0])
-                    if profiles[0]
-                    else [
-                        ComposeLines.scalar(v)
-                        for k, v, _, _ in ComposeLines.children(profiles[1])
-                        if k == "-"
-                    ]
-                )
-                conditions.extend(f"profile {name}" for name in names)
-            platform = fields.get("platform")
-            if platform is not None and platform[0]:
-                conditions.append(
-                    f"platform {Interpolation.expand(ComposeLines.scalar(platform[0]), environment)[0]}"
-                )
-            image = fields.get("image")
-            build = fields.get("build")
-            if build is not None:
-                context = (
-                    ComposeLines.scalar(build[0])
-                    if build[0] and not build[0].startswith("{")
-                    else ""
-                )
-                inline = (
-                    dict(re.findall(r"(\w+)\s*:\s*([^,}]+)", build[0]))
-                    if build[0].startswith("{")
-                    else {}
-                )
-                nested_fields = {k: (v, n) for k, v, n, _ in ComposeLines.children(build[1])}
-                context = (
-                    context
-                    or ComposeLines.scalar(inline.get("context", ""))
-                    or ComposeLines.scalar(nested_fields.get("context", ("", []))[0])
-                )
-                tag = (
-                    f" (tagged {ComposeLines.scalar(image[0])})"
-                    if image is not None and image[0]
-                    else ""
-                )
-                sources.append(f"service {service} builds its image{tag} from {context or '.'}")
-                extra = nested_fields.get("additional_contexts")
-                for key, value, _nested, line in ComposeLines.children(extra[1] if extra else []):
-                    target = ComposeLines.scalar(value if key != "-" else value.partition("=")[2])
-                    if target.startswith("docker-image://"):
-                        expanded, missing = Interpolation.expand(
-                            target.removeprefix("docker-image://"), environment
-                        )
-                        if not missing:
-                            dependency = ImageReference.declare(
-                                expanded,
-                                scope=Scope.BUILD,
-                                field_name=f"services.{service}.build.additional_contexts (line {line})",
-                                platform=tuple(conditions),
-                            )
-                            if dependency is not None:
-                                declared.append(dependency)
-                continue
-            if image is None or not image[0]:
-                if "extends" in fields:
-                    sources.append(f"service {service} extends another service's definition")
-                    continue
-                # Compose requires one after merging the files it is run with -- `compose.yaml`
-                # with `compose.override.yaml` by default, or `-f base.yml -f prod.yml` -- and a
-                # file read alone cannot see the other. Coolify's docker-compose.yml names its
-                # services' images only in docker-compose.prod.yml; refusing the base file left
-                # every other service in it unread.
-                sources.append(
-                    f"service {service} names neither an image nor a build context in this file "
-                    f"(line {number}); Compose takes it from a file merged over this one"
-                )
-                continue
-            written, missing = Interpolation.expand(ComposeLines.scalar(image[0]), environment)
-            if missing:
-                sources.append(
-                    f"service {service} takes its image from ${missing[0]}, which neither the environment file nor a default sets"
-                )
-                continue
-            dependency = ImageReference.declare(
-                written,
-                scope=Scope.RUNTIME,
-                field_name=f"services.{service}.image",
-                platform=tuple(conditions),
-            )
-            if dependency is None:
-                return BaseEcosystem._err(
-                    content, ecosystem, f"line {number}: {written[:80]!r} is not an image reference"
-                )
-            declared.append(dependency)
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            dependencies=tuple(declared),
-            sources=tuple(sources),
-        )
-
-    @staticmethod
-    def environment(text: str) -> dict[str, str]:
-        """A Compose `.env` file: `NAME=value` lines, quotes removed, `export` allowed."""
-        values: dict[str, str] = {}
-        for raw in text.splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            line = line.removeprefix("export ").strip()
-            name, equals, value = line.partition("=")
-            if equals and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name.strip()):
-                value = value.strip()
-                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                    value = value[1:-1]
-                else:
-                    value = value.split(" #", 1)[0].strip()
-                values[name.strip()] = value
-        return values
 
 
 class Kubernetes:
@@ -1139,6 +870,8 @@ class ImageEcosystem(BaseEcosystem):
         return path.endswith((".yaml", ".yml")) and not ImageEcosystem.is_compose(path)
 
     def parse_manifest(self, content: FileContent) -> Manifest:
+        from cordon_scanner.ecosystems.infra.compose import Compose
+
         if ImageEcosystem.is_compose(content.path):
             return Compose.parse(content, self.id, {})
         if ImageEcosystem.is_kubernetes(content.path):
@@ -1147,6 +880,8 @@ class ImageEcosystem(BaseEcosystem):
 
     def parse_in_tree(self, content: FileContent, files: Mapping[str, FileContent]) -> Manifest:
         """A Compose file with the `.env` beside it, which Compose reads for `${VAR}`."""
+        from cordon_scanner.ecosystems.infra.compose import Compose
+
         if ImageEcosystem.is_kubernetes(content.path):
             return Kubernetes.parse(content, self.id)
         if not ImageEcosystem.is_compose(content.path):
@@ -1165,8 +900,6 @@ class ImageEcosystem(BaseEcosystem):
 
 __all__ = [
     "HUB_HOSTS",
-    "Compose",
-    "ComposeLines",
     "Dockerfile",
     "ImageEcosystem",
     "ImageReference",

@@ -405,16 +405,16 @@ class TestErrorHandling(CliFixtures):
         """A tool with a bypass flag is a tool whose bypass flag ends up in the
         pipeline. The only way to accept a finding is a suppression, which is
         reviewable, expiring and recorded in the output."""
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.parser import CommandParser
 
-        text = CommandLine.build_parser().format_help()
+        text = CommandParser.build().format_help()
         for forbidden in ("--force", "--no-verify", "--ignore-all", "--skip"):
             assert forbidden not in text
 
     def test_exit_codes_are_documented_in_help(self) -> None:
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.parser import CommandParser
 
-        text = CommandLine.build_parser().format_help()
+        text = CommandParser.build().format_help()
         assert "exit codes" in text.lower()
         for code in ("0", "1", "2", "3", "4"):
             assert code in text

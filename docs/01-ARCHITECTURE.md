@@ -233,7 +233,18 @@ src/cordon_scanner/
   judge/ model/           The optional reviewing model and the verdict model
   notify/                 Notifications: notifier, events, transport, channels/
   report/                 Output adapters, each a Reporter
-  cli/ mcp/ cloud/        The front ends: the command line, the MCP server, the cloud agent
+  cli/                    The command line
+    main.py               Dispatch: each command's handler, and the typed exit codes
+    parser.py             The parser: every command's own arguments, in help order
+    commands/             One module per command, holding its arguments and its code;
+                          scan/ (by phase: options, command, enrichment, output, ...)
+                          and account/ (login, logout, whoami) as sub-packages
+  mcp/                    The MCP server for AI agents
+    server.py             The protocol: stdio, tools/list, tools/call, cancellation
+    tools/                base.py (what every tool shares), one module per tool
+                          family (packages, workspace, agents, machine, knowledge),
+                          catalogue.py (the definitions, in a fixed order)
+  cloud/                  The cloud agent: sign-in, runner, device inventory, results upload
 
 tests/unit/               Mirrors src: tests/unit/<place>/test_<module>.py, plus
                           repository/ (docs, release, layout), bench/, sandbox/

@@ -40,6 +40,7 @@ from cordon_scanner.report.sbom import TOOL_NAME, SbomDocument
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from cordon_scanner.foundation.files.walk import WalkEntry
     from cordon_scanner.foundation.results import Dependency
 
 SPEC_VERSION: Final = "1.6"
@@ -325,20 +326,7 @@ class AiBom:
                 or "model" in rel.lower()
                 or entry.size > (1 << 20)
             ):
-                found.add(
-                    {
-                        "type": "machine-learning-model",
-                        "bom-ref": f"file:{rel}",
-                        "name": rel,
-                        "hashes": AiBom._sha256(entry.real_path, entry.size),
-                        "properties": AiBom._props(
-                            ai_kind="model",
-                            ai_source="file",
-                            ai_format=MODEL_SUFFIXES[suffix],
-                            ai_size=entry.size,
-                        ),
-                    }
-                )
+                AiBom._model(found, entry, rel, suffix)
                 continue
             relevant = (
                 AiBom._matches(rel, INSTRUCTION_PATHS)
@@ -365,24 +353,7 @@ class AiBom:
                     [{"alg": "SHA-256", "content": hashlib.sha256(raw).hexdigest()}],
                 )
             elif AiBom._matches(rel, INSTRUCTION_PATHS) or AiBom._matches(rel, PROMPT_PATHS):
-                found.add(
-                    {
-                        "type": "data",
-                        "bom-ref": f"file:{rel}",
-                        "name": rel,
-                        "hashes": [{"alg": "SHA-256", "content": hashlib.sha256(raw).hexdigest()}],
-                        "data": [
-                            {
-                                "type": "other",
-                                "name": rel,
-                                "description": "Text an AI agent reads and acts on",
-                            }
-                        ],
-                        "properties": AiBom._props(
-                            ai_kind=AiBom._kind_of_instruction(rel), ai_agent=AiBom._agent_of(rel)
-                        ),
-                    }
-                )
+                AiBom._instruction(found, rel, raw)
             elif AiBom._matches(rel, WORKFLOW_PATHS):
                 AiBom._workflow(found, rel, text)
             if suffix in _CODE_SUFFIXES:
@@ -406,6 +377,46 @@ class AiBom:
                 if not item.get("hashes"):
                     item.pop("hashes", None)
         return found
+
+    @staticmethod
+    def _model(found: AiInventory, entry: WalkEntry, rel: str, suffix: str) -> None:
+        """A model file: its format, size and hash."""
+        found.add(
+            {
+                "type": "machine-learning-model",
+                "bom-ref": f"file:{rel}",
+                "name": rel,
+                "hashes": AiBom._sha256(entry.real_path, entry.size),
+                "properties": AiBom._props(
+                    ai_kind="model",
+                    ai_source="file",
+                    ai_format=MODEL_SUFFIXES[suffix],
+                    ai_size=entry.size,
+                ),
+            }
+        )
+
+    @staticmethod
+    def _instruction(found: AiInventory, rel: str, raw: bytes) -> None:
+        """An instruction or prompt file: text an agent reads and acts on."""
+        found.add(
+            {
+                "type": "data",
+                "bom-ref": f"file:{rel}",
+                "name": rel,
+                "hashes": [{"alg": "SHA-256", "content": hashlib.sha256(raw).hexdigest()}],
+                "data": [
+                    {
+                        "type": "other",
+                        "name": rel,
+                        "description": "Text an AI agent reads and acts on",
+                    }
+                ],
+                "properties": AiBom._props(
+                    ai_kind=AiBom._kind_of_instruction(rel), ai_agent=AiBom._agent_of(rel)
+                ),
+            }
+        )
 
     @staticmethod
     def cyclonedx_document(

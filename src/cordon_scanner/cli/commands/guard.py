@@ -64,7 +64,7 @@ class GuardCommand:
         root = Path(getattr(args, "path", "."))
 
         if action == "incoming":
-            from cordon_scanner.cli.incoming import IncomingCommand
+            from cordon_scanner.cli.commands.incoming import IncomingCommand
 
             return IncomingCommand.run_hook(args)
 

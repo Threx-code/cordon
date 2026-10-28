@@ -16,7 +16,8 @@ import pytest
 
 from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner, TimedOut
 from cordon_scanner.mcp.server import LEGACY, MODERN, Server
-from cordon_scanner.mcp.tools import TOOLS, Args, Outcome, Settings, Tool, ToolError
+from cordon_scanner.mcp.tools.base import Args, Outcome, Settings, Tool, ToolError
+from cordon_scanner.mcp.tools.catalogue import TOOLS
 from cordon_scanner.mcp.workspace import Workspace
 
 MODERN_META = {
@@ -583,7 +584,7 @@ class TestContainerLaunches:
         ],
     )
     def test_the_image_a_launch_runs(self, config: dict[str, Any], image: str | None) -> None:
-        from cordon_scanner.mcp.tools import AgentTools
+        from cordon_scanner.mcp.tools.agents import AgentTools
 
         assert AgentTools.container_image(config) == image
 
@@ -597,7 +598,7 @@ class TestModelPassThrough:
 
     def test_scans_carry_the_model_and_no_offline_switch(self, tmp_path: Path) -> None:
         from cordon_scanner.mcp.runner import Run
-        from cordon_scanner.mcp.tools import Scans
+        from cordon_scanner.mcp.tools.base import Scans
 
         seen: list[list[str]] = []
 

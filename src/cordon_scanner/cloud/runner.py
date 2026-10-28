@@ -367,9 +367,6 @@ class CloudRunner:
                 job, config, transport=transport, fetchers=fetchers, alive=alive
             )
         from cordon_scanner import Scanner
-        from cordon_scanner.cloud import auth, results
-        from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config.resolver import ConfigResolver
 
         fetch: dict[str, Callable[..., Path]] = {
             "git": CloudRunner.fetch_git,
@@ -394,16 +391,7 @@ class CloudRunner:
                     "status": "abandoned",
                     "error": "the lease was lost before the scan",
                 }
-            overrides: dict[str, Any] = {"use_cache": False}
-            if job.options.get("online") and config.allow_online:
-                overrides["offline"] = False
-            # The repository's own configuration, as a CI scan of it would read it: clamped as
-            # untrusted, so it can narrow what is reported only in the ways a scan target may.
-            # Through the resolver, which is the only path that clamps a discovered config as
-            # untrusted and applies every ceiling; `Config.discover` alone returns it unclamped.
-            scan_config = ConfigResolver.resolve(
-                root=target if target.is_dir() else target.parent, **overrides
-            )
+            scan_config = CloudRunner._scan_config(job, config, target)
             with _Heartbeat(config, job, transport) as beating:
                 result = Scanner(scan_config).scan(target)
             if beating.lost.is_set():
@@ -411,29 +399,7 @@ class CloudRunner:
                     "status": "abandoned",
                     "error": "the lease was lost during the scan",
                 }
-            # A runner scan that did not read everything has not passed.
-            gate = dataclasses.replace(scan_config.policy, fail_on_incomplete=True)
-            verdict = PolicyGate.evaluate(result, gate)
-            CloudRunner.heartbeat(config, job, transport=transport, stage="uploading")
-            credentials = auth.Credentials(
-                url=config.url,
-                org=str(job.options.get("org", "")),
-                access_token=config.token,
-                expires_at=time.time() + 600,
-            )
-            receipt = results.SignedResults.upload(
-                result,
-                credentials,
-                exit_code=int(verdict.exit_code),
-                reason=str(verdict.reason),
-                transport=transport,
-                ai_document=results.SignedResults.ai_inventory(target, result),
-            )
-            return {
-                "status": "succeeded",
-                "exit_code": int(verdict.exit_code),
-                "scan_id": receipt.scan_id,
-            }
+            return CloudRunner._report(job, config, transport, scan_config, result, target)
         except JobRefused as exc:
             return {"status": "refused", "error": str(exc)}
         except CloudError as exc:
@@ -448,6 +414,59 @@ class CloudRunner:
             return {"status": "failed", "error": "the job failed on the runner; see its log"}
         finally:
             Trees.remove(workspace)
+
+    @staticmethod
+    def _scan_config(job: Job, config: RunnerConfig, target: Path) -> Any:
+        """The configuration the job's scan runs with."""
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
+
+        overrides: dict[str, Any] = {"use_cache": False}
+        if job.options.get("online") and config.allow_online:
+            overrides["offline"] = False
+        # The repository's own configuration, as a CI scan of it would read it: clamped as
+        # untrusted, so it can narrow what is reported only in the ways a scan target may.
+        # Through the resolver, which is the only path that clamps a discovered config as
+        # untrusted and applies every ceiling; `Config.discover` alone returns it unclamped.
+        return ConfigResolver.resolve(
+            root=target if target.is_dir() else target.parent, **overrides
+        )
+
+    @staticmethod
+    def _report(
+        job: Job,
+        config: RunnerConfig,
+        transport: Transport | None,
+        scan_config: Any,
+        result: Any,
+        target: Path,
+    ) -> dict[str, Any]:
+        """The verdict, uploaded with the result, and the job's outcome."""
+        from cordon_scanner.cloud import auth, results
+        from cordon_scanner.decide.policy import PolicyGate
+
+        # A runner scan that did not read everything has not passed.
+        gate = dataclasses.replace(scan_config.policy, fail_on_incomplete=True)
+        verdict = PolicyGate.evaluate(result, gate)
+        CloudRunner.heartbeat(config, job, transport=transport, stage="uploading")
+        credentials = auth.Credentials(
+            url=config.url,
+            org=str(job.options.get("org", "")),
+            access_token=config.token,
+            expires_at=time.time() + 600,
+        )
+        receipt = results.SignedResults.upload(
+            result,
+            credentials,
+            exit_code=int(verdict.exit_code),
+            reason=str(verdict.reason),
+            transport=transport,
+            ai_document=results.SignedResults.ai_inventory(target, result),
+        )
+        return {
+            "status": "succeeded",
+            "exit_code": int(verdict.exit_code),
+            "scan_id": receipt.scan_id,
+        }
 
     @staticmethod
     def execute_fix(

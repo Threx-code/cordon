@@ -12,7 +12,7 @@ Every subcommand's `--help` keeps argparse's layout and gains colour for its hea
 values; argparse's errors are coloured the same way.
 
 Colour is the console's terminal palette, exact in 24-bit colour and chosen 256-colour stand-ins
-elsewhere, and it follows the rules the scan report follows (`CommandLine._use_color`):
+elsewhere, and it follows the rules the scan report follows (`ScanOutput.use_color`):
 `NO_COLOR` turns it off, `FORCE_COLOR` turns it on, and otherwise it is on only when the stream
 is a terminal. A piped or captured screen carries no escape sequence and no block letters.
 

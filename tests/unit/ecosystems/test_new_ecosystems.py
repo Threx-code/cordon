@@ -22,10 +22,10 @@ from cordon_scanner.ecosystems.others import (
     CranEcosystem,
     GradleEcosystem,
     HexEcosystem,
-    MavenEcosystem,
     NuGetEcosystem,
     SwiftEcosystem,
 )
+from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.limits import Limits

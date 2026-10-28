@@ -70,8 +70,8 @@ class TestTheReferenceIsCurrent:
             assert f"| {EcosystemTutorial.LANGUAGE_NAMES[language]} |" in text
 
     def test_every_command_has_a_section(self) -> None:
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.parser import CommandParser
 
         text = CommandTutorial.render()
-        for name in CommandTutorial.subparsers(CommandLine.build_parser()):
+        for name in CommandTutorial.subparsers(CommandParser.build()):
             assert f"\n## {name}\n" in text

@@ -18,7 +18,7 @@ import zipfile
 
 import pytest
 
-from cordon_scanner.cli.review import ChangeReview, GraphDiff, PackageChange, ReviewReport
+from cordon_scanner.cli.commands.review import ChangeReview, GraphDiff, PackageChange, ReviewReport
 from cordon_scanner.detect.supply import release_diff
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.registries.more_registries import MoreRegistries

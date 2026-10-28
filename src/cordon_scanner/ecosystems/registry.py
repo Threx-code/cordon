@@ -16,22 +16,22 @@ from cordon_scanner.ecosystems.base import Ecosystem
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
-    CargoEcosystem,
     CocoaPodsEcosystem,
     ComposerEcosystem,
     ConanEcosystem,
     CondaEcosystem,
     CranEcosystem,
     GitHubActionsEcosystem,
-    GoEcosystem,
     GradleEcosystem,
     HexEcosystem,
-    MavenEcosystem,
     NuGetEcosystem,
     PubEcosystem,
     RubyGemsEcosystem,
     SwiftEcosystem,
 )
+from cordon_scanner.ecosystems.packages.cargo import CargoEcosystem
+from cordon_scanner.ecosystems.packages.go import GoEcosystem
+from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
 from cordon_scanner.foundation.files.globs import PathGlob

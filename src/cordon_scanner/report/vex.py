@@ -36,7 +36,7 @@ from cordon_scanner.version import __version__
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.models import Finding, Suppression
     from cordon_scanner.foundation.results import ScanResult
     from cordon_scanner.report.base import ReportOptions
 
@@ -100,31 +100,7 @@ class VexReporter(BaseReporter):
         reachability = metadata.get("reachability", "")
 
         if finding.suppressed is not None:
-            decided = finding.suppressed
-            who = {
-                "baseline": "recorded in the baseline as existing, accepted debt",
-                "vex": "ruled out by a supplier's VEX statement",
-            }.get(
-                decided.approved_by or "",
-                f"suppressed, approved by {decided.approved_by or 'nobody named'}",
-            )
-            detail = f"{decided.justification} ({who}; until {decided.expires})."
-            if decided.approved_by == "vex":
-                # The supplier's own status, carried through: `VEX <status> ...`.
-                status = (
-                    decided.justification.split()[1] if decided.justification.count(" ") else ""
-                )
-                state = {"fixed": "resolved"}.get(
-                    status,
-                    status
-                    if status in ("not_affected", "false_positive", "resolved")
-                    else "not_affected",
-                )
-            else:
-                # Accepted or deferred by this repository, not analysed as unaffected: a
-                # suppression can mean either, and only the second is `not_affected`.
-                state = "in_triage"
-            analysis: dict[str, object] = {"state": state, "detail": detail}
+            analysis = VexReporter._suppression_analysis(finding.suppressed)
         elif reachability == "called_unreached":
             analysis = {
                 "state": "not_affected",
@@ -156,32 +132,7 @@ class VexReporter(BaseReporter):
                 ),
             }
         else:
-            # Not a claim that it is exploitable. A statement has to say
-            # something, and "nothing here rules it out" is what `exploitable`
-            # means when the producer has not analysed further. What was
-            # actually looked at is recorded, because a consumer reading this
-            # deserves to know whether an analysis ran at all.
-            symbols = str(metadata.get("reachability_symbols", ""))
-            looked = {
-                "called": (
-                    "First-party code calls into this package: "
-                    + (symbols.replace(",", ", ") or "see the finding")
-                    + ". Whether those reach the vulnerable function is for the reviewer to confirm."
-                ),
-                "imported": (
-                    "First-party code imports this package and no call into it was seen; "
-                    "its module-level code still runs on import, so the path exists."
-                ),
-                "unknown": (
-                    "Reachability could not be determined: a direct dependency not "
-                    "seen imported may be loaded dynamically or under another name."
-                ),
-            }.get(
-                str(reachability),
-                "Reported against the resolved version. No reachability analysis "
-                "ran; pass --reachability for the import-level check.",
-            )
-            analysis = {"state": "exploitable", "detail": looked}
+            analysis = VexReporter._exploitable_analysis(metadata, reachability)
 
         statement: dict[str, object] = {
             "id": VexReporter._identifier(finding),
@@ -204,6 +155,61 @@ class VexReporter(BaseReporter):
                 {"name": "cordon:exploited", "value": "; ".join(listed) or "yes"}
             ]
         return statement
+
+    @staticmethod
+    def _suppression_analysis(decided: Suppression) -> dict[str, object]:
+        """A finding a baseline or a VEX statement suppresses: the supplier's status, or in triage."""
+        who = {
+            "baseline": "recorded in the baseline as existing, accepted debt",
+            "vex": "ruled out by a supplier's VEX statement",
+        }.get(
+            decided.approved_by or "",
+            f"suppressed, approved by {decided.approved_by or 'nobody named'}",
+        )
+        detail = f"{decided.justification} ({who}; until {decided.expires})."
+        if decided.approved_by == "vex":
+            # The supplier's own status, carried through: `VEX <status> ...`.
+            status = decided.justification.split()[1] if decided.justification.count(" ") else ""
+            state = {"fixed": "resolved"}.get(
+                status,
+                status
+                if status in ("not_affected", "false_positive", "resolved")
+                else "not_affected",
+            )
+        else:
+            # Accepted or deferred by this repository, not analysed as unaffected: a
+            # suppression can mean either, and only the second is `not_affected`.
+            state = "in_triage"
+        return {"state": state, "detail": detail}
+
+    @staticmethod
+    def _exploitable_analysis(metadata: dict[str, str], reachability: str) -> dict[str, object]:
+        # Not a claim that it is exploitable. A statement has to say
+        # something, and "nothing here rules it out" is what `exploitable`
+        # means when the producer has not analysed further. What was
+        # actually looked at is recorded, because a consumer reading this
+        # deserves to know whether an analysis ran at all.
+        symbols = str(metadata.get("reachability_symbols", ""))
+        looked = {
+            "called": (
+                "First-party code calls into this package: "
+                + (symbols.replace(",", ", ") or "see the finding")
+                + ". Whether those reach the vulnerable function is for the reviewer to confirm."
+            ),
+            "imported": (
+                "First-party code imports this package and no call into it was seen; "
+                "its module-level code still runs on import, so the path exists."
+            ),
+            "unknown": (
+                "Reachability could not be determined: a direct dependency not "
+                "seen imported may be loaded dynamically or under another name."
+            ),
+        }.get(
+            str(reachability),
+            "Reported against the resolved version. No reachability analysis "
+            "ran; pass --reachability for the import-level check.",
+        )
+        return {"state": "exploitable", "detail": looked}
 
     @staticmethod
     def _identifier(finding: Finding) -> str:

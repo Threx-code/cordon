@@ -13307,7 +13307,7 @@ class TestOAuthClientIdentifiers:
 
 class TestTheGoStandardLibraryIsADependency:
     def _declared(self, text: str):
-        from cordon_scanner.ecosystems.others import GoEcosystem
+        from cordon_scanner.ecosystems.packages.go import GoEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         manifest = GoEcosystem().parse_manifest(FileContent.from_bytes("go.mod", text.encode()))
@@ -13677,7 +13677,7 @@ class TestScopedPackagesInAYarnLockfile:
 
 class TestGoReplaceDirectives:
     def _declared(self, text: str):
-        from cordon_scanner.ecosystems.others import GoEcosystem
+        from cordon_scanner.ecosystems.packages.go import GoEcosystem
         from cordon_scanner.foundation.content import FileContent
 
         manifest = GoEcosystem().parse_manifest(FileContent.from_bytes("go.mod", text.encode()))

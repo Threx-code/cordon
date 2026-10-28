@@ -29,6 +29,7 @@ from cordon_scanner.cli.help import (
     Wordmark,
 )
 from cordon_scanner.cli.main import CommandLine
+from cordon_scanner.cli.parser import CommandParser
 from cordon_scanner.foundation.errors import ExitCode
 from cordon_scanner.version import PROGRAM, __version__
 from support import ROOT as REPO
@@ -50,7 +51,7 @@ class HelpKit:
 
     @staticmethod
     def commands() -> dict[str, str]:
-        return CommandLine.build_parser().subcommands()
+        return CommandParser.build().subcommands()
 
     @staticmethod
     def screen(
@@ -393,14 +394,14 @@ class TestHelpCommand(NeutralColour):
 class TestSubcommandHelp(NeutralColour):
     def test_painting_never_changes_the_text(self) -> None:
         for name in ("scan", "sbom", "agent", "suppress", "help"):
-            parser = CommandLine.build_parser().subparser(name)
+            parser = CommandParser.build().subparser(name)
             assert parser is not None
             plain = parser.render_help(io.StringIO())
             painted = HelpPainter(Palette(True, True)).paint(plain)
             assert ANSI.sub("", painted) == plain
 
     def test_a_terminal_gets_colour(self) -> None:
-        parser = CommandLine.build_parser().subparser("scan")
+        parser = CommandParser.build().subparser("scan")
         assert parser is not None
         assert "\033[" in parser.render_help(HelpKit.Terminal())
 
@@ -423,7 +424,7 @@ class TestGroupsWithoutAnAction(NeutralColour):
         assert f"{PROGRAM} {group}" in err and "choose an action" in err
 
     def test_every_listed_group_has_that_destination(self) -> None:
-        parser = CommandLine.build_parser()
+        parser = CommandParser.build()
         for group, dest in GroupHelp.NEEDS_ACTION.items():
             sub = parser.subparser(group)
             assert sub is not None, group

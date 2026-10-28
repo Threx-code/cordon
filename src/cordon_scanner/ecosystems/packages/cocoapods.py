@@ -93,64 +93,9 @@ class Podfile:
                 # A test target's idiom: it links against the host app and adds only test pods.
                 test_targets.add(targets[-1])
                 continue
-            if word == "source":
-                url = (RubySource.strings(line) or [""])[0]
-                if url:
-                    sources.append(f"source {url}")
-            elif word == "platform":
-                found = re.match(r"platform\s+:(\w+)\s*,\s*['\"]([\d.]+)['\"]", line)
-                if found:
-                    declared[f"platform:{found.group(1)}"] = DeclaredDependency(
-                        name=found.group(1),
-                        spec=f">= {found.group(2)}",
-                        scope=Scope.PLATFORM,
-                        field_name="platform",
-                    )
-            elif word == "plugin":
-                name = (RubySource.strings(line) or [""])[0]
-                if name:
-                    declared[name] = DeclaredDependency(
-                        name=name, spec="*", scope=Scope.TOOL, field_name="plugin"
-                    )
-                    hooks.append(
-                        Hook(
-                            kind="build",
-                            path=content.path,
-                            name=f"plugin {name}",
-                            command="a CocoaPods plugin gem, loaded by pod install",
-                            ecosystem=ecosystem,
-                        )
-                    )
-            elif word == "pod":
-                found_pod = Podfile._pod(line, targets)
-                if (
-                    found_pod is not None
-                    and targets
-                    and (targets[-1] in test_targets or re.search(r"(?:UI)?Tests$", targets[-1]))
-                ):
-                    found_pod = DeclaredDependency(
-                        name=found_pod.name,
-                        spec=found_pod.spec,
-                        scope=Scope.TEST,
-                        field_name=found_pod.field_name,
-                        platform=found_pod.platform,
-                    )
-                if found_pod is not None:
-                    key = PodName.root(found_pod.name)
-                    existing = declared.get(key)
-                    if existing is None:
-                        declared[key] = found_pod
-                    else:
-                        # Two subspecs of one pod: one dependency, both subspecs as conditions.
-                        declared[key] = DeclaredDependency(
-                            name=key,
-                            spec=existing.spec,
-                            scope=existing.scope,
-                            field_name=existing.field_name,
-                            platform=tuple(
-                                dict.fromkeys((*existing.platform, *found_pod.platform))
-                            ),
-                        )
+            Podfile._statement(
+                word, line, sources, declared, hooks, content, ecosystem, targets, test_targets
+            )
         if depth > 0:
             return BaseEcosystem._err(
                 content, ecosystem, f"{depth} block(s) never closed with `end`"
@@ -162,6 +107,76 @@ class Podfile:
             hooks=tuple(hooks),
             sources=tuple(sources),
         )
+
+    @staticmethod
+    def _statement(
+        word: str,
+        line: str,
+        sources: list[str],
+        declared: dict[str, DeclaredDependency],
+        hooks: list[Hook],
+        content: FileContent,
+        ecosystem: str,
+        targets: list[str],
+        test_targets: set[str],
+    ) -> None:
+        """A source, platform, pod or plugin line, and the hooks and conditions it adds."""
+        if word == "source":
+            url = (RubySource.strings(line) or [""])[0]
+            if url:
+                sources.append(f"source {url}")
+        elif word == "platform":
+            found = re.match(r"platform\s+:(\w+)\s*,\s*['\"]([\d.]+)['\"]", line)
+            if found:
+                declared[f"platform:{found.group(1)}"] = DeclaredDependency(
+                    name=found.group(1),
+                    spec=f">= {found.group(2)}",
+                    scope=Scope.PLATFORM,
+                    field_name="platform",
+                )
+        elif word == "plugin":
+            name = (RubySource.strings(line) or [""])[0]
+            if name:
+                declared[name] = DeclaredDependency(
+                    name=name, spec="*", scope=Scope.TOOL, field_name="plugin"
+                )
+                hooks.append(
+                    Hook(
+                        kind="build",
+                        path=content.path,
+                        name=f"plugin {name}",
+                        command="a CocoaPods plugin gem, loaded by pod install",
+                        ecosystem=ecosystem,
+                    )
+                )
+        elif word == "pod":
+            found_pod = Podfile._pod(line, targets)
+            if (
+                found_pod is not None
+                and targets
+                and (targets[-1] in test_targets or re.search(r"(?:UI)?Tests$", targets[-1]))
+            ):
+                found_pod = DeclaredDependency(
+                    name=found_pod.name,
+                    spec=found_pod.spec,
+                    scope=Scope.TEST,
+                    field_name=found_pod.field_name,
+                    platform=found_pod.platform,
+                )
+            if found_pod is not None:
+                key = PodName.root(found_pod.name)
+                existing = declared.get(key)
+                if existing is None:
+                    declared[key] = found_pod
+                else:
+                    # Two subspecs of one pod: one dependency, both subspecs as conditions.
+                    declared[key] = DeclaredDependency(
+                        name=key,
+                        spec=existing.spec,
+                        scope=existing.scope,
+                        field_name=existing.field_name,
+                        platform=tuple(dict.fromkeys((*existing.platform, *found_pod.platform))),
+                    )
 
     @staticmethod
     def _pod(line: str, targets: list[str]) -> DeclaredDependency | None:
@@ -432,6 +447,23 @@ class PodfileLock:
             found_sum = re.match(r'^  "?([^\s":]+)"?: (\S+)$', line)
             if found_sum:
                 checksums[found_sum.group(1)] = found_sum.group(2)
+        entries = PodfileLock._entries(pods, external, repositories, checksums, direct)
+        version = (sections.get("COCOAPODS") or [""])[0].strip()
+        if version:
+            entries.append(
+                LockEntry(name="cocoapods", version=version, scope=Scope.TOOL, direct=True)
+            )
+        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
+
+    @staticmethod
+    def _entries(
+        pods: dict[str, dict[str, object]],
+        external: dict[str, dict[str, str]],
+        repositories: dict[str, str],
+        checksums: dict[str | Any, str | Any],
+        direct: set[str],
+    ) -> list[LockEntry]:
+        """One entry per pod: its source repository or external location, subspecs and checksum."""
         entries: list[LockEntry] = []
         for name, slot in sorted(pods.items()):
             options = external.get(name, {})
@@ -464,12 +496,7 @@ class PodfileLock:
                     note=note,
                 )
             )
-        version = (sections.get("COCOAPODS") or [""])[0].strip()
-        if version:
-            entries.append(
-                LockEntry(name="cocoapods", version=version, scope=Scope.TOOL, direct=True)
-            )
-        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
+        return entries
 
 
 class CocoaPodsEcosystem(BaseEcosystem):

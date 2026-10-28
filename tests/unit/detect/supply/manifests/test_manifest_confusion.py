@@ -211,12 +211,12 @@ class TestCheck:
         assert asked == ["https://registry.npmjs.org/@acme/x/1.0.0"]
 
     def test_the_check_runs_only_online(self, tmp_path):
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.commands.scan.enrichment import ScanEnrichment
 
         result = object()
         args = argparse.Namespace(online=False, offline=False)
         assert (
-            CommandLine._with_manifest_confusion(
+            ScanEnrichment.add_manifest_confusion(
                 args, Tarballs.npm(tmp_path, Tarballs.BASE), result, None
             )
             is result

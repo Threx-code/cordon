@@ -214,6 +214,42 @@ class SbomDocument:
         root_id = "SPDXRef-Package-root"
         root_purl = f"pkg:generic/{root_name}@{root_version}"
 
+        packages, spdx_id_by_name = SbomDocument._spdx_packages(dependencies)
+        relationships = SbomDocument._spdx_relationships(dependencies, spdx_id_by_name, root_id)
+
+        return {
+            "spdxVersion": SPEC_VERSION_SPDX,
+            "dataLicense": "CC0-1.0",
+            "SPDXID": "SPDXRef-DOCUMENT",
+            "name": f"{root_name}-{root_version}",
+            "documentNamespace": (
+                f"https://spdx.org/spdxdocs/{root_name}-{SbomDocument._identity(root_purl, dependencies)}"
+            ),
+            "creationInfo": {
+                "created": moment,
+                "creators": [f"Tool: {TOOL_NAME}-{tool_version}"],
+            },
+            "packages": [
+                {
+                    "SPDXID": root_id,
+                    "name": root_name,
+                    "versionInfo": root_version,
+                    "downloadLocation": "NOASSERTION",
+                    "filesAnalyzed": False,
+                    "licenseConcluded": "NOASSERTION",
+                    "licenseDeclared": "NOASSERTION",
+                    "copyrightText": "NOASSERTION",
+                },
+                *packages,
+            ],
+            "relationships": relationships,
+        }
+
+    @staticmethod
+    def _spdx_packages(
+        dependencies: Sequence[Dependency],
+    ) -> tuple[list[dict[str, Any]], dict[str, str]]:
+        """Each dependency's SPDX package entry, and the SPDXID its edges are looked up by."""
         spdx_id_by_name: dict[str, str] = {}
         by_purl: dict[str, str] = {}
         packages = []
@@ -252,7 +288,13 @@ class SbomDocument:
                     {"algorithm": digest[0].replace("-", ""), "checksumValue": digest[1]}
                 ]
             packages.append(entry)
+        return packages, spdx_id_by_name
 
+    @staticmethod
+    def _spdx_relationships(
+        dependencies: Sequence[Dependency], spdx_id_by_name: dict[str, str], root_id: str
+    ) -> list[dict[str, str]]:
+        """The document describes the root, and every dependency hangs off its parents or the root."""
         relationships = [
             {
                 "spdxElementId": "SPDXRef-DOCUMENT",
@@ -279,34 +321,7 @@ class SbomDocument:
                         "relatedSpdxElement": child_id,
                     }
                 )
-
-        return {
-            "spdxVersion": SPEC_VERSION_SPDX,
-            "dataLicense": "CC0-1.0",
-            "SPDXID": "SPDXRef-DOCUMENT",
-            "name": f"{root_name}-{root_version}",
-            "documentNamespace": (
-                f"https://spdx.org/spdxdocs/{root_name}-{SbomDocument._identity(root_purl, dependencies)}"
-            ),
-            "creationInfo": {
-                "created": moment,
-                "creators": [f"Tool: {TOOL_NAME}-{tool_version}"],
-            },
-            "packages": [
-                {
-                    "SPDXID": root_id,
-                    "name": root_name,
-                    "versionInfo": root_version,
-                    "downloadLocation": "NOASSERTION",
-                    "filesAnalyzed": False,
-                    "licenseConcluded": "NOASSERTION",
-                    "licenseDeclared": "NOASSERTION",
-                    "copyrightText": "NOASSERTION",
-                },
-                *packages,
-            ],
-            "relationships": relationships,
-        }
+        return relationships
 
     @staticmethod
     def _index_by_name(dependencies: Sequence[Dependency]) -> dict[str, Dependency]:

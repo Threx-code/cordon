@@ -187,6 +187,29 @@ class SwiftManifest:
                     source=url if not spec.startswith("git+") else None,
                 )
             )
+        hooks = SwiftManifest._binary_targets(binaries, declared)
+        SwiftManifest._plugin_hooks(plugins, hooks, content, ecosystem)
+        SwiftManifest._platforms(code, declared)
+        declared.append(
+            DeclaredDependency(
+                name="swift",
+                spec=f">= {tools.group(1)}",
+                scope=Scope.PLATFORM,
+                field_name="swift-tools-version",
+            )
+        )
+        package_name = re.search(r"Package\s*\(\s*name\s*:\s*\"([^\"]+)\"", code)
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            name=package_name.group(1).lower() if package_name else None,
+            dependencies=tuple(declared),
+            hooks=tuple(hooks),
+        )
+
+    @staticmethod
+    def _binary_targets(binaries: list[str], declared: list[DeclaredDependency]) -> list[Hook]:
+        """Each binary target: a local artifact, or a remote one pinned by checksum."""
         hooks: list[Hook] = []
         for arguments in binaries:
             name = SwiftManifest.argument(arguments, "name") or "binary"
@@ -219,6 +242,13 @@ class SwiftManifest:
                     note=note,
                 )
             )
+        return hooks
+
+    @staticmethod
+    def _plugin_hooks(
+        plugins: list[str], hooks: list[Hook], content: FileContent, ecosystem: str
+    ) -> None:
+        """Each plugin target, as a hook that runs at build time."""
         for arguments in plugins:
             if "capability" in arguments:
                 name = SwiftManifest.argument(arguments, "name") or "plugin"
@@ -232,6 +262,10 @@ class SwiftManifest:
                         ecosystem=ecosystem,
                     )
                 )
+
+    @staticmethod
+    def _platforms(code: str, declared: list[DeclaredDependency]) -> None:
+        """The platforms the package supports, each as a minimum version it requires."""
         for found in re.finditer(
             r"\.(macOS|iOS|tvOS|watchOS|visionOS|macCatalyst|driverKit)\s*\(\s*(?:\.v([\d_]+)|\"([\d.]+)\")",
             code,
@@ -245,22 +279,6 @@ class SwiftManifest:
                     field_name="platforms",
                 )
             )
-        declared.append(
-            DeclaredDependency(
-                name="swift",
-                spec=f">= {tools.group(1)}",
-                scope=Scope.PLATFORM,
-                field_name="swift-tools-version",
-            )
-        )
-        package_name = re.search(r"Package\s*\(\s*name\s*:\s*\"([^\"]+)\"", code)
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            name=package_name.group(1).lower() if package_name else None,
-            dependencies=tuple(declared),
-            hooks=tuple(hooks),
-        )
 
 
 class SwiftResolved:

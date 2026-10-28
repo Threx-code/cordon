@@ -201,6 +201,30 @@ class VcpkgManifest:
                 )
             declared.append(dependency)
         features = data.get("features")
+        VcpkgManifest._feature_dependencies(
+            features, default_features, overrides, unresolved, revisions, declared
+        )
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            name=BaseEcosystem._s(data.get("name")),
+            version=VcpkgFields.version_of(data),
+            dependencies=tuple(declared),
+            overrides={name: version for name, version in overrides.items() if version},
+            sources=tuple(sources),
+            source_patterns=routed,
+        )
+
+    @staticmethod
+    def _feature_dependencies(
+        features: Any | None,
+        default_features: set[str],
+        overrides: dict[str, str],
+        unresolved: str,
+        revisions: dict[str, str],
+        declared: list[DeclaredDependency],
+    ) -> None:
+        """The dependencies each feature adds, on when the feature is a default one."""
         for feature, body in features.items() if isinstance(features, dict) else []:
             listed = body.get("dependencies") if isinstance(body, dict) else None
             for entry in listed if isinstance(listed, list) else []:
@@ -219,16 +243,6 @@ class VcpkgManifest:
                 )
                 if dependency is not None:
                     declared.append(dependency)
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            name=BaseEcosystem._s(data.get("name")),
-            version=VcpkgFields.version_of(data),
-            dependencies=tuple(declared),
-            overrides={name: version for name, version in overrides.items() if version},
-            sources=tuple(sources),
-            source_patterns=routed,
-        )
 
     @staticmethod
     def inherited(path: str, files: Mapping[str, FileContent]) -> str | None:

@@ -10,8 +10,8 @@ import tarfile
 
 import pytest
 
+from cordon_scanner.ecosystems.infra.compose import Compose
 from cordon_scanner.ecosystems.infra.image import (
-    Compose,
     Dockerfile,
     ImageEcosystem,
     ImageReference,
@@ -20,7 +20,8 @@ from cordon_scanner.ecosystems.infra.image import (
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.images.oci import ImageIdentity, ImageLayers
+from cordon_scanner.images.identity import ImageIdentity
+from cordon_scanner.images.oci import ImageLayers
 from cordon_scanner.images.packages import OsPackage, PackageDatabases, PackageGraph
 from kits.imagekit import ImageKit
 

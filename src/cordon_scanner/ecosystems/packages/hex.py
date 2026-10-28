@@ -207,26 +207,30 @@ class BeamTerms:
             return float(value) if "." in value else int(value)
         word = re.compile(r"[A-Za-z_][\w.@]*[?!]?").match(text, self.position)
         if word:
-            self.position = word.end()
-            name = word.group(0)
-            if name in ("true", "false"):
-                return name == "true"
-            if name == "nil":
-                return None
-            if self.erlang and name[0].islower() and "." not in name:
-                return Atom(name)
-            if name == "fn" and not self.erlang:
-                # An anonymous function (`aliases: [mytask: fn _ -> ... end]`), to its `end`.
-                start = self.position - 2
-                self.to_end()
-                return Opaque(text[start : self.position])
-            # A call or a variable: consume its argument list and keep it opaque.
-            if self.peek() == "(":
-                start = self.position
-                self.balanced("(", ")")
-                return Opaque(name + text[start : self.position])
-            return Opaque(name)
+            return self._word(text, word)
         raise self.fail("unexpected character")
+
+    def _word(self, text: str, word: re.Match[str]) -> Any:
+        """A bare word: true, false, nil, an Erlang atom, an anonymous function, or a call or variable kept opaque."""
+        self.position = word.end()
+        name = word.group(0)
+        if name in ("true", "false"):
+            return name == "true"
+        if name == "nil":
+            return None
+        if self.erlang and name[0].islower() and "." not in name:
+            return Atom(name)
+        if name == "fn" and not self.erlang:
+            # An anonymous function (`aliases: [mytask: fn _ -> ... end]`), to its `end`.
+            start = self.position - 2
+            self.to_end()
+            return Opaque(text[start : self.position])
+        # A call or a variable: consume its argument list and keep it opaque.
+        if self.peek() == "(":
+            start = self.position
+            self.balanced("(", ")")
+            return Opaque(name + text[start : self.position])
+        return Opaque(name)
 
     #: A sigil's opening delimiters and what closes each (Elixir's `Kernel` sigil syntax).
     SIGIL_CLOSERS: ClassVar[dict[str, str]] = {
@@ -794,49 +798,7 @@ class HexEcosystem(BaseEcosystem):
         directory = content.path.rpartition("/")[0]
         declared: list[DeclaredDependency] = []
         overrides: dict[str, str] = {}
-        for item in deps:
-            if not isinstance(item, tuple) or not item or not isinstance(item[0], Atom):
-                continue
-            app = item[0].name
-            requirement = next((p for p in item[1:] if isinstance(p, str)), None)
-            options = (
-                BeamTerms.keyword(item[-1]) if len(item) > 1 and isinstance(item[-1], list) else {}
-            )
-            scope = Mixfile.scope(options)
-            hex_name = options.get("hex")
-            name = hex_name.name if isinstance(hex_name, Atom) else app
-            if options.get("in_umbrella") is True:
-                spec = f"path:../{app}"
-            elif isinstance(options.get("path"), str):
-                spec = f"path:{options['path']}"
-            elif isinstance(options.get("git"), str) or isinstance(options.get("github"), str):
-                url = options.get("git") or f"https://github.com/{options['github']}.git"
-                reference = options.get("tag") or options.get("ref") or options.get("branch")
-                spec = f"git+{url}" + (f"#{reference}" if isinstance(reference, str) else "")
-            else:
-                spec = requirement or "*"
-            if options.get("override") is True:
-                overrides[name] = spec
-            conditions = []
-            targets = options.get("targets")
-            if targets is not None:
-                listed = targets if isinstance(targets, list) else [targets]
-                conditions.append(
-                    "targets " + ", ".join(t.name for t in listed if isinstance(t, Atom))
-                )
-            declared.append(
-                DeclaredDependency(
-                    name=name,
-                    spec=spec,
-                    scope=scope,
-                    field_name="deps" + (" (override)" if options.get("override") is True else ""),
-                    alias=app if name != app else None,
-                    platform=tuple(conditions),
-                    note="a path dependency: mix.lock never locks one"
-                    if spec.startswith("path:")
-                    else None,
-                )
-            )
+        HexEcosystem._dependencies(deps, overrides, declared)
         elixir = project.get("elixir")
         if isinstance(elixir, str):
             declared.append(
@@ -883,6 +845,55 @@ class HexEcosystem(BaseEcosystem):
             else ("" if locked_by is not None else None),
             hooks=tuple(hooks),
         )
+
+    @staticmethod
+    def _dependencies(
+        deps: list[Any], overrides: dict[str, str], declared: list[DeclaredDependency]
+    ) -> None:
+        """Each deps entry in mix.exs: the Hex package, git or path source, or umbrella sibling, in its scope."""
+        for item in deps:
+            if not isinstance(item, tuple) or not item or not isinstance(item[0], Atom):
+                continue
+            app = item[0].name
+            requirement = next((p for p in item[1:] if isinstance(p, str)), None)
+            options = (
+                BeamTerms.keyword(item[-1]) if len(item) > 1 and isinstance(item[-1], list) else {}
+            )
+            scope = Mixfile.scope(options)
+            hex_name = options.get("hex")
+            name = hex_name.name if isinstance(hex_name, Atom) else app
+            if options.get("in_umbrella") is True:
+                spec = f"path:../{app}"
+            elif isinstance(options.get("path"), str):
+                spec = f"path:{options['path']}"
+            elif isinstance(options.get("git"), str) or isinstance(options.get("github"), str):
+                url = options.get("git") or f"https://github.com/{options['github']}.git"
+                reference = options.get("tag") or options.get("ref") or options.get("branch")
+                spec = f"git+{url}" + (f"#{reference}" if isinstance(reference, str) else "")
+            else:
+                spec = requirement or "*"
+            if options.get("override") is True:
+                overrides[name] = spec
+            conditions = []
+            targets = options.get("targets")
+            if targets is not None:
+                listed = targets if isinstance(targets, list) else [targets]
+                conditions.append(
+                    "targets " + ", ".join(t.name for t in listed if isinstance(t, Atom))
+                )
+            declared.append(
+                DeclaredDependency(
+                    name=name,
+                    spec=spec,
+                    scope=scope,
+                    field_name="deps" + (" (override)" if options.get("override") is True else ""),
+                    alias=app if name != app else None,
+                    platform=tuple(conditions),
+                    note="a path dependency: mix.lock never locks one"
+                    if spec.startswith("path:")
+                    else None,
+                )
+            )
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         if content.basename == "rebar.lock":

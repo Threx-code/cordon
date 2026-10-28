@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Final
 
 from cordon_scanner.images import langpkgs
+from cordon_scanner.images.identity import ImageInventory
 from cordon_scanner.images.oci import (
     APK_INSTALLED,
     APK_INSTALLED_USR,
@@ -33,7 +34,6 @@ from cordon_scanner.images.oci import (
     PORTAGE_FILES,
     RPM_LEGACY,
     RPM_SQLITE,
-    ImageInventory,
     ImageLayers,
 )
 
@@ -152,38 +152,43 @@ class HostFilesystem:
         return found
 
     def _language_packages(self, inventory: ImageInventory) -> None:
-        from cordon_scanner.images.binmeta import BinaryMetadata
 
         bases = (self.root,)
         homes = (self.home,) if self.home is not None else ()
         seen: set[tuple[str, str, str]] = set()
 
-        def add(package: langpkgs.LanguagePackage | None) -> None:
-            if package is None:
-                return
-            key = (package.ecosystem, package.name, package.version)
-            if key not in seen:
-                seen.add(key)
-                inventory.language_packages.append(package)
+        self._installed_packages(bases, homes, seen, inventory)
+        self._home_tools(homes, seen, inventory)
+        for cellar in (self.root / c for c in CELLARS):
+            if cellar.is_dir():
+                for receipt in sorted(cellar.glob("*/*/INSTALL_RECEIPT.json"))[:MAX_FILES]:
+                    HostFilesystem._add(
+                        seen,
+                        inventory,
+                        langpkgs.LanguagePackage(
+                            "homebrew",
+                            receipt.parent.parent.name,
+                            receipt.parent.name,
+                            self._label(homes, receipt),
+                        ),
+                    )
+        for pattern in RUNTIME_FILES:
+            for path in sorted(self.root.glob(pattern))[:100]:
+                relative = path.relative_to(self.root).as_posix()
+                data = self._bytes(path, MAX_METADATA_BYTES)
+                if data is not None:
+                    HostFilesystem._add(
+                        seen, inventory, langpkgs.LanguagePackages.runtime(relative, data)
+                    )
 
-        def label(path: Path) -> str:
-            for base in (*homes, self.root):
-                if path.is_relative_to(base):
-                    prefix = "~/" if base in homes and base != self.root else ""
-                    return prefix + path.relative_to(base).as_posix()
-            return path.as_posix()
-
-        def relabelled(
-            package: langpkgs.LanguagePackage | None, path: Path
-        ) -> langpkgs.LanguagePackage | None:
-            return (
-                None
-                if package is None
-                else langpkgs.LanguagePackage(
-                    package.ecosystem, package.name, package.version, label(path)
-                )
-            )
-
+    def _installed_packages(
+        self,
+        bases: tuple[Path],
+        homes: tuple[Path] | tuple[()],
+        seen: set[tuple[str, str, str]],
+        inventory: ImageInventory,
+    ) -> None:
+        """The Python, Node and Ruby packages installed system-wide and in each home: their metadata files, read as each manager records them."""
         for site in self._under(bases, SYSTEM_SITE) + self._under(homes, USER_SITE):
             for metadata in sorted(
                 [
@@ -196,7 +201,13 @@ class HostFilesystem:
                 if metadata.is_file() and langpkgs.LanguagePackages.is_metadata(relative):
                     data = self._bytes(metadata, MAX_METADATA_BYTES)
                     if data is not None:
-                        add(relabelled(langpkgs.LanguagePackages.parse(relative, data), metadata))
+                        HostFilesystem._add(
+                            seen,
+                            inventory,
+                            self._relabelled(
+                                homes, langpkgs.LanguagePackages.parse(relative, data), metadata
+                            ),
+                        )
         for modules in self._under(bases, SYSTEM_NODE) + self._under(homes, USER_NODE):
             for manifest in sorted(modules.rglob("package.json"))[:MAX_FILES]:
                 # Read as an installed tree would name it, so the directory-name check applies.
@@ -204,16 +215,36 @@ class HostFilesystem:
                 if langpkgs.LanguagePackages.is_metadata(relative):
                     data = self._bytes(manifest, MAX_METADATA_BYTES)
                     if data is not None:
-                        add(relabelled(langpkgs.LanguagePackages.parse(relative, data), manifest))
+                        HostFilesystem._add(
+                            seen,
+                            inventory,
+                            self._relabelled(
+                                homes, langpkgs.LanguagePackages.parse(relative, data), manifest
+                            ),
+                        )
         for specifications in self._under(bases, SYSTEM_GEMS) + self._under(homes, USER_GEMS):
             for spec in sorted(
                 [*specifications.glob("*.gemspec"), *specifications.glob("default/*.gemspec")]
             )[:MAX_FILES]:
-                add(
-                    relabelled(
-                        langpkgs.LanguagePackages.parse(f"specifications/{spec.name}", b""), spec
-                    )
+                HostFilesystem._add(
+                    seen,
+                    inventory,
+                    self._relabelled(
+                        homes,
+                        langpkgs.LanguagePackages.parse(f"specifications/{spec.name}", b""),
+                        spec,
+                    ),
                 )
+
+    def _home_tools(
+        self,
+        homes: tuple[Path] | tuple[()],
+        seen: set[tuple[str, str, str]],
+        inventory: ImageInventory,
+    ) -> None:
+        """What each home's own tools installed: the crates cargo install recorded, and the Go binaries in ~/go/bin."""
+        from cordon_scanner.images.binmeta import BinaryMetadata
+
         for home in homes:
             crates = self._bytes(home / ".cargo" / ".crates2.json", MAX_METADATA_BYTES)
             if crates is not None:
@@ -224,37 +255,56 @@ class HostFilesystem:
                 for key in installs if isinstance(installs, dict) else ():
                     matched = _CRATE_KEY.match(str(key))
                     if matched and "crates.io-index" in str(key):
-                        add(
+                        HostFilesystem._add(
+                            seen,
+                            inventory,
                             langpkgs.LanguagePackage(
                                 "cargo",
                                 matched.group("name"),
                                 matched.group("version"),
                                 "~/.cargo/.crates2.json",
-                            )
+                            ),
                         )
             go_bin = home / "go" / "bin"
             for binary in sorted(go_bin.glob("*"))[:5000] if go_bin.is_dir() else ():
                 data = self._bytes(binary, MAX_BINARY_BYTES)
                 if data is not None:
                     for package in BinaryMetadata.go(f"~/go/bin/{binary.name}", data):
-                        add(package)
-        for cellar in (self.root / c for c in CELLARS):
-            if cellar.is_dir():
-                for receipt in sorted(cellar.glob("*/*/INSTALL_RECEIPT.json"))[:MAX_FILES]:
-                    add(
-                        langpkgs.LanguagePackage(
-                            "homebrew",
-                            receipt.parent.parent.name,
-                            receipt.parent.name,
-                            label(receipt),
-                        )
-                    )
-        for pattern in RUNTIME_FILES:
-            for path in sorted(self.root.glob(pattern))[:100]:
-                relative = path.relative_to(self.root).as_posix()
-                data = self._bytes(path, MAX_METADATA_BYTES)
-                if data is not None:
-                    add(langpkgs.LanguagePackages.runtime(relative, data))
+                        HostFilesystem._add(seen, inventory, package)
+
+    @staticmethod
+    def _add(
+        seen: set[tuple[str, str, str]],
+        inventory: ImageInventory,
+        package: langpkgs.LanguagePackage | None,
+    ) -> None:
+        """Record a package once, by ecosystem, name and version."""
+        if package is None:
+            return
+        key = (package.ecosystem, package.name, package.version)
+        if key not in seen:
+            seen.add(key)
+            inventory.language_packages.append(package)
+
+    def _label(self, homes: tuple[Path, ...], path: Path) -> str:
+        """Where a package was found, relative to the root, or to a home as `~/`."""
+        for base in (*homes, self.root):
+            if path.is_relative_to(base):
+                prefix = "~/" if base in homes and base != self.root else ""
+                return prefix + path.relative_to(base).as_posix()
+        return path.as_posix()
+
+    def _relabelled(
+        self, homes: tuple[Path, ...], package: langpkgs.LanguagePackage | None, path: Path
+    ) -> langpkgs.LanguagePackage | None:
+        """A package, located where it was found on this machine."""
+        return (
+            None
+            if package is None
+            else langpkgs.LanguagePackage(
+                package.ecosystem, package.name, package.version, self._label(homes, path)
+            )
+        )
 
     def inventory(self) -> ImageInventory:
         inventory = ImageLayers.databases(self._database_files(), ImageInventory())
