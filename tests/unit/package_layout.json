@@ -69,7 +69,7 @@
   "cli/commands/sbom": "cli/commands/sbom",
   "cli/completion": "cli/completion",
   "cli/dependency_payload": "cli/dependency_payload",
-  "cli/deps": "cli/deps",
+  "cli/commands/deps": "cli/commands/deps",
   "cli/help": "cli/help",
   "cli/incoming": "cli/incoming",
   "cli/main": "cli/main",

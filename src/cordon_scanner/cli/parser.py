@@ -80,8 +80,8 @@ tutorials for this version ({__version__}):
         IntelCommand.add_parser(sub)
         SbomCommand.add_parser(sub)
 
+        from cordon_scanner.cli.commands.deps import DepsCommand
         from cordon_scanner.cli.completion import CompletionCommand
-        from cordon_scanner.cli.deps import DepsCommand
         from cordon_scanner.cli.suppressions import SuppressCommand
 
         DepsCommand.add_parser(sub)

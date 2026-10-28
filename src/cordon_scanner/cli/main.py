@@ -78,8 +78,8 @@ class CommandLine:
 
     @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
+        from cordon_scanner.cli.commands.deps import DepsCommand
         from cordon_scanner.cli.completion import CompletionCommand
-        from cordon_scanner.cli.deps import DepsCommand
         from cordon_scanner.cli.incoming import IncomingCommand
         from cordon_scanner.cli.review import ReviewCommand
         from cordon_scanner.cli.suppressions import SuppressCommand
