@@ -204,7 +204,7 @@ per-lesson copy -- without turning one message into a file listing."""
 
 UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
 SWEPT_NOTE = "Read to its end in windows."
-"""How the note for an oversized file whose windows reached its end begins (`Engine._truncated_note`)."""
+"""How the note for an oversized file whose windows reached its end begins (`ArchiveMembers.truncated_note`)."""
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
