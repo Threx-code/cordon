@@ -18,6 +18,8 @@ from cordon_scanner.detect.code.capability.hits import CapabilityHit, LineRanges
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.rules.loader import CompiledRule
 
@@ -379,6 +381,20 @@ class CompositeEvaluator:
         if "rule" in term:
             return str(term["rule"]) in fired
 
+        return self._compound_term(counts, fired, in_ci, in_consumer, in_hook, path, present, term)
+
+    def _compound_term(
+        self,
+        counts: Counter[Capability] | None,
+        fired: frozenset[str],
+        in_ci: bool,
+        in_consumer: bool,
+        in_hook: bool,
+        path: str | None,
+        present: set[Capability],
+        term: dict[Any, Any],
+    ) -> bool:
+        """A compound or contextual term: any or all of its parts, a negation, a path glob, or an execution context."""
         if "any" in term:
             return any(
                 self._term(
@@ -432,6 +448,12 @@ class CompositeEvaluator:
                 fired=fired,
             )
 
+        return self._context_term(in_ci, in_consumer, in_hook, path, term)
+
+    def _context_term(
+        self, in_ci: bool, in_consumer: bool, in_hook: bool, path: str | None, term: dict[Any, Any]
+    ) -> bool:
+        """A term about where or when code runs: a path glob over the package, or an execution context (install hook, CI, consumer install, entry points)."""
         if "path_glob" in term and path is not None:
             from cordon_scanner.foundation.files.globs import PathGlob
 

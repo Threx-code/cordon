@@ -131,6 +131,37 @@ class AdvisoryDetector(BaseDetector):
                 ),
             )
 
+        self._database_notes(findings)
+
+        # Ecosystems no advisory source covers, matched through the upstream their own data names
+        # (`intel/upstream_advisories`), when the scan may use the network.
+        upstream: UpstreamResult | None = None
+        if not ctx.offline:
+            candidates = [
+                d
+                for d in unit.dependencies
+                if not d.local
+                and not d.bundled
+                and d.ecosystem in UPSTREAM_ECOSYSTEMS
+                and not self._database.covers(d.ecosystem)
+            ]
+            if candidates:
+                upstream = UpstreamAdvisories.check(candidates)
+        # Then NVD (`intel/nvd`), for what no repository route named -- offline too, since its data
+        # is bundled: tied to a CPE product by a curated mapping, or by the guarded rule from the
+        # homepage and download the route read on the way.
+        upstream = self._with_nvd(unit, upstream)
+        no_feed = self._no_feed_note(
+            unit, ctx.config.policy.accept_no_feed or frozenset(), upstream
+        )
+        if no_feed is not None:
+            findings.append(no_feed)
+
+        self._dependency_findings(ctx, findings, unit, upstream)
+        return findings
+
+    def _database_notes(self, findings: list[Finding]) -> None:
+        """What the scan says about the advisory data itself: files that failed their integrity check, synced files refused, data that has gone stale, and what it does not contain."""
         # Before anything else about coverage. A file refused for a digest
         # mismatch has already removed part of the database, and the count that
         # made it past the empty check above says nothing about which part.
@@ -173,30 +204,14 @@ class AdvisoryDetector(BaseDetector):
         if scope_note is not None:
             findings.append(scope_note)
 
-        # Ecosystems no advisory source covers, matched through the upstream their own data names
-        # (`intel/upstream_advisories`), when the scan may use the network.
-        upstream: UpstreamResult | None = None
-        if not ctx.offline:
-            candidates = [
-                d
-                for d in unit.dependencies
-                if not d.local
-                and not d.bundled
-                and d.ecosystem in UPSTREAM_ECOSYSTEMS
-                and not self._database.covers(d.ecosystem)
-            ]
-            if candidates:
-                upstream = UpstreamAdvisories.check(candidates)
-        # Then NVD (`intel/nvd`), for what no repository route named -- offline too, since its data
-        # is bundled: tied to a CPE product by a curated mapping, or by the guarded rule from the
-        # homepage and download the route read on the way.
-        upstream = self._with_nvd(unit, upstream)
-        no_feed = self._no_feed_note(
-            unit, ctx.config.policy.accept_no_feed or frozenset(), upstream
-        )
-        if no_feed is not None:
-            findings.append(no_feed)
-
+    def _dependency_findings(
+        self,
+        ctx: ScanContext,
+        findings: list[Finding],
+        unit: GraphUnit,
+        upstream: UpstreamResult | None,
+    ) -> None:
+        """Each dependency's findings: its advisories, a provisional hold the feed keeps on it, malicious repositories its code is fetched from, and a declared range that admits a recorded malicious release."""
         for dependency in unit.dependencies:
             if dependency.local:
                 # A workspace member or a linked path: its code is in the repository and is
@@ -243,7 +258,6 @@ class AdvisoryDetector(BaseDetector):
                 )
             if dependency.version is None and dependency.declared_spec:
                 findings.extend(self._admitted_malware(dependency, ctx))
-        return findings
 
     def _own_records(self, dependency: Dependency) -> tuple[Advisory, ...]:
         """The records about this dependency by its own name: by version, and for an image pinned by

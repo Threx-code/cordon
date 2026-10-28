@@ -49,7 +49,7 @@ from cordon_scanner.foundation.text.prose import Prose
 from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.content import FileContent
@@ -607,123 +607,136 @@ class SecretDetector(BaseDetector):
             return
         for match in ASSIGNMENT.finditer(raw):
             # Group 1 is the name; 2 the quoted value, 3 the unquoted one.
-            value = match.group(2) or match.group(3)
-            if not value or PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
-                continue
-            if SecretValues.reads_as_words(value):
-                # The value is words rather than a generated run. See `reads_as_words`.
-                continue
-            if SecretValues.decoded_is_not_a_secret(value):
-                # The base64 decodes to something already refused. See
-                # `decoded_is_not_a_secret`.
-                continue
-            if SecretValues.is_firebase_web_config(raw, match.start(1), match.end()):
-                # Firebase's published web configuration. The provider path has asked
-                # this since the eighth pass; `excalidraw` assigns the whole object to
-                # one variable, so the generic rule sees `apiKey` inside a JSON blob and
-                # had to ask it too.
-                continue
-            if SecretValues.is_published_credential(value) or SecretValues.decodes_to_prose(value):
-                # Both tests were on the provider path only, which is backwards: a
-                # vendor's published default is usually assigned to an ordinary name
-                # rather than carrying a provider prefix. Supabase's self-host
-                # `docker-compose.yml` assigns its `SECRET_KEY_BASE` that way, and every
-                # project that copies the file copies the value.
-                continue
+            yield from self._assignment_finding(ctx, match, raw, seen, unit)
 
-            decoded = value.decode("utf-8", errors="replace")
-            if Redactor.shannon_entropy(decoded) < MIN_ASSIGNMENT_ENTROPY:
-                continue
-            if SecretValues.looks_sequential(value):
-                # An alphabet, not a secret. See `looks_sequential`.
-                continue
-            if SecretAssembly.character_classes(decoded) < MIN_CHARACTER_CLASSES:
-                # Carries what the entropy floor used to carry alone. A
-                # dictionary word or a repeated filler uses one class; generated
-                # key material almost always mixes at least two.
-                continue
+    def _assignment_finding(
+        self, ctx: ScanContext, match: re.Match[bytes], raw: bytes, seen: set[str], unit: FileUnit
+    ) -> Iterator[Finding]:
+        """The finding for one assignment of a credential-shaped value, unless the value, its name or its place says it is not one."""
+        value = match.group(2) or match.group(3)
+        if not value or PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
+            return
+        if SecretValues.reads_as_words(value):
+            # The value is words rather than a generated run. See `reads_as_words`.
+            return
+        if SecretValues.decoded_is_not_a_secret(value):
+            # The base64 decodes to something already refused. See
+            # `decoded_is_not_a_secret`.
+            return
+        if SecretValues.is_firebase_web_config(raw, match.start(1), match.end()):
+            # Firebase's published web configuration. The provider path has asked
+            # this since the eighth pass; `excalidraw` assigns the whole object to
+            # one variable, so the generic rule sees `apiKey` inside a JSON blob and
+            # had to ask it too.
+            return
+        if SecretValues.is_published_credential(value) or SecretValues.decodes_to_prose(value):
+            # Both tests were on the provider path only, which is backwards: a
+            # vendor's published default is usually assigned to an ordinary name
+            # rather than carrying a provider prefix. Supabase's self-host
+            # `docker-compose.yml` assigns its `SECRET_KEY_BASE` that way, and every
+            # project that copies the file copies the value.
+            return
 
-            digest = Evidence.hash_bytes(value)
-            if digest in seen:
-                continue
-            seen.add(digest)
+        decoded = value.decode("utf-8", errors="replace")
+        if Redactor.shannon_entropy(decoded) < MIN_ASSIGNMENT_ENTROPY:
+            return
+        if SecretValues.looks_sequential(value):
+            # An alphabet, not a secret. See `looks_sequential`.
+            return
+        if SecretAssembly.character_classes(decoded) < MIN_CHARACTER_CLASSES:
+            # Carries what the entropy floor used to carry alone. A
+            # dictionary word or a repeated filler uses one class; generated
+            # key material almost always mixes at least two.
+            return
 
-            if (
-                PEM_ARMOUR_ONLY.match(value)
-                or SecretValues.is_public_by_design(value)
-                or SecretValues.is_password_hash(value)
-            ):
-                continue
+        digest = Evidence.hash_bytes(value)
+        if digest in seen:
+            return
+        seen.add(digest)
 
-            name = match.group(1).decode("utf-8", errors="replace")
-            if (
-                SecretNames.names_configuration(name)
-                or SecretNames.names_placeholder(name)
-                or SecretNames.names_public_by_contract(name)
-                or SecretNames.names_identifier(name)
-            ):
-                continue
-            if SecretValues._decoded_text(value) and SecretNames.value_restates_the_name(
-                name, SecretValues._decoded_text(value)
-            ):
-                # The base64 decodes to the name plus almost nothing. `harvester` writes
-                # `db-password: ZGJwYXNzd29yZDEx`, which is `dbpassword11`, and the
-                # question `value_restates_the_name` asks could not see through the
-                # encoding.
-                continue
-            if SecretNames.value_restates_the_name(name, decoded):
-                # The value is the name plus a word or a number. See
-                # `value_restates_the_name`, and `value_is_the_name` for why the plain
-                # containment test this narrows is refused.
-                continue
-            if SecretNames.value_is_the_name(name, decoded):
-                # An enum member, a feature flag, a storage key: the value is the name
-                # written the way the wire spells it. See `value_is_the_name`.
-                continue
-            if SecretDetector._is_example_line(unit.content, match.start(1)):
-                continue
-            if SecretValues.is_inside_example_literal(raw, match.start(1), unit.language):
-                # A Go raw string the author named as example or help text. See
-                # `is_inside_example_literal`.
-                continue
-            if self._is_commented(unit, match.start(1)):
-                continue
-            # The name's own offset, not the match's. The pattern opens with
-            # `(?:^|[^\w.])`, which on every line but the first consumes the
-            # newline that ended the line before -- so `match.start()` sits on
-            # the previous line and every finding from this rule pointed one
-            # line above the credential.
-            spec = SecretPattern(
-                rule_id="SECRET.GENERIC.ASSIGNMENT.001",
-                name=f"credential assigned to {name!r}",
-                pattern=ASSIGNMENT,
-                # A UUID is graded down rather than dismissed. See `CANONICAL_UUID`:
-                # it really is the secret in some systems, and it is also the format an
-                # example value is generated in.
-                severity=(
-                    Severity.MEDIUM
-                    if CANONICAL_UUID.match(value)
-                    or SecretValues.is_url_parameter(raw, match.start(1))
-                    # rclone, alist and every desktop or CLI OAuth client ship a client secret
-                    # beside its client ID, because the app cannot keep one: RFC 8252 treats
-                    # such a client as public. Worth a look, and not a build failure.
-                    or (
-                        SecretNames.names_client_secret(name)
-                        and CLIENT_ID_ASSIGNED.search(raw) is not None
-                    )
-                    # A query parameter of a URL is a signed link. Graded for the same
-                    # reason a UUID is -- it is usually not a credential and sometimes
-                    # is. See `is_url_parameter`.
-                    else Severity.HIGH
-                ),
-                # Medium, not high: a high-entropy string assigned to something
-                # named `token` is usually a credential and is sometimes a hash,
-                # an identifier or a fixture. The finding is worth a look and is
-                # not worth failing a build on its own.
-                confidence=Confidence.MEDIUM,
-                remediation=ROTATE,
-            )
-            yield self._finding(spec, unit, ctx, match.start(1), match.end(), value)
+        if (
+            PEM_ARMOUR_ONLY.match(value)
+            or SecretValues.is_public_by_design(value)
+            or SecretValues.is_password_hash(value)
+        ):
+            return
+
+        name = match.group(1).decode("utf-8", errors="replace")
+        if (
+            SecretNames.names_configuration(name)
+            or SecretNames.names_placeholder(name)
+            or SecretNames.names_public_by_contract(name)
+            or SecretNames.names_identifier(name)
+        ):
+            return
+        if SecretValues._decoded_text(value) and SecretNames.value_restates_the_name(
+            name, SecretValues._decoded_text(value)
+        ):
+            # The base64 decodes to the name plus almost nothing. `harvester` writes
+            # `db-password: ZGJwYXNzd29yZDEx`, which is `dbpassword11`, and the
+            # question `value_restates_the_name` asks could not see through the
+            # encoding.
+            return
+        if SecretNames.value_restates_the_name(name, decoded):
+            # The value is the name plus a word or a number. See
+            # `value_restates_the_name`, and `value_is_the_name` for why the plain
+            # containment test this narrows is refused.
+            return
+        if SecretNames.value_is_the_name(name, decoded):
+            # An enum member, a feature flag, a storage key: the value is the name
+            # written the way the wire spells it. See `value_is_the_name`.
+            return
+        if SecretDetector._is_example_line(unit.content, match.start(1)):
+            return
+        if SecretValues.is_inside_example_literal(raw, match.start(1), unit.language):
+            # A Go raw string the author named as example or help text. See
+            # `is_inside_example_literal`.
+            return
+        if self._is_commented(unit, match.start(1)):
+            return
+        spec = SecretDetector._assignment_pattern(match, name, raw, value)
+        yield self._finding(spec, unit, ctx, match.start(1), match.end(), value)
+
+    @staticmethod
+    def _assignment_pattern(
+        match: re.Match[bytes], name: str, raw: bytes, value: bytes
+    ) -> SecretPattern:
+        """The pattern an assigned credential is reported under: its provider's when the value has a provider's shape, else a generic assignment's, graded by the name it is assigned to."""
+        # The name's own offset, not the match's. The pattern opens with
+        # `(?:^|[^\w.])`, which on every line but the first consumes the
+        # newline that ended the line before -- so `match.start()` sits on
+        # the previous line and every finding from this rule pointed one
+        # line above the credential.
+        return SecretPattern(
+            rule_id="SECRET.GENERIC.ASSIGNMENT.001",
+            name=f"credential assigned to {name!r}",
+            pattern=ASSIGNMENT,
+            # A UUID is graded down rather than dismissed. See `CANONICAL_UUID`:
+            # it really is the secret in some systems, and it is also the format an
+            # example value is generated in.
+            severity=(
+                Severity.MEDIUM
+                if CANONICAL_UUID.match(value)
+                or SecretValues.is_url_parameter(raw, match.start(1))
+                # rclone, alist and every desktop or CLI OAuth client ship a client secret
+                # beside its client ID, because the app cannot keep one: RFC 8252 treats
+                # such a client as public. Worth a look, and not a build failure.
+                or (
+                    SecretNames.names_client_secret(name)
+                    and CLIENT_ID_ASSIGNED.search(raw) is not None
+                )
+                # A query parameter of a URL is a signed link. Graded for the same
+                # reason a UUID is -- it is usually not a credential and sometimes
+                # is. See `is_url_parameter`.
+                else Severity.HIGH
+            ),
+            # Medium, not high: a high-entropy string assigned to something
+            # named `token` is usually a credential and is sometimes a hash,
+            # an identifier or a fixture. The finding is worth a look and is
+            # not worth failing a build on its own.
+            confidence=Confidence.MEDIUM,
+            remediation=ROTATE,
+        )
 
     def _finding(
         self,
