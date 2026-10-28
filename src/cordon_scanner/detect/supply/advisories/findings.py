@@ -69,6 +69,11 @@ Deliberately exact: a prerelease of `security` on a three-part version, which
 is the form npm publishes and not something a project picks. `1.2.3-security.1`
 or `2.0.0-security-fix` is somebody's own release and is matched as normal."""
 
+PROVISIONAL_RULE = "SUSPECT.DEPENDENCY.PROVISIONAL.001"
+"""This exact version is HELD FOR REVIEW by Cordon's feed: one signal flagged it minutes ago, and a
+second signal or a person has not yet confirmed or cleared it (`FeedStore.read_provisional`).
+Suspicious, not malicious -- nothing has confirmed it -- and HIGH, so the default gate pauses it."""
+
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
 
 EXPLOITED_RULE = "VULNERABLE.DEPENDENCY.EXPLOITED.001"
@@ -391,6 +396,7 @@ __all__ = [
     "EXPLOITED_RULE",
     "MALICIOUS_RULE",
     "PLACEHOLDER_RULE",
+    "PROVISIONAL_RULE",
     "REMOVED_RULE",
     "SECURITY_PLACEHOLDER",
     "TEST_FIXTURE_SEGMENTS",
