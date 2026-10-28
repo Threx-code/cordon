@@ -42,10 +42,10 @@ the wording of SUSPECT.DEPENDENCY.TYPOSQUAT.001, both of which changed with this
 
 from __future__ import annotations
 
-import functools
 from collections.abc import Iterator
 from typing import Final
 
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.registries.known.actions import NAMES as _ACTIONS
 from cordon_scanner.intel.registries.known.cargo import NAMES as _CARGO
@@ -153,7 +153,7 @@ class RealPackages:
     """Names known to be established packages in an ecosystem."""
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def _shipped(ecosystem: str) -> frozenset[str]:
         """The generated allowlist for one ecosystem, or an empty set.
 

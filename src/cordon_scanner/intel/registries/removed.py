@@ -12,14 +12,13 @@ before, which is the safe direction for a list that can only lower a block to a 
 
 from __future__ import annotations
 
-import functools
-
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.intel.registries.real import DATA_DIR
 
 
 class RemovedNames:
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def removed(ecosystem: str) -> frozenset[str]:
         try:
             text = (DATA_DIR / f"{ecosystem}.removed.txt").read_text(encoding="utf-8")
@@ -30,7 +29,7 @@ class RemovedNames:
         )
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def checked(ecosystem: str) -> str:
         """The date the list was refreshed, as its header records it, or empty."""
         try:

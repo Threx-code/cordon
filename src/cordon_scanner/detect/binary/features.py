@@ -31,7 +31,6 @@ executable of any size held in a window source costs one pass and bounded memory
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import json
 import math
@@ -39,6 +38,7 @@ import re
 from collections import Counter
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
@@ -78,11 +78,11 @@ class BinaryFeatures:
     #: co-occurrence the anti-analysis rules exist to report.
     DATA: ClassVar[Path] = PackagePaths.data("detect")
 
-    @classmethod
-    @functools.cache
-    def groups(cls) -> dict[str, tuple[bytes, ...]]:
+    @staticmethod
+    @OneOff.cache
+    def groups() -> dict[str, tuple[bytes, ...]]:
         out: dict[str, tuple[bytes, ...]] = {}
-        for path in sorted(cls.DATA.glob("exe-strings-*.json")):
+        for path in sorted(BinaryFeatures.DATA.glob("exe-strings-*.json")):
             names = json.loads(path.read_text(encoding="utf-8"))
             out[path.stem.removeprefix("exe-strings-")] = tuple(str(n).encode() for n in names)
         return out

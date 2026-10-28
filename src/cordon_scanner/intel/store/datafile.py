@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import contextlib
 import json
-from functools import cache
 from typing import Any
 
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.intel.advisories.advisories import DATA_DIR, AdvisoryFiles
 
 
@@ -28,7 +28,7 @@ class IntelDataFile:
         return document if isinstance(document, dict) else None
 
     @staticmethod
-    @cache
+    @OneOff.cache
     def newest(name: str) -> dict[str, Any]:
         """The newest trustworthy copy of `name`, or an empty document when there is none."""
         candidates: list[dict[str, Any]] = []

@@ -5,7 +5,6 @@ package's data with its digests checked, and the severity and confidence names i
 from __future__ import annotations
 
 import dataclasses
-import functools
 import gzip
 import hashlib
 import json
@@ -16,6 +15,7 @@ from cordon_scanner.detect.infra.iac import IacPolicy
 from cordon_scanner.detect.infra.iac_policies import CURATED, CuratedPolicies
 from cordon_scanner.detect.infra.policy_terms import HIGH, LOW, MEDIUM
 from cordon_scanner.foundation.models import Category, Confidence, Severity
+from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
 
 #: Where the generated half lives, beside the advisory data and for the same
@@ -66,7 +66,7 @@ class GeneratedPolicies:
             return False
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def generated_rows() -> dict[str, tuple[dict[str, Any], ...]]:
         """The schema-generated policies, grouped by the resource they are about.
 
@@ -103,7 +103,7 @@ class GeneratedPolicies:
         return {resource: tuple(items) for resource, items in grouped.items()}
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def generated_meta() -> dict[str, Any]:
         """What the generated set was built from, for `rules list` and the report."""
         try:
@@ -142,7 +142,7 @@ class GeneratedPolicies:
         return tuple(seen.values())
 
     @staticmethod
-    @functools.cache
+    @OneOff.cache
     def all_policies() -> tuple[IacPolicy, ...]:
         """Curated plus generated, which is what `rules list` and the matrix show.
 
