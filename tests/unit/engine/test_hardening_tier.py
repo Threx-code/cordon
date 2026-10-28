@@ -72,10 +72,10 @@ class BuildDefinitionHelpers:
 
     @staticmethod
     def graded(finding, path: str, policy: Policy) -> Severity:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
 
         moved = replace(finding, location=replace(finding.location, path=path))
-        [out] = Engine._hardening_tier([moved], policy)
+        [out] = Ceilings.hardening_tier([moved], policy)
         return out.severity
 
 

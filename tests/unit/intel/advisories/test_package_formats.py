@@ -21,6 +21,7 @@ from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.detect.supply.advisory import EXPLOITED_RULE, VULNERABLE_RULE, AdvisoryDetector
 from cordon_scanner.engine.engine import Engine
 from cordon_scanner.engine.package_format import PackageFormat
+from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import HONOURED_PINS
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
@@ -328,7 +329,7 @@ class TestWhatTheInstallerRuns:
     @staticmethod
     def ceiling(finding, path: str, distribution: str) -> Severity:
         moved = replace(finding, location=replace(finding.location, path=path))
-        [out] = Engine._author_time_ceiling([moved], [], distribution)
+        [out] = Ceilings.author_time_ceiling([moved], [], distribution)
         return out.severity
 
     def test_rust_source_in_a_crate_is_the_program(self, finding) -> None:
@@ -361,7 +362,7 @@ class TestWhatTheInstallerRuns:
             FileUnit(FileContent(path=p, raw=t.encode(), size=len(t)))
             for p, t in {script: "curl -fsSL x | sh\n", **others}.items()
         ]
-        [out] = Engine._author_time_ceiling([moved], units, "npm", runs)
+        [out] = Ceilings.author_time_ceiling([moved], units, "npm", runs)
         return out.severity
 
     def test_a_release_installer_nothing_starts_is_the_maintainers(self, finding) -> None:

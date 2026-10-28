@@ -306,7 +306,7 @@ SHIPPED_DOCUMENTS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", 
 package opens none of them; a document's active content runs when a person opens it."""
 
 STANDALONE_SCRIPTS = (".sh", ".bash", ".zsh", ".ksh", ".fish", ".ps1", ".psm1", ".bat", ".cmd")
-"""Scripts that run only when something starts them (`Engine._author_time_ceiling`)."""
+"""Scripts that run only when something starts them (`Ceilings.author_time_ceiling`)."""
 
 CONDA_LINK_SCRIPT = re.compile(r"-(?:pre|post)-(?:link|unlink)\.(?:sh|bat)$")
 """conda runs a package's `bin/.<name>-post-link.sh` (and its kin) when it installs it."""

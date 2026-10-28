@@ -787,7 +787,7 @@ RULES: tuple[ConfigRule, ...] = (
         ),
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
-        # Malicious, so the hardening tier never lowers it (`Engine._hardening_tier`). The
+        # Malicious, so the hardening tier never lowers it (`Ceilings.hardening_tier`). The
         # SUSPECT rule above stays at LOW for the common publishing shape; this one needs
         # the untrusted destination IN the same command, which publishing does not have.
         # GhostAction (2026) planted `curl` to a raw IP with named secrets on one line in
