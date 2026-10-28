@@ -4,7 +4,7 @@ grammar reads, and the TypeScript types it passes over without building nodes.""
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.javascript.front.lexer import Lexer, Token
 from cordon_scanner.analysis.javascript.front.syntax import Node
@@ -377,3 +377,17 @@ class TokenStream:
             elif open_ == "<" and v == ";" and braces <= 0 and limit is not None:
                 raise ParseError("not type arguments")
             self.advance()
+
+    if TYPE_CHECKING:
+        # The grammar is one mutually recursive component: statements, declarations, expressions,
+        # JSX and TypeScript all read each other. These declare, once, what each area calls in the
+        # others; the one real definition of each is in its area's class, and mypy checks it
+        # against this signature. Nothing here exists at run time.
+
+        def assignment(self, *, no_in: bool = False) -> Node: ...
+
+        def expression(self, *, no_in: bool = False) -> Node: ...
+
+        def left_hand_side(self) -> Node: ...
+
+        def statement(self) -> Node: ...
