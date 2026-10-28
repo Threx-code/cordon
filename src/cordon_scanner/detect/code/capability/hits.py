@@ -34,7 +34,7 @@ class CapabilityHit:
     """Whether this is a spawn whose entire argv was written out in the source.
 
     Set only by the Python AST tier, which is the only tier that can answer it.
-    See `_evaluate_over`, which is the one place it is read."""
+    See `CompositeEvaluator._evaluate_over`, which is the one place it is read."""
 
     variants: int = 1
     """How many distinct operations of this capability the rule matched.
@@ -49,7 +49,7 @@ class CapabilityHit:
 
     A parsed hit is a SECOND VIEW of a call the byte tier usually saw too --
     `base64.b64decode(blob)` is one decoding step whether one tier reports it or
-    three do. So these are excluded from the depth counts in `_evaluate_over`,
+    three do. So these are excluded from the depth counts in `CompositeEvaluator._evaluate_over`,
     or every parsed Python file would appear to decode twice and satisfy rules
     that ask for a chain of encodings.
 

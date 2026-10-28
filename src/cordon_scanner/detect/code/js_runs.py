@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
@@ -225,13 +226,12 @@ class JsRuns:
         uses, and they call their own services with the user's name and the repository's by
         design (review 98: an extension's activation code, a CI helper, a commit tool).
         """
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         return (
             ctx is not None
             and ctx.distribution == "npm"
             and ctx.in_install_hook(content.path)
-            and not CapabilityDetector._agent_run(content, ctx)
+            and not LoadPath.agent_run(content, ctx)
         )
 
     @classmethod

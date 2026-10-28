@@ -194,7 +194,7 @@ class ScanEnrichment:
         from dataclasses import replace as _replace
 
         from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.supply.manifest_confusion import ManifestConfusion
+        from cordon_scanner.detect.supply.manifests.confusion import ManifestConfusion
         from cordon_scanner.intel.malware.feed import FeedClient
 
         offline = not args.online or args.offline or FeedClient.offline_requested()
@@ -218,7 +218,7 @@ class ScanEnrichment:
         if not getattr(args, "history", False) and not getattr(args, "verify_secrets", False):
             return result
         from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.secrets.secret_history import (
+        from cordon_scanner.detect.secrets.history import (
             HistorySecretScan,
             SecretLiveness,
             SecretValues,

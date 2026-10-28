@@ -270,7 +270,7 @@ class ScanCommand:
             # organisation that supplies its own is stating what it considers
             # authoritative, and silently merging a shipped list into it would
             # produce findings it did not choose to act on.
-            from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+            from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
             from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
             database = AdvisoryDatabase.from_file(args.advisories)

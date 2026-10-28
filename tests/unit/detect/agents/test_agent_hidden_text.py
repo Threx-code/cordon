@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.agents.agents import _PRIORITY_CLAIM, InstructionText
+from cordon_scanner.detect.agents.chain import _PRIORITY_CLAIM
+from cordon_scanner.detect.agents.instructions import InstructionText
 
 
 class TestHiddenDirective:

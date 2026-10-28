@@ -8,7 +8,7 @@ is only a string to read; nothing decoded is ever run.
 The checks, each a class of attack a tool call carries and none a guess at intent:
 
 * a shell command that is the attack -- an injected separator before a command, a destructive
-  command, a reverse shell, a fetch-and-run, credentials sent out (`agent_config.CommandClassifier`);
+  command, a reverse shell, a fetch-and-run, credentials sent out (`configuration.CommandClassifier`);
 * a read or write of a place that holds secrets or runs code at boot: `/etc/shadow`, `~/.ssh`,
   `~/.aws`, shell history, `/etc/cron.d`, a traversal out of the working directory;
 * a request to a cloud metadata service, a non-HTTP scheme or a drop point (paste, webhook,
@@ -447,7 +447,7 @@ class ToolCallGuard:
     @classmethod
     def _value(cls, path: str, key: str, value: str) -> Iterator[GuardFinding]:
         from cordon_scanner.analysis.shared.destinations import Destinations
-        from cordon_scanner.detect.agents.agent_config import CommandClassifier
+        from cordon_scanner.detect.agents.configuration import CommandClassifier
         from cordon_scanner.intel.malware.atr import AtrEngine
 
         for view, text in ValueViews.of(value):

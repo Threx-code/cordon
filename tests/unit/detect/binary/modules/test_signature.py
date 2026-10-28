@@ -13,8 +13,9 @@ import json
 from typing import Any
 
 from cordon_scanner.detect.binary.modules import signature as rs
-from cordon_scanner.detect.binary.modules.signature import X500, BadDer, Clock, Tlv
+from cordon_scanner.detect.binary.modules.der import BadDer, Clock, Tlv
 from cordon_scanner.detect.binary.modules.values import Call, Data, Record, Scalar, Seq
+from cordon_scanner.detect.binary.modules.x509 import X500
 from support import ROOT
 
 DIR = ROOT / "tests" / "unit" / "data" / "rule_reference" / "modules"

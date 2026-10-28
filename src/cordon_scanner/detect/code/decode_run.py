@@ -9,7 +9,7 @@ A `decode -> writeFile(p) -> exec(p)` keeps the pairing: the written path then c
 label (js_flow), or the literal path names a file the unit writes. Unresolved, dynamic, minified or
 bundled code keeps today's proximity pairing (fail-closed).
 
-`excused_lines` is taken by LINE, as `_evaluate_over`'s fixed-argv discount is, so both the pattern
+`excused_lines` is taken by LINE, as `CompositeEvaluator._evaluate_over`'s fixed-argv discount is, so both the pattern
 and AST hits for one call are dropped: `fixed` sits only on the AST hit, and the pattern hit on the
 same line would otherwise satisfy the term anyway.
 """

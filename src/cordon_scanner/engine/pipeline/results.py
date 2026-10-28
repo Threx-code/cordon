@@ -156,7 +156,7 @@ class ResultFolding:
             # `curl | bash` rather than the banner above it -- and keying this
             # on the evidence therefore switched the collapse off: ProxmoxVE's
             # persistence findings went from one to twenty-seven in a pass. See
-            # `CapabilityDetector._with_idiom_key`, which is where the shared
+            # `FindingAnchor.with_idiom_key`, which is where the shared
             # half is hashed, and which applies this same length test to it.
             idiom = dict(evidence.metadata).get("idiom_hash")
             if idiom is None and (not evidence.match_hash or len(snippet) < MIN_IDIOM_SNIPPET):

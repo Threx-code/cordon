@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, PROVIDER_PATTERNS
+from cordon_scanner.detect.secrets.patterns import PROVIDER_PATTERNS
+from cordon_scanner.detect.secrets.values import PLACEHOLDER
 from support import Support
 
 #: rule id -> (positive samples, counter-samples).
@@ -374,7 +375,7 @@ class TestCredentialsTheVendorPublishes:
     """
 
     def test_the_emulator_key_is_not_reported(self, tmp_path) -> None:
-        from cordon_scanner.detect.secrets.secrets import PUBLISHED_CREDENTIALS
+        from cordon_scanner.detect.secrets.values import PUBLISHED_CREDENTIALS
 
         key = next(k for k in PUBLISHED_CREDENTIALS if len(k) == 88).decode()
         (tmp_path / "docker-compose.yml").write_text(
@@ -413,7 +414,7 @@ class TestCredentialsTheVendorPublishes:
     def test_the_list_holds_only_exact_values(self) -> None:
         """No shapes, no regexes, nothing that could widen. Every entry is bytes that
         a vendor documents as public."""
-        from cordon_scanner.detect.secrets.secrets import PUBLISHED_CREDENTIALS
+        from cordon_scanner.detect.secrets.values import PUBLISHED_CREDENTIALS
 
         assert PUBLISHED_CREDENTIALS
         for entry in PUBLISHED_CREDENTIALS:

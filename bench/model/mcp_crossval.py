@@ -32,7 +32,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from cordon_scanner.detect.agents.mcp_model import FEATURES, McpDescriptionModel
+from cordon_scanner.detect.agents.mcp_servers.description_model import FEATURES, McpDescriptionModel
 
 
 class McpCrossVal:
@@ -116,7 +116,7 @@ class McpCrossVal:
                 "thresholds": {k: list(v) for k, v in thresholds.items()},
                 "calibration": {"fold": name},
                 "trained_on": sorted({r["source"] for r in train}),
-                "features": "word 1-3 grams + channel, crc32 mod 2^18, L2; agent_semantics slots (detect/mcp_model.py)",
+                "features": "word 1-3 grams + channel, crc32 mod 2^18, L2; semantics slots (detect/agents/mcp_servers/description_model.py)",
             }
             with gzip.open(
                 args.out / f"{name.replace(':', '-')}.json.gz", "wt", encoding="utf-8"

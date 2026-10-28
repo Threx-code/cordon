@@ -18,7 +18,7 @@ Run it after adding an ecosystem, a manifest shape or an advisory feed:
 from __future__ import annotations
 
 from cordon_scanner.detect.supply.provenance import SUPPORTED_ECOSYSTEMS as PROVENANCE_ECOSYSTEMS
-from cordon_scanner.detect.supply.registry import REGISTRY_ECOSYSTEMS
+from cordon_scanner.detect.supply.registries.detector import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 from cordon_scanner.intel.advisories.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS

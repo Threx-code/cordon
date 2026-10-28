@@ -13,14 +13,12 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pyast import PythonSource
 from cordon_scanner.analysis.shared import embedded
-from cordon_scanner.analysis.shared.documentation import DocumentationSpans
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import (
     FileUnit,
     RuleSelector,
     ScanContext,
 )
-from cordon_scanner.detect.code.addresses import PublicAddress
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
@@ -149,6 +147,73 @@ class Labelling:
         scan. It also means attacker-controlled bytes are only decoded once
         something has already indicated it is worth doing.
         """
+        blocks, delays, folded, hits, prose, raw, tests = Labelling._excused_spans(
+            candidates, content, language
+        )
+
+        for compiled in candidates:
+            capability = compiled.rule.capability
+            if capability is None or compiled.match.regex is None:
+                continue
+
+            # The prefilter is what makes this affordable. A cheap substring scan
+            # rejects the large majority of files before any regex runs, turning
+            # cost proportional to files times rules into something a commit-time
+            # hook can pay.
+            regex = compiled.match.regex_for(raw, folded)
+            if regex is None:
+                continue
+
+            first = None
+            distinct: set[bytes] = set()
+
+            first = Labelling._examine_matches(
+                blocks,
+                capability,
+                compiled,
+                content,
+                delays,
+                distinct,
+                first,
+                language,
+                prose,
+                raw,
+                regex,
+                tests,
+            )
+
+            if first is None:
+                continue
+
+            # One hit per rule per file. Reporting every occurrence would
+            # inflate the evidence without changing any conclusion; the count
+            # of distinct operations rides along on the hit instead.
+            hits.append(
+                CapabilityHit(
+                    capability=capability,
+                    rule_id=compiled.id,
+                    byte_start=first.start(),
+                    byte_end=first.end(),
+                    line=content.line_of(first.start()),
+                    variants=len(distinct),
+                )
+            )
+
+        return hits
+
+    @staticmethod
+    def _excused_spans(
+        candidates: tuple[CompiledRule, ...], content: FileContent, language: str | None
+    ) -> tuple[
+        tuple[tuple[int, int], ...],
+        frozenset[int],
+        bytes | None,
+        list[CapabilityHit],
+        tuple[tuple[int, int], ...],
+        bytes,
+        tuple[tuple[int, int], ...],
+    ]:
+        """The regions of the file whose matches do not count: block comments, Rust test modules, Python docstrings, deferred function bodies, and the fold of split string fragments."""
         raw = content.raw
         hits: list[CapabilityHit] = []
         # Once per file, not once per match: the per-line comment test cannot see a
@@ -192,113 +257,96 @@ class Labelling:
             )
             else None
         )
+        return blocks, delays, folded, hits, prose, raw, tests
 
-        for compiled in candidates:
-            capability = compiled.rule.capability
-            if capability is None or compiled.match.regex is None:
+    @staticmethod
+    def _examine_matches(
+        blocks: tuple[tuple[int, int], ...],
+        capability: Capability,
+        compiled: CompiledRule,
+        content: FileContent,
+        delays: frozenset[int],
+        distinct: set[bytes],
+        first: re.Match[bytes] | None,
+        language: str | None,
+        prose: tuple[tuple[int, int], ...],
+        raw: bytes,
+        regex: re.Pattern[bytes],
+        tests: tuple[tuple[int, int], ...],
+    ) -> re.Match[bytes] | None:
+        """Walk one rule's matches in the file, dropping each the text's position excuses, counting the distinct operations it shows, and keeping the first that stands."""
+        for index, match in enumerate(regex.finditer(raw)):
+            if TextPosition.is_printed_text(content, match.start(), match.end()):
                 continue
-
-            # The prefilter is what makes this affordable. A cheap substring scan
-            # rejects the large majority of files before any regex runs, turning
-            # cost proportional to files times rules into something a commit-time
-            # hook can pay.
-            regex = compiled.match.regex_for(raw, folded)
-            if regex is None:
+            if (
+                capability is Capability.FETCH_EXEC
+                and compiled.rule.id not in Labelling.QUOTED_BY_DESIGN
+                and TextPosition.is_quoted_pipeline(content, match.start(), match.end())
+            ):
+                # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
                 continue
-
-            first = None
-            distinct: set[bytes] = set()
-
-            for index, match in enumerate(regex.finditer(raw)):
-                if TextPosition.is_printed_text(content, match.start(), match.end()):
-                    continue
-                if (
-                    capability is Capability.FETCH_EXEC
-                    and compiled.rule.id not in Labelling.QUOTED_BY_DESIGN
-                    and TextPosition.is_quoted_pipeline(content, match.start(), match.end())
-                ):
-                    # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
-                    continue
-                if capability is Capability.SPAWN and TextPosition.is_literal_backtick(
-                    content, match.start()
-                ):
-                    # A backtick inside single quotes is a character, not a substitution.
-                    # See `_is_literal_backtick`.
-                    continue
-                if TextPosition.is_declaration(content, match.start(), match.end()):
-                    # `export function fetch(` defines a name; it does not call one. See
-                    # `DECLARATION` and `SIGNATURE_ARGUMENT`.
-                    continue
-                if TextPosition.is_example_line(content, match.start()):
-                    # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
-                    continue
-                if SourceComments.inside_spans(tests, match.start()):
-                    # A Rust test module. See `tests` above.
-                    continue
-                if SourceComments.inside_spans(prose, match.start()):
-                    # A Python docstring. See `prose` above.
-                    continue
-                if (
-                    capability is Capability.ANTI_ANALYSIS
-                    and delays
-                    and content.line_of(match.start()) in delays
-                ):
-                    # A sleep inside a loop. See `delays` above.
-                    continue
-                if compiled.rule.id == "CAP.JS.CREDENTIAL.001" and (
-                    Labelling.narrowed_environment(content, match.end())
-                ):
-                    # The environment enumerated, then cut down to one prefix or handed to a
-                    # child process. See `_narrowed_environment`.
-                    continue
-                if compiled.rule.id == "CAP.ANTI.ENVIRONMENT.001" and (
-                    Labelling._courtesy_gate(content, match.start())
-                ):
-                    # A CI read beside a user's opt-out or a terminal test. See
-                    # `_courtesy_gate`.
-                    continue
-                if SourceComments.inside_spans(blocks, match.start()) or TextPosition.is_comment(
-                    content, match.start(), language
-                ):
-                    # A comment does not run. `misc/error_handler.func` in
-                    # `community-scripts/ProxmoxVE` explains in a comment that
-                    # `systemd-detect-virt` reports lxc inside a container, and that
-                    # sentence was reported as a check for being observed.
-                    continue
-                if capability is Capability.EGRESS and (
-                    TextPosition.is_local_target(content, match.start())
-                    or TextPosition.is_tool_probe(content, match.start())
-                ):
-                    continue
-                if first is None:
-                    first = match
-                # Distinct *operations*, not distinct occurrences. Ten calls to
-                # the same decoder are one decoding step repeated; base64 and
-                # then decompression are two, and that difference is what
-                # separates an ordinary decode from a chain built to survive
-                # each layer of inspection.
-                distinct.add(b" ".join(match.group(0).split()))
-                if len(distinct) >= MAX_VARIANTS or index >= MAX_MATCHES_EXAMINED:
-                    break
-
+            if capability is Capability.SPAWN and TextPosition.is_literal_backtick(
+                content, match.start()
+            ):
+                # A backtick inside single quotes is a character, not a substitution.
+                # See `_is_literal_backtick`.
+                continue
+            if TextPosition.is_declaration(content, match.start(), match.end()):
+                # `export function fetch(` defines a name; it does not call one. See
+                # `DECLARATION` and `SIGNATURE_ARGUMENT`.
+                continue
+            if TextPosition.is_example_line(content, match.start()):
+                # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
+                continue
+            if SourceComments.inside_spans(tests, match.start()):
+                # A Rust test module. See `tests` above.
+                continue
+            if SourceComments.inside_spans(prose, match.start()):
+                # A Python docstring. See `prose` above.
+                continue
+            if (
+                capability is Capability.ANTI_ANALYSIS
+                and delays
+                and content.line_of(match.start()) in delays
+            ):
+                # A sleep inside a loop. See `delays` above.
+                continue
+            if compiled.rule.id == "CAP.JS.CREDENTIAL.001" and (
+                Labelling.narrowed_environment(content, match.end())
+            ):
+                # The environment enumerated, then cut down to one prefix or handed to a
+                # child process. See `_narrowed_environment`.
+                continue
+            if compiled.rule.id == "CAP.ANTI.ENVIRONMENT.001" and (
+                Labelling._courtesy_gate(content, match.start())
+            ):
+                # A CI read beside a user's opt-out or a terminal test. See
+                # `_courtesy_gate`.
+                continue
+            if SourceComments.inside_spans(blocks, match.start()) or TextPosition.is_comment(
+                content, match.start(), language
+            ):
+                # A comment does not run. `misc/error_handler.func` in
+                # `community-scripts/ProxmoxVE` explains in a comment that
+                # `systemd-detect-virt` reports lxc inside a container, and that
+                # sentence was reported as a check for being observed.
+                continue
+            if capability is Capability.EGRESS and (
+                TextPosition.is_local_target(content, match.start())
+                or TextPosition.is_tool_probe(content, match.start())
+            ):
+                continue
             if first is None:
-                continue
-
-            # One hit per rule per file. Reporting every occurrence would
-            # inflate the evidence without changing any conclusion; the count
-            # of distinct operations rides along on the hit instead.
-            hits.append(
-                CapabilityHit(
-                    capability=capability,
-                    rule_id=compiled.id,
-                    byte_start=first.start(),
-                    byte_end=first.end(),
-                    line=content.line_of(first.start()),
-                    variants=len(distinct),
-                )
-            )
-
-        return hits
+                first = match
+            # Distinct *operations*, not distinct occurrences. Ten calls to
+            # the same decoder are one decoding step repeated; base64 and
+            # then decompression are two, and that difference is what
+            # separates an ordinary decode from a chain built to survive
+            # each layer of inspection.
+            distinct.add(b" ".join(match.group(0).split()))
+            if len(distinct) >= MAX_VARIANTS or index >= MAX_MATCHES_EXAMINED:
+                break
+        return first
 
     COURTESY_GATE: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"\b(?:DO_NOT_TRACK|NO_UPDATE_NOTIFIER|NO_COLOR|FORCE_COLOR|[A-Z0-9_]*TELEMETRY[A-Z0-9_]*"
@@ -311,6 +359,12 @@ class Labelling:
         rb"|\.\s{0,4}startsWith\s{0,4}\(\s{0,4}[\"'`][A-Za-z][A-Za-z0-9]{1,30}_"
         rb"|\bELECTRON_RUN_AS_NODE\b"
     )
+    """What follows an enumeration of `process.env` when it reads one family of variables or
+    passes the environment to a child: `Object.keys(process.env).filter(k => /^debug_/i.test(k))`
+    is the `debug` package's options, `startsWith("LANGCHAIN_")` is LangChain's configuration,
+    and `ELECTRON_RUN_AS_NODE` is vscode-languageclient starting its server. Each is bundled into
+    thousands of extensions, and 6 of 8 benign ones blocked as credential theft were these (review
+    98). The environment dumped whole, or sent anywhere, still matches."""
 
     @staticmethod
     def narrowed_environment(content: FileContent, end: int) -> bool:
@@ -499,10 +553,6 @@ class Labelling:
         start = starts[index]
         end = starts[index + 1] if index + 1 < len(starts) else len(content.raw)
         return (start, max(start, end))
-
-    DROP_POINT_RULE = "INTEL.EGRESS.DROP_POINT.001"
-
-    INTERACTION_RULE = "INTEL.EGRESS.INTERACTION.001"
 
     @classmethod
     def ast_rule_capabilities(
@@ -749,156 +799,6 @@ class Labelling:
                 line=text.count("\n", 0, store.start()) + 1,
             )
         ]
-
-    @classmethod
-    def destination_capabilities(
-        cls, content: FileContent, language: str | None = None
-    ) -> list[CapabilityHit]:
-        """Egress to a destination that means something on its own.
-
-        Webhook ingest URLs, anonymous paste and file-drop services, and
-        out-of-band interaction hosts. None of these is a finding by itself --
-        software does post to webhooks -- but each is a place with no reason to
-        appear in a build, an install script or a library, so it raises what an
-        outbound request in that file is worth.
-
-        The host list lives in `analysis/shared/destinations.py` rather than in a pattern pack.
-        A pack would have to restate it, and a restated blocklist drifts, which
-        is worse than a short one because it still looks maintained.
-        """
-        from cordon_scanner.analysis.shared.destinations import Destinations
-
-        raw = content.raw
-        literal_ip = cls.public_ip_url(content, language)
-
-        # A substring prefilter, for the same reason the rule engine has one:
-        # the alternation over every host is around eight hundred bytes and
-        # cost roughly five milliseconds per file when it ran unconditionally,
-        # which was enough to put a large repository over its latency budget by
-        # itself. Almost every file is rejected here without a regex running.
-        if not Destinations.could_match(raw):
-            return literal_ip
-
-        # Skipping documentation, which names a host without contacting one.
-        # This searched the raw bytes and took the first hit, so a module whose
-        # opening paragraph explains what it drives was read as driving it --
-        # see `analysis.shared.documentation.DocumentationSpans.of` for the case that found it. The
-        # later occurrences are still considered, because the first being prose
-        # says nothing about the rest of the file.
-
-        ignore = DocumentationSpans.of(raw, language)
-        blocks = SourceComments.block_comment_spans(content.text, language)
-
-        match = None
-        for candidate in Destinations.destination_matcher().finditer(raw):
-            offset = candidate.start()
-            if SourceComments.inside_spans(ignore, offset) or SourceComments.inside_spans(
-                blocks, offset
-            ):
-                continue
-            if TextPosition.is_comment(content, offset, language):
-                continue
-            match = candidate
-            break
-        if match is None:
-            return literal_ip
-
-        found = [
-            CapabilityHit(
-                capability=Capability.EGRESS,
-                rule_id=cls.DROP_POINT_RULE,
-                byte_start=match.start(),
-                byte_end=match.end(),
-                line=content.line_of(match.start()),
-            )
-        ]
-        from cordon_scanner.analysis.shared.destinations import Destinations
-
-        host = match.group(0).decode("utf-8", "replace").split("//")[-1].split("/")[0]
-        if Destinations.is_interaction_host(host):
-            found.append(
-                CapabilityHit(
-                    capability=Capability.EGRESS,
-                    rule_id=cls.INTERACTION_RULE,
-                    byte_start=match.start(),
-                    byte_end=match.end(),
-                    line=content.line_of(match.start()),
-                )
-            )
-        return found
-
-    _IP_URL = re.compile(
-        rb"\bhttps?://(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::\d{1,5})?(?:/|[\"'\s]|$)"
-    )
-
-    # The same address given as a host rather than inside a URL: `const TARGET_HOST =
-    # '154.57.164.64'` handed to `http.request({hostname: TARGET_HOST})`, or a socket's
-    # `connect(4444, '154.57.164.64')`. A bare four-part string is as often a version number,
-    # so it counts only where the line names it as a host.
-    _IP_HOST = re.compile(
-        rb"(?i)(?:\b[a-z_]*host[a-z_]*[\"']?\s*[:=]|\b(?:connect|createConnection)\(\s*(?:\d{1,5}\s*,\s*)?)"
-        rb"\s*[\"'](\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})[\"']"
-    )
-
-    # What every match of each must contain, as a pattern the regex engine scans for fast (a
-    # literal or a two-character class first, where the full patterns open on `\b`): over ten
-    # thousand files of ordinary packages the two ran on every one, 7.8 s for five files with any
-    # match, and 1.2 s gated, with the same matches.
-    _IP_URL_GATE = re.compile(rb"https?://\d")
-
-    _IP_HOST_GATE = re.compile(rb"[\"']\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}[\"']")
-
-    # Public resolvers, which network checks and DNS clients name as hosts all the time, and
-    # the made-up addresses examples and fixtures use (`"host": "1.2.3.4"`): public on paper,
-    # reached by nobody.
-    _RESOLVERS: ClassVar[frozenset[tuple[int, ...]]] = frozenset(
-        {
-            (1, 1, 1, 1), (1, 0, 0, 1), (8, 8, 8, 8), (8, 8, 4, 4), (9, 9, 9, 9),
-            (208, 67, 222, 222), (1, 2, 3, 4), (4, 3, 2, 1), (5, 6, 7, 8), (12, 34, 56, 78),
-            (11, 22, 33, 44), (123, 123, 123, 123), (123, 45, 67, 89),
-        }
-    )  # fmt: skip
-
-    @classmethod
-    def public_ip_url(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
-        """A URL, or a host setting, whose host is a literal public IPv4 address.
-
-        Services are reached by name; a payload posting the environment to
-        `http://54.242.228.151:8090/` does not have one. Loopback, private, link-local -- the
-        cloud metadata service at 169.254.169.254 -- and the documentation ranges are ordinary
-        in code and tests and are not counted.
-        """
-
-        ignore: tuple[tuple[int, int], ...] | None = None
-        raw = content.raw
-        matches = [
-            *(cls._IP_URL.finditer(raw) if cls._IP_URL_GATE.search(raw) else ()),
-            *(cls._IP_HOST.finditer(raw) if cls._IP_HOST_GATE.search(raw) else ()),
-        ]
-        for match in sorted(matches, key=lambda m: m.start()):
-            octets = [int(part) for part in match.groups()]
-            if any(o > 255 for o in octets) or not PublicAddress.is_public(octets):
-                continue
-            if tuple(octets) in cls._RESOLVERS:
-                continue
-            # Docstrings are worked out only once a public address is found: almost no file has
-            # one, and the spans mean parsing the file.
-            if ignore is None:
-                ignore = DocumentationSpans.of(content.raw, language)
-            if SourceComments.inside_spans(ignore, match.start()) or TextPosition.is_comment(
-                content, match.start(), language
-            ):
-                continue
-            return [
-                CapabilityHit(
-                    capability=Capability.EGRESS,
-                    rule_id=cls.DROP_POINT_RULE,
-                    byte_start=match.start(),
-                    byte_end=match.end(),
-                    line=content.line_of(match.start()),
-                )
-            ]
-        return []
 
     @classmethod
     def embedded_capabilities(

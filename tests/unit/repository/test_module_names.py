@@ -1,6 +1,6 @@
 """No module binds one name twice at its top level.
 
-The second binding wins at import, silently: `detect/agents/agent_intent.py` once defined
+The second binding wins at import, silently: `detect/agents/instruction_intent.py` once defined
 `_LOCAL_HOST` as a bare-host pattern and then again as a URL pattern, so the checks written for the
 first read the second, and every local host looked like somewhere data leaves to (review 98,
 2026-10-20). A name means one thing; give the other a name of its own.

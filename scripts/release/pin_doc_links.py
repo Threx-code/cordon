@@ -28,7 +28,7 @@ REPOSITORY = "https://github.com/Threx-code/cordon"
 LINK = re.compile(re.escape(REPOSITORY) + r"/(blob|tree)/([^/\s)\"'>]+)/")
 RAW = "https://raw.githubusercontent.com/Threx-code/cordon"
 #: An image the README names by a path in the repository, or by a raw URL on some ref.
-IMAGE = re.compile(r'src="(?:' + re.escape(RAW) + r'/[^"\s]+?/)?(docs/assets/[^"\s]+)"')
+IMAGE = re.compile(r'(src|srcset)="(?:' + re.escape(RAW) + r'/[^"\s]+?/)?(docs/assets/[^"\s]+)"')
 FILES = ("README.md", "CHANGELOG.md", "docs/*.md", "tutorials/*.md", "editors/vscode/README.md")
 
 
@@ -52,7 +52,7 @@ class DocLinks:
         """`text` with every repository link, and with `images` every image, naming `tag`."""
         text = LINK.sub(lambda m: f"{REPOSITORY}/{m.group(1)}/{tag}/", text)
         if images:
-            text = IMAGE.sub(lambda m: f'src="{RAW}/{tag}/{m.group(1)}"', text)
+            text = IMAGE.sub(lambda m: f'{m.group(1)}="{RAW}/{tag}/{m.group(2)}"', text)
         return text
 
     @staticmethod

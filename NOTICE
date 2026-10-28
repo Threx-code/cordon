@@ -78,9 +78,9 @@ Version 2.0, the licence above.
 -------------------------------------------------------------------------------
 OpenSSL object names
 
-src/cordon_scanner/detect/binary/modules/oids.py holds the short and long names OpenSSL 1.1
-gives object identifiers and the sizes of the digests it knows, generated from OpenSSL's
-object tables (https://www.openssl.org). This product includes software developed by the
+src/cordon_scanner/detect/binary/modules/oid_itu_t.py, oid_iso.py and oid_joint.py hold the
+short and long names OpenSSL 1.1 gives object identifiers, and modules/oids.py the sizes of the
+digests it knows, generated from OpenSSL's object tables (https://www.openssl.org). This product includes software developed by the
 OpenSSL Project for use in the OpenSSL Toolkit.
 
 -------------------------------------------------------------------------------
@@ -89,3 +89,13 @@ YARA
 Cordon's rule engine reads rule files in the YARA format and was inspired by YARA
 (https://github.com/VirusTotal/yara); it is Cordon's own code, and Cordon is not affiliated
 with or endorsed by the YARA project or VirusTotal.
+
+-------------------------------------------------------------------------------
+Ecosystem and agent marks
+
+docs/assets/marks/marks.json holds the marks the README shows beside each ecosystem and AI
+agent Cordon reads, as the project's website draws them: from SVG Logos (@iconify-json/logos,
+CC0-1.0, https://github.com/gilbarbara/logos), Simple Icons (simple-icons, CC0-1.0,
+https://simpleicons.org) and the website's own source files. Each mark is its owner's
+trademark, shown only to name the product or ecosystem it stands for; Cordon is not
+affiliated with or endorsed by any of them.

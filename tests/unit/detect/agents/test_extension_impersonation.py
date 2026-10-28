@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.agents.agents import ExtensionNames
+from cordon_scanner.detect.agents.extensions import ExtensionNames
 
 POPULAR = {"juanblanco.solidity", "vscode-icons-team.vscode-icons", "solomonkinard.git-blame"}
 

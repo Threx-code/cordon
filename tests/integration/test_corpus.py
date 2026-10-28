@@ -371,12 +371,13 @@ class TestSelfScan(CorpusFixtures):
             and f.location.path != "tests/unit/judge/test_tool_call_guard.py"
             and f.location.path != "tests/unit/analysis/python/test_pattern_literals.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
-            and f.location.path != "tests/unit/detect/code/capability/test_recovered_misses.py"
+            and f.location.path
+            != "tests/unit/detect/code/capability/test_recovered_malware_shapes.py"
             # The spelling matrix lists every way JavaScript writes a capability primitive -- a
             # spawn, a beacon, a persistence write -- each a rule's test positive, by construction.
             and f.location.path != "tests/unit/detect/code/capability/test_js_spelling_matrix.py"
             # Campaign behaviours rebuilt as inert fixtures, each a rule's test positive.
-            and f.location.path != "tests/unit/detect/code/test_npm_campaign_classes.py"
+            and f.location.path != "tests/unit/detect/code/test_npm_campaign_behaviours.py"
             and f.location.path != "tests/unit/detect/agents/test_agents.py"
             # The JavaScript dataflow's fixtures are attack-shaped fixtures by construction -- a
             # credential read reaching a request, a decoded blob reaching a spawn -- each the
@@ -468,11 +469,11 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
 
     @staticmethod
     def _declared() -> dict[str, object]:
-        from cordon_scanner.detect.binary.binary import BinaryDetector
-        from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
+        from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
         from cordon_scanner.detect.supply.dependency import DependencyDetector
         from cordon_scanner.detect.supply.lockfile import LockfileDetector
-        from cordon_scanner.detect.supply.manifest import ManifestDetector
+        from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
 
         declared: dict[str, object] = {}
         for detector in (

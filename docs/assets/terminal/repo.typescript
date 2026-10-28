@@ -1,5 +1,5 @@
-Script started on 2026-10-28 15:01:31+00:00 [COMMAND="cordon-scanner scan ." <not executed on terminal>]
-[1mintel     [0m[K[1midentifying[0m[K[1mreading   [0m[K[1mdependencies[0m[K[1mscanning  [0m  [36m[--------------------][0m  0/40    0%[0m[K[1mscanning  [0m  [36m[--------------------][0m  1/40    2%  [2m.mcp.json[0m[K[1mscanning  [0m  [36m[##------------------][0m  5/40   12%  [2msetup.py[0m[K[1mscanning  [0m  [36m[###-----------------][0m  6/40   15%  [2m.claude/skills/setup/SKILL.md[0m[K[1mscanning  [0m  [36m[##########----------][0m  21/40   52%  [2m.github/workflows/release.yml[0m[K[1mscanning  [0m  [36m[####################][0m  40/40  100%  [2msrc/telemetry.js[0m[K[1mgraph     [0m[K[K[2mcordon 0.6.0 · rulepack 0.2.0 (5c3d561bc857cfc0)[0m
+Script started on 2026-10-28 18:13:12+00:00 [COMMAND="cordon-scanner scan ." <not executed on terminal>]
+[1mintel     [0m[K[1midentifying[0m[K[1mreading   [0m[K[1mdependencies[0m[K[1mscanning  [0m  [36m[--------------------][0m  0/40    0%[0m[K[1mscanning  [0m  [36m[--------------------][0m  1/40    2%  [2m.mcp.json[0m[K[1mscanning  [0m  [36m[##------------------][0m  5/40   12%  [2msetup.py[0m[K[1mscanning  [0m  [36m[###-----------------][0m  6/40   15%  [2m.claude/skills/setup/SKILL.md[0m[K[1mscanning  [0m  [36m[##########----------][0m  21/40   52%  [2m.github/workflows/release.yml[0m[K[1mscanning  [0m  [36m[################----][0m  32/40   80%  [2mservices/javascript/api-client.js[0m[K[1mscanning  [0m  [36m[##################--][0m  36/40   90%  [2mservices/ops/sync.py[0m[K[1mgraph     [0m[K[K[2mcordon 0.6.0 · rulepack 0.2.0 (5c3d561bc857cfc0)[0m
 
 
 [1;36m.github/workflows/release.yml[0m  [2m1 finding[0m
@@ -24,7 +24,7 @@ Script started on 2026-10-28 15:01:31+00:00 [COMMAND="cordon-scanner scan ." <no
 [2m25 signals below the failure policy in 12 files, worth a look when reviewing this code; `-v` lists them.[0m
 [2m----------------------------------------------------------------------------[0m
 [1;97;41m 4 critical [0m · [1;30;101m 5 high [0m · [1;30;43m 17 medium [0m · [1;30;46m 8 low [0m
-[2m40 files · 25506ms[0m
+[2m40 files · 27435ms[0m
 [2mintel: osv, 0h old[0m
 [33mscan INCOMPLETE[0m [2m- results are partial; see the coverage notes above[0m
 
@@ -32,4 +32,4 @@ Script started on 2026-10-28 15:01:31+00:00 [COMMAND="cordon-scanner scan ." <no
 
 FAILED: 9 finding(s) met the failure policy (highest: critical)
 
-Script done on 2026-10-28 15:01:59+00:00 [COMMAND_EXIT_CODE="1"]
+Script done on 2026-10-28 18:13:42+00:00 [COMMAND_EXIT_CODE="1"]

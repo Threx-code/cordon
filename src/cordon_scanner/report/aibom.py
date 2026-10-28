@@ -25,14 +25,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.detect.agents.agents import (
-    AGENT_ACTIONS,
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+from cordon_scanner.detect.agents.paths import (
     AGENT_SETTINGS_PATHS,
     INSTRUCTION_PATHS,
     MCP_PATHS,
     WORKFLOW_PATHS,
-    McpConfigs,
 )
+from cordon_scanner.detect.agents.rule_catalogue import AGENT_ACTIONS
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.files.walk import Walker
 from cordon_scanner.report.sbom import TOOL_NAME, SbomDocument
