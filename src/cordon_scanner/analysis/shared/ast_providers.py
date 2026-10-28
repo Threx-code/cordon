@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from cordon_scanner.analysis.python.pyast import AstCall
+    from cordon_scanner.analysis.python.pyfacts import AstCall
 
 
 class AstProvider(Protocol):

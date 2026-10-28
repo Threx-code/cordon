@@ -3542,10 +3542,10 @@ class SecretDetector(BaseDetector):
         yield from SecretDetector._decoded_values(content)
 
         if unit.language == "python":
-            from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+            from cordon_scanner.analysis.python.pyfacts import PythonFacts
 
             starts = content.line_starts
-            for item in PythonAnalyzer.assembled(content.text):
+            for item in PythonFacts.assembled(content.text):
                 if not item.value:
                     continue
                 index = min(max(item.line - 1, 0), len(starts) - 1)
@@ -3558,7 +3558,7 @@ class SecretDetector(BaseDetector):
                     item.assembled,
                     item.name,
                 )
-            if PythonAnalyzer.parses(content.text):
+            if PythonFacts.parses(content.text):
                 return
 
         for start, end, value in SecretValues.fold_concatenations(content.raw):

@@ -41,104 +41,33 @@ import ast
 import base64
 import posixpath
 import re
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
+from cordon_scanner.analysis.python.pyfacts import (
+    DNS_LOOKUPS,
+    ENVIRONMENT,
+    PRIMITIVES,
+    SCRIPT_LAUNCH,
+    AstCall,
+    AstHit,
+    PythonFacts,
+)
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
-# Dotted primitives, mapped to what they mean. The keys are what a resolved
-# call must look like once aliases and bindings are unwound, so `go(...)` where
-# `go` is `subprocess.run` arrives here as `subprocess.run`.
-PRIMITIVES: dict[str, Capability] = {
-    "base64.b64decode": Capability.DECODE,
-    "base64.b32decode": Capability.DECODE,
-    "base64.b16decode": Capability.DECODE,
-    "base64.urlsafe_b64decode": Capability.DECODE,
-    "base64.decodebytes": Capability.DECODE,
-    "base64.standard_b64decode": Capability.DECODE,
-    "base64.b32hexdecode": Capability.DECODE,
-    "base64.b85decode": Capability.DECODE,
-    "base64.a85decode": Capability.DECODE,
-    # Python 3.13's ZeroMQ alphabet; aiolrucache's loader decodes its bytecode with it.
-    "base64.z85decode": Capability.DECODE,
-    "binascii.a2b_base64": Capability.DECODE,
-    "binascii.unhexlify": Capability.DECODE,
-    "codecs.decode": Capability.DECODE,
-    "zlib.decompress": Capability.DECOMPRESS,
-    "lzma.decompress": Capability.DECOMPRESS,
-    "bz2.decompress": Capability.DECOMPRESS,
-    "gzip.decompress": Capability.DECOMPRESS,
-    "bytes.fromhex": Capability.DECODE,
-    # `marshal.loads` is deliberately absent. The pattern tier labels it `execute`
-    # -- a marshal stream holds code objects, so loading one is an evaluation wearing
-    # a serialisation format, and `CAP.PY.EXECUTE.001` argues it at length -- and
-    # labelling it `decode` here as well handed `SUSPECT.DECODE_EXEC.001` both halves
-    # out of one call. CPython's own `Lib/importlib/_bootstrap_external.py` was
-    # reported for it: `_compile_bytecode`'s body is `code = marshal.loads(data)`, the
-    # function every `.pyc` in the world is loaded by.
-    #
-    # Nothing is lost by dropping the second label. The two-call forms still report,
-    # because their decode comes from the other call:
-    # `marshal.loads(base64.b64decode(DATA))` is base64 decoding and marshal
-    # executing, and `exec(marshal.loads(base64.b64decode(blob)))` is the same with a
-    # third step. Only a lone `marshal.loads(data)` goes quiet, which is the importer.
-    "pickle.loads": Capability.DESERIALIZE,
-    "exec": Capability.EXECUTE,
-    "eval": Capability.EXECUTE,
-    "compile": Capability.EXECUTE,
-    "os.system": Capability.SPAWN,
-    "os.popen": Capability.SPAWN,
-    "os.execv": Capability.SPAWN,
-    "os.execve": Capability.SPAWN,
-    "os.spawnv": Capability.SPAWN,
-    "subprocess.run": Capability.SPAWN,
-    "subprocess.call": Capability.SPAWN,
-    "subprocess.check_call": Capability.SPAWN,
-    "subprocess.check_output": Capability.SPAWN,
-    "os.startfile": Capability.SPAWN,
-    "subprocess.getoutput": Capability.SPAWN,
-    "subprocess.getstatusoutput": Capability.SPAWN,
-    "subprocess.Popen": Capability.SPAWN,
-    "pty.spawn": Capability.SPAWN,
-    "os.environ": Capability.CREDENTIAL,
-    "os.getenv": Capability.CREDENTIAL,
-    "os.environb": Capability.CREDENTIAL,
-    "urllib.request.urlopen": Capability.EGRESS,
-    # Who and where this is, through whatever name it was imported under.
-    "socket.gethostname": Capability.RECONNAISSANCE,
-    "socket.getfqdn": Capability.RECONNAISSANCE,
-    "getpass.getuser": Capability.RECONNAISSANCE,
-    "os.getlogin": Capability.RECONNAISSANCE,
-    "platform.node": Capability.RECONNAISSANCE,
-    "platform.uname": Capability.RECONNAISSANCE,
-    "uuid.getnode": Capability.RECONNAISSANCE,
-    "urllib.request.urlretrieve": Capability.EGRESS,
-    "requests.get": Capability.EGRESS,
-    "requests.post": Capability.EGRESS,
-    "requests.put": Capability.EGRESS,
-    "requests.patch": Capability.EGRESS,
-    "requests.delete": Capability.EGRESS,
-    "requests.request": Capability.EGRESS,
-    "httpx.get": Capability.EGRESS,
-    "httpx.post": Capability.EGRESS,
-    "httpx.Client": Capability.EGRESS,
-    # Socket creation and a bare DNS lookup are not egress on their own (census D): a server creates
-    # a socket to bind and resolves its own name. Egress is `create_connection`, a `.connect(...)` on
-    # a created socket (`_socket_connect`), or a runtime-built DNS name (DNS_CONSTRUCTED.AST).
-    "socket.create_connection": Capability.EGRESS,
-    "smtplib.SMTP": Capability.EGRESS,
-    "ftplib.FTP": Capability.EGRESS,
-    "http.client.HTTPConnection": Capability.EGRESS,
-    "http.client.HTTPSConnection": Capability.EGRESS,
-}
+from typing import TYPE_CHECKING
 
-ENVIRONMENT = frozenset({"os.environ", "os.getenv", "os.environb"})
-"""The environment primitives, which need a second question asked of them."""
+if TYPE_CHECKING:  # from the source
+    from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # from the source  # from the source
+    from collections.abc import Callable
+
 
 CREDENTIAL_VARIABLE = re.compile(
     r"""(?ix)
@@ -173,7 +102,6 @@ which is the other half of the pattern tier's rule and the half that matters:
 REFLECTIVE = frozenset({"getattr", "__import__", "globals", "vars", "locals"})
 BUILTIN_MODULES = frozenset({"builtins", "__builtin__", "__builtins__"})
 WRITE_METHODS = frozenset({"write", "write_text", "write_bytes", "writelines"})
-MAX_FOLDED_CODES = 200_000
 
 #: Names and attributes the interpreter or platform provides, never an attacker: a command built
 #: only from these and literals cannot be running a decoded or downloaded value (`safe_spawn_lines`).
@@ -224,8 +152,6 @@ SOURCE_FREE_METHODS = frozenset(
     }
 )
 """Character codes folded from one `map(chr, [...])`; a longer literal list is not read."""
-#: Calls that return this machine's own name; `get_hostname` is Ansible's callback helper.
-OWN_HOST_CALLS = frozenset({"gethostname", "getfqdn", "node", "get_hostname"})
 UNSAFE_LOADERS = frozenset(
     {"torch.load", "pickle.load", "pickle.loads", "joblib.load", "dill.load", "cloudpickle.load"}
 )
@@ -235,20 +161,12 @@ UNSAFE_LOADERS = frozenset(
 MODEL_COMMIT = re.compile(r"[0-9a-f]{40}")
 """A model repository revision that is a commit, rather than a branch or tag that moves."""
 
-SCRIPT_LAUNCH = re.compile(
-    r"(?i)(?:^|[\s\"'])[\w.@%\\/:$~-]{1,200}\.(?:exe|scr|com|bat|cmd|vbs|vbe|jse|wsf|hta|ps1|msi|sh|py|pl|rb)"
-    r"(?:[\s\"']|$)"
-)
-"""A command that names a script or program file to run, rather than only a tool on PATH."""
 
 EXECUTABLE_NAME = re.compile(
     r"(?i)\.(?:exe|scr|com|bat|cmd|vbs|vbe|js|jse|wsf|hta|ps1|msi|dll|sh|app)\b"
 )
 """File names that a launch runs as a program."""
 
-DNS_LOOKUPS = frozenset(
-    {"socket.gethostbyname", "socket.gethostbyname_ex", "socket.getaddrinfo", "socket.getfqdn"}
-)
 
 PERSISTENCE_PATH = re.compile(
     r"(?:^|/)\.(?:profile|bashrc|bash_profile|bash_login|zshrc|zprofile|zlogin)$"
@@ -401,124 +319,6 @@ analogue worth the silence. `getattr(self, method_name)` on a plugin object is
 ordinary; `getattr(os, something_decoded)` is not."""
 
 
-@dataclass(frozen=True, slots=True)
-class AstHit:
-    """One capability resolved from the tree, with where it was seen."""
-
-    capability: Capability
-    line: int
-    detail: str
-    column: int = 0
-    """Byte offset of the call within its line, 0-based. Carried for the same
-    reason as `AstCall.column`: a composite's byte-distance bound needs the true
-    position, not the start of the line, or a minified one-line file collapses
-    every hit to the same place."""
-    command: str | None = None
-    """The command string handed to a spawn primitive, when it is derivable.
-
-    A shell command written as a Python string is data to every language pack:
-    the Python rules see a string, and the shell rules never run on a `.py`
-    file. Carrying it here is what lets the shell rules be applied to the one
-    place in the file where a string is unambiguously a command."""
-
-    fixed_command: bool = False
-    """Whether EVERY part of that command was a literal in the source.
-
-    `command` is filled in when any part resolves, because a partially resolved
-    command is still worth matching shell rules against. This is the stricter
-    question, and a different one: a spawn whose whole argv is written out cannot
-    be running anything the file decoded or downloaded, because what it runs is
-    visible in the file.
-
-    False for a command mentioning a temporary or relative path, which is where a
-    dropped payload lands: `subprocess.run(["/tmp/update"])` is a constant argv and
-    is also the second half of a dropper."""
-
-
-@dataclass(frozen=True, slots=True)
-class Assembled:
-    """A string value built by concatenation, and what it evaluates to.
-
-    Carried separately from capabilities because it answers a different
-    question: not what this code can do, but what value it contains that no
-    contiguous pattern can see.
-    """
-
-    value: str
-    line: int
-    name: str | None
-    """The name it was assigned to, when it was assigned to one."""
-
-    assembled: bool = True
-    """Whether the value was built from more than one piece.
-
-    A plain literal is carried too, because Python joins adjacent literals with
-    no operator and the byte scan cannot see the joined value. But the two are
-    not equivalent evidence: the entropy heuristic's whole justification is that
-    building a value out of pieces is not how a URL or an identifier is written,
-    and applying it to every constant in a file reports every long URL as a
-    credential. Provider shapes and known prefixes apply to both."""
-
-
-@dataclass(frozen=True, slots=True)
-class AstCall:
-    """One call site, with its callee resolved and its arguments folded.
-
-    The difference between this and the source text is the whole point of the
-    `ast` match kind. `f = os.system; f(cmd)` produces `name="os.system"`, and
-    so does `getattr(os, "sys" + "tem")(cmd)` -- neither of which any pattern
-    over the bytes can see, because in the first the call site says `f` and in
-    the second the primitive's name does not appear in the file at all.
-    """
-
-    name: str
-    """The callee's dotted name, resolved through imports, aliases, local
-    bindings and `getattr`. `""` when it could not be resolved."""
-
-    line: int
-
-    column: int = 0
-    """Byte offset of the call within its line, 0-based.
-
-    Carried so a composite's proximity check can measure the true distance
-    between two call sites rather than treating both as the start of their line.
-    On a minified bundle the whole file is one line, and without this every call
-    collapses to the same position -- which is how a decode and an execution
-    four thousand bytes apart came to satisfy a rule that asks for them in the
-    same breath."""
-
-    arguments: tuple[str, ...] = ()
-    """Positional arguments folded to their constant values, in order.
-
-    `""` for an argument that is not a derivable constant, so position is
-    preserved -- a query about argument 1 must not silently read argument 2
-    because argument 0 was a variable. A list or tuple argument folds to its
-    elements joined by a space, which is how `["sh", "-c", "..."]` and
-    `"sh -c ..."` become the same string to a rule author."""
-
-    keywords: tuple[tuple[str, str], ...] = ()
-    """Keyword arguments, folded the same way. Present so a rule can say
-    `shell=True` without caring where in the call it was written."""
-
-    has_constructed_argument: bool = False
-    """Whether any argument is a BUILT expression rather than a literal or name.
-
-    A concatenation, an f-string, a `.format()`, a slice, or a nested call.
-    This is what separates `resolve("api.example.com")` -- a name written in
-    the source -- from `resolve(blob[i:i+60] + ".exfil.invalid")`, where the
-    hostname carries program data. The regex tier draws the same line by
-    requiring a `+`, `%` or f-string after the resolver call; carrying it here
-    lets an `ast` rule stay that precise while seeing through an aliased
-    import, which the regex cannot."""
-
-    @property
-    def argument_text(self) -> str:
-        """Every resolved argument as one string, for a pattern to run over."""
-        parts = [a for a in self.arguments if a]
-        parts.extend(f"{k}={v}" for k, v in self.keywords if v)
-        return " ".join(parts)
-
-
 class PythonAnalyzer:
     """Resolves capability primitives through aliases, bindings and constants."""
 
@@ -562,7 +362,7 @@ class PythonAnalyzer:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
             return []
-        analyzer = cls._prepared(tree)
+        analyzer = PythonAnalyzer._prepared(tree)
         analyzer._follow_literals = follow_literals
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
@@ -650,25 +450,6 @@ class PythonAnalyzer:
                     id(node)
                 )
 
-        def harmless(use: ast.Name) -> bool:
-            parent = parents.get(id(use))
-            if isinstance(parent, ast.keyword) and parent.arg == "env":
-                return True
-            if isinstance(parent, ast.Attribute) and parent.value is use:
-                return parent.attr in {"update", "setdefault", "pop", "get", "copy", "__setitem__"}
-            if isinstance(parent, ast.Subscript) and parent.value is use:
-                return True
-            if isinstance(parent, ast.Assign) and parent.value is use:
-                return all(
-                    isinstance(t, ast.Subscript) and self.constant(t.slice) == "env"
-                    for t in parent.targets
-                )
-            if isinstance(parent, ast.Dict):
-                index = next((i for i, v in enumerate(parent.values) if v is use), None)
-                key = parent.keys[index] if index is not None else None
-                return key is not None and self.constant(key) == "env"
-            return False
-
         excused = set(direct)
         for (scope, name), nodes in environ_nodes.items():
             uses = [
@@ -676,11 +457,30 @@ class PythonAnalyzer:
                 for n in PythonSyntax.of(tree, ast.Name)
                 if n.id == name and isinstance(n.ctx, ast.Load) and id(scope_of(n)) == scope
             ]
-            if uses and all(harmless(use) for use in uses):
+            if uses and all(self._harmless_use(use, parents) for use in uses):
                 excused.update(nodes)
         result = frozenset(excused)
         tree.__dict__["_cordon_handed"] = result
         return result
+
+    def _harmless_use(self, use: ast.Name, parents: dict[int, ast.AST]) -> bool:
+        parent = parents.get(id(use))
+        if isinstance(parent, ast.keyword) and parent.arg == "env":
+            return True
+        if isinstance(parent, ast.Attribute) and parent.value is use:
+            return parent.attr in {"update", "setdefault", "pop", "get", "copy", "__setitem__"}
+        if isinstance(parent, ast.Subscript) and parent.value is use:
+            return True
+        if isinstance(parent, ast.Assign) and parent.value is use:
+            return all(
+                isinstance(t, ast.Subscript) and PythonFacts.constant(t.slice) == "env"
+                for t in parent.targets
+            )
+        if isinstance(parent, ast.Dict):
+            index = next((i for i, v in enumerate(parent.values) if v is use), None)
+            key = parent.keys[index] if index is not None else None
+            return key is not None and PythonFacts.constant(key) == "env"
+        return False
 
     def _iterated_literals(self, tree: ast.AST) -> dict[str, list[str]]:
         """Loop variables whose every value is a string literal, with those values.
@@ -694,12 +494,12 @@ class PythonAnalyzer:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     assigned[target.id] = assigned.get(target.id, 0) + 1
-                    values = self._literal_strings(node.value)
+                    values = PythonFacts.literal_strings(node.value)
                     if values is not None:
                         sequences[target.id] = values
 
         def resolved(iterable: ast.AST) -> list[str] | None:
-            values = self._literal_strings(iterable)
+            values = PythonFacts.literal_strings(iterable)
             if values is None and isinstance(iterable, ast.Name) and assigned.get(iterable.id) == 1:
                 values = sequences.get(iterable.id)
             return values
@@ -715,184 +515,6 @@ class PythonAnalyzer:
                 else:
                     found[name] = values
         return {name: values for name, values in found.items() if name not in refused}
-
-    @staticmethod
-    def _literal_strings(node: ast.AST) -> list[str] | None:
-        if not isinstance(node, ast.Tuple | ast.List) or not node.elts:
-            return None
-        values = [
-            e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)
-        ]
-        return values if len(values) == len(node.elts) else None
-
-    @classmethod
-    def excused_lines(cls, source: str) -> dict[Capability | str, frozenset[int]]:
-        """Lines where the pattern tier's match is a known-harmless form this tier can see.
-
-        `exec` of text read from the package's own file (EXECUTE), and the whole environment
-        copied only to become a child process's environment (CREDENTIAL). The pattern tier sees
-        `exec(` and `os.environ` and cannot tell what follows; the caller drops its hits on these
-        lines and keeps every other."""
-        try:
-            tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
-            return {}
-        analyzer = cls._prepared(tree)
-        analyzer._walk(tree)
-        handed = analyzer._environment_handed_to_children(tree)
-        environment = {
-            node.lineno
-            for node in PythonSyntax.nodes(tree)
-            if id(node) in handed and hasattr(node, "lineno")
-        }
-        # A line that also reads the environment some other way keeps its pattern hit.
-        environment -= {
-            node.lineno
-            for node in PythonSyntax.nodes(tree)
-            if analyzer._dotted(node) in ENVIRONMENT
-            and id(node) not in handed
-            and hasattr(node, "lineno")
-        }
-        own_name = frozenset(
-            node.lineno
-            for node in PythonSyntax.nodes(tree)
-            if isinstance(node, ast.Call)
-            and (analyzer._dotted(node.func) or "") in DNS_LOOKUPS
-            and node.args
-            and cls._own_name_locally(node.args[0])
-        )
-        patterns = cls._pattern_literals(tree)
-        return {
-            "CAP.EGRESS.DNS_CONSTRUCTED.001": own_name,
-            Capability.PERSIST: cls._persistence_named_not_written(tree)
-            | patterns
-            | cls._persistence_not_reaching_a_write(source, tree, analyzer._hits),
-            Capability.EXECUTE: frozenset(analyzer._excused_lines),
-            Capability.CREDENTIAL: frozenset(environment) | patterns,
-            Capability.DECODE: analyzer._decoded_into_data_parsers(tree),
-        }
-
-    #: `setup()` keywords that are a package's description, never something it does.
-    SETUP_METADATA = frozenset(
-        {
-            "description",
-            "long_description",
-            "install_requires",
-            "extras_require",
-            "tests_require",
-            "setup_requires",
-            "requires",
-            "keywords",
-            "classifiers",
-            "project_urls",
-            "summary",
-        }
-    )
-    #: `re` and `regex` functions whose first argument is a pattern: text to match against.
-    PATTERN_CALLS = frozenset(
-        {"compile", "match", "fullmatch", "search", "findall", "finditer", "sub", "subn", "split"}
-    )
-
-    @classmethod
-    def _pattern_literals(cls, tree: ast.AST) -> frozenset[int]:
-        """Lines of a regular expression written as literal text: `re.compile(r"/etc/rc\\.local|
-        ~/\\.ssh")`. A pattern says what to look for; nothing reads or writes the paths it names.
-        Cordon's own tool-call guard lists every persistence path it refuses, and the pattern
-        tier read it as persistence (review 98) -- as it would any scanner, linter or guard. Only
-        a pattern made of literals is covered: one built from a call or a variable keeps its hit."""
-        lines: set[int] = set()
-        for node in PythonSyntax.nodes(tree):
-            if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id in ("re", "regex")
-                and node.func.attr in cls.PATTERN_CALLS
-                and node.args
-            ):
-                continue
-            pattern = node.args[0]
-            if all(
-                isinstance(part, ast.Constant | ast.BinOp | ast.operator)
-                for part in ast.walk(pattern)
-            ):
-                first = getattr(pattern, "lineno", None)
-                last = getattr(pattern, "end_lineno", None) or first
-                if first is not None:
-                    lines.update(range(first, (last or first) + 1))
-        return frozenset(lines)
-
-    @staticmethod
-    def _persistence_not_reaching_a_write(
-        source: str, tree: ast.AST, hits: list[AstHit]
-    ) -> frozenset[int]:
-        """Lines whose persistence location is named in a literal that never reaches a write
-        (`analysis/python/py_persist.py`): a list of the profiles a key is read from, a scanner's
-        pattern table, `crontab -l` saved as evidence. A line this tier itself read as persistence
-        (a profile opened to append, its path folded from character codes) keeps its hit."""
-        from cordon_scanner.analysis.python.py_persist import PythonPersistence
-
-        written = PythonPersistence.written_lines(tree)
-        if written is None:
-            return frozenset()
-        recorded = {hit.line for hit in hits if hit.capability is Capability.PERSIST}
-        return PythonPersistence.named_only_lines(source) - written - recorded
-
-    #: Calls that show text to a person: what a shell profile line is in them is advice.
-    MESSAGE_CALLS = frozenset(
-        {"print", "echo", "warn", "warning", "info", "debug", "error", "wrn", "inf", "dbg", "err"}
-    )
-
-    @classmethod
-    def _persistence_named_not_written(cls, tree: ast.AST) -> frozenset[int]:
-        """Lines where a profile, a crontab or a unit is only named: a `setup()` description or
-        requirement (`'python-crontab'`, a README inlined as `long_description`), a docstring, a
-        message printed or logged for a person (`log.wrn('add to ~/.bashrc')`). Nothing on such
-        a line writes anywhere, and at install time the pattern tier read each as a foothold
-        planted (review 98). A line that also writes keeps its hit: the excuse is per line, and
-        a write is a call the line would also hold."""
-        lines: set[int] = set()
-
-        def cover(node: ast.AST) -> None:
-            first = getattr(node, "lineno", None)
-            last = getattr(node, "end_lineno", None) or first
-            if first is not None:
-                lines.update(range(first, (last or first) + 1))
-
-        for node in PythonSyntax.nodes(tree):
-            if isinstance(node, ast.Call):
-                name = cls._call_name(node.func)
-                if name == "setup":
-                    for keyword in node.keywords:
-                        if keyword.arg in cls.SETUP_METADATA:
-                            cover(keyword.value)
-                elif name in cls.MESSAGE_CALLS and not any(
-                    isinstance(child, ast.Call)
-                    and cls._call_name(child.func) not in cls.MESSAGE_CALLS
-                    for argument in (*node.args, *(k.value for k in node.keywords))
-                    for child in ast.walk(argument)
-                ):
-                    cover(node)
-            elif isinstance(
-                node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Module
-            ):
-                body = getattr(node, "body", [])
-                if (
-                    body
-                    and isinstance(body[0], ast.Expr)
-                    and isinstance(body[0].value, ast.Constant)
-                    and isinstance(body[0].value.value, str)
-                ):
-                    cover(body[0])
-        return frozenset(lines)
-
-    @staticmethod
-    def _call_name(func: ast.AST) -> str | None:
-        if isinstance(func, ast.Name):
-            return func.id
-        if isinstance(func, ast.Attribute):
-            return func.attr
-        return None
 
     DATA_PARSERS = frozenset({"ast.literal_eval", "literal_eval", "json.loads", "json.load"})
     """Parsers that turn text into values and cannot run any of it. `pickle` and `marshal` are
@@ -925,143 +547,6 @@ class PythonAnalyzer:
             (parsed if consumer in self.DATA_PARSERS else other).add(node.lineno)
         return frozenset(parsed - other)
 
-    @classmethod
-    def calls(cls, source: str) -> list[AstCall]:
-        """Every call in this source, with callee and arguments resolved.
-
-        The same resolution `analyse` applies to the fixed `PRIMITIVES` table,
-        exposed for rules to query instead. That table is this module's own
-        list of what matters; a rule pack needs to name its own.
-
-        Unparseable source yields nothing, which the caller must treat as "not
-        examined" rather than "nothing here" -- the regex tier still runs over
-        the same file, which is why this is an addition to it and never a
-        replacement.
-        """
-        try:
-            tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
-            return []
-        analyzer = cls._prepared(tree)
-        # `_invoked` maps an inner call to the call that invokes its result, so
-        # `getattr(os, "system")("...")` can find the argument list that belongs
-        # to the outer parentheses.
-        for node in PythonSyntax.of(tree, ast.Call):
-            if isinstance(node.func, ast.Call | ast.Subscript):
-                analyzer._invoked[id(node.func)] = node
-
-        # What each plain name is assigned, so a hostname assembled into a variable on one line
-        # and resolved on the next reads as the built value it is.
-        assigned: dict[str, list[ast.AST]] = {}
-        for node in PythonSyntax.of(tree, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    assigned.setdefault(target.id, []).append(node.value)
-
-        def constructed(argument: ast.AST) -> bool:
-            if cls._is_constructed(argument):
-                return True
-            values = assigned.get(argument.id, []) if isinstance(argument, ast.Name) else []
-            return bool(values) and all(
-                cls._is_constructed(value) and cls._has_dotted_literal(value) for value in values
-            )
-
-        found: list[AstCall] = []
-        for node in PythonSyntax.of(tree, ast.Call):
-            resolved = analyzer._resolve_callee(node)
-            if resolved is None:
-                continue
-            name, callsite = resolved
-            found.append(
-                AstCall(
-                    name=name,
-                    line=getattr(node, "lineno", 0),
-                    column=getattr(node, "col_offset", 0),
-                    arguments=tuple(analyzer._argument_value(a) for a in callsite.args),
-                    keywords=tuple(
-                        (kw.arg, analyzer._argument_value(kw.value))
-                        for kw in callsite.keywords
-                        if kw.arg
-                    ),
-                    has_constructed_argument=any(constructed(a) for a in callsite.args),
-                )
-            )
-        return found
-
-    @staticmethod
-    def _has_dotted_literal(node: ast.AST) -> bool:
-        """Whether a built value carries a literal domain suffix: `x + ".lib.example.com"`."""
-        return any(
-            isinstance(part.value, str) and "." in part.value.strip(".")
-            for part in PythonSyntax.within(node, ast.Constant)
-        )
-
-    @staticmethod
-    def _is_constructed(node: ast.AST) -> bool:
-        """Whether an argument is BUILT rather than named or written whole.
-
-        A concatenation, an interpolation, a `.format()`, a slice or a nested
-        call -- the shapes that carry runtime data into an argument. A plain
-        literal, a bare name and an attribute access are not constructed: those
-        are how ordinary code passes a fixed host or a variable.
-        """
-        # A folds-to-a-constant expression is a literal written in pieces, not a
-        # value built at runtime: `"api." + ".example.com"` is the fixed string
-        # `"api..example.com"`. Only an expression that pulls in a name, a call
-        # or a slice carries runtime data, so a fully constant one is not
-        # "constructed" for this purpose -- otherwise a resolver call with a
-        # hostname spelled as two adjacent literals reads as exfiltration.
-        if PythonAnalyzer.constant(node) is not None:
-            return False
-        if PythonAnalyzer._own_name_locally(node):
-            return False
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod):
-            return True
-        if isinstance(node, ast.JoinedStr | ast.Subscript):
-            return True
-        if isinstance(node, ast.Call):
-            func = node.func
-            if isinstance(func, ast.Attribute) and func.attr in {"format", "join"}:
-                return True
-            # Resolving this machine's own name -- `gethostbyname(socket.gethostname())` -- is
-            # how a program finds its address; xgboost's tracker and jupyter_client both do it.
-            # The name was built by nobody.
-            callee = (
-                func.attr
-                if isinstance(func, ast.Attribute)
-                else func.id
-                if isinstance(func, ast.Name)
-                else ""
-            )
-            # Otherwise a nested call whose value becomes the argument -- `tohex(host())`.
-            return callee not in OWN_HOST_CALLS
-        return False
-
-    LOCAL_SUFFIXES = (".local", ".localdomain", ".lan", ".home.arpa", ".internal")
-    """Suffixes that name this machine on its own network and are never sent to a public
-    resolver's operator: mDNS's `.local` and the reserved home and internal zones."""
-
-    @staticmethod
-    def _own_name_locally(node: ast.AST) -> bool:
-        """`socket.gethostname() + ".local"` -- this machine's own name in a local-only zone, which
-        jupyter_client resolves when the bare hostname maps to loopback. No data travels in it."""
-        if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)):
-            return False
-        suffix = PythonAnalyzer.constant(node.right)
-        func = node.left.func if isinstance(node.left, ast.Call) else None
-        callee = (
-            func.attr
-            if isinstance(func, ast.Attribute)
-            else func.id
-            if isinstance(func, ast.Name)
-            else ""
-        )
-        return (
-            callee in OWN_HOST_CALLS
-            and suffix is not None
-            and suffix.lower() in PythonAnalyzer.LOCAL_SUFFIXES
-        )
-
     def _resolve_callee(self, node: ast.Call) -> tuple[str, ast.Call] | None:
         """This call's dotted name, and the call whose arguments belong to it.
 
@@ -1073,7 +558,7 @@ class PythonAnalyzer:
 
         if base in REFLECTIVE:
             namespace = self._dotted(node.args[0]) if node.args else None
-            attribute = self.constant(node.args[1]) if len(node.args) > 1 else None
+            attribute = PythonFacts.constant(node.args[1]) if len(node.args) > 1 else None
             if namespace and attribute is not None:
                 return f"{namespace}.{attribute}", self._invoked.get(id(node), node)
             return None
@@ -1089,7 +574,7 @@ class PythonAnalyzer:
         written two ways, and a rule author should not have to write it twice.
         """
         if isinstance(node, ast.List | ast.Tuple):
-            parts = [self.constant(element) or "" for element in node.elts]
+            parts = [PythonFacts.constant(element) or "" for element in node.elts]
             return " ".join(p for p in parts if p)
         # `constant` answers "what string is this", and deliberately returns
         # None for a bool or a number -- it exists to fold names and commands.
@@ -1098,101 +583,9 @@ class PythonAnalyzer:
         # for every other caller.
         if isinstance(node, ast.Constant) and isinstance(node.value, bool | int | float):
             return str(node.value)
-        return self.constant(node) or ""
-
-    @classmethod
-    def assembled(cls, source: str) -> list[Assembled]:
-        """String values built by concatenation, folded to what they evaluate to.
-
-        A credential regex needs a contiguous literal, and `"ghp_" + "..."` is
-        not one. The value is identical to the interpreter and invisible to the
-        pattern, which makes splitting a token across a `+` the cheapest way to
-        commit a live credential past a secret scanner.
-
-        Returns every derivable string value, including plain literals. That
-        looks redundant against the byte-level pattern pass and is not: adjacent
-        string literals in Python concatenate with no operator, so `("ghp_"
-        "rest")` is a single constant to the parser and two separate quoted runs
-        in the file. Deduplication happens in the caller, which hashes the value
-        rather than its spelling.
-        """
-        try:
-            tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
-            return []
-
-        found: list[Assembled] = []
-
-        for node in PythonSyntax.of(tree, ast.Assign, ast.AnnAssign, ast.AugAssign):
-            targets: list[str] = []
-            if isinstance(node, ast.Assign):
-                value: ast.AST | None = node.value
-                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-            elif isinstance(node, ast.AnnAssign | ast.AugAssign):
-                value = node.value
-                targets = [node.target.id] if isinstance(node.target, ast.Name) else []
-            else:
-                continue
-
-            if value is None:
-                continue
-
-            # Plain constants are included, and that is not redundant with the
-            # byte scan. Python concatenates adjacent literals with no operator
-            # at all -- `("ghp_" "rest")` is one `Constant` to the parser and
-            # two separated literals in the source -- so the contiguous pattern
-            # never sees the joined value while the interpreter only ever sees
-            # the joined value. Anything the byte scan did find is already in
-            # the caller's `seen` set and is dropped there.
-            folded = cls.constant(value)
-            if folded is None:
-                continue
-
-            found.append(
-                Assembled(
-                    value=folded,
-                    line=getattr(value, "lineno", 1),
-                    name=targets[0] if targets else None,
-                    assembled=not isinstance(value, ast.Constant),
-                )
-            )
-
-        return found
-
-    @staticmethod
-    def parses(source: str) -> bool:
-        """Whether this is Python the analyzer could read.
-
-        Asked separately so the caller can report a file it could not analyse
-        rather than quietly treating an unreadable file as an uninteresting
-        one."""
-        try:
-            PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
-            return False
-        return True
+        return PythonFacts.constant(node) or ""
 
     # -- Name resolution -------------------------------------------------
-
-    @classmethod
-    def _prepared(cls, tree: ast.AST) -> PythonAnalyzer:
-        """An analyser with this tree's name tables already built, each table its own copy.
-
-        Four entry points (`analyse`, `calls`, `excused_lines` and `PythonSource.loop_delay_lines`)
-        each built the same tables from scratch: 3.2 builds per file. They are built once per tree now, kept on it, and copied per caller, so what one
-        caller adds -- `_walk` fills `_invoked` and records hits -- reaches no other.
-        """
-        base = tree.__dict__.get("_cordon_names")
-        if base is None:
-            base = cls()
-            base._collect_names(tree)
-            tree.__dict__["_cordon_names"] = base
-        fresh = cls()
-        for name, value in vars(base).items():
-            if name == "_hits":
-                continue
-            setattr(fresh, name, value.copy() if isinstance(value, dict | set | list) else value)
-        return fresh
 
     def _collect_names(self, tree: ast.AST) -> None:
         """Build the alias and binding maps before evaluating any call.
@@ -1221,24 +614,7 @@ class PythonAnalyzer:
                 n.id == "__file__" for n in PythonSyntax.within(node.value, ast.Name)
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        for node in PythonSyntax.nodes(tree):
-            # Names holding the text of a local file: `l` in `for l in open(...)`, `t = open(...)
-            # .read()`, `t = Path(...).read_text()`.
-            source = (
-                node.iter
-                if isinstance(node, ast.For) and isinstance(node.target, ast.Name)
-                else node.value
-                if isinstance(node, ast.Assign)
-                else None
-            )
-            if source is not None and self._is_local_read(source):
-                target = node.target if isinstance(node, ast.For) else None
-                names = (
-                    [target.id]
-                    if isinstance(target, ast.Name)
-                    else [t.id for t in getattr(node, "targets", []) if isinstance(t, ast.Name)]
-                )
-                self._local_reads.update(names)
+        self._collect_reads(tree)
         for node in PythonSyntax.of(tree, ast.Import, ast.ImportFrom, ast.Assign, ast.For):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -1252,7 +628,7 @@ class PythonAnalyzer:
                     dotted = self._dotted(node.value)
                     if dotted:
                         self._bindings[target.id] = dotted
-                    literal = self.constant(node.value)
+                    literal = PythonFacts.constant(node.value)
                     if literal is not None:
                         # A second, different assignment makes the value unknowable statically.
                         known = self._strings.get(target.id, literal)
@@ -1278,7 +654,7 @@ class PythonAnalyzer:
             elif (
                 isinstance(node, ast.For)
                 and isinstance(node.target, ast.Name)
-                and self._is_literal_strings(node.iter)
+                and PythonFacts.is_literal_strings(node.iter)
             ):
                 # A loop over a literal list of strings. Every value the variable can
                 # take is written out above it, so a call through it is not a name this
@@ -1293,21 +669,26 @@ class PythonAnalyzer:
         # The tables are complete: from here a name resolves the same way every time it is asked.
         self._dotted_cache: dict[int, str | None] = {}
 
-    @classmethod
-    def _is_literal_strings(cls, node: ast.AST) -> bool:
-        """Whether this expression is a list, tuple or set of string literals.
-
-        Not a general evaluator: only the written-out form, where reading the file is
-        reading the values. A name bound to a list elsewhere is not followed, because
-        the next thing to follow would be a list that is appended to, and then one
-        built from a network response.
-        """
-        if not isinstance(node, ast.List | ast.Tuple | ast.Set):
-            return False
-        return bool(node.elts) and all(
-            isinstance(element, ast.Constant) and isinstance(element.value, str)
-            for element in node.elts
-        )
+    def _collect_reads(self, tree: ast.AST) -> None:
+        """The names the tree reads from local files, and the paths it bundles."""
+        for node in PythonSyntax.nodes(tree):
+            # Names holding the text of a local file: `l` in `for l in open(...)`, `t = open(...)
+            # .read()`, `t = Path(...).read_text()`.
+            source = (
+                node.iter
+                if isinstance(node, ast.For) and isinstance(node.target, ast.Name)
+                else node.value
+                if isinstance(node, ast.Assign)
+                else None
+            )
+            if source is not None and PythonFacts.is_local_read(source):
+                target = node.target if isinstance(node, ast.For) else None
+                names = (
+                    [target.id]
+                    if isinstance(target, ast.Name)
+                    else [t.id for t in getattr(node, "targets", []) if isinstance(t, ast.Name)]
+                )
+                self._local_reads.update(names)
 
     def _dotted(self, node: ast.AST) -> str | None:
         """The dotted name an expression refers to, unwinding aliases.
@@ -1342,7 +723,7 @@ class PythonAnalyzer:
             # to keep `import base64` and `exec(` off the same page.
             callee = self._dotted(node.func)
             if callee in ("__import__", "importlib.import_module"):
-                module = self.constant(node.args[0])
+                module = PythonFacts.constant(node.args[0])
                 if module:
                     return module
             if callee == "eval":
@@ -1359,7 +740,7 @@ class PythonAnalyzer:
         """
         if isinstance(node, ast.Call) and self._dotted(node.func) == "compile" and node.args:
             node = node.args[0]
-        source = self.constant(node)
+        source = PythonFacts.constant(node)
         if source is None or len(source) > 200:
             return None
         try:
@@ -1371,170 +752,6 @@ class PythonAnalyzer:
         return None
 
     # -- Constant folding ------------------------------------------------
-
-    @classmethod
-    def constant(cls, node: ast.AST) -> str | None:
-        """The string an expression evaluates to, if it is derivable statically.
-
-        Handles the shapes that hide a name: adjacent literals, `+` chains,
-        `"".join([...])` and f-strings whose parts are all constant. Anything
-        else returns None, which is the signal that the target is genuinely
-        computed at runtime.
-        """
-        if isinstance(node, ast.Constant):
-            return node.value if isinstance(node.value, str) else None
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            # A `+` chain nests to the left, and an obfuscated file writes thousands of terms:
-            # `"a" + "b" + ...`. Walked with a stack rather than by recursion, so its length cannot
-            # exhaust Python's -- a RecursionError here once lost the whole file's analysis.
-            parts: list[str] = []
-            stack: list[ast.AST] = [node]
-            while stack:
-                current = stack.pop()
-                if isinstance(current, ast.BinOp) and isinstance(current.op, ast.Add):
-                    stack.append(current.right)
-                    stack.append(current.left)
-                    continue
-                value = cls.constant(current)
-                if value is None:
-                    return None
-                parts.append(value)
-            return "".join(parts)
-        if isinstance(node, ast.JoinedStr):
-            pieces = [cls.constant(value) for value in node.values]
-            return (
-                None if any(part is None for part in pieces) else "".join(p or "" for p in pieces)
-            )
-        if isinstance(node, ast.FormattedValue):
-            return cls.constant(node.value)
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "join"
-            and len(node.args) == 1
-        ):
-            separator = cls.constant(node.func.value)
-            elements = node.args[0]
-            if separator is not None and isinstance(elements, ast.List | ast.Tuple):
-                pieces = [cls.constant(element) for element in elements.elts]
-                if all(part is not None for part in pieces):
-                    return separator.join(part or "" for part in pieces)
-            # `"".join([chr(x) for x in [47, 101, ...]])`: the same, as a comprehension.
-            if (
-                separator is not None
-                and isinstance(elements, ast.ListComp | ast.GeneratorExp)
-                and len(elements.generators) == 1
-                and not elements.generators[0].ifs
-                and isinstance(elements.generators[0].target, ast.Name)
-                and isinstance(elements.generators[0].iter, ast.List | ast.Tuple)
-                and len(elements.generators[0].iter.elts) <= MAX_FOLDED_CODES
-                and isinstance(elements.elt, ast.Call)
-                and isinstance(elements.elt.func, ast.Name)
-                and elements.elt.func.id == "chr"
-                and len(elements.elt.args) == 1
-                and isinstance(elements.elt.args[0], ast.Name)
-                and elements.elt.args[0].id == elements.generators[0].target.id
-            ):
-                codes = [cls._code_point(e) for e in elements.generators[0].iter.elts]
-                if all(c is not None for c in codes):
-                    return separator.join(chr(c) for c in codes if c is not None)
-            # `"".join(map(chr, [102, 114, 111, 109, ...]))`: code spelled as character codes.
-            if (
-                separator is not None
-                and isinstance(elements, ast.Call)
-                and isinstance(elements.func, ast.Name)
-                and elements.func.id == "map"
-                and len(elements.args) == 2
-                and isinstance(elements.args[0], ast.Name)
-                and elements.args[0].id == "chr"
-                and isinstance(elements.args[1], ast.List | ast.Tuple)
-                and len(elements.args[1].elts) <= MAX_FOLDED_CODES
-            ):
-                codes = [cls._code_point(e) for e in elements.args[1].elts]
-                if all(c is not None for c in codes):
-                    return separator.join(chr(c) for c in codes if c is not None)
-        # `chr(102)`, one character at a time.
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "chr"
-            and len(node.args) == 1
-        ):
-            code = cls._code_point(node.args[0])
-            if code is not None:
-                return chr(code)
-        return None
-
-    @staticmethod
-    def _code_point(node: ast.AST) -> int | None:
-        if (
-            isinstance(node, ast.Constant)
-            and type(node.value) is int
-            and 0 <= node.value <= 0x10FFFF
-        ):
-            return node.value
-        return None
-
-    WRITABLE_TARGET = re.compile(
-        r"""(?:^|[\s"'=])(?:\./|\.\\|/tmp/|/var/tmp/|/dev/shm/|%TEMP%|\$TMPDIR|\$HOME/\.)""",
-    )
-    """Paths a dropper writes its payload to.
-
-    A constant argv naming one of these is not the reassurance the rest of
-    `fixed_command` is: the command is fixed and the FILE it runs is not, because
-    whatever ran before it created that file."""
-
-    BARE_SHELL = re.compile(
-        r"""(?ix)
-        ^[ \t]*
-        (?:[\w.-]{0,40}[/\\]){0,4}
-        (?:sh|bash|zsh|ksh|dash|ash|csh|tcsh|fish|cmd|powershell|pwsh)
-        (?:\.exe)?
-        (?:[ \t]{1,4}-{1,2}[il]{1,2}\b){0,3}
-        [ \t]*$
-        """,
-    )
-    """A constant argv that is a shell and nothing else.
-
-    The discount `fixed_command` applies rests on one claim: a spawn whose whole
-    command is visible cannot be running something decoded or downloaded. That
-    holds for `["git", "rev-parse", "HEAD"]` and fails completely for
-    `["/bin/sh", "-i"]`, where the literal IS the act -- what such a shell runs
-    arrives over whatever its file descriptors were wired to, which is the whole
-    construction of a reverse shell.
-
-    Measured: `subprocess.call(["/bin/sh", "-i"])` next to
-    `socket.connect(("<literal ip>", 4444))` produced no finding at all, because
-    the spawn half was discounted here and `MALWARE.REVERSE_SHELL.001` needs
-    both. The pattern tier's hit on the same line was dropped with it, by line.
-
-    `sh -c "<command>"` is deliberately NOT this shape: it carries its command,
-    the embedded-shell tier extracts it, and the discount stays correct there."""
-
-    @classmethod
-    def _fixed_command(cls, node: ast.Call) -> bool:
-        """Whether every argument of this spawn was written out in the source."""
-        if not node.args:
-            return False
-        first = node.args[0]
-        if isinstance(first, ast.List | ast.Tuple):
-            parts = [cls.constant(element) for element in first.elts]
-            if not parts or any(part is None for part in parts):
-                return False
-            resolved = " ".join(part for part in parts if part is not None)
-        else:
-            single = cls.constant(first)
-            if single is None:
-                return False
-            resolved = single
-        if cls.BARE_SHELL.match(resolved):
-            return False
-        if SCRIPT_LAUNCH.search(resolved):
-            # `os.system("start main.cpython-39.vbs")`: literal, and what it runs is a file whose
-            # content is not in the command -- where a dropper that brought its payload with it
-            # puts it. `subprocess.run(["git", "rev-parse"])` names a tool, not a file.
-            return False
-        return cls.WRITABLE_TARGET.search(resolved) is None
 
     def _source_free(self, node: ast.AST) -> bool:
         """Whether this expression is built only from literals and interpreter- or platform-provided
@@ -1587,37 +804,8 @@ class PythonAnalyzer:
             for element in elements:
                 if not self._source_free(element):
                     return None
-                parts.append(self.constant(element) or "x")
+                parts.append(PythonFacts.constant(element) or "x")
         return " ".join(parts)
-
-    @classmethod
-    def safe_spawn_lines(cls, source: str) -> frozenset[int]:
-        """Lines of a spawn or execute whose command is provably source-free, so it cannot be
-        running a decoded value -- the Python analogue of `JsFlow.safe_spawn_lines`, which
-        `DecodeRun` uses to drop such a spawn from a decode-run pairing. `os.system(f"{sys.executable}
-        -m pip install requests")` is here; `exec(b64decode(blob))` and `subprocess.run(cmd)` for
-        any sourced `cmd` are not (fail-closed). A bare shell, a `start x.vbs` script launch, or a
-        command that runs a file the unit writes is kept too: there the literal IS the act
-        (`_fixed_command`'s guards)."""
-        try:
-            tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
-            return frozenset()
-        analyzer = cls._prepared(tree)
-        analyzer._walk(tree)
-        lines: set[int] = set()
-        for node in PythonSyntax.of(tree, ast.Call):
-            if PRIMITIVES.get(analyzer._dotted(node.func) or "") not in (
-                Capability.SPAWN,
-                Capability.EXECUTE,
-            ):
-                continue
-            folded = analyzer._source_free_command(node)
-            if folded is None or cls.BARE_SHELL.match(folded) or SCRIPT_LAUNCH.search(folded):
-                continue
-            if cls.WRITABLE_TARGET.search(folded) is None:
-                lines.add(node.lineno)
-        return frozenset(lines)
 
     def _command(self, node: ast.Call) -> str | None:
         """The command a spawn primitive is being handed.
@@ -1646,13 +834,13 @@ class PythonAnalyzer:
         literal text at all."""
         if depth > 4:
             return None
-        literal = self.constant(node)
+        literal = PythonFacts.constant(node)
         if literal is not None:
             return literal
         if isinstance(node, ast.JoinedStr):
             pieces = []
             for value in node.values:
-                part = self.constant(value)
+                part = PythonFacts.constant(value)
                 if part is None and isinstance(value, ast.FormattedValue):
                     inner = value.value
                     part = (
@@ -1680,7 +868,7 @@ class PythonAnalyzer:
         ):
             # A location named by an environment variable -- `os.getenv("TEMP") + "\\x.exe"`
             # -- is the same file wherever the expression is written twice.
-            name = self.constant(node.args[0])
+            name = PythonFacts.constant(node.args[0])
             if name is not None:
                 return f"{{env:{name}}}"
         return None
@@ -1791,7 +979,7 @@ class PythonAnalyzer:
     def _file_key(self, node: ast.AST) -> str | None:
         """A file named the same way twice: the literal path, the variable holding it, or a path
         built the same way each time (`os.getenv("APPDATA") + "\\u.exe"`)."""
-        literal = self.constant(node)
+        literal = PythonFacts.constant(node)
         if literal is None and isinstance(node, ast.Name):
             literal = self._strings.get(node.id) or f"name:{node.id}"
         if literal is None and isinstance(node, ast.BinOp | ast.JoinedStr | ast.Call):
@@ -1853,10 +1041,34 @@ class PythonAnalyzer:
                 if key:
                     downloaded.add(key)
             elif callee == "open" and node.args:
-                mode = self.constant(node.args[1]) if len(node.args) > 1 else None
+                mode = PythonFacts.constant(node.args[1]) if len(node.args) > 1 else None
                 key = self._file_key(node.args[0])
                 if key and mode and ("w" in mode or "a" in mode):
                     writers[f"{getattr(node, 'lineno', 0)}:{getattr(node, 'col_offset', 0)}"] = key
+        self._run_on_downloaded(tree, fetched, writers, downloaded)
+        if not downloaded and not fetched_output:
+            return
+        executable_download = any(EXECUTABLE_NAME.search(key) for key in downloaded)
+        for node in PythonSyntax.of(tree, ast.Call):
+            resolved = self._resolve_callee(node)
+            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
+                continue
+            call = resolved[1]
+            if call.args and self._runs_one_of(call.args[0], downloaded):
+                self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded file")
+            elif call.args and executable_download and self._starts_an_executable(call):
+                # A download saved as `main.exe`, moved, then started under its new name: the
+                # rename breaks the link by path, not the shape -- a fetched executable, run.
+                self._record(
+                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded program"
+                )
+            elif call.args and self._evaluates_output(call.args[0], fetched_output):
+                self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
+
+    def _run_on_downloaded(
+        self, tree: ast.AST, fetched: set[str], writers: dict[str, str], downloaded: set[str]
+    ) -> None:
+        """A process started on a path a download wrote, directly or through a name bound to it."""
         for node in PythonSyntax.of(tree, ast.Call):
             # `with open(P, "wb") as out: out.write(response.read())` and
             # `open(P, "wb").write(r.content)`, where `response` or `r` came from a request.
@@ -1887,24 +1099,6 @@ class PythonAnalyzer:
                     key = self._file_key(target)
                     if key:
                         downloaded.add(key)
-        if not downloaded and not fetched_output:
-            return
-        executable_download = any(EXECUTABLE_NAME.search(key) for key in downloaded)
-        for node in PythonSyntax.of(tree, ast.Call):
-            resolved = self._resolve_callee(node)
-            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
-                continue
-            call = resolved[1]
-            if call.args and self._runs_one_of(call.args[0], downloaded):
-                self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded file")
-            elif call.args and executable_download and self._starts_an_executable(call):
-                # A download saved as `main.exe`, moved, then started under its new name: the
-                # rename breaks the link by path, not the shape -- a fetched executable, run.
-                self._record(
-                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded program"
-                )
-            elif call.args and self._evaluates_output(call.args[0], fetched_output):
-                self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
 
     def _download_run_through_helpers(self, tree: ast.AST) -> None:
         """A download and its run, each in a helper, joined by the variable the caller hands both.
@@ -1924,114 +1118,29 @@ class PythonAnalyzer:
         if not functions:
             return
 
-        def params(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-            return [a.arg for a in (*function.args.posonlyargs, *function.args.args)]
-
         fetchers: set[str] = set()
-
-        def from_network(expr: ast.AST, local: set[str]) -> bool:
-            for part in PythonSyntax.within(expr, ast.Name, ast.Call):
-                if isinstance(part, ast.Name) and part.id in local:
-                    return True
-                if isinstance(part, ast.Call):
-                    if self._egress_call(part):
-                        return True
-                    if isinstance(part.func, ast.Name) and part.func.id in fetchers:
-                        return True
-            return False
-
-        def network_names(scope: ast.AST) -> set[str]:
-            local: set[str] = set()
-            for _ in range(2):
-                for node in ast.walk(scope):
-                    if isinstance(node, ast.Assign) and from_network(node.value, local):
-                        local |= {t.id for t in node.targets if isinstance(t, ast.Name)}
-            return local
 
         for _ in range(2):
             for function in functions:
-                local = network_names(function)
+                local = self._network_names(function, fetchers)
                 if any(
                     isinstance(n, ast.Return)
                     and n.value is not None
-                    and from_network(n.value, local)
+                    and self._from_network(n.value, local, fetchers)
                     for n in ast.walk(function)
                 ):
                     fetchers.add(function.name)
 
-        def opened_path(call: ast.AST) -> ast.AST | None:
-            if (
-                isinstance(call, ast.Call)
-                and isinstance(call.func, ast.Name)
-                and call.func.id == "open"
-                and call.args
-            ):
-                return call.args[0]
-            return None
-
         writers: dict[str, tuple[int, int | None]] = {}
         runners: dict[str, int] = {}
-        for function in functions:
-            names = params(function)
-            local = network_names(function)
-            handles: dict[str, ast.AST] = {}
-            for node in ast.walk(function):
-                if isinstance(node, ast.With):
-                    for item in node.items:
-                        path = opened_path(item.context_expr)
-                        if path is not None and isinstance(item.optional_vars, ast.Name):
-                            handles[item.optional_vars.id] = path
-                elif isinstance(node, ast.Assign):
-                    path = opened_path(node.value)
-                    if path is not None:
-                        handles.update(
-                            {t.id: path for t in node.targets if isinstance(t, ast.Name)}
-                        )
-            for node in ast.walk(function):
-                if not (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr in WRITE_METHODS
-                    and node.args
-                ):
-                    continue
-                target = node.func.value
-                path = (
-                    handles.get(target.id) if isinstance(target, ast.Name) else opened_path(target)
-                )
-                if not isinstance(path, ast.Name) or path.id not in names:
-                    continue
-                data = node.args[0]
-                data_param = next(
-                    (
-                        i
-                        for i, n in enumerate(names)
-                        if n in {x.id for x in PythonSyntax.within(data, ast.Name)}
-                    ),
-                    None,
-                )
-                if from_network(data, local):
-                    writers[function.name] = (names.index(path.id), None)
-                elif data_param is not None:
-                    writers[function.name] = (names.index(path.id), data_param)
-            for node in PythonSyntax.of(function, ast.Call):
-                resolved = self._resolve_callee(node)
-                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
-                    continue
-                call = resolved[1]
-                if not call.args:
-                    continue
-                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
-                for index, name in enumerate(names):
-                    if name in used:
-                        runners[function.name] = index
+        self._helper_downloads(functions, fetchers, writers, runners)
         if not writers or not runners:
             return
 
         scopes: list[ast.AST] = [tree, *functions]
         downloaded: set[str] = set()
         for scope in scopes:
-            local = network_names(scope)
+            local = self._network_names(scope, fetchers)
             for node in ast.walk(scope):
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
                     continue
@@ -2040,7 +1149,8 @@ class PythonAnalyzer:
                     continue
                 path_index, data_index = spec
                 if data_index is not None and (
-                    len(node.args) <= data_index or not from_network(node.args[data_index], local)
+                    len(node.args) <= data_index
+                    or not self._from_network(node.args[data_index], local, fetchers)
                 ):
                     continue
                 key = self._file_key(node.args[path_index])
@@ -2061,6 +1171,90 @@ class PythonAnalyzer:
                         node,
                         f"{node.func.id} runs the file a helper downloaded",
                     )
+
+    def _helper_downloads(
+        self,
+        functions: list[ast.FunctionDef | ast.AsyncFunctionDef],
+        fetchers: set[str],
+        writers: dict[str, tuple[int, int | None]],
+        runners: dict[str, int],
+    ) -> None:
+        """Each helper that downloads to a path its caller hands it, and each that runs one."""
+        for function in functions:
+            names = PythonFacts.parameter_names(function)
+            local = self._network_names(function, fetchers)
+            handles: dict[str, ast.AST] = {}
+            for node in ast.walk(function):
+                if isinstance(node, ast.With):
+                    for item in node.items:
+                        path = PythonFacts.opened_path(item.context_expr)
+                        if path is not None and isinstance(item.optional_vars, ast.Name):
+                            handles[item.optional_vars.id] = path
+                elif isinstance(node, ast.Assign):
+                    path = PythonFacts.opened_path(node.value)
+                    if path is not None:
+                        handles.update(
+                            {t.id: path for t in node.targets if isinstance(t, ast.Name)}
+                        )
+            for node in ast.walk(function):
+                if not (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in WRITE_METHODS
+                    and node.args
+                ):
+                    continue
+                target = node.func.value
+                path = (
+                    handles.get(target.id)
+                    if isinstance(target, ast.Name)
+                    else PythonFacts.opened_path(target)
+                )
+                if not isinstance(path, ast.Name) or path.id not in names:
+                    continue
+                data = node.args[0]
+                data_param = next(
+                    (
+                        i
+                        for i, n in enumerate(names)
+                        if n in {x.id for x in PythonSyntax.within(data, ast.Name)}
+                    ),
+                    None,
+                )
+                if self._from_network(data, local, fetchers):
+                    writers[function.name] = (names.index(path.id), None)
+                elif data_param is not None:
+                    writers[function.name] = (names.index(path.id), data_param)
+            for node in PythonSyntax.of(function, ast.Call):
+                resolved = self._resolve_callee(node)
+                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
+                    continue
+                call = resolved[1]
+                if not call.args:
+                    continue
+                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
+                for index, name in enumerate(names):
+                    if name in used:
+                        runners[function.name] = index
+
+    def _network_names(self, scope: ast.AST, fetchers: set[str]) -> set[str]:
+        local: set[str] = set()
+        for _ in range(2):
+            for node in ast.walk(scope):
+                if isinstance(node, ast.Assign) and self._from_network(node.value, local, fetchers):
+                    local |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        return local
+
+    def _from_network(self, expr: ast.AST, local: set[str], fetchers: set[str]) -> bool:
+        for part in PythonSyntax.within(expr, ast.Name, ast.Call):
+            if isinstance(part, ast.Name) and part.id in local:
+                return True
+            if isinstance(part, ast.Call):
+                if self._egress_call(part):
+                    return True
+                if isinstance(part.func, ast.Name) and part.func.id in fetchers:
+                    return True
+        return False
 
     def _received_and_run(self, tree: ast.AST) -> None:
         """Code or a command that arrived over the network, executed.
@@ -2143,7 +1337,7 @@ class PythonAnalyzer:
                 )
 
     def _starts_an_executable(self, call: ast.Call) -> bool:
-        text = self._command(call) or self.constant(call.args[0]) or ""
+        text = self._command(call) or PythonFacts.constant(call.args[0]) or ""
         return EXECUTABLE_NAME.search(text) is not None
 
     def _is_recon_call(self, node: ast.AST) -> bool:
@@ -2166,56 +1360,6 @@ class PythonAnalyzer:
         command = self._command(node) or ""
         first = command.strip().split(" ", 1)[0].rsplit("/", 1)[-1].lower()
         return first.removesuffix(".exe") in IDENTITY_COMMANDS
-
-    @staticmethod
-    def _carried(
-        tree: ast.AST, is_source: Callable[[ast.AST], bool], kind: type
-    ) -> Callable[..., bool]:
-        """Whether an expression holds what `is_source` finds: the source itself, a name assigned
-        from it, or a call to a function of this file that returns it. The last is how a collector
-        is written -- `def collect(): return json.dumps({"host":
-        socket.gethostname(), ...})` in one function, `requests.post(URL, data=collect())` in
-        another (review 98: eight MalSkillBench beacons). Names resolve per scope (`name_scope`), and
-        an argument's load passes to the parameter it binds, call after call (`passed`).
-        """
-        scope = PythonSyntax.name_scope(tree)
-        passed = PythonSyntax.passed(tree)
-        functions = PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
-        carrying: set[tuple[int, str]] = set()
-        returning: set[str] = set()
-
-        def callee(call: ast.Call) -> str | None:
-            func = call.func
-            if isinstance(func, ast.Name):
-                return func.id
-            # `self.collect()` and `Collector.collect()`: a method of a class in this file.
-            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-                return func.attr
-            return None
-
-        def holds(node: ast.AST, *, deep: bool = True) -> bool:
-            parts = PythonSyntax.within(node, kind, ast.Call, ast.Name) if deep else [node]
-            return any(
-                is_source(part)
-                or (isinstance(part, ast.Name) and (scope(part, part.id), part.id) in carrying)
-                or (isinstance(part, ast.Call) and callee(part) in returning)
-                for part in parts
-            )
-
-        for _ in range(3):
-            carrying.update((function, param) for arg, function, param in passed if holds(arg))
-            for node in PythonSyntax.nodes(tree):
-                if isinstance(node, ast.Assign) and holds(node.value):
-                    carrying.update(
-                        (scope(t, t.id), t.id) for t in node.targets if isinstance(t, ast.Name)
-                    )
-            for function in functions:
-                if function.name not in returning and any(
-                    isinstance(part, ast.Return) and part.value is not None and holds(part.value)
-                    for part in PythonSyntax.within(function, ast.Return)
-                ):
-                    returning.add(function.name)
-        return holds
 
     def _handed_to_a_sender(
         self, tree: ast.AST, holds: Callable[..., bool]
@@ -2297,7 +1441,7 @@ class PythonAnalyzer:
         thirty lines is what a telemetry plugin, a socket demo and a browser installer all do;
         putting the hostname in the request is the probe.
         """
-        holds = self._carried(tree, self._is_recon_call, ast.Subscript)
+        holds = PythonFacts.carried(tree, self._is_recon_call, ast.Subscript)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
@@ -2339,7 +1483,7 @@ class PythonAnalyzer:
                 and parent.attr in ("get", "setdefault", "pop", "__contains__")
             )
 
-        holds = self._carried(tree, is_whole, ast.Attribute)
+        holds = PythonFacts.carried(tree, is_whole, ast.Attribute)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
@@ -2359,62 +1503,18 @@ class PythonAnalyzer:
         """
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
-        def credential_read(node: ast.AST) -> str | None:
-            name: ast.AST | None = None
-            if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
-                "os.environ",
-                "os.environb",
-            ):
-                name = node.slice
-            elif isinstance(node, ast.Call):
-                dotted = self._dotted(node.func)
-                if (
-                    dotted
-                    in ("os.getenv", "os.environ.get", "os.environ.setdefault", "os.environ.pop")
-                    and node.args
-                ):
-                    name = node.args[0]
-            if isinstance(name, ast.Constant) and isinstance(name.value, str):
-                return name.value if SecretFlow.home_of(name.value) else None
-            return None
-
-        def url_literal(node: ast.AST) -> str | None:
-            if (
-                isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and "://" in node.value
-            ):
-                return node.value
-            if isinstance(node, ast.JoinedStr) and node.values:
-                first = node.values[0]
-                if (
-                    isinstance(first, ast.Constant)
-                    and isinstance(first.value, str)
-                    and "://" in first.value
-                ):
-                    return first.value
-            if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
-                return url_literal(node.left)
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "format"
-            ):
-                return url_literal(node.func.value)
-            return None
-
         carrying: dict[str, str] = {}
         urls: dict[str, str] = {}
         for _ in range(3):
             for node in PythonSyntax.of(tree, ast.Assign):
                 targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-                literal = url_literal(node.value)
+                literal = PythonFacts.url_literal(node.value)
                 if literal is not None:
                     assigned = SecretFlow.host_of(literal)
                     if assigned:
                         urls.update(dict.fromkeys(targets, assigned))
                 for part in PythonSyntax.nodes(node.value):
-                    key = credential_read(part)
+                    key = self._credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
                     if key is not None:
@@ -2428,7 +1528,7 @@ class PythonAnalyzer:
             keys: set[str] = set()
             for argument in arguments:
                 for part in PythonSyntax.within(argument, ast.Subscript, ast.Call, ast.Name):
-                    key = credential_read(part)
+                    key = self._credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
                     if key is not None:
@@ -2445,7 +1545,7 @@ class PythonAnalyzer:
             )
             host: str | None = None
             if destination is not None:
-                literal = url_literal(destination)
+                literal = PythonFacts.url_literal(destination)
                 if literal is not None:
                     host = SecretFlow.host_of(literal)
                 elif isinstance(destination, ast.Name):
@@ -2455,32 +1555,25 @@ class PythonAnalyzer:
                     self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}")
                     break
 
-    @staticmethod
-    def _is_local_read(node: ast.AST) -> bool:
-        """`open(<no URL>)`, optionally `.read()`/`.readlines()`/`.strip()` on it, or
-        `<path>.read_text()`."""
-        current = node
-        while (
-            isinstance(current, ast.Call)
-            and isinstance(current.func, ast.Attribute)
-            and (
-                current.func.attr
-                in ("read", "readlines", "strip", "splitlines", "decode", "read_text")
-            )
+    def _credential_read(self, node: ast.AST) -> str | None:
+        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
+
+        name: ast.AST | None = None
+        if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
+            "os.environ",
+            "os.environb",
         ):
-            if current.func.attr == "read_text":
-                return True
-            current = current.func.value
-        if not (
-            isinstance(current, ast.Call)
-            and isinstance(current.func, ast.Name)
-            and current.func.id == "open"
-        ):
-            return False
-        literals = [
-            n.value for n in PythonSyntax.within(current, ast.Constant) if isinstance(n.value, str)
-        ]
-        return not any("://" in value for value in literals)
+            name = node.slice
+        elif isinstance(node, ast.Call):
+            dotted = self._dotted(node.func)
+            if (
+                dotted in ("os.getenv", "os.environ.get", "os.environ.setdefault", "os.environ.pop")
+                and node.args
+            ):
+                name = node.args[0]
+        if isinstance(name, ast.Constant) and isinstance(name.value, str):
+            return name.value if SecretFlow.home_of(name.value) else None
+        return None
 
     def _read_from_local_file(self, node: ast.AST) -> bool:
         """Whether every name in this expression holds text read from a local file, rather than
@@ -2531,35 +1624,20 @@ class PythonAnalyzer:
         ):
             return False
         revision = next(
-            (self.constant(k.value) for k in node.keywords if k.arg == "revision"), None
+            (PythonFacts.constant(k.value) for k in node.keywords if k.arg == "revision"), None
         )
         if revision and MODEL_COMMIT.fullmatch(revision):
             return False
-        source = self.constant(node.args[0]) if node.args else None
+        source = PythonFacts.constant(node.args[0]) if node.args else None
         source = source or next(
             (
-                self.constant(k.value)
+                PythonFacts.constant(k.value)
                 for k in node.keywords
                 if k.arg in ("pretrained_model_name_or_path", "model", "path")
             ),
             None,
         )
         return not (source and source.startswith(("./", "../", "/")))
-
-    @staticmethod
-    def _unsafe_model_option(node: ast.Call, dotted: str | None) -> str:
-        """A model loader called with its safety switch turned off: Keras's `safe_mode=False`
-        (Lambda layers run arbitrary Python), NumPy's `allow_pickle=True` (an object array is a
-        pickle), each written out as a constant."""
-        name = (dotted or "").rsplit(".", 1)[-1]
-        for keyword in node.keywords:
-            if not isinstance(keyword.value, ast.Constant):
-                continue
-            if keyword.arg == "safe_mode" and keyword.value.value is False and name == "load_model":
-                return "safe_mode=False"
-            if keyword.arg == "allow_pickle" and keyword.value.value is True and name == "load":
-                return "allow_pickle=True"
-        return ""
 
     def _opened_for_persistence(self, node: ast.Call) -> None:
         """`open(<a shell profile, LaunchAgent, crontab or systemd user unit>, "a")`.
@@ -2568,9 +1646,9 @@ class PythonAnalyzer:
         `/home/<user>/.profile` from character codes and appends to it for every user in
         `/etc/passwd` -- is only legible once folded.
         """
-        mode = self.constant(node.args[1]) if len(node.args) > 1 else None
+        mode = PythonFacts.constant(node.args[1]) if len(node.args) > 1 else None
         mode = mode or next(
-            (self.constant(k.value) for k in node.keywords if k.arg == "mode"), None
+            (PythonFacts.constant(k.value) for k in node.keywords if k.arg == "mode"), None
         )
         if not mode or not any(flag in mode for flag in "wa"):
             return
@@ -2582,8 +1660,8 @@ class PythonAnalyzer:
         """`run(["node", "-e", r.stdout])` where `r` holds a download's output."""
         if not fetched or not isinstance(argv, ast.List | ast.Tuple) or len(argv.elts) < 3:
             return False
-        program = posixpath.basename(self.constant(argv.elts[0]) or "").lower()
-        flag = self.constant(argv.elts[1]) or ""
+        program = posixpath.basename(PythonFacts.constant(argv.elts[0]) or "").lower()
+        flag = PythonFacts.constant(argv.elts[1]) or ""
         code = argv.elts[2]
         source = code.value if isinstance(code, ast.Attribute) else code
         return (
@@ -2690,12 +1768,12 @@ class PythonAnalyzer:
             or self._dotted(node.func) not in BASE64_DECODERS
         ):
             # A value the folder can compute -- `"".join(map(chr, [...]))` -- is still a literal.
-            return self.constant(node)
+            return PythonFacts.constant(node)
         argument = node.args[0]
         encoded = (
             self._strings.get(argument.id)
             if isinstance(argument, ast.Name)
-            else self.constant(argument)
+            else PythonFacts.constant(argument)
         )
         if isinstance(argument, ast.Constant) and isinstance(argument.value, bytes):
             encoded = argument.value.decode("ascii", "replace")
@@ -2738,24 +1816,14 @@ class PythonAnalyzer:
         for node_id in self._environment_handed_to_children(tree):
             keyed[node_id] = ""
 
-        def key_of(node: ast.AST) -> str | None:
-            # A literal, or a loop variable drawn from a literal sequence of names --
-            # `for n in ("http_proxy", "HTTPS_PROXY"): os.environ[n]`, which is how nodeenv
-            # passes proxy settings on. Every candidate is judged, joined, so one name that
-            # reads as a credential keeps the read a credential read.
-            key = self.constant(node)
-            if key is None and isinstance(node, ast.Name) and node.id in candidates:
-                return " ".join(candidates[node.id])
-            return key
-
         for node in PythonSyntax.of(tree, ast.Subscript, ast.Call, ast.Compare):
             if isinstance(node, ast.Subscript):
                 # `os.environ["NAME"]`
-                key = key_of(node.slice)
+                key = self._key_of(node.slice, candidates)
                 if key is not None and self._dotted(node.value) in ENVIRONMENT:
                     keyed[id(node.value)] = key
             elif isinstance(node, ast.Call):
-                key = key_of(node.args[0]) if node.args else None
+                key = self._key_of(node.args[0], candidates) if node.args else None
                 if key is None:
                     continue
                 if self._dotted(node.func) in ENVIRONMENT:
@@ -2797,7 +1865,7 @@ class PythonAnalyzer:
                     if isinstance(op, ast.In | ast.NotIn) and (
                         self._dotted(comparator) in ENVIRONMENT
                     ):
-                        key = self.constant(left)
+                        key = PythonFacts.constant(left)
                         if key is not None:
                             keyed[id(comparator)] = key
                     left = comparator
@@ -2805,6 +1873,16 @@ class PythonAnalyzer:
             # A written name is not a read at all, whatever the name says.
             keyed[node_id] = ""
         return keyed
+
+    def _key_of(self, node: ast.AST, candidates: dict[str, list[str]]) -> str | None:
+        # A literal, or a loop variable drawn from a literal sequence of names --
+        # `for n in ("http_proxy", "HTTPS_PROXY"): os.environ[n]`, which is how nodeenv
+        # passes proxy settings on. Every candidate is judged, joined, so one name that
+        # reads as a credential keeps the read a credential read.
+        key = PythonFacts.constant(node)
+        if key is None and isinstance(node, ast.Name) and node.id in candidates:
+            return " ".join(candidates[node.id])
+        return key
 
     def _call(self, node: ast.Call) -> None:
         dotted = self._dotted(node.func)
@@ -2814,7 +1892,7 @@ class PythonAnalyzer:
             self._record(Capability.EXECUTE, node, f"unsafe model load: {dotted}")
         if self._runs_remote_model_code(node):
             self._record(Capability.EXECUTE, node, f"remote model code: {dotted or 'call'}")
-        unsafe_option = self._unsafe_model_option(node, dotted)
+        unsafe_option = PythonFacts.unsafe_model_option(node, dotted)
         if unsafe_option:
             self._record(Capability.EXECUTE, node, f"unsafe model option: {unsafe_option}")
         if dotted and dotted in PRIMITIVES:
@@ -2822,7 +1900,7 @@ class PythonAnalyzer:
                 # `os.getenv("NAME")`, whose key is its first argument. With no
                 # literal key the name is computed, and a computed lookup into the
                 # environment is the broad access rather than a named setting.
-                key = self.constant(node.args[0]) if node.args else None
+                key = PythonFacts.constant(node.args[0]) if node.args else None
                 if key is not None and not CREDENTIAL_VARIABLE.search(key):
                     return
             if (
@@ -2840,7 +1918,7 @@ class PythonAnalyzer:
                 node,
                 dotted,
                 command=self._command(node),
-                fixed=self._fixed_command(node),
+                fixed=PythonFacts.fixed_command(node),
             )
             return
 
@@ -2851,10 +1929,10 @@ class PythonAnalyzer:
         # `getattr(os, "system")` and friends. The first argument names the
         # namespace, the second the attribute.
         namespace = self._dotted(node.args[0]) if node.args else None
-        attribute = self.constant(node.args[1]) if len(node.args) > 1 else None
+        attribute = PythonFacts.constant(node.args[1]) if len(node.args) > 1 else None
 
         if base == "__import__":
-            imported = self.constant(node.args[0]) if node.args else None
+            imported = PythonFacts.constant(node.args[0]) if node.args else None
             first = node.args[0] if node.args else None
             if isinstance(first, ast.Name) and first.id in self._enumerated:
                 # Enumerated rather than computed. See `_collect_names`.
@@ -2872,7 +1950,7 @@ class PythonAnalyzer:
                     node,
                     resolved,
                     command=self._command(callsite),
-                    fixed=self._fixed_command(callsite),
+                    fixed=PythonFacts.fixed_command(callsite),
                 )
                 return
         if (
@@ -2914,7 +1992,7 @@ class PythonAnalyzer:
         if isinstance(node.value, ast.Call):
             inner = self._dotted(node.value.func)
             container = inner.split(".")[-1] if inner else None
-        key = self.constant(node.slice)
+        key = PythonFacts.constant(node.slice)
 
         if key is not None:
             if key in PRIMITIVES:
@@ -2992,9 +2070,173 @@ class PythonAnalyzer:
             )
         )
 
+    @classmethod
+    def excused_lines(cls, source: str) -> dict[Capability | str, frozenset[int]]:
+        """Lines where the pattern tier's match is a known-harmless form this tier can see.
+
+        `exec` of text read from the package's own file (EXECUTE), and the whole environment
+        copied only to become a child process's environment (CREDENTIAL). The pattern tier sees
+        `exec(` and `os.environ` and cannot tell what follows; the caller drops its hits on these
+        lines and keeps every other."""
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return {}
+        analyzer = PythonAnalyzer._prepared(tree)
+        analyzer._walk(tree)
+        handed = analyzer._environment_handed_to_children(tree)
+        environment = {
+            node.lineno
+            for node in PythonSyntax.nodes(tree)
+            if id(node) in handed and hasattr(node, "lineno")
+        }
+        # A line that also reads the environment some other way keeps its pattern hit.
+        environment -= {
+            node.lineno
+            for node in PythonSyntax.nodes(tree)
+            if analyzer._dotted(node) in ENVIRONMENT
+            and id(node) not in handed
+            and hasattr(node, "lineno")
+        }
+        own_name = frozenset(
+            node.lineno
+            for node in PythonSyntax.nodes(tree)
+            if isinstance(node, ast.Call)
+            and (analyzer._dotted(node.func) or "") in DNS_LOOKUPS
+            and node.args
+            and PythonFacts._own_name_locally(node.args[0])
+        )
+        patterns = PythonFacts._pattern_literals(tree)
+        return {
+            "CAP.EGRESS.DNS_CONSTRUCTED.001": own_name,
+            Capability.PERSIST: PythonFacts._persistence_named_not_written(tree)
+            | patterns
+            | PythonFacts._persistence_not_reaching_a_write(source, tree, analyzer._hits),
+            Capability.EXECUTE: frozenset(analyzer._excused_lines),
+            Capability.CREDENTIAL: frozenset(environment) | patterns,
+            Capability.DECODE: analyzer._decoded_into_data_parsers(tree),
+        }
+
+    @classmethod
+    def calls(cls, source: str) -> list[AstCall]:
+        """Every call in this source, with callee and arguments resolved.
+
+        The same resolution `analyse` applies to the fixed `PRIMITIVES` table,
+        exposed for rules to query instead. That table is this module's own
+        list of what matters; a rule pack needs to name its own.
+
+        Unparseable source yields nothing, which the caller must treat as "not
+        examined" rather than "nothing here" -- the regex tier still runs over
+        the same file, which is why this is an addition to it and never a
+        replacement.
+        """
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return []
+        analyzer = PythonAnalyzer._prepared(tree)
+        # `_invoked` maps an inner call to the call that invokes its result, so
+        # `getattr(os, "system")("...")` can find the argument list that belongs
+        # to the outer parentheses.
+        for node in PythonSyntax.of(tree, ast.Call):
+            if isinstance(node.func, ast.Call | ast.Subscript):
+                analyzer._invoked[id(node.func)] = node
+
+        # What each plain name is assigned, so a hostname assembled into a variable on one line
+        # and resolved on the next reads as the built value it is.
+        assigned: dict[str, list[ast.AST]] = {}
+        for node in PythonSyntax.of(tree, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assigned.setdefault(target.id, []).append(node.value)
+
+        def constructed(argument: ast.AST) -> bool:
+            if PythonFacts._is_constructed(argument):
+                return True
+            values = assigned.get(argument.id, []) if isinstance(argument, ast.Name) else []
+            return bool(values) and all(
+                PythonFacts._is_constructed(value) and PythonFacts._has_dotted_literal(value)
+                for value in values
+            )
+
+        found: list[AstCall] = []
+        for node in PythonSyntax.of(tree, ast.Call):
+            resolved = analyzer._resolve_callee(node)
+            if resolved is None:
+                continue
+            name, callsite = resolved
+            found.append(
+                AstCall(
+                    name=name,
+                    line=getattr(node, "lineno", 0),
+                    column=getattr(node, "col_offset", 0),
+                    arguments=tuple(analyzer._argument_value(a) for a in callsite.args),
+                    keywords=tuple(
+                        (kw.arg, analyzer._argument_value(kw.value))
+                        for kw in callsite.keywords
+                        if kw.arg
+                    ),
+                    has_constructed_argument=any(constructed(a) for a in callsite.args),
+                )
+            )
+        return found
+
+    @classmethod
+    def _prepared(cls, tree: ast.AST) -> PythonAnalyzer:
+        """An analyser with this tree's name tables already built, each table its own copy.
+
+        Four entry points (`analyse`, `calls`, `excused_lines` and `PythonSource.loop_delay_lines`)
+        each built the same tables from scratch: 3.2 builds per file. They are built once per tree now, kept on it, and copied per caller, so what one
+        caller adds -- `_walk` fills `_invoked` and records hits -- reaches no other.
+        """
+        base = tree.__dict__.get("_cordon_names")
+        if base is None:
+            base = cls()
+            base._collect_names(tree)
+            tree.__dict__["_cordon_names"] = base
+        fresh = cls()
+        for name, value in vars(base).items():
+            if name == "_hits":
+                continue
+            setattr(fresh, name, value.copy() if isinstance(value, dict | set | list) else value)
+        return fresh
+
+    @classmethod
+    def safe_spawn_lines(cls, source: str) -> frozenset[int]:
+        """Lines of a spawn or execute whose command is provably source-free, so it cannot be
+        running a decoded value -- the Python analogue of `JsFlow.safe_spawn_lines`, which
+        `DecodeRun` uses to drop such a spawn from a decode-run pairing. `os.system(f"{sys.executable}
+        -m pip install requests")` is here; `exec(b64decode(blob))` and `subprocess.run(cmd)` for
+        any sourced `cmd` are not (fail-closed). A bare shell, a `start x.vbs` script launch, or a
+        command that runs a file the unit writes is kept too: there the literal IS the act
+        (`_fixed_command`'s guards)."""
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return frozenset()
+        analyzer = PythonAnalyzer._prepared(tree)
+        analyzer._walk(tree)
+        lines: set[int] = set()
+        for node in PythonSyntax.of(tree, ast.Call):
+            if PRIMITIVES.get(analyzer._dotted(node.func) or "") not in (
+                Capability.SPAWN,
+                Capability.EXECUTE,
+            ):
+                continue
+            folded = analyzer._source_free_command(node)
+            if (
+                folded is None
+                or PythonFacts.BARE_SHELL.match(folded)
+                or SCRIPT_LAUNCH.search(folded)
+            ):
+                continue
+            if PythonFacts.WRITABLE_TARGET.search(folded) is None:
+                lines.add(node.lineno)
+        return frozenset(lines)
+
 
 SLEEP_CALLS = frozenset({"time.sleep", "asyncio.sleep", "trio.sleep", "anyio.sleep"})
 """The ways Python waits, as a dotted name."""
 
 
-__all__ = ["PRIMITIVES", "SLEEP_CALLS", "Assembled", "AstHit", "PythonAnalyzer", "PythonSource"]
+__all__ = ["SLEEP_CALLS", "PythonAnalyzer", "PythonSource"]

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import ast
 
-from cordon_scanner.analysis.python.pyast import PythonAnalyzer, PythonSource
+from cordon_scanner.analysis.python.pyast import PythonSource
+from cordon_scanner.analysis.python.pyfacts import PythonFacts
 
 #: Long enough to pass the default recursion limit (1,000) the old fold hit, short enough to parse.
 TERMS = 2_500
@@ -14,11 +15,11 @@ class TestLongConcatenation:
     def test_a_long_chain_folds_to_its_string(self) -> None:
         source = " + ".join(["'ab'"] * TERMS)
         node = ast.parse(source, mode="eval").body
-        assert PythonAnalyzer.constant(node) == "ab" * TERMS
+        assert PythonFacts.constant(node) == "ab" * TERMS
 
     def test_a_chain_with_a_computed_term_is_not_folded(self) -> None:
         node = ast.parse("'a' + name + 'b'", mode="eval").body
-        assert PythonAnalyzer.constant(node) is None
+        assert PythonFacts.constant(node) is None
 
     def test_a_file_holding_one_is_still_analysed(self) -> None:
         source = (

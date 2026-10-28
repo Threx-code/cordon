@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from cordon_scanner.analysis.python.pyast import AstCall
+    from cordon_scanner.analysis.python.pyfacts import AstCall
 
 MAX_CALLS = 4096
 """How many resolved calls to consider in one file.

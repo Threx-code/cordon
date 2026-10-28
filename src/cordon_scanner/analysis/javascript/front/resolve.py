@@ -35,7 +35,7 @@ from cordon_scanner.analysis.shared.content_memo import ContentMemo
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from cordon_scanner.analysis.python.pyast import AstCall
+    from cordon_scanner.analysis.python.pyfacts import AstCall
 
 
 @dataclass
@@ -129,7 +129,7 @@ class CallResolver:
     ) -> list[tuple[int, AstCall]]:
         """The calls of a file given in parts, each `(byte offset, newlines before it, column of
         its start, its text or a sliceable view of its bytes)`, with each call's byte offset."""
-        from cordon_scanner.analysis.python.pyast import AstCall
+        from cordon_scanner.analysis.python.pyfacts import AstCall
 
         module = Scope(None, module=True)
         done: list[tuple[int, int, int, str, list[str], bool]] = []
