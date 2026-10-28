@@ -18,6 +18,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary.detector import BinaryDetector
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
+from cordon_scanner.detect.code.capability.destinations import DestinationLabels
 from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.assembly import SecretAssembly
@@ -12526,7 +12527,7 @@ class TestAModuleThatExplainsWhatItDrives:
     That is an accurate description of the tool the module drives, and
     `trycloudflare.com` is on the drop-point host list precisely because the
     property being described -- no account, reachable anywhere -- makes it a
-    good exfiltration endpoint. `Labelling.destination_capabilities` searched the raw
+    good exfiltration endpoint. `DestinationLabels.destination_capabilities` searched the raw
     bytes and took the first hit, so the sentence counted as contacting it, and
     a `platform.machine()` call a hundred lines below completed the pair.
 
@@ -13597,7 +13598,7 @@ class TestMoreDecodersAndDestinations:
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.py", f'URL = "{url}"\n'.encode())
-        assert bool(Labelling.public_ip_url(content, "python")) is counted
+        assert bool(DestinationLabels.public_ip_url(content, "python")) is counted
 
     @pytest.mark.parametrize(
         ("line", "counted"),
@@ -13616,7 +13617,7 @@ class TestMoreDecodersAndDestinations:
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.js", f"{line}\n".encode())
-        assert bool(Labelling.public_ip_url(content, "javascript")) is counted
+        assert bool(DestinationLabels.public_ip_url(content, "javascript")) is counted
 
 
 class TestAnInlineRequireRunsTheFile:

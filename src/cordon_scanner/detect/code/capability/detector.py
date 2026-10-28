@@ -42,6 +42,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.code.capability.anchor import FindingAnchor
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.composites import CompositeEvaluator
+from cordon_scanner.detect.code.capability.destinations import DestinationLabels
 from cordon_scanner.detect.code.capability.grading import CompositeGrading
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
@@ -324,7 +325,7 @@ class CapabilityDetector(BaseDetector):
             # A build's own signing passwords and publishing tokens (`detect/gradle_auth.py`).
             hits = GradleBuildAuth.drop_build_auth(content.text, hits, Capability.CREDENTIAL)
         hits.extend(Labelling.embedded_capabilities(ctx, content, commands))
-        hits.extend(Labelling.destination_capabilities(content, unit.language))
+        hits.extend(DestinationLabels.destination_capabilities(content, unit.language))
         hits.extend(JavaScriptCapabilities.js_downloaded_and_run(content, unit.language))
         hits.extend(JavaScriptCapabilities.js_wallet_secret_sent(content, unit.language))
         hits.extend(JavaScriptCapabilities.js_flows(content, unit.language))

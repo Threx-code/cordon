@@ -151,6 +151,7 @@
   "detect/code/capability/intent": "detect/code/capability/intent",
   "detect/code/capability/javascript": "detect/code/capability/javascript",
   "detect/code/capability/labelling": "detect/code/capability/labelling",
+  "detect/code/capability/destinations": "detect/code/capability/destinations",
   "detect/code/capability/legitimate_use": "detect/code/capability/legitimate_use",
   "detect/code/capability/build_output": "detect/code/capability/build_output",
   "detect/code/capability/composites": "detect/code/capability/composites",
