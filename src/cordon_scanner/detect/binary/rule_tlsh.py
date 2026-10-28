@@ -17,6 +17,7 @@ too few buckets, has no hash and yields the empty string.
 from __future__ import annotations
 
 import bisect
+from collections import Counter
 from fractions import Fraction
 from typing import ClassVar
 
@@ -68,8 +69,6 @@ class Tlsh:
 
     #: Per-salt 256-byte substitution tables (``x -> PEARSON[salt ^ x]``), built once on first use.
     _salt_cache: ClassVar[dict[int, bytes] | None] = None
-    #: Deletion sets for the histogram's value splits, cached by range across calls.
-    _delete_cache: ClassVar[dict[tuple[int, int], bytes]] = {}
     #: Bucket values TLSH discards (>= 128), deleted in one pass before the histogram.
     _HIGH: ClassVar[bytes] = bytes(range(128, 256))
 
@@ -131,38 +130,15 @@ class Tlsh:
             votes = cls._xor(votes, back[j]).translate(table)
             votes = cls._xor(votes, back[k]).translate(table)
             buckets.append(votes)
-        active = [0] * cls.BUCKET_COUNT
         kept = b"".join(buckets).translate(None, cls._HIGH)  # TLSH keeps only buckets 0..127
-        cls._partition(kept, 0, cls.BUCKET_COUNT, active)
+        # Counter counts the bytes in one C pass (``_count_elements``); the values are 0..127 after _HIGH
+        counts = Counter(kept)
+        active = [counts.get(value, 0) for value in range(cls.BUCKET_COUNT)]
         prefix = cls._xor(newest.translate(salted[1]), back[1]).translate(table)
         checksum = 0
         for byte in prefix:
             checksum = table[byte ^ checksum]
         return active, checksum
-
-    @classmethod
-    def _partition(cls, data: bytes, lo: int, hi: int, active: list[int]) -> None:
-        """Tally the bucket values in ``[lo, hi)`` occurring in ``data`` into ``active`` by recursive halving:
-        ``bytes.translate`` (a C pass) keeps only the bytes in each half, so a leaf's count is just the length
-        of the bytes that reached it. Each tree level touches the whole input once, ~7 levels for 128 values."""
-        if not data:
-            return
-        if hi - lo == 1:
-            active[lo] = len(data)
-            return
-        mid = (lo + hi) // 2
-        cls._partition(data.translate(None, cls._delete_for(lo, mid)), lo, mid, active)
-        cls._partition(data.translate(None, cls._delete_for(mid, hi)), mid, hi, active)
-
-    @classmethod
-    def _delete_for(cls, lo: int, hi: int) -> bytes:
-        """The ``translate`` deletion set that keeps only byte values in ``[lo, hi)`` -- cached, as it depends
-        only on the split, not the data."""
-        table = cls._delete_cache.get((lo, hi))
-        if table is None:
-            table = bytes(v for v in range(256) if not lo <= v < hi)
-            cls._delete_cache[(lo, hi)] = table
-        return table
 
     @staticmethod
     def _xor(left: bytes, right: bytes) -> bytes:
