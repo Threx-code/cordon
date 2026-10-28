@@ -153,7 +153,7 @@ class BaselineCommand:
         value, and evidence is hash-only throughout -- but the shape of the
         mistake is the one this tool exists to object to elsewhere.
 
-        Unlike `_git_source`, a tree that is not a repository is not an error.
+        Unlike `GitModes.source`, a tree that is not a repository is not an error.
         `--tracked` on `scan` is a promise about which bytes were read and must
         fail rather than quietly widen; this is a default about which files are
         worth recording, and refusing to baseline an unversioned directory would
