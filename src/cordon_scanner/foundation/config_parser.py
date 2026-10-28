@@ -26,15 +26,17 @@ if TYPE_CHECKING:
 
 from cordon_scanner.foundation.config import (
     CONFIG_VERSION,
-    DEFAULT_ADVISORY_DOMAINS,
-    DEFAULT_MAX_MAJOR_DRIFT,
     LICENSE_UNKNOWN_ORDER,
     MIN_JUSTIFICATION_CHARS,
     TOP_LEVEL_KEYS,
     Config,
+    Provenance,
+)
+from cordon_scanner.foundation.policy import (
+    DEFAULT_ADVISORY_DOMAINS,
+    DEFAULT_MAX_MAJOR_DRIFT,
     OrgConstraints,
     Policy,
-    Provenance,
 )
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

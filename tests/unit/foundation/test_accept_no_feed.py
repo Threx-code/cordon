@@ -11,10 +11,11 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config, Policy
+from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.config_parser import ConfigParser
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
+from cordon_scanner.foundation.policy import Policy
 
 NO_FEED = "OPERATIONAL.ADVISORY.NO_FEED.001"
 

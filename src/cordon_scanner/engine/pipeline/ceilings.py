@@ -32,7 +32,6 @@ from cordon_scanner.engine.pipeline.constants import (
 )
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.operational import OperationalFinding
-from cordon_scanner.foundation.config import Policy
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -40,6 +39,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.policy import Policy
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -8,31 +8,26 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from cordon_scanner.foundation.config import (
+    CONFIG_VERSION,
+    TOP_LEVEL_KEYS,
+    Config,
+    Layer,
+    Provenance,
+)
+from cordon_scanner.foundation.config_parser import ConfigParser
 from cordon_scanner.foundation.distribution import PolicyDistribution
 from cordon_scanner.foundation.errors import ConfigError
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
     Severity,
 )
 from cordon_scanner.foundation.paths import StatePaths
-
-if TYPE_CHECKING:
-    pass
-
-from cordon_scanner.foundation.config import (
-    CONFIG_VERSION,
-    MAX_SUPPRESSION_DAYS,
-    TOP_LEVEL_KEYS,
-    Config,
-    Layer,
-    OrgConstraints,
-    Provenance,
-)
-from cordon_scanner.foundation.config_parser import ConfigParser
-from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
+from cordon_scanner.foundation.policy import MAX_SUPPRESSION_DAYS, OrgConstraints
 
 
 class ConfigResolver:

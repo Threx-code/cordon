@@ -28,13 +28,13 @@ from cordon_scanner.foundation.config import (
     CONFIG_VERSION,
     MIN_JUSTIFICATION_CHARS,
     Config,
-    OrgConstraints,
 )
 from cordon_scanner.foundation.config_parser import ConfigParser
 from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Suppression
+from cordon_scanner.foundation.policy import OrgConstraints
 
 
 @dataclass(frozen=True, slots=True)

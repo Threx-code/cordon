@@ -38,7 +38,8 @@ from cordon_scanner.version import PROGRAM
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from cordon_scanner.foundation.config import Config, Policy
+    from cordon_scanner.foundation.config import Config
+    from cordon_scanner.foundation.policy import Policy
 
 
 @dataclass(frozen=True, slots=True)

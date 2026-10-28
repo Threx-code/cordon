@@ -23,9 +23,9 @@ from cordon_scanner.cli.completion import CommandTree, CompletionScript
 from cordon_scanner.cli.deps import DependencyView
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cli.suppressions import SuppressCommand, SuppressionFile, SuppressionRules
-from cordon_scanner.foundation.config import OrgConstraints
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.models import Category, Suppression
+from cordon_scanner.foundation.policy import OrgConstraints
 from cordon_scanner.intel.registries import more_registries, registry_client
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
 from cordon_scanner.intel.registries.registry_client import (

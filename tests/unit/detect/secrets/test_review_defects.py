@@ -12866,8 +12866,8 @@ class TestWhatShouldStopARelease:
         not reach it: its category is the stronger claim about the same file.
         The category test runs first for exactly this reason."""
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Policy
         from cordon_scanner.foundation.models import Category, Confidence, Severity
+        from cordon_scanner.foundation.policy import Policy
         from cordon_scanner.foundation.taxonomy import Taxonomy, ThreatDomain
 
         assert Taxonomy.domain_of("MALWARE.CI.SECRET_EXFIL.001") is ThreatDomain.CICD

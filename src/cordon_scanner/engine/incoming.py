@@ -44,9 +44,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.foundation.config import Config, Policy
+from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.errors import ConfigError, SourceError
 from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.foundation.policy import Policy
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

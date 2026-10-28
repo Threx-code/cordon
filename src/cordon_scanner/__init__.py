@@ -41,7 +41,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.decide.policy import Baseline, PolicyGate, Verdict
-from cordon_scanner.foundation.config import Config, OrgConstraints, Policy
+from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.errors import (
     ConfigError,
@@ -75,6 +75,7 @@ from cordon_scanner.foundation.models import (
     Severity,
     Suppression,
 )
+from cordon_scanner.foundation.policy import OrgConstraints, Policy
 from cordon_scanner.version import RULEPACK_VERSION, SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
