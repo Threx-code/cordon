@@ -18,6 +18,7 @@
   "analysis/javascript/flow/structure": "analysis/javascript/flow/structure",
   "analysis/javascript/flow/bindings": "analysis/javascript/flow/bindings",
   "analysis/javascript/flow/sinks": "analysis/javascript/flow/sinks",
+  "analysis/javascript/flow/taint": "analysis/javascript/flow/taint",
   "analysis/javascript/js_fold": "analysis/javascript/js_fold",
   "analysis/javascript/js_persist": "analysis/javascript/js_persist",
   "analysis/javascript/js_string_code": "analysis/javascript/js_string_code",
@@ -883,7 +884,7 @@
   "long_modules": {
    "analysis/javascript/front/parser": 1759,
    "analysis/javascript/js_eval": 1085,
-   "analysis/javascript/js_flow": 1305,
+   "analysis/javascript/js_flow": 1001,
    "rules/loader": 1642,
    "sources/archive": 1062
   },
@@ -892,8 +893,7 @@
    "src/cordon_scanner/rules/loader.py"
   ],
   "long_classes": {
-   "analysis/javascript/front/parser:Parser": 1718,
-   "analysis/javascript/js_flow:_Analysis": 1121
+   "analysis/javascript/front/parser:Parser": 1718
   },
   "long_functions": {
    "analysis/javascript/front/parser:Parser._statement": 107,
@@ -901,7 +901,6 @@
    "analysis/javascript/js_eval:JsEval._scan": 91,
    "analysis/javascript/js_eval:_Evaluator.rewrite": 103,
    "analysis/javascript/js_flow:_Analysis._call": 144,
-   "analysis/javascript/js_flow:_Analysis._facts": 108,
    "analysis/javascript/js_flow:_Analysis.deferred": 102,
    "rules/loader:PatternCompiler._reject_unsafe": 121,
    "rules/loader:PatternCompiler._reject_unsafe.walk": 102,

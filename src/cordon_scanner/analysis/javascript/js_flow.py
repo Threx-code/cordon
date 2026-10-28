@@ -36,31 +36,25 @@ import re
 from contextlib import suppress
 from typing import ClassVar
 
-from cordon_scanner.analysis.javascript.flow.sinks import Sinks
+from cordon_scanner.analysis.javascript.flow.taint import Taint
 from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _ARCHIVE_ADD_PATH,
     _ARCHIVE_CLASSES,
     _ARCHIVE_MODULES,
     _ARGV_CALLS,
-    _BROWSER,
     _CLOSE,
     _CONNECTION_OPEN,
     _DESTINATION_KEYS,
     _DNS_MODULES,
-    _FS_READ,
     _FS_WRITE,
     _HOST_OBJECTS,
-    _IDENTITY,
-    _IDENTITY_COMMAND,
     _KEYWORDS,
     _OPEN,
     _OPENER,
     _RAW_SOCKET_MODULES,
-    _REGISTRY_URL,
     _RUNS_ITS_ARGUMENT,
     _SECRET_PATH,
     _STORE_METHODS,
-    _WALLET_MEMBER,
     _WALLET_PARAM,
     MAX_BYTES,
     MAX_PARAMETER_LABELS,
@@ -101,15 +95,7 @@ class JsFlow:
     def read_of(labels: set[Label]) -> set[Label]:
         """What reading a file at a path carrying `labels` yields: a credential store's path gives its
         contents; a parameter's path gives a read deferred to the call site."""
-        out: set[Label] = set()
-        for x in labels:
-            if x == "secret_path":
-                out.add("secret_file")
-            elif x == "home_path":
-                out.add("home_file")
-            elif isinstance(x, tuple) and x[0] == "P":
-                out.add(("R", x[1], x[2]))
-        return out
+        return Taint.read_of(labels)
 
     @classmethod
     def flows(cls, text: str) -> list[Flow]:
@@ -182,280 +168,10 @@ class JsFlow:
             return frozenset()
 
 
-class _Analysis(Sinks):
+class _Analysis(Taint):
     # -- bindings --------------------------------------------------------------------------------
 
     # -- taint ------------------------------------------------------------------------------------
-
-    def _facts(self) -> None:
-        """What each token contributes to a value, decided once: the rounds only look these up."""
-        t = self.t
-        self.fact: list[tuple[str, object] | None] = [None] * self.n
-        for k in range(self.n):
-            tok = t[k]
-            if tok.kind == "str":
-                if self.seed is not None and (label := self.seed(str(tok.value))) is not None:
-                    self.fact[k] = ("src", label)
-                elif _SECRET_PATH.search(str(tok.value)):
-                    self.fact[k] = ("src", "secret_path")
-                elif str(tok.value).startswith(("~/", "~\\")) or str(tok.value) in (
-                    "~",
-                    "HOME",
-                    "USERPROFILE",
-                ):
-                    self.fact[k] = ("src", "home_path")
-                elif _REGISTRY_URL.match(str(tok.value)) and self._registry_template(k):
-                    # Not a source a rule reads: what tells a registry install's request apart.
-                    self.fact[k] = ("src", "registry_url")
-            elif tok.kind == "name":
-                v = str(tok.value)
-                if self.is_p(k - 1, ".") or self.is_p(k - 1, "?."):
-                    if (
-                        self.is_p(k + 1, "(")
-                        and self.match[k + 1] > 0
-                        and self._sink_kind(k, self.scope_of(k)) == "request"
-                    ):
-                        self.fact[k] = ("src", "network_response")  # `axios.get(...)`'s value
-                    elif _WALLET_MEMBER.match(v):
-                        self.fact[k] = ("src", "wallet_key")
-                    elif (
-                        v in _BROWSER
-                        and k >= 2
-                        and str(t[k - 2].value) in ("document", "window", "globalThis")
-                    ):
-                        self.fact[k] = ("src", "browser")
-                    elif (
-                        v == "env"
-                        and self.is_name(k - 2, "process")
-                        and not (
-                            self.is_p(k + 1, ".") or self.is_p(k + 1, "[") or self.is_p(k + 1, "?.")
-                        )
-                    ):
-                        if not (self.is_p(k - 4, "(") and self.is_name(k - 5, "keys")):
-                            self.fact[k] = ("src", "environment")
-                    elif v in _IDENTITY and self.is_p(k + 1, "(") and self._chain(k)[0][0] == "os":
-                        self.fact[k] = ("src", "identity")
-                    elif v == "homedir" and self.is_p(k + 1, "(") and self._chain(k)[0][0] == "os":
-                        # Not a source: a path. Reading a file under it is (see `JsFlow.read_of`).
-                        self.fact[k] = ("src", "home_path")
-                    elif v in ("HOME", "USERPROFILE") and self.is_name(k - 2, "env"):
-                        self.fact[k] = ("src", "home_path")
-                    elif (
-                        v in _FS_READ
-                        and self.is_p(k + 1, "(")
-                        and self.match[k + 1] > 0
-                        and not self._opened_to_write(k)
-                    ):
-                        self.fact[k] = ("read", self.match[k + 1])
-                    elif (
-                        v in ("readText", "read")
-                        and k >= 2
-                        and str(t[k - 2].value) in ("clipboard", "clipboardy")
-                    ):
-                        self.fact[k] = ("src", "clipboard")
-                    elif self.is_p(k + 1, "(") and self.match[k + 1] > 0 and self._is_decode(k):
-                        # `Buffer.from(x, "base64")`, `zlib.gunzipSync(x)`: the decoded bytes.
-                        self.fact[k] = ("src", "decoded")
-                    elif (
-                        (self.is_name(k - 2, "this") or self._on_class(k))
-                        and self.is_p(k + 1, "(")
-                        and self.match[k + 1] > 0
-                    ):
-                        # A method of the same class, or a static one called on its class
-                        # (`WorkerHost.start(p)`).
-                        self.fact[k] = ("call", v)
-                elif v in _BROWSER and v != "cookie" and self.is_p(k + 1, "."):
-                    self.fact[k] = ("src", "browser")
-                elif (
-                    v in self.aliases
-                    and self.is_p(k + 1, "(")
-                    and self.match[k + 1] > 0
-                    and self._bound_source(k)
-                ):
-                    # `const {hostname} = require("os")`, `import {readFileSync} from "fs"`: the
-                    # member called by the name it was bound to.
-                    self.fact[k] = self._bound_source(k)
-                elif v == "this" and self.is_p(k + 1, "."):
-                    self.fact[k] = ("ref", "this")  # `this.key = v` taints the instance
-                elif v not in _KEYWORDS and not (
-                    self.is_p(k + 1, ":") and (self.is_p(k - 1, "{") or self.is_p(k - 1, ","))
-                ):
-                    if (
-                        self.is_p(k + 1, "(")
-                        and self.match[k + 1] > 0
-                        and self._sink_kind(k, self.scope_of(k)) == "request"
-                    ):
-                        # What a request returns is what the server chose to send.
-                        self.fact[k] = ("src", "network_response")
-                    elif self.is_p(k + 1, "(") and self.match[k + 1] > 0 and self._is_decode(k):
-                        # `atob(x)`, a destructured `gunzipSync(x)`: the decoded bytes.
-                        self.fact[k] = ("src", "decoded")
-                    elif self.is_p(k + 1, "(") and self.match[k + 1] > 0:
-                        self.fact[k] = ("call", v)
-                    else:
-                        self.fact[k] = ("ref", v)
-        self._spelled_identity()
-
-    def _spelled_identity(self) -> None:
-        """The machine's identity read in spellings `_facts` does not see one token at a time:
-        what an identity command prints (`execSync("whoami")`, `exec("uname -a", cb)`), and
-        `os`'s own reads behind a computed name (`os["host" + "name"]()`) -- review 98 P3: four
-        study-half misses send `whoami`/`uname` output through a helper, three call
-        `os["S" + "S"]()`."""
-        for k in range(self.n - 1):
-            if self.t[k].kind != "name" or not self.is_p(k + 1, "(") or self.match[k + 1] <= 0:
-                if (
-                    self.t[k].kind == "name"
-                    and self.is_p(k + 1, "[")
-                    and self.match[k + 1] > 0
-                    and (
-                        str(self.t[k].value) == "os"
-                        or self.aliases.get(str(self.t[k].value)) == "os"
-                    )
-                    and self.is_p(self.match[k + 1] + 1, "(")
-                ):
-                    name = self._folded(k + 2, self.match[k + 1])
-                    if name in _IDENTITY:
-                        self.fact[self.match[k + 1]] = ("src", "identity")
-                    elif name == "homedir":
-                        self.fact[self.match[k + 1]] = ("src", "home_path")
-                continue
-            if self._identity_command(k):
-                self.fact[k] = ("src", "identity")
-
-    def _identity_command(self, k: int) -> bool:
-        """Whether the process call at name token `k` runs a command that prints who and where
-        this machine is, given as a literal (`execSync("whoami")`, `exec("uname -a", cb)`)."""
-        if self._sink_kind(k, self.scope_of(k)) != "process":
-            return False
-        args = self._args(k + 1)
-        if not args:
-            return False
-        command = self._folded(args[0][0], args[0][1])
-        return command is not None and bool(_IDENTITY_COMMAND.match(command))
-
-    def _bound_source(self, k: int) -> tuple[str, object] | None:
-        """What a call by a bound member name at `k` contributes, as `_facts` gives it for the
-        same member called on its module."""
-        module, _, member = self.aliases[str(self.t[k].value)].partition(".")
-        if module == "os" and member in _IDENTITY:
-            return ("src", "identity")
-        if module == "os" and member == "homedir":
-            return ("src", "home_path")
-        if module in ("fs", "fs/promises") and member in _FS_READ and not self._opened_to_write(k):
-            return ("read", self.match[k + 1])
-        return None
-
-    def _opened_to_write(self, k: int) -> bool:
-        """`openSync(log, "a")`: a descriptor to write a log through is no read of the file. Only
-        `openSync` takes a mode; a read is one without it or with an `r` mode."""
-        if str(self.t[k].value) != "openSync" and not str(
-            self.aliases.get(str(self.t[k].value), "")
-        ).endswith(".openSync"):
-            return False
-        args = self._split_args(k + 1)
-        if len(args) < 2:
-            return False
-        mode = self.t[args[1][0]]
-        return mode.kind == "str" and not str(mode.value).startswith("r")
-
-    def _compile(
-        self, a: int, b: int, scope: int
-    ) -> tuple[
-        frozenset[Label],
-        tuple[tuple[int, str], ...],
-        tuple[tuple[int, int], ...],
-        tuple[tuple[int, int], ...],
-    ]:
-        """A range reduced once to what its value depends on: constant labels, the names it reads,
-        the known functions it calls (token, function id) and the files it reads (token, close)."""
-        key = (a, b, scope)
-        got = self._compiled.get(key)
-        if got is not None:
-            return got
-        labels: set[Label] = set()
-        refs: list[tuple[int, str]] = []
-        calls: list[tuple[int, int]] = []
-        reads: list[tuple[int, int]] = []
-        fact, fn_at = self.fact, self.fn_at_token
-        k = a
-        while k < b:
-            fid = fn_at.get(k)
-            if fid is not None:
-                k = max(k + 1, self.fns[fid - 1].end)  # a function literal's value carries nothing
-                continue
-            f = fact[k]
-            if f is not None:
-                what, v = f
-                if what == "src":
-                    labels.add(v)
-                elif what == "read":
-                    reads.append((k, int(v)))  # type: ignore[call-overload]
-                    k = int(v)  # type: ignore[call-overload]
-                elif what == "call" and v == "Promise" and self.is_name(k - 1, "new"):
-                    refs.append(_Analysis.promise_key(k))  # what its executor resolves it with
-                    k = max(k, self.match[k + 1])
-                else:
-                    resolved = self.resolve(str(v), scope)
-                    if what != "call":
-                        target = None
-                    elif self.is_p(k - 1, ".") and self.is_name(k - 2, "this"):
-                        target = self.method_of(str(v), scope)
-                    elif self._static_call(k) is not None:
-                        target = self._static_call(k)
-                    else:
-                        target = self.fn_by_name.get(resolved)
-                    if target is not None:
-                        calls.append((k, target))
-                        k = self.match[k + 1]
-                    else:
-                        refs.append(resolved)
-            k += 1
-        self.work += (b - a) // 64
-        if self.work > self.budget:
-            raise _OverBudget
-        got = (frozenset(labels), tuple(dict.fromkeys(refs)), tuple(calls), tuple(reads))
-        self._compiled[key] = got
-        return got
-
-    def taint(self, a: int, b: int, scope: int) -> set[Label]:
-        """The labels an expression spanning tokens [a, b) carries."""
-        key = (a, b, scope)
-        hit = self._cache.get(key)
-        if hit is not None and hit[0] == self.version:
-            return hit[1]
-        labels, refs, calls, reads = self._compile(a, b, scope)
-        self.work += 1 + len(refs) // 8
-        if self.work > self.budget:
-            raise _OverBudget
-        out: set[Label] = set(labels)
-        for ref in refs:
-            got = self.vars.get(ref)
-            if got:
-                out |= got
-        for k, target in calls:
-            out |= self._call_return(k, target, scope)
-        for k, close in reads:
-            out |= JsFlow.read_of(self.taint(k + 2, close, scope))
-        self._cache[key] = (self.version, out)
-        return out
-
-    def _call_return(self, k: int, target: int, scope: int) -> set[Label]:
-        """What calling the known function `target` at token `k` returns: its summary applied to the
-        arguments. (An unknown function's arguments are read where they stand: what it returns is
-        not known, what it was given usually is.)"""
-        args = self._args(k + 1)
-        fn = self.fns[target - 1]
-        out: set[Label] = set()
-        for label in fn.ret:
-            if isinstance(label, tuple) and label[1] == fn.fid:
-                if label[2] < len(args):
-                    s, e = args[label[2]]
-                    value = self.taint(s, e, scope)
-                    out |= JsFlow.read_of(value) if label[0] == "R" else value
-            else:
-                out.add(label)
-        return out
 
     # -- the fixpoint ----------------------------------------------------------------------------
 
@@ -973,21 +689,6 @@ class _Analysis(Sinks):
                 heads.append(str(tok.value))
         return bool(heads) and all(_OPENER.match(h) for h in heads)
 
-    def _registry_template(self, k: int) -> bool:
-        """Whether the registry host at string `k` begins a package tarball URL: `/-/` and `.tgz`
-        further along the same template or concatenation. Its literal parts are kept
-        (`registry_parts`)."""
-        end = self.match[k - 1] if self.is_p(k - 1, "(") and self.match[k - 1] > k else -1
-        if end < 0:
-            end = self.expr_end(k)
-        parts = [
-            str(self.t[i].value) for i in range(k, min(end, k + 60)) if self.t[i].kind == "str"
-        ]
-        if any("/-/" in p for p in parts) and any(".tgz" in p for p in parts):
-            self.registry_parts.update(parts)
-            return True
-        return False
-
     def requests(self) -> list[Request]:
         """See `JsFlow.requests`."""
         from cordon_scanner.analysis.javascript.js_values import JsValues
@@ -1199,11 +900,6 @@ class _Analysis(Sinks):
             ):
                 return False
         return True
-
-    @staticmethod
-    def promise_key(k: int) -> tuple[int, str]:
-        """The value of the `new Promise(...)` at token `k`, as a name no scope declares."""
-        return (-1_000_000 - k, "Promise")
 
     def _promises(self) -> None:
         """`resolvers`: an executor's first parameter -> the promise it settles."""
