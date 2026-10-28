@@ -75,7 +75,7 @@
   "cli/main": "cli/main",
   "cli/parser": "cli/parser",
   "cli/progress": "cli/progress",
-  "cli/review": "cli/review",
+  "cli/commands/review": "cli/commands/review",
   "cli/suppressions": "cli/suppressions",
   "cloud/_p256": "cloud/_p256",
   "cloud/auth": "cloud/auth",

@@ -86,7 +86,7 @@ tutorials for this version ({__version__}):
 
         DepsCommand.add_parser(sub)
         from cordon_scanner.cli.commands.incoming import IncomingCommand
-        from cordon_scanner.cli.review import ReviewCommand
+        from cordon_scanner.cli.commands.review import ReviewCommand
 
         IncomingCommand.add_parser(sub)
 
