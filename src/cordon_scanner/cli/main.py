@@ -1669,7 +1669,6 @@ class CommandLine:
         """List every remote MCP server's tools and record their fingerprints. A later `scan
         --online` reports any tool added or changed since (`SUSPECT.MCP.TOOLS_CHANGED.001`)."""
         from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
-        from cordon_scanner.detect.agents.paths import MCP_PATHS
         from cordon_scanner.foundation.files.globs import PathGlob
         from cordon_scanner.intel.store.live_mcp import LiveMcp, LiveMcpError, McpApprovals
 
@@ -1681,7 +1680,7 @@ class CommandLine:
             :200_000
         ]:
             relative = path.relative_to(root).as_posix()
-            if not any(PathGlob.matches(relative, pattern) for pattern in MCP_PATHS):
+            if not any(PathGlob.matches(relative, pattern) for pattern in McpConfigs.PATHS):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")

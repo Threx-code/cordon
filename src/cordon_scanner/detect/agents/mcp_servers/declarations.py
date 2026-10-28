@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import re
 import tomllib
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.detect.agents.paths import MCP_PATHS
 from cordon_scanner.foundation.formats import jsonc
 
 if TYPE_CHECKING:
@@ -32,6 +33,10 @@ _DLX_RUNNERS: Final = {
 
 class McpConfigs:
     """MCP server declarations in every agent's configuration dialect, and what they launch."""
+
+    PATHS: ClassVar[tuple[str, ...]] = MCP_PATHS
+    """The files an agent reads its MCP servers from (`agents.paths.MCP_PATHS`): where to look for
+    the declarations `mcp_servers` reads."""
 
     @staticmethod
     def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:

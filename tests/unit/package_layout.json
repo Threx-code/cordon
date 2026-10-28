@@ -843,7 +843,7 @@
    "analysis/javascript/front/parser": 1759,
    "analysis/javascript/js_eval": 1085,
    "analysis/javascript/js_flow": 2328,
-   "cli/main": 1947,
+   "cli/main": 1946,
    "ecosystems/infra/image": 1177,
    "ecosystems/others": 1417,
    "ecosystems/packages/gradle": 1270,
@@ -888,7 +888,7 @@
   "long_classes": {
    "analysis/javascript/front/parser:Parser": 1718,
    "analysis/javascript/js_flow:_Analysis": 1877,
-   "cli/main:CommandLine": 1869,
+   "cli/main:CommandLine": 1868,
    "ecosystems/packages/pypi:PypiEcosystem": 1138
   },
   "long_functions": {
