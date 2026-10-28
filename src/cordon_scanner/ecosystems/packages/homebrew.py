@@ -40,6 +40,7 @@ from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from re import Match
 
     from cordon_scanner.foundation.content import FileContent
 
@@ -254,23 +255,7 @@ class Formula:
                 continue
             if re.match(r"^end\b", stripped):
                 if stack:
-                    closed = stack.pop()
-                    if closed.startswith(("resource:", "patch:")) and pending.get("url"):
-                        kind, _, name = closed.partition(":")
-                        # A resource by its name; a patch, which has none, by the file it fetches.
-                        label = name or pending["url"].rstrip("/").rsplit("/", 1)[-1]
-                        declared.append(
-                            DeclaredDependency(
-                                name=label,
-                                spec=pending["url"],
-                                scope=Scope.BUILD,
-                                field_name=kind,
-                                integrity=f"sha256:{pending['sha256']}"
-                                if pending.get("sha256")
-                                else None,
-                                platform=Formula.conditions(stack),
-                            )
-                        )
+                    Formula._close_block(stack, pending, declared)
                     pending = {}
                 continue
             if any(s in ("test", "livecheck", "def", "service") for s in stack):
@@ -301,28 +286,75 @@ class Formula:
                     version = field.group(2)
                 continue
             depends = Formula.DEPENDS.match(stripped) or Formula.USES.match(stripped)
-            if depends:
-                tags = depends.group("tags") or ""
-                scope = next((s for t, s in Formula.SCOPES.items() if t in tags), Scope.RUNTIME)
-                conditions = Formula.conditions(stack)
-                if stripped.lstrip().startswith("uses_from_macos"):
-                    # On macOS the system provides it; elsewhere Homebrew installs it.
-                    conditions = (*conditions, "linux (macOS provides it)")
-                trailing = re.search(r"\bif\s+(.+)$", stripped)
-                if trailing:
-                    conditions = (*conditions, trailing.group(1).strip())
-                declared.append(
-                    DeclaredDependency(
-                        name=depends.group(1),
-                        spec="*",
-                        scope=scope,
-                        field_name="uses_from_macos"
-                        if stripped.lstrip().startswith("uses_from_macos")
-                        else "depends_on",
-                        platform=conditions,
-                        note="Homebrew installs the formula's current version: a formula pins nothing it depends on",
-                    )
+            Formula._depends(depends, stack, stripped, declared)
+        name, version = Formula._bottles_and_version(text, sources, content, version)
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            name=name,
+            version=version,
+            dependencies=tuple(declared),
+            hooks=tuple(hooks),
+            sources=tuple(sources),
+        )
+
+    @staticmethod
+    def _close_block(
+        stack: list[str], pending: dict[str, str], declared: list[DeclaredDependency]
+    ) -> None:
+        """An end line: the block it closes, and what a closed resource or patch block declares."""
+        closed = stack.pop()
+        if closed.startswith(("resource:", "patch:")) and pending.get("url"):
+            kind, _, name = closed.partition(":")
+            # A resource by its name; a patch, which has none, by the file it fetches.
+            label = name or pending["url"].rstrip("/").rsplit("/", 1)[-1]
+            declared.append(
+                DeclaredDependency(
+                    name=label,
+                    spec=pending["url"],
+                    scope=Scope.BUILD,
+                    field_name=kind,
+                    integrity=f"sha256:{pending['sha256']}" if pending.get("sha256") else None,
+                    platform=Formula.conditions(stack),
                 )
+            )
+
+    @staticmethod
+    def _depends(
+        depends: Match[str] | None,
+        stack: list[str],
+        stripped: str,
+        declared: list[DeclaredDependency],
+    ) -> None:
+        """A depends_on or uses_from_macos line: the dependency, in its scope, under its conditions."""
+        if depends:
+            tags = depends.group("tags") or ""
+            scope = next((s for t, s in Formula.SCOPES.items() if t in tags), Scope.RUNTIME)
+            conditions = Formula.conditions(stack)
+            if stripped.lstrip().startswith("uses_from_macos"):
+                # On macOS the system provides it; elsewhere Homebrew installs it.
+                conditions = (*conditions, "linux (macOS provides it)")
+            trailing = re.search(r"\bif\s+(.+)$", stripped)
+            if trailing:
+                conditions = (*conditions, trailing.group(1).strip())
+            declared.append(
+                DeclaredDependency(
+                    name=depends.group(1),
+                    spec="*",
+                    scope=scope,
+                    field_name="uses_from_macos"
+                    if stripped.lstrip().startswith("uses_from_macos")
+                    else "depends_on",
+                    platform=conditions,
+                    note="Homebrew installs the formula's current version: a formula pins nothing it depends on",
+                )
+            )
+
+    @staticmethod
+    def _bottles_and_version(
+        text: str, sources: list[str], content: FileContent, version: str | None
+    ) -> tuple[str, str | None]:
+        """The bottles the formula pours, and its version, from the url when no version line gives it."""
         bottles = len(
             re.findall(
                 r'^\s*sha256\s+(?:cellar:\s*\S+\s*,?\s*)?\w+:\s*"[0-9a-f]{64}"', text, re.MULTILINE
@@ -336,15 +368,7 @@ class Formula:
                 r'^\s*url\s+"[^"]*?[-_/](?:v)?(\d+(?:\.\d+)+)[^"/]*"', text, re.MULTILINE
             )
             version = found.group(1) if found else None
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            name=name,
-            version=version,
-            dependencies=tuple(declared),
-            hooks=tuple(hooks),
-            sources=tuple(sources),
-        )
+        return name, version
 
     @staticmethod
     def conditions(stack: list[str]) -> tuple[str, ...]:

@@ -917,7 +917,6 @@
    "ecosystems/packages/hex:BeamTerms.term": 103,
    "ecosystems/packages/hex:HexEcosystem.parse_in_tree": 103,
    "ecosystems/packages/homebrew:Brewfile.parse": 98,
-   "ecosystems/packages/homebrew:Formula.parse": 138,
    "ecosystems/packages/julia:Project.parse": 110,
    "ecosystems/packages/nuget:NuGetEcosystem.parse_in_tree": 117,
    "ecosystems/packages/pypi:PypiEcosystem._parse_pep_style_lock": 124,
