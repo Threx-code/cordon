@@ -311,7 +311,7 @@ class DistroDatabase:
 
     @staticmethod
     def _write(family: str, index: dict[str, dict[str, list[Any]]]) -> None:
-        from cordon_scanner.engine.local_seal import LocalSeal
+        from cordon_scanner.foundation.files.seal import LocalSeal
 
         directory = DistroDatabase.directory()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -352,7 +352,7 @@ class DistroDatabase:
     @staticmethod
     def load(family: str) -> dict[str, dict[str, list[Any]]] | None:
         """One family's index, or None when it was never synced or does not verify."""
-        from cordon_scanner.engine.local_seal import LocalSeal
+        from cordon_scanner.foundation.files.seal import LocalSeal
 
         directory = DistroDatabase.directory()
         path = directory / f"os-{family}.json.gz"

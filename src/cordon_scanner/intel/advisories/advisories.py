@@ -60,7 +60,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Final
 
-from cordon_scanner.engine.local_seal import SEAL_KEY, LocalSeal
+from cordon_scanner.foundation.files.seal import SEAL_KEY, LocalSeal
 from cordon_scanner.foundation.paths import PackagePaths
 
 DATA_DIR: Final = PackagePaths.data("intel")

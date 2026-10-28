@@ -33,8 +33,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
-from cordon_scanner.engine.local_seal import LocalSeal
 from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.files.seal import LocalSeal
 
 SEAL_LABEL: Final = "osv-delta"
 CHUNK: Final = 64 << 10
