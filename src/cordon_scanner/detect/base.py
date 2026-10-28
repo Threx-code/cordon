@@ -98,16 +98,25 @@ class ScanContext:
     """Positive results a detector reaches without a finding -- a registry hash that matched,
     provenance that verified -- read into each dependency's record (`core/inventory.py`)."""
     install_hook_paths: frozenset[str] = frozenset()
+    """Paths that execute during install or build.
+
+    Precomputed because it is consulted for every finding and is the largest
+    single input to the risk score. The same capability pair is moderate in
+    application code and critical here, since install-time code runs unprompted,
+    as the developer, before any other control applies.
+
+    Pipeline definitions are deliberately not in here. See `ci_hook_paths`.
+    """
     import_entry_paths: frozenset[str] = frozenset()
     """A published package's own entry points -- npm `main`, `bin` and `exports` targets, a
     wheel's or sdist's top-level `__init__.py` -- whose top level runs on `require()`, `import`
     or the command. Code there runs on every consumer without a hook (review 98, REC-2)."""
     library_entry_paths: frozenset[str] = frozenset()
+    """`import_entry_paths` without `bin`: the files that run whenever another program loads the
+    package (npm `main`, `exports`), not when a person runs its command."""
     library_closure_paths: frozenset[str] = frozenset()
     """First-party JavaScript files a published package's library entry points (`main`, `exports`)
     load, transitively: code that runs on a consumer's `require()` without being an entry itself."""
-    """`import_entry_paths` without `bin`: the files that run whenever another program loads the
-    package (npm `main`, `exports`), not when a person runs its command."""
     declared_dependencies: frozenset[str] = frozenset()
     """The runtime dependencies a published package's manifest declares, by name (npm
     `dependencies` and `optionalDependencies`): what installing it installs beside it."""
@@ -119,15 +128,6 @@ class ScanContext:
     agent_run_paths: frozenset[str] = frozenset()
     """Skill scripts and MCP server sources: in `install_hook_paths` because an agent runs them
     unasked, but tools, not install scripts -- a bundle read to its end is not padding."""
-    """Paths that execute during install or build.
-
-    Precomputed because it is consulted for every finding and is the largest
-    single input to the risk score. The same capability pair is moderate in
-    application code and critical here, since install-time code runs unprompted,
-    as the developer, before any other control applies.
-
-    Pipeline definitions are deliberately not in here. See `ci_hook_paths`.
-    """
 
     ci_hook_paths: frozenset[str] = frozenset()
     """Paths that execute in the project's own pipeline.
