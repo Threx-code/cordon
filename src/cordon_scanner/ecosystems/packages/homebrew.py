@@ -41,6 +41,7 @@ from cordon_scanner.foundation.models import Hook, Scope
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from re import Match
+    from typing import Any
 
     from cordon_scanner.foundation.content import FileContent
 
@@ -597,57 +598,7 @@ class Brewfile:
                     else []
                 ),
             )
-            if kind == "tap":
-                custom = re.match(rf"\s*,\s*{STRING}", rest)
-                tap = Brewfile.tap_name(value)
-                owner, _, repo = tap.partition("/")
-                url = custom.group(1) if custom else f"https://github.com/{owner}/homebrew-{repo}"
-                if tap.lower() not in Brewfile.CORE_TAPS:
-                    declared.append(
-                        DeclaredDependency(
-                            name=tap,
-                            spec=url,
-                            scope=Scope.DEV,
-                            field_name="tap",
-                            platform=conditions,
-                            note="a tap: the repository of formulae brew follows at its default branch",
-                        )
-                    )
-            elif kind == "vscode":
-                # An editor extension: judged by the extension rules (detect/agents.py), not here.
-                sources.append(f"vscode extension {value}")
-            elif kind == "whalebrew":
-                from cordon_scanner.ecosystems.infra.image import ImageReference
-
-                image = ImageReference.declare(
-                    value, scope=Scope.DEV, field_name="whalebrew", platform=conditions
-                )
-                if image is not None:
-                    declared.append(image)
-            elif kind == "mas":
-                # An App Store app, which `mas` installs: Apple's store, not a Homebrew registry.
-                mas_id = re.search(r"id:\s*(\d+)", rest)
-                sources.append(
-                    f"mas app {value}" + (f" (App Store id {mas_id.group(1)})" if mas_id else "")
-                )
-            else:
-                args = re.search(r"args:\s*\[([^\]]*)\]", rest)
-                from_tap, name = Brewfile.qualified(value)
-                declared.append(
-                    DeclaredDependency(
-                        # Formula names are lower case, matched by brew in any case; the spelling
-                        # and the tap written stay as the alias.
-                        name=name.lower(),
-                        spec="*",
-                        scope=Scope.DEV,
-                        field_name=kind,
-                        extras=tuple(re.findall(r'"([^"]+)"', args.group(1))) if args else (),
-                        platform=(*conditions, "cask") if kind == "cask" else conditions,
-                        source=f"registry:{from_tap}" if from_tap else None,
-                        alias=value if value != name.lower() else None,
-                        note="brew bundle installs the current version: a Brewfile pins nothing",
-                    )
-                )
+            Brewfile._entry(kind, rest, value, declared, conditions, sources)
         if unread and not declared and not sources:
             return BaseEcosystem._err(
                 content, ecosystem, "a Brewfile with no line brew bundle reads"
@@ -658,6 +609,68 @@ class Brewfile:
             dependencies=tuple(declared),
             sources=tuple(sources),
         )
+
+    @staticmethod
+    def _entry(
+        kind: str | Any,
+        rest: str | Any,
+        value: str | Any,
+        declared: list[DeclaredDependency],
+        conditions: tuple[str, ...],
+        sources: list[str],
+    ) -> None:
+        """One Brewfile entry: a tap and the source it adds, or a brew, cask, mas or vscode dependency."""
+        if kind == "tap":
+            custom = re.match(rf"\s*,\s*{STRING}", rest)
+            tap = Brewfile.tap_name(value)
+            owner, _, repo = tap.partition("/")
+            url = custom.group(1) if custom else f"https://github.com/{owner}/homebrew-{repo}"
+            if tap.lower() not in Brewfile.CORE_TAPS:
+                declared.append(
+                    DeclaredDependency(
+                        name=tap,
+                        spec=url,
+                        scope=Scope.DEV,
+                        field_name="tap",
+                        platform=conditions,
+                        note="a tap: the repository of formulae brew follows at its default branch",
+                    )
+                )
+        elif kind == "vscode":
+            # An editor extension: judged by the extension rules (detect/agents.py), not here.
+            sources.append(f"vscode extension {value}")
+        elif kind == "whalebrew":
+            from cordon_scanner.ecosystems.infra.image import ImageReference
+
+            image = ImageReference.declare(
+                value, scope=Scope.DEV, field_name="whalebrew", platform=conditions
+            )
+            if image is not None:
+                declared.append(image)
+        elif kind == "mas":
+            # An App Store app, which `mas` installs: Apple's store, not a Homebrew registry.
+            mas_id = re.search(r"id:\s*(\d+)", rest)
+            sources.append(
+                f"mas app {value}" + (f" (App Store id {mas_id.group(1)})" if mas_id else "")
+            )
+        else:
+            args = re.search(r"args:\s*\[([^\]]*)\]", rest)
+            from_tap, name = Brewfile.qualified(value)
+            declared.append(
+                DeclaredDependency(
+                    # Formula names are lower case, matched by brew in any case; the spelling
+                    # and the tap written stay as the alias.
+                    name=name.lower(),
+                    spec="*",
+                    scope=Scope.DEV,
+                    field_name=kind,
+                    extras=tuple(re.findall(r'"([^"]+)"', args.group(1))) if args else (),
+                    platform=(*conditions, "cask") if kind == "cask" else conditions,
+                    source=f"registry:{from_tap}" if from_tap else None,
+                    alias=value if value != name.lower() else None,
+                    note="brew bundle installs the current version: a Brewfile pins nothing",
+                )
+            )
 
     @staticmethod
     def tap_name(value: str) -> str:
