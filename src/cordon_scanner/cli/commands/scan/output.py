@@ -59,13 +59,23 @@ class ScanOutput:
 
     @staticmethod
     def notify(
-        channels: tuple[str, ...], result: ScanResult, verdict: Any, *, verbose: bool
-    ) -> None:
-        """Post the gate failure. Reported on stderr, never allowed to change the exit code."""
+        channels: tuple[str, ...],
+        result: ScanResult,
+        verdict: Any,
+        *,
+        gate: str = "failed",
+        verbose: bool,
+    ) -> list[Any]:
+        """Post the gate's outcome. Reported on stderr, never allowed to change the exit code;
+        the deliveries are returned for the audit log."""
         from cordon_scanner.notify.notifier import Notifier
 
         deliveries = Notifier().send(
-            channels, result, reason=str(verdict.reason), exit_code=int(verdict.exit_code)
+            channels,
+            result,
+            reason=str(verdict.reason),
+            exit_code=int(verdict.exit_code),
+            gate=gate,
         )
         for delivery in deliveries:
             if not delivery.ok:
@@ -75,6 +85,7 @@ class ScanOutput:
                 )
             elif verbose:
                 print(f"{PROGRAM}: notified {delivery.channel}", file=sys.stderr)
+        return deliveries
 
     @staticmethod
     def use_color(disabled: bool) -> bool:

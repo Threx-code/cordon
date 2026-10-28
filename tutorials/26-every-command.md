@@ -122,13 +122,17 @@ Scan a directory, file or archive.
 │                           no first-party code imports is lowered and       │
 │                           tagged (never dropped). Reads every source file  │
 │                           to collect imports                               │
-│ --notify CHANNELS         when the gate fails, post one message to each    │
-│                           channel: webhook, slack, teams (comma-           │
-│                           separated). URLs come only from                  │
-│                           CORDON_NOTIFY_WEBHOOK, CORDON_NOTIFY_SLACK and   │
-│                           CORDON_NOTIFY_TEAMS; the webhook is signed with  │
+│ --notify CHANNELS         post one message to each channel: webhook,       │
+│                           slack, teams (comma-separated; or                │
+│                           notify.channels in the config file). URLs come   │
+│                           only from CORDON_NOTIFY_WEBHOOK,                 │
+│                           CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS; the │
+│                           webhook is signed with                           │
 │                           CORDON_NOTIFY_WEBHOOK_SECRET. A failed delivery  │
 │                           never changes the exit code                      │
+│ --notify-on WHEN          when to post: failed, incomplete, passed (comma- │
+│                           separated; or notify.on in the config file).     │
+│                           Default failed,incomplete: when the gate fails   │
 │ --model SERVER            also have Cordon's own detection model score the │
 │                           packages this scan holds (a scanned package      │
 │                           archive, archives in the tree, installed         │
@@ -350,6 +354,7 @@ Re-render a saved JSON result in another format.
 - `baseline`: record findings, adopt gradually
 - `suppress`: reviewed, expiring exceptions
 - `guard`: git hooks and self-integrity
+- `notify`: test the notification channels
 
 ## rules
 
@@ -573,6 +578,31 @@ Scanner self-integrity and git hook installation.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## notify
+
+Notification channels: send a test message to each.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ notify test                   send each channel a message marked as a      │
+│                               test, print each outcome, and exit non-zero  │
+│                               if any did not arrive                        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### notify test
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ channels                  webhook, slack, teams (comma-separated);         │
+│                           default: notify.channels in the configuration.   │
+│                           URLs come from CORDON_NOTIFY_WEBHOOK,            │
+│                           CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS      │
+│ --config PATH             the configuration file to read                   │
+│ --policy PATH             the organisation policy to read                  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

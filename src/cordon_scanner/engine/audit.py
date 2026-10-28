@@ -39,6 +39,8 @@ from cordon_scanner.foundation.text.redact import Redactor
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from cordon_scanner.foundation.results import ScanResult
 
 
@@ -104,6 +106,34 @@ class AuditLog:
         # them.
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    def record_deliveries(self, deliveries: Sequence[Any]) -> None:
+        """Append one line per notification sent for a scan: the channel, the delivery id its
+        receiver saw, whether it arrived, the error if not, and the attempts made. Never the URL,
+        which is a credential; a delivery does not carry it."""
+        stamp = AuditClock._timestamp()
+        lines = [
+            json.dumps(
+                {
+                    "event": "notify",
+                    "timestamp": stamp,
+                    "channel": d.channel,
+                    "delivery": d.delivery,
+                    "ok": d.ok,
+                    "error": d.error,
+                    "attempts": d.attempts,
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            for d in deliveries
+        ]
+        if not lines:
+            return
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
 

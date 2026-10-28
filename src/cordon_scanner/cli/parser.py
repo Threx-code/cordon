@@ -16,6 +16,7 @@ from cordon_scanner.cli.commands.config import ConfigCommand
 from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
+from cordon_scanner.cli.commands.notify import NotifyCommand
 from cordon_scanner.cli.commands.report import ReportCommand
 from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
@@ -78,6 +79,7 @@ tutorials for this version ({__version__}):
         WhoamiCommand.add_parser(sub)
 
         IntelCommand.add_parser(sub)
+        NotifyCommand.add_parser(sub)
         SbomCommand.add_parser(sub)
 
         from cordon_scanner.cli.commands.completion import CompletionCommand

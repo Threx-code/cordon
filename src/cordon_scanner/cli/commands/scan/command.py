@@ -81,7 +81,7 @@ class ScanCommand:
         target = cls._target(args)
         config, cloud_bundle = cls._configure(args, target, cls._overrides(args))
         selected = cls._detectors(args, config)
-        channels = cls._channels(args)
+        notify = cls._notify(args, config)
 
         source = GitModes.source(args, target)
 
@@ -100,7 +100,7 @@ class ScanCommand:
         result = cls._scan(args, target, config, selected, source, progress)
         result = ScanSuppression.apply_baseline(args, result)
         result = ScanSuppression.apply_vex(args, result)
-        return cls._finish(args, target, result, config, audit, channels, cloud_bundle)
+        return cls._finish(args, target, result, config, audit, notify, cloud_bundle)
 
     @staticmethod
     def _target(args: argparse.Namespace) -> Path:
@@ -279,18 +279,25 @@ class ScanCommand:
         return selected
 
     @staticmethod
-    def _channels(args: argparse.Namespace) -> tuple[str, ...]:
-        # Validated before the scan, like the audit log below: an unknown channel is a
-        # corrected command line, not a message that silently never arrives.
-        channels: tuple[str, ...] = ()
-        if getattr(args, "notify", None):
-            from cordon_scanner.notify.notifier import Notifier
+    def _notify(args: argparse.Namespace, config: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """The channels to post to and the occasions to post on: the command line's, else the
+        configuration's (`notify.channels`, `notify.on`), else no channel and the default occasions.
+        Validated before the scan, like the audit log below: an unknown channel is a corrected
+        command line, not a message that silently never arrives."""
+        from cordon_scanner.notify.notifier import Notifier
 
-            try:
-                channels = Notifier.parse_channels(args.notify)
-            except ValueError as exc:
-                raise ConfigError(str(exc)) from exc
-        return channels
+        channels_text = getattr(args, "notify", None) or ",".join(config.notify_channels)
+        triggers_text = getattr(args, "notify_on", None) or ",".join(config.notify_on)
+        try:
+            channels = Notifier.parse_channels(channels_text) if channels_text else ()
+            triggers = (
+                Notifier.parse_triggers(triggers_text)
+                if triggers_text
+                else Notifier.DEFAULT_TRIGGERS
+            )
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        return channels, tuple(triggers)
 
     @staticmethod
     def _scan(
@@ -326,7 +333,7 @@ class ScanCommand:
         result: ScanResult,
         config: Any,
         audit: AuditLog | None,
-        channels: tuple[str, ...],
+        notify: tuple[tuple[str, ...], tuple[str, ...]],
         cloud_bundle: Any,
     ) -> int:
         """The verdict, the reports, the audit record, the notifications and the upload, and the
@@ -364,8 +371,25 @@ class ScanCommand:
 
         if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
             print(f"\nFAILED: {verdict.reason}", file=sys.stderr)
-        if channels and verdict.exit_code in (ExitCode.FINDINGS, ExitCode.INCOMPLETE):
-            ScanOutput.notify(channels, result, verdict, verbose=args.verbose)
+        channels, triggers = notify
+        if channels:
+            from cordon_scanner.notify.notifier import Notifier
+
+            # `failed` is the gate's findings exit and `incomplete` its incomplete exit, so the
+            # default occasions are exactly when a scan posted before `--notify-on` existed.
+            gate = "passed" if verdict.exit_code is ExitCode.CLEAN else "failed"
+            complete = verdict.exit_code is not ExitCode.INCOMPLETE
+            failed = verdict.exit_code is ExitCode.FINDINGS
+            if Notifier.fires(triggers, gate="failed" if failed else "passed", complete=complete):
+                deliveries = ScanOutput.notify(
+                    channels, result, verdict, gate=gate, verbose=args.verbose
+                )
+                if audit is not None:
+                    try:
+                        audit.record_deliveries(deliveries)
+                    except OSError as exc:
+                        print(f"{PROGRAM}: audit log could not be written: {exc}", file=sys.stderr)
+                        return int(ExitCode.SCANNER_ERROR)
         if getattr(args, "upload", False):
             # The upload carries the verdict as it is; Cordon applies the repository's mode too.
             ScanOutput.upload(args, result, verdict, target)

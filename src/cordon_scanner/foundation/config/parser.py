@@ -30,13 +30,13 @@ from cordon_scanner.foundation.config.policy import (
     OrgConstraints,
     Policy,
 )
+from cordon_scanner.foundation.config.provenance import Provenance
 from cordon_scanner.foundation.config.settings import (
     CONFIG_VERSION,
     LICENSE_UNKNOWN_ORDER,
     MIN_JUSTIFICATION_CHARS,
     TOP_LEVEL_KEYS,
     Config,
-    Provenance,
 )
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -204,6 +204,7 @@ class ConfigParser:
         )
 
         packs, extra, disabled = ConfigParser._parse_rules(data, source)
+        notify_channels, notify_on = ConfigParser._parse_notify(data, source)
 
         record("scan.severity_threshold", str(severity))
         record("scan.confidence_threshold", str(confidence))
@@ -238,8 +239,34 @@ class ConfigParser:
             allowed_action_owners=ConfigParser._as_str_tuple(
                 scan.get("allowed_action_owners"), f"{source}: scan.allowed_action_owners"
             ),
+            notify_channels=notify_channels,
+            notify_on=notify_on,
             profile=str(scan.get("profile", "balanced")),
             provenance=tuple(provenance),
+        )
+
+    @staticmethod
+    def _parse_notify(
+        data: Mapping[str, Any], source: str
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """The notify section: which channels, and on what. A URL here is refused, by name, rather
+        than read: a webhook URL is a credential, and a repository's config file is not where one
+        belongs."""
+        notify = data.get("notify") or {}
+        if not isinstance(notify, dict):
+            raise ConfigError(f"{source}: notify must be a mapping")
+        stray = sorted(set(notify) - {"channels", "on"})
+        if stray:
+            raise ConfigError(
+                f"{source}: notify takes only channels and on, not {', '.join(stray)}",
+                hint=(
+                    "A channel's URL is a credential: set it in CORDON_NOTIFY_WEBHOOK, "
+                    "CORDON_NOTIFY_SLACK or CORDON_NOTIFY_TEAMS, never in a file."
+                ),
+            )
+        return (
+            ConfigParser._as_str_tuple(notify.get("channels"), f"{source}: notify.channels"),
+            ConfigParser._as_str_tuple(notify.get("on"), f"{source}: notify.on"),
         )
 
     @staticmethod

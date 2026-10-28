@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.config.policy import OrgConstraints, Policy
+from cordon_scanner.foundation.config.provenance import Layer, Provenance
 from cordon_scanner.foundation.errors import ConfigError, PolicyViolationError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.models import (
@@ -75,35 +76,6 @@ and becomes permanent by default.
 # ---------------------------------------------------------------------------
 # Layer identity, for `cordon config explain`
 # ---------------------------------------------------------------------------
-
-
-class Layer:
-    """Where a setting came from. Every effective value records its origin."""
-
-    DEFAULT = "default"
-    REPO = "repo"
-    ORG = "org"
-    CLI = "cli"
-
-    ORDER = (DEFAULT, REPO, ORG, CLI)
-
-
-@dataclass(frozen=True, slots=True)
-class Provenance:
-    """One setting's final value and the layer that supplied it.
-
-    Auditability requires that "why is this threshold medium?" be answerable
-    without re-deriving the merge by hand.
-    """
-
-    key: str
-    value: Any
-    layer: str
-    source: str = ""
-
-    def __str__(self) -> str:
-        where = f" ({self.source})" if self.source else ""
-        return f"{self.key} = {self.value!r}  [{self.layer}{where}]"
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +219,14 @@ class Config:
     attacker achieves by setting it is noise in the scan of their own package
     -- so it needs no clamping, and the default of none means the check is off
     until somebody supplies the fact."""
+
+    notify_channels: tuple[str, ...] = ()
+    """The channels a scan posts to (`notify.channels`), when `--notify` names none. Names only:
+    each channel's URL is a credential and is read from the environment, never from this file."""
+
+    notify_on: tuple[str, ...] = ()
+    """When a scan posts (`notify.on`): `failed`, `incomplete`, `passed`. Empty means the default,
+    `failed` and `incomplete`, when `--notify-on` names none."""
 
     profile: str = "balanced"
     cache_dir: str | None = None
@@ -757,6 +737,10 @@ class Config:
             # The organisation may forbid the network entirely (an air-gapped estate) and may
             # demand fresher intel; a repository can do neither the other way.
             intel_feed=self.intel_feed and org.intel_feed,
+            # Who hears about a scan is routing, not a ceiling: the repository's own choice, else
+            # the organisation's.
+            notify_channels=self.notify_channels or org.notify_channels,
+            notify_on=self.notify_on or org.notify_on,
             clamav=self.clamav or org.clamav,
             rule_file=self.rule_file or org.rule_file,
             keyrings=self.keyrings or org.keyrings,
@@ -848,6 +832,8 @@ class Config:
             "disabled_rules": sorted(self.disabled_rules),
             "internal_namespaces": sorted(self.internal_namespaces),
             "allowed_action_owners": sorted(self.allowed_action_owners),
+            "notify_channels": list(self.notify_channels),
+            "notify_on": list(self.notify_on),
             "profile": self.profile,
             "offline": self.offline,
             "reachability": self.reachability,
@@ -957,7 +943,9 @@ class Config:
 # Parsing
 # ---------------------------------------------------------------------------
 
-TOP_LEVEL_KEYS = frozenset({"version", "scan", "policy", "evidence", "suppressions", "rules"})
+TOP_LEVEL_KEYS = frozenset(
+    {"version", "scan", "policy", "evidence", "suppressions", "rules", "notify"}
+)
 LICENSE_UNKNOWN_ORDER = ("allow", "report", "deny")
 
 
@@ -993,4 +981,4 @@ class IntelAge:
     # unsupported construct is a clear error rather than a silent misparse.
 
 
-__all__ = ["CONFIG_FILENAMES", "CONFIG_VERSION", "Config", "Layer", "Provenance"]
+__all__ = ["CONFIG_FILENAMES", "CONFIG_VERSION", "Config"]

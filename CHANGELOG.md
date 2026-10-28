@@ -24,6 +24,13 @@ test or conformance case that fails on the old code.
   changing one. A notification channel is now a plugin point (`cordon_scanner.notifiers`), loaded
   only with `--allow-plugins`, and is handed only the safe summary. The Slack, Teams and webhook
   messages for a failed gate are byte for byte what they were.
+- **When to notify, set once, tested first, recorded.** `--notify-on failed,incomplete,passed`
+  chooses the occasions (default `failed,incomplete`, as before), so a passing gate can post too.
+  `notify.channels` and `notify.on` in `.cordon.yaml` set them for a repository; a URL there is
+  refused, since a channel's URL is a credential. `cordon-scanner notify test` sends each channel a
+  message marked as a test and exits non-zero if any did not arrive. With `--audit-log`, each
+  delivery is recorded (channel, delivery id, outcome, attempts), never its URL.
+  [docs/14-NOTIFICATIONS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/14-NOTIFICATIONS.md).
 - **No optional runtime dependencies for provenance or signing.** Sigstore bundles (npm, PyPI PEP
   740, Maven Central, RubyGems, Homebrew, Bazel) and OpenPGP signatures (Helm, Ansible) are
   verified by Cordon's own code against trust material it pins, and CI uploads are signed
