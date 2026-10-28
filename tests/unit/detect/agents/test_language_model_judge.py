@@ -282,7 +282,7 @@ class TestTheCloudContract:
             "MCP tool description",
         }
         assert sent == set(self.SCHEMA["$defs"]["request"]["properties"]["kind"]["enum"])
-        assert source.name == "language_model_judge.py"
+        assert source.as_posix().endswith("detect/agents/language_model/detector.py")
 
     def test_the_package_reads_the_schema_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
         response = self.SCHEMA["$defs"]["response"]["properties"]["verdict"]
