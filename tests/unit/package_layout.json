@@ -908,7 +908,6 @@
    "detect/supply/registry:RegistryDetector._compare": 115,
    "detect/supply/registry:RegistryDetector.declared_rules": 254,
    "detect/supply/registry:RegistryDetector.inspect": 209,
-   "images/host:HostFilesystem._language_packages": 104,
    "rules/loader:PatternCompiler._reject_unsafe": 121,
    "rules/loader:PatternCompiler._reject_unsafe.walk": 102,
    "rules/loader:PatternCompiler.required_literals": 181,
