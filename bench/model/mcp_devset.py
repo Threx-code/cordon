@@ -44,7 +44,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mcp_poisoning import McpSafetyBench, McpTox
 
 from cordon_scanner.detect.agents.agent_semantics import TRAILER
-from cordon_scanner.detect.agents.agents import _MCP_SDK, _SERVER_SOURCE_SUFFIXES, McpServerSource
+from cordon_scanner.detect.agents.mcp.server_source import (
+    MCP_SDK,
+    SERVER_SOURCE_SUFFIXES,
+    McpServerSource,
+)
 
 MEMBER_LIMIT = 1_500_000
 
@@ -120,7 +124,7 @@ class McpDevset:
                 if "/node_modules/" in name:
                     continue
                 text = data.decode("utf-8", "replace")
-                if not _MCP_SDK.search(text):
+                if not MCP_SDK.search(text):
                     continue
                 for channel, piece in cls.texts(text):
                     source = "corpus" if channel == "description" else "corpus-return"
@@ -133,7 +137,7 @@ class McpDevset:
                 with zipfile.ZipFile(path) as archive:
                     for info in archive.infolist():
                         if info.file_size < MEMBER_LIMIT and info.filename.endswith(
-                            _SERVER_SOURCE_SUFFIXES
+                            SERVER_SOURCE_SUFFIXES
                         ):
                             yield info.filename, archive.read(info)
             else:
@@ -142,7 +146,7 @@ class McpDevset:
                         if (
                             member.isfile()
                             and member.size < MEMBER_LIMIT
-                            and member.name.endswith(_SERVER_SOURCE_SUFFIXES)
+                            and member.name.endswith(SERVER_SOURCE_SUFFIXES)
                         ):
                             handle = archive.extractfile(member)
                             if handle is not None:

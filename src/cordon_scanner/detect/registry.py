@@ -24,7 +24,10 @@ ROLES: dict[str, tuple[str, str]] = {
     "ReachedFlows": ("cordon_scanner.detect.code.reached_flows", "ReachedFlows"),
     "SBOM_NAMES": ("cordon_scanner.detect.supply.sbom", "SBOM_NAMES"),
     "SBOM_SUFFIXES": ("cordon_scanner.detect.supply.sbom", "SBOM_SUFFIXES"),
-    "SERVER_SOURCE_SUFFIXES": ("cordon_scanner.detect.agents.agents", "_SERVER_SOURCE_SUFFIXES"),
+    "SERVER_SOURCE_SUFFIXES": (
+        "cordon_scanner.detect.agents.mcp.server_source",
+        "SERVER_SOURCE_SUFFIXES",
+    ),
     "Submodules": ("cordon_scanner.detect.source.submodules", "Submodules"),
 }
 

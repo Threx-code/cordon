@@ -459,9 +459,20 @@ class AgentTutorial:
         from pathlib import Path
 
         from cordon_scanner.cloud.device import DeviceInventory
-        from cordon_scanner.detect.agents import agents
+        from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS
+        from cordon_scanner.detect.agents.paths import (
+            AGENT_SETTINGS_PATHS,
+            BREWFILE_PATHS,
+            CODEX_CONFIG_PATHS,
+            EXTENSION_PATHS,
+            GITPOD_PATHS,
+            INSTRUCTION_PATHS,
+            MARKETPLACE_PATHS,
+            MCP_PATHS,
+        )
+        from cordon_scanner.detect.agents.rule_catalogue import AGENT_ACTIONS, ATR_CATEGORIES, RULES
 
-        rules = sorted(agents.RULES.values(), key=lambda r: r.rule_id)
+        rules = sorted(RULES.values(), key=lambda r: r.rule_id)
         rule_rows = [
             f"| `{r.rule_id}` | {r.severity} | {r.title.replace('|', '/')} |" for r in rules
         ]
@@ -475,14 +486,8 @@ class AgentTutorial:
             f"| `{src.path.as_posix().replace('/home/you', '~')}` | {src.tool} | {src.kind} |"
             for src in sources
         ]
-        actions = [
-            f"| `{name}` | {agent} |" for name, agent in sorted(agents.AGENT_ACTIONS.items())
-        ]
-        categories = (
-            ", ".join(sorted(agents.ATR_CATEGORIES))
-            if isinstance(agents.ATR_CATEGORIES, dict)
-            else ""
-        )
+        actions = [f"| `{name}` | {agent} |" for name, agent in sorted(AGENT_ACTIONS.items())]
+        categories = ", ".join(sorted(ATR_CATEGORIES)) if isinstance(ATR_CATEGORIES, dict) else ""
         sections = [
             f"""# 27 · Every AI agent and MCP location
 
@@ -503,30 +508,27 @@ the code appears here, and one that is not read never does. The walkthrough is t
 """,
             "## Instruction files, skills and commands\n",
             AgentTutorial.table(
-                agents.INSTRUCTION_PATHS,
+                INSTRUCTION_PATHS,
                 "Text an agent reads as its instructions. Checked for hidden characters, injection wording, remote instructions, what the text asks for, and the Agent Threat Rules.",
             ),
             "## Settings and hooks\n",
             AgentTutorial.table(
-                agents.AGENT_SETTINGS_PATHS + agents.CODEX_CONFIG_PATHS,
+                AGENT_SETTINGS_PATHS + CODEX_CONFIG_PATHS,
                 "Configuration that decides what an agent may do, and hooks it runs on its own: permissions granted, commands run on events, approval switched off.",
             ),
             "## MCP servers\n",
             AgentTutorial.table(
-                agents.MCP_PATHS,
+                MCP_PATHS,
                 "Every MCP configuration dialect. Each local server is resolved to the exact package it launches and read from the registry tarball; each remote one, with `--online`, is asked what it serves now (tutorial 18).",
             ),
             "## Files that run when a folder opens\n",
             AgentTutorial.table(
-                agents.AUTORUN_PATHS,
+                AUTORUN_PATHS,
                 "Commands an editor or agent runs without anyone typing them: tasks set to run on open, dev-container lifecycle commands, background-agent setup.",
             ),
             "## Editor extensions\n",
             AgentTutorial.table(
-                agents.EXTENSION_PATHS
-                + agents.GITPOD_PATHS
-                + agents.BREWFILE_PATHS
-                + agents.MARKETPLACE_PATHS,
+                EXTENSION_PATHS + GITPOD_PATHS + BREWFILE_PATHS + MARKETPLACE_PATHS,
                 "Extensions and plugins a repository asks to have installed, checked against the marketplaces' own malware and impersonation verdicts.",
             ),
             "## Agents in CI\n",

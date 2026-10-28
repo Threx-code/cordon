@@ -584,7 +584,7 @@ class McpPoisoningBench:
     @classmethod
     def one(cls, row: dict[str, Any]) -> dict[str, Any]:
         """Scan one unit: the gate's verdict, and every LOW+ finding with where it is."""
-        from cordon_scanner.detect.agents.agents import McpServerSource
+        from cordon_scanner.detect.agents.mcp.server_source import McpServerSource
 
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="mcpbench-") as work:

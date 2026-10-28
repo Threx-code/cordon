@@ -88,26 +88,35 @@ class AgentText:
 
     @staticmethod
     def of(unit: FileUnit) -> list[tuple[str, str]]:
-        from cordon_scanner.detect.agents import agents
+        from cordon_scanner.detect.agents.mcp.configs import McpConfigs
+        from cordon_scanner.detect.agents.mcp.server_source import (
+            MCP_SDK,
+            SERVER_SOURCE_SUFFIXES,
+            McpServerSource,
+        )
+        from cordon_scanner.detect.agents.paths import (
+            AGENT_SETTINGS_PATHS,
+            COMMAND_PATHS,
+            INSTRUCTION_PATHS,
+            AgentPaths,
+        )
 
         path = unit.content.path.rpartition("!")[2]
         text = unit.content.text
-        if agents.AgentPaths._paths_match(
-            path, agents.INSTRUCTION_PATHS
-        ) or agents.AgentPaths._paths_match(path, agents.COMMAND_PATHS):
+        if AgentPaths._paths_match(path, INSTRUCTION_PATHS) or AgentPaths._paths_match(
+            path, COMMAND_PATHS
+        ):
             return [("agent instruction file", text)]
-        if agents.AgentPaths._paths_match(path, agents.AGENT_SETTINGS_PATHS):
-            settings = agents.McpConfigs._json(unit.content)
+        if AgentPaths._paths_match(path, AGENT_SETTINGS_PATHS):
+            settings = McpConfigs._json(unit.content)
             hooks = settings.get("hooks") if isinstance(settings, dict) else None
             if isinstance(hooks, dict):
-                return [
-                    ("agent hook command", c) for c in agents.McpConfigs._hook_commands(hooks) if c
-                ]
+                return [("agent hook command", c) for c in McpConfigs._hook_commands(hooks) if c]
             return []
-        if path.endswith(agents._SERVER_SOURCE_SUFFIXES) and agents._MCP_SDK.search(text):
+        if path.endswith(SERVER_SOURCE_SUFFIXES) and MCP_SDK.search(text):
             return [
                 ("MCP tool description", d)
-                for d in dict.fromkeys(agents.McpServerSource._tool_descriptions(text))
+                for d in dict.fromkeys(McpServerSource._tool_descriptions(text))
             ]
         return []
 

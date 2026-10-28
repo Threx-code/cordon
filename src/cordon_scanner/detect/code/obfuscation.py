@@ -877,7 +877,8 @@ class ObfuscationDetector(BaseDetector):
         agents read READMEs, docs and comments as readily as their own instruction files, which
         the agent-chain detector already covers.
         """
-        from cordon_scanner.detect.agents.agents import INSTRUCTION_PATHS, InstructionText
+        from cordon_scanner.detect.agents.instructions import InstructionText
+        from cordon_scanner.detect.agents.paths import INSTRUCTION_PATHS
 
         if b"\xf3\xa0" not in content.raw:
             # The lead bytes of every Tag character, so `TAG_RUN` cannot match without them: the

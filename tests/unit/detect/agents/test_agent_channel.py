@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.agents.agents import InstructionText
+from cordon_scanner.detect.agents.instructions import InstructionText
 
 
 class TestAgentChannel:
