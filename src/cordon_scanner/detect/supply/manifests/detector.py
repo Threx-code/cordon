@@ -26,8 +26,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
-from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.decide.scoring import ScoringContext
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
@@ -38,23 +37,17 @@ from cordon_scanner.foundation.models import (
     INSTALL_TIME_HOOKS,
     Category,
     Confidence,
-    Evidence,
-    EvidenceKind,
-    Explanation,
     Finding,
-    Location,
-    RedactionMode,
-    RiskScore,
     Scope,
     Severity,
 )
-from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.ecosystems.base import DeclaredDependency, Manifest
+from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.rule_ids import (
     CLEARTEXT_SOURCE_RULE,
     CONFUSION_RULE,
@@ -108,7 +101,7 @@ READABLE_HOOK_TARGETS = frozenset(
 class ManifestDetector(BaseDetector):
     """Inspects dependency manifests."""
 
-    id = "manifest"
+    id = ManifestFinding.DETECTOR
     version = "0.5.0"
     categories = frozenset(
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL}
@@ -288,7 +281,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "No single finding in this package blocks, but the combination -- which rules, "
                     "how strong, in what kind of package -- scores above the learned blocking "
@@ -322,7 +315,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "This MCP server's package is named after a well-known service -- GitHub, "
                     "Slack, Postgres -- that nothing in its code refers to. Chosen by that name, it "
@@ -337,7 +330,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "A file that runs at install was truncated or ran out of its time budget, so "
                     "part of it was never examined. Install scripts are kilobytes; one padded past "
@@ -352,7 +345,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="This release runs code at install that the previous release did not, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Read what changed between the two releases before installing this one.",
@@ -363,7 +356,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="This release's flagged code gains network, process or execution capability, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Read what changed between the two releases before installing this one.",
@@ -374,7 +367,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="This release ships obfuscated code where the previous shipped none, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Read what changed between the two releases before installing this one.",
@@ -385,7 +378,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.MEDIUM,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="This release adds compiled files, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Read what changed between the two releases before installing this one.",
@@ -396,7 +389,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "The registry's copy of the manifest disagrees with the tarball's own package.json "
                     "on install scripts, dependencies, commands, name or version (`--online`, for a "
@@ -412,7 +405,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.CRITICAL,
                 confidence=Confidence.HIGH,
                 category=Category.MALICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="A dependency this npm package declares, resolved and scanned on its own bytes (`--dependency-store`, or `--online`), is malicious by its content: installing this package installs it.",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Do not install this package; read the named dependency's finding first.",
@@ -423,7 +416,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.MEDIUM,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="This release was published by a different account than the previous one, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Read what changed between the two releases before installing this one.",
@@ -491,7 +484,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="An archive member's name is absolute or climbs out with `..`.",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Do not unpack or install it.",
@@ -502,7 +495,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "A member of this archive is a symbolic link to a system or credential file -- "
                     "/etc/hosts, ~/.ssh/id_rsa, ~/.aws. Anything that reads or uploads the "
@@ -517,7 +510,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="The file begins as a tar or compressed stream and ends as a zip, so different tools read different contents.",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Do not install it.",
@@ -528,7 +521,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="The archive expands far past its compression ceiling and the byte budget ran out inside it, so what follows the padding was not read.",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Do not install it until it is examined whole.",
@@ -539,7 +532,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message="The innermost archive was never examined; depth past two levels keeps a payload out of reach.",
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Raise limits.max_archive_depth and examine the inner archives before installing.",
@@ -564,7 +557,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "The scanned package's own name is one slip from a widely used package and "
                     "is not itself established: the shape of a typosquat waiting for the typo. "
@@ -579,7 +572,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "A published package whose name looks chosen to be installed by mistake -- a "
                     "slip of a popular name, an organisation's name outside its scope, a "
@@ -596,7 +589,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.CRITICAL,
                 confidence=Confidence.HIGH,
                 category=Category.MALICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "An install-time script downloads something and runs it. Install hooks run "
                     "unprompted, as the developer, with the developer's full environment, "
@@ -628,7 +621,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "This package runs a script during installation. That is ordinary for "
                     "packages that compile something and it is also the single most used "
@@ -644,7 +637,7 @@ class ManifestDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
-                detector=ManifestDetector.id,
+                detector=ManifestFinding.DETECTOR,
                 message=(
                     "This package's version is engineered to win a version resolution -- 99 or "
                     "above, or all nines -- it runs a script of its own on install, and it has "
@@ -689,7 +682,7 @@ class ManifestDetector(BaseDetector):
             # A manifest that could not be read is a manifest whose contents
             # were not checked. Reporting it keeps that from resembling a pass.
             return [
-                self._operational(
+                ManifestFinding.operational(
                     unit.path,
                     f"Could not parse this {ecosystem_id} manifest, so its "
                     f"lifecycle scripts and dependency sources were not "
@@ -722,7 +715,7 @@ class ManifestDetector(BaseDetector):
         if assessment is None:
             return
         reasons = [signal.reason for signal in assessment.signals]
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=RULE,
             category=Category.SUSPICIOUS,
             # Below a block it is recorded, not raised: measured on 162,499 long-tail units the
@@ -775,7 +768,7 @@ class ManifestDetector(BaseDetector):
         if not values.get("distributionUrl") or values.get("distributionSha256Sum"):
             return
         tool = "Maven" if name.startswith("maven") else "Gradle"
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=WRAPPER_RULE,
             category=Category.POLICY,
             severity=Severity.LOW,
@@ -832,7 +825,7 @@ class ManifestDetector(BaseDetector):
             or sdist_root is not None
             or unit.path.rpartition("!")[2] == "package/package.json"
         )
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",
             category=Category.SUSPICIOUS,
             severity=Severity.HIGH if published else Severity.MEDIUM,
@@ -898,7 +891,7 @@ class ManifestDetector(BaseDetector):
         if len(others) > 1:
             return
         hook = running[0]
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=CONFUSION_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.HIGH,
@@ -1041,7 +1034,7 @@ class ManifestDetector(BaseDetector):
                     )
                     for path in in_tree
                 )
-                yield self._finding(
+                yield ManifestFinding.finding(
                     rule_id="SUSPECT.INSTALL.SCRIPT.001",
                     category=Category.SUSPICIOUS,
                     # Graded by whose manifest it is and what the command reaches.
@@ -1127,7 +1120,7 @@ class ManifestDetector(BaseDetector):
             )
 
             if fetch_and_run:
-                yield self._finding(
+                yield ManifestFinding.finding(
                     rule_id="MALWARE.INSTALL.FETCH_EXEC.001",
                     category=Category.MALICIOUS,
                     severity=Severity.CRITICAL,
@@ -1153,7 +1146,7 @@ class ManifestDetector(BaseDetector):
                 )
             else:
                 author_time = hook.name.lower() in AUTHOR_TIME_HOOKS
-                yield self._finding(
+                yield ManifestFinding.finding(
                     rule_id="SUSPECT.INSTALL.SCRIPT.001",
                     category=Category.SUSPICIOUS,
                     # An author-time hook cannot reach a consumer installing from a
@@ -1234,7 +1227,7 @@ class ManifestDetector(BaseDetector):
                 }
             )
         )
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=SOURCE_PRIORITY_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.MEDIUM,
@@ -1276,7 +1269,7 @@ class ManifestDetector(BaseDetector):
                 continue
             if re.fullmatch(r"[0-9a-fA-F]{40}", commit):
                 continue  # `dev-main#<full sha>`: pinned to one commit, whatever the branch does
-            yield self._finding(
+            yield ManifestFinding.finding(
                 rule_id=MUTABLE_REF_RULE,
                 category=Category.POLICY,
                 severity=Severity.MEDIUM,
@@ -1313,7 +1306,7 @@ class ManifestDetector(BaseDetector):
         from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=SOURCE_PRIORITY_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.MEDIUM,
@@ -1350,7 +1343,7 @@ class ManifestDetector(BaseDetector):
         )
         if not malformed:
             return
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=MALFORMED_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.HIGH,
@@ -1387,7 +1380,7 @@ class ManifestDetector(BaseDetector):
             if not declared.field_name.startswith("FROM "):
                 continue
             written = declared.alias or declared.name
-            yield self._finding(
+            yield ManifestFinding.finding(
                 rule_id="POLICY.CONTAINER.UNPINNED_BASE.001",
                 category=Category.POLICY,
                 severity=Severity.LOW,
@@ -1411,7 +1404,7 @@ class ManifestDetector(BaseDetector):
     ) -> Iterable[Finding]:
         """A Kubernetes container (or a Kustomize override) naming its image by tag."""
         written = declared.alias or declared.name
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id="POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001",
             category=Category.POLICY,
             severity=Severity.LOW,
@@ -1471,7 +1464,7 @@ class ManifestDetector(BaseDetector):
         if not weak:
             return
         named = ", ".join(sorted(weak))
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id="SUSPECT.HELM.UNTRUSTED_REPOSITORY.001",
             category=Category.SUSPICIOUS,
             severity=Severity.MEDIUM,
@@ -1511,7 +1504,7 @@ class ManifestDetector(BaseDetector):
         from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=SOURCE_PRIORITY_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.MEDIUM,
@@ -1549,7 +1542,7 @@ class ManifestDetector(BaseDetector):
         from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(sorted({DependencySource.sanitise(s) or s for s in global_sources}))
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=SOURCE_PRIORITY_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.MEDIUM,
@@ -1582,7 +1575,7 @@ class ManifestDetector(BaseDetector):
         from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(sorted({(DependencySource.sanitise(s) or s) for s in private}))
-        yield self._finding(
+        yield ManifestFinding.finding(
             rule_id=SOURCE_PRIORITY_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.MEDIUM,
@@ -1627,7 +1620,7 @@ class ManifestDetector(BaseDetector):
             if host in self._LOOPBACK or host in seen:
                 continue
             seen.add(host)
-            yield self._finding(
+            yield ManifestFinding.finding(
                 rule_id=CLEARTEXT_SOURCE_RULE,
                 category=Category.POLICY,
                 severity=Severity.MEDIUM,
@@ -1683,7 +1676,7 @@ class ManifestDetector(BaseDetector):
                 # Nix writes and every build of the flake reads, pins it to a commit and a hash.
                 continue
             if kind == "mutable":
-                yield self._finding(
+                yield ManifestFinding.finding(
                     rule_id=MUTABLE_REF_RULE,
                     category=Category.POLICY,
                     severity=Severity.MEDIUM,
@@ -1721,7 +1714,7 @@ class ManifestDetector(BaseDetector):
                 # npm samples declare one, and in 58 it is the entire package.
                 rule_id, host, severity = remote
                 malicious = rule_id == MALICIOUS_REMOTE_TARBALL_RULE
-                yield self._finding(
+                yield ManifestFinding.finding(
                     rule_id=rule_id,
                     category=Category.MALICIOUS if malicious else Category.SUSPICIOUS,
                     severity=severity,
@@ -1759,7 +1752,7 @@ class ManifestDetector(BaseDetector):
                 else None
             )
             if foreign is not None:
-                yield self._finding(
+                yield ManifestFinding.finding(
                     rule_id=FOREIGN_COMMIT_RULE,
                     category=Category.SUSPICIOUS,
                     severity=Severity.HIGH,
@@ -1791,7 +1784,7 @@ class ManifestDetector(BaseDetector):
                 # Where git is how the ecosystem distributes every package (SwiftPM), a commit
                 # pin is its most immutable form, not a departure from a registry.
                 continue
-            yield self._finding(
+            yield ManifestFinding.finding(
                 rule_id="POLICY.DEPENDENCY.SOURCE.001",
                 category=Category.POLICY,
                 severity=Severity.LOW if pinned else Severity.MEDIUM,
@@ -1824,130 +1817,6 @@ class ManifestDetector(BaseDetector):
             )
 
     # -- Construction ----------------------------------------------------
-
-    def _finding(
-        self,
-        *,
-        rule_id: str,
-        category: Category,
-        severity: Severity,
-        confidence: Confidence,
-        title: str,
-        message: str,
-        remediation: str,
-        unit: FileUnit,
-        ctx: ScanContext,
-        detail: str,
-        capabilities: list[Capability] | tuple[Capability, ...],
-        reasons: list[str],
-        fixture_ceiling: bool = True,
-    ) -> Finding:
-        line = self._line_of(unit, detail)
-
-        if (
-            fixture_ceiling
-            and category is not Category.MALICIOUS
-            and SourcePaths.is_test_material_here(unit.path, ctx)
-        ):
-            # The ceiling every other detector applies, arrived at last here because a
-            # manifest felt like the one file that is never a fixture. It is: a package
-            # manager's own tests need packages to install, so pnpm carries
-            # `exec/lifecycle/test/fixtures/*/package.json`, each declaring the install
-            # hooks whose runner is under test -- `node -e "console.log('install')"`
-            # four times in one manifest. Sixteen HIGH findings, every one of them
-            # describing test input for the code that runs install hooks.
-            #
-            # Still reported, and MALICIOUS is untouched: a fixture tree is where a
-            # real payload would most like to sit, and the severity is what changes.
-            severity = min(severity, FIXTURE_CEILING)
-            message = (
-                f"{message} This manifest sits under a path that holds test material, "
-                f"where a declared install script is usually input to a test of the "
-                f"installer rather than something that ships, so it is reported below "
-                f"its usual severity."
-            )
-
-        risk = ctx.scorer.score(
-            severity,
-            confidence,
-            ScoringContext(
-                # A lifecycle script is install-time by definition; the manifest
-                # need not be listed as a hook for that to be true.
-                in_install_hook=True,
-                capabilities=frozenset(capabilities),
-            ),
-        )
-
-        return Finding(
-            rule_id=rule_id,
-            category=category,
-            severity=severity,
-            confidence=confidence,
-            message=message,
-            location=Location(path=unit.path, line=line, project=unit.project),
-            evidence=Evidence(
-                kind=EvidenceKind.METADATA,
-                match_hash=Evidence.hash_bytes(detail.encode("utf-8")),
-                redaction=RedactionMode.MASKED,
-                # Masked because a lifecycle command can embed a token, and a
-                # finding must never be the thing that copies one into a log.
-                snippet=Redactor.mask(detail[:200]),
-            ),
-            remediation=remediation,
-            explanation=Explanation(
-                summary=title,
-                matched_rule=rule_id,
-                escalations=tuple(reasons),
-            ),
-            risk=risk,
-            detector=self.id,
-            capabilities=tuple(dict.fromkeys(capabilities)),
-        )
-
-    @staticmethod
-    def _line_of(unit: FileUnit, detail: str) -> int | None:
-        """Find the line a manifest entry sits on.
-
-        Best effort by design. The parsers work on parsed structures, which
-        carry no positions, so the key is located in the raw text afterwards.
-        A missing line number is acceptable; a wrong file is not.
-        """
-        key = detail.split(":", 1)[0].split(" =", 1)[0].strip()
-        if not key:
-            return None
-        needle = f'"{key}"'.encode()
-        index = unit.content.raw.find(needle)
-        if index == -1:
-            index = unit.content.raw.find(key.encode())
-        return unit.content.line_of(index) if index != -1 else None
-
-    def _operational(self, path: str, message: str) -> Finding:
-        return Finding(
-            rule_id="OPERATIONAL.MANIFEST.UNPARSED",
-            category=Category.OPERATIONAL,
-            # MEDIUM, not INFO. A manifest is the file that decides what runs at
-            # install time, so being unable to read one is a coverage hole
-            # rather than a note: every lifecycle check, every declared
-            # dependency and every install-hook path for this package is
-            # unavailable, and the report should not read like a package that
-            # was examined and found to declare nothing.
-            severity=Severity.MEDIUM,
-            confidence=Confidence.CONFIRMED,
-            message=message,
-            location=Location(path=path),
-            evidence=Evidence(
-                kind=EvidenceKind.METADATA,
-                match_hash=Evidence.hash_bytes(path.encode()),
-                redaction=RedactionMode.NONE,
-            ),
-            remediation="Fix the syntax error so the manifest can be checked.",
-            explanation=Explanation(
-                summary="A manifest that cannot be parsed is a manifest that was not checked.",
-                matched_rule="OPERATIONAL.MANIFEST.UNPARSED",
-            ),
-            risk=RiskScore(value=0, base=0, confidence_multiplier=1.0),
-            detector=self.id,
-        )
 
 
 __all__ = [
