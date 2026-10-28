@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.code.capability.detector import CapabilityHit
+from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Capability

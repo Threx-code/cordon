@@ -30,7 +30,7 @@ import re
 from collections import Counter
 from collections.abc import Sequence
 from contextlib import suppress
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
@@ -50,6 +50,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.addresses import PublicAddress
+from cordon_scanner.detect.code.capability.hits import CapabilityHit, LineRanges
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
@@ -207,57 +208,6 @@ amount of ordinary cloud tooling finds out where it is running. A fetch that doe
 leave the host is still a fetch: the suppression is per match, so one local curl
 beside one remote curl leaves the remote one intact.
 """
-
-
-class LineRanges:
-    """Lines and the ranges that contain them."""
-
-    @staticmethod
-    def cls_in(line: int, spans: frozenset[tuple[int, int]]) -> bool:
-        """Whether a line falls inside any of these ranges."""
-        return any(first <= line <= last for first, last in spans)
-
-
-@dataclass(frozen=True, slots=True)
-class CapabilityHit:
-    """One capability observed in a file, with where it was seen."""
-
-    capability: Capability
-    rule_id: str
-    byte_start: int
-    byte_end: int
-    line: int
-    fixed: bool = False
-    """Whether this is a spawn whose entire argv was written out in the source.
-
-    Set only by the Python AST tier, which is the only tier that can answer it.
-    See `_evaluate_over`, which is the one place it is read."""
-
-    variants: int = 1
-    """How many distinct operations of this capability the rule matched.
-
-    A decode rule covering base64, hex and decompression matches all three
-    with one pattern, so the number of rules that fired cannot express how many
-    decoding steps a file performs. This can: one call site repeated ten times
-    is still one operation, and base64 followed by decompression is two."""
-
-    resolved: bool = False
-    """Whether this hit came from parsing the source rather than scanning it.
-
-    A parsed hit is a SECOND VIEW of a call the byte tier usually saw too --
-    `base64.b64decode(blob)` is one decoding step whether one tier reports it or
-    three do. So these are excluded from the depth counts in `_evaluate_over`,
-    or every parsed Python file would appear to decode twice and satisfy rules
-    that ask for a chain of encodings.
-
-    This used to be inferred from the rule id beginning `AST.`, which held only
-    while the single internal tier was the only thing producing such hits.
-    Adding `kind: ast` to the rule vocabulary broke that silently: rules named
-    `CAP.PY.AST.*` are the same second view, do not begin with `AST.`, and so
-    were counted -- which turned one `base64.b64decode` into a two-step decode
-    chain and fired `SUSPECT.DECODE_CHAIN.001` on a file that decodes once.
-    Carried explicitly now, because the property is about where a hit came from
-    and never was about how it was named."""
 
 
 class ScriptFetchedThenEvaluated:
@@ -5117,4 +5067,4 @@ class CapabilityDetector(BaseDetector):
         )
 
 
-__all__ = ["CapabilityDetector", "CapabilityHit"]
+__all__ = ["CapabilityDetector"]

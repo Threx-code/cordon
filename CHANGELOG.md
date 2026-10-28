@@ -164,6 +164,8 @@ test or conformance case that fails on the old code.
   does; Apache's PHP module, the Composer PHAR and jar groups are named as Syft names them.
 - The home screen and tutorial 11 say what a default scan does on the network (it asks OSV what
   changed since the intel was built) and how to turn that off.
+- The capability detector's class moved to `cordon_scanner.detect.code.capability.detector`
+  (its entry point follows); the detector id `capability` that configs name is unchanged.
 
 ### Security
 

@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import FileUnit
-    from cordon_scanner.detect.code.capability.detector import CapabilityHit
+    from cordon_scanner.detect.code.capability.hits import CapabilityHit
     from cordon_scanner.foundation.content import FileContent
 
 

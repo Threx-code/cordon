@@ -44,7 +44,7 @@ from cordon_scanner.foundation.text.comments import BLOCK_COMMENT_LANGUAGES, Sou
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
-    from cordon_scanner.detect.code.capability.detector import CapabilityHit
+    from cordon_scanner.detect.code.capability.hits import CapabilityHit
 
 #: Hosts that serve release artefacts and nothing else an install script would fetch from them.
 #: Path-qualified where the host also serves other things: `github.com` only under
