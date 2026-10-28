@@ -25,9 +25,9 @@ class Fetch:
 
     @staticmethod
     def get(url: str, limit: int = 4 << 20) -> bytes:
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
 
-        body = MoreRegistries._get(url)
+        body = RegistryHttp.get(url)
         if len(body) > limit:
             raise ValueError("response too large")
         return body

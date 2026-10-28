@@ -101,8 +101,9 @@ class PodSiblings:
 
     @staticmethod
     def find(dependency: Dependency, tags: Mapping[str, set[str]]) -> Upstream | None:
-        from cordon_scanner.intel.registries.more_registries import HOSTS, MoreRegistries
+        from cordon_scanner.intel.registries.package_registries import PackageRegistries
         from cordon_scanner.intel.registries.registry_client import PackageNotFound
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
 
         name, version = dependency.name.split("/", 1)[0], dependency.version or ""
         if not re.fullmatch(r"[\w.+-]+", name):
@@ -116,9 +117,9 @@ class PodSiblings:
         )[: PodSiblings.MAX_CANDIDATES]
         if not candidates:
             return None
-        a, b, c = MoreRegistries.cocoapods_shard(name)
+        a, b, c = PackageRegistries.cocoapods_shard(name)
         spec = json.loads(
-            MoreRegistries._cocoapods_spec(
+            PackageRegistries.cocoapods_spec(
                 f"{HOSTS['cocoapods']}/Specs/{a}/{b}/{c}/{name}/{version}/{name}.podspec.json"
             )
         )

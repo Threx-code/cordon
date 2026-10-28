@@ -153,14 +153,15 @@ class HelmProvenance:
     ) -> tuple[bytes | None, str, str | None] | ChartCheck:
         """`(provenance layer, archive name, chart layer sha256)` from an OCI registry: the layer is
         content-addressed, so its digest is the archive's SHA-256."""
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.image_registries import ImageRegistries
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
 
         host, _, path = source.removeprefix("oci://").partition("/")
         if not re.fullmatch(r"[a-z0-9.\-]+(?::\d+)?", host) or ".." in path:
             return ChartCheck("unverifiable", f"{source} is not an OCI registry reference")
         repository = f"{path.strip('/')}/{name}" if path.strip("/") else name
         base_url = f"https://{host}/v2/{repository}"
-        manifest = MoreRegistries._oci(
+        manifest = RegistryHttp.oci(
             # helm `pkg/registry/reference.go`: a `+` in a version is `_` in its OCI tag.
             f"{base_url}/manifests/{urllib.parse.quote(version.replace('+', '_'), safe='-._')}",
             "application/vnd.oci.image.manifest.v1+json",
@@ -178,7 +179,7 @@ class HelmProvenance:
             return None, f"{name}-{version}.tgz", chart.removeprefix("sha256:")
         # A blob is content-addressed: _oci_blob refuses bytes that do not hash to its digest.
         return (
-            MoreRegistries._oci_blob(base_url, prov),
+            ImageRegistries.oci_blob(base_url, prov),
             f"{name}-{version}.tgz",
             chart.removeprefix("sha256:"),
         )

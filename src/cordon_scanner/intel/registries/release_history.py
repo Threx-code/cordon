@@ -249,121 +249,193 @@ class ReleaseHistory:
     @classmethod
     def timeline(cls, ecosystem: str, name: str, version: str) -> dict[str, datetime]:
         """When the registry says each release was published. Network."""
-        from cordon_scanner.intel.registries.more_registries import HOSTS, MoreRegistries
-        from cordon_scanner.intel.registries.registry_client import REGISTRY_HOSTS, RegistryClient
 
         quoted = urllib.parse.quote(name, safe="")
         out: dict[str, datetime] = {}
 
-        def put(release: Any, when: Any) -> None:
-            moment = cls._when(when)
-            if isinstance(release, str) and release and moment is not None:
-                out[release] = min(out.get(release, moment), moment)
-
         if ecosystem == "npm":
-            document = RegistryClient._fetch(
-                f"{REGISTRY_HOSTS['npm']}/{urllib.parse.quote(name, safe='@')}"
-            )
-            listed = RegistryClient._mapping(document.get("versions"))
-            for release, when in RegistryClient._mapping(document.get("time")).items():
-                # The scanned release keeps its time after npm withdraws it (as it does a
-                # malicious one); a baseline must still be served.
-                if release in listed or release == version:
-                    put(release, when)
+            ReleaseHistory._npm_times(name, version, out)
         elif ecosystem == "pypi":
-            document = RegistryClient._fetch(f"{REGISTRY_HOSTS['pypi']}/pypi/{quoted}/json")
-            for release, files in RegistryClient._mapping(document.get("releases")).items():
-                for upload in files if isinstance(files, list) else ():
-                    if isinstance(upload, dict) and not upload.get("yanked"):
-                        put(release, upload.get("upload_time_iso_8601"))
+            ReleaseHistory._pypi_times(quoted, out)
         elif ecosystem == "openvsx":
-            from cordon_scanner.intel.registries.openvsx import OpenVsx
-
-            out.update(OpenVsx.timeline(name, version))
+            ReleaseHistory._openvsx_times(name, version, out)
         elif ecosystem == "cargo":
-            document = MoreRegistries._mapping(
-                MoreRegistries._json(f"{HOSTS['cargo']}/api/v1/crates/{quoted}")
-            )
-            for entry in MoreRegistries._entries(document.get("versions")):
-                if not entry.get("yanked"):
-                    put(entry.get("num"), entry.get("created_at"))
+            ReleaseHistory._cargo_times(quoted, out)
         elif ecosystem == "rubygems":
-            listed = MoreRegistries._json(f"{HOSTS['rubygems']}/api/v1/versions/{quoted}.json")
-            for entry in MoreRegistries._entries(listed):
-                if entry.get("platform", "ruby") == "ruby":
-                    put(entry.get("number"), entry.get("created_at"))
+            ReleaseHistory._rubygems_times(quoted, out)
         elif ecosystem == "nuget":
-            index = MoreRegistries._mapping(
-                MoreRegistries._json(
-                    f"{HOSTS['nuget']}/v3/registration5-gz-semver2/{quoted.lower()}/index.json"
-                )
-            )
-            for page in MoreRegistries._entries(index.get("items")):
-                items = page.get("items")
-                if items is None and isinstance(page.get("@id"), str):
-                    items = MoreRegistries._mapping(MoreRegistries._json(page["@id"])).get("items")
-                for item in MoreRegistries._entries(items):
-                    entry = MoreRegistries._mapping(item.get("catalogEntry"))
-                    if entry.get("listed", True):
-                        put(entry.get("version"), entry.get("published"))
+            ReleaseHistory._nuget_times(quoted, out)
         elif ecosystem == "gomod":
-            from cordon_scanner.intel.advisories.versions import Versions
-
-            current = version.lstrip("v")
-            earlier = sorted(
-                (
-                    v
-                    for v in MoreRegistries.versions("gomod", name)
-                    if Versions.compare("gomod", v, current) < 0
-                ),
-                key=lambda v: Versions.sort_key("gomod", v),
-                reverse=True,
-            )
-            module = MoreRegistries.go_escape(name)
-            for release in [current, *earlier[:40]]:
-                info = MoreRegistries._mapping(
-                    MoreRegistries._json(f"{HOSTS['gomod']}/{module}/@v/v{release}.info")
-                )
-                put(release, info.get("Time"))
-                moment = out.get(release)
-                if (
-                    release != current
-                    and moment is not None
-                    and current in out
-                    and moment <= out[current] - timedelta(days=MIN_AGE_DAYS)
-                ):
-                    break
+            ReleaseHistory._gomod_times(name, version, out)
         elif ecosystem == "hex":
-            document = MoreRegistries._mapping(
-                MoreRegistries._json(f"{HOSTS['hex']}/api/packages/{quoted}")
-            )
-            for entry in MoreRegistries._entries(document.get("releases")):
-                put(entry.get("version"), entry.get("inserted_at"))
+            ReleaseHistory._hex_times(quoted, out)
         elif ecosystem == "pub":
-            document = MoreRegistries._mapping(
-                MoreRegistries._json(f"{HOSTS['pub']}/api/packages/{quoted}")
-            )
-            for entry in MoreRegistries._entries(document.get("versions")):
-                if entry.get("retracted") is not True:
-                    put(entry.get("version"), entry.get("published"))
+            ReleaseHistory._pub_times(quoted, out)
         elif ecosystem in ("maven", "gradle"):
-            group, _, artifact = name.partition(":")
-            query = urllib.parse.quote(f'g:"{group}" AND a:"{artifact}"', safe="")
-            document = MoreRegistries._mapping(
-                MoreRegistries._json(
-                    f"https://search.maven.org/solrsearch/select?q={query}&core=gav&rows=200&wt=json"
-                )
-            )
-            for entry in MoreRegistries._entries(
-                MoreRegistries._mapping(document.get("response")).get("docs")
-            ):
-                stamp = entry.get("timestamp")
-                if isinstance(stamp, int):
-                    put(
-                        entry.get("v"),
-                        datetime.fromtimestamp(stamp / 1000).astimezone().isoformat(),
-                    )
+            ReleaseHistory._maven_times(name, out)
         return out
+
+    @staticmethod
+    def _put(out: dict[str, datetime], release: Any, when: Any) -> None:
+        """Record when a release was published: its earliest time, if it has one."""
+        moment = ReleaseHistory._when(when)
+        if isinstance(release, str) and release and moment is not None:
+            out[release] = min(out.get(release, moment), moment)
+
+    @staticmethod
+    def _npm_times(name: str, version: str, out: dict[str, datetime]) -> None:
+        """When npm says each release was published."""
+        from cordon_scanner.intel.registries.registry_client import REGISTRY_HOSTS, RegistryClient
+
+        document = RegistryClient._fetch(
+            f"{REGISTRY_HOSTS['npm']}/{urllib.parse.quote(name, safe='@')}"
+        )
+        listed = RegistryClient._mapping(document.get("versions"))
+        for release, when in RegistryClient._mapping(document.get("time")).items():
+            # The scanned release keeps its time after npm withdraws it (as it does a
+            # malicious one); a baseline must still be served.
+            if release in listed or release == version:
+                ReleaseHistory._put(out, release, when)
+
+    @staticmethod
+    def _pypi_times(quoted: str, out: dict[str, datetime]) -> None:
+        """When pypi says each release was published."""
+        from cordon_scanner.intel.registries.registry_client import REGISTRY_HOSTS, RegistryClient
+
+        document = RegistryClient._fetch(f"{REGISTRY_HOSTS['pypi']}/pypi/{quoted}/json")
+        for release, files in RegistryClient._mapping(document.get("releases")).items():
+            for upload in files if isinstance(files, list) else ():
+                if isinstance(upload, dict) and not upload.get("yanked"):
+                    ReleaseHistory._put(out, release, upload.get("upload_time_iso_8601"))
+
+    @staticmethod
+    def _openvsx_times(name: str, version: str, out: dict[str, datetime]) -> None:
+        """When openvsx says each release was published."""
+        from cordon_scanner.intel.registries.openvsx import OpenVsx
+
+        out.update(OpenVsx.timeline(name, version))
+
+    @staticmethod
+    def _cargo_times(quoted: str, out: dict[str, datetime]) -> None:
+        """When cargo says each release was published."""
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        document = RegistryHttp.mapping(
+            RegistryHttp.json(f"{HOSTS['cargo']}/api/v1/crates/{quoted}")
+        )
+        for entry in RegistryHttp.entries(document.get("versions")):
+            if not entry.get("yanked"):
+                ReleaseHistory._put(out, entry.get("num"), entry.get("created_at"))
+
+    @staticmethod
+    def _rubygems_times(quoted: str, out: dict[str, datetime]) -> None:
+        """When rubygems says each release was published."""
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        listed = RegistryHttp.json(f"{HOSTS['rubygems']}/api/v1/versions/{quoted}.json")
+        for entry in RegistryHttp.entries(listed):
+            if entry.get("platform", "ruby") == "ruby":
+                ReleaseHistory._put(out, entry.get("number"), entry.get("created_at"))
+
+    @staticmethod
+    def _nuget_times(quoted: str, out: dict[str, datetime]) -> None:
+        """When nuget says each release was published."""
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        index = RegistryHttp.mapping(
+            RegistryHttp.json(
+                f"{HOSTS['nuget']}/v3/registration5-gz-semver2/{quoted.lower()}/index.json"
+            )
+        )
+        for page in RegistryHttp.entries(index.get("items")):
+            items = page.get("items")
+            if items is None and isinstance(page.get("@id"), str):
+                items = RegistryHttp.mapping(RegistryHttp.json(page["@id"])).get("items")
+            for item in RegistryHttp.entries(items):
+                entry = RegistryHttp.mapping(item.get("catalogEntry"))
+                if entry.get("listed", True):
+                    ReleaseHistory._put(out, entry.get("version"), entry.get("published"))
+
+    @staticmethod
+    def _gomod_times(name: str, version: str, out: dict[str, datetime]) -> None:
+        """When gomod says each release was published."""
+        from cordon_scanner.intel.advisories.versions import Versions
+        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.package_registries import PackageRegistries
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        current = version.lstrip("v")
+        earlier = sorted(
+            (
+                v
+                for v in MoreRegistries.versions("gomod", name)
+                if Versions.compare("gomod", v, current) < 0
+            ),
+            key=lambda v: Versions.sort_key("gomod", v),
+            reverse=True,
+        )
+        module = PackageRegistries.go_escape(name)
+        for release in [current, *earlier[:40]]:
+            info = RegistryHttp.mapping(
+                RegistryHttp.json(f"{HOSTS['gomod']}/{module}/@v/v{release}.info")
+            )
+            ReleaseHistory._put(out, release, info.get("Time"))
+            moment = out.get(release)
+            if (
+                release != current
+                and moment is not None
+                and current in out
+                and moment <= out[current] - timedelta(days=MIN_AGE_DAYS)
+            ):
+                break
+
+    @staticmethod
+    def _hex_times(quoted: str, out: dict[str, datetime]) -> None:
+        """When hex says each release was published."""
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        document = RegistryHttp.mapping(RegistryHttp.json(f"{HOSTS['hex']}/api/packages/{quoted}"))
+        for entry in RegistryHttp.entries(document.get("releases")):
+            ReleaseHistory._put(out, entry.get("version"), entry.get("inserted_at"))
+
+    @staticmethod
+    def _pub_times(quoted: str, out: dict[str, datetime]) -> None:
+        """When pub says each release was published."""
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        document = RegistryHttp.mapping(RegistryHttp.json(f"{HOSTS['pub']}/api/packages/{quoted}"))
+        for entry in RegistryHttp.entries(document.get("versions")):
+            if entry.get("retracted") is not True:
+                ReleaseHistory._put(out, entry.get("version"), entry.get("published"))
+
+    @staticmethod
+    def _maven_times(name: str, out: dict[str, datetime]) -> None:
+        """When maven says each release was published."""
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        group, _, artifact = name.partition(":")
+        query = urllib.parse.quote(f'g:"{group}" AND a:"{artifact}"', safe="")
+        document = RegistryHttp.mapping(
+            RegistryHttp.json(
+                f"https://search.maven.org/solrsearch/select?q={query}&core=gav&rows=200&wt=json"
+            )
+        )
+        for entry in RegistryHttp.entries(
+            RegistryHttp.mapping(document.get("response")).get("docs")
+        ):
+            stamp = entry.get("timestamp")
+            if isinstance(stamp, int):
+                ReleaseHistory._put(
+                    out,
+                    entry.get("v"),
+                    datetime.fromtimestamp(stamp / 1000).astimezone().isoformat(),
+                )
 
     @classmethod
     def established(

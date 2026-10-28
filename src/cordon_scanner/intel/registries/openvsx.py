@@ -42,9 +42,9 @@ class OpenVsx:
 
     @staticmethod
     def _json(url: str) -> dict[str, Any]:
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
 
-        return MoreRegistries._mapping(MoreRegistries._json(url))
+        return RegistryHttp.mapping(RegistryHttp.json(url))
 
     @classmethod
     def timeline(cls, name: str, version: str) -> dict[str, datetime]:
@@ -88,14 +88,14 @@ class OpenVsx:
     @classmethod
     def archive(cls, name: str, version: str) -> base.PackageArchive:
         """The `.vsix` the registry publishes for `version`, checked against its own SHA-256."""
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
 
         namespace, extension = cls.split(name)
         document = cls._json(
             f"{API}/{namespace}/{extension}/{urllib.parse.quote(version, safe='')}"
         )
-        files = MoreRegistries._mapping(document.get("files"))
-        published = MoreRegistries._text(cls._on_file_host(files.get("sha256"))).split()
+        files = RegistryHttp.mapping(document.get("files"))
+        published = RegistryHttp.text(cls._on_file_host(files.get("sha256"))).split()
         if not published or not re.fullmatch(r"[0-9a-fA-F]{64}", published[0]):
             raise RegistryError(f"Open VSX publishes no SHA-256 for {name}@{version}")
         download = cls._on_file_host(files.get("download"))

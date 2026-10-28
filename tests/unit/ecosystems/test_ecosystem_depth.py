@@ -13,6 +13,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.package_registries import PackageRegistries
 from cordon_scanner.intel.registries.registry_client import PackageArchive
 from cordon_scanner.sources.package import PackageTarget
 from cordon_scanner.sources.previous import Identity, PreviousRelease
@@ -91,7 +92,7 @@ class TestTheGoChecksumDatabase:
         monkeypatch.setattr(
             MoreRegistries, "_json", staticmethod(lambda url: {"Version": "v0.9.1"})
         )
-        facts = MoreRegistries.gomod("github.com/pkg/errors", "0.9.1")
+        facts = PackageRegistries.gomod("github.com/pkg/errors", "0.9.1")
         assert any(url.endswith("/lookup/github.com/pkg/errors@v0.9.1") for url in asked)
         assert (
             facts.digests == ("h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",)

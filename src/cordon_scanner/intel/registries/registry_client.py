@@ -281,7 +281,8 @@ class RegistryClient:
             return RegistryClient._pypi(name, version)
         if ecosystem == "npm":
             return RegistryClient._npm(name, version)
-        from cordon_scanner.intel.registries.more_registries import ALIASES, MoreRegistries
+        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.registry_hosts import ALIASES
 
         if ecosystem in ALIASES:
             # crates.io, RubyGems, NuGet, the Go proxy and Maven Central (G5).
@@ -604,9 +605,9 @@ class RegistryClient:
             if ecosystem == "rubygems":
                 return RegistryClient._rubygems_attestation_payload(name, version)
             if ecosystem == "image":
-                from cordon_scanner.intel.registries.more_registries import MoreRegistries
+                from cordon_scanner.intel.registries.image_registries import ImageRegistries
 
-                return MoreRegistries.image_attestations(name, version)
+                return ImageRegistries.image_attestations(name, version)
         except (RegistryError, ValueError):
             return None
         return None

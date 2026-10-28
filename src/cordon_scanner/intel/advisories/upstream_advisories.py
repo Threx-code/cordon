@@ -162,7 +162,7 @@ class Upstreams:
             # A version Conan Center has since dropped (ruby 3.2.2): the package's current recipe
             # still names its repository.
             return ConanCenter.removed(name, version)
-        # `MoreRegistries._get` inflates a gzip answer itself, so this may already be a plain tar.
+        # `RegistryHttp.get` inflates a gzip answer itself, so this may already be a plain tar.
         with tarfile.open(fileobj=io.BytesIO(export), mode="r:*") as archive:
             member = archive.extractfile("conandata.yml")
             text = member.read(MAX_EXPORT_BYTES).decode("utf-8", "replace") if member else ""
@@ -207,7 +207,8 @@ class Upstreams:
     @staticmethod
     def cocoapods(dependency: Dependency) -> Upstream | Unnamed:
         from cordon_scanner.foundation.models import Scope
-        from cordon_scanner.intel.registries.more_registries import HOSTS, MoreRegistries
+        from cordon_scanner.intel.registries.package_registries import PackageRegistries
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
 
         if dependency.scope == Scope.TOOL and dependency.name == "cocoapods":
             # Podfile.lock's COCOAPODS line: the version of CocoaPods itself, a RubyGem.
@@ -220,32 +221,11 @@ class Upstreams:
             )
         given = dependency.resolved_from
         if given is not None:
-            # `pod 'X', :git => ..., :commit|:tag => ...`: Podfile.lock's CHECKOUT OPTIONS hold
-            # what was checked out: a commit is exact; a ref only once the repository shows it is
-            # a tag -- a branch moves, so it is no fixed point.
-            git = re.fullmatch(r"git\+(\S+)#(\S+)", given)
-            repository = RepositoryArchive.repository(git.group(1)) if git else None
-            if git and repository:
-                ref, how = git.group(2), f"the {dependency.name} checkout ({repository})"
-                if re.fullmatch(r"[0-9a-f]{40}", ref) or ref in (
-                    TagInference.refs(repository) or {}
-                ):
-                    return RepositoryArchive.upstream(repository, ref, how)
-                return Unnamed(f"its checkout names {ref}, which is not a tag of {repository}")
-            within = NpmPodspec.NOTE.search(dependency.resolution_note or "")
-            if within:
-                return NpmPodspec.read(
-                    within.group(2),
-                    within.group(1),
-                    within.group(3).split(" or "),
-                    dependency.version or "",
-                    f"the {dependency.name} podspec in npm's {within.group(2)}",
-                )
-            return Unnamed("it is not from CocoaPods trunk")
+            return Upstreams.cocoapods_checkout(dependency, given)
         name, version = dependency.name.split("/", 1)[0], dependency.version or ""
-        a, b, c = MoreRegistries.cocoapods_shard(name)
+        a, b, c = PackageRegistries.cocoapods_shard(name)
         spec = json.loads(
-            MoreRegistries._cocoapods_spec(
+            PackageRegistries.cocoapods_spec(
                 f"{HOSTS['cocoapods']}/Specs/{a}/{b}/{c}/{name}/{version}/{name}.podspec.json"
             )
         )
@@ -303,6 +283,30 @@ class Upstreams:
                 homes=answer.homes,
             )
         return answer
+
+    @staticmethod
+    def cocoapods_checkout(dependency: Dependency, given: str) -> Upstream | Unnamed:
+        """A pod installed from a checkout, not trunk: its commit or tag, or the npm podspec it came with."""
+        # `pod 'X', :git => ..., :commit|:tag => ...`: Podfile.lock's CHECKOUT OPTIONS hold
+        # what was checked out: a commit is exact; a ref only once the repository shows it is
+        # a tag -- a branch moves, so it is no fixed point.
+        git = re.fullmatch(r"git\+(\S+)#(\S+)", given)
+        repository = RepositoryArchive.repository(git.group(1)) if git else None
+        if git and repository:
+            ref, how = git.group(2), f"the {dependency.name} checkout ({repository})"
+            if re.fullmatch(r"[0-9a-f]{40}", ref) or ref in (TagInference.refs(repository) or {}):
+                return RepositoryArchive.upstream(repository, ref, how)
+            return Unnamed(f"its checkout names {ref}, which is not a tag of {repository}")
+        within = NpmPodspec.NOTE.search(dependency.resolution_note or "")
+        if within:
+            return NpmPodspec.read(
+                within.group(2),
+                within.group(1),
+                within.group(3).split(" or "),
+                dependency.version or "",
+                f"the {dependency.name} podspec in npm's {within.group(2)}",
+            )
+        return Unnamed("it is not from CocoaPods trunk")
 
     @staticmethod
     def patterns(value: object) -> list[str]:

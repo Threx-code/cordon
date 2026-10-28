@@ -389,11 +389,12 @@ class TestMavenCentralSignatures:
     @pytest.mark.conformance("maven", "UNI-17")
     def test_the_source_repository_comes_from_the_published_pom(self, monkeypatch) -> None:
         from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.package_registries import PackageRegistries
 
         pom = "<project><url>https://acme.example</url><scm><url>https://github.com/acme/lib</url></scm></project>"
         monkeypatch.setattr(MoreRegistries, "_text", staticmethod(lambda url: pom))
         assert (
-            MoreRegistries._maven_scm("https://repo.maven.apache.org/x.pom")
+            PackageRegistries.maven_scm("https://repo.maven.apache.org/x.pom")
             == "https://github.com/acme/lib"
         )
         monkeypatch.setattr(
@@ -401,7 +402,7 @@ class TestMavenCentralSignatures:
             "_text",
             staticmethod(lambda url: '<!DOCTYPE p [<!ENTITY e "x">]><project/>'),
         )
-        assert MoreRegistries._maven_scm("https://repo.maven.apache.org/x.pom") is None
+        assert PackageRegistries.maven_scm("https://repo.maven.apache.org/x.pom") is None
 
     @pytest.mark.conformance("maven", "UNI-17")
     @pytest.mark.conformance("gradle", "UNI-17")

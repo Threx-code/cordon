@@ -183,7 +183,7 @@ class TestEstablished:
             ),
             (
                 "cargo",
-                "more_registries.MoreRegistries._json",
+                "more_registries.RegistryHttp.json",
                 {
                     "versions": [
                         {"num": "1.0.0", "created_at": "2025-01-01T00:00:00Z"},

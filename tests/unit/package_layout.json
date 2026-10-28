@@ -325,6 +325,11 @@
   "intel/provenance/x509": "intel/provenance/x509",
   "intel/registries/installers": "intel/registries/installers",
   "intel/registries/more_registries": "intel/registries/more_registries",
+  "intel/registries/package_registries": "intel/registries/package_registries",
+  "intel/registries/infra_registries": "intel/registries/infra_registries",
+  "intel/registries/image_registries": "intel/registries/image_registries",
+  "intel/registries/registry_http": "intel/registries/registry_http",
+  "intel/registries/registry_hosts": "intel/registries/registry_hosts",
   "intel/registries/openvsx": "intel/registries/openvsx",
   "intel/registries/popular": "intel/registries/popular",
   "intel/registries/private_registries": "intel/registries/private_registries",
@@ -779,7 +784,6 @@
    "ecosystems/packages/pypi": 1319,
    "images/oci": 1074,
    "intel/advisories/advisories": 1153,
-   "intel/registries/more_registries": 2163,
    "mcp/tools": 1802,
    "rules/loader": 1642,
    "sources/archive": 1062
@@ -893,8 +897,7 @@
    "detect/code/obfuscation:ObfuscationDetector": 1002,
    "detect/supply/advisory:AdvisoryDetector": 1065,
    "detect/supply/manifest:ManifestDetector": 1843,
-   "ecosystems/packages/pypi:PypiEcosystem": 1138,
-   "intel/registries/more_registries:MoreRegistries": 2009
+   "ecosystems/packages/pypi:PypiEcosystem": 1138
   },
   "long_functions": {
    "analysis/javascript/front/parser:Parser._statement": 107,
@@ -989,11 +992,9 @@
    "images/oci:ImageLayers.added_files": 101,
    "images/oci:ImageLayers.databases": 95,
    "intel/advisories/osv_import:OsvImport.advisories_from_osv_record": 115,
-   "intel/advisories/upstream_advisories:Upstreams.cocoapods": 98,
    "intel/malware/feed:FeedClient.status": 100,
    "intel/provenance/attest:SigstoreVerification.verify": 95,
    "intel/registries/more_registries:MoreRegistries.archive": 100,
-   "intel/registries/release_history:ReleaseHistory.timeline": 117,
    "mcp/packages:Lockfiles._pinned": 105,
    "mcp/tools:Catalogue.build": 459,
    "report/aibom:AiBom.inventory": 92,

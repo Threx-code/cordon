@@ -1214,7 +1214,7 @@ class RegistryDetector(BaseDetector):
             return True
         import urllib.parse
 
-        from cordon_scanner.intel.registries.more_registries import PUBLIC_HOSTS
+        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
 
         resolved = dependency.resolved_from or ""
         if not resolved.startswith(("http://", "https://")):
@@ -1236,7 +1236,7 @@ class RegistryDetector(BaseDetector):
         if not resolved.startswith(("http://", "https://")):
             return False
         host = urllib.parse.urlsplit(resolved).hostname or ""
-        from cordon_scanner.intel.registries.more_registries import PUBLIC_HOSTS
+        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
 
         return host not in {
             "registry.npmjs.org",
