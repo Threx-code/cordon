@@ -17,6 +17,7 @@
   "analysis/javascript/flow/vocabulary": "analysis/javascript/flow/vocabulary",
   "analysis/javascript/flow/structure": "analysis/javascript/flow/structure",
   "analysis/javascript/flow/bindings": "analysis/javascript/flow/bindings",
+  "analysis/javascript/flow/sinks": "analysis/javascript/flow/sinks",
   "analysis/javascript/js_fold": "analysis/javascript/js_fold",
   "analysis/javascript/js_persist": "analysis/javascript/js_persist",
   "analysis/javascript/js_string_code": "analysis/javascript/js_string_code",
@@ -882,7 +883,7 @@
   "long_modules": {
    "analysis/javascript/front/parser": 1759,
    "analysis/javascript/js_eval": 1085,
-   "analysis/javascript/js_flow": 1451,
+   "analysis/javascript/js_flow": 1305,
    "rules/loader": 1642,
    "sources/archive": 1062
   },
@@ -892,7 +893,7 @@
   ],
   "long_classes": {
    "analysis/javascript/front/parser:Parser": 1718,
-   "analysis/javascript/js_flow:_Analysis": 1253
+   "analysis/javascript/js_flow:_Analysis": 1121
   },
   "long_functions": {
    "analysis/javascript/front/parser:Parser._statement": 107,
