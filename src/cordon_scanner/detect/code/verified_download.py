@@ -11,7 +11,7 @@ write and spawn in a postinstall hook, so `MALWARE.DROPPER.001` reported it at C
 
 It answers one question about one file -- is every download in it a pinned release, verified
 against a digest that did not come from the network, before anything runs? -- and the only
-thing the answer may change is the dropper-by-pattern grading (`capability._composite_finding`):
+thing the answer may change is the dropper-by-pattern grading (`capability.grading.CompositeGrading`):
 `MALWARE.DROPPER.001` is withdrawn and `SUSPECT.DROPPER.001` reports the span at MEDIUM.
 
 It never makes a file clean, and that is a design constraint rather than caution (review 98,
