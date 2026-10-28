@@ -65,7 +65,6 @@ from cordon_scanner.engine.pipeline.constants import (
     DER_STRING,
     DROP_POINT_SECRETS,
     HONOURED_PINS,
-    PACKAGED_BUILD_FILENAMES,
     REPOSITORY_SCOPE,
     TEST_IDENTITY,
 )
@@ -321,7 +320,7 @@ class Engine:
                 )
             )
         dependencies = (*dependencies, *ingested, *submodules)
-        manifest_hooks, consumer_hooks, ci_scripts = self._manifest_hook_paths(units, acc)
+        manifest_hooks, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
         hook_paths = (
             set(ctx.install_hook_paths)
             | manifest_hooks
@@ -357,7 +356,7 @@ class Engine:
         # and defines its functions -- it does not call them.
         # Every function of agent-run code is an entry point: the agent calls them by name.
         deferred = Engine._entry_points_reached(
-            self._hook_deferred_lines(units, hook_paths, entries), agent_run
+            Hooks.hook_deferred_lines(units, hook_paths, entries), agent_run
         )
         ctx = replace(
             ctx,
@@ -764,7 +763,7 @@ class Engine:
         # time, which is the whole reason a package archive is worth scanning.
         units.extend(self._inline_hook_units(units))
         units.extend(self._deobfuscated_units(units))
-        hook_paths, consumer_hooks, ci_scripts = self._manifest_hook_paths(units, acc)
+        hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
         # commonest thing to vet, and it was the one target that skipped all three.
@@ -806,7 +805,7 @@ class Engine:
             consumer_install_paths=frozenset(consumer_hooks),
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
             install_deferred_lines=Engine._entry_points_reached(
-                self._hook_deferred_lines(units, hook_paths, entries), agent_run
+                Hooks.hook_deferred_lines(units, hook_paths, entries), agent_run
             ),
             # Known before any file is examined, so a detector can tell an image's files from a
             # source tree's: an image's executables are what it ships.
@@ -3050,42 +3049,6 @@ class Engine:
 
         return collected
 
-    @staticmethod
-    def _hook_deferred_lines(
-        units: list[FileUnit], hooks: set[str], entries: frozenset[str] | None = None
-    ) -> frozenset[tuple[str, int, int]]:
-        """Bodies inside the closure that the hooks never actually call.
-
-        The closure answers which files run at install time. Importing a module
-        runs its top level and defines its functions; it does not call them, and
-        a library reached because `setup.py` reads its `__version__` is almost
-        entirely functions nothing on that path calls. See
-        `core.reachability.CallReachability` for what is and is not treated as
-        reachable, and why every approximation there keeps the finding.
-        """
-        from cordon_scanner.ecosystems.packages.homebrew import NotRunAtInstall
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry
-        from cordon_scanner.engine.reachability import CallReachability
-
-        # A formula or cask is a hook as a whole; its `service`, `test` and `caveats` blocks are
-        # not run by `brew install` (`NotRunAtInstall`).
-        brew = frozenset(
-            (unit.path, first, last)
-            for unit in units
-            if unit.path in hooks
-            and unit.path.endswith(".rb")
-            and EcosystemRegistry.manifest_ecosystem(unit.path) == "homebrew"
-            for first, last in NotRunAtInstall.spans(unit.content.text)
-        )
-        sources = {
-            unit.path: unit.content.text
-            for unit in units
-            if unit.path.endswith(".py") and not unit.content.is_binary
-        }
-        if not sources:
-            return brew
-        return brew | CallReachability.deferred_lines(hooks, sources, entries)
-
     def _expand_member_units(
         self, rel_path: str, loaded: FileContent, acc: Accumulator, deadline: float
     ) -> list[FileUnit] | None:
@@ -3251,130 +3214,6 @@ class Engine:
                         )
                     )
         return lifted
-
-    @staticmethod
-    def _manifest_hook_paths(
-        units: list[FileUnit], acc: Accumulator | None = None
-    ) -> tuple[set[str], set[str], set[str]]:
-        """Paths that execute at install time, according to their manifests -- and, third, the
-        scripts a published GitHub action's composite steps run, which are CI code.
-
-        The inventory's packaging test, here too: fixing only the first place a `setup.py` becomes
-        a hook left `hermes_cli/subcommands/setup.py`, an argument parser, seeding an import closure
-        of 510 files (`Hooks.hook_executes`). A Dockerfile a dependency vendors is not a hook:
-        its RUN steps run when somebody builds that image, never on install (opencv's zlib-ng).
-        """
-        paths: set[str] = set()
-        consumer: set[str] = set()
-        ci_scripts: set[str] = set()
-        """Paths that run for whoever INSTALLS the package, a subset (`ScanContext.consumer_install_paths`):
-        a `setup.py` reaches a consumer only when it overrides a consumer-time command."""
-        known = frozenset(unit.path for unit in units)
-        package_directories = {
-            unit.path.rpartition("/")[0]
-            for unit in units
-            if ContainerPaths.basename(unit.path) == "__init__.py"
-        }
-        from cordon_scanner.analysis.shared.source_paths import SourcePaths
-
-        for unit in units:
-            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
-            if ecosystem_id is None or (
-                ecosystem_id == "image" and SourcePaths.is_vendored(unit.path)
-            ):
-                continue
-            if ContainerPaths.basename(unit.path) in PACKAGED_BUILD_FILENAMES and (
-                unit.path.rpartition("/")[0] in package_directories
-                # And the second half of the same test. Applying only the
-                # package-directory half here is the mistake this function's
-                # docstring already warns about, one member of the family later:
-                # `test/cpp_extensions/setup.py` is a fixture pytorch's own test
-                # suite compiles, and it seeded a 507-file closure over `torch`.
-                # See `FIXTURE_DIRECTORIES`.
-                or Hooks.under_fixture_directory(unit.path)
-            ):
-                continue
-            ecosystem = EcosystemRegistry.get(ecosystem_id)
-            if ecosystem is None:
-                continue
-            try:
-                manifest = ecosystem.parse_manifest(unit.content)
-                # And the hooks only the tree shows: a CRAN source package's `configure` and
-                # `cleanup` beside its DESCRIPTION. The manifest detector and the inventory
-                # already ask; without it here those scripts were never install-time code.
-                hooks_from_tree = getattr(ecosystem, "hooks_from_tree", None)
-                if hooks_from_tree is not None:
-                    manifest = hooks_from_tree(manifest, known)
-            except Exception as exc:  # noqa: BLE001
-                # Same containment as the lockfile path, and reported for the
-                # same reason. Catching it and moving on quietly would trade one
-                # failure mode (the scan dies) for the worse one (the manifest
-                # was never read and nothing says so), which is the trade this
-                # whole audit is about.
-                if acc is not None:
-                    acc.complete = False
-                    acc.append(
-                        OperationalFinding.build(
-                            path=unit.path,
-                            rule_id="OPERATIONAL.PARSER.FAILED",
-                            message=(
-                                f"The {ecosystem_id} manifest parser failed on this file, "
-                                f"so its install hooks were not identified: "
-                                f"{type(exc).__name__}"
-                            ),
-                            remediation="Report this with the file that triggered it.",
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                continue
-            # Consumer-time hooks only. A `prepare` or a `prepack` runs on the author's
-            # machine, not on the machine of anybody who installs the package from a
-            # registry -- and marking the script it names as install-time code is what
-            # put `MALWARE.ANTI_ANALYSIS.001` at critical on `n8n`'s three-line
-            # `scripts/prepare.mjs`, which is the file the anti-analysis composite's own
-            # comment cites as the false positive it was corrected for. See
-            # `core.models.AUTHOR_TIME_HOOKS`, including what this gives up.
-            #
-            # The MANIFEST still counts whenever it declares any of them, because
-            # `SUSPECT.INSTALL.SCRIPT.001` is about the declaration and grades itself by
-            # which kind it is.
-            if any(not hook.action_step for hook in manifest.hooks):
-                paths.add(unit.path)
-            if manifest.hooks:
-                # A published action's composite steps run on its consumers' runners as CI code:
-                # what they name is read in CI context, not install context (review 98: as
-                # install code, 305 of 2,978 benign actions blocked).
-                steps = [hook for hook in manifest.hooks if hook.action_step]
-                if steps:
-                    ci_scripts |= Hooks.hook_script_paths(unit.path, steps, known)
-                reaching = [
-                    hook
-                    for hook in manifest.hooks
-                    if hook.name.lower() not in AUTHOR_TIME_HOOKS and hook not in steps
-                ]
-                if reaching:
-                    paths |= Hooks.hook_script_paths(unit.path, reaching, known)
-                    paths |= {
-                        program.path
-                        for hook in reaching
-                        for program in InlinePrograms.lifted(
-                            unit.path, hook.name, hook.command or ""
-                        )
-                        if program.path in known
-                    }
-                consuming = [hook for hook in manifest.hooks if hook.kind == "consumerinstall"]
-                if consuming:
-                    consumer.add(unit.path)
-                    consumer |= Hooks.hook_script_paths(unit.path, consuming, known)
-                    consumer |= {
-                        program.path
-                        for hook in consuming
-                        for program in InlinePrograms.lifted(
-                            unit.path, hook.name, hook.command or ""
-                        )
-                        if program.path in known
-                    }
-        return paths, consumer, ci_scripts
 
     def _coverage_findings(
         self,
