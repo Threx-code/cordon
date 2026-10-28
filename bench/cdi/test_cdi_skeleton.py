@@ -43,9 +43,14 @@ class Build:
             label_ref="label:7",
             dataset_membership=split,
             baseline={"scanner_version": "afae550", "intel_version": "s3", "model_version": None},
-            reproduce={"command": "cordon scan evil-skill.tgz", "scan_output_digest": "sha256:dead"},
+            reproduce={
+                "command": "cordon scan evil-skill.tgz",
+                "scan_output_digest": "sha256:dead",
+            },
             detectors_ran=["agent_intent", "capability"],
-            absent_or_misweighted=[{"what": "file-exfil intent", "why": "upload shape not matched"}],
+            absent_or_misweighted=[
+                {"what": "file-exfil intent", "why": "upload shape not matched"}
+            ],
             failure_mechanism="class a: file read uploaded to an external host, directive in prose",
             needed={"kind": "rule", "note": "agent.intent.file-exfil rule pack"},
         )
@@ -64,7 +69,15 @@ class TestFeatureSet:
         row2 = {
             **_ROW,
             "findings": [
-                ["SUSPECT.AGENT.INTENT.001", "HIGH", 0.9, "agent", "kit/SKILL.md", 12, "agent_intent"],
+                [
+                    "SUSPECT.AGENT.INTENT.001",
+                    "HIGH",
+                    0.9,
+                    "agent",
+                    "kit/SKILL.md",
+                    12,
+                    "agent_intent",
+                ],
                 ["MALWARE.PACKAGE.KNOWN.002", "CRITICAL", 1.0, "intel", "", 0, "advisory"],
             ],
         }
@@ -74,7 +87,9 @@ class TestFeatureSet:
 
     def test_content_change_moves_the_digest(self):
         row2 = {**_ROW, "verdict": {"package": {"skill": 1.0, "n_files": 9.0, "has_readme": 1.0}}}
-        assert Build.featureset()["featureset_digest"] != Build.featureset(row2)["featureset_digest"]
+        assert (
+            Build.featureset()["featureset_digest"] != Build.featureset(row2)["featureset_digest"]
+        )
 
     def test_deterministic_and_valid(self):
         assert Build.featureset() == Build.featureset()
@@ -88,9 +103,17 @@ class TestMiss:
     def test_bad_needed_kind_rejected(self):
         with pytest.raises(ValueError):
             Miss.detection_miss(
-                miss_id="m", artifact_id="a", artifact_digest="d", label_ref="l",
-                dataset_membership="dev", baseline={}, reproduce={}, detectors_ran=[],
-                absent_or_misweighted=[], failure_mechanism="x", needed={"kind": "wand"},
+                miss_id="m",
+                artifact_id="a",
+                artifact_digest="d",
+                label_ref="l",
+                dataset_membership="dev",
+                baseline={},
+                reproduce={},
+                detectors_ran=[],
+                absent_or_misweighted=[],
+                failure_mechanism="x",
+                needed={"kind": "wand"},
             )
 
     def test_eligibility_two_gates(self):
@@ -121,11 +144,23 @@ class TestCandidateFactory:
     def test_rule_pack_required(self):
         with pytest.raises(FactoryRejection):
             CandidateFactory.make_candidate(
-                candidate_id="c", version="1", kind="rule", lane="rule_pack",
-                source_misses=[Build.miss()], mechanism_addressed="", evidence="", provenance="",
-                expected_gain="", benign_lookalikes=[], scope="", cost="",
-                train_dataset_digest="sha256:aa", limits="", rollback_conditions="",
-                compatibility={}, rule_pack=None,
+                candidate_id="c",
+                version="1",
+                kind="rule",
+                lane="rule_pack",
+                source_misses=[Build.miss()],
+                mechanism_addressed="",
+                evidence="",
+                provenance="",
+                expected_gain="",
+                benign_lookalikes=[],
+                scope="",
+                cost="",
+                train_dataset_digest="sha256:aa",
+                limits="",
+                rollback_conditions="",
+                compatibility={},
+                rule_pack=None,
             )
 
     def test_reject_is_a_new_version(self):

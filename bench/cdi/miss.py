@@ -14,9 +14,7 @@ from typing import Any
 
 from . import schemas
 
-_NEEDED_KINDS = frozenset(
-    {"extractor", "correction", "rule", "composite", "model", "capability"}
-)
+_NEEDED_KINDS = frozenset({"extractor", "correction", "rule", "composite", "model", "capability"})
 
 
 class Miss:
