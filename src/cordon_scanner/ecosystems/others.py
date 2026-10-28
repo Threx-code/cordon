@@ -12,8 +12,6 @@ resolves from somewhere other than the ecosystem's own registry.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
 # Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
 from cordon_scanner.ecosystems.infra.actions import GitHubActionsEcosystem
@@ -29,25 +27,6 @@ from cordon_scanner.ecosystems.packages.nuget import NuGetEcosystem
 from cordon_scanner.ecosystems.packages.pub import PubEcosystem
 from cordon_scanner.ecosystems.packages.rubygems import RubyGemsEcosystem
 from cordon_scanner.ecosystems.packages.swift import SwiftEcosystem
-
-if TYPE_CHECKING:
-    pass
-
-
-# ---------------------------------------------------------------------------
-# Cargo
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Go modules
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Maven and Gradle
-# ---------------------------------------------------------------------------
-
 
 __all__ = [
     "BazelEcosystem",
