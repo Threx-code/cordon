@@ -269,9 +269,7 @@ class TestAgentTools(Served):
                 "args": ["-y", "@modelcontextprotocol/server-filesystem", "/"],
             },
         )["structuredContent"]
-        # The notes name what made a verdict 'incomplete' (a scan budget under load, for one), which
-        # is never accepted here: they are printed so a failure says its own cause.
-        assert found["verdict"] in {"warn", "block"}, found["notes"]
+        assert found["verdict"] in {"warn", "block"}
         assert any("not pinned" in n for n in found["notes"])
         assert session.call("check_mcp_server", name="x", config={"shell": "rm"})["isError"] is True
 
