@@ -130,6 +130,7 @@
   "detect/binary/rule_engine/threads": "detect/binary/rule_engine/threads",
   "detect/binary/rule_engine/pattern": "detect/binary/rule_engine/pattern",
   "detect/binary/modules/pe": "detect/binary/modules/pe",
+  "detect/binary/modules/pe_functions": "detect/binary/modules/pe_functions",
   "detect/binary/rule_engine/search_parts": "detect/binary/rule_engine/search_parts",
   "detect/binary/rule_engine/scan": "detect/binary/rule_engine/scan",
   "detect/binary/modules/der": "detect/binary/modules/der",
@@ -834,7 +835,6 @@
    "analysis/javascript/js_flow": 2328,
    "cli/main": 1947,
    "detect/binary/binary": 1225,
-   "detect/binary/modules/pe": 1175,
    "detect/secrets/secrets": 4105,
    "ecosystems/infra/image": 1177,
    "ecosystems/others": 1417,
@@ -881,7 +881,6 @@
    "analysis/javascript/front/parser:Parser": 1718,
    "analysis/javascript/js_flow:_Analysis": 1877,
    "cli/main:CommandLine": 1869,
-   "detect/binary/modules/pe:Pe": 1068,
    "ecosystems/packages/pypi:PypiEcosystem": 1138
   },
   "long_functions": {
