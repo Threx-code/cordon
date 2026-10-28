@@ -736,6 +736,31 @@ class RubyGemsEcosystem(BaseEcosystem):
             )
         declared = list(gemfile.dependencies)
         directory = content.path.rpartition("/")[0]
+        RubyGemsEcosystem._gemspec_dependencies(gemfile, directory, files, declared)
+        if gemfile.ruby:
+            declared.append(
+                DeclaredDependency(
+                    name="ruby", spec=gemfile.ruby, scope=Scope.PLATFORM, field_name="ruby"
+                )
+            )
+        sources = [f"source {url}" for url in gemfile.global_sources] + [
+            f"source block {url}" for url in gemfile.block_sources
+        ]
+        return Manifest(
+            path=content.path,
+            ecosystem=self.id,
+            dependencies=tuple(declared),
+            sources=tuple(sources),
+        )
+
+    @staticmethod
+    def _gemspec_dependencies(
+        gemfile: Gemfile,
+        directory: str,
+        files: Mapping[str, FileContent],
+        declared: list[DeclaredDependency],
+    ) -> None:
+        """The dependencies each gemspec the Gemfile names declares, in the group it is named in."""
         for relative, group in gemfile.gemspecs:
             base = relative.strip("/") if relative not in (".", "") else ""
             prefix = "/".join(p for p in (directory, base) if p)
@@ -775,21 +800,6 @@ class RubyGemsEcosystem(BaseEcosystem):
                                 field_name="required_ruby_version",
                             )
                         )
-        if gemfile.ruby:
-            declared.append(
-                DeclaredDependency(
-                    name="ruby", spec=gemfile.ruby, scope=Scope.PLATFORM, field_name="ruby"
-                )
-            )
-        sources = [f"source {url}" for url in gemfile.global_sources] + [
-            f"source block {url}" for url in gemfile.block_sources
-        ]
-        return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            dependencies=tuple(declared),
-            sources=tuple(sources),
-        )
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return BundlerLock.parse(content, self.id)
