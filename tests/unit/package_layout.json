@@ -87,7 +87,6 @@
   "detect/binary/rule_files": "detect/binary/rule_files",
   "detect/binary/rule_lang": "detect/binary/rule_lang",
   "detect/binary/rule_layout": "detect/binary/rule_layout",
-  "detect/binary/rule_legacy": "detect/binary/rule_legacy",
   "detect/binary/rule_oids": "detect/binary/rule_oids",
   "detect/binary/rule_pattern": "detect/binary/rule_pattern",
   "detect/binary/rule_pe": "detect/binary/rule_pe",

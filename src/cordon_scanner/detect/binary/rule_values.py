@@ -22,21 +22,6 @@ import math
 from collections.abc import Callable, Mapping
 from typing import Any, ClassVar
 
-# The value trees of the readers not yet moved to declared schemas, still imported from here by
-# them until they are (`Legacy` loads them as modules).
-from cordon_scanner.detect.binary.rule_legacy import (
-    UNDEF_FLOAT,
-    UNDEF_INT,
-    UNDEF_STR,
-    UNDEFINED,
-    Array,
-    Dictionary,
-    Function,
-    Struct,
-    TypedUndefined,
-    Values,
-)
-
 
 class Scalar:
     """A single value's type: `Scalar.INT`, `FLOAT`, `TEXT` (bytes) or `BOOL`."""
@@ -190,98 +175,13 @@ class Data:
         return [f"{where or '.'}: an unknown declaration"]
 
 
-class Legacy:
-    """A schema and plain data from a value tree of the readers not yet rewritten
-    (`rule_legacy`), so they load as modules meanwhile."""
-
-    KINDS: ClassVar[dict[str, str]] = {
-        "int": "int", "float": "float", "str": "text", "bool": "bool", "r": "regex",
-    }  # fmt: skip
-
-    @staticmethod
-    def module(build: Callable[[bytes], Any]) -> Module:
-        empty = build(b"")
-        if not isinstance(empty, Struct):
-            raise TypeError("a module builds a structure")
-        return Module(Legacy.declared(empty), lambda file: Legacy.data(build(file)))
-
-    @staticmethod
-    def declared(tree: Any) -> Any:
-        if isinstance(tree, Struct):
-            return Record({k: Legacy.declared(v) for k, v in tree.fields.items()})
-        if isinstance(tree, Array):
-            return Seq(Legacy.declared(tree.proto))
-        if isinstance(tree, Dictionary):
-            return Keyed(Legacy.declared(tree.proto))
-        if isinstance(tree, Function):
-            return Call(
-                *(
-                    Sig(tuple(Legacy.KINDS[p] for p in params), Legacy.scalar(ret))
-                    for params, (_, ret) in tree.overloads.items()
-                )
-            )
-        if isinstance(tree, TypedUndefined):
-            return Legacy.scalar(tree.kind or "int")
-        if isinstance(tree, bool):
-            return Scalar.BOOL
-        if isinstance(tree, int):
-            return Scalar.INT
-        if isinstance(tree, float):
-            return Scalar.FLOAT
-        if isinstance(tree, bytes):
-            return Scalar.TEXT
-        raise TypeError(f"a value of no known type: {type(tree).__name__}")
-
-    @staticmethod
-    def scalar(kind: str) -> Scalar:
-        return {"int": Scalar.INT, "float": Scalar.FLOAT, "str": Scalar.TEXT}.get(kind, Scalar.BOOL)
-
-    @staticmethod
-    def data(tree: Any) -> Any:
-        if isinstance(tree, TypedUndefined):
-            return None
-        if isinstance(tree, Struct):
-            out = {}
-            for k, v in tree.fields.items():
-                d = Legacy.data(v)
-                if d is not None:
-                    out[k] = d
-            return out
-        if isinstance(tree, (Array, Dictionary)):
-            return {k: Legacy.data(v) for k, v in tree.items.items()}
-        if isinstance(tree, Function):
-            return tuple(Legacy.call(call) for call, _ in tree.overloads.values())
-        return tree
-
-    @staticmethod
-    def call(impl: Callable[..., Any]) -> Callable[..., Any]:
-        """A function of the old trees, its typed undefined result read as None."""
-
-        def plain(*args: Any) -> Any:
-            v = impl(*args)
-            return None if isinstance(v, TypedUndefined) else v
-
-        return plain
-
-
 __all__ = [
-    "UNDEFINED",
-    "UNDEF_FLOAT",
-    "UNDEF_INT",
-    "UNDEF_STR",
-    "Array",
     "Call",
     "Data",
-    "Dictionary",
-    "Function",
     "Keyed",
-    "Legacy",
     "Module",
     "Record",
     "Scalar",
     "Seq",
     "Sig",
-    "Struct",
-    "TypedUndefined",
-    "Values",
 ]

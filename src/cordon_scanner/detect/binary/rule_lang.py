@@ -44,7 +44,7 @@ from cordon_scanner.detect.binary.rule_syntax import (
     RuleError,
     StringDef,
 )
-from cordon_scanner.detect.binary.rule_values import Legacy, Module
+from cordon_scanner.detect.binary.rule_values import Module
 
 MAX_MATCHES = 1_000_000
 
@@ -201,18 +201,13 @@ class Rules:
     def loaded(given: dict[str, Any] | None) -> dict[str, Module]:
         if not Rules.BUILT_IN:
             Rules.BUILT_IN.update(Builtin.modules())
-        extra = {
-            name: m if isinstance(m, Module) else Legacy.module(m)
-            for name, m in (given or {}).items()
-        }
-        return {**Rules.BUILT_IN, **extra}
+        return {**Rules.BUILT_IN, **(given or {})}
 
     @staticmethod
     def compile(
         text: str, externals: dict[str, Any] | None = None, modules: dict[str, Any] | None = None
     ) -> Rules:
-        """`modules` adds modules (`rule_values.Module`s, or builders of the older value trees)
-        to the built-in ones."""
+        """`modules` adds modules (`rule_values.Module`s) to the built-in ones."""
         loaded = Rules.loaded(modules)
         given = dict(externals or {})
         try:
