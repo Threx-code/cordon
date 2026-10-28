@@ -198,6 +198,7 @@
   "detect/supply/manifests/sources": "detect/supply/manifests/sources",
   "detect/supply/manifests/detector": "detect/supply/manifests/detector",
   "detect/supply/manifests/findings": "detect/supply/manifests/findings",
+  "detect/supply/manifests/identity_findings": "detect/supply/manifests/identity_findings",
   "detect/supply/manifests/lifecycle_findings": "detect/supply/manifests/lifecycle_findings",
   "detect/supply/manifests/confusion": "detect/supply/manifests/confusion",
   "detect/supply/name_risk": "detect/supply/name_risk",
