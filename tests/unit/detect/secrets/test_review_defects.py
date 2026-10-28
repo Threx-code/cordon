@@ -17,6 +17,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary.binary import BinaryDetector
+from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.secrets import ASSIGNMENT, NOT_A_SECRET, SecretNames
 from cordon_scanner.foundation.models import Category, Severity
@@ -2151,16 +2152,14 @@ class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
         return FileContent(path=path, raw=raw, size=len(raw))
 
     def test_a_hashed_bundle_is_recognised(self) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         bundle = "var a=1;" * 400
-        assert CapabilityDetector._is_minified(self.content("assets/index-BTLZFAP9.js", bundle))
+        assert BuildOutput.is_minified(self.content("assets/index-BTLZFAP9.js", bundle))
 
     def test_ordinary_source_is_not(self) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         source = "function add(a, b) {\n    return a + b;\n}\n" * 50
-        assert not CapabilityDetector._is_minified(self.content("src/math.js", source))
+        assert not BuildOutput.is_minified(self.content("src/math.js", source))
 
     def test_a_minified_bundle_is_reported_below_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
@@ -11634,16 +11633,15 @@ class TestWhatRealMalwareActuallyLooksLike:
         so the ceiling took `SUSPECT.DECODE_CHAIN.001` from critical to medium
         and a gate would have passed it. Python is not a language anybody
         minifies."""
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         long_line = b"x" * 6307
-        assert not CapabilityDetector._is_minified(
+        assert not BuildOutput.is_minified(
             FileContent(path="pkg/payload.py", raw=long_line, size=len(long_line))
         )
         # And the case the ceiling exists for is untouched: a bundler's output,
         # named with a content hash so no glob can see it.
-        assert CapabilityDetector._is_minified(
+        assert BuildOutput.is_minified(
             FileContent(path="assets/index-BTLZFAP9.js", raw=long_line, size=len(long_line))
         )
 
@@ -12017,14 +12015,13 @@ class TestTheSameActsInAnotherEcosystem:
     def test_a_real_bundle_is_still_minified(self, tmp_path) -> None:
         """The other direction, so the fix above does not simply remove the
         ceiling. A bundle is long lines and almost nothing else."""
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         bundle = ("var a=1,b=2,c=3;" * 400 + "\n") * 3
         content = FileContent(
             path="dist/app.min.js", raw=bundle.encode(), size=len(bundle.encode())
         )
-        assert CapabilityDetector._is_minified(content)
+        assert BuildOutput.is_minified(content)
 
     def test_a_signature_laid_out_one_parameter_to_a_line(self) -> None:
         """`_is_declaration` reads the rest of the line after the opening

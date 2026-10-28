@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.foundation.models import Capability
 
@@ -175,9 +176,8 @@ class JsRuns:
         text = content.text
         # A bundle runs its tools' commands and calls its own APIs a line apart (a minified editor
         # extension calling `gh` and GitHub's API matched); the payloads were written by hand.
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
-        if len(text) > 4_000_000 or "exec" not in text or CapabilityDetector._is_minified(content):
+        if len(text) > 4_000_000 or "exec" not in text or BuildOutput.is_minified(content):
             return []
         for started in cls._JS_COMMAND_OUTPUT.finditer(text):
             output = started["cb"] or started["sync"]

@@ -30,7 +30,6 @@ import re
 from collections import Counter
 from contextlib import suppress
 from dataclasses import replace
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.js_persist import JsPersistence
@@ -49,6 +48,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.addresses import PublicAddress
+from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit, LineRanges
 from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
@@ -327,7 +327,7 @@ class CapabilityDetector(BaseDetector):
         hits.extend(JsCampaigns.attribution_cloak(content, unit.language))
         computed = self._js_computed_require(content, unit.language)
         hits.extend(computed)
-        if computed and not self._bundled(content):
+        if computed and not BuildOutput.bundled(content):
             # The same, in a hand-written file: the install-time composite may convict on this alone.
             # A bundle's loader computes module names by construction (review 98: two extensions'
             # dist/extension.js).
@@ -357,7 +357,7 @@ class CapabilityDetector(BaseDetector):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
         hits = TextPosition.off_this_machine(content, hits)
-        if self._bundled(content):
+        if BuildOutput.bundled(content):
             # A compiled tool that schedules its own jobs (an agent runner's LaunchAgent, a
             # crontab writer) registers autostart entries as its feature; three Open VSX agent
             # extensions do it from dist/. The hand-written file is where an implant's is
@@ -445,7 +445,7 @@ class CapabilityDetector(BaseDetector):
         if (
             len(text) <= self._JS_EVAL_MAX_BYTES
             and self._JS_EVAL_MARKERS.search(text)
-            and not self._bundled(content)
+            and not BuildOutput.bundled(content)
         ):
             try:
                 folded, decoded_lines = JsEval.resolve_with_decodes(folded)
@@ -454,7 +454,7 @@ class CapabilityDetector(BaseDetector):
                 # file, the file is read as written -- every other rule still applies -- rather
                 # than the scan failing.
                 decoded_lines = []
-        elif len(text) <= self._JS_EVAL_MAX_BYTES and not self._bundled(content):
+        elif len(text) <= self._JS_EVAL_MAX_BYTES and not BuildOutput.bundled(content):
             # Without anything to evaluate, still the modules under names chosen to look like
             # anything else (`JsEval.module_names`), which the evaluator's view also writes back.
             folded = JsEval.module_names(folded)
@@ -964,24 +964,6 @@ class CapabilityDetector(BaseDetector):
     def _evaluates_a_literal_payload(content: FileContent) -> bool:
         return CapabilityDetector._LITERAL_PAYLOAD_RUN.search(content.raw) is not None
 
-    #: A line this long means the file was generated, whatever it is called.
-    #:
-    #: The path globs catch `*.min.js`, `dist/` and `.yarn/releases/`, and they cannot
-    #: catch a bundler that names its output with a content hash:
-    #: `assets/ToolsPage-COpoWLDm.js` and `assets/index-BTLZFAP9.js` are Vite output and
-    #: match no convention a glob can express. A minified bundle contains a decoder
-    #: beside an evaluator because that is what a module loader is, so it supplies
-    #: `SUSPECT.DECODE_CHAIN.001` and `SUSPECT.DECODE_EXEC.001` by construction.
-    #:
-    #: Content rather than name is also the harder signal to dodge, which is why the
-    #: threshold is generous: a thousand characters on one line is not something
-    #: anybody writes by hand, and hand-written code that does is already reported by
-    #: `SUSPECT.OBFUSCATION.LONGLINE.001` on its own merits.
-    MINIFIED_LINE = 1000
-
-    BUNDLED_SUFFIXES = frozenset(
-        {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".css", ".scss", ".less", ".map"}
-    )
     """Extensions where a thousand characters on one line means a bundler ran.
 
     The ceiling above exists for one reason, stated in `MINIFIED_LINE`: a minified
@@ -1001,7 +983,6 @@ class CapabilityDetector(BaseDetector):
     A noise ceiling that fires on obfuscated malware is worse than no ceiling: it
     turns a finding a reader would act on into one they will not see."""
 
-    MINIFIED_MEAN_LINE = 200
     """Mean bytes per line before a file is build output rather than source.
 
     The third half of this test, added after the other two were not enough. A
@@ -1392,22 +1373,6 @@ class CapabilityDetector(BaseDetector):
     """Go's `func init()`, Java's `static { ... }`, a C# static constructor, a C/C++
     `__attribute__((constructor))` and Rust's `#[ctor]`: code that runs when the package is imported,
     the class is loaded or the library is mapped -- how malicious modules run their payload."""
-
-    @staticmethod
-    def _is_minified(content: FileContent) -> bool:
-        """Whether this file looks like build output regardless of its name.
-
-        Long lines, an extension a bundler writes, AND long lines being what the
-        file is mostly made of. See `BUNDLED_SUFFIXES` for why the second is not
-        optional and `MINIFIED_MEAN_LINE` for why the third is not either.
-        """
-        if content.longest_line <= CapabilityDetector.MINIFIED_LINE:
-            return False
-        suffix = PurePosixPath(content.path).suffix.lower()
-        if suffix not in CapabilityDetector.BUNDLED_SUFFIXES:
-            return False
-        lines = max(1, len(content.line_starts))
-        return len(content.raw) / lines > CapabilityDetector.MINIFIED_MEAN_LINE
 
     @staticmethod
     def _satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
@@ -2066,7 +2031,7 @@ class CapabilityDetector(BaseDetector):
                 JsEval.resolve(JsFold.fold(text))
                 if len(text) <= cls._JS_EVAL_MAX_BYTES
                 and cls._JS_EVAL_MARKERS.search(text)
-                and not cls._bundled(content)
+                and not BuildOutput.bundled(content)
                 else text
             )
             flows = JsFlow.flows(view)
@@ -2197,22 +2162,6 @@ class CapabilityDetector(BaseDetector):
         r")"
     )
 
-    @staticmethod
-    def _bundled(content: FileContent) -> bool:
-        """Compiled or bundled output: a dist/out/build directory, a .min/.bundle file, or a file
-        too large to be a hand-written script."""
-        return CapabilityDetector._bundled_path(content.path) or len(content.raw) > 100_000
-
-    @staticmethod
-    def _bundled_path(path: str) -> bool:
-        """`_bundled` by the path alone: a dist/out/build directory or a .min/.bundle file."""
-        member = path.rpartition("!")[2]
-        return bool(
-            re.search(
-                r"(?:^|/)(?:dist|out|build|bundle|webpack)/|\.(?:min|bundle)\.[cm]?js$", member
-            )
-        )
-
     _JS_CODE_ARRAY_CALL: ClassVar[re.Pattern[str]] = re.compile(
         r"(?<![\w$.])(?P<decoder>[A-Za-z_$][\w$]{0,20})\(\s{0,4}\[\s{0,4}\d{2,3}(?:\s{0,4},\s{0,4}\d{2,3}){1,60}\s{0,4}\]\s{0,4}\)"
     )
@@ -2229,7 +2178,7 @@ class CapabilityDetector(BaseDetector):
         if (
             language not in ("javascript", "typescript")
             or "fromCharCode" not in content.text
-            or CapabilityDetector._bundled(content)
+            or BuildOutput.bundled(content)
         ):
             return []
         counts: dict[str, list[re.Match[str]]] = {}
@@ -2592,7 +2541,7 @@ class CapabilityDetector(BaseDetector):
         )
 
         decode_excused = DecodeRun.excused_lines(
-            unit, hits, self._bundled_path(unit.path), [c.rule.id for c in candidates]
+            unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
         )
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
@@ -2761,7 +2710,7 @@ class CapabilityDetector(BaseDetector):
                 # And written by hand: an editor extension's compiled entry is a bundle whose
                 # first hundred lines hold unrelated libraries (review 98: about twenty Open VSX
                 # AI-coding extensions read as one install-time act).
-                and not self._bundled_path(path)
+                and not BuildOutput.bundled_path(path)
             )
         ):
             # An install script a few hundred lines long runs top to bottom, and its parts are one
@@ -3885,7 +3834,7 @@ class CapabilityDetector(BaseDetector):
                 # the library, which is a different review from the one this report is.
                 ceilinged = "vendored third-party code"
             elif (
-                CapabilityDetector._is_minified(content)
+                BuildOutput.is_minified(content)
                 and not CapabilityDetector._flow_in_shipped_code(compiled.rule.id, content, ctx)
                 and not LoadPath.runs_a_downloaded_file(hits)
                 and not CapabilityDetector._evaluates_a_literal_payload(content)
