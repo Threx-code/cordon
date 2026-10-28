@@ -15,7 +15,7 @@ import cordon_scanner
 from cordon_scanner.decide import intent, verdict
 from cordon_scanner.detect.agents.mcp_servers import description_model
 from cordon_scanner.detect.binary import binary_imports, rule_files
-from cordon_scanner.detect.infra import iac_policies
+from cordon_scanner.detect.infra import generated_policies
 from cordon_scanner.engine import registry
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.advisories import advisories
@@ -42,7 +42,7 @@ class TestPackagePaths:
         for path in files:
             assert path.is_file(), path
         folders = [
-            iac_policies.DATA_DIR,
+            generated_policies.DATA_DIR,
             binary_imports.ImportCapabilities.DATA,
             real.DATA_DIR,
             advisories.DATA_DIR,
@@ -91,4 +91,4 @@ class TestPackagePaths:
         )
         assert real.DATA_DIR == PACKAGE / "intel" / "data"
         assert advisories.DATA_DIR == PACKAGE / "intel" / "data"
-        assert iac_policies.DATA_DIR == PACKAGE / "detect" / "data"
+        assert generated_policies.DATA_DIR == PACKAGE / "detect" / "data"
