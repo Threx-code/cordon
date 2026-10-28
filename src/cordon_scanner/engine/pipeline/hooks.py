@@ -45,10 +45,6 @@ from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, S
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import Repository
 
-if TYPE_CHECKING:  # from the source
-    from collections.abc import Iterator, Sequence
-
-
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 

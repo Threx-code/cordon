@@ -1,7 +1,7 @@
 """The whole of a file too large to read at once, read a window at a time.
 
 Every rule reads the first `max_file_bytes` of a file. What lies past that was read by nine rules
-(`CapabilityDetector.sweep`), from a copy of the whole file held in memory, and only up to
+(a sweep of the capability detector's), from a copy of the whole file held in memory, and only up to
 `max_stream_bytes` -- so a payload past the first ten megabytes was invisible to every secret,
 obfuscation, exfiltration and dropper rule, and past sixty-four to all of them. Padding a bundle
 is cheap: an inert token placed after twelve megabytes of filler was found by nothing (review 98).
