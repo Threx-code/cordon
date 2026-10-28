@@ -2,8 +2,9 @@
 the ASN.1 primitives it is built on. ``values()`` returns schema-shaped data; recode() renders it the way
 the reference reports ``pe.signatures`` (bytes as hex, a sequence as its slots in order, integers signed) so
 the two compare leaf by leaf. The real-file and malformed-file differentials live in the review harness;
-these pin the fixture's values and the decoder's contract. A ``decode_whole`` strictness check is included:
-a malformation in declared structure fails the decode, a malformation inside an opaque value does not.
+these pin the fixture's values and the structured parse's opacity contract: a malformation in declared
+structure fails the parse, one inside an opaque value (an OCTET STRING, or a CMS non-certificate
+CertificateChoices) does not.
 """
 
 from __future__ import annotations
@@ -95,7 +96,7 @@ class TestSignatureValues:
 
 
 class TestAsn1Decoder:
-    """The BER decoder, and the strict ``decode_whole`` the d2i-equivalent paths use."""
+    """The BER decoder the structured parse reads through."""
 
     @staticmethod
     def tlv(tag: int, body: bytes) -> bytes:
@@ -116,24 +117,92 @@ class TestAsn1Decoder:
         else:
             raise AssertionError("expected BadDer on a padded integer")
 
-    def test_strict_fails_a_truncated_declared_field(self) -> None:
-        # a SEQUENCE whose inner element claims more length than is present
-        bad = self.tlv(
-            0x30, bytes([0x30, 0x05, 0x02, 0x01])
-        )  # inner SEQUENCE says 5 bytes, 2 present
-        Tlv.decode(bad)  # lazy decode of the outer is fine
-        try:
-            Tlv.decode_whole(bad)
-        except BadDer:
-            pass
-        else:
-            raise AssertionError("expected BadDer: declared structure is broken")
 
-    def test_strict_keeps_garbage_inside_an_octet_string(self) -> None:
-        # an OCTET STRING whose bytes are not valid DER is still accepted: d2i never looks inside it
-        garbage_der = bytes([0x30, 0x7F, 0x02])  # a SEQUENCE claiming 127 bytes with 1 present
-        node = Tlv.decode_whole(self.tlv(0x30, self.tlv(0x04, garbage_der)))
-        assert node.row(1)[0].bytes_of() == garbage_der
+class TestCountersignCertSetOpacity:
+    """The parse is the template: a Microsoft timestamp's certificate set may hold a non-certificate
+    CertificateChoices (a v1AttrCert [1]), which CMS types as one opaque SEQUENCE and never descends. A
+    scatter inside such an element must not fail the countersignature -- it still verifies with its full
+    chain and digest, the signed content being untouched -- while a malformed element's own TLV header, or a
+    damaged plain certificate (declared structure, which is descended), is refused. cpython-wmi.pyd carries a
+    real, verifying Microsoft timestamp; we append elements to its countersignature's certificate set and
+    refix the enclosing DER lengths, so the signature over the untouched signed content still holds."""
+
+    @staticmethod
+    def _der_len(length: int) -> bytes:
+        if length < 0x80:
+            return bytes([length])
+        body = length.to_bytes((length.bit_length() + 7) // 8, "big")
+        return bytes([0x80 | len(body)]) + body
+
+    @staticmethod
+    def _reseal(tag: int, body: bytes) -> bytes:
+        return bytes([tag]) + TestCountersignCertSetOpacity._der_len(len(body)) + body
+
+    def _timestamp(self) -> tuple[Tlv, bytes]:
+        """The real Microsoft-timestamp countersignature value, and the parent signature it stamps."""
+        data = (DIR / "cpython-wmi.pyd").read_bytes()
+        at = int.from_bytes(data[0x3C:0x40], "little")
+        is64 = int.from_bytes(data[at + 0x18 : at + 0x1A], "little") == 0x20B
+        table = at + (16 if is64 else 0) + 0x98
+        addr = int.from_bytes(data[table : table + 4], "little")
+        length = int.from_bytes(data[addr : addr + 4], "little")
+        _, signed = rs.Pkcs7.parse(data[addr + 8 : addr + length])
+        assert signed is not None
+        signer = signed.signers[0]
+        value = rs.Signer.values_of(signer.unsigned_attrs, rs.Signatures.MS_TIMESTAMP)
+        assert value is not None
+        return value[0], signer.signature
+
+    def _with_extra(self, value: Tlv, extra: bytes) -> Tlv:
+        """``value`` (a ContentInfo) with ``extra`` appended to its SignedData certificate set, the enclosing
+        DER lengths refixed."""
+        oid, content = value.row(2)
+        (signed,) = content.unpack()
+        parts = signed.unpack()
+        index = next(i for i, p in enumerate(parts) if p.is_context(0) and p.constructed)
+        spans = [p.span for p in parts]
+        spans[index] = self._reseal(parts[index].span[0], parts[index].body + extra)
+        new_signed = self._reseal(signed.span[0], b"".join(spans))
+        new_content = self._reseal(content.span[0], new_signed)
+        return Tlv.decode(self._reseal(value.span[0], oid.span + new_content))
+
+    def test_the_real_timestamp_verifies(self) -> None:
+        value, parent = self._timestamp()
+        counter = rs.Countersign.from_microsoft(value, parent, 0)
+        assert counter.verified
+        assert len(counter.chain or []) == 2
+        assert counter.digest_alg == "sha256"
+
+    def test_a_scatter_inside_an_opaque_choice_still_verifies(self) -> None:
+        # a well-formed v1AttrCert [1] whose interior is a truncated SEQUENCE: kept opaque, so untouched
+        value, parent = self._timestamp()
+        counter = rs.Countersign.from_microsoft(
+            self._with_extra(value, bytes([0xA1, 0x03, 0x30, 0x01, 0x02])), parent, 0
+        )
+        assert counter.verified
+        assert len(counter.chain or []) == 2
+        assert counter.digest_alg == "sha256"
+
+    def test_a_choice_whose_own_tlv_overruns_is_refused(self) -> None:
+        # the element must still be one well-formed TLV: a [1] whose length runs past the set is refused
+        value, parent = self._timestamp()
+        counter = rs.Countersign.from_microsoft(
+            self._with_extra(value, bytes([0xA1, 0x7F, 0x30, 0x01, 0x02])), parent, 0
+        )
+        assert not counter.verified
+        assert not counter.chain
+        assert counter.digest_alg is None
+
+    def test_a_damaged_plain_certificate_is_refused(self) -> None:
+        # a malformed plain certificate (a SEQUENCE that is not a certificate) is declared structure: it is
+        # descended, fails the whole parse, and the countersignature comes out empty
+        value, parent = self._timestamp()
+        counter = rs.Countersign.from_microsoft(
+            self._with_extra(value, bytes([0x30, 0x01, 0x02])), parent, 0
+        )
+        assert not counter.verified
+        assert not counter.chain
+        assert counter.digest_alg is None
 
 
 class TestClock:

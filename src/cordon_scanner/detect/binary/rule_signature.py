@@ -151,32 +151,6 @@ class Tlv:
         return Tlv._decode(data, 0, 0)[0]
 
     @staticmethod
-    def decode_whole(data: bytes) -> Tlv:
-        """Decode as OpenSSL's template ``d2i`` does -- the declared structure is read in full, and a
-        malformation anywhere the template declares structure (a length past a parent, a fragment left over
-        inside a constructed element, a child that does not decode) fails the whole decode, which is why the
-        reference reports nothing at all for a certificate or timestamp whose body is scattered even a little.
-        d2i never looks inside the types the template leaves opaque -- a BIT STRING or OCTET STRING (a public
-        key, a signature, an extension's value, a timestamp's eContent) -- so those are not descended into;
-        their contents are decoded later, in their own ``d2i``. Our plain ``decode`` is lazy, so the strict
-        walk is explicit here and used wherever ``d2i`` is (each certificate, each countersignature, nested
-        signatures, the TSTInfo)."""
-        node = Tlv.decode(data)
-        Tlv._decode_fully(node)
-        return node
-
-    @staticmethod
-    def _decode_fully(node: Tlv) -> None:
-        # BIT STRING and OCTET STRING are opaque to a template decoder: their bytes are decoded only later,
-        # by whatever reads that field, so a scatter inside one does not fail the enclosing structure
-        if node.constructed and not (node.klass == Tlv.UNIVERSAL and node.tag in (3, 4)):
-            children = node.unpack()  # raises on a truncated or over-long child
-            if sum(len(child.span) for child in children) != len(node.body):
-                raise BadDer("a constructed element its children do not fill exactly")
-            for child in children:
-                Tlv._decode_fully(child)
-
-    @staticmethod
     def _decode(data: bytes, at: int, depth: int) -> tuple[Tlv, int]:
         if depth > Tlv.DEPTH_LIMIT:
             raise BadDer("nested too deeply")
@@ -666,7 +640,19 @@ class Certificate:
             and self.subject.key == subject.issuer.key
             and subject.authority_matches_of(self)
             and self.can_issue()
+            and self._key_loadable()
         )
+
+    def _key_loadable(self) -> bool:
+        # chain building ends at a candidate issuer whose public key cannot be loaded: an unknown SPKI
+        # algorithm means the issuer's signature over the subject could never be checked, so OpenSSL does
+        # not extend the chain through it. This is key loadability, not a signature-algorithm/key-type
+        # match (which 1.1 does not do): the key's own algorithm must be one we can read.
+        try:
+            oid = self.spki.row(2)[0].row((1, 2))[0].object_id()
+        except (BadDer, ValueError, IndexError):
+            return False
+        return oid in (PublicKey.RSA, PublicKey.EC, PublicKey.DSA)
 
     def authority_matches_of(self, issuer: Certificate) -> bool:
         akid = self.authority_key_id
@@ -974,9 +960,15 @@ class Pkcs7:
     SIGNED: ClassVar[str] = "1.2.840.113549.1.7.2"
 
     @staticmethod
-    def parse(data: bytes, *, cms: bool = False, strict: bool = False) -> tuple[str, Pkcs7 | None]:
-        """The ContentInfo's type and, when it is SignedData, the SignedData."""
-        outer = (Tlv.decode_whole(data) if strict else Tlv.decode(data)).row((1, 2))
+    def parse(data: bytes, *, cms: bool = False) -> tuple[str, Pkcs7 | None]:
+        """The ContentInfo's type and, when it is SignedData, the SignedData. The parse itself is the
+        template: each declared SEQUENCE/SET is read and validated as it is walked (a malformation in
+        declared structure raises), while the fields OpenSSL's d2i leaves opaque are read as raw bytes and
+        never descended -- OCTET STRING and BIT STRING, the ANY of an AlgorithmIdentifier's parameters or an
+        attribute's value, and the non-certificate CertificateChoices alternatives (extendedCertificate [0],
+        v1AttrCert [1], v2AttrCert [2], other [3]), which CMS types as a plain SEQUENCE and keeps whole. So a
+        scatter inside one of those does not fail the structure, exactly as it does not for the reference."""
+        outer = Tlv.decode(data).row((1, 2))
         kind = outer[0].object_id()
         if kind != Pkcs7.SIGNED:
             if cms:
@@ -1115,12 +1107,12 @@ class Countersign:
         out = Countersign()
         cms = False
         try:
-            signed = Pkcs7.parse(value.span, strict=True)[1]
+            signed = Pkcs7.parse(value.span)[1]
             if signed is None:
                 return out
         except (BadDer, ValueError, IndexError):
             try:
-                _, signed = Pkcs7.parse(value.span, cms=True, strict=True)
+                _, signed = Pkcs7.parse(value.span, cms=True)
                 cms = True
             except (BadDer, ValueError, IndexError):
                 return out
