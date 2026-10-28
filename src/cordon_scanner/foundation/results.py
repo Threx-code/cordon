@@ -457,7 +457,7 @@ class ScanResult:
     a Cargo registry or source replacement, a Composer repository, a NuGet feed -- with any
     credentials removed. Where resolution looks is what dependency confusion turns on."""
     image: dict[str, Any] | None = None
-    """The scanned image's identity (`images.oci.ImageIdentity`): its ID and manifest digest, the
+    """The scanned image's identity (`images.identity.ImageIdentity`): its ID and manifest digest, the
     names it was saved under, its layers, its platform and the base image its labels name."""
     target_kind: str = "source"
     """What was scanned: ``source`` (a directory or repository), ``image`` (a container image
