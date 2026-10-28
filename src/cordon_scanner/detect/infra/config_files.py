@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.analysis.shared.destinations import Destinations
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -62,7 +63,6 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.text.redact import Redactor
-from cordon_scanner.intel.malware.hosts import Destinations
 from cordon_scanner.intel.registries.installers import OfficialInstallers
 
 if TYPE_CHECKING:

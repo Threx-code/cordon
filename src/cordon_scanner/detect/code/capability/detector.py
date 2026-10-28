@@ -1272,7 +1272,7 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _names_untrusted_destination(raw: bytes) -> bool:
         """A paste site, tunnel, webhook catcher or interaction service, or a bare IPv4 URL."""
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         if CapabilityDetector._RAW_IP_URL.search(raw):
             return True
@@ -3422,11 +3422,11 @@ class CapabilityDetector(BaseDetector):
         appear in a build, an install script or a library, so it raises what an
         outbound request in that file is worth.
 
-        The host list lives in `intel/hosts.py` rather than in a pattern pack.
+        The host list lives in `analysis/shared/destinations.py` rather than in a pattern pack.
         A pack would have to restate it, and a restated blocklist drifts, which
         is worse than a short one because it still looks maintained.
         """
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         raw = content.raw
         literal_ip = cls._public_ip_url(content, language)
@@ -3472,7 +3472,7 @@ class CapabilityDetector(BaseDetector):
                 line=content.line_of(match.start()),
             )
         ]
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         host = match.group(0).decode("utf-8", "replace").split("//")[-1].split("/")[0]
         if Destinations.is_interaction_host(host):
@@ -3778,7 +3778,7 @@ class CapabilityDetector(BaseDetector):
         read = cls._SETTING_READ.match(text)
         if read is None:
             return False
-        from cordon_scanner.detect.code.secretflow import CREDENTIAL_HOMES
+        from cordon_scanner.analysis.shared.credential_homes import CREDENTIAL_HOMES
 
         name = read.group("dotted") or read.group("quoted") or ""
         return not any(pattern.match(name) for pattern, _ in CREDENTIAL_HOMES)

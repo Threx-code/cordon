@@ -38,9 +38,9 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.analysis.shared.destinations import Destinations
 from cordon_scanner.foundation.models import Capability
 from cordon_scanner.foundation.text.comments import BLOCK_COMMENT_LANGUAGES, SourceComments
-from cordon_scanner.intel.malware.hosts import Destinations
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext

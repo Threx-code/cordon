@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.secretflow import JavaScriptFlow, SecretFlow
+from cordon_scanner.analysis.shared.credential_homes import SecretFlow
+from cordon_scanner.detect.code.secretflow import JavaScriptFlow
 from cordon_scanner.foundation.config import Config
 
 RULE = "SUSPECT.EXFIL.NAMED_SECRET.001"

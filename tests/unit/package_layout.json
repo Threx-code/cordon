@@ -31,6 +31,7 @@
   "analysis/shared/ast_providers": "analysis/shared/ast_providers",
   "analysis/shared/astquery": "analysis/shared/astquery",
   "analysis/shared/content_memo": "analysis/shared/content_memo",
+  "analysis/shared/credential_homes": "analysis/shared/credential_homes",
   "analysis/shared/deobfuscation": "analysis/shared/deobfuscation",
   "analysis/shared/documentation": "analysis/shared/documentation",
   "analysis/shared/embedded": "analysis/shared/embedded",
@@ -255,7 +256,7 @@
   "intel/malware/feed": "intel/malware/feed",
   "intel/malware/feed_rules": "intel/malware/feed_rules",
   "intel/malware/hallucinated": "intel/malware/hallucinated",
-  "intel/malware/hosts": "intel/malware/hosts",
+  "analysis/shared/destinations": "analysis/shared/destinations",
   "intel/provenance/_der": "intel/provenance/_der",
   "intel/provenance/_dsa": "intel/provenance/_dsa",
   "intel/provenance/_ecdsa": "intel/provenance/_ecdsa",
@@ -726,8 +727,6 @@
    "sources/archive": 1095
   },
   "outward_imports": [
-   "analysis/javascript/js_flow -> intel/malware/hosts",
-   "analysis/python/pyast -> detect/code/secretflow",
    "decide/policy -> engine/walker",
    "detect/agents/agent_judge -> judge",
    "detect/agents/agents -> decide/scoring",

