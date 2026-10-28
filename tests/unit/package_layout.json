@@ -205,6 +205,7 @@
   "ecosystems/packages/conda": "ecosystems/packages/conda",
   "ecosystems/packages/cran": "ecosystems/packages/cran",
   "ecosystems/packages/jvm/gradle": "ecosystems/packages/jvm/gradle",
+  "ecosystems/packages/jvm/gradle_scripts": "ecosystems/packages/jvm/gradle_scripts",
   "ecosystems/packages/hackage": "ecosystems/packages/hackage",
   "ecosystems/packages/haskell/cabal_project": "ecosystems/packages/haskell/cabal_project",
   "ecosystems/packages/haskell/stack": "ecosystems/packages/haskell/stack",
@@ -817,7 +818,6 @@
    "detect/supply/advisory": 1186,
    "detect/supply/manifest": 2749,
    "detect/supply/registry": 1310,
-   "ecosystems/packages/jvm/gradle": 1270,
    "images/oci": 1074,
    "rules/loader": 1642,
    "sources/archive": 1062
