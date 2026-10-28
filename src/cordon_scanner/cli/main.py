@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.cli.commands.account.login import LoginCommand
+from cordon_scanner.cli.commands.account.logout import LogoutCommand
 from cordon_scanner.cli.commands.advisories import AdvisoriesCommand
 from cordon_scanner.cli.commands.agent import AgentCommand
 from cordon_scanner.cli.commands.baseline import BaselineCommand
@@ -509,7 +510,7 @@ class CommandLine:
         LoginCommand.add_parser(sub)
         RunnerCommand.add_parser(sub)
         AgentCommand.add_parser(sub)
-        sub.add_parser("logout", help="forget the stored Cordon Cloud sign-in")
+        LogoutCommand.add_parser(sub)
         sub.add_parser("whoami", help="show the Cordon Cloud sign-in in use")
 
         IntelCommand.add_parser(sub)
@@ -1317,27 +1318,6 @@ class CommandLine:
                 buffer.flush()
 
     @classmethod
-    def cmd_logout(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.cloud import auth
-
-        credentials = auth.CloudAuth.load()
-        revoked = credentials is not None and auth.CloudAuth.revoke(credentials)
-        if not auth.CloudAuth.forget():
-            print("Not signed in.")
-        elif revoked:
-            print("Signed out, here and in Cordon Cloud.")
-        else:
-            # Said plainly rather than as a plain "Signed out.": a copy of the credential file
-            # would still work, and the person signing out is the one who can end it.
-            print("Signed out on this machine.")
-            print(
-                "cordon-scanner: Cordon Cloud could not be told, so this sign-in stays valid until it "
-                "expires. End it in the console under Account, CLI sign-ins.",
-                file=sys.stderr,
-            )
-        return int(ExitCode.CLEAN)
-
-    @classmethod
     def cmd_whoami(cls, args: argparse.Namespace) -> int:
         import time
 
@@ -1398,7 +1378,7 @@ class CommandLine:
             "advisories": AdvisoriesCommand.run,
             "intel": IntelCommand.run,
             "login": LoginCommand.run,
-            "logout": cls.cmd_logout,
+            "logout": LogoutCommand.run,
             "runner": RunnerCommand.run,
             "agent": AgentCommand.run,
             "whoami": cls.cmd_whoami,
