@@ -160,6 +160,13 @@ class McpServerFindings:
         names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
             yield from AgentTextFindings.threat_rules(unit, ctx, name, ("tool_name",), within=text)
+        yield from McpServerFindings._handler_findings(ctx, text, unit)
+        yield from McpServerFindings._return_findings(ctx, text, unit)
+        yield from cls._server_content(unit, ctx, text)
+
+    @staticmethod
+    def _handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
+        """The findings for what a Python server's own handler code does with the agent's input: a shell built from it, a time bomb, input mirrored or forwarded to a host, secrets harvested, a listener, arguments overridden."""
         if unit.content.path.endswith(".py"):
             # What the handlers do with the agent's input (`detect/mcp_code.py`).
             from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
@@ -212,6 +219,10 @@ class McpServerFindings:
                 yield AgentFinding.finding(
                     "SUSPECT.MCP.ARGUMENT_OVERRIDE.001", unit, ctx, start, end
                 )
+
+    @staticmethod
+    def _return_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
+        """The findings for what a server's tools hand back: a result wrapped to look like an instruction, an order to send or run something, or wording the learned model reads as steering."""
         # What the tools hand back. The agent reads a tool's result as context, so an instruction
         # in a returned string steers it as one in a description does. The model only: the
         # phrase rules were written for descriptions, and status messages are not those.
@@ -271,7 +282,6 @@ class McpServerFindings:
                     f"agent rather than a result (model score {score:.2f}).",
                     severity=None if score >= limits[0] else Severity.MEDIUM,
                 )
-        yield from cls._server_content(unit, ctx, text)
 
     @classmethod
     def _server_content(cls, unit: FileUnit, ctx: ScanContext, text: str) -> Iterator[Finding]:

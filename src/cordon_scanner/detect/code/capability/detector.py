@@ -219,6 +219,34 @@ class CapabilityDetector(BaseDetector):
         if not candidates:
             return None
 
+        commands, hits, matched_content, resolved = CapabilityDetector._pattern_hits(
+            assembly_view, candidates, content, ctx, dotnet_commands, language, unit
+        )
+        hits = CapabilityDetector._tree_capabilities(
+            candidates, commands, content, ctx, hits, matched_content, resolved, unit
+        )
+        hits = TextPosition.off_this_machine(content, hits)
+        if BuildOutput.bundled(content):
+            # A compiled tool that schedules its own jobs (an agent runner's LaunchAgent, a
+            # crontab writer) registers autostart entries as its feature; three Open VSX agent
+            # extensions do it from dist/. The hand-written file is where an implant's is
+            # (review 98).
+            hits = [h for h in hits if h.rule_id != "CAP.JS.AUTOSTART.001"]
+        return hits, candidates
+
+    @staticmethod
+    def _pattern_hits(
+        assembly_view: bool,
+        candidates: tuple[CompiledRule, ...],
+        content: FileContent,
+        ctx: ScanContext,
+        dotnet_commands: list[embedded.Command],
+        language: str | None,
+        unit: FileUnit,
+    ) -> tuple[list[embedded.Command], list[CapabilityHit], FileContent, list[CapabilityHit]]:
+        """The pattern tier's hits and the commands written inside the file: matched over a Go file's own code, a .NET assembly's strings or the file as it is, with what the parsed tree resolves and the encoded commands decoded."""
+        from cordon_scanner.foundation.content import FileContent
+
         matched_content = content
         if unit.language == "go" and content.size <= 2_000_000:
             # What the file builds at run time -- commands added up from a table of characters,
@@ -262,6 +290,20 @@ class CapabilityDetector(BaseDetector):
                 embedded.Command(text, line) for text, line in NixCode.shell(content.text)
             )
         commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
+        return commands, hits, matched_content, resolved
+
+    @staticmethod
+    def _tree_capabilities(
+        candidates: tuple[CompiledRule, ...],
+        commands: list[embedded.Command],
+        content: FileContent,
+        ctx: ScanContext,
+        hits: list[CapabilityHit],
+        matched_content: FileContent,
+        resolved: list[CapabilityHit],
+        unit: FileUnit,
+    ) -> list[CapabilityHit]:
+        """The capabilities read from the file's structure rather than its bytes: parsed-tree and ast rules, embedded shell, destinations, the JavaScript flows and campaigns, credential sweeps, browser stores, Go and Nix specifics."""
         # And the plaintext of an encoded command the script runs at its own top
         # level, which is handed to no call and so reaches neither branch above.
         if unit.language in embedded.SCRIPT_LANGUAGES:
@@ -323,14 +365,7 @@ class CapabilityDetector(BaseDetector):
         if NixCode.is_nix(content.path):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
-        hits = TextPosition.off_this_machine(content, hits)
-        if BuildOutput.bundled(content):
-            # A compiled tool that schedules its own jobs (an agent runner's LaunchAgent, a
-            # crontab writer) registers autostart entries as its feature; three Open VSX agent
-            # extensions do it from dist/. The hand-written file is where an implant's is
-            # (review 98).
-            hits = [h for h in hits if h.rule_id != "CAP.JS.AUTOSTART.001"]
-        return hits, candidates
+        return hits
 
     # -- Labelling -------------------------------------------------------
 

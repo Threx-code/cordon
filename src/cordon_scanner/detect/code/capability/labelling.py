@@ -149,6 +149,73 @@ class Labelling:
         scan. It also means attacker-controlled bytes are only decoded once
         something has already indicated it is worth doing.
         """
+        blocks, delays, folded, hits, prose, raw, tests = Labelling._excused_spans(
+            candidates, content, language
+        )
+
+        for compiled in candidates:
+            capability = compiled.rule.capability
+            if capability is None or compiled.match.regex is None:
+                continue
+
+            # The prefilter is what makes this affordable. A cheap substring scan
+            # rejects the large majority of files before any regex runs, turning
+            # cost proportional to files times rules into something a commit-time
+            # hook can pay.
+            regex = compiled.match.regex_for(raw, folded)
+            if regex is None:
+                continue
+
+            first = None
+            distinct: set[bytes] = set()
+
+            first = Labelling._examine_matches(
+                blocks,
+                capability,
+                compiled,
+                content,
+                delays,
+                distinct,
+                first,
+                language,
+                prose,
+                raw,
+                regex,
+                tests,
+            )
+
+            if first is None:
+                continue
+
+            # One hit per rule per file. Reporting every occurrence would
+            # inflate the evidence without changing any conclusion; the count
+            # of distinct operations rides along on the hit instead.
+            hits.append(
+                CapabilityHit(
+                    capability=capability,
+                    rule_id=compiled.id,
+                    byte_start=first.start(),
+                    byte_end=first.end(),
+                    line=content.line_of(first.start()),
+                    variants=len(distinct),
+                )
+            )
+
+        return hits
+
+    @staticmethod
+    def _excused_spans(
+        candidates: tuple[CompiledRule, ...], content: FileContent, language: str | None
+    ) -> tuple[
+        tuple[tuple[int, int], ...],
+        frozenset[int],
+        bytes | None,
+        list[CapabilityHit],
+        tuple[tuple[int, int], ...],
+        bytes,
+        tuple[tuple[int, int], ...],
+    ]:
+        """The regions of the file whose matches do not count: block comments, Rust test modules, Python docstrings, deferred function bodies, and the fold of split string fragments."""
         raw = content.raw
         hits: list[CapabilityHit] = []
         # Once per file, not once per match: the per-line comment test cannot see a
@@ -192,113 +259,96 @@ class Labelling:
             )
             else None
         )
+        return blocks, delays, folded, hits, prose, raw, tests
 
-        for compiled in candidates:
-            capability = compiled.rule.capability
-            if capability is None or compiled.match.regex is None:
+    @staticmethod
+    def _examine_matches(
+        blocks: tuple[tuple[int, int], ...],
+        capability: Capability,
+        compiled: CompiledRule,
+        content: FileContent,
+        delays: frozenset[int],
+        distinct: set[bytes],
+        first: re.Match[bytes] | None,
+        language: str | None,
+        prose: tuple[tuple[int, int], ...],
+        raw: bytes,
+        regex: re.Pattern[bytes],
+        tests: tuple[tuple[int, int], ...],
+    ) -> re.Match[bytes] | None:
+        """Walk one rule's matches in the file, dropping each the text's position excuses, counting the distinct operations it shows, and keeping the first that stands."""
+        for index, match in enumerate(regex.finditer(raw)):
+            if TextPosition.is_printed_text(content, match.start(), match.end()):
                 continue
-
-            # The prefilter is what makes this affordable. A cheap substring scan
-            # rejects the large majority of files before any regex runs, turning
-            # cost proportional to files times rules into something a commit-time
-            # hook can pay.
-            regex = compiled.match.regex_for(raw, folded)
-            if regex is None:
+            if (
+                capability is Capability.FETCH_EXEC
+                and compiled.rule.id not in Labelling.QUOTED_BY_DESIGN
+                and TextPosition.is_quoted_pipeline(content, match.start(), match.end())
+            ):
+                # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
                 continue
-
-            first = None
-            distinct: set[bytes] = set()
-
-            for index, match in enumerate(regex.finditer(raw)):
-                if TextPosition.is_printed_text(content, match.start(), match.end()):
-                    continue
-                if (
-                    capability is Capability.FETCH_EXEC
-                    and compiled.rule.id not in Labelling.QUOTED_BY_DESIGN
-                    and TextPosition.is_quoted_pipeline(content, match.start(), match.end())
-                ):
-                    # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
-                    continue
-                if capability is Capability.SPAWN and TextPosition.is_literal_backtick(
-                    content, match.start()
-                ):
-                    # A backtick inside single quotes is a character, not a substitution.
-                    # See `_is_literal_backtick`.
-                    continue
-                if TextPosition.is_declaration(content, match.start(), match.end()):
-                    # `export function fetch(` defines a name; it does not call one. See
-                    # `DECLARATION` and `SIGNATURE_ARGUMENT`.
-                    continue
-                if TextPosition.is_example_line(content, match.start()):
-                    # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
-                    continue
-                if SourceComments.inside_spans(tests, match.start()):
-                    # A Rust test module. See `tests` above.
-                    continue
-                if SourceComments.inside_spans(prose, match.start()):
-                    # A Python docstring. See `prose` above.
-                    continue
-                if (
-                    capability is Capability.ANTI_ANALYSIS
-                    and delays
-                    and content.line_of(match.start()) in delays
-                ):
-                    # A sleep inside a loop. See `delays` above.
-                    continue
-                if compiled.rule.id == "CAP.JS.CREDENTIAL.001" and (
-                    Labelling.narrowed_environment(content, match.end())
-                ):
-                    # The environment enumerated, then cut down to one prefix or handed to a
-                    # child process. See `_narrowed_environment`.
-                    continue
-                if compiled.rule.id == "CAP.ANTI.ENVIRONMENT.001" and (
-                    Labelling._courtesy_gate(content, match.start())
-                ):
-                    # A CI read beside a user's opt-out or a terminal test. See
-                    # `_courtesy_gate`.
-                    continue
-                if SourceComments.inside_spans(blocks, match.start()) or TextPosition.is_comment(
-                    content, match.start(), language
-                ):
-                    # A comment does not run. `misc/error_handler.func` in
-                    # `community-scripts/ProxmoxVE` explains in a comment that
-                    # `systemd-detect-virt` reports lxc inside a container, and that
-                    # sentence was reported as a check for being observed.
-                    continue
-                if capability is Capability.EGRESS and (
-                    TextPosition.is_local_target(content, match.start())
-                    or TextPosition.is_tool_probe(content, match.start())
-                ):
-                    continue
-                if first is None:
-                    first = match
-                # Distinct *operations*, not distinct occurrences. Ten calls to
-                # the same decoder are one decoding step repeated; base64 and
-                # then decompression are two, and that difference is what
-                # separates an ordinary decode from a chain built to survive
-                # each layer of inspection.
-                distinct.add(b" ".join(match.group(0).split()))
-                if len(distinct) >= MAX_VARIANTS or index >= MAX_MATCHES_EXAMINED:
-                    break
-
+            if capability is Capability.SPAWN and TextPosition.is_literal_backtick(
+                content, match.start()
+            ):
+                # A backtick inside single quotes is a character, not a substitution.
+                # See `_is_literal_backtick`.
+                continue
+            if TextPosition.is_declaration(content, match.start(), match.end()):
+                # `export function fetch(` defines a name; it does not call one. See
+                # `DECLARATION` and `SIGNATURE_ARGUMENT`.
+                continue
+            if TextPosition.is_example_line(content, match.start()):
+                # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
+                continue
+            if SourceComments.inside_spans(tests, match.start()):
+                # A Rust test module. See `tests` above.
+                continue
+            if SourceComments.inside_spans(prose, match.start()):
+                # A Python docstring. See `prose` above.
+                continue
+            if (
+                capability is Capability.ANTI_ANALYSIS
+                and delays
+                and content.line_of(match.start()) in delays
+            ):
+                # A sleep inside a loop. See `delays` above.
+                continue
+            if compiled.rule.id == "CAP.JS.CREDENTIAL.001" and (
+                Labelling.narrowed_environment(content, match.end())
+            ):
+                # The environment enumerated, then cut down to one prefix or handed to a
+                # child process. See `_narrowed_environment`.
+                continue
+            if compiled.rule.id == "CAP.ANTI.ENVIRONMENT.001" and (
+                Labelling._courtesy_gate(content, match.start())
+            ):
+                # A CI read beside a user's opt-out or a terminal test. See
+                # `_courtesy_gate`.
+                continue
+            if SourceComments.inside_spans(blocks, match.start()) or TextPosition.is_comment(
+                content, match.start(), language
+            ):
+                # A comment does not run. `misc/error_handler.func` in
+                # `community-scripts/ProxmoxVE` explains in a comment that
+                # `systemd-detect-virt` reports lxc inside a container, and that
+                # sentence was reported as a check for being observed.
+                continue
+            if capability is Capability.EGRESS and (
+                TextPosition.is_local_target(content, match.start())
+                or TextPosition.is_tool_probe(content, match.start())
+            ):
+                continue
             if first is None:
-                continue
-
-            # One hit per rule per file. Reporting every occurrence would
-            # inflate the evidence without changing any conclusion; the count
-            # of distinct operations rides along on the hit instead.
-            hits.append(
-                CapabilityHit(
-                    capability=capability,
-                    rule_id=compiled.id,
-                    byte_start=first.start(),
-                    byte_end=first.end(),
-                    line=content.line_of(first.start()),
-                    variants=len(distinct),
-                )
-            )
-
-        return hits
+                first = match
+            # Distinct *operations*, not distinct occurrences. Ten calls to
+            # the same decoder are one decoding step repeated; base64 and
+            # then decompression are two, and that difference is what
+            # separates an ordinary decode from a chain built to survive
+            # each layer of inspection.
+            distinct.add(b" ".join(match.group(0).split()))
+            if len(distinct) >= MAX_VARIANTS or index >= MAX_MATCHES_EXAMINED:
+                break
+        return first
 
     COURTESY_GATE: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"\b(?:DO_NOT_TRACK|NO_UPDATE_NOTIFIER|NO_COLOR|FORCE_COLOR|[A-Z0-9_]*TELEMETRY[A-Z0-9_]*"
