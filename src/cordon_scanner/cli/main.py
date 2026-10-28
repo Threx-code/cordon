@@ -42,6 +42,7 @@ from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
 from cordon_scanner.cli.commands.sbom import SbomCommand
 from cordon_scanner.cli.commands.scan.enrichment import ScanEnrichment
+from cordon_scanner.cli.commands.scan.output import ScanOutput
 from cordon_scanner.cli.dependency_payload import DependencyPayload
 from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
@@ -775,7 +776,7 @@ class CommandLine:
         # pipeline is parsing.
         progress: Progress | None = None
         if TerminalText.should_show(sys.stderr, args.progress, quiet=args.quiet):
-            progress = TerminalProgress(sys.stderr, color=cls._use_color(args.no_color))
+            progress = TerminalProgress(sys.stderr, color=ScanOutput.use_color(args.no_color))
 
         if getattr(args, "host", False):
             result = Scanner(config, detectors=selected, progress=progress).scan_host(
@@ -841,12 +842,12 @@ class CommandLine:
         # fails the gate in full and the rest as one line (`ReportOptions.blocking`).
         verdict = PolicyGate.evaluate(result, config.policy)
         opts = ReportOptions(
-            color=cls._use_color(args.no_color),
+            color=ScanOutput.use_color(args.no_color),
             verbose=args.verbose,
             blocking=frozenset(f.fingerprint for f in verdict.triggering),
             quiet=args.quiet,
         )
-        cls._emit(result, formats, args.output, opts, quiet=args.quiet)
+        ScanOutput.emit(result, formats, args.output, opts, quiet=args.quiet)
 
         if audit is not None:
             # After the verdict, so the recorded exit code is the one the
@@ -867,10 +868,10 @@ class CommandLine:
         if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
             print(f"\nFAILED: {verdict.reason}", file=sys.stderr)
         if channels and verdict.exit_code in (ExitCode.FINDINGS, ExitCode.INCOMPLETE):
-            cls._notify(channels, result, verdict, verbose=args.verbose)
+            ScanOutput.notify(channels, result, verdict, verbose=args.verbose)
         if getattr(args, "upload", False):
             # The upload carries the verdict as it is; Cordon applies the repository's mode too.
-            cls._upload(args, result, verdict, target)
+            ScanOutput.upload(args, result, verdict, target)
         return cls._gated_exit(verdict, cloud_bundle, result, quiet=args.quiet)
 
     @classmethod
@@ -935,86 +936,6 @@ class CommandLine:
                 + "\n  - ".join(problems)
             )
         return config.with_overrides(suppressions=(*config.suppressions, *suppressions))
-
-    @classmethod
-    def _upload(
-        cls, args: argparse.Namespace, result: ScanResult, verdict: Any, target: Path
-    ) -> None:
-        """Send the results. Reported on stderr, never allowed to change the exit code."""
-        from cordon_scanner.cloud import CloudError, auth, results
-
-        try:
-            credentials = auth.CloudAuth.current(args.cloud_url)
-            ambient = auth.CloudAuth.ambient_identity_token()
-            # A token for Sigstore's own audience, when the pipeline minted one (GitLab, CircleCI,
-            # Buildkite); otherwise sigstore asks the CI for one itself (GitHub Actions).
-            signer = (
-                results.SignedResults.sigstore_signer(os.environ.get("SIGSTORE_ID_TOKEN") or None)
-                if ambient is not None
-                else None
-            )
-            receipt = results.SignedResults.upload(
-                result,
-                credentials,
-                exit_code=int(verdict.exit_code),
-                reason=str(verdict.reason),
-                signer=signer,
-                ai_document=results.SignedResults.ai_inventory(target, result),
-            )
-        except CloudError as exc:
-            print(f"{cls.PROGRAM}: upload failed: {exc}", file=sys.stderr)
-            return
-        except Exception as exc:  # noqa: BLE001
-            print(
-                f"{cls.PROGRAM}: upload failed while signing: {type(exc).__name__}", file=sys.stderr
-            )
-            return
-        if not args.quiet:
-            trust = (
-                "signed with the CI identity"
-                if receipt.signing == "sigstore"
-                else "unsigned, vouched for by the sign-in"
-            )
-            where = f" {receipt.url}" if receipt.url else ""
-            print(
-                f"{cls.PROGRAM}: uploaded scan {receipt.scan_id} ({trust}){where}", file=sys.stderr
-            )
-
-    @classmethod
-    def _notify(
-        cls, channels: tuple[str, ...], result: ScanResult, verdict: Any, *, verbose: bool
-    ) -> None:
-        """Post the gate failure. Reported on stderr, never allowed to change the exit code."""
-        from cordon_scanner.notify.notifier import Notifier
-
-        deliveries = Notifier().send(
-            channels, result, reason=str(verdict.reason), exit_code=int(verdict.exit_code)
-        )
-        for delivery in deliveries:
-            if not delivery.ok:
-                print(
-                    f"{cls.PROGRAM}: notify {delivery.channel} failed: {delivery.error}",
-                    file=sys.stderr,
-                )
-            elif verbose:
-                print(f"{cls.PROGRAM}: notified {delivery.channel}", file=sys.stderr)
-
-    @staticmethod
-    def _use_color(disabled: bool) -> bool:
-        """Whether to emit colour, by the conventions people already have.
-
-        `--no-color` wins, then `NO_COLOR` (no-color.org: set to anything at
-        all means no colour), then `FORCE_COLOR` for the case a terminal test
-        cannot answer -- a CI log viewer that renders escapes, or a capture
-        being piped into something that wants them. Without `FORCE_COLOR`
-        there is no way to get coloured output that is not a terminal, which
-        is what rendering this project's own README image needs.
-        """
-        if disabled or os.environ.get("NO_COLOR") is not None:
-            return False
-        if os.environ.get("FORCE_COLOR"):
-            return True
-        return sys.stdout.isatty()
 
     @staticmethod
     def _baseline_notice(silenced: Sequence[Finding], path: Path) -> Finding:
@@ -1114,67 +1035,6 @@ class CommandLine:
                 hint=f"Check that {args.git_diff!r} names a commit this repository has.",
             ) from exc
         return GitPathSource(changed, mode=f"diff vs {args.git_diff}", empty_is_normal=True)
-
-    @classmethod
-    def _emit(
-        cls,
-        result: ScanResult,
-        formats: Sequence[str],
-        single_output: str | None,
-        opts: object,
-        *,
-        quiet: bool,
-    ) -> None:
-        """Render each requested format to its destination.
-
-        A destination is attached to its format with a colon:
-        ``--format sarif:cordon.sarif``. Positional pairing between two repeatable
-        flags was tried first and is genuinely error-prone: with
-        ``-f text -f sarif -o cordon.sarif`` the natural reading is that SARIF goes
-        to the file, while positional pairing sends the *text* report there. That
-        produced an unparseable SARIF file, and it did so silently, because writing
-        a report to a path always succeeds.
-
-        ``--output`` remains as a shorthand for the single-format case, and is
-        refused when it would be ambiguous.
-        """
-        from cordon_scanner.engine.registry import Registry
-
-        registry = Registry()
-        targets: list[tuple[str, str | None]] = []
-
-        for entry in formats:
-            name, sep, path = entry.partition(":")
-            targets.append((name, path if sep and path else None))
-
-        if single_output is not None:
-            named = [name for name, path in targets if path is None]
-            if len(named) != 1:
-                raise ConfigError(
-                    "--output is ambiguous with more than one --format",
-                    hint=(
-                        "Attach the destination to its format instead, for example:\n"
-                        "  --format text --format sarif:cordon.sarif"
-                    ),
-                )
-            targets = [(name, single_output if path is None else path) for name, path in targets]
-
-        for name, destination in targets:
-            reporter = registry.reporter(name)
-
-            if destination:
-                out_path = Path(destination)
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                with out_path.open("wb") as handle:
-                    for chunk in reporter.render(result, opts):
-                        handle.write(chunk)
-                if not quiet:
-                    print(f"wrote {name} report to {destination}", file=sys.stderr)
-            else:
-                buffer = sys.stdout.buffer
-                for chunk in reporter.render(result, opts):
-                    buffer.write(chunk)
-                buffer.flush()
 
     @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
