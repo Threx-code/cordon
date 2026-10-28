@@ -15,7 +15,8 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.detect.binary.modules.dotnet import Dotnet, Tables
+from cordon_scanner.detect.binary.modules.dotnet import Dotnet
+from cordon_scanner.detect.binary.modules.dotnet_metadata import Tables
 from cordon_scanner.detect.binary.modules.layout import Cursor, LazySeq
 from cordon_scanner.detect.binary.modules.values import Data, Keyed, Record, Scalar, Seq
 from support import ROOT
