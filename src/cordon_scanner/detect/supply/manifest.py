@@ -837,7 +837,7 @@ READABLE_HOOK_TARGETS = frozenset(
 #: program whose entire effect is a line of text.
 #:
 #: The engine already draws this distinction for hook PATHS -- `PRINTING_COMMANDS` and
-#: `Engine._runs` strip printer segments before resolving what a lifecycle script
+#: `Hooks.runs` strip printer segments before resolving what a lifecycle script
 #: reaches -- and the manifest detector had no equivalent for the program inside a `-e`.
 INERT_CALL = re.compile(
     r"(?:console\s*\.\s*(?:log|info|warn|error|debug)"

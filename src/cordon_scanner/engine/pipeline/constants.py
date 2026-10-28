@@ -348,7 +348,7 @@ PRINTING_COMMANDS = frozenset({"echo", "printf"})
 """Commands whose arguments are text for a person, not code to run.
 
 A lifecycle script that prints instructions is the commonest `postinstall` there
-is, and the instructions it prints name commands. See `Engine._runs`."""
+is, and the instructions it prints name commands. See `Hooks.runs`."""
 
 
 PACKAGED_BUILD_FILENAMES = frozenset({"setup.py", "conanfile.py"})
@@ -357,7 +357,7 @@ PACKAGED_BUILD_FILENAMES = frozenset({"setup.py", "conanfile.py"})
 `setup.py` is the one that matters and `conanfile.py` has the same property:
 both are plain Python names, both are common words, and neither can be a build
 file from inside a package directory -- a packaging script sits at a
-distribution root, not next to an `__init__.py`. See `Engine._hook_executes`.
+distribution root, not next to an `__init__.py`. See `Hooks.hook_executes`.
 """
 
 CI_HOOK_PREFIXES = (

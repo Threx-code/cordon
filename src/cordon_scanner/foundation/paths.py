@@ -181,7 +181,7 @@ all: its closure is EMPTY.
 
 The same shape put `six.py` in servo (`tests/wpt/tests/tools/third_party/`) and
 two vendored modules in mongodb (`src/third_party/wiredtiger/test/3rdparty/`)
-into the same category. `Engine._hook_executes` already refuses a `setup.py`
+into the same category. `Hooks.hook_executes` already refuses a `setup.py`
 inside a package directory and a `.git/hooks/*.sample`; this is the third member
 of that family and the one that reaches furthest, because of the closure.
 

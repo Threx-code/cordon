@@ -372,11 +372,11 @@ class TestAnInstallHookInASubdirectory:
 
     @staticmethod
     def resolve(manifest: str, command: str) -> set[str]:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
         from cordon_scanner.foundation.models import Hook
 
         hook = Hook(kind="npm", path=manifest, name="postinstall", command=command)
-        return Engine._hook_script_paths(manifest, [hook], TestAnInstallHookInASubdirectory.KNOWN)
+        return Hooks.hook_script_paths(manifest, [hook], TestAnInstallHookInASubdirectory.KNOWN)
 
     @pytest.mark.parametrize(
         ("manifest", "command", "expected"),
@@ -7245,7 +7245,7 @@ class TestAOneLinerThatOnlyTalks:
     so being the project's own manifest did not help.
 
     The engine already draws this distinction for hook PATHS: `PRINTING_COMMANDS` and
-    `Engine._runs` strip printer segments before resolving what a lifecycle script
+    `Hooks.runs` strip printer segments before resolving what a lifecycle script
     reaches. The manifest detector had no equivalent for the program inside a `-e`.
 
     Still reported, through the branch that says a script runs at install time and is not
@@ -12717,12 +12717,12 @@ class TestAFixtureIsNotTheDistributionsInstaller:
         """mongodb vendors one at `src/third_party/wiredtiger/test/3rdparty/`
         and servo's is `tests/wpt/tests/tools/third_party/`. A rule that only
         looked at the top level would have caught one of the three."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
 
-        assert Engine._under_fixture_directory("src/third_party/wiredtiger/test/x/setup.py")
-        assert Engine._under_fixture_directory("tests/wpt/tools/setup.py")
-        assert not Engine._under_fixture_directory("setup.py")
-        assert not Engine._under_fixture_directory("src/mylib/setup.py")
+        assert Hooks.under_fixture_directory("src/third_party/wiredtiger/test/x/setup.py")
+        assert Hooks.under_fixture_directory("tests/wpt/tools/setup.py")
+        assert not Hooks.under_fixture_directory("setup.py")
+        assert not Hooks.under_fixture_directory("src/mylib/setup.py")
 
 
 class TestTheAnchorAndTheCollapseAreDifferentQuestions:

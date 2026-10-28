@@ -169,7 +169,7 @@ class TestActivationRunsUnasked:
 
     def test_the_manifests_main_is_the_activation_entry(self, tmp_path: Path) -> None:
         from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
         from cordon_scanner.foundation.content import FileContent
 
         manifest = json.dumps(
@@ -187,16 +187,16 @@ class TestActivationRunsUnasked:
                 ("t.vsix!extension/node_modules/lib/index.js", b"module.exports = 1;"),
             )
         ]
-        assert Engine._extension_entries(units) == {"t.vsix!extension/out/extension.js"}
+        assert Hooks.extension_entries(units) == {"t.vsix!extension/out/extension.js"}
 
     def test_a_project_has_no_activation_entry(self) -> None:
         from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
         from cordon_scanner.foundation.content import FileContent
 
         raw = json.dumps({"name": "app", "main": "index.js"}).encode()
         units = [FileUnit(FileContent(path="package.json", raw=raw, size=len(raw)))]
-        assert Engine._extension_entries(units) == set()
+        assert Hooks.extension_entries(units) == set()
 
 
 class TestSourceMapsAreNeverRun:

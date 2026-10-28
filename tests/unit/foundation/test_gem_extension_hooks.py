@@ -1,4 +1,4 @@
-"""A published gem's native-extension scripts run at install (`Engine._gem_extension_hooks`).
+"""A published gem's native-extension scripts run at install (`Hooks.gem_extension_hooks`).
 
 A built `.gem` names them only in `metadata.gz`; the fixture gem is built in memory and inert.
 """
