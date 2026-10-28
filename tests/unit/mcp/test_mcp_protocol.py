@@ -584,7 +584,7 @@ class TestContainerLaunches:
         ],
     )
     def test_the_image_a_launch_runs(self, config: dict[str, Any], image: str | None) -> None:
-        from cordon_scanner.mcp.tools.catalogue import AgentTools
+        from cordon_scanner.mcp.tools.agents import AgentTools
 
         assert AgentTools.container_image(config) == image
 
