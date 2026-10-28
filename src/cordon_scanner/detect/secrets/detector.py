@@ -211,76 +211,83 @@ class SecretDetector(BaseDetector):
                 # the file content to the matched token, so every later
                 # prefilter tests the previous match instead of the file and
                 # silently stops finding anything.
-                matched = match.group(0)
-                if PLACEHOLDER.search(matched) or SecretValues.is_published_credential(matched):
-                    continue
-                if SecretValues.is_client_configuration(unit.path, spec.rule_id):
-                    continue
-                if spec.rule_id in CLIENT_CONFIG_RULES and SecretValues.is_firebase_web_config(
-                    raw, match.start(), match.end()
-                ):
-                    # Firebase's published web configuration. See
-                    # `is_firebase_web_config`; scoped to the same rule the file-name
-                    # test is, because nothing else in a `.env` is excused by it.
-                    continue
-                if SecretValues.looks_sequential(matched):
-                    # The alphabet in order, inside a provider prefix. `TryGhost/Ghost`
-                    # documents Stripe with `sk_live_abcdefghij...XYZ` and
-                    # `headroomlabs` writes `Bearer sk-ant-api03-abcdefghij...`. This
-                    # test has always been applied to the generic rule and not to these.
-                    continue
-                if SecretValues.is_illustrated_by_its_key(raw, match.start()):
-                    continue
-                if SecretValues.is_presigned_credential(raw, match.start()):
-                    continue
-                if SecretValues.decodes_to_prose(matched):
-                    # The body is base64 for a sentence. See `decodes_to_prose`.
-                    continue
-                if (
-                    SecretValues.holds_published_key(raw, match.start())
-                    or SecretValues.holds_illustrative_key(raw, match.start())
-                    # Or the name in front of it says it is a sample. See
-                    # `key_name_is_illustrative`: `holds_illustrative_key` reads the BODY
-                    # and cannot help when the body is a real key of real length, which
-                    # is what `vapor` ships in its development target.
-                    or SecretValues.key_name_is_illustrative(raw, match.start())
-                ):
-                    continue
-                digest = Evidence.hash_bytes(matched)
-                if digest in seen:
-                    continue
-                seen.add(digest)
-                # An access key id with no secret beside it is graded, not dropped. See
-                # `is_lone_access_key_id`.
-                lone = SecretValues.is_lone_access_key_id(
-                    raw, match.start(), match.end(), spec.rule_id
-                )
-                # A Google key in an app's own source ships inside every installed copy.
-                client_app = spec.rule_id in CLIENT_CONFIG_RULES and (
-                    unit.language in CLIENT_APP_LANGUAGES
-                    or unit.path.lower().endswith(CLIENT_APP_EXTENSIONS)
-                )
-                findings.append(
-                    self._finding(
-                        spec,
-                        unit,
-                        ctx,
-                        match.start(),
-                        match.end(),
-                        matched,
-                        grade=Severity.MEDIUM if lone or client_app else None,
-                        note=LONE_KEY_ID_NOTE
-                        if lone
-                        else CLIENT_APP_KEY_NOTE
-                        if client_app
-                        else "",
-                    )
-                )
+                self._provider_finding(ctx, findings, match, raw, seen, spec, unit)
 
         findings.extend(self._assembled_findings(unit, ctx, seen))
         findings.extend(self._assignment_findings(unit, ctx, seen))
         findings.extend(self._connection_findings(unit, ctx, seen))
         return SecretAssembly.one_per_credential(findings)
+
+    def _provider_finding(
+        self,
+        ctx: ScanContext,
+        findings: list[Finding],
+        match: re.Match[bytes],
+        raw: bytes,
+        seen: set[str],
+        spec: SecretPattern,
+        unit: FileUnit,
+    ) -> None:
+        """One provider-pattern match: kept unless the value or its place says it is not a credential, and reported once per value."""
+        matched = match.group(0)
+        if PLACEHOLDER.search(matched) or SecretValues.is_published_credential(matched):
+            return
+        if SecretValues.is_client_configuration(unit.path, spec.rule_id):
+            return
+        if spec.rule_id in CLIENT_CONFIG_RULES and SecretValues.is_firebase_web_config(
+            raw, match.start(), match.end()
+        ):
+            # Firebase's published web configuration. See
+            # `is_firebase_web_config`; scoped to the same rule the file-name
+            # test is, because nothing else in a `.env` is excused by it.
+            return
+        if SecretValues.looks_sequential(matched):
+            # The alphabet in order, inside a provider prefix. `TryGhost/Ghost`
+            # documents Stripe with `sk_live_abcdefghij...XYZ` and
+            # `headroomlabs` writes `Bearer sk-ant-api03-abcdefghij...`. This
+            # test has always been applied to the generic rule and not to these.
+            return
+        if SecretValues.is_illustrated_by_its_key(raw, match.start()):
+            return
+        if SecretValues.is_presigned_credential(raw, match.start()):
+            return
+        if SecretValues.decodes_to_prose(matched):
+            # The body is base64 for a sentence. See `decodes_to_prose`.
+            return
+        if (
+            SecretValues.holds_published_key(raw, match.start())
+            or SecretValues.holds_illustrative_key(raw, match.start())
+            # Or the name in front of it says it is a sample. See
+            # `key_name_is_illustrative`: `holds_illustrative_key` reads the BODY
+            # and cannot help when the body is a real key of real length, which
+            # is what `vapor` ships in its development target.
+            or SecretValues.key_name_is_illustrative(raw, match.start())
+        ):
+            return
+        digest = Evidence.hash_bytes(matched)
+        if digest in seen:
+            return
+        seen.add(digest)
+        # An access key id with no secret beside it is graded, not dropped. See
+        # `is_lone_access_key_id`.
+        lone = SecretValues.is_lone_access_key_id(raw, match.start(), match.end(), spec.rule_id)
+        # A Google key in an app's own source ships inside every installed copy.
+        client_app = spec.rule_id in CLIENT_CONFIG_RULES and (
+            unit.language in CLIENT_APP_LANGUAGES
+            or unit.path.lower().endswith(CLIENT_APP_EXTENSIONS)
+        )
+        findings.append(
+            self._finding(
+                spec,
+                unit,
+                ctx,
+                match.start(),
+                match.end(),
+                matched,
+                grade=Severity.MEDIUM if lone or client_app else None,
+                note=LONE_KEY_ID_NOTE if lone else CLIENT_APP_KEY_NOTE if client_app else "",
+            )
+        )
 
     #: A line of a doctest or an interactive transcript, which is documentation.
     #:

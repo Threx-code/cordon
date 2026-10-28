@@ -185,25 +185,7 @@ class EncodingFindings:
                 first = unit_pattern.search(content.raw)
                 if first is None:  # pragma: no cover - findall implies a match
                     continue
-                yield Hit(
-                    rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
-                    title=f"String built from {label} spread across the file",
-                    message=(
-                        f"This file contains {total} {label} in total, split across "
-                        f"several places so that no single run is long. Splitting is "
-                        f"what makes the total worth reporting: the value still does "
-                        f"not appear in the file, and the division has no purpose "
-                        f"except that a per-construct threshold does not see it."
-                    ),
-                    remediation=(
-                        "Write the strings as text. If a value must not be readable "
-                        "in source, it is a secret and belongs in a secret store."
-                    ),
-                    severity=Severity.MEDIUM,
-                    confidence=Confidence.MEDIUM,
-                    start=first.start(),
-                    end=first.end(),
-                )
+                yield EncodingFindings._spread_hit(label, total, first)
                 return
 
             # The same discriminator the cumulative branch applies, and for the
@@ -222,25 +204,53 @@ class EncodingFindings:
             if not CONCEALED_TEXT.search(cls._decoded(match.group(0), unit_pattern)):
                 continue
 
-            yield Hit(
-                rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
-                title=f"String built from a long run of {label}",
-                message=(
-                    f"A string here is written as a long run of {label} rather than "
-                    f"as text. That has no benefit for readability or correctness; "
-                    f"its only effect is that the resulting value does not appear in "
-                    f"the file and cannot be found by searching for it."
-                ),
-                remediation=(
-                    "Write the string as text. If the value must not be readable in "
-                    "source, it is a secret and belongs in a secret store."
-                ),
-                severity=Severity.MEDIUM,
-                confidence=Confidence.HIGH,
-                start=match.start(),
-                end=match.end(),
-            )
+            yield EncodingFindings._run_hit(label, match)
             return  # one encoding finding per file is enough to make the point
+
+    @staticmethod
+    def _spread_hit(label: str, total: int, first: re.Match[bytes]) -> Hit:
+        """The finding for escapes split across the file so no one run is long."""
+        return Hit(
+            rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
+            title=f"String built from {label} spread across the file",
+            message=(
+                f"This file contains {total} {label} in total, split across "
+                f"several places so that no single run is long. Splitting is "
+                f"what makes the total worth reporting: the value still does "
+                f"not appear in the file, and the division has no purpose "
+                f"except that a per-construct threshold does not see it."
+            ),
+            remediation=(
+                "Write the strings as text. If a value must not be readable "
+                "in source, it is a secret and belongs in a secret store."
+            ),
+            severity=Severity.MEDIUM,
+            confidence=Confidence.MEDIUM,
+            start=first.start(),
+            end=first.end(),
+        )
+
+    @staticmethod
+    def _run_hit(label: str, match: re.Match[bytes]) -> Hit:
+        """The finding for one long run of escapes."""
+        return Hit(
+            rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
+            title=f"String built from a long run of {label}",
+            message=(
+                f"A string here is written as a long run of {label} rather than "
+                f"as text. That has no benefit for readability or correctness; "
+                f"its only effect is that the resulting value does not appear in "
+                f"the file and cannot be found by searching for it."
+            ),
+            remediation=(
+                "Write the string as text. If the value must not be readable in "
+                "source, it is a secret and belongs in a secret store."
+            ),
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            start=match.start(),
+            end=match.end(),
+        )
 
     @staticmethod
     def is_remark(

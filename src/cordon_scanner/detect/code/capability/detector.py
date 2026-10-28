@@ -548,15 +548,7 @@ class CapabilityDetector(BaseDetector):
         # its functions without calling them -- so a pair of capabilities inside
         # a body nothing reaches does not run at install time, whatever the file
         # does. See `ScanContext.install_hook_reaches`.
-        deferred = (
-            frozenset(
-                (first, last)
-                for path, first, last in ctx.install_deferred_lines
-                if path == unit.path
-            )
-            if in_hook
-            else frozenset()
-        )
+        deferred = CapabilityDetector._deferred_windows(ctx, unit, in_hook)
 
         decode_excused = DecodeRun.excused_lines(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
@@ -567,13 +559,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            rule_hits = (
-                [h for h in hits if not LegitimateUse.a_setting(unit.content, h)]
-                if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
-                else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
-                if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS
-                else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
-            )
+            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused)
             if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
                 window = evaluator.satisfying_window(
                     compiled, rule_hits, unit.path, False, False, False, frozenset()
@@ -586,21 +572,8 @@ class CapabilityDetector(BaseDetector):
                 continue
 
             matched_capabilities = CompositeEvaluator.capabilities_of(compiled)
-            if Capability.EGRESS in matched_capabilities and (
-                (
-                    Capability.CREDENTIAL in matched_capabilities
-                    and LegitimateUse.credential_reaches_its_own_issuer(unit.content, window)
-                )
-                # Not at install time: nothing installing a package needs its user's keys, and
-                # boto3 uploads just as well to a bucket the attacker owns.
-                or (
-                    not in_hook and LegitimateUse.store_used_by_its_own_client(unit.content, window)
-                )
-                or (
-                    not in_hook
-                    and compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
-                    and KeychainOwner.excuses(unit.content, window, hits)
-                )
+            if CapabilityDetector._authenticates(
+                matched_capabilities, unit, window, in_hook, compiled, hits
             ):
                 # Authentication, not exfiltration. See `LegitimateUse.credential_reaches_its_own_issuer`,
                 # `LegitimateUse.store_used_by_its_own_client` and `keychain_owner`.
@@ -627,6 +600,62 @@ class CapabilityDetector(BaseDetector):
             ).finding()
             if finding is not None:
                 yield finding
+
+    @staticmethod
+    def _deferred_windows(
+        ctx: ScanContext, unit: FileUnit, in_hook: bool
+    ) -> frozenset[tuple[int, int]]:
+        """The line ranges of this file's bodies an install hook defines but never calls (only while it is in a hook)."""
+        return (
+            frozenset(
+                (first, last)
+                for path, first, last in ctx.install_deferred_lines
+                if path == unit.path
+            )
+            if in_hook
+            else frozenset()
+        )
+
+    @staticmethod
+    def _rule_hits(
+        compiled: CompiledRule,
+        unit: FileUnit,
+        hits: list[CapabilityHit],
+        decode_excused: frozenset[int],
+    ) -> list[CapabilityHit]:
+        """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs do not count."""
+        return (
+            [h for h in hits if not LegitimateUse.a_setting(unit.content, h)]
+            if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
+            else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
+            if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS
+            else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
+        )
+
+    @staticmethod
+    def _authenticates(
+        matched_capabilities: tuple[Capability, ...],
+        unit: FileUnit,
+        window: list[CapabilityHit],
+        in_hook: bool,
+        compiled: CompiledRule,
+        hits: list[CapabilityHit],
+    ) -> bool:
+        """Whether the egress is authentication, not exfiltration: a credential sent to its own issuer, a store used by its own client, a keychain read by its owner."""
+        return Capability.EGRESS in matched_capabilities and (
+            (
+                Capability.CREDENTIAL in matched_capabilities
+                and LegitimateUse.credential_reaches_its_own_issuer(unit.content, window)
+            )
+            # Not at install time: nothing installing a package needs its user's keys, and
+            # boto3 uploads just as well to a bucket the attacker owns.
+            or (not in_hook and LegitimateUse.store_used_by_its_own_client(unit.content, window))
+            or (
+                not in_hook
+                and compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
+                and KeychainOwner.excuses(unit.content, window, hits)
+            )
+        )
 
     """One environment variable read by its literal name: `os.getenv("TELEGRAM_BOT_TOKEN")`,
     `process.env.DINGTALK_TOKEN`, `std::env::var("SMTP_SERVER")`. A name computed at run time

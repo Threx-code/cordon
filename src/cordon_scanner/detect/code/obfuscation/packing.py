@@ -371,7 +371,12 @@ class PackingFindings:
             return
 
         start = content.line_starts[index - 1]
-        yield Hit(
+        yield PackingFindings._long_line_hit(content, index, start, length)
+
+    @staticmethod
+    def _long_line_hit(content: FileContent, index: int, start: int, length: int) -> Hit:
+        """The finding for one extremely long line."""
+        return Hit(
             rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
             title="Very long high-entropy line in a source file",
             message=(

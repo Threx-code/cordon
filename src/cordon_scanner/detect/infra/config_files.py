@@ -217,33 +217,6 @@ class ConfigDetector(BaseDetector):
         first match in the file.
         """
 
-        def eligible(match: re.Match[bytes]) -> bool:
-            """Whether this match counts, given where the rule says it has to land.
-
-            Overlap, not containment. These patterns anchor at the start of a line and
-            run forward to the thing they are about, so the match begins on the `run:`
-            key and the interpolation it found sits inside the script -- a containment
-            test on the start offset rejects every one of them.
-            """
-            if rule.foreign_kind is not None and rule.foreign_kind.search(
-                ConfigDetector._document_window(uncommented, match.start())
-            ):
-                # The enclosing YAML document says the rule is about something else.
-                # See `ConfigRule.foreign_kind`.
-                return False
-            if rule.outbound_exempt and ConfigDetector._is_outbound(uncommented, match):
-                # An egress rule. See `ConfigRule.outbound_exempt`.
-                return False
-            if rule.enclosing_key and not (
-                set(ConfigDetector._enclosing_keys(uncommented, match)) & set(rule.enclosing_key)
-            ):
-                # The value is real and belongs to a different key, which means
-                # something else. See `ConfigRule.enclosing_key`.
-                return False
-            if shell is None:
-                return True
-            return any(match.start() < end and start < match.end() for start, end in shell)
-
         if rule.require_aggravation and rule.aggravation is not None:
             aggravation, confirm = rule.aggravation, rule.confirm
 
@@ -255,7 +228,11 @@ class ConfigDetector(BaseDetector):
 
             if not rule.one_command:
                 return next(
-                    (m for m in rule.pattern.finditer(uncommented) if eligible(m) and claimed(m)),
+                    (
+                        m
+                        for m in rule.pattern.finditer(uncommented)
+                        if ConfigDetector._eligible(rule, uncommented, shell, m) and claimed(m)
+                    ),
                     None,
                 )
             # Searched one logical command at a time: a match that spans two commands is not this
@@ -264,16 +241,23 @@ class ConfigDetector(BaseDetector):
             for brk in [*ONE_COMMAND_BREAK.finditer(uncommented), None]:
                 end = brk.start() if brk is not None else len(uncommented)
                 for m in rule.pattern.finditer(uncommented, start, end):
-                    if eligible(m) and claimed(m):
+                    if ConfigDetector._eligible(rule, uncommented, shell, m) and claimed(m):
                         return m
                 start = brk.end() if brk is not None else end
             return None
         if rule.mitigation is None:
-            return next((m for m in rule.pattern.finditer(uncommented) if eligible(m)), None)
+            return next(
+                (
+                    m
+                    for m in rule.pattern.finditer(uncommented)
+                    if ConfigDetector._eligible(rule, uncommented, shell, m)
+                ),
+                None,
+            )
 
         first: re.Match[bytes] | None = None
         for match in rule.pattern.finditer(uncommented):
-            if not eligible(match):
+            if not ConfigDetector._eligible(rule, uncommented, shell, match):
                 continue
             if first is None:
                 first = match
@@ -290,6 +274,39 @@ class ConfigDetector(BaseDetector):
         # Every occurrence is mitigated, so any of them describes the file; the first
         # is the one a reader scrolls to.
         return first
+
+    @staticmethod
+    def _eligible(
+        rule: ConfigRule,
+        uncommented: bytes,
+        shell: tuple[tuple[int, int], ...] | None,
+        match: re.Match[bytes],
+    ) -> bool:
+        """Whether this match counts, given where the rule says it has to land.
+
+        Overlap, not containment. These patterns anchor at the start of a line and
+        run forward to the thing they are about, so the match begins on the `run:`
+        key and the interpolation it found sits inside the script -- a containment
+        test on the start offset rejects every one of them.
+        """
+        if rule.foreign_kind is not None and rule.foreign_kind.search(
+            ConfigDetector._document_window(uncommented, match.start())
+        ):
+            # The enclosing YAML document says the rule is about something else.
+            # See `ConfigRule.foreign_kind`.
+            return False
+        if rule.outbound_exempt and ConfigDetector._is_outbound(uncommented, match):
+            # An egress rule. See `ConfigRule.outbound_exempt`.
+            return False
+        if rule.enclosing_key and not (
+            set(ConfigDetector._enclosing_keys(uncommented, match)) & set(rule.enclosing_key)
+        ):
+            # The value is real and belongs to a different key, which means
+            # something else. See `ConfigRule.enclosing_key`.
+            return False
+        if shell is None:
+            return True
+        return any(match.start() < end and start < match.end() for start, end in shell)
 
     #: A block that declares outbound traffic: Terraform's `type = "egress"` on an
     #: `aws_security_group_rule` (or a module's rule map), GCP's and Azure's `direction`.

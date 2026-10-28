@@ -519,24 +519,7 @@ class AdvisoryDetector(BaseDetector):
             return None
         ecosystems = sorted({str(d.ecosystem) for d in unchecked})
         derivable = [e for e in ecosystems if e in UPSTREAM_ECOSYSTEMS]
-        if upstream is None:
-            why = (
-                f" With --online, {', '.join(derivable)} packages are matched through the upstream "
-                f"repository their ecosystem names, asked of OSV."
-                if derivable
-                else ""
-            )
-        else:
-            reasons: dict[str, list[str]] = {}
-            for d in unchecked:
-                reason = upstream.unchecked.get(d.purl)
-                if reason:
-                    reasons.setdefault(reason, []).append(f"{d.name}")
-            why = "".join(
-                f" {', '.join(names[:3])}{f' and {len(names) - 3} more' if len(names) > 3 else ''}: "
-                f"{reason}."
-                for reason, names in sorted(reasons.items(), key=lambda kv: -len(kv[1]))[:5]
-            )
+        why = AdvisoryDetector._why_unchecked(derivable, unchecked, upstream)
         # `policy.accept_no_feed`: still named here, every time, but no longer a scan that did
         # not finish -- unless an ecosystem the policy does not accept is among them.
         unaccepted = [e for e in ecosystems if e not in accepted]
@@ -560,6 +543,31 @@ class AdvisoryDetector(BaseDetector):
             rule_id=NO_FEED_RULE,
             degrades_coverage=bool(unaccepted),
         )
+
+    @staticmethod
+    def _why_unchecked(
+        derivable: list[str], unchecked: list[Dependency], upstream: UpstreamResult | None
+    ) -> str:
+        """Why the uncovered dependencies went unchecked: what --online would add, or the reasons the upstream lookup gave."""
+        if upstream is None:
+            why = (
+                f" With --online, {', '.join(derivable)} packages are matched through the upstream "
+                f"repository their ecosystem names, asked of OSV."
+                if derivable
+                else ""
+            )
+        else:
+            reasons: dict[str, list[str]] = {}
+            for d in unchecked:
+                reason = upstream.unchecked.get(d.purl)
+                if reason:
+                    reasons.setdefault(reason, []).append(f"{d.name}")
+            why = "".join(
+                f" {', '.join(names[:3])}{f' and {len(names) - 3} more' if len(names) > 3 else ''}: "
+                f"{reason}."
+                for reason, names in sorted(reasons.items(), key=lambda kv: -len(kv[1]))[:5]
+            )
+        return why
 
     def _database_age_note(self) -> Finding | None:
         """Surface it only when the bundled advisory data has gone stale.
