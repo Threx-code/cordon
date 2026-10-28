@@ -27,8 +27,8 @@ class ScanEnrichment:
 
         from cordon_scanner.decide.policy import SuppressionMatcher
         from cordon_scanner.detect.agents.model import MALICIOUS_PACKAGE, UNAVAILABLE
-        from cordon_scanner.engine.engine import Engine
         from cordon_scanner.engine.pipeline.operational import OperationalFinding
+        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
         from cordon_scanner.intel.malware.feed import FeedClient
         from cordon_scanner.model.client import ModelClient, ModelError, ModelTargets
 
@@ -58,7 +58,7 @@ class ScanEnrichment:
                         "" if verdict.file_score is None else f", file {verdict.file_score:.3f}"
                     )
                     added.append(
-                        Engine.package_check(
+                        ReleaseChecks.package_check(
                             path=verdict.location,
                             rule_id=MALICIOUS_PACKAGE,
                             message=(

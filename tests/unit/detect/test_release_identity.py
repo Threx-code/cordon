@@ -1,4 +1,4 @@
-"""A published gem, crate or Go module zip names its own release (`Engine._archive_release_identity`).
+"""A published gem, crate or Go module zip names its own release (`ReleaseChecks.archive_release_identity`).
 
 What is tested is where each format keeps its manifest inside its archive; nothing is fetched.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 import gzip
 
 from cordon_scanner.detect.base import FileUnit
-from cordon_scanner.engine.engine import Engine
+from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.foundation.content import FileContent
 
 
@@ -22,20 +22,26 @@ class TestIdentity:
     def test_a_gem_by_its_metadata(self):
         meta = b"name: demo\nversion: !ruby/object:Gem::Version\n  version: 1.2.3\n"
         unit = Units.at("x/demo-1.2.3.gem!metadata.gz", gzip.compress(meta))
-        assert Engine._archive_release_identity(unit) == ("rubygems", "demo", "1.2.3")
+        assert ReleaseChecks.archive_release_identity(unit) == ("rubygems", "demo", "1.2.3")
 
     def test_a_crate_by_its_manifest_directory(self):
         unit = Units.at("x/demo-0.3.10.crate!demo-0.3.10/Cargo.toml", b"[package]\n")
-        assert Engine._archive_release_identity(unit) == ("cargo", "demo", "0.3.10")
+        assert ReleaseChecks.archive_release_identity(unit) == ("cargo", "demo", "0.3.10")
 
     def test_a_go_module_zip_by_its_go_mod(self):
         unit = Units.at(
             "x/m.zip!example.invalid/mod@v1.0.0/go.mod", b"module example.invalid/mod\n"
         )
-        assert Engine._archive_release_identity(unit) == ("gomod", "example.invalid/mod", "v1.0.0")
+        assert ReleaseChecks.archive_release_identity(unit) == (
+            "gomod",
+            "example.invalid/mod",
+            "v1.0.0",
+        )
 
     def test_a_repositorys_own_manifest_is_not_a_release(self):
-        assert Engine._archive_release_identity(Units.at("demo-0.3.10/Cargo.toml", b"")) is None
+        assert (
+            ReleaseChecks.archive_release_identity(Units.at("demo-0.3.10/Cargo.toml", b"")) is None
+        )
 
 
 class TestBrowserSecrets:

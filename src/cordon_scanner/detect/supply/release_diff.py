@@ -117,7 +117,7 @@ class ReleaseDiff:
     @staticmethod
     def as_findings(changes: list[Change], result: ScanResult) -> list[Finding]:
         """The changes as findings anchored in the newer release's own paths."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 
         archive = next(
             (f.location.path.partition("!")[0] for f in result.findings if "!" in f.location.path),
@@ -127,7 +127,7 @@ class ReleaseDiff:
         for change in changes:
             path = f"{archive}!{change.path}" if archive and change.path != "." else change.path
             out.append(
-                Engine.release_change(
+                ReleaseChecks.release_change(
                     path=path,
                     rule_id=change.rule_id,
                     message=change.message,

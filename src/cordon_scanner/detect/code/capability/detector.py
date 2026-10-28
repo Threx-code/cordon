@@ -1014,13 +1014,13 @@ class CapabilityDetector(BaseDetector):
             return True
         if ctx is not None and content.path in ctx.agent_run_paths:
             return True
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 
         member = content.path.rpartition("!")[2]
         return (
             member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
-            and not Engine._NOT_A_SERVER_PATH.search(member)
-            and Engine._MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
+            and not ReleaseChecks.NOT_A_SERVER_PATH.search(member)
+            and ReleaseChecks.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
         )
 
     @staticmethod

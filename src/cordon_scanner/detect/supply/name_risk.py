@@ -38,7 +38,7 @@ in a package that contains nothing and names no source, is not.
 ```
 
 Only a published package's own metadata is read, located the way the engine's own release check
-(`Engine._known_malicious_release`) locates it: an npm tarball's `package/package.json`, an sdist's
+(`ReleaseChecks.known_malicious_release`) locates it: an npm tarball's `package/package.json`, an sdist's
 `<name>-<version>/PKG-INFO`, a wheel's `*.dist-info/METADATA`. A repository's root manifest is a
 project, not a release, and an empty project is not suspicious.
 """
