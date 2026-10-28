@@ -223,7 +223,7 @@ class TestPrefixes:
         are added, and if a future release covers every prefix it skips with a reason
         rather than passing on nothing.
         """
-        from cordon_scanner.detect.secrets.detector import CREDENTIAL_PREFIXES
+        from cordon_scanner.detect.secrets.assembly import CREDENTIAL_PREFIXES
         from cordon_scanner.detect.secrets.patterns import PROVIDER_PATTERNS
 
         unclaimed = next(

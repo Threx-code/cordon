@@ -20,6 +20,7 @@ from cordon_scanner.detect.binary.binary import BinaryDetector
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.text_position import TextPosition
+from cordon_scanner.detect.secrets.assembly import SecretAssembly
 from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
 from cordon_scanner.detect.secrets.patterns import ASSIGNMENT
 from cordon_scanner.foundation.models import Category, Severity
@@ -13386,16 +13387,15 @@ class TestABodyTheLoadPathCallsIsTopLevel:
 
 class TestAPrefixIsNotAKey:
     def test_the_prefix_alone_is_not_a_credential(self) -> None:
-        from cordon_scanner.detect.secrets.detector import SecretDetector
 
-        assert SecretDetector._assembled_spec(b"sk-", assembled=False, name="KEY_PREFIX") is None
+        assert SecretAssembly.assembled_spec(b"sk-", assembled=False, name="KEY_PREFIX") is None
 
     def test_the_prefix_with_a_body_is(self) -> None:
-        from cordon_scanner.detect.secrets.detector import CREDENTIAL_PREFIXES, SecretDetector
+        from cordon_scanner.detect.secrets.assembly import CREDENTIAL_PREFIXES
 
         prefix = sorted(CREDENTIAL_PREFIXES)[0]
         assert (
-            SecretDetector._assembled_spec(prefix + b"A1b2C3d4E5f6G7h8J9", name="token") is not None
+            SecretAssembly.assembled_spec(prefix + b"A1b2C3d4E5f6G7h8J9", name="token") is not None
         )
 
 
