@@ -24,10 +24,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "ReachedFlows": ("cordon_scanner.detect.code.reached_flows", "ReachedFlows"),
     "SBOM_NAMES": ("cordon_scanner.detect.supply.sbom", "SBOM_NAMES"),
     "SBOM_SUFFIXES": ("cordon_scanner.detect.supply.sbom", "SBOM_SUFFIXES"),
-    "SERVER_SOURCE_SUFFIXES": (
-        "cordon_scanner.detect.agents.mcp_servers.source",
-        "SERVER_SOURCE_SUFFIXES",
-    ),
+    "ServerSources": ("cordon_scanner.detect.agents.mcp_servers.source", "ServerSources"),
     "Submodules": ("cordon_scanner.detect.source.submodules", "Submodules"),
 }
 
@@ -35,6 +32,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.agents import (
         language_model_judge as _detect_agents_language_model_judge,
     )
+    from cordon_scanner.detect.agents.mcp_servers import source as _detect_agents_mcp_servers_source
     from cordon_scanner.detect.base import (
         BinaryIdentification,
         ComposerPluginPaths,
@@ -43,6 +41,7 @@ if TYPE_CHECKING:
         ImportReachabilityNotes,
         JudgeScheduling,
         ReachedFlowFacts,
+        ServerSourceFinding,
         SkillScripts,
         SubmoduleDependencies,
     )
@@ -69,7 +68,7 @@ if TYPE_CHECKING:
     ReachedFlows: ReachedFlowFacts = _detect_code_reached_flows.ReachedFlows
     SBOM_NAMES: tuple[str, ...] = _detect_supply_sbom.SBOM_NAMES
     SBOM_SUFFIXES: tuple[str, ...] = _detect_supply_sbom.SBOM_SUFFIXES
-    SERVER_SOURCE_SUFFIXES: tuple[str, ...]  # (a value: its type is enough; the module's own Final)
+    ServerSources: ServerSourceFinding = _detect_agents_mcp_servers_source.ServerSources
     Submodules: SubmoduleDependencies = _detect_source_submodules.Submodules
 
 
@@ -90,7 +89,6 @@ __all__ = [
     "ROLES",
     "SBOM_NAMES",
     "SBOM_SUFFIXES",
-    "SERVER_SOURCE_SUFFIXES",
     "BinaryDetector",
     "ComposerPluginHooks",
     "DeclaredSource",
@@ -99,5 +97,6 @@ __all__ = [
     "JudgeGate",
     "LoadPath",
     "ReachedFlows",
+    "ServerSources",
     "Submodules",
 ]

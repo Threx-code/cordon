@@ -20,7 +20,7 @@ from cordon_scanner.detect.base import (
     RepositoryUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks
+from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.engine.cache import ScanCache
 from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -129,7 +129,7 @@ class ScanStages:
         # the trust boundary an install hook has (review 98: a skill script reading files and
         # posting them out was graded as a library's, at MEDIUM).
         skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ReleaseChecks.mcp_server_sources(units)
+        agent_run = skill_scripts | ServerSources.of(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or

@@ -6,7 +6,7 @@ import ast
 import contextlib
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.text_patterns import (
@@ -23,9 +23,9 @@ from cordon_scanner.foundation.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Sequence
 
-    from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.detect.base import FileUnit, ScanContext
 
 _QUOTED_DESCRIPTION: Final = re.compile(
     r"""(?:\bdescription\b[ \t]{0,8}[:=][ \t]{0,8}|\.describe\([ \t]{0,8})"""
@@ -576,4 +576,45 @@ class McpServerSource:
             return McpServerSource._scan_path(target, ctx)
 
 
-__all__ = ["MCP_SDK", "RESULT_SENDS_TO_URL", "SERVER_SOURCE_SUFFIXES", "McpServerSource"]
+class ServerSources:
+    """What an MCP server's own source is: code an agent host starts and runs on the agent's tool calls."""
+
+    @staticmethod
+    def of(units: Sequence[FileUnit]) -> set[str]:
+        """An MCP server's own source: started by the agent host and run on the agent's tool calls,
+        never on a run the user chose -- the boundary an install hook has. Graded as application
+        code, a server reading the environment's secrets and posting them out was a warning
+        (review 98, mcp-variants: 12 of 177 malicious servers blocked by their code)."""
+        return {
+            u.path
+            for u in units
+            if u.path.endswith(SERVER_SOURCE_SUFFIXES)
+            and "/node_modules/" not in u.path
+            and "site-packages/" not in u.path
+            and not ServerSources.NOT_A_SERVER_PATH.search(u.path.rpartition("!")[2])
+            and ServerSources.MCP_SDK_IMPORT.search(u.content.text[:200_000]) is not None
+        }
+
+    #: An import statement of an MCP server SDK at the start of a line -- not the same words in a
+    #: string, which is how a test file holds a server's source as a fixture.
+    MCP_SDK_IMPORT: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:from[ \t]{1,8}(?:mcp|fastmcp)(?:\.\w{1,40}){0,4}[ \t]{1,8}import\b|import[ \t]{1,8}(?:mcp|fastmcp)\b"
+        r"|[ \t]{0,8}import\b[^\n]{0,200}[\"']@modelcontextprotocol/sdk"
+        r"|[^\n]{0,80}require\(\s{0,4}[\"']@modelcontextprotocol/sdk)",
+        re.MULTILINE,
+    )
+
+    #: Tests, fixtures, examples and documentation are read, not started by an agent host.
+    NOT_A_SERVER_PATH: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|/)(?:tests?|__tests__|spec|fixtures?|examples?|docs?|bench(?:marks?)?)/"
+        r"|(?:^|/)test_[^/]*$|\.(?:test|spec)\.[^/]+$"
+    )
+
+
+__all__ = [
+    "MCP_SDK",
+    "RESULT_SENDS_TO_URL",
+    "SERVER_SOURCE_SUFFIXES",
+    "McpServerSource",
+    "ServerSources",
+]

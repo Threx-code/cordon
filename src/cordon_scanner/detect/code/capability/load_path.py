@@ -522,13 +522,13 @@ class LoadPath:
             return True
         if ctx is not None and content.path in ctx.agent_run_paths:
             return True
-        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+        from cordon_scanner.detect.agents.mcp_servers.source import ServerSources
 
         member = content.path.rpartition("!")[2]
         return (
             member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
-            and not ReleaseChecks.NOT_A_SERVER_PATH.search(member)
-            and ReleaseChecks.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
+            and not ServerSources.NOT_A_SERVER_PATH.search(member)
+            and ServerSources.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
         )
 
 

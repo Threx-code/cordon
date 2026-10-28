@@ -17,7 +17,7 @@ from cordon_scanner.detect.base import (
     GraphUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks
+from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.parallel import ParallelScanner
@@ -218,7 +218,7 @@ class ArchiveStages:
         hook_paths |= Hooks.gem_extension_hooks(units)
         hook_paths |= ComposerPluginHooks.paths(units)
         skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ReleaseChecks.mcp_server_sources(units)
+        agent_run = skill_scripts | ServerSources.of(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or

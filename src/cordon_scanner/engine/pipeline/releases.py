@@ -16,6 +16,7 @@ from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
 )
+from cordon_scanner.detect.registry import ServerSources
 from cordon_scanner.engine.pipeline.constants import (
     KNOWN_MALICIOUS_RELEASE_RULE,
     MACHO_MAGIC,
@@ -164,7 +165,7 @@ class ReleaseChecks:
         mcp-variants' Tool Squatting servers; none of its 786 reference servers). A real GitHub
         server mentions GitHub in its code.
         """
-        sources = ReleaseChecks.mcp_server_sources(units)
+        sources = ServerSources.of(units)
         if not sources:
             return []
         code = [
@@ -563,39 +564,6 @@ class ReleaseChecks:
                     )
                     break
         return out
-
-    @staticmethod
-    def mcp_server_sources(units: Sequence[FileUnit]) -> set[str]:
-        """An MCP server's own source: started by the agent host and run on the agent's tool calls,
-        never on a run the user chose -- the boundary an install hook has. Graded as application
-        code, a server reading the environment's secrets and posting them out was a warning
-        (review 98, mcp-variants: 12 of 177 malicious servers blocked by their code)."""
-        from cordon_scanner.detect.registry import SERVER_SOURCE_SUFFIXES
-
-        return {
-            u.path
-            for u in units
-            if u.path.endswith(SERVER_SOURCE_SUFFIXES)
-            and "/node_modules/" not in u.path
-            and "site-packages/" not in u.path
-            and not ReleaseChecks.NOT_A_SERVER_PATH.search(u.path.rpartition("!")[2])
-            and ReleaseChecks.MCP_SDK_IMPORT.search(u.content.text[:200_000]) is not None
-        }
-
-    #: An import statement of an MCP server SDK at the start of a line -- not the same words in a
-    #: string, which is how a test file holds a server's source as a fixture.
-    MCP_SDK_IMPORT: ClassVar[re.Pattern[str]] = re.compile(
-        r"^(?:from[ \t]{1,8}(?:mcp|fastmcp)(?:\.\w{1,40}){0,4}[ \t]{1,8}import\b|import[ \t]{1,8}(?:mcp|fastmcp)\b"
-        r"|[ \t]{0,8}import\b[^\n]{0,200}[\"']@modelcontextprotocol/sdk"
-        r"|[^\n]{0,80}require\(\s{0,4}[\"']@modelcontextprotocol/sdk)",
-        re.MULTILINE,
-    )
-
-    #: Tests, fixtures, examples and documentation are read, not started by an agent host.
-    NOT_A_SERVER_PATH: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?:^|/)(?:tests?|__tests__|spec|fixtures?|examples?|docs?|bench(?:marks?)?)/"
-        r"|(?:^|/)test_[^/]*$|\.(?:test|spec)\.[^/]+$"
-    )
 
 
 __all__ = ["ReleaseChecks"]

@@ -610,6 +610,12 @@ class ReachedFlowFacts(Protocol):
     def of(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]: ...
 
 
+class ServerSourceFinding(Protocol):
+    """What the engine uses of the class `ServerSources`: which files are an MCP server's own source."""
+
+    def of(self, units: Sequence[FileUnit]) -> set[str]: ...
+
+
 class SkillScripts(Protocol):
     """What the engine uses of the class `LoadPath`."""
 
@@ -643,6 +649,7 @@ __all__ = [
     "RepositoryUnit",
     "RuleSelector",
     "ScanContext",
+    "ServerSourceFinding",
     "SkillScripts",
     "SubmoduleDependencies",
     "Unit",
