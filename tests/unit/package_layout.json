@@ -394,6 +394,7 @@
   "mcp/runner": "mcp/runner",
   "mcp/server": "mcp/server",
   "mcp/tools/catalogue": "mcp/tools/catalogue",
+  "mcp/tools/knowledge": "mcp/tools/knowledge",
   "mcp/tools/machine": "mcp/tools/machine",
   "mcp/tools/base": "mcp/tools/base",
   "mcp/tools/agents": "mcp/tools/agents",
