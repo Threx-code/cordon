@@ -41,7 +41,7 @@ class Session:
 
 
 SESSIONS = (
-    Session("home", "cordon-scanner", 5200),
+    Session("home", "cordon-scanner | head -n 13", 4200),
     Session("repo", "cordon-scanner scan .", 7000),
     Session("npm", "cordon-scanner scan pkg:npm/express --online", 5200),
     Session("image", "cordon-scanner scan pkg:docker/nginx@1.27 --online", 6500),
@@ -53,7 +53,7 @@ PROMPT_MARK = "\u276f "  # the shell prompt the recordings are typed after
 
 class Grid:
     COLS = 112
-    ROWS = 42
+    ROWS = 26
     CW = 7.92  # character width, px
     LH = 18  # line height, px
     FONT = 13.2
