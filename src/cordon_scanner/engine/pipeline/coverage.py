@@ -59,6 +59,21 @@ class Coverage:
         """
         findings: list[Finding] = []
 
+        Coverage.lfs_pointers(lfs_pointers, findings)
+
+        Coverage.binary_files(binary, findings)
+
+        self.untrusted_exclusions(stats, findings)
+
+        self.nothing_examined(examined, stats, selected, findings)
+
+        self.untrusted_source(findings, complete)
+
+        return findings
+
+    @staticmethod
+    def lfs_pointers(lfs_pointers: Sequence[str], findings: list[Finding]) -> None:
+        """Git LFS pointers, whose content is not in the tree."""
         # Files that exist but hold no source to examine. One aggregated finding
         # rather than one per file: a repository with four hundred icons would
         # otherwise drown the report, and a report nobody reads is the same
@@ -103,6 +118,9 @@ class Coverage:
                 )
             )
 
+    @staticmethod
+    def binary_files(binary: Sequence[str], findings: list[Finding]) -> None:
+        """Files examined only as binary artefacts, counted."""
         if binary:
             sample = ", ".join(sorted(binary)[:5])
             more = f" and {len(binary) - 5} more" if len(binary) > 5 else ""
@@ -124,6 +142,8 @@ class Coverage:
                 )
             )
 
+    def untrusted_exclusions(self, stats: WalkStats, findings: list[Finding]) -> None:
+        """Exclusions an untrusted configuration asked for, applied and said."""
         # Anything the *scan target's own* configuration removed, at any share.
         #
         # BROAD_EXCLUSION below only fires past 80 percent of a tree of at least
@@ -167,6 +187,10 @@ class Coverage:
                     )
                 )
 
+    def nothing_examined(
+        self, examined: int, stats: WalkStats, selected: int, findings: list[Finding]
+    ) -> None:
+        """A scan that saw files and examined none of them."""
         # Nothing at all was examined, but the tree is not empty.
         #
         # The count that matters is what reached a detector and was read, not
@@ -242,142 +266,154 @@ class Coverage:
                     )
                 )
 
+    def untrusted_source(self, findings: list[Finding], complete: bool) -> None:
+        """What a configuration from an untrusted source was not allowed to do, said as findings."""
         # A detector turned off in a config that came from the scan target.
         if self.config.from_untrusted_source:
-            disabled = sorted(name for name, on in self.config.detectors.items() if on is False)
-            if disabled:
-                findings.append(
-                    OperationalFinding.build(
-                        path=REPOSITORY_SCOPE,
-                        rule_id="POLICY.COVERAGE.DETECTOR_DISABLED",
-                        category=Category.POLICY,
-                        # HIGH, because the default gate fails at HIGH and this
-                        # was reported at MEDIUM: `detectors: {manifest: false}`
-                        # in the scan target's own config made a CRITICAL
-                        # finding disappear and the build pass.
-                        severity=Severity.HIGH,
-                        message=(
-                            f"The repository's own configuration disabled "
-                            f"{len(disabled)} detector(s): {', '.join(disabled)}. "
-                            f"Those checks did not run."
-                        ),
-                        remediation=(
-                            "Confirm each is genuinely inapplicable. An organisation "
-                            "policy can require detectors that a repository may not "
-                            "disable."
-                        ),
-                    )
-                )
+            self.disabled_checks(findings)
 
-            if self.config.disabled_rules:
-                names = ", ".join(sorted(self.config.disabled_rules))
-                findings.append(
-                    OperationalFinding.build(
-                        path=REPOSITORY_SCOPE,
-                        rule_id="POLICY.COVERAGE.RULE_DISABLED",
-                        category=Category.POLICY,
-                        severity=Severity.HIGH,
-                        message=(
-                            f"The repository's own configuration disabled "
-                            f"{len(self.config.disabled_rules)} rule(s): {names}. "
-                            f"Those checks produced nothing here whatever the code "
-                            f"contains."
-                        ),
-                        remediation=(
-                            "Confirm each is genuinely inapplicable. An organisation "
-                            "policy can require rules that a repository may not "
-                            "disable."
-                        ),
-                    )
-                )
+            self.reduced_limits(complete, findings)
 
-            for setting in self.config.reduced_limits:
-                # An incomplete scan does not fail the build by default, and
-                # that default is right: making it fatal would break pipelines
-                # on the first genuinely large repository and teach people to
-                # append `|| true`, which is worse than the failure it prevents.
-                #
-                # It is not right here. This scan is incomplete *because the
-                # scan target asked for it to be*, which is not the same thing
-                # as a repository that outgrew a default, so it fails.
-                truncated = not complete
-                findings.append(
-                    OperationalFinding.build(
-                        path=REPOSITORY_SCOPE,
-                        rule_id="POLICY.CONFIG.LIMIT_REDUCED",
-                        category=Category.POLICY,
-                        severity=Severity.HIGH if truncated else Severity.MEDIUM,
-                        message=(
-                            f"{setting} was lowered below the built-in default by the "
-                            f"repository's own configuration, which narrows what the "
-                            f"scan reaches. A lowered limit is an exclusion written in "
-                            f"a form that produces no exclusion patterns to report, so "
-                            f"it is reported here instead."
-                            + (
-                                " The scan did not finish, so this limit is what stopped it."
-                                if truncated
-                                else ""
-                            )
-                        ),
-                        remediation=(
-                            "Confirm the reduction is intended. If the scan is slow, "
-                            "narrow it with exclusions, which are visible, rather than "
-                            "with a limit, which is not."
-                        ),
-                    )
-                )
+            self.clamped_settings(findings)
 
-            for setting in self.config.clamped_settings:
-                # Weakening the failure gate is reported at HIGH, where the
-                # default gate fails, rather than at LOW with the resource
-                # limits. Raising a limit is a repository being greedy with the
-                # scanning machine; emptying `fail_on` is a repository turning
-                # the verdict off for every finding including MALICIOUS at
-                # CRITICAL. Those are not the same act and must not read the
-                # same in a report.
-                gate = setting.startswith("policy.")
-                blinding = setting in BLINDING_SETTINGS
-                findings.append(
-                    OperationalFinding.build(
-                        path=REPOSITORY_SCOPE,
-                        rule_id=(
-                            "POLICY.CONFIG.GATE_WEAKENED"
-                            if gate or blinding
-                            else "POLICY.CONFIG.CLAMPED"
-                        ),
-                        category=Category.POLICY,
-                        severity=Severity.HIGH if gate or blinding else Severity.LOW,
-                        message=(
-                            (
-                                f"The repository's own configuration tried to weaken the "
-                                f"failure gate ({setting}) and was refused. A scan target "
-                                f"cannot decide which of its own findings are allowed to "
-                                f"fail the build; the built-in gate was used instead."
-                            )
-                            if gate
-                            else (
-                                f"The repository's own configuration set {setting}, which "
-                                f"switches detection off or loads code into the scanner, and "
-                                f"was refused. A scan target cannot choose how closely it is "
-                                f"examined; the built-in behaviour was used instead."
-                            )
-                            if blinding
-                            else (
-                                f"{setting} was set by the repository's own configuration "
-                                f"and reduced to the built-in default. A configuration "
-                                f"file inside the scan target cannot raise a resource "
-                                f"limit or add a rule pack, because both can be used "
-                                f"against the machine running the scan."
-                            )
-                        ),
-                        remediation=(
-                            "Pass the value on the command line, which is operator "
-                            "input, or set it in an organisation policy."
-                        ),
-                    )
+    def disabled_checks(self, findings: list[Finding]) -> None:
+        """Detectors and rules an untrusted configuration turned off, said."""
+        disabled = sorted(name for name, on in self.config.detectors.items() if on is False)
+        if disabled:
+            findings.append(
+                OperationalFinding.build(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="POLICY.COVERAGE.DETECTOR_DISABLED",
+                    category=Category.POLICY,
+                    # HIGH, because the default gate fails at HIGH and this
+                    # was reported at MEDIUM: `detectors: {manifest: false}`
+                    # in the scan target's own config made a CRITICAL
+                    # finding disappear and the build pass.
+                    severity=Severity.HIGH,
+                    message=(
+                        f"The repository's own configuration disabled "
+                        f"{len(disabled)} detector(s): {', '.join(disabled)}. "
+                        f"Those checks did not run."
+                    ),
+                    remediation=(
+                        "Confirm each is genuinely inapplicable. An organisation "
+                        "policy can require detectors that a repository may not "
+                        "disable."
+                    ),
                 )
+            )
 
-        return findings
+        if self.config.disabled_rules:
+            names = ", ".join(sorted(self.config.disabled_rules))
+            findings.append(
+                OperationalFinding.build(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="POLICY.COVERAGE.RULE_DISABLED",
+                    category=Category.POLICY,
+                    severity=Severity.HIGH,
+                    message=(
+                        f"The repository's own configuration disabled "
+                        f"{len(self.config.disabled_rules)} rule(s): {names}. "
+                        f"Those checks produced nothing here whatever the code "
+                        f"contains."
+                    ),
+                    remediation=(
+                        "Confirm each is genuinely inapplicable. An organisation "
+                        "policy can require rules that a repository may not "
+                        "disable."
+                    ),
+                )
+            )
+
+    def reduced_limits(self, complete: bool, findings: list[Finding]) -> None:
+        """Limits an untrusted configuration reduced, each said, with what it cost the scan."""
+        for setting in self.config.reduced_limits:
+            # An incomplete scan does not fail the build by default, and
+            # that default is right: making it fatal would break pipelines
+            # on the first genuinely large repository and teach people to
+            # append `|| true`, which is worse than the failure it prevents.
+            #
+            # It is not right here. This scan is incomplete *because the
+            # scan target asked for it to be*, which is not the same thing
+            # as a repository that outgrew a default, so it fails.
+            truncated = not complete
+            findings.append(
+                OperationalFinding.build(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="POLICY.CONFIG.LIMIT_REDUCED",
+                    category=Category.POLICY,
+                    severity=Severity.HIGH if truncated else Severity.MEDIUM,
+                    message=(
+                        f"{setting} was lowered below the built-in default by the "
+                        f"repository's own configuration, which narrows what the "
+                        f"scan reaches. A lowered limit is an exclusion written in "
+                        f"a form that produces no exclusion patterns to report, so "
+                        f"it is reported here instead."
+                        + (
+                            " The scan did not finish, so this limit is what stopped it."
+                            if truncated
+                            else ""
+                        )
+                    ),
+                    remediation=(
+                        "Confirm the reduction is intended. If the scan is slow, "
+                        "narrow it with exclusions, which are visible, rather than "
+                        "with a limit, which is not."
+                    ),
+                )
+            )
+
+    def clamped_settings(self, findings: list[Finding]) -> None:
+        """Settings an untrusted configuration tried to loosen, clamped to the safe value, each said."""
+        for setting in self.config.clamped_settings:
+            # Weakening the failure gate is reported at HIGH, where the
+            # default gate fails, rather than at LOW with the resource
+            # limits. Raising a limit is a repository being greedy with the
+            # scanning machine; emptying `fail_on` is a repository turning
+            # the verdict off for every finding including MALICIOUS at
+            # CRITICAL. Those are not the same act and must not read the
+            # same in a report.
+            gate = setting.startswith("policy.")
+            blinding = setting in BLINDING_SETTINGS
+            findings.append(
+                OperationalFinding.build(
+                    path=REPOSITORY_SCOPE,
+                    rule_id=(
+                        "POLICY.CONFIG.GATE_WEAKENED"
+                        if gate or blinding
+                        else "POLICY.CONFIG.CLAMPED"
+                    ),
+                    category=Category.POLICY,
+                    severity=Severity.HIGH if gate or blinding else Severity.LOW,
+                    message=(
+                        (
+                            f"The repository's own configuration tried to weaken the "
+                            f"failure gate ({setting}) and was refused. A scan target "
+                            f"cannot decide which of its own findings are allowed to "
+                            f"fail the build; the built-in gate was used instead."
+                        )
+                        if gate
+                        else (
+                            f"The repository's own configuration set {setting}, which "
+                            f"switches detection off or loads code into the scanner, and "
+                            f"was refused. A scan target cannot choose how closely it is "
+                            f"examined; the built-in behaviour was used instead."
+                        )
+                        if blinding
+                        else (
+                            f"{setting} was set by the repository's own configuration "
+                            f"and reduced to the built-in default. A configuration "
+                            f"file inside the scan target cannot raise a resource "
+                            f"limit or add a rule pack, because both can be used "
+                            f"against the machine running the scan."
+                        )
+                    ),
+                    remediation=(
+                        "Pass the value on the command line, which is operator "
+                        "input, or set it in an organisation policy."
+                    ),
+                )
+            )
 
 
 __all__ = ["Coverage"]
