@@ -36,7 +36,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
-    LockEntry,
     LockGraph,
     Manifest,
 )
@@ -268,19 +267,7 @@ class CabalFile:
         }
         flags: dict[str, bool] = {}
         sources: list[str] = []
-        for node in nodes:
-            if (
-                not node.is_field
-                and node.head.lower().startswith("flag ")
-                and len(node.head.split()) > 1
-            ):
-                flag = node.head.split(None, 1)[1].strip().lower()
-                default = (CabalLayout.first(node.children, "default") or "true").lower() != "false"
-                manual = (CabalLayout.first(node.children, "manual") or "false").lower() == "true"
-                flags[flag] = default
-                sources.append(
-                    f"flag {flag} (default {'on' if default else 'off'}{', manual' if manual else ''})"
-                )
+        CabalFile._flags_and_sources(nodes, flags, sources)
         collected = _Collected()
         if not any(
             not n.is_field and n.head.lower().split()[0] in CabalFile.COMPONENTS for n in nodes
@@ -335,6 +322,25 @@ class CabalFile:
             sources=tuple(sources),
             repository=CabalFile._repository(nodes),
         )
+
+    @staticmethod
+    def _flags_and_sources(
+        nodes: list[CabalNode], flags: dict[str, bool], sources: list[str]
+    ) -> None:
+        """Each flag's default, and the source repositories the file names."""
+        for node in nodes:
+            if (
+                not node.is_field
+                and node.head.lower().startswith("flag ")
+                and len(node.head.split()) > 1
+            ):
+                flag = node.head.split(None, 1)[1].strip().lower()
+                default = (CabalLayout.first(node.children, "default") or "true").lower() != "false"
+                manual = (CabalLayout.first(node.children, "manual") or "false").lower() == "true"
+                flags[flag] = default
+                sources.append(
+                    f"flag {flag} (default {'on' if default else 'off'}{', manual' if manual else ''})"
+                )
 
     @staticmethod
     def hooks(path: str, build_type: str | None, ecosystem: str) -> tuple[Hook, ...]:
@@ -566,6 +572,80 @@ class Hpack:
             yield from CabalDeps.entries(str(item))
 
     @staticmethod
+    def _section(
+        body: Mapping[str, Any],
+        scope: Scope,
+        conditions: tuple[str, ...],
+        internal: set[str],
+        flags: dict[str, bool],
+        collected: _Collected,
+        snapshot_note: str | None,
+    ) -> None:
+        """One section's dependencies, build tools and system libraries, and its when: clauses,
+        each under its conditions."""
+        for key, field_scope in (
+            ("dependencies", scope),
+            ("build-tools", Scope.TOOL),
+            ("build-tool-depends", Scope.TOOL),
+        ):
+            for dep, spec in Hpack.entries(body.get(key)):
+                if dep.lower() in internal:
+                    continue
+                applied = (
+                    Scope.PLATFORM
+                    if dep in GHC_PACKAGES and field_scope is not Scope.TOOL
+                    else field_scope
+                )
+                CabalFile._add(dep, spec, applied, key, conditions, flags, collected, snapshot_note)
+        for system_key in ("pkg-config-dependencies", "extra-libraries"):
+            for dep, spec in Hpack.entries(body.get(system_key)):
+                prefix = "pkg-config:" if system_key == "pkg-config-dependencies" else "lib:"
+                collected.add(
+                    DeclaredDependency(
+                        name=prefix + dep,
+                        spec=spec,
+                        scope=Scope.PLATFORM,
+                        field_name=system_key,
+                        platform=conditions,
+                    )
+                )
+        when = body.get("when")
+        for clause in when if isinstance(when, list) else [when] if isinstance(when, dict) else []:
+            if not isinstance(clause, dict) or not isinstance(clause.get("condition"), str):
+                continue
+            condition = clause["condition"]
+            if isinstance(clause.get("then"), dict):
+                Hpack._section(
+                    clause["then"],
+                    scope,
+                    (*conditions, condition),
+                    internal,
+                    flags,
+                    collected,
+                    snapshot_note,
+                )
+                if isinstance(clause.get("else"), dict):
+                    Hpack._section(
+                        clause["else"],
+                        scope,
+                        (*conditions, f"!({condition})"),
+                        internal,
+                        flags,
+                        collected,
+                        snapshot_note,
+                    )
+            else:
+                Hpack._section(
+                    clause,
+                    scope,
+                    (*conditions, condition),
+                    internal,
+                    flags,
+                    collected,
+                    snapshot_note,
+                )
+
+    @staticmethod
     def parse(
         content: FileContent, ecosystem: str, data: Mapping[str, Any], snapshot_note: str | None
     ) -> Manifest:
@@ -585,51 +665,8 @@ class Hpack:
                 sources.append(f"flag {str(flag).lower()} (default {'on' if default else 'off'})")
         collected = _Collected()
 
-        def section(body: Mapping[str, Any], scope: Scope, conditions: tuple[str, ...]) -> None:
-            for key, field_scope in (
-                ("dependencies", scope),
-                ("build-tools", Scope.TOOL),
-                ("build-tool-depends", Scope.TOOL),
-            ):
-                for dep, spec in Hpack.entries(body.get(key)):
-                    if dep.lower() in internal:
-                        continue
-                    applied = (
-                        Scope.PLATFORM
-                        if dep in GHC_PACKAGES and field_scope is not Scope.TOOL
-                        else field_scope
-                    )
-                    CabalFile._add(
-                        dep, spec, applied, key, conditions, flags, collected, snapshot_note
-                    )
-            for system_key in ("pkg-config-dependencies", "extra-libraries"):
-                for dep, spec in Hpack.entries(body.get(system_key)):
-                    prefix = "pkg-config:" if system_key == "pkg-config-dependencies" else "lib:"
-                    collected.add(
-                        DeclaredDependency(
-                            name=prefix + dep,
-                            spec=spec,
-                            scope=Scope.PLATFORM,
-                            field_name=system_key,
-                            platform=conditions,
-                        )
-                    )
-            when = body.get("when")
-            for clause in (
-                when if isinstance(when, list) else [when] if isinstance(when, dict) else []
-            ):
-                if not isinstance(clause, dict) or not isinstance(clause.get("condition"), str):
-                    continue
-                condition = clause["condition"]
-                if isinstance(clause.get("then"), dict):
-                    section(clause["then"], scope, (*conditions, condition))
-                    if isinstance(clause.get("else"), dict):
-                        section(clause["else"], scope, (*conditions, f"!({condition})"))
-                else:
-                    section(clause, scope, (*conditions, condition))
-
         try:
-            section(data, Scope.RUNTIME, ())
+            Hpack._section(data, Scope.RUNTIME, (), internal, flags, collected, snapshot_note)
             for key, scope, named in Hpack.COMPONENTS:
                 body = data.get(key)
                 bodies = (
@@ -641,10 +678,10 @@ class Hpack:
                 )
                 for each in bodies:
                     if isinstance(each, dict):
-                        section(each, scope, ())
+                        Hpack._section(each, scope, (), internal, flags, collected, snapshot_note)
             setup = data.get("custom-setup")
             if isinstance(setup, dict):
-                section(setup, Scope.BUILD, ())
+                Hpack._section(setup, Scope.BUILD, (), internal, flags, collected, snapshot_note)
         except ValueError as exc:
             return BaseEcosystem._err(content, ecosystem, f"not a readable package.yaml: {exc}")
         return Manifest(
@@ -664,352 +701,6 @@ class Hpack:
             sources=tuple(sources),
             repository=BaseEcosystem._s(data.get("github")),
         )
-
-
-class CabalProject:
-    """cabal.project: Cabal's project configuration."""
-
-    @staticmethod
-    def git_source(children: list[CabalNode]) -> tuple[list[str], str] | None:
-        location = CabalLayout.first(children, "location")
-        if not location:
-            return None
-        tag = CabalLayout.first(children, "tag") or CabalLayout.first(children, "branch") or ""
-        kind = (CabalLayout.first(children, "type") or "git").lower()
-        subdirs = " ".join(CabalLayout.fields(children, "subdir")).split()
-        repo = location.rstrip("/").rpartition("/")[2].removesuffix(".git")
-        names = [s.rstrip("/").rpartition("/")[2] or repo for s in subdirs] or [repo]
-        prefix = "git+" if kind == "git" else f"{kind}+"
-        return names, f"{prefix}{location}" + (f"#{tag}" if tag else "")
-
-    @staticmethod
-    def parse(content: FileContent, ecosystem: str) -> Manifest:
-        try:
-            nodes = CabalLayout.parse(content.text)
-        except ValueError as exc:
-            return BaseEcosystem._err(content, ecosystem, f"not a readable cabal.project: {exc}")
-        overrides: dict[str, str] = {}
-        sources: list[str] = []
-        routed: dict[str, str] = {}
-        declared: list[DeclaredDependency] = []
-        for value in CabalLayout.fields(nodes, "constraints"):
-            for chunk in CabalDeps.split(value):
-                found = re.match(r"^(?:any\.)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s+(.+)$", chunk)
-                if not found:
-                    continue
-                package, rule = found.group(1), found.group(2).strip()
-                if re.fullmatch(r"(?:[+-][\w-]+\s*)+", rule):
-                    sources.append(f"flags {package}: {rule}")
-                elif rule not in ("installed", "source"):
-                    overrides[package] = rule
-        for node in nodes:
-            if node.is_field:
-                continue
-            head = node.head.lower()
-            if head == "source-repository-package":
-                found_source = CabalProject.git_source(node.children)
-                if found_source:
-                    for name in found_source[0]:
-                        routed[name] = found_source[1]
-            elif head.startswith("repository "):
-                url = CabalLayout.first(node.children, "url")
-                sources.append(
-                    f"repository {node.head.split(None, 1)[1].strip()} {url or ''}".strip()
-                )
-            elif head.startswith("package ") and len(head.split()) > 1:
-                flag_value = CabalLayout.first(node.children, "flags")
-                if flag_value:
-                    sources.append(f"flags {node.head.split(None, 1)[1].strip()}: {flag_value}")
-        compiler = CabalLayout.first(nodes, "with-compiler")
-        if compiler:
-            found_compiler = re.match(r"^(?:.*/)?(ghc|ghcjs)-?([0-9][0-9.]*)?$", compiler)
-            declared.append(
-                DeclaredDependency(
-                    name=found_compiler.group(1) if found_compiler else "ghc",
-                    spec=(
-                        found_compiler.group(2)
-                        if found_compiler and found_compiler.group(2)
-                        else compiler
-                    ),
-                    scope=Scope.PLATFORM,
-                    field_name="with-compiler",
-                )
-            )
-        for value in CabalLayout.fields(nodes, "extra-packages"):
-            for name, spec in CabalDeps.entries(value):
-                declared.append(
-                    DeclaredDependency(name=name, spec=spec, field_name="extra-packages")
-                )
-        index = CabalLayout.first(nodes, "index-state")
-        if index:
-            sources.append(f"index-state {index}")
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            dependencies=tuple(declared),
-            overrides=overrides,
-            sources=tuple(sources),
-            source_patterns=routed,
-        )
-
-
-class CabalFreeze:
-    """cabal.project.freeze: every package of Cabal's install plan, pinned."""
-
-    PIN: ClassVar[re.Pattern[str]] = re.compile(
-        r"^(?:(any|setup|[A-Za-z0-9-]+:setup|[A-Za-z0-9-]+:exe)\.)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s*==\s*([0-9]+(?:\.[0-9]+)*)$"
-    )
-    FLAGS: ClassVar[re.Pattern[str]] = re.compile(
-        r"^(?:any\.)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s+((?:[+-][\w-]+\s*)+)$"
-    )
-
-    @staticmethod
-    def parse(content: FileContent, ecosystem: str) -> LockGraph:
-        try:
-            nodes = CabalLayout.parse(content.text)
-        except ValueError as exc:
-            return LockGraph(
-                path=content.path,
-                ecosystem=ecosystem,
-                parse_error=f"not a readable freeze file: {exc}",
-            )
-        values = CabalLayout.fields(nodes, "constraints")
-        if not values and CabalLayout.fields(nodes, "index-state"):
-            # Only the package index pinned (`index-state: hackage.haskell.org 2026-08-10T...`),
-            # PostgREST's way: every version is resolved from that snapshot when it builds, so none
-            # is locked -- which is a lock that pins nothing, not one that could not be read.
-            return LockGraph(path=content.path, ecosystem=ecosystem)
-        if not values:
-            return LockGraph(
-                path=content.path,
-                ecosystem=ecosystem,
-                parse_error="a freeze file with no `constraints`",
-            )
-        if not content.text.endswith("\n"):
-            # `cabal freeze` ends the file with a newline after `index-state`; a file cut short is
-            # missing pins nobody can tell were there.
-            return LockGraph(
-                path=content.path,
-                ecosystem=ecosystem,
-                parse_error="a freeze file that does not end where cabal freeze ends it",
-            )
-        entries: dict[tuple[str, Scope], LockEntry] = {}
-        for value in values:
-            for chunk in CabalDeps.split(value):
-                pinned = CabalFreeze.PIN.match(chunk)
-                if pinned:
-                    qualifier, name, version = pinned.groups()
-                    scope = (
-                        Scope.PLATFORM
-                        if name in GHC_PACKAGES
-                        else Scope.BUILD
-                        if qualifier and "setup" in qualifier
-                        else Scope.TOOL
-                        if qualifier and qualifier.endswith(":exe")
-                        else Scope.RUNTIME
-                    )
-                    entries.setdefault(
-                        (name, scope), LockEntry(name=name, version=version, scope=scope)
-                    )
-                    continue
-                if CabalFreeze.FLAGS.match(chunk) or re.match(
-                    r"^(?:any\.)?[\w-]+\s+(installed|source)$", chunk
-                ):
-                    continue
-                return LockGraph(
-                    path=content.path,
-                    ecosystem=ecosystem,
-                    parse_error="a freeze constraint is neither a pin nor a flag assignment",
-                )
-        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries.values()))
-
-
-class StackProject:
-    """stack.yaml."""
-
-    HACKAGE: ClassVar[re.Pattern[str]] = re.compile(
-        r"^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*?)-([0-9]+(?:\.[0-9]+)*)(?:@(rev:[0-9]+|sha256:[0-9a-f]{64}(?:,[0-9]+)?))?$"
-    )
-
-    @staticmethod
-    def load(content: FileContent) -> dict[str, Any]:
-        data = DataYaml.load(content.text, source=content.path)
-        if not isinstance(data, dict):
-            raise ValueError("not a mapping")
-        return data
-
-    @staticmethod
-    def snapshot(data: Mapping[str, Any]) -> str | None:
-        value = data.get("snapshot", data.get("resolver"))
-        if isinstance(value, dict):
-            value = value.get("url")
-        return str(value) if value else None
-
-    @staticmethod
-    def parse(content: FileContent, ecosystem: str) -> Manifest:
-        try:
-            data = StackProject.load(content)
-        except ValueError as exc:
-            return BaseEcosystem._err(content, ecosystem, f"invalid stack.yaml: {exc}")
-        snapshot = StackProject.snapshot(data)
-        if not snapshot:
-            return BaseEcosystem._err(
-                content, ecosystem, "a stack.yaml without a snapshot (`snapshot` or `resolver`)"
-            )
-        sources = [f"snapshot {snapshot}"]
-        overrides: dict[str, str] = {}
-        routed: dict[str, str] = {}
-        declared: list[DeclaredDependency] = []
-        extra = data.get("extra-deps")
-        for item in extra if isinstance(extra, list) else []:
-            if isinstance(item, str):
-                pinned = StackProject.HACKAGE.match(item.strip())
-                if pinned:
-                    overrides[pinned.group(1)] = f"=={pinned.group(2)}"
-                    if pinned.group(3):
-                        sources.append(
-                            f"extra-dep {pinned.group(1)}-{pinned.group(2)} pinned to {pinned.group(3).split(',')[0]}"
-                        )
-                elif item.startswith(("http://", "https://")):
-                    name = re.sub(r"(?:\.tar\.gz|\.zip|\.tgz)$", "", item.rpartition("/")[2])
-                    routed[re.sub(r"-[0-9][0-9.]*$", "", name)] = item
-                continue
-            if not isinstance(item, dict):
-                continue
-            location = item.get("git") or (
-                f"https://github.com/{item['github']}"
-                if isinstance(item.get("github"), str)
-                else None
-            )
-            if isinstance(location, str):
-                commit = BaseEcosystem._s(item.get("commit")) or ""
-                listed = item.get("subdirs")
-                subdirs: list[Any] = listed if isinstance(listed, list) else []
-                repo = location.rstrip("/").rpartition("/")[2].removesuffix(".git")
-                for name in [str(s).rstrip("/").rpartition("/")[2] for s in subdirs] or [repo]:
-                    routed[name] = f"git+{location}#{commit}" if commit else f"git+{location}"
-            elif isinstance(item.get("url"), str):
-                name = re.sub(r"(?:\.tar\.gz|\.zip|\.tgz)$", "", item["url"].rpartition("/")[2])
-                routed[re.sub(r"-[0-9][0-9.]*$", "", name)] = item["url"]
-        flags = data.get("flags")
-        if isinstance(flags, dict):
-            for package, assigned in sorted(flags.items()):
-                if isinstance(assigned, dict):
-                    text = " ".join(
-                        f"{'+' if v is True else '-'}{k}" for k, v in sorted(assigned.items())
-                    )
-                    sources.append(f"flags {package}: {text}")
-        compiler = data.get("compiler")
-        if isinstance(compiler, str):
-            found = re.match(r"^(ghc|ghcjs)-([0-9][0-9.]*)$", compiler)
-            declared.append(
-                DeclaredDependency(
-                    name=found.group(1) if found else "ghc",
-                    spec=found.group(2) if found else compiler,
-                    scope=Scope.PLATFORM,
-                    field_name="compiler",
-                )
-            )
-        indices = data.get("package-indices") or (
-            [data["package-index"]] if isinstance(data.get("package-index"), dict) else []
-        )
-        for index in indices if isinstance(indices, list) else []:
-            if isinstance(index, dict):
-                url = index.get("download-prefix") or index.get("http")
-                sources.append(
-                    f"repository {index.get('name', 'package-index')} {url or ''}".strip()
-                )
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            dependencies=tuple(declared),
-            overrides=overrides,
-            sources=tuple(sources),
-            source_patterns=routed,
-        )
-
-
-class StackLock:
-    """stack.yaml.lock: the extra-deps completed, and the snapshot by hash."""
-
-    HACKAGE: ClassVar[re.Pattern[str]] = re.compile(
-        r"^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*?)-([0-9]+(?:\.[0-9]+)*)(?:@sha256:([^,\s]+),[0-9]+)?$"
-    )
-    """`name-version@sha256:<cabal-file hash>,<size>`. A hash that is not 64 hex digits is kept
-    and judged malformed, not read as a damaged file."""
-
-    @staticmethod
-    def parse(content: FileContent, ecosystem: str) -> LockGraph:
-        try:
-            data = StackProject.load(content)
-        except ValueError as exc:
-            return LockGraph(
-                path=content.path,
-                ecosystem=ecosystem,
-                parse_error=f"invalid stack.yaml.lock: {exc}",
-            )
-        if "snapshots" not in data:
-            return LockGraph(
-                path=content.path,
-                ecosystem=ecosystem,
-                parse_error="a stack.yaml.lock without `snapshots`",
-            )
-        listed = data.get("packages", data.get("dependencies")) or []
-        if not isinstance(listed, list):
-            return LockGraph(
-                path=content.path, ecosystem=ecosystem, parse_error="`packages` is not a list"
-            )
-        entries: list[LockEntry] = []
-        for item in listed:
-            completed = item.get("completed") if isinstance(item, dict) else None
-            if not isinstance(completed, dict):
-                continue
-            if isinstance(completed.get("hackage"), str):
-                found = StackLock.HACKAGE.match(completed["hackage"].strip())
-                if not found:
-                    return LockGraph(
-                        path=content.path,
-                        ecosystem=ecosystem,
-                        parse_error="a Hackage entry that is not `name-version@sha256:<hash>,<size>`",
-                    )
-                # The SHA-256 of the pinned cabal-file revision: what Hackage lists per revision.
-                digest = found.group(3)
-                entries.append(
-                    LockEntry(
-                        name=found.group(1),
-                        version=found.group(2),
-                        integrity=f"sha256:{digest.lower()}" if digest else None,
-                    )
-                )
-                continue
-            name = BaseEcosystem._s(completed.get("name"))
-            version = BaseEcosystem._s(completed.get("version"))
-            if not name or not version:
-                continue
-            location = completed.get("git") or (
-                f"https://github.com/{completed['github']}"
-                if isinstance(completed.get("github"), str)
-                else None
-            )
-            if isinstance(location, str):
-                entries.append(
-                    LockEntry(
-                        name=name,
-                        version=version,
-                        resolved_from=f"git+{location}#{completed.get('commit', '')}",
-                    )
-                )
-            elif isinstance(completed.get("url"), str):
-                digest = BaseEcosystem._s(completed.get("sha256"))
-                entries.append(
-                    LockEntry(
-                        name=name,
-                        version=version,
-                        resolved_from=completed["url"],
-                        integrity=f"sha256:{digest}" if digest else None,
-                    )
-                )
-        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
 
 
 class HackageEcosystem(BaseEcosystem):
@@ -1038,6 +729,8 @@ class HackageEcosystem(BaseEcosystem):
         path: str, files: Mapping[str, FileContent]
     ) -> tuple[str, Mapping[str, Any]] | None:
         """The stack.yaml of the nearest directory at or above the file, and its data."""
+        from cordon_scanner.ecosystems.packages.haskell.stack import StackProject
+
         directory = path.rpartition("/")[0]
         while True:
             candidate = f"{directory}/stack.yaml" if directory else "stack.yaml"
@@ -1074,6 +767,8 @@ class HackageEcosystem(BaseEcosystem):
         directories, or a .cabal file in it)."""
         import fnmatch
 
+        from cordon_scanner.ecosystems.packages.haskell.stack import StackProject
+
         patterns: list[str] = []
         if content.basename == "cabal.project":
             try:
@@ -1104,6 +799,8 @@ class HackageEcosystem(BaseEcosystem):
 
     @staticmethod
     def snapshot_note(path: str, files: Mapping[str, FileContent], owner: str | None) -> str | None:
+        from cordon_scanner.ecosystems.packages.haskell.stack import StackProject
+
         directory = path.rpartition("/")[0] if owner is None else owner
         freeze = f"{directory}/cabal.project.freeze" if directory else "cabal.project.freeze"
         if freeze in files:
@@ -1122,6 +819,9 @@ class HackageEcosystem(BaseEcosystem):
         return self.parse_in_tree(content, {content.path: content})
 
     def parse_in_tree(self, content: FileContent, files: Mapping[str, FileContent]) -> Manifest:
+        from cordon_scanner.ecosystems.packages.haskell.cabal_project import CabalProject
+        from cordon_scanner.ecosystems.packages.haskell.stack import StackProject
+
         basename = content.basename
         if basename == "cabal.project":
             return CabalProject.parse(content, self.id)
@@ -1169,6 +869,9 @@ class HackageEcosystem(BaseEcosystem):
         return CabalFile.parse(content, self.id, note)
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
+        from cordon_scanner.ecosystems.packages.haskell.cabal_project import CabalFreeze
+        from cordon_scanner.ecosystems.packages.haskell.stack import StackLock
+
         if content.basename == "stack.yaml.lock":
             return StackLock.parse(content, self.id)
         return CabalFreeze.parse(content, self.id)
@@ -1178,11 +881,7 @@ __all__ = [
     "GHC_PACKAGES",
     "CabalDeps",
     "CabalFile",
-    "CabalFreeze",
     "CabalLayout",
-    "CabalProject",
     "HackageEcosystem",
     "Hpack",
-    "StackLock",
-    "StackProject",
 ]
