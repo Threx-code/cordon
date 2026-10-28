@@ -28,7 +28,7 @@ import io
 import posixpath
 import re
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -51,6 +51,7 @@ from cordon_scanner.engine.cache import CacheKey, ScanCache
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner, WorkItem
+from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import (
@@ -64,7 +65,6 @@ from cordon_scanner.engine.pipeline.constants import (
     DER_STRING,
     DROP_POINT_SECRETS,
     HONOURED_PINS,
-    INCOMPLETE_WHEN_REPORTED,
     PACKAGED_BUILD_FILENAMES,
     REPOSITORY_SCOPE,
     TEST_IDENTITY,
@@ -112,63 +112,6 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Detector
     from cordon_scanner.ecosystems.base import DeclaredDependency
-
-
-@dataclass
-class _Accumulator:
-    """Mutable state for one scan.
-
-    Deliberately local to a single run. The engine itself holds no per-scan
-    state, which is what makes one Scanner instance reusable and safe to share.
-    """
-
-    findings: list[Finding] = field(default_factory=list)
-    complete: bool = True
-    """Every file's content was read: nothing refused, truncated, pruned or timed out."""
-    advisory_complete: bool = True
-    """Every dependency was checked against an advisory or registry source, and the threat intel
-    was current. A missing feed is reported and never blocks a package for malware purposes
-    (review 98, REC-5): the two halves are kept apart so the gate can tell them apart."""
-    rejected_archives: set[str] = field(default_factory=set)
-    """Archives already reported as read in part (`OPERATIONAL.ARCHIVE.REJECTED`), which the
-    truncation notice would only repeat."""
-    files_scanned: int = 0
-    files_skipped: int = 0
-    bytes_scanned: int = 0
-    rules_evaluated: int = 0
-
-    finding_cap: int = 0
-    """Ceiling on retained findings, from `limits.max_findings`.
-
-    Zero disables it. The limit was declared and documented -- "a hostile
-    repository can otherwise turn a scan into an out-of-memory failure by
-    arranging for every line to match. Reaching this cap is itself reported" --
-    and never checked anywhere.
-    """
-
-    capped: bool = False
-
-    def append(self, finding: Finding) -> bool:
-        """Retain one finding if the cap allows it.
-
-        Enforced here rather than at render time, which is where
-        `ReportOptions.max_findings` applies -- by then everything is already in
-        memory and the limit has prevented nothing.
-        """
-        if finding.rule_id in INCOMPLETE_WHEN_REPORTED:
-            self.complete = False
-        if self.finding_cap and len(self.findings) >= self.finding_cap:
-            self.capped = True
-            self.complete = False
-            return False
-        self.findings.append(finding)
-        return True
-
-    def add(self, produced: Iterable[Finding]) -> None:
-        """Retain a batch, stopping at the cap."""
-        for finding in produced:
-            if not self.append(finding):
-                return
 
 
 class Engine:
@@ -244,7 +187,7 @@ class Engine:
         from cordon_scanner.images.host import HostFilesystem
 
         started = time.monotonic()
-        acc = _Accumulator(finding_cap=self.config.limits.max_findings)
+        acc = Accumulator(finding_cap=self.config.limits.max_findings)
         intel = self._intel_status(acc)
         if not root.is_dir():
             raise SourceError(f"--host needs a directory to read as a filesystem root: {root}")
@@ -297,7 +240,7 @@ class Engine:
 
     def _scan(self, target: str | Path) -> ScanResult:
         started = time.monotonic()
-        acc = _Accumulator(finding_cap=self.config.limits.max_findings)
+        acc = Accumulator(finding_cap=self.config.limits.max_findings)
 
         # Recorded before resolving, because resolving is what loses it. The
         # walker never follows a link found during traversal; a link *named as
@@ -623,7 +566,7 @@ class Engine:
         with NetworkGuard.sealed():
             yield
 
-    def _intel_status(self, acc: _Accumulator) -> dict[str, Any]:
+    def _intel_status(self, acc: Accumulator) -> dict[str, Any]:
         """Refresh from the signed feed when allowed, and say how current the intel is.
 
         Stale intel is not a clean scan: a package that turned malicious since the intel was
@@ -666,7 +609,7 @@ class Engine:
 
     # -- Archives ---------------------------------------------------------
 
-    def _scan_archive(self, path: Path, acc: _Accumulator, started: float) -> ScanResult:
+    def _scan_archive(self, path: Path, acc: Accumulator, started: float) -> ScanResult:
         """Scan an archive without writing any of it to disk.
 
         Members are held in memory and never materialised. Nothing that was
@@ -1093,7 +1036,7 @@ class Engine:
     def inventory(
         self,
         root: Path,
-        acc: _Accumulator | None = None,
+        acc: Accumulator | None = None,
         *,
         walked: Sequence[WalkEntry] | None = None,
         walker: Walker | None = None,
@@ -1329,7 +1272,7 @@ class Engine:
         self,
         root: Path,
         inventory: Repository,
-        acc: _Accumulator,
+        acc: Accumulator,
         deadline: float,
         *,
         walked: Sequence[WalkEntry] | None = None,
@@ -1744,7 +1687,7 @@ class Engine:
         self,
         unit: FileUnit,
         ctx: ScanContext,
-        acc: _Accumulator,
+        acc: Accumulator,
         detectors: list[Detector],
         signature: str,
     ) -> list[Finding]:
@@ -1864,7 +1807,7 @@ class Engine:
         units: list[FileUnit],
         root: Path,
         ctx: ScanContext,
-        acc: _Accumulator,
+        acc: Accumulator,
         detectors: list[Detector],
         signature: str,
         *,
@@ -2276,7 +2219,7 @@ class Engine:
             out.update({f"{place}_can_{name}": 1.0 for name in held})
         return out | ReachedFlows.of(units, ctx)  # what the reached code does with what it reads
 
-    def _image_inventory(self, data: bytes, acc: _Accumulator) -> Any:
+    def _image_inventory(self, data: bytes, acc: Accumulator) -> Any:
         """The OS packages of a container image tarball, or None when the archive is not one.
 
         What could not be read is stated and marks the scan incomplete: an image whose package
@@ -2377,7 +2320,7 @@ class Engine:
         return inventory
 
     @staticmethod
-    def _report_image_contents(inventory: Any, acc: _Accumulator) -> None:
+    def _report_image_contents(inventory: Any, acc: Accumulator) -> None:
         """Say what of the image was content-scanned and what was not, and why."""
         from cordon_scanner.images.oci import OVERSIZE, OVERSIZE_STRINGS
 
@@ -2436,9 +2379,7 @@ class Engine:
                 )
             )
 
-    def _sbom_dependencies(
-        self, units: list[FileUnit], acc: _Accumulator
-    ) -> tuple[Dependency, ...]:
+    def _sbom_dependencies(self, units: list[FileUnit], acc: Accumulator) -> tuple[Dependency, ...]:
         """The components of a CycloneDX or SPDX document, validated and attributed to it."""
         from cordon_scanner.engine.sbom_ingest import SbomDocument, SbomInventory
 
@@ -2703,7 +2644,7 @@ class Engine:
                 )
         return base + languages + tuple(operating_system)
 
-    def _build_graph(self, units: list[FileUnit], acc: _Accumulator) -> tuple[Dependency, ...]:
+    def _build_graph(self, units: list[FileUnit], acc: Accumulator) -> tuple[Dependency, ...]:
         """Build the resolved graph from lockfiles.
 
         Never by invoking the package manager and never over the network (C2,
@@ -2913,7 +2854,7 @@ class Engine:
     }
 
     @staticmethod
-    def _unread_dependency_files(units: list[FileUnit], acc: _Accumulator) -> None:
+    def _unread_dependency_files(units: list[FileUnit], acc: Accumulator) -> None:
         present = {u.path for u in units}
         for unit in units:
             name = unit.path.rpartition("/")[2]
@@ -3695,7 +3636,7 @@ class Engine:
     def _declared_graph(
         self,
         units: list[FileUnit],
-        acc: _Accumulator,
+        acc: Accumulator,
         *,
         covered: set[tuple[str | None, str]],
     ) -> list[Dependency]:
@@ -3899,7 +3840,7 @@ class Engine:
         return brew | CallReachability.deferred_lines(hooks, sources, entries)
 
     def _expand_member_units(
-        self, rel_path: str, loaded: FileContent, acc: _Accumulator, deadline: float
+        self, rel_path: str, loaded: FileContent, acc: Accumulator, deadline: float
     ) -> list[FileUnit] | None:
         """The members of an archive found during a directory scan, as units.
 
@@ -4066,7 +4007,7 @@ class Engine:
 
     @staticmethod
     def _manifest_hook_paths(
-        units: list[FileUnit], acc: _Accumulator | None = None
+        units: list[FileUnit], acc: Accumulator | None = None
     ) -> tuple[set[str], set[str], set[str]]:
         """Paths that execute at install time, according to their manifests -- and, third, the
         scripts a published GitHub action's composite steps run, which are CI code.
@@ -4557,7 +4498,7 @@ class Engine:
         ]
 
     def _run(
-        self, detector: Detector, unit: Unit, ctx: ScanContext, acc: _Accumulator
+        self, detector: Detector, unit: Unit, ctx: ScanContext, acc: Accumulator
     ) -> list[Finding]:
         """Run one detector over one unit, containing its failures.
 
