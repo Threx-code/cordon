@@ -9,7 +9,7 @@ malicious packages: the pack is opt-in, and what it reports must be worth readin
 Run inside Docker only:
 
     docker run --rm -v "$PWD:/pkg" -w /pkg python:3.12-slim sh -c \\
-      "pip install -q yara-python==4.5.1 && python tests/conformance/generate/rule_pack_select.py"
+      "pip install -q yara-python==4.5.1 && python scripts/reference/rule_pack_select.py"
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import fnmatch
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 import yara  # type: ignore[import-not-found]
 
@@ -43,7 +44,7 @@ class Selection:
         return files
 
     @staticmethod
-    def applies(meta: dict, path: Path) -> bool:
+    def applies(meta: dict[str, Any], path: Path) -> bool:
         wanted = meta.get("path_include")
         if not isinstance(wanted, str) or not wanted.strip():
             return True
@@ -98,7 +99,7 @@ class Selection:
         header = (
             "// Cordon's built-in rule pack (`--rule-file builtin`). Rules by the GuardDog Team, Datadog,\n"
             f"// from github.com/DataDog/guarddog at {commit}, Apache License 2.0 (upstream/LICENSE),\n"
-            "// unchanged. Chosen by tests/conformance/generate/rule_pack_select.py: see MANIFEST.json.\n\n"
+            "// unchanged. Chosen by scripts/reference/rule_pack_select.py: see MANIFEST.json.\n\n"
         )
         PACK.write_text(
             header + "\n".join((UPSTREAM / name).read_text(encoding="utf-8") for name in kept),

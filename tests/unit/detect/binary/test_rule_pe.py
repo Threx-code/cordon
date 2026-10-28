@@ -100,7 +100,7 @@ class TestPeFunctions:
     engine -- exact values, not kinds, so a wrong value turns the suite red. Two recorded datasets, both
     run through the engine exactly as the reference captured them (one console.log rule per call):
 
-    - expected.json's ``functions`` -- what yara-python's modules_callback reports for each file (imphash,
+    - expected.json's ``functions`` -- what the reference engine's modules_callback reports for each file (imphash,
       the predicates, imports/exports/section/rva with real arguments, rich_signature.toolid/version, and
       elf.telfhash/import_md5 for the object file);
     - functions.json -- the broader harness set: 33 varied calls (absent names, out-of-range RVAs, ordinal,

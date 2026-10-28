@@ -2,7 +2,7 @@
 # Fetches the rules shipped as Cordon's built-in pack (`--rule-file builtin`): DataDog GuardDog's
 # `threat-*` source-code rules, Apache-2.0, at the commit pinned here, with the licence. The
 # rules are detection signatures, not samples. Which of them ship is decided by
-# tests/conformance/generate/rule_pack_select.py against the benign corpus. Run inside Docker only:
+# scripts/reference/rule_pack_select.py against the benign corpus. Run inside Docker only:
 #
 #   docker run --rm -v "$PWD/src/cordon_scanner/rules:/rules" curlimages/curl:latest sh /rules/../../../tests/conformance/generate/rule_pack_fetch.sh
 set -eu

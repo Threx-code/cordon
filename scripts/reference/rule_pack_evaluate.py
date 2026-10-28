@@ -8,7 +8,7 @@ Every package of every set, across every core. Run inside Docker only, with the 
 read-only:
 
     docker run --rm -v cordon-bench-data:/data:ro -v "$PWD:/pkg" -w /pkg python:3.12-slim sh -c \\
-      "pip install -q yara-python==4.5.1 && python tests/conformance/generate/rule_pack_evaluate.py"
+      "pip install -q yara-python==4.5.1 && python scripts/reference/rule_pack_evaluate.py"
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import tarfile
 import zipfile
 from collections import Counter
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import yara  # type: ignore[import-not-found]
 
@@ -173,7 +173,8 @@ class Evaluation:
         """One package: its set, the rules that fired, and any rule that ran out of time."""
         dataset, kind, path = task
         Evaluation.SLOW.clear()
-        assert Evaluation.RULES is not None
+        if Evaluation.RULES is None:
+            raise RuntimeError("the pack is compiled before any package is evaluated")
         password = b"infected" if dataset == "datadog" else None
         hit = Evaluation.rules_hit(Evaluation.RULES, Evaluation.members(Path(path), password))
         return dataset, kind, sorted(hit), sorted(Evaluation.SLOW.elements())
@@ -228,7 +229,7 @@ class Evaluation:
             | set(value)
             | {r.identifier for r in yara.compile(filepaths=Evaluation.sources(), includes=False)}
         )
-        report = {
+        report: dict[str, Any] = {
             "datasets": dict(totals),
             "benign_packages": sum(n for d, n in totals.items() if d.startswith("benign")),
             "malicious_packages": sum(n for d, n in totals.items() if not d.startswith("benign")),

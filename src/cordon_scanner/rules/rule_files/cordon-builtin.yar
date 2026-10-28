@@ -1,6 +1,6 @@
 // Cordon's built-in rule pack (`--rule-file builtin`). Rules by the GuardDog Team, Datadog,
 // from github.com/DataDog/guarddog at 1f4a66c064fb2087c224750507f3b65c7633deeb, Apache License 2.0 (upstream/LICENSE),
-// unchanged. Chosen by tests/conformance/generate/rule_pack_select.py: see MANIFEST.json.
+// unchanged. Chosen by scripts/reference/rule_pack_select.py: see MANIFEST.json.
 
 rule threat_filesystem_autostart
 {
