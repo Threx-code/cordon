@@ -32,15 +32,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import re
 from dataclasses import dataclass, field, replace
 from dataclasses import fields as dataclass_fields
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.foundation.distribution import PolicyDistribution
 from cordon_scanner.foundation.errors import ConfigError, PolicyViolationError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.models import (
@@ -50,8 +47,6 @@ from cordon_scanner.foundation.models import (
     Severity,
     Suppression,
 )
-from cordon_scanner.foundation.paths import StatePaths
-from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.foundation.taxonomy import ThreatDomain
 from cordon_scanner.version import PROGRAM
 
@@ -67,15 +62,6 @@ CONFIG_FILENAMES = (
     ".cordon.yml",
 )
 
-_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
-MAX_NESTING = 32
-"""Ceiling on configuration nesting depth.
-
-Far above anything a real configuration uses -- the deepest key in this
-project's own schema is four levels -- and far below the interpreter's recursion
-limit. What it bounds is a file written to overflow the stack rather than to
-configure anything."""
 
 MIN_JUSTIFICATION_CHARS = 40
 """A suppression's justification must be long enough to contain a reason.
@@ -563,6 +549,8 @@ class Config:
         Raises :class:`ConfigError` on any unknown key, malformed value, or
         invalid suppression. Nothing is coerced silently.
         """
+        from cordon_scanner.foundation.config_parser import ConfigParser
+
         return ConfigParser._parse_config(data, source=source, layer=layer)
 
     MAX_CONFIG_BYTES = 1024 * 1024
@@ -574,6 +562,8 @@ class Config:
 
     @classmethod
     def from_file(cls, path: str | Path) -> Config:
+        from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
+
         p = Path(path)
         if not p.is_file():
             raise ConfigError(
@@ -632,10 +622,58 @@ class Config:
         return config._withhold_untrusted_powers()
 
     def _withhold_untrusted_powers(self) -> Config:
+        from cordon_scanner.foundation.config_parser import ConfigParser
+
         clamped: list[str] = []
         reduced: list[str] = []
 
         limits = self.limits
+        limits = self._withheld_limits(limits, clamped, reduced)
+
+        extra = self.extra_rule_paths
+        if extra:
+            clamped.append("rules.extra")
+            extra = ()
+
+        # The failure gate. A discovered config may make it stricter and never
+        # weaker, which is the same rule limits already follow and for a sharper
+        # reason: `policy: {fail_on: []}` disarms the gate for every finding
+        # including MALICIOUS at CRITICAL, and it did so silently.
+        #
+        # Worse, it disarmed the fix for a different bug. `filter_for_reporting`
+        # keeps any finding that trips the gate regardless of a reporting
+        # threshold, precisely so a repository cannot hide a critical finding
+        # behind `confidence_threshold: confirmed`. That protection is
+        # conditioned on the gate being non-empty, and the same untrusted file
+        # controlled both -- so five lines re-opened the bug the fix was written
+        # against, in the file the fix lives in.
+        policy = ConfigParser._stricter_policy(self.policy, Policy.default())
+        if policy != self.policy:
+            clamped.append("policy.fail_on")
+
+        offline, allow_plugins, expand_archives, intel_feed, max_intel_age, minified = (
+            self._withheld_switches(clamped)
+        )
+
+        return replace(
+            self,
+            limits=limits,
+            extra_rule_paths=extra,
+            policy=policy,
+            offline=offline,
+            allow_plugins=allow_plugins,
+            expand_archives=expand_archives,
+            intel_feed=intel_feed,
+            max_intel_age=max_intel_age,
+            minified=minified,
+            from_untrusted_source=True,
+            clamped_settings=tuple(clamped),
+            reduced_limits=tuple(reduced),
+            untrusted_exclusions=(*self.exclude, *self.include, *minified),
+        )
+
+    def _withheld_limits(self, limits: Limits, clamped: list[str], reduced: list[str]) -> Limits:
+        """Limits an untrusted layer raised, held at the default; ones it lowered, kept and recorded."""
         for name in sorted(self.explicit_limits):
             if name == "max_workers":
                 continue
@@ -658,27 +696,13 @@ class Config:
                 # silent, because the reason might equally be that the fifth
                 # file is where the interesting one starts.
                 reduced.append(f"limits.{name}")
+        return limits
 
-        extra = self.extra_rule_paths
-        if extra:
-            clamped.append("rules.extra")
-            extra = ()
-
-        # The failure gate. A discovered config may make it stricter and never
-        # weaker, which is the same rule limits already follow and for a sharper
-        # reason: `policy: {fail_on: []}` disarms the gate for every finding
-        # including MALICIOUS at CRITICAL, and it did so silently.
-        #
-        # Worse, it disarmed the fix for a different bug. `filter_for_reporting`
-        # keeps any finding that trips the gate regardless of a reporting
-        # threshold, precisely so a repository cannot hide a critical finding
-        # behind `confidence_threshold: confirmed`. That protection is
-        # conditioned on the gate being non-empty, and the same untrusted file
-        # controlled both -- so five lines re-opened the bug the fix was written
-        # against, in the file the fix lives in.
-        policy = ConfigParser._stricter_policy(self.policy, Policy.default())
-        if policy != self.policy:
-            clamped.append("policy.fail_on")
+    def _withheld_switches(
+        self, clamped: list[str]
+    ) -> tuple[bool, bool, bool, bool, int | None, tuple[str, ...]]:
+        """The switches an untrusted layer may only turn towards safety: offline, plugins, archives, the intel feed, its age, minified paths."""
+        from cordon_scanner.foundation.config_parser import ConfigParser
 
         # Going online is an operator's decision, never the scan target's.
         #
@@ -729,23 +753,7 @@ class Config:
         minified = tuple(p for p in self.minified if not ConfigParser._spans_tree(p))
         if len(minified) != len(self.minified):
             clamped.append("scan.minified")
-
-        return replace(
-            self,
-            limits=limits,
-            extra_rule_paths=extra,
-            policy=policy,
-            offline=offline,
-            allow_plugins=allow_plugins,
-            expand_archives=expand_archives,
-            intel_feed=intel_feed,
-            max_intel_age=max_intel_age,
-            minified=minified,
-            from_untrusted_source=True,
-            clamped_settings=tuple(clamped),
-            reduced_limits=tuple(reduced),
-            untrusted_exclusions=(*self.exclude, *self.include, *minified),
-        )
+        return offline, allow_plugins, expand_archives, intel_feed, max_intel_age, minified
 
     @classmethod
     def discover(cls, root: str | Path) -> Config:
@@ -792,6 +800,8 @@ class Config:
         and a justification are demanded of the repository by the tool, not by
         anybody's policy.
         """
+        from cordon_scanner.foundation.config_parser import ConfigParser
+
         violations = [
             f"suppression {s.rule} at {s.path}: {problem}"
             for s in self.suppressions
@@ -861,6 +871,8 @@ class Config:
         One error listing every conflict, rather than one per run: an operator
         fixing these is otherwise made to rediscover them one at a time.
         """
+        from cordon_scanner.foundation.config_parser import ConfigParser
+
         violations: list[str] = []
 
         for detector in sorted(constraints.detectors_required):
@@ -940,6 +952,8 @@ class Config:
 
     def _merged_under(self, org: Config, constraints: OrgConstraints) -> Config:
         """Take the stricter value of each pair. Called only after checking."""
+        from cordon_scanner.foundation.config_parser import ConfigParser
+
         return replace(
             self,
             severity_threshold=min(self.severity_threshold, org.severity_threshold),
@@ -1153,45 +1167,8 @@ class Config:
 # Parsing
 # ---------------------------------------------------------------------------
 
-_TOP_LEVEL_KEYS = frozenset({"version", "scan", "policy", "evidence", "suppressions", "rules"})
-_SCAN_KEYS = frozenset(
-    {
-        "severity_threshold",
-        "confidence_threshold",
-        "detectors",
-        "exclude",
-        "include",
-        "minified",
-        "limits",
-        "offline",
-        "reachability",
-        "expand_archives",
-        "intel_feed",
-        "max_intel_age",
-        "allow_plugins",
-        "profile",
-        "internal_namespaces",
-        "allowed_action_owners",
-    }
-)
-_POLICY_KEYS = frozenset(
-    {
-        "fail_on",
-        "fail_on_incomplete",
-        "min_confidence_to_fail",
-        "advisory_domains",
-        "hardening",
-        "max_major_drift",
-        "packages",
-        "licenses",
-        "accept_no_feed",
-    }
-)
-_PACKAGE_LIST_KEYS = frozenset({"deny", "allow"})
-_LICENSE_LIST_KEYS = frozenset({"deny", "allow", "unknown"})
+TOP_LEVEL_KEYS = frozenset({"version", "scan", "policy", "evidence", "suppressions", "rules"})
 LICENSE_UNKNOWN_ORDER = ("allow", "report", "deny")
-_RULES_KEYS = frozenset({"packs", "extra", "disabled"})
-_SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
 
 
 class IntelAge:
@@ -1205,884 +1182,6 @@ class IntelAge:
         if ours is None or ours == 0:
             return theirs
         return ours if theirs == 0 else min(ours, theirs)
-
-
-class RestrictedYamlParser:
-    """A YAML parser for the subset a configuration file needs, and no more.
-
-    Not a dependency and not a subset by accident. Constraint C1 rules out
-    third-party runtime dependencies, and the parts of YAML deliberately left
-    unimplemented are the parts that make a config file a hazard:
-
-    * **Anchors and aliases** (`&a`, `*a`). A small file expands to gigabytes --
-      the billion-laughs shape. Unimplemented, so unreachable.
-    * **Tags** (`!!python/object`). The mechanism behind every YAML
-      deserialisation CVE. There is no tag handling to exploit.
-    * **Merge keys**, multi-document streams, and flow-mapping nesting. Each is
-      one more construct a reviewer has to hold in their head to know what a
-      security configuration actually says.
-
-    The parser is recursive-descent over an indentation-token stream, and
-    depth is bounded, so a deeply nested file is a configuration error rather
-    than a stack overflow. The scan target is untrusted input and its
-    configuration file is part of it, which is why this reads like a parser for
-    hostile input and not like a convenience loader.
-    """
-
-    @staticmethod
-    def _load_yaml_subset(text: str, *, source: str) -> dict[str, Any]:
-        lines = RestrictedYamlParser._tokenize(text, source=source)
-        if not lines:
-            return {}
-        value, index = RestrictedYamlParser._parse_block(lines, 0, lines[0][0], source=source)
-        if index != len(lines):
-            raise _YamlError(f"{source}:{lines[index][2]}: unexpected indentation")
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise _YamlError(f"{source}: top level must be a mapping")
-        return value
-
-    @staticmethod
-    def _tokenize(text: str, *, source: str) -> list[tuple[int, str, int]]:
-        """Return (indent, content, line_number) for each significant line."""
-        out: list[tuple[int, str, int]] = []
-        for number, raw in enumerate(text.splitlines(), 1):
-            if "\t" in raw[: len(raw) - len(raw.lstrip())]:
-                raise _YamlError(
-                    f"{source}:{number}: tab in indentation",
-                    hint="YAML indentation must use spaces.",
-                )
-            stripped = raw.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            if stripped in {"---", "..."}:
-                continue
-            indent = len(raw) - len(raw.lstrip(" "))
-            out.append((indent, stripped, number))
-        return out
-
-    @staticmethod
-    def _parse_block(
-        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str, depth: int = 0
-    ) -> tuple[Any, int]:
-        RestrictedYamlParser._check_depth(depth, source=source, number=0)
-        if start >= len(lines):
-            return None, start
-        if lines[start][1].startswith("- "):
-            return RestrictedYamlParser._parse_sequence(
-                lines, start, indent, source=source, depth=depth
-            )
-        return RestrictedYamlParser._parse_mapping(lines, start, indent, source=source, depth=depth)
-
-    @staticmethod
-    def _check_depth(depth: int, *, source: str, number: int) -> None:
-        """Refuse a document nested past `MAX_NESTING`.
-
-        The class docstring already promised this -- "depth is bounded, so a
-        deeply nested file is a configuration error rather than a stack
-        overflow" -- and no depth parameter existed anywhere in the class. An
-        audit fed the scanner a 400 KB config of nine hundred progressively
-        indented keys and got `RecursionError`, exit 2, and a message blaming
-        the maintainers.
-
-        Exit 2 is worse than it looks. It means "the scanner broke", and
-        pipelines routinely treat a broken tool as skippable in a way they do
-        not treat a finding -- so a repository could refuse to be scanned and
-        have that read as an infrastructure problem. `MAX_CONFIG_BYTES` did not
-        help: one space per level costs n^2/2 bytes for block nesting and one
-        byte per level for flow nesting, so hundreds of levels fit easily.
-        """
-        if depth > MAX_NESTING:
-            raise _YamlError(f"{source}:{number}: nested more than {MAX_NESTING} levels deep")
-
-    @staticmethod
-    def _parse_mapping(
-        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str, depth: int = 0
-    ) -> tuple[dict[str, Any], int]:
-        result: dict[str, Any] = {}
-        index = start
-        while index < len(lines):
-            line_indent, content, number = lines[index]
-            if line_indent < indent:
-                break
-            if line_indent > indent:
-                raise _YamlError(f"{source}:{number}: unexpected indentation")
-            if content.startswith("- "):
-                break
-
-            key, _, rest = content.partition(":")
-            if not _:
-                raise _YamlError(f"{source}:{number}: expected 'key: value'")
-            key = RestrictedYamlParser._unquote(key.strip())
-            if key in result:
-                # Last-win, silently, was a scanner-blinding primitive. A hostile
-                # config could put the benign value first, where a reviewer
-                # reads it, and the real one fifty lines further down:
-                #
-                #     scan:
-                #       exclude: []          # what the reviewer reads
-                #       ...
-                #       exclude: ["**/*"]    # what takes effect
-                #
-                # This parser already refuses a misspelled key for the same
-                # reason. A duplicate is the same failure in a better costume.
-                raise _YamlError(
-                    f"{source}:{number}: duplicate key {key!r}; "
-                    f"a later value would silently replace the earlier one"
-                )
-            rest = rest.strip()
-
-            if rest.startswith("#"):
-                rest = ""
-            if rest in {"|", ">", "|-", ">-"}:
-                value, index = RestrictedYamlParser._parse_block_scalar(
-                    lines, index + 1, indent, rest, source=source
-                )
-                result[key] = value
-                continue
-            if rest:
-                result[key] = RestrictedYamlParser._scalar(rest, number=number, source=source)
-                index += 1
-                continue
-
-            # Nested block: whatever is indented further than this key.
-            index += 1
-            if index < len(lines) and lines[index][0] > indent:
-                child_indent = lines[index][0]
-                value, index = RestrictedYamlParser._parse_block(
-                    lines, index, child_indent, source=source, depth=depth + 1
-                )
-                result[key] = value
-            elif (
-                index < len(lines)
-                and lines[index][0] == indent
-                and lines[index][1].startswith("- ")
-            ):
-                # A sequence at the same indentation as its key. Common and legal.
-                sequence, index = RestrictedYamlParser._parse_sequence(
-                    lines, index, indent, source=source, depth=depth + 1
-                )
-                result[key] = sequence
-            else:
-                result[key] = None
-        return result, index
-
-    @staticmethod
-    def _opens_inline_mapping(item: str) -> bool:
-        """Whether a sequence item begins an inline mapping.
-
-        The test used to be `":" in item`, and every URL is a sequence item
-        containing a colon. So every `references:` entry in every shipped rule
-        was parsed into a single-key dict and stringified, and the tool's own
-        output carried
-
-            refs  {'https': '//cwe.mitre.org/data/definitions/522.html'}
-
-        for the whole rule set -- in the terminal report and in SARIF `helpUri`
-        alike.
-
-        A mapping key is a bare word. Requiring the text before the first colon
-        to look like one, and requiring the colon to be followed by a space or
-        end of line, distinguishes `name: value` from `https://host/path`
-        without needing to know what a URL is.
-        """
-        if not item or item.startswith(("'", '"')):
-            return False
-        head, sep, rest = item.partition(":")
-        if not sep:
-            return False
-        if rest and not rest.startswith(" "):
-            # `https://...` and `10:30` -- a mapping always has a space after
-            # the colon, or nothing at all.
-            return False
-        return bool(head) and all(c.isalnum() or c in "_-." for c in head)
-
-    @staticmethod
-    def _parse_sequence(
-        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str, depth: int = 0
-    ) -> tuple[list[Any], int]:
-        result: list[Any] = []
-        index = start
-        while index < len(lines):
-            line_indent, content, number = lines[index]
-            if line_indent < indent or not content.startswith("- "):
-                break
-            if line_indent > indent:
-                raise _YamlError(f"{source}:{number}: unexpected indentation in sequence")
-
-            item = content[2:].strip()
-            if RestrictedYamlParser._opens_inline_mapping(item):
-                # An inline mapping opening a sequence item. Re-parse the item and
-                # any following lines indented past the dash as one mapping.
-                synthetic: list[tuple[int, str, int]] = [(indent + 2, item, number)]
-                index += 1
-                while index < len(lines) and lines[index][0] > indent:
-                    synthetic.append(lines[index])
-                    index += 1
-                value, consumed = RestrictedYamlParser._parse_mapping(
-                    synthetic, 0, indent + 2, source=source
-                )
-                if consumed != len(synthetic):
-                    raise _YamlError(f"{source}:{number}: could not parse sequence item")
-                result.append(value)
-                continue
-
-            result.append(RestrictedYamlParser._scalar(item, number=number, source=source))
-            index += 1
-        return result, index
-
-    @staticmethod
-    def _parse_block_scalar(
-        lines: list[tuple[int, str, int]], start: int, indent: int, style: str, *, source: str
-    ) -> tuple[str, int]:
-        """Parse a literal (``|``) or folded (``>``) block scalar.
-
-        Both chomping indicators are honoured, because they are not equivalent:
-        ``|`` clips to a single trailing newline while ``|-`` strips it entirely.
-        Collapsing them means a value silently differs from what the author wrote,
-        which for a security configuration is exactly the class of surprise this
-        parser exists to avoid.
-        """
-        parts: list[str] = []
-        index = start
-        while index < len(lines) and lines[index][0] > indent:
-            parts.append(lines[index][1])
-            index += 1
-
-        # Literal keeps line breaks; folded joins lines with a single space.
-        text = "\n".join(parts) if style.startswith("|") else " ".join(parts)
-
-        # Chomping: "-" strips the trailing newline, the default clips to one.
-        if style.endswith("-") or not text:
-            return text, index
-        return text + "\n", index
-
-    @staticmethod
-    def _scalar(text: str, *, number: int, source: str, depth: int = 0) -> Any:
-        # Flow collections nest too, and cost one byte per level rather than the
-        # n^2/2 of block indentation -- so `[[[[...]]]]` reaches the stack limit
-        # inside a document far below `MAX_CONFIG_BYTES`.
-        RestrictedYamlParser._check_depth(depth, source=source, number=number)
-        text = text.strip()
-
-        # Strip a trailing comment, but not one inside quotes.
-        if text and text[0] not in {"'", '"'}:
-            hash_at = text.find(" #")
-            if hash_at != -1:
-                text = text[:hash_at].strip()
-
-        if not text:
-            return None
-        if text.startswith(("'", '"')):
-            return RestrictedYamlParser._unquote(text)
-        if text.startswith("["):
-            if not text.endswith("]"):
-                raise _YamlError(f"{source}:{number}: unterminated flow sequence")
-            inner = text[1:-1].strip()
-            if not inner:
-                return []
-            return [
-                RestrictedYamlParser._scalar(p, number=number, source=source, depth=depth + 1)
-                for p in RestrictedYamlParser._split_flow(inner)
-            ]
-        if text.startswith("{"):
-            if not text.endswith("}"):
-                raise _YamlError(f"{source}:{number}: unterminated flow mapping")
-            inner = text[1:-1].strip()
-            if not inner:
-                return {}
-            mapping: dict[str, Any] = {}
-            for pair in RestrictedYamlParser._split_flow(inner):
-                k, sep, v = pair.partition(":")
-                if not sep:
-                    raise _YamlError(f"{source}:{number}: expected 'key: value' in flow mapping")
-                mapping[RestrictedYamlParser._unquote(k.strip())] = RestrictedYamlParser._scalar(
-                    v.strip(), number=number, source=source, depth=depth + 1
-                )
-            return mapping
-
-        lowered = text.lower()
-        if lowered in {"true", "yes", "on"}:
-            return True
-        if lowered in {"false", "no", "off"}:
-            return False
-        if lowered in {"null", "~"}:
-            return None
-        # NOTE: "none" is deliberately NOT a null literal. The YAML 1.2 core schema
-        # does not treat it as one, and `evidence: none` is a legitimate enum value
-        # in this configuration -- mapping it to null makes that setting unreachable
-        # while appearing to work.
-
-        # Anchors, aliases and type tags are deliberately unsupported. Each is a
-        # documented hazard in untrusted YAML, and a clear error beats a silent
-        # misparse of something a user believed was in effect.
-        if text[0] in {"&", "*", "!"}:
-            raise _YamlError(
-                f"{source}:{number}: YAML anchors, aliases and tags are not supported",
-                hint="Cordon parses a restricted YAML subset deliberately. Write the value inline.",
-            )
-
-        try:
-            return int(text)
-        except ValueError:
-            pass
-        try:
-            return float(text)
-        except ValueError:
-            pass
-        return text
-
-    @staticmethod
-    def _split_flow(text: str) -> list[str]:
-        """Split a flow collection on commas that are not inside quotes or brackets."""
-        parts: list[str] = []
-        depth = 0
-        quote: str | None = None
-        current: list[str] = []
-        for ch in text:
-            if quote:
-                current.append(ch)
-                if ch == quote:
-                    quote = None
-                continue
-            if ch in {"'", '"'}:
-                quote = ch
-                current.append(ch)
-            elif ch in "[{":
-                depth += 1
-                current.append(ch)
-            elif ch in "]}":
-                depth -= 1
-                current.append(ch)
-            elif ch == "," and depth == 0:
-                parts.append("".join(current).strip())
-                current = []
-            else:
-                current.append(ch)
-        if current:
-            parts.append("".join(current).strip())
-        return [p for p in parts if p]
-
-    @staticmethod
-    @staticmethod
-    def _unescape(body: str) -> str:
-        """Resolve double-quoted escapes in one pass."""
-        out: list[str] = []
-        index = 0
-        while index < len(body):
-            char = body[index]
-            if char == "\\" and index + 1 < len(body):
-                nxt = body[index + 1]
-                out.append({"n": "\n", "t": "\t", '"': '"', "\\": "\\"}.get(nxt, "\\" + nxt))
-                index += 2
-                continue
-            out.append(char)
-            index += 1
-        return "".join(out)
-
-    @staticmethod
-    def _unquote(text: str) -> str:
-        text = text.strip()
-        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
-            body = text[1:-1]
-            if text[0] == '"':
-                # Scanned once, left to right, rather than by three sequential
-                # replaces. The replace chain handled the backslash escape
-                # *last*, so `"\\n"` -- an escaped backslash followed by `n` --
-                # became a newline instead of a literal backslash-n. Cosmetic
-                # while values are patterns and severities; a correctness trap
-                # the moment a quoted value carries a Windows path.
-                return RestrictedYamlParser._unescape(body)
-            return body.replace("''", "'")
-        return text
-
-
-class _YamlError(ConfigError):
-    pass
-
-
-class ConfigParser:
-    """Reads a configuration mapping into domain objects, strictly.
-
-    Strictness is the whole point, and it is a security property rather than
-    pedantry. A parser that ignores what it does not understand is a
-    scanner-blinding primitive: `detectors:` misspelled as `detector:` silently
-    means "use every default", the author believes they turned something on,
-    and nothing anywhere says otherwise. Every unknown key is an error, and
-    every error carries a suggestion, because an error without a suggestion is
-    one people work around by deleting the setting.
-    """
-
-    @staticmethod
-    def _reject_unknown(data: Mapping[str, Any], allowed: frozenset[str], where: str) -> None:
-        """Strict key checking.
-
-        A configuration parser that ignores what it does not understand is a
-        scanner-blinding primitive: `detectors:` misspelled as `detector:` silently
-        means "use every default", and nothing anywhere reports that the setting was
-        discarded.
-        """
-        unknown = set(data) - allowed
-        if unknown:
-            names = ", ".join(sorted(unknown))
-            near = ConfigParser._suggest(next(iter(sorted(unknown))), allowed)
-            hint = f"Did you mean {near!r}?" if near else None
-            raise ConfigError(f"unknown key(s) in {where}: {names}", hint=hint)
-
-    @staticmethod
-    def _suggest(word: str, options: frozenset[str]) -> str | None:
-        """Cheapest useful typo suggestion: shared-prefix, then edit distance 1-2."""
-        best: tuple[int, str] | None = None
-        for option in options:
-            distance = ConfigParser._edit_distance(word, option)
-            if distance <= 2 and (best is None or distance < best[0]):
-                best = (distance, option)
-        return best[1] if best else None
-
-    @staticmethod
-    def _edit_distance(a: str, b: str) -> int:
-        if abs(len(a) - len(b)) > 2:
-            return 99
-        previous = list(range(len(b) + 1))
-        for i, ca in enumerate(a, 1):
-            current = [i]
-            for j, cb in enumerate(b, 1):
-                current.append(
-                    min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb))
-                )
-            previous = current
-        return previous[-1]
-
-    @staticmethod
-    def _spans_tree(pattern: str) -> bool:
-        """Whether a path pattern reaches across the whole tree rather than naming a place."""
-        stripped = pattern.strip().lstrip("./")
-        if not stripped or "**" in stripped:
-            return True
-        first = stripped.split("/", 1)[0]
-        return "*" in first or "?" in first
-
-    @staticmethod
-    def _as_str_tuple(value: Any, where: str) -> tuple[str, ...]:
-        if value is None:
-            return ()
-        if isinstance(value, str):
-            raise ConfigError(
-                f"{where} must be a list, not a string",
-                hint=f"Write:\n  {where}:\n    - {value}",
-            )
-        if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
-            raise ConfigError(f"{where} must be a list of strings")
-        return tuple(value)
-
-    @staticmethod
-    def _parse_config(data: Mapping[str, Any], *, source: str, layer: str) -> Config:
-        if not isinstance(data, dict):
-            raise ConfigError(f"{source}: top level must be a mapping")
-
-        ConfigParser._reject_unknown(data, _TOP_LEVEL_KEYS, source)
-
-        version = data.get("version", CONFIG_VERSION)
-        if version != CONFIG_VERSION:
-            raise ConfigError(
-                f"{source}: unsupported config version {version!r}",
-                hint=f"This build understands version {CONFIG_VERSION}.",
-            )
-
-        provenance: list[Provenance] = []
-
-        def record(key: str, value: Any) -> Any:
-            provenance.append(Provenance(key, value, layer, source))
-            return value
-
-        scan = data.get("scan") or {}
-        if not isinstance(scan, dict):
-            raise ConfigError(f"{source}: `scan` must be a mapping")
-        ConfigParser._reject_unknown(scan, _SCAN_KEYS, f"{source}: scan")
-
-        try:
-            severity = Severity.parse(scan.get("severity_threshold", "low"))
-            confidence = Confidence.parse(scan.get("confidence_threshold", "low"))
-        except ValueError as exc:
-            raise ConfigError(f"{source}: {exc}") from exc
-
-        detectors_raw = scan.get("detectors") or {}
-        if not isinstance(detectors_raw, dict) or not all(
-            isinstance(v, bool) for v in detectors_raw.values()
-        ):
-            raise ConfigError(f"{source}: scan.detectors must map detector ids to booleans")
-        # a detector named by the ID it had before a rename is the detector it became
-        detectors_raw = {Renamed.detector(k): v for k, v in detectors_raw.items()}
-
-        limits_raw = scan.get("limits") or {}
-        if not isinstance(limits_raw, dict):
-            raise ConfigError(f"{source}: scan.limits must be a mapping")
-        explicit_limits = frozenset(limits_raw)
-        try:
-            limits = DEFAULT_LIMITS.merged(**limits_raw) if limits_raw else DEFAULT_LIMITS
-            Limits.from_dict({**DEFAULT_LIMITS.to_dict(), **limits_raw})  # key validation
-        except (ValueError, TypeError) as exc:
-            raise ConfigError(f"{source}: scan.limits: {exc}") from exc
-
-        evidence_raw = data.get("evidence", "masked")
-        try:
-            evidence = RedactionMode(evidence_raw)
-        except ValueError:
-            valid = ", ".join(m.value for m in RedactionMode)
-            raise ConfigError(
-                f"{source}: evidence must be one of: {valid}", hint=f"got {evidence_raw!r}"
-            ) from None
-
-        policy = ConfigParser._parse_policy(data.get("policy") or {}, source=source)
-        suppressions = ConfigParser._parse_suppressions(
-            data.get("suppressions") or [], source=source
-        )
-
-        rules = data.get("rules") or {}
-        if not isinstance(rules, dict):
-            raise ConfigError(f"{source}: `rules` must be a mapping")
-        ConfigParser._reject_unknown(rules, _RULES_KEYS, f"{source}: rules")
-        packs = ConfigParser._as_str_tuple(rules.get("packs"), f"{source}: rules.packs") or (
-            "cordon-builtin",
-        )
-        extra = ConfigParser._as_str_tuple(rules.get("extra"), f"{source}: rules.extra")
-        disabled = ConfigParser._as_str_tuple(rules.get("disabled"), f"{source}: rules.disabled")
-
-        record("scan.severity_threshold", str(severity))
-        record("scan.confidence_threshold", str(confidence))
-        record("evidence", str(evidence))
-        record("scan.offline", bool(scan.get("offline", True)))
-
-        return Config(
-            version=CONFIG_VERSION,
-            severity_threshold=severity,
-            confidence_threshold=confidence,
-            detectors=dict(detectors_raw),
-            exclude=ConfigParser._as_str_tuple(scan.get("exclude"), f"{source}: scan.exclude"),
-            include=ConfigParser._as_str_tuple(scan.get("include"), f"{source}: scan.include"),
-            minified=ConfigParser._as_str_tuple(scan.get("minified"), f"{source}: scan.minified"),
-            limits=limits,
-            explicit_limits=explicit_limits,
-            policy=policy,
-            suppressions=suppressions,
-            evidence=evidence,
-            offline=bool(scan.get("offline", True)),
-            reachability=bool(scan.get("reachability", False)),
-            expand_archives=bool(scan.get("expand_archives", True)),
-            intel_feed=bool(scan.get("intel_feed", True)),
-            max_intel_age=ConfigParser._max_intel_age(scan.get("max_intel_age"), source),
-            allow_plugins=bool(scan.get("allow_plugins", False)),
-            rule_packs=packs,
-            extra_rule_paths=extra,
-            disabled_rules=frozenset(disabled),
-            internal_namespaces=ConfigParser._as_str_tuple(
-                scan.get("internal_namespaces"), f"{source}: scan.internal_namespaces"
-            ),
-            allowed_action_owners=ConfigParser._as_str_tuple(
-                scan.get("allowed_action_owners"), f"{source}: scan.allowed_action_owners"
-            ),
-            profile=str(scan.get("profile", "balanced")),
-            provenance=tuple(provenance),
-        )
-
-    @staticmethod
-    def _max_intel_age(raw: Any, source: str) -> int | None:
-        if raw is None:
-            return None
-        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
-            raise ConfigError(
-                f"{source}: scan.max_intel_age must be a whole number of seconds >= 0"
-            )
-        return raw
-
-    @staticmethod
-    def _parse_policy(raw: Any, *, source: str) -> Policy:
-        if not isinstance(raw, dict):
-            raise ConfigError(f"{source}: `policy` must be a mapping")
-        ConfigParser._reject_unknown(raw, _POLICY_KEYS, f"{source}: policy")
-
-        fail_on = raw.get("fail_on")
-        severity: Severity | None = Severity.HIGH
-        categories: set[Category] = {Category.MALICIOUS}
-
-        if fail_on is not None:
-            if not isinstance(fail_on, list):
-                raise ConfigError(f"{source}: policy.fail_on must be a list")
-            if not fail_on:
-                # Refused from every layer, operator input included. "Fail on
-                # nothing" is not a setting anybody means: it produces a scan
-                # that reports findings and exits 0, which is a scan whose
-                # verdict has been deleted while its output still looks like a
-                # verdict. Somebody who wants that writes `--fail-on` never, or
-                # ignores the exit code; they do not write an empty list.
-                raise ConfigError(
-                    f"{source}: policy.fail_on is empty, which would fail on nothing",
-                    hint=(
-                        "Omit the key to keep the default gate, or list the severities "
-                        "and categories that should fail the build."
-                    ),
-                )
-            severity = None
-            categories = set()
-            for entry in fail_on:
-                if isinstance(entry, str):
-                    try:
-                        level = Severity.parse(entry)
-                    except ValueError as exc:
-                        raise ConfigError(f"{source}: policy.fail_on: {exc}") from exc
-                    severity = level if severity is None else min(severity, level)
-                elif isinstance(entry, dict) and set(entry) == {"category"}:
-                    try:
-                        categories.add(Category(entry["category"]))
-                    except ValueError:
-                        valid = ", ".join(c.value for c in Category)
-                        raise ConfigError(
-                            f"{source}: policy.fail_on: unknown category {entry['category']!r}; "
-                            f"expected one of: {valid}"
-                        ) from None
-                else:
-                    raise ConfigError(
-                        f"{source}: policy.fail_on entries must be a severity name "
-                        f"or {{category: <name>}}, got {entry!r}"
-                    )
-
-        min_conf = Confidence.MEDIUM
-        if "min_confidence_to_fail" in raw:
-            try:
-                min_conf = Confidence.parse(raw["min_confidence_to_fail"])
-            except ValueError as exc:
-                raise ConfigError(f"{source}: policy: {exc}") from exc
-
-        advisory = DEFAULT_ADVISORY_DOMAINS
-        if "advisory_domains" in raw:
-            entries = raw["advisory_domains"]
-            if not isinstance(entries, list):
-                raise ConfigError(f"{source}: policy.advisory_domains must be a list")
-            names = []
-            for entry in entries:
-                try:
-                    names.append(ThreatDomain(str(entry)))
-                except ValueError:
-                    valid = ", ".join(sorted(str(d) for d in ThreatDomain))
-                    raise ConfigError(
-                        f"{source}: policy.advisory_domains: unknown domain {entry!r}; "
-                        f"expected one of: {valid}"
-                    ) from None
-            advisory = frozenset(names)
-
-        drift = DEFAULT_MAX_MAJOR_DRIFT
-        if "max_major_drift" in raw:
-            value = raw["max_major_drift"]
-            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-                raise ConfigError(
-                    f"{source}: policy.max_major_drift must be an integer of 1 or more"
-                )
-            drift = value
-
-        packages = raw.get("packages") or {}
-        if not isinstance(packages, dict):
-            raise ConfigError(f"{source}: policy.packages must be a mapping")
-        ConfigParser._reject_unknown(packages, _PACKAGE_LIST_KEYS, f"{source}: policy.packages")
-        licenses = raw.get("licenses") or {}
-        if not isinstance(licenses, dict):
-            raise ConfigError(f"{source}: policy.licenses must be a mapping")
-        ConfigParser._reject_unknown(licenses, _LICENSE_LIST_KEYS, f"{source}: policy.licenses")
-        unknown = str(licenses.get("unknown", "allow"))
-        if unknown not in LICENSE_UNKNOWN_ORDER:
-            raise ConfigError(
-                f"{source}: policy.licenses.unknown must be one of: {', '.join(LICENSE_UNKNOWN_ORDER)}",
-                hint=f"got {unknown!r}",
-            )
-
-        accepted: frozenset[str] | None = None
-        if "accept_no_feed" in raw:
-            from cordon_scanner.foundation.dependencies import ECOSYSTEM_IDS
-
-            ecosystems = ConfigParser._as_str_tuple(
-                raw["accept_no_feed"], f"{source}: policy.accept_no_feed"
-            )
-            known = ECOSYSTEM_IDS
-            unknown_names = [n for n in ecosystems if n not in known]
-            if unknown_names:
-                raise ConfigError(
-                    f"{source}: policy.accept_no_feed names no ecosystem Cordon reads: "
-                    f"{', '.join(unknown_names)}",
-                    hint=f"one of: {', '.join(sorted(known))}",
-                )
-            accepted = frozenset(ecosystems)
-        return Policy(
-            fail_on_severity=severity,
-            fail_on_categories=frozenset(categories),
-            fail_on_incomplete=bool(raw.get("fail_on_incomplete", False)),
-            min_confidence_to_fail=min_conf,
-            advisory_domains=advisory,
-            hardening=bool(raw.get("hardening", False)),
-            max_major_drift=drift,
-            accept_no_feed=accepted,
-            package_deny=ConfigParser._as_str_tuple(
-                packages.get("deny"), f"{source}: policy.packages.deny"
-            ),
-            package_allow=ConfigParser._as_str_tuple(
-                packages.get("allow"), f"{source}: policy.packages.allow"
-            ),
-            license_deny=ConfigParser._as_str_tuple(
-                licenses.get("deny"), f"{source}: policy.licenses.deny"
-            ),
-            license_allow=ConfigParser._as_str_tuple(
-                licenses.get("allow"), f"{source}: policy.licenses.allow"
-            ),
-            license_unknown=unknown,
-        )
-
-    @staticmethod
-    def _parse_suppressions(raw: Any, *, source: str) -> tuple[Suppression, ...]:
-        """Parse and validate suppressions.
-
-        Validation is strict here rather than at apply time, so a malformed
-        suppression fails the configuration instead of silently suppressing nothing
-        (or, worse, silently suppressing everything).
-        """
-        if not isinstance(raw, list):
-            raise ConfigError(f"{source}: `suppressions` must be a list")
-
-        out: list[Suppression] = []
-        for index, entry in enumerate(raw):
-            where = f"{source}: suppressions[{index}]"
-            if not isinstance(entry, dict):
-                raise ConfigError(f"{where} must be a mapping")
-            ConfigParser._reject_unknown(entry, _SUPPRESSION_KEYS, where)
-
-            for required in ("rule", "path", "justification", "expires"):
-                if not entry.get(required):
-                    raise ConfigError(
-                        f"{where}: `{required}` is required",
-                        hint=(
-                            "Every suppression must name a rule AND a path, and must carry a "
-                            "justification and an expiry date. A suppression naming only one of "
-                            "rule or path disables far more than intended, and one that never "
-                            "expires outlives everyone who understood it."
-                        ),
-                    )
-
-            justification = str(entry["justification"]).strip()
-            if len(justification) < MIN_JUSTIFICATION_CHARS:
-                raise ConfigError(
-                    f"{where}: justification must be at least {MIN_JUSTIFICATION_CHARS} characters",
-                    hint="Record why this is safe here, not that somebody decided it was.",
-                )
-
-            expires = str(entry["expires"])
-            if not _ISO_DATE.match(expires):
-                raise ConfigError(f"{where}: expires must be an ISO date (YYYY-MM-DD)")
-            try:
-                date.fromisoformat(expires)
-            except ValueError as exc:
-                raise ConfigError(f"{where}: invalid date {expires!r}") from exc
-
-            out.append(
-                Suppression(
-                    rule=str(entry["rule"]),
-                    path=str(entry["path"]),
-                    justification=justification,
-                    expires=expires,
-                    approved_by=str(entry["approved_by"]) if entry.get("approved_by") else None,
-                )
-            )
-        return tuple(out)
-
-    @staticmethod
-    def _suppression_violation(s: Suppression, c: OrgConstraints) -> str | None:
-        """Check one suppression against the organisation ceiling."""
-        if c.require_justification and len(s.justification.strip()) < MIN_JUSTIFICATION_CHARS:
-            return "justification is too short"
-        if c.require_approver and not s.approved_by:
-            return "organisation policy requires an approver"
-        if c.forbid_path_only_suppressions and (not s.rule or s.rule == "*"):
-            return "wildcard rule suppressions are forbidden; name the specific rule"
-        if c.forbid_path_only_suppressions:
-            # The check tested only the rule half. `{rule: SUSPECT.PERSIST.001,
-            # path: "*"}` therefore disabled that rule across the whole
-            # repository -- and suppression path matching used fnmatchcase,
-            # whose `*` crosses `/`, so a single character did it. That is
-            # precisely the failure the rule-and-path pair exists to prevent.
-            #
-            # Listing the exact strings was not enough either: `*.js` reads as
-            # specific and, under fnmatch, was not. Matching is now
-            # path-aware, and any pattern that can still reach arbitrary depth
-            # is refused, because a suppression that spans directories is a
-            # rule-level exception wearing a path.
-            stripped = s.path.strip()
-            if not stripped or stripped in {"*", "**", "**/*", "/"}:
-                return "wildcard path suppressions are forbidden; name the specific path"
-            if "**" in stripped:
-                return (
-                    "a suppression path may not use `**`; it spans directories, which "
-                    "makes the exception rule-wide rather than path-specific"
-                )
-        try:
-            expires = date.fromisoformat(s.expires)
-        except ValueError:
-            return "expiry is not a valid date"
-        horizon = (expires - date.today()).days
-        if horizon > c.max_suppression_days:
-            return (
-                f"expiry is {horizon} days away, exceeding the maximum of {c.max_suppression_days}"
-            )
-        return None
-
-    @staticmethod
-    def _stricter_policy(a: Policy, b: Policy) -> Policy:
-        """Merge two failure policies, keeping the stricter of each field."""
-        if a.fail_on_severity is None:
-            severity = b.fail_on_severity
-        elif b.fail_on_severity is None:
-            severity = a.fail_on_severity
-        else:
-            severity = min(a.fail_on_severity, b.fail_on_severity)
-        return Policy(
-            fail_on_severity=severity,
-            fail_on_categories=a.fail_on_categories | b.fail_on_categories,
-            fail_on_incomplete=a.fail_on_incomplete or b.fail_on_incomplete,
-            min_confidence_to_fail=min(a.min_confidence_to_fail, b.min_confidence_to_fail),
-            # Intersection, because merging two policies must never end weaker
-            # than either. A domain is advisory only if BOTH sides say so; an
-            # organisation policy that blocks on infrastructure is not undone by
-            # a repository's own file leaving the default in place.
-            advisory_domains=a.advisory_domains & b.advisory_domains,
-            # Either side asking for the hardening tier at full severity gets it: reporting more
-            # is the stricter choice.
-            hardening=a.hardening or b.hardening,
-            # The tighter of the two, for the same reason: merging must never
-            # end weaker than either side asked for.
-            max_major_drift=min(a.max_major_drift, b.max_major_drift),
-            # Unsaid on one side, the other side's; said on both, only what both accept.
-            accept_no_feed=(
-                b.accept_no_feed
-                if a.accept_no_feed is None
-                else a.accept_no_feed
-                if b.accept_no_feed is None
-                else a.accept_no_feed & b.accept_no_feed
-            ),
-            # Deny lists add up; allow lists narrow (an empty one allows everything, so the other
-            # side's applies); unknown licences take the stricter handling. A repository's own file
-            # cannot loosen what the organisation set.
-            package_deny=tuple(dict.fromkeys((*a.package_deny, *b.package_deny))),
-            package_allow=ConfigParser._narrower(a.package_allow, b.package_allow),
-            license_deny=tuple(dict.fromkeys((*a.license_deny, *b.license_deny))),
-            license_allow=ConfigParser._narrower(a.license_allow, b.license_allow),
-            license_unknown=max(
-                a.license_unknown, b.license_unknown, key=LICENSE_UNKNOWN_ORDER.index
-            ),
-        )
-
-    @staticmethod
-    def _narrower(a: tuple[str, ...], b: tuple[str, ...]) -> tuple[str, ...]:
-        if not a:
-            return b
-        if not b:
-            return a
-        return tuple(x for x in a if x in set(b))
 
     # ---------------------------------------------------------------------------
     # YAML subset parser
@@ -2104,253 +1203,12 @@ class ConfigParser:
     # unsupported construct is a clear error rather than a silent misparse.
 
 
-class ConfigResolver:
-    """Assembles the effective configuration from all four layers.
-
-    Order is defaults, organisation policy, repository file, command line, and
-    it is not adjustable. The organisation layer is a ceiling rather than
-    another set of values: later layers may make a setting stricter and may not
-    relax one, so a repository cannot lower a threshold its organisation set.
-
-    The repository layer is the one that needs care, because it comes from
-    inside the scan target and the scan target is untrusted. Powers that a
-    configuration file could turn against the machine running the scan -- rule
-    packs, resource limits -- are withheld from that layer and reported as
-    withheld.
-    """
-
-    # ---------------------------------------------------------------------------
-    # Organisation policy loading
-    # ---------------------------------------------------------------------------
-
-    _ORG_TOP_KEYS = frozenset(
-        {
-            "version",
-            "name",
-            "issued",
-            "issuer",
-            "enforce",
-            "suppressions",
-            "scoring",
-            "fail_on",
-            "scan",
-            "evidence",
-            "rules",
-            "policy",
-        }
-    )
-    _ENFORCE_KEYS = frozenset(
-        {
-            "detectors_required",
-            "min_severity_threshold",
-            "min_confidence_threshold",
-            "allow_network",
-            "allow_plugins",
-            "allow_extra_rule_packs",
-            "allow_limit_increase",
-            "max_total_timeout",
-        }
-    )
-    _ORG_SUPPRESSION_KEYS = frozenset(
-        {
-            "max_duration_days",
-            "require_justification",
-            "require_approver",
-            "forbid_categories",
-            "forbid_path_only",
-        }
-    )
-
-    @classmethod
-    def load_org_policy(
-        cls,
-        path: str | Path,
-        *,
-        allow_network: bool = False,
-        cache_dir: Path | None = None,
-    ) -> tuple[Config, OrgConstraints]:
-        """Load an organisation policy: its settings and its constraints.
-
-        Returns the policy's own configuration (used as the upper layer in the merge)
-        and the constraints it imposes on repository configurations.
-
-        A URL is accepted and resolved to a verified local file first. It must
-        carry a `#sha256=` digest, because this document is the ceiling -- the
-        thing that says a repository may not disable a detector or suppress a
-        category -- and fetching it over an unauthenticated channel would let
-        whoever controls the network switch the control off across every
-        repository at once.
-        """
-        source = str(path)
-        if not PolicyDistribution.is_remote(source) and "#sha256=" in source:
-            path = PolicyDistribution.verify_local(source)
-        elif PolicyDistribution.is_remote(source):
-            path = PolicyDistribution.resolve(
-                source,
-                allow_network=allow_network,
-                cache_dir=cache_dir or StatePaths.default_cache_dir(),
-            )
-
-        p = Path(path)
-        if not p.is_file():
-            raise ConfigError(f"organisation policy not found: {p}")
-        data = RestrictedYamlParser._load_yaml_subset(Config.read_bounded(p), source=str(p))
-        ConfigParser._reject_unknown(data, cls._ORG_TOP_KEYS, str(p))
-
-        enforce = data.get("enforce") or {}
-        if not isinstance(enforce, dict):
-            raise ConfigError(f"{p}: `enforce` must be a mapping")
-        ConfigParser._reject_unknown(enforce, cls._ENFORCE_KEYS, f"{p}: enforce")
-
-        sup = data.get("suppressions") or {}
-        if not isinstance(sup, dict):
-            raise ConfigError(
-                f"{p}: in an organisation policy, `suppressions` is a mapping of constraints, "
-                "not a list of suppressions"
-            )
-        ConfigParser._reject_unknown(sup, cls._ORG_SUPPRESSION_KEYS, f"{p}: suppressions")
-
-        forbid_raw = sup.get("forbid_categories", ["malicious"])
-        try:
-            forbid = frozenset(Category(c) for c in forbid_raw)
-        except ValueError as exc:
-            raise ConfigError(f"{p}: suppressions.forbid_categories: {exc}") from exc
-
-        constraints = OrgConstraints(
-            detectors_required=frozenset(
-                ConfigParser._as_str_tuple(
-                    enforce.get("detectors_required"), f"{p}: enforce.detectors_required"
-                )
-            ),
-            min_severity_threshold=(
-                Severity.parse(enforce["min_severity_threshold"])
-                if "min_severity_threshold" in enforce
-                else None
-            ),
-            min_confidence_threshold=(
-                Confidence.parse(enforce["min_confidence_threshold"])
-                if "min_confidence_threshold" in enforce
-                else None
-            ),
-            allow_network=bool(enforce.get("allow_network", True)),
-            allow_plugins=bool(enforce.get("allow_plugins", False)),
-            allow_extra_rule_packs=bool(enforce.get("allow_extra_rule_packs", True)),
-            allow_limit_increase=bool(enforce.get("allow_limit_increase", False)),
-            # Read, at last. `max_total_timeout` was in `_ENFORCE_KEYS`, so the
-            # strict key validator accepted it, and `OrgConstraints` was built
-            # without it -- leaving the field `None`, so the block that would
-            # apply it never ran. An organisation believed a ceiling was in
-            # force and the 900s default applied. The module's own docstring
-            # names this failure: "the same failure in a different costume".
-            max_total_timeout=(
-                float(enforce["max_total_timeout"])
-                if enforce.get("max_total_timeout") is not None
-                else None
-            ),
-            max_suppression_days=int(sup.get("max_duration_days", MAX_SUPPRESSION_DAYS)),
-            require_justification=bool(sup.get("require_justification", True)),
-            require_approver=bool(sup.get("require_approver", False)),
-            forbid_path_only_suppressions=bool(sup.get("forbid_path_only", True)),
-            forbid_suppressing=forbid,
-        )
-
-        # The policy's own scan settings form the upper configuration layer.
-        body = {k: v for k, v in data.items() if k in _TOP_LEVEL_KEYS and k != "suppressions"}
-        body.setdefault("version", CONFIG_VERSION)
-        org_config = ConfigParser._parse_config(body, source=str(p), layer=Layer.ORG)
-
-        if constraints.max_total_timeout is not None:
-            org_config = replace(
-                org_config,
-                limits=org_config.limits.merged(total_timeout=constraints.max_total_timeout),
-            )
-
-        return org_config, constraints
-
-    @staticmethod
-    def resolve(
-        *,
-        root: str | Path = ".",
-        config_path: str | Path | None = None,
-        policy_path: str | Path | None = None,
-        allow_network: bool = False,
-        **cli_overrides: Any,
-    ) -> Config:
-        """Build the effective configuration from all four layers.
-
-        This is the only supported way to assemble a Config for a scan. Constructing
-        one directly skips the ceiling enforcement, which is why the CLI and the SDK
-        both route through here.
-        """
-        # An explicitly passed --config is operator input and is trusted. A config
-        # discovered inside the scan target is not: it is part of the untrusted
-        # input, and two of its powers are withheld accordingly.
-        if config_path:
-            repo = Config.from_file(config_path)
-        else:
-            repo = Config.discover(root)
-            if repo != Config.default():
-                repo = repo._withhold_untrusted_powers()
-
-        # An explicit --policy wins over the environment. An attacker who can
-        # set variables in a build -- a `.env` sourced by a Makefile, an `env:`
-        # block in a workflow, a compromised shell profile -- could otherwise
-        # point CORDON_POLICY at a crafted file and break every build, or aim it
-        # at an unrelated file to have its parse error name that file's keys.
-        from_environment = policy_path is None
-        policy_source = policy_path or os.environ.get("CORDON_POLICY")
-        if policy_source:
-            org_config, constraints = ConfigResolver.load_org_policy(
-                policy_source,
-                # A policy URL is fetched only when network access was asked
-                # for. A tool that reaches out because an argument happened to
-                # begin with `https://` has network behaviour nobody can audit.
-                allow_network=allow_network,
-            )
-            repo = repo.clamped_by(org_config, constraints)
-            if from_environment:
-                # Recorded so the report says where the policy came from. A
-                # ceiling nobody can see the origin of is one nobody can audit.
-                repo = replace(
-                    repo,
-                    provenance=(
-                        *repo.provenance,
-                        Provenance(
-                            key="policy",
-                            value=str(policy_source),
-                            source="$CORDON_POLICY",
-                            layer=Layer.ORG,
-                        ),
-                    ),
-                )
-        elif repo.from_untrusted_source:
-            # The default ceiling still applies. `_suppression_violation` was
-            # reachable only through `clamped_by`, which runs only when a policy
-            # file is configured -- so with no policy, and that is almost every
-            # repository, `OrgConstraints.permissive()` sat on the config and
-            # was never consulted. A repository could write `expires:
-            # 9999-12-31` with a forty-character justification and suppress a
-            # finding about itself forever, and MAX_SUPPRESSION_DAYS had no
-            # effect at all.
-            #
-            # Only the suppression rules are enforced here, and only for a
-            # configuration that came from inside the scan target. The other
-            # constraints (required detectors, minimum thresholds) express an
-            # organisation's intent and have no meaning without an organisation.
-            repo._check_suppressions(OrgConstraints.permissive())
-
-        return repo.with_overrides(**cli_overrides)
-
-
 __all__ = [
     "CONFIG_FILENAMES",
     "CONFIG_VERSION",
     "Config",
-    "ConfigParser",
-    "ConfigResolver",
     "Layer",
     "OrgConstraints",
     "Policy",
     "Provenance",
-    "RestrictedYamlParser",
 ]

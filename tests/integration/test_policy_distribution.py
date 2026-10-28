@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.foundation.config import ConfigResolver
+from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.distribution import MAX_POLICY_BYTES, PolicyDistribution
 from cordon_scanner.foundation.errors import ConfigError
 

@@ -826,7 +826,7 @@ class CommandLine:
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import PolicyGate
         from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
         from cordon_scanner.foundation.models import RedactionMode
         from cordon_scanner.report.base import ReportOptions
         from cordon_scanner.sources.package import PackageTarget
@@ -1155,7 +1155,7 @@ class CommandLine:
     @staticmethod
     def _with_cloud_suppressions(config: Any, suppressions: tuple[Any, ...]) -> Any:
         """Add the organisation's approved suppressions, held to the same rules as any other."""
-        from cordon_scanner.foundation.config import ConfigParser
+        from cordon_scanner.foundation.config_parser import ConfigParser
 
         problems = [
             f"{s.rule} at {s.path}: {problem}"
@@ -1781,7 +1781,7 @@ class CommandLine:
         """
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import Baseline
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
 
         target = Path(args.target)
         if not target.exists():

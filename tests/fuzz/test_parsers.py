@@ -34,9 +34,10 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.foundation.config import Config, ConfigError, RestrictedYamlParser
+from cordon_scanner.foundation.config import Config, ConfigError
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import CordonError, RulePackError
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.rules.loader import RuleLoader
 
 pytestmark = pytest.mark.fuzz

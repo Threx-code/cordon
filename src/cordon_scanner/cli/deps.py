@@ -134,7 +134,7 @@ class DepsCommand:
     @staticmethod
     def run(args: argparse.Namespace) -> int:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
 
         target = Path(args.target)
         if not target.exists():

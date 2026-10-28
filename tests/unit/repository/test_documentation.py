@@ -410,7 +410,7 @@ class TestConfigurationFilename:
     def test_a_documented_config_is_actually_discovered(self, tmp_path) -> None:
         """The end-to-end form. The names agreeing is not the same as discovery
         working."""
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
 
         (tmp_path / "cordon.yaml").write_text(
             "scan:\n  severity_threshold: critical\n", encoding="utf-8"

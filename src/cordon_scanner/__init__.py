@@ -41,7 +41,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.decide.policy import Baseline, PolicyGate, Verdict
-from cordon_scanner.foundation.config import Config, ConfigResolver, OrgConstraints, Policy
+from cordon_scanner.foundation.config import Config, OrgConstraints, Policy
+from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.errors import (
     ConfigError,
     CordonError,

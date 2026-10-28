@@ -29,8 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.foundation.config import RestrictedYamlParser
 from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import (
     Capability,
     Category,

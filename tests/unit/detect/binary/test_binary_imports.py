@@ -467,7 +467,7 @@ class TestRuleFile(RuleFileFixtures):
         (tmp_path / "cordon.yaml").write_text(
             "version: 1\nrule_file: /tmp/rules.yar\n", encoding="utf-8"
         )
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
         from cordon_scanner.foundation.errors import ConfigError
 
         with pytest.raises(ConfigError):
@@ -510,7 +510,7 @@ class TestRenamedNames:
         assert new.fingerprint == old.fingerprint
 
     def test_an_old_detector_id_in_a_config_names_the_new_detector(self, tmp_path) -> None:
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
 
         (tmp_path / "cordon.yaml").write_text(
             "version: 1\nscan:\n  detectors:\n    yara: false\n", encoding="utf-8"

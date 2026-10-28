@@ -6,7 +6,8 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.walker import Walker
-from cordon_scanner.foundation.config import Config, ConfigResolver
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ConfigError, CordonError
 from cordon_scanner.foundation.limits import Limits

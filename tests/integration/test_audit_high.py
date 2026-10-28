@@ -15,9 +15,11 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config, ConfigResolver, RestrictedYamlParser
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 
 PAYLOAD = 'eval(atob("cGF5bG9hZA=="))\n'
 

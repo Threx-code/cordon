@@ -43,7 +43,7 @@ class RulesCommand:
     def run(cls, args: argparse.Namespace) -> int:
         from cordon_scanner.detect.catalogue import RuleCatalogue
         from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         packs = RuleLoader.load_builtin()

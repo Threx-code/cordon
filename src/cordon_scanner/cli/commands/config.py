@@ -38,14 +38,15 @@ class ConfigCommand:
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        from cordon_scanner.foundation.config import Config, ConfigResolver
+        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config_resolver import ConfigResolver
 
         action = args.config_command or "validate"
 
         if action == "validate":
             config = Config.from_file(args.path) if args.path else Config.discover(".")
             if args.policy:
-                from cordon_scanner.foundation.config import ConfigResolver
+                from cordon_scanner.foundation.config_resolver import ConfigResolver
 
                 org, constraints = ConfigResolver.load_org_policy(args.policy)
                 config.clamped_by(org, constraints)

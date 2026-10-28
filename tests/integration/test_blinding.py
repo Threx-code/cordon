@@ -28,7 +28,8 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.decide.policy import PolicyGate
-from cordon_scanner.foundation.config import Config, ConfigResolver, OrgConstraints, Policy
+from cordon_scanner.foundation.config import Config, OrgConstraints, Policy
+from cordon_scanner.foundation.config_resolver import ConfigResolver
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 

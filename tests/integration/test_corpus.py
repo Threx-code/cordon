@@ -23,7 +23,8 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config, RestrictedYamlParser
+from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Severity
 from support import requires_corpus, requires_malicious_corpus
 

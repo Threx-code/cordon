@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config, ConfigParser, Policy
+from cordon_scanner.foundation.config import Config, Policy
+from cordon_scanner.foundation.config_parser import ConfigParser
 from cordon_scanner.foundation.models import Severity
 
 WORKFLOW = (
