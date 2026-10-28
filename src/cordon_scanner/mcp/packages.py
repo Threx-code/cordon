@@ -135,6 +135,13 @@ class PackageSpec:
 class Lockfiles:
     """The files a project depending on these packages would hold."""
 
+    JSON_LOCKFILES: ClassVar[frozenset[str]] = frozenset(
+        {"npm", "nuget", "composer", "cran", "swift"}
+    )
+    TEXT_LOCKFILES: ClassVar[frozenset[str]] = frozenset(
+        {"pypi", "cargo", "gomod", "maven", "rubygems", "pub", "hex"}
+    )
+
     @staticmethod
     def write(specs: list[PackageSpec]) -> dict[str, str]:
         """`{relative path: content}` -- one subdirectory per ecosystem, so two ecosystems' lockfiles
@@ -156,6 +163,15 @@ class Lockfiles:
 
     @staticmethod
     def _pinned(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
+        if eco in Lockfiles.JSON_LOCKFILES:
+            return Lockfiles._pinned_json(eco, specs)
+        if eco in Lockfiles.TEXT_LOCKFILES:
+            return Lockfiles._pinned_text(eco, specs)
+        raise PackageError(f"unsupported ecosystem {eco!r}")
+
+    @staticmethod
+    def _pinned_json(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
+        """The lockfiles written as JSON."""
         if eco == "npm":
             packages: dict[str, object] = {
                 "": {"name": "cordon-check", "dependencies": {s.name: s.version for s in specs}}
@@ -172,6 +188,50 @@ class Lockfiles:
                     }
                 )
             }
+        if eco == "nuget":
+            locked = {
+                s.name: {"type": "Direct", "requested": f"[{s.version}, )", "resolved": s.version}
+                for s in specs
+            }
+            return {
+                "packages.lock.json": json.dumps({"version": 1, "dependencies": {"net8.0": locked}})
+            }
+        if eco == "composer":
+            return {
+                "composer.lock": json.dumps(
+                    {
+                        "packages": [{"name": s.name, "version": s.version} for s in specs],
+                        "packages-dev": [],
+                    }
+                )
+            }
+        if eco == "cran":
+            packages_r = {
+                s.name: {
+                    "Package": s.name,
+                    "Version": s.version,
+                    "Source": "Repository",
+                    "Repository": "CRAN",
+                }
+                for s in specs
+            }
+            return {"renv.lock": json.dumps({"R": {"Version": "4.3.0"}, "Packages": packages_r})}
+        if eco == "swift":
+            pins = [
+                {
+                    "identity": s.name.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git").lower(),
+                    "kind": "remoteSourceControl",
+                    "location": Lockfiles._swift_location(s.name),
+                    "state": {"version": s.version, "revision": "0" * 40},
+                }
+                for s in specs
+            ]
+            return {"Package.resolved": json.dumps({"pins": pins, "version": 2})}
+        raise PackageError(f"unsupported ecosystem {eco!r}")
+
+    @staticmethod
+    def _pinned_text(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
+        """The lockfiles written as text: requirements, TOML, go.mod, XML, YAML and Elixir terms."""
         if eco == "pypi":
             return {"requirements.txt": "".join(f"{s.name}=={s.version}\n" for s in specs)}
         if eco == "cargo":
@@ -199,23 +259,6 @@ class Lockfiles:
                 "<artifactId>check</artifactId><version>1</version>"
                 f"<dependencies>{deps}</dependencies></project>"
             }
-        if eco == "nuget":
-            locked = {
-                s.name: {"type": "Direct", "requested": f"[{s.version}, )", "resolved": s.version}
-                for s in specs
-            }
-            return {
-                "packages.lock.json": json.dumps({"version": 1, "dependencies": {"net8.0": locked}})
-            }
-        if eco == "composer":
-            return {
-                "composer.lock": json.dumps(
-                    {
-                        "packages": [{"name": s.name, "version": s.version} for s in specs],
-                        "packages-dev": [],
-                    }
-                )
-            }
         if eco == "rubygems":
             specs_text = "".join(f"    {s.name} ({s.version})\n" for s in specs)
             deps = "".join(f"  {s.name}\n" for s in specs)
@@ -237,28 +280,6 @@ class Lockfiles:
                 for s in specs
             )
             return {"mix.lock": "%{\n" + body + "}\n"}
-        if eco == "cran":
-            packages_r = {
-                s.name: {
-                    "Package": s.name,
-                    "Version": s.version,
-                    "Source": "Repository",
-                    "Repository": "CRAN",
-                }
-                for s in specs
-            }
-            return {"renv.lock": json.dumps({"R": {"Version": "4.3.0"}, "Packages": packages_r})}
-        if eco == "swift":
-            pins = [
-                {
-                    "identity": s.name.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git").lower(),
-                    "kind": "remoteSourceControl",
-                    "location": Lockfiles._swift_location(s.name),
-                    "state": {"version": s.version, "revision": "0" * 40},
-                }
-                for s in specs
-            ]
-            return {"Package.resolved": json.dumps({"pins": pins, "version": 2})}
         raise PackageError(f"unsupported ecosystem {eco!r}")
 
     @staticmethod

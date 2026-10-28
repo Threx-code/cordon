@@ -937,7 +937,6 @@
    "images/host:HostFilesystem._language_packages": 104,
    "images/oci:ImageLayers.added_files": 101,
    "images/oci:ImageLayers.databases": 95,
-   "mcp/packages:Lockfiles._pinned": 105,
    "report/aibom:AiBom.inventory": 92,
    "report/sbom:SbomDocument.spdx_document": 112,
    "report/vex:VexReporter._statement": 109,
