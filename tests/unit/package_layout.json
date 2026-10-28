@@ -932,7 +932,6 @@
    "detect/supply/manifests/source_findings:SourceFindings.source_findings": 177,
    "detect/supply/provenance:ProvenanceDetector._verify": 155,
    "detect/supply/registries/detector:RegistryDetector._compare": 115,
-   "detect/supply/registries/detector:RegistryDetector.inspect": 209,
    "ecosystems/infra/actions:ActionsFile.parse": 135,
    "ecosystems/infra/bazel:ModuleFile.parse": 141,
    "ecosystems/infra/image:Compose.parse": 182,

@@ -76,6 +76,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
+    from cordon_scanner.intel.registries.private_registries import PrivateRegistry
     from cordon_scanner.intel.registries.registry_client import PackageFacts
 from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 from cordon_scanner.detect.supply.registries.findings import RegistryFinding
@@ -183,12 +184,6 @@ class RegistryDetector(BaseDetector):
         if not isinstance(unit, GraphUnit):
             return ()
 
-        from cordon_scanner.intel.registries.registry_client import (
-            PackageNotFound,
-            RegistryClient,
-            RegistryError,
-        )
-
         findings: list[Finding] = []
         unanswered: list[str] = []
 
@@ -209,18 +204,46 @@ class RegistryDetector(BaseDetector):
                 and d.ecosystem != RUNTIME_ECOSYSTEM
             }
         )
-        from cordon_scanner.ecosystems.infra.image import (
-            ImageEcosystem,
-            ImageReference,
-            PublicRegistries,
-        )
         from cordon_scanner.intel.registries.private_registries import (
-            PrivateRegistries,
             PrivateRegistry,
         )
 
         # Registries the organisation runs, with the credential the operator named for each.
         configured = tuple(PrivateRegistry(*pair) for pair in ctx.config.private_registries)
+        askable, asking, private_images = self._worth_asking(configured, unit)
+        # Counted, not inferred from the finding below. A reader reconciling
+        # "250 dependencies" against "200 could not be checked" concludes that
+        # fifty were checked and came back clean, and the fifty past the ceiling
+        # were never asked about at all.
+        over_ceiling = len(askable) - len(asking)
+        ran_out_of_time = 0
+
+        ran_out_of_time = self._ask(asking, configured, ctx, findings, ran_out_of_time, unanswered)
+
+        RegistryDetector._coverage_notes(
+            askable,
+            ctx,
+            findings,
+            over_ceiling,
+            private_images,
+            ran_out_of_time,
+            unanswered,
+            unit,
+            unsupported,
+        )
+        return findings
+
+    def _worth_asking(
+        self, configured: tuple[PrivateRegistry, ...], unit: GraphUnit
+    ) -> tuple[list[Dependency], list[Dependency], list[Dependency]]:
+        """Which dependencies to ask the registries about, in the order the question budget is spent: what a registry can answer, without a private image's internal names, up to the query ceiling."""
+        from cordon_scanner.ecosystems.infra.image import (
+            ImageEcosystem,
+            ImageReference,
+            PublicRegistries,
+        )
+        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+
         # An image pinned by digest alone is asked about by its digest. An image on a registry
         # an organisation runs answers only with credentials: asked with them where the operator
         # supplied some, and otherwise counted, not asked.
@@ -254,12 +277,24 @@ class RegistryDetector(BaseDetector):
             and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
         ]
         asking = askable[:MAX_QUERIES]
-        # Counted, not inferred from the finding below. A reader reconciling
-        # "250 dependencies" against "200 could not be checked" concludes that
-        # fifty were checked and came back clean, and the fifty past the ceiling
-        # were never asked about at all.
-        over_ceiling = len(askable) - len(asking)
-        ran_out_of_time = 0
+        return askable, asking, private_images
+
+    def _ask(
+        self,
+        asking: list[Dependency],
+        configured: tuple[PrivateRegistry, ...],
+        ctx: ScanContext,
+        findings: list[Finding],
+        ran_out_of_time: int,
+        unanswered: list[str],
+    ) -> int:
+        """Ask the registries about each dependency in turn, within the time budget: what each answers is compared with what the project declares, a name no public registry knows is reported, and a question that went unanswered is kept for the coverage note. How many were left unasked when time ran out."""
+        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+        from cordon_scanner.intel.registries.registry_client import (
+            PackageNotFound,
+            RegistryClient,
+            RegistryError,
+        )
 
         for index, dependency in enumerate(asking):
             if ctx.out_of_time():
@@ -318,7 +353,21 @@ class RegistryDetector(BaseDetector):
                 unanswered.append(f"{dependency.name}: {exc}")
                 continue
             findings.extend(self._compare(dependency, observed, ctx))
+        return ran_out_of_time
 
+    @staticmethod
+    def _coverage_notes(
+        askable: list[Dependency],
+        ctx: ScanContext,
+        findings: list[Finding],
+        over_ceiling: int,
+        private_images: list[Dependency],
+        ran_out_of_time: int,
+        unanswered: list[str],
+        unit: GraphUnit,
+        unsupported: list[str],
+    ) -> None:
+        """What the scan could not ask the registries, said as operational findings: answers that never came, ecosystems no registry covers, and dependencies left unasked for the query ceiling, the time budget or a private image."""
         if unanswered:
             # One aggregated report rather than one per package: an offline
             # runner would otherwise produce a finding for every dependency in
@@ -383,7 +432,6 @@ class RegistryDetector(BaseDetector):
                     degrades_coverage=True,
                 )
             )
-        return findings
 
     def _manifest_findings(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
         """Whether this project's manifest and the registry agree on the source.
