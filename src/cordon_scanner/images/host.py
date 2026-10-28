@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Final
 
 from cordon_scanner.images import langpkgs
+from cordon_scanner.images.identity import ImageInventory
 from cordon_scanner.images.oci import (
     APK_INSTALLED,
     APK_INSTALLED_USR,
@@ -33,7 +34,6 @@ from cordon_scanner.images.oci import (
     PORTAGE_FILES,
     RPM_LEGACY,
     RPM_SQLITE,
-    ImageInventory,
     ImageLayers,
 )
 

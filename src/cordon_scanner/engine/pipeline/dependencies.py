@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.ecosystems.base import Ecosystem
     from cordon_scanner.engine.engine import Engine
-    from cordon_scanner.images.oci import ImageInventory
+    from cordon_scanner.images.identity import ImageInventory
 
 
 class Dependencies:
