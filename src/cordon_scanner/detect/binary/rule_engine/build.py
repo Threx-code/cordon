@@ -60,10 +60,10 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
     Quantity,
     Read,
     RuleDef,
-    RuleError,
     Span,
     Truth,
 )
+from cordon_scanner.detect.binary.rule_engine.tokens import RuleError
 
 INT64_MAX, INT64_MIN = 2**63 - 1, -(2**63)
 INT, FLOAT, TEXT, BOOL = Scalar.INT, Scalar.FLOAT, Scalar.TEXT, Scalar.BOOL

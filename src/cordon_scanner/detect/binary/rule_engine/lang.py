@@ -42,9 +42,9 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
     Node,
     Of,
     RuleDef,
-    RuleError,
     StringDef,
 )
+from cordon_scanner.detect.binary.rule_engine.tokens import RuleError
 
 MAX_MATCHES = 1_000_000
 
