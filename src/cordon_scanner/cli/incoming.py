@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     import argparse
 
     from cordon_scanner.engine.incoming import IncomingCheck
-    from cordon_scanner.foundation.config import Config
+    from cordon_scanner.foundation.config.settings import Config
 
 FAIL_ON_HELP = (
     "also block on findings at or above this severity (default: critical; anything "
@@ -75,7 +75,7 @@ class IncomingCommand:
     @staticmethod
     def _config(args: argparse.Namespace) -> Config:
         from cordon_scanner.engine.incoming import Incoming
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         base = Config.from_file(args.config) if getattr(args, "config", None) else None
         return Incoming.config(base, getattr(args, "fail_on", None))

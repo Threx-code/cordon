@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.foundation.models import Dependency
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.nvd import CpeRule, NvdAdvisories, NvdData, NvdRange
 from cordon_scanner.intel.advisories.nvd_import import NvdImport
 

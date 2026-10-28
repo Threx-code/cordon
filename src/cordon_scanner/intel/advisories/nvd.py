@@ -42,7 +42,7 @@ from cordon_scanner.intel.advisories.advisories import DATA_DIR, Advisory, Advis
 from cordon_scanner.intel.advisories.versions import LibVersion
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 CVES_NAME: Final = "nvd-cves.json.gz"
 CPE_NAME: Final = "nvd-cpe.json.gz"

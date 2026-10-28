@@ -18,7 +18,8 @@ from cordon_scanner.ecosystems.infra.image import (
     Interpolation,
 )
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Dependency, Scope
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.images.oci import ImageIdentity, ImageLayers
 from cordon_scanner.images.packages import OsPackage, PackageDatabases, PackageGraph
 from kits.imagekit import ImageKit
@@ -483,7 +484,7 @@ class TestProvenanceOfImages:
     def test_a_digest_pinned_image_is_verified_by_that_digest(self, monkeypatch) -> None:
         from cordon_scanner.detect.base import GraphUnit, ScanContext
         from cordon_scanner.detect.supply.provenance import INVALID_RULE, ProvenanceDetector
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.intel.provenance import attest
         from cordon_scanner.intel.provenance.attest import Outcome, Result
         from cordon_scanner.intel.registries.registry_client import PackageFacts

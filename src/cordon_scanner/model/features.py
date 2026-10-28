@@ -29,6 +29,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.foundation.paths import PackagePaths
+
 MAX_FILES: Final = 3000
 MAX_FILE: Final = 2 << 20
 MAX_TOTAL: Final = 40 << 20
@@ -42,7 +44,7 @@ _ARCHIVES: Final = (".tgz", ".tar.gz", ".whl", ".zip")
 PATTERNS: Final[dict[str, re.Pattern[bytes]]] = {
     name: re.compile(p.encode())
     for name, p in json.loads(
-        (Path(__file__).parent / "data" / "patterns.json").read_text(encoding="utf-8")
+        (PackagePaths.data("model") / "patterns.json").read_text(encoding="utf-8")
     ).items()
 }
 PACKAGE_DENSE: Final[tuple[str, ...]] = (

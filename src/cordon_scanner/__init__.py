@@ -41,7 +41,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.decide.policy import Baseline, PolicyGate, Verdict
-from cordon_scanner.foundation.config import Config, ConfigResolver, OrgConstraints, Policy
+from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.config.policy import OrgConstraints, Policy
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import (
     ConfigError,
     CordonError,
@@ -55,25 +58,20 @@ from cordon_scanner.foundation.errors import (
 )
 from cordon_scanner.foundation.limits import Limits
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Confidence,
-    Dependency,
     Evidence,
     Finding,
     Hook,
     Location,
-    Project,
     RedactionMode,
-    Repository,
     RiskScore,
-    Rule,
-    ScanResult,
-    ScanStats,
     Scope,
     Severity,
     Suppression,
 )
+from cordon_scanner.foundation.results import Dependency, Project, Repository, ScanResult, ScanStats
+from cordon_scanner.foundation.rule_model import Rule
 from cordon_scanner.version import RULEPACK_VERSION, SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:

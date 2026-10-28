@@ -20,7 +20,7 @@ from cordon_scanner.report.base import BaseReporter, ReportOptions
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.foundation.models import ScanResult
+    from cordon_scanner.foundation.results import ScanResult
 
 LEVEL = {
     Severity.CRITICAL: "error",

@@ -1,7 +1,7 @@
 """Go code that runs what it receives, or writes the CI job's environment, when it is imported.
 
 `received_and_run`: data read from a connection handed to a process start. `ci_environment_write`:
-a package whose load path writes `GITHUB_ENV` or `GITHUB_PATH`. Moved beside `capability.py` (0.7.0
+a package whose load path writes `GITHUB_ENV` or `GITHUB_PATH`. Moved beside `capability/detector.py` (0.7.0
 layout: a long module only shrinks); `CapabilityDetector` calls these and labels what they return.
 """
 
@@ -10,8 +10,9 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.detect.code.capability import CapabilityHit
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.detect.code.capability.load_path import LoadPath
+from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent
@@ -38,9 +39,8 @@ class GoRuns:
         text = content.text
         if "exec.Command" not in text or ("Dial" not in text and "Accept" not in text):
             return []
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
-        for found in CapabilityDetector._GO_FUNC.finditer(text):
+        for found in LoadPath.GO_FUNC.finditer(text):
             depth, index = 1, found.end()
             limit = min(len(text), index + 200_000)
             while index < limit and depth:
@@ -119,12 +119,11 @@ class GoRuns:
                     line=text.count("\n", 0, write.start()) + 1,
                 )
             )
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
         on_load = [
             hit
             for hit in candidates
-            if CapabilityDetector._in_go_load_path(content, [hit], (Capability.PERSIST,))
+            if LoadPath.in_go_load_path(content, [hit], (Capability.PERSIST,))
         ]
         return on_load[:1]
 

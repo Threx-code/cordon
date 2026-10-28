@@ -20,7 +20,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
 from cordon_scanner.detect.secrets.secrets import NOT_A_SECRET
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from support import Support
 

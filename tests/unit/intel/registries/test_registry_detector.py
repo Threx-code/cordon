@@ -20,9 +20,10 @@ import pytest
 
 from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext
 from cordon_scanner.detect.supply.registry import RegistryDetector, RegistryEvidence
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Category, Dependency, Scope, Severity
+from cordon_scanner.foundation.models import Category, Scope, Severity
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.registries.registry_client import PackageFacts, RegistryError
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 

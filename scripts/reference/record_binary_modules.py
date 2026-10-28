@@ -4,7 +4,7 @@ A maintainer's measurement tool, never part of Cordon: it needs the reference in
 in tests/unit/data/rule_reference/modules/README.md), and nothing Cordon ships or tests imports it.
 It regenerates the malformed set with ``Corpus.mutate`` (tests/conformance/generate/binary_modules.py),
 runs the reference over each variant once, and writes the values, with each variant's SHA-256, to
-``malformed.json``, which ``test_rule_malformed_replay.py`` replays without the reference.
+``malformed.json``, which ``test_malformed_replay.py`` replays without the reference.
 
 Run when the fixtures or the mutation scheme change, inside Docker, from the repository root:
     python scripts/reference/record_binary_modules.py \

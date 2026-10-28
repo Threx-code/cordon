@@ -38,13 +38,13 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Final
 
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.analysis.shared.destinations import Destinations
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.text.comments import BLOCK_COMMENT_LANGUAGES, SourceComments
-from cordon_scanner.intel.malware.hosts import Destinations
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
-    from cordon_scanner.detect.code.capability import CapabilityHit
+    from cordon_scanner.detect.code.capability.hits import CapabilityHit
 
 #: Hosts that serve release artefacts and nothing else an install script would fetch from them.
 #: Path-qualified where the host also serves other things: `github.com` only under
@@ -78,7 +78,7 @@ DISQUALIFYING_CAPABILITIES: Final = frozenset(
 )
 
 #: A download piped into its interpreter, or written and started in one command line: nothing can
-#: be verified between the two. Kept in step with `CapabilityDetector.DOWNLOAD_RUN_CONSTRUCTS`.
+#: be verified between the two. Kept in step with `LoadPath.DOWNLOAD_RUN_CONSTRUCTS`.
 UNVERIFIABLE_RUNS: Final = frozenset(
     {
         "CAP.JS.COMMAND_FETCH_RUN.001",

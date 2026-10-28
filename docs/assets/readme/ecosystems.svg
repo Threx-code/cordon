@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330" role="img" aria-labelledby="t d">
+<title id="t">Twenty-eight ecosystems</title>
+<desc id="d">Package managers: npm, PyPI, Cargo, Go modules, Maven, Gradle, NuGet, RubyGems, Composer, Hex, Pub, CocoaPods, Swift, Conan, vcpkg, Conda, CRAN, Hackage, Julia, opam, Nix, Homebrew, Bazel. Infrastructure: GitHub Actions, Terraform, Helm, Ansible, container images.</desc>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+.chip{opacity:0;animation:in .45s ease-out forwards}
+.sweep{animation:sweep 6s ease-in-out infinite}
+@keyframes in{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+@keyframes sweep{0%{transform:translateX(-260px)}60%,100%{transform:translateX(1300px)}}
+@media (prefers-reduced-motion:reduce){.chip{animation:none;opacity:1;transform:none}.sweep{animation:none;opacity:0}}
+</style>
+<defs>
+<linearGradient id="sh" x1="0" x2="1"><stop offset="0" stop-color="#56d4c4" stop-opacity="0"/><stop offset=".5" stop-color="#56d4c4" stop-opacity=".10"/><stop offset="1" stop-color="#56d4c4" stop-opacity="0"/></linearGradient>
+<clipPath id="card"><rect width="1200" height="330" rx="18"/></clipPath>
+</defs>
+<rect width="1200" height="330" rx="18" fill="#0b1110"/>
+<rect x=".5" y=".5" width="1199" height="329" rx="17.5" fill="none" stroke="#22302c"/>
+<text x="48" y="64" fill="#f2f7f5" font-size="26" font-weight="700">Twenty-eight ecosystems</text>
+<text x="48" y="92" fill="#8fa49d" font-size="14">Manifests, lockfiles and what they resolve to, each with the checks its format allows.</text>
+<text x="48" y="130" fill="#6d827b" font-size="12" letter-spacing="1">PACKAGE MANAGERS</text>
+<text x="48" y="250" fill="#6d827b" font-size="12" letter-spacing="1">INFRASTRUCTURE</text>
+<g font-size="14" fill="#d6e2de" text-anchor="middle">
+<g class="chip" style="animation-delay:.00s"><rect x="48" y="142" width="74" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="85" y="164">npm</text></g>
+<g class="chip" style="animation-delay:.03s"><rect x="130" y="142" width="74" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="167" y="164">PyPI</text></g>
+<g class="chip" style="animation-delay:.06s"><rect x="212" y="142" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="253" y="164">Cargo</text></g>
+<g class="chip" style="animation-delay:.09s"><rect x="302" y="142" width="122" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="363" y="164">Go modules</text></g>
+<g class="chip" style="animation-delay:.12s"><rect x="432" y="142" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="473" y="164">Maven</text></g>
+<g class="chip" style="animation-delay:.15s"><rect x="522" y="142" width="90" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="567" y="164">Gradle</text></g>
+<g class="chip" style="animation-delay:.18s"><rect x="620" y="142" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="661" y="164">NuGet</text></g>
+<g class="chip" style="animation-delay:.21s"><rect x="710" y="142" width="106" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="763" y="164">RubyGems</text></g>
+<g class="chip" style="animation-delay:.24s"><rect x="824" y="142" width="106" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="877" y="164">Composer</text></g>
+<g class="chip" style="animation-delay:.27s"><rect x="938" y="142" width="66" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="971" y="164">Hex</text></g>
+<g class="chip" style="animation-delay:.30s"><rect x="1012" y="142" width="66" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="1045" y="164">Pub</text></g>
+<g class="chip" style="animation-delay:.33s"><rect x="48" y="186" width="114" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="105" y="208">CocoaPods</text></g>
+<g class="chip" style="animation-delay:.36s"><rect x="170" y="186" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="211" y="208">Swift</text></g>
+<g class="chip" style="animation-delay:.39s"><rect x="260" y="186" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="301" y="208">Conan</text></g>
+<g class="chip" style="animation-delay:.42s"><rect x="350" y="186" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="391" y="208">vcpkg</text></g>
+<g class="chip" style="animation-delay:.45s"><rect x="440" y="186" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="481" y="208">Conda</text></g>
+<g class="chip" style="animation-delay:.48s"><rect x="530" y="186" width="74" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="567" y="208">CRAN</text></g>
+<g class="chip" style="animation-delay:.51s"><rect x="612" y="186" width="98" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="661" y="208">Hackage</text></g>
+<g class="chip" style="animation-delay:.54s"><rect x="718" y="186" width="82" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="759" y="208">Julia</text></g>
+<g class="chip" style="animation-delay:.57s"><rect x="808" y="186" width="74" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="845" y="208">opam</text></g>
+<g class="chip" style="animation-delay:.60s"><rect x="890" y="186" width="66" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="923" y="208">Nix</text></g>
+<g class="chip" style="animation-delay:.63s"><rect x="964" y="186" width="106" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="1017" y="208">Homebrew</text></g>
+<g class="chip" style="animation-delay:.66s"><rect x="1078" y="186" width="74" height="34" rx="9" fill="#121a18" stroke="#2c3d38"/><text x="1115" y="208">Bazel</text></g>
+<g class="chip" style="animation-delay:.72s"><rect x="48" y="262" width="162" height="34" rx="9" fill="#10262a" stroke="#2f5a55"/><text x="129" y="284">GitHub Actions</text></g>
+<g class="chip" style="animation-delay:.75s"><rect x="218" y="262" width="114" height="34" rx="9" fill="#10262a" stroke="#2f5a55"/><text x="275" y="284">Terraform</text></g>
+<g class="chip" style="animation-delay:.78s"><rect x="340" y="262" width="74" height="34" rx="9" fill="#10262a" stroke="#2f5a55"/><text x="377" y="284">Helm</text></g>
+<g class="chip" style="animation-delay:.81s"><rect x="422" y="262" width="98" height="34" rx="9" fill="#10262a" stroke="#2f5a55"/><text x="471" y="284">Ansible</text></g>
+<g class="chip" style="animation-delay:.84s"><rect x="528" y="262" width="170" height="34" rx="9" fill="#10262a" stroke="#2f5a55"/><text x="613" y="284">container images</text></g>
+</g>
+<g clip-path="url(#card)"><rect class="sweep" x="0" y="132" width="220" height="196" fill="url(#sh)"/></g>
+</svg>

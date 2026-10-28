@@ -9,7 +9,8 @@ worth getting right, not any one ecosystem's parsing.
 
 from __future__ import annotations
 
-from cordon_scanner.foundation.models import Dependency, Scope
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.report import sbom
 
 FIXED_MOMENT = "2026-01-01T00:00:00Z"

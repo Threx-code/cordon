@@ -28,6 +28,8 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.analysis.shared.destinations import Destinations
+from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -41,15 +43,11 @@ from cordon_scanner.detect.infra.ci_exfil import (
     DropPoint,
     SecretInventory,
 )
-from cordon_scanner.detect.secrets.secrets import (
-    FIXTURE_CEILING,
-    RULE_MATERIAL_CEILING,
-    SourcePaths,
-)
-from cordon_scanner.engine.walker import PathGlob
+from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Confidence,
     Evidence,
@@ -62,7 +60,6 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.text.redact import Redactor
-from cordon_scanner.intel.malware.hosts import Destinations
 from cordon_scanner.intel.registries.installers import OfficialInstallers
 
 if TYPE_CHECKING:
@@ -790,7 +787,7 @@ RULES: tuple[ConfigRule, ...] = (
         ),
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
-        # Malicious, so the hardening tier never lowers it (`Engine._hardening_tier`). The
+        # Malicious, so the hardening tier never lowers it (`Ceilings.hardening_tier`). The
         # SUSPECT rule above stays at LOW for the common publishing shape; this one needs
         # the untrusted destination IN the same command, which publishing does not have.
         # GhostAction (2026) planted `curl` to a raw IP with named secrets on one line in

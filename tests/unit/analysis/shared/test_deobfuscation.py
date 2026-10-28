@@ -24,7 +24,7 @@ from cordon_scanner.analysis.shared.deobfuscation import (
     ObfuscatorIo,
 )
 from cordon_scanner.decide.policy import PolicyGate
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
 

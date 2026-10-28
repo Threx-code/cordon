@@ -21,7 +21,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.images.binmeta import StreamedBinary
 from kits.conformancebuilders import Pkg, Writers

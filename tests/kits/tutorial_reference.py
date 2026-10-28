@@ -3,7 +3,7 @@
 The other tutorials are written by hand, one use case each. These two are the reference beside
 them, and a reference kept by hand drifts: an ecosystem is added and its section never written, a
 flag is renamed and the tutorial keeps the old one. So both are rendered from the registry and the
-argument parser, and `tests/unit/repository/test_tutorial_reference.py` fails when the files disagree.
+argument parser, and `tests/unit/repository/documentation/test_tutorial_reference.py` fails when the files disagree.
 
     python tests/kits/tutorial_reference.py ecosystems > tutorials/25-every-ecosystem.md
     python tests/kits/tutorial_reference.py commands > tutorials/26-every-command.md

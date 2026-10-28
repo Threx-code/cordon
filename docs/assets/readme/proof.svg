@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="t d">
+<title id="t">Measured, not claimed</title>
+<desc id="d">94.2% of 39,328 real malicious packages detected. 1.6% of the 2,000 most popular npm and PyPI packages wrongly blocked, against GuardDog's 16.8%. 97.7% of 4,034 AI-agent attacks detected. 99.6% agreement with Trivy across 190,274 packages in 1,687 lockfiles. Head to head with GuardDog on the same 498 malicious packages: 95.2% detected against 85.5%.</desc>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+.tile{opacity:0;animation:in .6s ease-out forwards}
+.t1{animation-delay:.1s}.t2{animation-delay:.3s}.t3{animation-delay:.5s}.t4{animation-delay:.7s}
+.bar{transform-box:fill-box;transform-origin:left center;transform:scaleX(0);animation:grow 1.1s cubic-bezier(.2,.8,.2,1) forwards}
+.b1{animation-delay:1s}.b2{animation-delay:1.15s}.b3{animation-delay:1.4s}.b4{animation-delay:1.55s}
+.lab{opacity:0;animation:in .4s ease-out forwards}
+.l1{animation-delay:1.9s}.l2{animation-delay:2s}.l3{animation-delay:2.3s}.l4{animation-delay:2.4s}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes grow{to{transform:scaleX(1)}}
+@media (prefers-reduced-motion:reduce){.tile,.bar,.lab{animation:none;opacity:1;transform:none}}
+</style>
+<rect width="1200" height="600" rx="18" fill="#0b1110"/>
+<rect x=".5" y=".5" width="1199" height="599" rx="17.5" fill="none" stroke="#22302c"/>
+<text x="48" y="64" fill="#f2f7f5" font-size="26" font-weight="700">Measured, not claimed</text>
+<text x="48" y="92" fill="#8fa49d" font-size="14">Every number comes from a script in the repository, run against code nobody on the project wrote.</text>
+
+<g font-size="13">
+<g class="tile t1"><rect x="48" y="118" width="258" height="196" rx="14" fill="#121a18" stroke="#22302c"/>
+<text x="70" y="182" fill="#56d4c4" font-size="50" font-weight="700">94.2%</text>
+<text x="70" y="214" fill="#d6e2de">of real malicious packages</text><text x="70" y="233" fill="#d6e2de">detected</text>
+<text x="70" y="268" fill="#6d827b" font-size="12">39,328 samples: npm, PyPI,</text><text x="70" y="286" fill="#6d827b" font-size="12">AI skills, IDE extensions</text></g>
+<g class="tile t2"><rect x="324" y="118" width="258" height="196" rx="14" fill="#121a18" stroke="#22302c"/>
+<text x="346" y="182" fill="#8bd49c" font-size="50" font-weight="700">1.6%</text>
+<text x="346" y="214" fill="#d6e2de">of popular packages</text><text x="346" y="233" fill="#d6e2de">wrongly blocked</text>
+<text x="346" y="268" fill="#6d827b" font-size="12">top 1,000 PyPI + 1,000 npm</text><text x="346" y="286" fill="#6d827b" font-size="12">GuardDog: 16.8%</text></g>
+<g class="tile t3"><rect x="600" y="118" width="258" height="196" rx="14" fill="#121a18" stroke="#22302c"/>
+<text x="622" y="182" fill="#56d4c4" font-size="50" font-weight="700">97.7%</text>
+<text x="622" y="214" fill="#d6e2de">of AI-agent attacks</text><text x="622" y="233" fill="#d6e2de">detected</text>
+<text x="622" y="268" fill="#6d827b" font-size="12">4,034 Agent Threat Rules</text><text x="622" y="286" fill="#6d827b" font-size="12">test cases</text></g>
+<g class="tile t4"><rect x="876" y="118" width="276" height="196" rx="14" fill="#121a18" stroke="#22302c"/>
+<text x="898" y="182" fill="#56d4c4" font-size="50" font-weight="700">99.6%</text>
+<text x="898" y="214" fill="#d6e2de">agreement with Trivy on</text><text x="898" y="233" fill="#d6e2de">real lockfiles</text>
+<text x="898" y="268" fill="#6d827b" font-size="12">190,274 packages in</text><text x="898" y="286" fill="#6d827b" font-size="12">1,687 lockfiles, 14 registries</text></g>
+</g>
+
+<text x="48" y="374" fill="#f2f7f5" font-size="17" font-weight="700">Head to head with GuardDog</text>
+<g font-size="13">
+<text x="48" y="414" fill="#d6e2de">Malicious packages detected</text>
+<text x="48" y="433" fill="#6d827b" font-size="12">same 498, fixed seed · higher is better</text>
+<line x1="420" y1="398" x2="420" y2="470" stroke="#22302c"/>
+<rect class="bar b1" x="420" y="400" width="571" height="24" rx="4" fill="#35c3b1"/>
+<rect class="bar b2" x="420" y="430" width="513" height="24" rx="4" fill="#4f625c"/>
+<text class="lab l1" x="1003" y="417" fill="#f2f7f5" font-weight="700">95.2%<tspan fill="#8fa49d" font-weight="400">  Cordon</tspan></text>
+<text class="lab l2" x="945" y="447" fill="#d6e2de">85.5%<tspan fill="#8fa49d">  GuardDog</tspan></text>
+
+<text x="48" y="512" fill="#d6e2de">Popular packages wrongly blocked</text>
+<text x="48" y="531" fill="#6d827b" font-size="12">top 1,000 PyPI + 1,000 npm · lower is better</text>
+<line x1="420" y1="496" x2="420" y2="568" stroke="#22302c"/>
+<rect class="bar b3" x="420" y="498" width="10" height="24" rx="3" fill="#35c3b1"/>
+<rect class="bar b4" x="420" y="528" width="101" height="24" rx="4" fill="#4f625c"/>
+<text class="lab l3" x="442" y="515" fill="#f2f7f5" font-weight="700">1.6%<tspan fill="#8fa49d" font-weight="400">  Cordon</tspan></text>
+<text class="lab l4" x="533" y="545" fill="#d6e2de">16.8%<tspan fill="#8fa49d">  GuardDog</tspan></text>
+<text x="1152" y="590" text-anchor="end" fill="#4f625c" font-size="11">bars: 0 to 100%, 6 px a point · docs/08-ACCURACY.md has each method</text>
+</g>
+</svg>

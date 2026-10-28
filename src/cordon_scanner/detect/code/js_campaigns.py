@@ -3,7 +3,7 @@
 `plants_agent_config`: an install script copying execution-capable agent configuration into the
 project being installed into (`INIT_CWD`). `attribution_cloak`: a mobile attribution callback
 beside a server-chosen WebView or a POST. `channel_follow`: a messaging library made to follow a
-fixed channel. Moved beside `capability.py` (0.7.0 layout: a long module only shrinks);
+fixed channel. Moved beside `capability/detector.py` (0.7.0 layout: a long module only shrinks);
 `CapabilityDetector` calls these and labels what they return.
 """
 
@@ -12,8 +12,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.detect.code.capability import CapabilityHit
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext

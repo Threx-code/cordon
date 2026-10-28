@@ -1448,10 +1448,10 @@ class _Analysis:
     @staticmethod
     def classify(url: str) -> tuple[str | None, str]:
         """(host, kind) of a URL: `drop` for a webhook, paste, tunnel or out-of-band interaction
-        service (`intel/hosts.py`, the same lists the manifest and egress rules use), `ip` for a
+        service (`analysis/shared/destinations.py`, the same lists the manifest and egress rules use), `ip` for a
         bare address, `fixed` for any other host the file names; (None, "unknown") when the
         string is not a URL at all."""
-        from cordon_scanner.intel.malware.hosts import ALL_HOSTS, INTERACTION_HOSTS
+        from cordon_scanner.analysis.shared.destinations import ALL_HOSTS, INTERACTION_HOSTS
 
         m = _URL.match(url.strip())
         if m is None:

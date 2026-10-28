@@ -63,7 +63,7 @@ product requires:
 | Pipeline / phases | `engine/engine.py` | Each phase has one input type and one output type, so a phase can be replaced, parallelised or cached in isolation. |
 | Immutable value objects | the whole domain | Safe to share across processes, impossible to mutate a result post hoc, and free hashability for deduplication. |
 | Specification | `decide/policy.py` | Failure policy is a composable predicate over findings, so gate logic is testable without running a scan. |
-| Layered configuration with a ceiling | `foundation/config.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
+| Layered configuration with a ceiling | `foundation/config/settings.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
 | Streaming iterators | sources, reporters | Bounds memory on inputs of unknown size, which is a security requirement, not just an efficiency one. |
 
 ---
@@ -194,40 +194,46 @@ prints the secret. Reports travel further than the repository does.
 
 ### 3.1 Package layout
 
+Layers, inner to outer; a module imports only its own layer and those inside it. An adapter
+layer's ports are its `base` (the protocols) and its `registry` (what implements them); the
+engine imports an adapter layer through nothing else.
+
 ```
 src/cordon_scanner/
   __init__.py             Public SDK surface. Everything else is internal.
   version.py              Engine, rule-pack and schema versions
 
-  foundation/             Shared types and utilities; imports nothing above it
-    models.py             Findings, rules, dependencies, repositories, results
-    errors.py             Typed errors mapped to exit codes
-    config.py             Layered configuration with an enforced ceiling
-    limits.py             Resource governance
-    content.py            Lazy file content: bytes, text, lines, hashes
-    redact.py             Evidence redaction
-    paths.py              Paths inside containers; the package's own data
+  foundation/             The domain: shared types and utilities; imports nothing above it
+    models.py results.py rule_model.py capabilities.py
+                          Findings, rules, dependencies, repositories, results
+    dependencies.py       A dependency's source and resolution; EcosystemFacts, the port the
+                          ecosystems layer answers for it
+    errors.py limits.py content.py paths.py
+                          Typed errors, resource governance, lazy file content, where files are
+    config/               Layered configuration: settings, parser, resolver, policy
+    files/                Walking, globs, atomic writes, spill, windows over large files, seals
+    formats/ text/        Hardened readers (restricted YAML, XML, JSONC); comments, prose, redaction
   analysis/               Reading code: facts, never verdicts
-    javascript/ python/ go/ dotnet/ jvm/ nix/ shared/
-  detect/                 Detectors: base.py (the contract), catalogue.py, then
+    javascript/ python/ go/ dotnet/ jvm/ nix/ formats/ shared/
+  detect/                 Detectors: base.py (the contract), catalogue.py, registry.py, then
     code/ agents/ supply/ binary/ infra/ secrets/ source/
-  decide/                 Package-level decisions: verdict, intent, scoring, policy, vex
+  ecosystems/             Package-ecosystem adapters: base.py, registry.py, packages/, infra/
+  intel/                  Knowledge from outside the scanned content, offline-first: registry.py,
+    advisories/ malware/ registries/ provenance/ store/
+  images/                 Container images: layers, OS packages, distribution advisories
+  sources/                Where a scan's files come from: base.py, registry.py, archive, git, package
+  rules/                  Rule loading, validation, compilation; the built-in packs
+  decide/                 Package-level decisions: verdict, intent, scoring, policy, VEX
   engine/                 Running a scan
     engine.py             Phase orchestration
-    registry.py           Plugin discovery and registration
-    walker.py             Traversal, ignore semantics, git awareness
-    cache.py              Content-addressed incremental cache
-    audit.py              Structured audit log
-  intel/                  Knowledge from outside the scanned content, offline-first
-    advisories/ malware/ registries/ provenance/ store/
-
-  sources/                Adapters: directory, file, archive, git, package
-  rules/                  Rule loading, validation, compilation, packs
-  ecosystems/             Package-ecosystem adapters
-  langs/                  Language identification data
-  report/                 Output adapters
-  archive/                Hardened archive extraction
-  cli/                    Argument parsing and command implementations
+    pipeline/             The phases: units, facts, detection, stages, graph, hooks, history, results
+    registry.py           Plugin discovery and registration (entry points)
+    parallel.py cache.py audit.py guard.py incoming.py
+                          The worker pool, the incremental cache, the audit log, the guard
+  judge/ model/           The optional reviewing model and the verdict model
+  notify/                 Notifications: notifier, events, transport, channels/
+  report/                 Output adapters, each a Reporter
+  cli/ mcp/ cloud/        The front ends: the command line, the MCP server, the cloud agent
 
 tests/unit/               Mirrors src: tests/unit/<place>/test_<module>.py, plus
                           repository/ (docs, release, layout), bench/, sandbox/
@@ -724,6 +730,7 @@ Full treatment in `02-THREAT-MODEL.md`. The architectural hooks:
 | New detector | `Detector` implementation, entry point `cordon_scanner.detectors` | none |
 | New reporter | `Reporter` implementation, entry point `cordon_scanner.reporters` | none |
 | New source | `Source` implementation, entry point `cordon_scanner.sources` | none |
+| New notification channel | `Channel` implementation, entry point `cordon_scanner.notifiers` | none |
 | New intel feed | `IntelProvider` implementation | none |
 | Organisation policy | YAML | none |
 

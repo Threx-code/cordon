@@ -18,15 +18,14 @@ directory it was asked to scan.
 from __future__ import annotations
 
 from collections import Counter
-from pathlib import Path
 
 import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.registry import Registry
-from support import requires_malicious_corpus
+from support import ROOT, requires_malicious_corpus
 
-CORPUS = Path(__file__).resolve().parents[2] / "corpus"
+CORPUS = ROOT / "corpus"
 
 NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # Requires an advisory database, which is supplied by the operator rather

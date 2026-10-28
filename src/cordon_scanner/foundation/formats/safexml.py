@@ -22,7 +22,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from re import Match
+
 
 MAX_DEPTH: Final = 64
 MAX_ELEMENTS: Final = 200_000
@@ -167,22 +171,7 @@ class _Reader:
             self.count += 1
             if self.count > MAX_ELEMENTS:
                 raise self.fail(f"more than {MAX_ELEMENTS} elements")
-            element = Element(
-                tag=name_match.group(0),
-                attributes={
-                    m.group(1): self.decode(
-                        m.group(2) if m.group(2) is not None else m.group(3) or ""
-                    )
-                    for m in _ATTRIBUTE.finditer(body[name_match.end() :])
-                },
-                line=self.line(),
-            )
-            if stack:
-                stack[-1].children.append(element)
-            elif root is None:
-                root = element
-            else:
-                raise self.fail("a second root element")
+            element, root = self._element(name_match, body, stack, root)
             if not closing:
                 stack.append(element)
                 if len(stack) > MAX_DEPTH:
@@ -192,6 +181,26 @@ class _Reader:
         if root is None:
             raise self.fail("no root element")
         return root
+
+    def _element(
+        self, name_match: Match[str], body: str, stack: list[Element], root: Element | None
+    ) -> tuple[Element, Element | None]:
+        """An opening tag as an element, attached to its parent when it has one."""
+        element = Element(
+            tag=name_match.group(0),
+            attributes={
+                m.group(1): self.decode(m.group(2) if m.group(2) is not None else m.group(3) or "")
+                for m in _ATTRIBUTE.finditer(body[name_match.end() :])
+            },
+            line=self.line(),
+        )
+        if stack:
+            stack[-1].children.append(element)
+        elif root is None:
+            root = element
+        else:
+            raise self.fail("a second root element")
+        return element, root
 
     def _tag_end(self, start: int) -> int:
         quote = ""

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from cordon_scanner.decide.scoring import RiskScorer, ScoringContext
-from cordon_scanner.engine.inventory import CheckLog
+from cordon_scanner.foundation.dependencies import CheckLog
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -41,10 +41,15 @@ from cordon_scanner.foundation.models import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
+    from pathlib import Path
+    from typing import Any
 
-    from cordon_scanner.foundation.config import Config
+    from cordon_scanner.foundation.capabilities import Capability
+    from cordon_scanner.foundation.config.settings import Config
     from cordon_scanner.foundation.content import FileContent
-    from cordon_scanner.foundation.models import Capability, Dependency, Repository, Rule
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import Dependency, Repository
+    from cordon_scanner.foundation.rule_model import Rule
     from cordon_scanner.rules.loader import CompiledRule, RuleSet
 
 
@@ -488,7 +493,7 @@ class RuleSelector:
         across rules with otherwise-different `paths_include`/`paths_exclude`
         tuples.
         """
-        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         return PathGlob.matches(path, pattern)
 
@@ -527,14 +532,118 @@ class RuleSelector:
         )
 
 
+class CapabilityMark(Protocol):
+    """One thing a piece of code can do, where it does it: what the engine reads of a hit."""
+
+    @property
+    def capability(self) -> Capability: ...
+    @property
+    def byte_start(self) -> int: ...
+
+
+@runtime_checkable
+class CapabilityLabelling(Protocol):
+    """A detector that says what each file's code can do: the engine finds it by this, not by its
+    class, for the intent layer and the capability profile."""
+
+    def labelled(
+        self, unit: FileUnit, ctx: ScanContext
+    ) -> tuple[Sequence[CapabilityMark], Sequence[object]] | None: ...
+
+
+# Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
+# each implementation typed by one of these, and the type checker proves the implementation
+# conforms, so the engine never sees a concrete adapter type.
+
+
+class FileFormat(Protocol):
+    """A recognised file format, as the engine reads it: its name."""
+
+    @property
+    def name(self) -> str: ...
+
+
+class BinaryIdentification(Protocol):
+    """What the engine uses of the class `BinaryDetector`."""
+
+    def identify(self, raw: bytes) -> FileFormat | None: ...
+
+
+class ComposerPluginPaths(Protocol):
+    """What the engine uses of the class `ComposerPluginHooks`."""
+
+    def paths(self, units: Sequence[Any]) -> set[str]: ...
+
+
+class DeclaredSourceKinds(Protocol):
+    """What the engine uses of the class `DeclaredSource`."""
+
+    def kind(self, spec: str, manifest_path: str) -> str: ...
+
+
+class DownloadRunning(Protocol):
+    """What the engine uses of the class `DownloadFlow`."""
+
+    def runs_download(self, text: str, language: str | None) -> list[int] | None: ...
+
+
+class ImportReachabilityNotes(Protocol):
+    """What the engine uses of the class `ImportReachability`."""
+
+    def annotate(
+        self, findings: list[Finding], units: Sequence[Unit], dependencies: tuple[Dependency, ...]
+    ) -> list[Finding]: ...
+
+
+class JudgeScheduling(Protocol):
+    """What the engine uses of the class `JudgeGate`."""
+
+    @property
+    def ID(self) -> str: ...
+    def last(self, detectors: list[Any]) -> list[Any]: ...
+    def wants(self, findings: list[Any]) -> bool: ...
+
+
+class ReachedFlowFacts(Protocol):
+    """What the engine uses of the class `ReachedFlows`."""
+
+    def of(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]: ...
+
+
+class SkillScripts(Protocol):
+    """What the engine uses of the class `LoadPath`."""
+
+    def skill_script(self, path: str, ctx: ScanContext | None) -> bool: ...
+
+
+class SubmoduleDependencies(Protocol):
+    """What the engine uses of the class `Submodules`."""
+
+    def dependencies(
+        self, units: Iterable[Any], root: Path
+    ) -> tuple[list[Dependency], list[tuple[str, str]]]: ...
+
+
 __all__ = [
     "BaseDetector",
+    "BinaryIdentification",
+    "CapabilityLabelling",
+    "CapabilityMark",
+    "ComposerPluginPaths",
+    "DeclaredSourceKinds",
     "Detector",
     "DetectorRequirements",
+    "DownloadRunning",
+    "FileFormat",
     "FileUnit",
     "GraphUnit",
+    "ImportReachabilityNotes",
+    "JudgeScheduling",
+    "ReachedFlowFacts",
     "RepositoryUnit",
     "RuleSelector",
     "ScanContext",
+    "SkillScripts",
+    "SubmoduleDependencies",
     "Unit",
 ]

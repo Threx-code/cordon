@@ -384,7 +384,7 @@ class TestCredentialsTheVendorPublishes:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         assert not [f for f in result.findings if "AZURE" in f.rule_id]
@@ -405,7 +405,7 @@ class TestCredentialsTheVendorPublishes:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         assert [f for f in result.findings if f.rule_id == "SECRET.AZURE.STORAGE_KEY.001"]

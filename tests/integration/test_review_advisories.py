@@ -18,10 +18,11 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.supply.advisory import AdvisoryDetector
 from cordon_scanner.engine.registry import Registry
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.models import Category, Confidence
-from cordon_scanner.intel.advisories.advisories import BUNDLED, Advisory, AdvisoryDatabase
+from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
+from cordon_scanner.intel.advisories.shipped import BUNDLED
 
 
 class ReviewAdvisoriesHelpers:
@@ -59,7 +60,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
 
     def test_every_record_names_a_reference(self) -> None:
         """So a reader can check it rather than trust it."""
-        from cordon_scanner.intel.advisories.advisories import BUNDLED
+        from cordon_scanner.intel.advisories.shipped import BUNDLED
 
         for advisory in BUNDLED:
             assert advisory.reference.startswith("http"), advisory.name
@@ -86,7 +87,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
         a "duplicate" of its Maven sibling, so a Gradle project matched
         nothing at all. Regression for that.
         """
-        import cordon_scanner.intel.advisories.advisories as advisories_module
+        import cordon_scanner.intel.advisories.shipped as shipped_module
 
         record = {
             "name": "org.example:lib",
@@ -102,7 +103,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
                 return {"org.example:lib": (record,)}
             return {}
 
-        monkeypatch.setattr(advisories_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
+        monkeypatch.setattr(shipped_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
         db = AdvisoryDatabase.bundled()
         assert db.matching("maven", "org.example:lib", "1.0.0")
         assert db.matching("gradle", "org.example:lib", "1.0.0")
@@ -113,7 +114,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
         (ecosystem, identifier) kept whichever arrived first and the other two
         matched nothing.
         """
-        import cordon_scanner.intel.advisories.advisories as advisories_module
+        import cordon_scanner.intel.advisories.shipped as shipped_module
 
         def record(name: str) -> dict[str, object]:
             return {
@@ -129,7 +130,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
                 return {}
             return {name: (record(name),) for name in ("pkg", "pkg-gpu", "pkg-cpu")}
 
-        monkeypatch.setattr(advisories_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
+        monkeypatch.setattr(shipped_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
         db = AdvisoryDatabase.bundled()
         for name in ("pkg", "pkg-gpu", "pkg-cpu"):
             assert db.matching("pypi", name, "1.0.0"), name
@@ -139,7 +140,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
         several records sharing an identifier. Each describes a different window,
         so dropping the later ones loses the versions they name.
         """
-        import cordon_scanner.intel.advisories.advisories as advisories_module
+        import cordon_scanner.intel.advisories.shipped as shipped_module
 
         def window(introduced: str, fixed: str) -> dict[str, object]:
             return {
@@ -156,7 +157,7 @@ class TestBundledDatabase(ReviewAdvisoriesFixtures):
                 return {}
             return {"pkg": (window("1.0.0", "1.0.3"), window("2.0.0", "2.0.1"))}
 
-        monkeypatch.setattr(advisories_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
+        monkeypatch.setattr(shipped_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
         db = AdvisoryDatabase.bundled()
         assert db.matching("npm", "pkg", "1.0.1")
         assert db.matching("npm", "pkg", "2.0.0")

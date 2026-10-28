@@ -29,7 +29,9 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 sys.path.insert(0, str(ROOT / "src"))
 
 from cordon_scanner.intel.store.dbsync import BUNDLE_NAME, SIGNATURE_NAME, AdvisoryBundle  # noqa: E402

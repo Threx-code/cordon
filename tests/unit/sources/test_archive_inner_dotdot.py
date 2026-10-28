@@ -12,7 +12,8 @@ import io
 import tarfile
 import zipfile
 
-from cordon_scanner.sources.archive import ArchiveReader, Rejection
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.base import Rejection
 
 
 class InnerDotKit:

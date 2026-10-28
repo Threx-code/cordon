@@ -45,7 +45,10 @@ import binascii
 import enum
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cordon_scanner.intel.provenance.sigstore_bundle import Verified
 
 #: OIDC issuer for GitHub Actions, the workload identity that signs a
 #: `--provenance` publish. The identity policy is pinned to it so a certificate
@@ -156,6 +159,26 @@ class SigstoreVerification:
         except BundleError as exc:
             return Result(Outcome.UNVERIFIABLE, f"the bundle could not be checked: {exc}")
 
+        refusal = SigstoreVerification._identity_refusal(verified, repository)
+        if refusal is not None:
+            return refusal
+
+        subject = (
+            SigstoreVerification._subject(
+                verified.payload_type, verified.payload, digest_hex, algorithm.lower()
+            )
+            if verified.payload is not None
+            else Result(Outcome.VERIFIED, "the signature covers the pinned digest")
+        )
+        if subject.outcome is not Outcome.VERIFIED:
+            return subject
+        return Result(
+            Outcome.VERIFIED, f"built by github.com/{repository} and signed for that identity"
+        )
+
+    @staticmethod
+    def _identity_refusal(verified: Verified, repository: str) -> Result | None:
+        """Why the signing identity is not the declared source repository, or None when it is."""
         certificate = verified.certificate
         if certificate is None:
             # npm's registry signed it: proof the registry published these bytes, not of who
@@ -192,19 +215,7 @@ class SigstoreVerification:
                 f"verification failed: Certificate's GitHubWorkflowRepository does not match "
                 f"(got '{signer}', expected '{repository}')",
             )
-
-        subject = (
-            SigstoreVerification._subject(
-                verified.payload_type, verified.payload, digest_hex, algorithm.lower()
-            )
-            if verified.payload is not None
-            else Result(Outcome.VERIFIED, "the signature covers the pinned digest")
-        )
-        if subject.outcome is not Outcome.VERIFIED:
-            return subject
-        return Result(
-            Outcome.VERIFIED, f"built by github.com/{repository} and signed for that identity"
-        )
+        return None
 
     @staticmethod
     def _repository(source_repo: tuple[str, str, str] | None) -> str | None:

@@ -1,6 +1,6 @@
 """G5: the online questions for crates.io, RubyGems, NuGet, Go, Maven Central, Packagist, pub.dev and Hex.
 
-No test here makes a request. `MoreRegistries._get` is replaced with a fixed map of URL to body, and
+No test here makes a request. `RegistryHttp.get` is replaced with a fixed map of URL to body, and
 every reader is checked against the shape its registry really serves (recorded from live answers when
 the readers were written): withdrawal, latest, hashes, provenance, and the malformed and hostile cases
 a registry answer can carry.
@@ -25,17 +25,22 @@ from cordon_scanner.detect.supply.registry import (
     RegistryEvidence,
 )
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Dependency, Scope
-from cordon_scanner.intel.registries import more_registries
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.intel.registries import more_registries, registry_http
+from cordon_scanner.intel.registries.image_registries import ImageRegistries
+from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.package_registries import PackageRegistries
 from cordon_scanner.intel.registries.registry_client import (
     PackageFacts,
     PackageNotFound,
     RegistryClient,
     RegistryError,
 )
+from cordon_scanner.intel.registries.registry_http import RegistryHttp
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
 SHA256 = "ab" * 32
@@ -70,7 +75,7 @@ class RegistryFixtures:
     def serve(self, monkeypatch):
         def install(answers: dict[str, Any]) -> Served:
             served = Served(answers)
-            monkeypatch.setattr(MoreRegistries, "_get", staticmethod(served))
+            monkeypatch.setattr(RegistryHttp, "get", staticmethod(served))
             return served
 
         return install
@@ -105,7 +110,7 @@ class TestTransport:
         def install(*outcomes: Any) -> None:
             fake = self._Opener(list(outcomes))
             monkeypatch.setattr(more_registries.urllib.request, "build_opener", lambda *a: fake)
-            monkeypatch.setattr(more_registries.time, "sleep", lambda s: None)
+            monkeypatch.setattr(registry_http.time, "sleep", lambda s: None)
 
         return install
 
@@ -115,7 +120,7 @@ class TestTransport:
 
     def test_a_plain_http_url_is_refused_before_any_request(self) -> None:
         with pytest.raises(RegistryError, match="non-HTTPS"):
-            MoreRegistries._get("http://crates.io/api/v1/crates/serde")
+            RegistryHttp.get("http://crates.io/api/v1/crates/serde")
 
     def test_a_response_cut_short_is_retried_then_an_error_not_a_crash(self, opener) -> None:
         # Hackage closing a connection mid-body raised http.client.IncompleteRead, which is no
@@ -123,61 +128,61 @@ class TestTransport:
         import http.client
 
         opener(http.client.IncompleteRead(b"x" * 41), self._Response(b'{"ok": 1}'))
-        assert MoreRegistries._json("https://hackage.haskell.org/x") == {"ok": 1}
+        assert RegistryHttp.json("https://hackage.haskell.org/x") == {"ok": 1}
         opener(*[http.client.IncompleteRead(b"") for _ in range(5)])
         with pytest.raises(RegistryError):
-            MoreRegistries._get("https://hackage.haskell.org/x")
+            RegistryHttp.get("https://hackage.haskell.org/x")
 
     def test_a_gzip_body_is_decompressed(self, opener) -> None:
         opener(self._Response(gzip.compress(b'{"ok": 1}'), "gzip"))
-        assert MoreRegistries._json("https://api.nuget.org/x") == {"ok": 1}
+        assert RegistryHttp.json("https://api.nuget.org/x") == {"ok": 1}
 
     def test_a_body_that_expands_past_the_ceiling_is_refused(self, opener, monkeypatch) -> None:
-        monkeypatch.setattr(more_registries, "_MAX_GZIP_BYTES", 1024)
+        monkeypatch.setattr(registry_http, "_MAX_GZIP_BYTES", 1024)
         opener(self._Response(gzip.compress(b"0" * 10_000), "gzip"))
         with pytest.raises(RegistryError, match="expands past"):
-            MoreRegistries._get("https://api.nuget.org/x")
+            RegistryHttp.get("https://api.nuget.org/x")
 
     def test_a_corrupt_gzip_body_is_an_error_not_a_crash(self, opener) -> None:
         opener(self._Response(b"\x1f\x8bnot-gzip", "gzip"))
         with pytest.raises(RegistryError, match="compressed"):
-            MoreRegistries._get("https://api.nuget.org/x")
+            RegistryHttp.get("https://api.nuget.org/x")
 
     def test_an_oversized_body_is_refused(self, opener, monkeypatch) -> None:
         monkeypatch.setattr(more_registries.base, "MAX_RESPONSE_BYTES", 8)
         opener(self._Response(b"0123456789"))
         with pytest.raises(RegistryError, match="exceeded"):
-            MoreRegistries._get("https://crates.io/x")
+            RegistryHttp.get("https://crates.io/x")
 
     @pytest.mark.parametrize("code", [404, 410])
     def test_not_found_and_gone_are_definite_answers(self, opener, code) -> None:
         opener(self._http(code))
         with pytest.raises(PackageNotFound):
-            MoreRegistries._get("https://proxy.golang.org/x")
+            RegistryHttp.get("https://proxy.golang.org/x")
 
     def test_a_busy_registry_is_asked_again(self, opener) -> None:
         opener(self._http(503), self._Response(b"{}"))
-        assert MoreRegistries._json("https://crates.io/x") == {}
+        assert RegistryHttp.json("https://crates.io/x") == {}
 
     def test_a_registry_busy_every_time_is_an_error(self, opener) -> None:
         opener(self._http(503), self._http(503), self._http(503))
         with pytest.raises(RegistryError, match="HTTP 503"):
-            MoreRegistries._get("https://crates.io/x")
+            RegistryHttp.get("https://crates.io/x")
 
     def test_a_refusal_is_not_retried(self, opener) -> None:
         opener(self._http(403))
         with pytest.raises(RegistryError, match="HTTP 403"):
-            MoreRegistries._get("https://crates.io/x")
+            RegistryHttp.get("https://crates.io/x")
 
     def test_a_connection_failure_is_retried_then_reported(self, opener) -> None:
         opener(OSError("down"), OSError("down"), OSError("down"))
         with pytest.raises(RegistryError, match="OSError"):
-            MoreRegistries._get("https://crates.io/x")
+            RegistryHttp.get("https://crates.io/x")
 
     def test_a_body_that_is_not_json_is_an_error(self, opener) -> None:
         opener(self._Response(b"<html>"))
         with pytest.raises(RegistryError, match="unreadable"):
-            MoreRegistries._json("https://crates.io/x")
+            RegistryHttp.json("https://crates.io/x")
 
 
 class TestDispatch(RegistryFixtures):
@@ -225,25 +230,25 @@ class TestCrates(RegistryFixtures):
                 }
             }
         )
-        facts = MoreRegistries.cargo("demo", "1.0.0")
+        facts = PackageRegistries.cargo("demo", "1.0.0")
         assert facts.yanked and facts.yanked_reason == "broken build"
         assert facts.digests == (SHA256,) and facts.latest == "2.0.0" and facts.releases == 2
         assert facts.repository == "https://github.com/o/demo"
 
     def test_a_version_the_crate_does_not_list_has_no_answer(self, serve) -> None:
         serve({self.URL: {"crate": {"newest_version": "0.1.0"}, "versions": [{"num": "0.1.0"}]}})
-        facts = MoreRegistries.cargo("demo", "9.9.9")
+        facts = PackageRegistries.cargo("demo", "9.9.9")
         assert not facts.yanked and facts.digests == () and facts.latest == "0.1.0"
 
     def test_hostile_field_types_produce_an_empty_answer(self, serve) -> None:
         serve({self.URL: {"crate": ["not", "a", "map"], "versions": "nope"}})
-        facts = MoreRegistries.cargo("demo", "1.0.0")
+        facts = PackageRegistries.cargo("demo", "1.0.0")
         assert facts == PackageFacts(name="demo", version="1.0.0")
 
     def test_an_unknown_crate_is_not_found(self, serve) -> None:
         serve({})
         with pytest.raises(PackageNotFound):
-            MoreRegistries.cargo("nope", "1.0.0")
+            PackageRegistries.cargo("nope", "1.0.0")
 
 
 class TestRubyGems(RegistryFixtures):
@@ -258,7 +263,7 @@ class TestRubyGems(RegistryFixtures):
 
     def test_a_version_the_gem_no_longer_lists_was_withdrawn(self, serve) -> None:
         serve(self.answers([{"number": "2.1.0", "platform": "ruby", "sha": SHA256}]))
-        facts = MoreRegistries.rubygems("demo", "1.6.13")
+        facts = PackageRegistries.rubygems("demo", "1.6.13")
         assert facts.yanked and "no longer listed" in (facts.yanked_reason or "")
         assert facts.latest == "2.1.0" and facts.repository == "https://github.com/o/demo"
 
@@ -287,19 +292,19 @@ class TestRubyGems(RegistryFixtures):
                 ]
             )
         )
-        facts = MoreRegistries.rubygems("demo", "1.0.0")
+        facts = PackageRegistries.rubygems("demo", "1.0.0")
         assert not facts.yanked
         assert set(facts.digests) == {SHA256, "cd" * 32}
         assert facts.first_published == "2020-01-01" and facts.releases == 2
 
     def test_a_platform_qualified_pin_matches_its_build(self, serve) -> None:
         serve(self.answers([{"number": "1.0.0", "platform": "java", "sha": SHA256}]))
-        facts = MoreRegistries.rubygems("demo", "1.0.0-java")
+        facts = PackageRegistries.rubygems("demo", "1.0.0-java")
         assert not facts.yanked and facts.digests == (SHA256,)
 
     def test_no_version_asked_is_never_withdrawn(self, serve) -> None:
         serve(self.answers([]))
-        assert not MoreRegistries.rubygems("demo", None).yanked
+        assert not PackageRegistries.rubygems("demo", None).yanked
 
 
 class TestNuGet(RegistryFixtures):
@@ -332,7 +337,7 @@ class TestNuGet(RegistryFixtures):
                 self.LEAF: {"packageHash": SHA512_B64, "packageHashAlgorithm": "SHA512"},
             }
         )
-        facts = MoreRegistries.nuget("Demo.Pkg", "1.0.0")
+        facts = PackageRegistries.nuget("Demo.Pkg", "1.0.0")
         assert facts.yanked and "unlisted" in (facts.yanked_reason or "")
         assert "CriticalBugs" in (facts.yanked_reason or "")
         assert facts.digests == (f"sha512-{SHA512_B64}",)
@@ -344,13 +349,13 @@ class TestNuGet(RegistryFixtures):
         served = serve(
             {self.INDEX: {"items": [{"@id": page}]}, page: {"items": [self.leaf("1.0.0")]}}
         )
-        facts = MoreRegistries.nuget("Demo.Pkg", "1.0.0")
+        facts = PackageRegistries.nuget("Demo.Pkg", "1.0.0")
         assert not facts.yanked and page in served.asked
 
     def test_a_page_on_another_host_is_never_fetched(self, serve) -> None:
         served = serve({self.INDEX: {"items": [{"@id": "https://evil.example/page.json"}]}})
         with pytest.raises(RegistryError, match=r"outside api\.nuget\.org"):
-            MoreRegistries.nuget("Demo.Pkg", "1.0.0")
+            PackageRegistries.nuget("Demo.Pkg", "1.0.0")
         assert "https://evil.example/page.json" not in served.asked
 
     def test_a_catalog_leaf_on_another_host_is_never_fetched(self, serve) -> None:
@@ -362,7 +367,7 @@ class TestNuGet(RegistryFixtures):
             }
         )
         with pytest.raises(RegistryError, match=r"outside api\.nuget\.org"):
-            MoreRegistries.nuget("Demo.Pkg", "1.0.0")
+            PackageRegistries.nuget("Demo.Pkg", "1.0.0")
 
     def test_the_unlisted_placeholder_date_is_not_a_first_release(self, serve) -> None:
         serve(
@@ -385,7 +390,9 @@ class TestNuGet(RegistryFixtures):
                 }
             }
         )
-        assert MoreRegistries.nuget("Demo.Pkg", "1.0.0").first_published == "2022-01-01T00:00:00Z"
+        assert (
+            PackageRegistries.nuget("Demo.Pkg", "1.0.0").first_published == "2022-01-01T00:00:00Z"
+        )
 
     def test_an_unknown_hash_algorithm_is_not_published_as_a_digest(self, serve) -> None:
         serve(
@@ -394,12 +401,12 @@ class TestNuGet(RegistryFixtures):
                 self.LEAF: {"packageHash": "abc", "packageHashAlgorithm": "MD4"},
             }
         )
-        assert MoreRegistries.nuget("Demo.Pkg", "1.0.0").digests == ()
+        assert PackageRegistries.nuget("Demo.Pkg", "1.0.0").digests == ()
 
 
 class TestGo(RegistryFixtures):
     def test_uppercase_is_escaped_the_way_the_proxy_requires(self) -> None:
-        assert MoreRegistries.go_escape("github.com/Azure/SDK") == "github.com/!azure/!s!d!k"
+        assert PackageRegistries.go_escape("github.com/Azure/SDK") == "github.com/!azure/!s!d!k"
 
     def test_retractions_single_ranged_and_in_blocks(self) -> None:
         go_mod = (
@@ -411,25 +418,25 @@ class TestGo(RegistryFixtures):
             "    [v1.3.0, v1.3.5] // credential leak\n"
             ")\n"
         )
-        found = MoreRegistries.retractions(go_mod)
+        found = PackageRegistries.retractions(go_mod)
         assert found == {
             "v1.0.1": "published by mistake",
             "v1.2.0": "",
             "v1.3.0..v1.3.5": "credential leak",
         }
-        assert MoreRegistries.retracted("v1.0.1", found) == "published by mistake"
-        assert MoreRegistries.retracted("v1.2.0", found) == "retracted by its author"
-        assert MoreRegistries.retracted("v1.3.2", found) == "credential leak"
-        assert MoreRegistries.retracted("v1.3.6", found) is None
-        assert MoreRegistries.retracted("v9.9.9", found) is None
+        assert PackageRegistries.retracted("v1.0.1", found) == "published by mistake"
+        assert PackageRegistries.retracted("v1.2.0", found) == "retracted by its author"
+        assert PackageRegistries.retracted("v1.3.2", found) == "credential leak"
+        assert PackageRegistries.retracted("v1.3.6", found) is None
+        assert PackageRegistries.retracted("v9.9.9", found) is None
 
     def test_a_prerelease_sorts_before_its_release_inside_a_range(self) -> None:
         found = {"v1.3.0..v1.3.5": "x"}
-        assert MoreRegistries.retracted("v1.3.0-rc.1", found) is None
-        assert MoreRegistries.retracted("v1.3.5-rc.1", found) == "x"
+        assert PackageRegistries.retracted("v1.3.0-rc.1", found) is None
+        assert PackageRegistries.retracted("v1.3.5-rc.1", found) == "x"
 
     def test_a_version_that_is_not_semver_is_never_in_a_range(self) -> None:
-        assert MoreRegistries.retracted("latest", {"v0.0.0..v9.9.9": "x"}) is None
+        assert PackageRegistries.retracted("latest", {"v0.0.0..v9.9.9": "x"}) is None
 
     def test_facts_combine_the_proxy_the_latest_go_mod_and_the_checksum_database(
         self, serve
@@ -452,7 +459,7 @@ class TestGo(RegistryFixtures):
                 ),
             }
         )
-        facts = MoreRegistries.gomod(name, "v1.0.0")
+        facts = PackageRegistries.gomod(name, "v1.0.0")
         assert facts.yanked and facts.yanked_reason == "broken"
         assert facts.latest == "v1.1.0" and facts.releases == 2
         assert facts.digests == (h1, h1_mod)
@@ -463,7 +470,7 @@ class TestGo(RegistryFixtures):
     ) -> None:
         root = "https://proxy.golang.org/example.com/m"
         serve({f"{root}/@v/list": "v1.0.0\n", f"{root}/@latest": {"Version": "v1.0.0"}})
-        facts = MoreRegistries.gomod("example.com/m", "v1.0.0")
+        facts = PackageRegistries.gomod("example.com/m", "v1.0.0")
         assert not facts.yanked and facts.digests == () and facts.repository is None
 
 
@@ -485,7 +492,7 @@ class TestMaven(RegistryFixtures):
                 f"{stem}.sigstore.json": {"mediaType": "application/vnd.dev.sigstore.bundle+json"},
             }
         )
-        facts = MoreRegistries.maven("org.demo:lib", "1.0.0")
+        facts = PackageRegistries.maven("org.demo:lib", "1.0.0")
         assert facts.digests == (f"sha256:{SHA256}", f"sha1:{'ab' * 20}")
         assert facts.attested and facts.latest == "1.9.0" and facts.releases == 3
         assert not facts.yanked
@@ -499,12 +506,12 @@ class TestMaven(RegistryFixtures):
                 f"{stem}.sha1": "ab" * 20,
             }
         )
-        facts = MoreRegistries.maven("org.demo:lib", "1.0.0")
+        facts = PackageRegistries.maven("org.demo:lib", "1.0.0")
         assert facts.digests == (f"sha1:{'ab' * 20}",) and not facts.attested
 
     def test_a_version_central_does_not_list_asks_for_nothing_more(self, serve) -> None:
         served = serve({f"{self.ROOT}/maven-metadata.xml": self.METADATA})
-        assert MoreRegistries.maven("org.demo:lib", "0.0.1").digests == ()
+        assert PackageRegistries.maven("org.demo:lib", "0.0.1").digests == ()
         assert served.asked == [f"{self.ROOT}/maven-metadata.xml"]
 
     @pytest.mark.parametrize(
@@ -512,7 +519,7 @@ class TestMaven(RegistryFixtures):
     )
     def test_a_name_that_is_not_a_coordinate_is_refused(self, name) -> None:
         with pytest.raises(RegistryError):
-            MoreRegistries.maven(name, "1.0.0")
+            PackageRegistries.maven(name, "1.0.0")
 
     def test_a_checksum_file_that_holds_no_digest_is_ignored(self, serve) -> None:
         stem = f"{self.ROOT}/1.0.0/lib-1.0.0.jar"
@@ -522,7 +529,7 @@ class TestMaven(RegistryFixtures):
                 f"{stem}.sha256": "<html>nope</html>",
             }
         )
-        assert MoreRegistries.maven("org.demo:lib", "1.0.0").digests == ()
+        assert PackageRegistries.maven("org.demo:lib", "1.0.0").digests == ()
 
 
 class TestPackagist(RegistryFixtures):
@@ -554,12 +561,12 @@ class TestPackagist(RegistryFixtures):
         }
 
     def test_minified_versions_are_expanded_and_unset_removes_a_key(self) -> None:
-        expanded = MoreRegistries.expand_minified([{"a": 1, "b": 2}, {"b": 3}, {"a": "__unset"}])
+        expanded = PackageRegistries.expand_minified([{"a": 1, "b": 2}, {"b": 3}, {"a": "__unset"}])
         assert expanded == [{"a": 1, "b": 2}, {"a": 1, "b": 3}, {"b": 3}]
 
     def test_a_listed_version_its_shasum_and_the_newest_stable(self, serve) -> None:
         serve(self.answers())
-        facts = MoreRegistries.composer("acme/demo", "v1.0.0")
+        facts = PackageRegistries.composer("acme/demo", "v1.0.0")
         assert not facts.yanked and facts.digests == ("ab" * 20,)
         assert facts.latest == "1.1.0" and facts.first_published == "2023-01-01"
         # `source` was unset on this version, so the newest version's repository is used.
@@ -567,22 +574,22 @@ class TestPackagist(RegistryFixtures):
 
     def test_a_normalised_pin_matches(self, serve) -> None:
         serve(self.answers())
-        assert not MoreRegistries.composer("acme/demo", "1.1.0.0").yanked
+        assert not PackageRegistries.composer("acme/demo", "1.1.0.0").yanked
 
     def test_a_tag_that_is_gone_was_withdrawn(self, serve) -> None:
         serve(self.answers())
-        facts = MoreRegistries.composer("acme/demo", "1.0.5")
+        facts = PackageRegistries.composer("acme/demo", "1.0.5")
         assert facts.yanked and facts.yanked_reason == "no longer published on Packagist"
 
     @pytest.mark.parametrize("version", ["dev-main", "1.x-dev", None])
     def test_a_development_branch_is_never_withdrawn(self, serve, version) -> None:
         serve(self.answers())
-        assert not MoreRegistries.composer("acme/demo", version).yanked
+        assert not PackageRegistries.composer("acme/demo", version).yanked
 
     @pytest.mark.parametrize("name", ["demo", "acme/", "/demo", "acme/demo/extra", "acme/../x"])
     def test_a_name_that_is_not_vendor_and_package_is_refused(self, name) -> None:
         with pytest.raises(RegistryError):
-            MoreRegistries.composer(name, "1.0.0")
+            PackageRegistries.composer(name, "1.0.0")
 
 
 class TestPub(RegistryFixtures):
@@ -612,7 +619,7 @@ class TestPub(RegistryFixtures):
                 }
             }
         )
-        facts = MoreRegistries.pub("demo", "1.0.0")
+        facts = PackageRegistries.pub("demo", "1.0.0")
         assert facts.yanked and facts.yanked_reason == "retracted by its publisher"
         assert facts.digests == (f"sha256:{SHA256}",) and facts.latest == "1.2.0"
         assert (
@@ -622,7 +629,7 @@ class TestPub(RegistryFixtures):
 
     def test_retracted_must_be_true_not_merely_present(self, serve) -> None:
         serve({self.URL: {"versions": [{"version": "1.0.0", "retracted": "yes"}]}})
-        assert not MoreRegistries.pub("demo", "1.0.0").yanked
+        assert not PackageRegistries.pub("demo", "1.0.0").yanked
 
 
 class TestHex(RegistryFixtures):
@@ -641,20 +648,20 @@ class TestHex(RegistryFixtures):
                 f"{self.URL}/releases/1.0.0": {"checksum": SHA256.upper()},
             }
         )
-        facts = MoreRegistries.hex("demo", "1.0.0")
+        facts = PackageRegistries.hex("demo", "1.0.0")
         assert facts.yanked and facts.yanked_reason == "security - CVE fix in 1.0.1"
         assert facts.digests == (f"sha256:{SHA256}",) and facts.latest == "1.0.1"
         assert facts.repository == "https://github.com/o/demo" and facts.releases == 2
 
     def test_a_version_hex_does_not_have_asks_for_no_release(self, serve) -> None:
         served = serve({self.URL: {"releases": [{"version": "1.0.1"}]}})
-        facts = MoreRegistries.hex("demo", "0.0.1")
+        facts = PackageRegistries.hex("demo", "0.0.1")
         assert facts.digests == () and not facts.yanked
         assert served.asked == [self.URL]
 
     def test_a_retirement_with_no_words_still_says_why(self, serve) -> None:
         serve({self.URL: {"retirements": {"1.0.0": {"reason": ""}}, "releases": []}})
-        assert MoreRegistries.hex("demo", "1.0.0").yanked_reason == "retired by its owner"
+        assert PackageRegistries.hex("demo", "1.0.0").yanked_reason == "retired by its owner"
 
 
 class TestCocoaPodsTrunk(RegistryFixtures):
@@ -664,7 +671,7 @@ class TestCocoaPodsTrunk(RegistryFixtures):
     PODSPEC = b'{"name": "Alamofire", "version": "5.9.1", "deprecated": true, "deprecated_in_favor_of": "Alamofire2"}'
 
     def urls(self, name: str = "Alamofire", version: str = "5.9.1") -> tuple[str, str]:
-        a, b, c = MoreRegistries.cocoapods_shard(name)
+        a, b, c = PackageRegistries.cocoapods_shard(name)
         base = "https://cdn.cocoapods.org"
         return (
             f"{base}/all_pods_versions_{a}_{b}_{c}.txt",
@@ -677,7 +684,7 @@ class TestCocoaPodsTrunk(RegistryFixtures):
 
         listing, podspec = self.urls()
         served = serve({listing: "Other/1.0\nAlamofire/5.8.0/5.9.1\n", podspec: self.PODSPEC})
-        facts = MoreRegistries.cocoapods("Alamofire", "5.9.1")
+        facts = PackageRegistries.cocoapods("Alamofire", "5.9.1")
         assert facts.digests == (
             f"sha1:{hashlib.sha1(self.PODSPEC, usedforsecurity=False).hexdigest()}",
         )
@@ -691,10 +698,10 @@ class TestCocoaPodsTrunk(RegistryFixtures):
         # been compared with its registry: the redirect-free reader refused them all.
         import hashlib
 
-        from cordon_scanner.intel.registries.more_registries import Redirected
+        from cordon_scanner.intel.registries.registry_hosts import Redirected
 
         listing, podspec = self.urls()
-        a, b, c = MoreRegistries.cocoapods_shard("Alamofire")
+        a, b, c = PackageRegistries.cocoapods_shard("Alamofire")
         mirror = f"https://cdn.jsdelivr.net/cocoa/Specs/{a}/{b}/{c}/Alamofire/5.9.1/Alamofire.podspec.json"
         served = serve(
             {
@@ -703,7 +710,7 @@ class TestCocoaPodsTrunk(RegistryFixtures):
                 mirror: self.PODSPEC,
             }
         )
-        facts = MoreRegistries.cocoapods("Alamofire", "5.9.1")
+        facts = PackageRegistries.cocoapods("Alamofire", "5.9.1")
         assert facts.digests == (
             f"sha1:{hashlib.sha1(self.PODSPEC, usedforsecurity=False).hexdigest()}",
         )
@@ -719,26 +726,26 @@ class TestCocoaPodsTrunk(RegistryFixtures):
             }
         )
         with pytest.raises(Redirected):
-            MoreRegistries.cocoapods("Alamofire", "5.9.1")
+            PackageRegistries.cocoapods("Alamofire", "5.9.1")
 
     @pytest.mark.conformance("cocoapods", "UNI-16")
     def test_a_version_trunk_no_longer_lists_was_deleted(self, serve) -> None:
         listing, _ = self.urls()
         serve({listing: "Alamofire/5.8.0\n"})
-        assert MoreRegistries.cocoapods("Alamofire", "5.9.1").yanked
+        assert PackageRegistries.cocoapods("Alamofire", "5.9.1").yanked
 
     @pytest.mark.conformance("cocoapods", "UNI-16")
     def test_a_pod_trunk_does_not_have_is_not_found(self, serve) -> None:
         listing, _ = self.urls("NoSuchPodAnywhere")
         serve({listing: "Other/1.0\n"})
         with pytest.raises(PackageNotFound):
-            MoreRegistries.cocoapods("NoSuchPodAnywhere", "1.0.0")
+            PackageRegistries.cocoapods("NoSuchPodAnywhere", "1.0.0")
 
     @pytest.mark.conformance("cocoapods", "UNI-22")
     def test_a_name_that_is_not_a_pod_name_is_never_requested(self, serve) -> None:
         served = serve({})
         with pytest.raises(RegistryError):
-            MoreRegistries.cocoapods("../../etc", "1.0")
+            PackageRegistries.cocoapods("../../etc", "1.0")
         assert served.asked == []
 
 
@@ -755,20 +762,20 @@ class TestCran(RegistryFixtures):
     @pytest.mark.conformance("cran", "UNI-16", "UNI-22")
     def test_versions_dates_and_the_latest(self, serve) -> None:
         serve({self.URL: self.DOCUMENT})
-        facts = MoreRegistries.cran("jsonlite", "1.8.9")
+        facts = PackageRegistries.cran("jsonlite", "1.8.9")
         assert facts.releases == 2 and facts.latest == "2.0.0" and not facts.yanked
         assert facts.first_published == "2024-09-20T09:30:02+00:00" and facts.digests == ()
 
     @pytest.mark.conformance("cran", "UNI-16")
     def test_an_archived_package_is_withdrawn(self, serve) -> None:
         serve({self.URL: {**self.DOCUMENT, "archived": True}})
-        facts = MoreRegistries.cran("jsonlite", "2.0.0")
+        facts = PackageRegistries.cran("jsonlite", "2.0.0")
         assert facts.yanked and facts.yanked_reason == "archived by CRAN"
 
     @pytest.mark.conformance("cran", "UNI-16")
     def test_a_version_cran_never_published(self, serve) -> None:
         serve({self.URL: self.DOCUMENT})
-        facts = MoreRegistries.cran("jsonlite", "9.9.9")
+        facts = PackageRegistries.cran("jsonlite", "9.9.9")
         assert facts.yanked and facts.yanked_reason == "not a version CRAN published"
 
     @pytest.mark.conformance("cran", "UNI-16")
@@ -777,17 +784,17 @@ class TestCran(RegistryFixtures):
         # reported withdrawn. Ordered by R too: 1.2-17 is newer than 1.2-9.
         url = "https://crandb.r-pkg.org/AER/all"
         serve({url: {"versions": {"1.2-9": {}, "1.2-16": {}, "1.2-17": {}}, "archived": False}})
-        facts = MoreRegistries.cran("AER", "1.2.16")
+        facts = PackageRegistries.cran("AER", "1.2.16")
         assert not facts.yanked and facts.latest == "1.2-17"
-        assert MoreRegistries.cran("AER", "1.2.15").yanked
+        assert PackageRegistries.cran("AER", "1.2.15").yanked
 
     @pytest.mark.conformance("cran", "UNI-22")
     def test_an_unreachable_registry_and_a_hostile_name(self, serve) -> None:
         serve({self.URL: RegistryError("connection timed out")})
         with pytest.raises(RegistryError):
-            MoreRegistries.cran("jsonlite", "2.0.0")
+            PackageRegistries.cran("jsonlite", "2.0.0")
         with pytest.raises(RegistryError):
-            MoreRegistries.cran("../../etc/passwd", "1")
+            PackageRegistries.cran("../../etc/passwd", "1")
 
 
 class TestHackage(RegistryFixtures):
@@ -811,7 +818,7 @@ class TestHackage(RegistryFixtures):
     @pytest.mark.conformance("hackage", "UNI-16", "UNI-22", "hackage.revisions")
     def test_revision_hashes_and_the_latest(self, serve) -> None:
         serve(self.answers())
-        facts = MoreRegistries.hackage("acme-missiles", "0.3")
+        facts = PackageRegistries.hackage("acme-missiles", "0.3")
         # The cabal-file revision hash Stack's lock pins (`@sha256:...`).
         assert facts.digests == (f"sha256:{self.REVISION}",)
         assert facts.latest == "0.3" and not facts.yanked and facts.releases == 3
@@ -828,7 +835,7 @@ class TestHackage(RegistryFixtures):
                 }
             )
         )
-        facts = MoreRegistries.hackage("acme-missiles", "0.1")
+        facts = PackageRegistries.hackage("acme-missiles", "0.1")
         assert (
             facts.yanked
             and facts.yanked_reason == "deprecated by its maintainer: the solver avoids it"
@@ -838,7 +845,7 @@ class TestHackage(RegistryFixtures):
     @pytest.mark.conformance("hackage", "UNI-16")
     def test_a_version_hackage_never_published(self, serve) -> None:
         serve(self.answers())
-        facts = MoreRegistries.hackage("acme-missiles", "9.9")
+        facts = PackageRegistries.hackage("acme-missiles", "9.9")
         assert (
             facts.yanked
             and facts.yanked_reason == "not a version Hackage published"
@@ -849,12 +856,12 @@ class TestHackage(RegistryFixtures):
     def test_an_unreachable_registry_and_hostile_coordinates(self, serve) -> None:
         serve({f"{self.BASE}/acme-missiles/preferred": RegistryError("connection timed out")})
         with pytest.raises(RegistryError):
-            MoreRegistries.hackage("acme-missiles", "0.3")
+            PackageRegistries.hackage("acme-missiles", "0.3")
         with pytest.raises(RegistryError):
-            MoreRegistries.hackage("../../etc/passwd", "1")
+            PackageRegistries.hackage("../../etc/passwd", "1")
         serve(self.answers())
         with pytest.raises(RegistryError):
-            MoreRegistries.hackage("acme-missiles", "0.3/../../x")
+            PackageRegistries.hackage("acme-missiles", "0.3/../../x")
 
 
 class TestJuliaGeneral(RegistryFixtures):
@@ -871,7 +878,7 @@ class TestJuliaGeneral(RegistryFixtures):
         serve(
             {f"{self.BASE}/Package.toml": self.PACKAGE, f"{self.BASE}/Versions.toml": self.VERSIONS}
         )
-        facts = MoreRegistries.julia("JSON3", "1.14.3")
+        facts = PackageRegistries.julia("JSON3", "1.14.3")
         # The tree a manifest's git-tree-sha1 pins.
         assert facts.digests == ("git-tree-sha1:411eccfe8aba0814ffa0fdf4860913ed09c34975",)
         assert facts.repository == "https://github.com/quinnj/JSON3.jl.git"
@@ -885,15 +892,15 @@ class TestJuliaGeneral(RegistryFixtures):
         )
         serve({f"{self.BASE}/Package.toml": retired, f"{self.BASE}/Versions.toml": self.VERSIONS})
         assert (
-            MoreRegistries.julia("JSON3", "1.15.0").yanked_reason
+            PackageRegistries.julia("JSON3", "1.15.0").yanked_reason
             == "yanked from the General registry"
         )
         assert (
-            MoreRegistries.julia("JSON3", "9.9.9").yanked_reason
+            PackageRegistries.julia("JSON3", "9.9.9").yanked_reason
             == "not a version the General registry holds"
         )
         assert (
-            MoreRegistries.julia("JSON3", "1.14.3").deprecated
+            PackageRegistries.julia("JSON3", "1.14.3").deprecated
             == "deprecated in the General registry in favour of JSON"
         )
 
@@ -901,7 +908,7 @@ class TestJuliaGeneral(RegistryFixtures):
     def test_unreachable_unreadable_and_hostile(self, serve) -> None:
         serve({f"{self.BASE}/Package.toml": RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.julia("JSON3", "1.14.3")
+            PackageRegistries.julia("JSON3", "1.14.3")
         serve(
             {
                 f"{self.BASE}/Package.toml": "name = [unterminated",
@@ -909,9 +916,9 @@ class TestJuliaGeneral(RegistryFixtures):
             }
         )
         with pytest.raises(RegistryError):
-            MoreRegistries.julia("JSON3", "1.14.3")
+            PackageRegistries.julia("JSON3", "1.14.3")
         with pytest.raises(RegistryError):
-            MoreRegistries.julia("../../x", "1")
+            PackageRegistries.julia("../../x", "1")
 
 
 class TestOpamRepository(RegistryFixtures):
@@ -927,7 +934,7 @@ class TestOpamRepository(RegistryFixtures):
     @pytest.mark.conformance("opam", "UNI-16", "UNI-22", "opam.repositories")
     def test_checksum_and_repository(self, serve) -> None:
         serve({f"{self.RAW}/fmt.0.11.0/opam": self.OPAM})
-        facts = MoreRegistries.opam("fmt", "0.11.0")
+        facts = PackageRegistries.opam("fmt", "0.11.0")
         # What dune's lock records for the archive.
         assert facts.digests == (f"sha512:{self.SHA512}",)
         assert facts.repository == "git+https://erratique.ch/repos/fmt.git" and not facts.yanked
@@ -940,29 +947,29 @@ class TestOpamRepository(RegistryFixtures):
                 self.SITE: "<html></html>",
             }
         )
-        flagged = MoreRegistries.opam("fmt", "0.11.0")
+        flagged = PackageRegistries.opam("fmt", "0.11.0")
         assert flagged.yanked_reason == "flagged avoid-version: the solver avoids it"
         assert flagged.deprecated == "deprecated in opam-repository"
         assert (
-            MoreRegistries.opam("fmt", "0.0.1").yanked_reason
+            PackageRegistries.opam("fmt", "0.0.1").yanked_reason
             == "not a version opam-repository holds"
         )
         serve({})
         with pytest.raises(PackageNotFound):
-            MoreRegistries.opam("fmt", "0.0.1")
+            PackageRegistries.opam("fmt", "0.0.1")
 
     @pytest.mark.conformance("opam", "UNI-22")
     def test_unreachable_unreadable_and_hostile(self, serve) -> None:
         serve({f"{self.RAW}/fmt.0.11.0/opam": RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.opam("fmt", "0.11.0")
+            PackageRegistries.opam("fmt", "0.11.0")
         serve({f"{self.RAW}/fmt.0.11.0/opam": 'depends: ["unterminated'})
         with pytest.raises(RegistryError):
-            MoreRegistries.opam("fmt", "0.11.0")
+            PackageRegistries.opam("fmt", "0.11.0")
         with pytest.raises(RegistryError):
-            MoreRegistries.opam("../../x", "1")
+            PackageRegistries.opam("../../x", "1")
         with pytest.raises(RegistryError):
-            MoreRegistries.opam("fmt", "1/../../x")
+            PackageRegistries.opam("fmt", "1/../../x")
 
 
 class TestConanCenter(RegistryFixtures):
@@ -992,7 +999,7 @@ class TestConanCenter(RegistryFixtures):
                 f"{self.BASE}/zlib/1.3.1/_/_/revisions": self.REVISIONS,
             }
         )
-        facts = MoreRegistries.conan("zlib", "1.3.1")
+        facts = InfraRegistries.conan("zlib", "1.3.1")
         # Every revision of the version: a lock may pin any of them.
         assert facts.digests == (
             "md5:cac0f6daea041b0ccf42934163defb20",
@@ -1005,22 +1012,23 @@ class TestConanCenter(RegistryFixtures):
     def test_a_version_and_a_recipe_conancenter_lacks(self, serve) -> None:
         serve({f"{self.BASE}/search?q=zlib": self.SEARCH})
         assert (
-            MoreRegistries.conan("zlib", "1.0.0").yanked_reason == "not a version ConanCenter holds"
+            InfraRegistries.conan("zlib", "1.0.0").yanked_reason
+            == "not a version ConanCenter holds"
         )
         serve({f"{self.BASE}/search?q=acme-internal": {"results": []}})
         with pytest.raises(PackageNotFound):
-            MoreRegistries.conan("acme-internal", "1.0")
+            InfraRegistries.conan("acme-internal", "1.0")
 
     @pytest.mark.conformance("conan", "UNI-22")
     def test_unreachable_and_hostile(self, serve) -> None:
         serve({f"{self.BASE}/search?q=zlib": RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.conan("zlib", "1.3.1")
+            InfraRegistries.conan("zlib", "1.3.1")
         with pytest.raises(RegistryError):
-            MoreRegistries.conan("../../x", "1")
+            InfraRegistries.conan("../../x", "1")
         serve({f"{self.BASE}/search?q=zlib": self.SEARCH})
         with pytest.raises(RegistryError):
-            MoreRegistries.conan("zlib", "1.3.1/../../x")
+            InfraRegistries.conan("zlib", "1.3.1/../../x")
 
 
 class TestVcpkgRegistry(RegistryFixtures):
@@ -1048,7 +1056,7 @@ class TestVcpkgRegistry(RegistryFixtures):
     @pytest.mark.conformance("vcpkg", "UNI-16", "UNI-22", "vcpkg.port-versions")
     def test_git_trees_per_port_version_and_latest(self, serve) -> None:
         serve({self.URL: self.DOCUMENT})
-        facts = MoreRegistries.vcpkg("fmt", "12.2.0")
+        facts = InfraRegistries.vcpkg("fmt", "12.2.0")
         # Both port-versions of 12.2.0: each a different git-tree of the port.
         assert facts.digests == (
             "git-tree-sha1:7ca0b8c0026883daf28a0db75f6b4964bae2979a",
@@ -1060,19 +1068,19 @@ class TestVcpkgRegistry(RegistryFixtures):
     def test_a_version_and_a_port_the_registry_lacks(self, serve) -> None:
         serve({self.URL: self.DOCUMENT})
         assert (
-            MoreRegistries.vcpkg("fmt", "9.0.0").yanked_reason
+            InfraRegistries.vcpkg("fmt", "9.0.0").yanked_reason
             == "not a version the vcpkg registry holds"
         )
         with pytest.raises(PackageNotFound):
-            MoreRegistries.vcpkg("acme-internal", "1.0")
+            InfraRegistries.vcpkg("acme-internal", "1.0")
 
     @pytest.mark.conformance("vcpkg", "UNI-22")
     def test_unreachable_and_hostile(self, serve) -> None:
         serve({self.URL: RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.vcpkg("fmt", "12.2.0")
+            InfraRegistries.vcpkg("fmt", "12.2.0")
         with pytest.raises(RegistryError):
-            MoreRegistries.vcpkg("../../x", "1")
+            InfraRegistries.vcpkg("../../x", "1")
 
 
 class TestActionTags(RegistryFixtures):
@@ -1103,7 +1111,7 @@ class TestActionTags(RegistryFixtures):
     @pytest.mark.conformance("actions", "UNI-16", "UNI-22", "actions.sha-pinning")
     def test_the_commit_a_release_tag_names(self, serve) -> None:
         serve({self.URL: self.refs()})
-        facts = MoreRegistries.actions("actions/checkout", "7.0.1")
+        facts = InfraRegistries.actions("actions/checkout", "7.0.1")
         # The annotated tag peeled to its commit: what a SHA pin with `# v7.0.1` must equal.
         assert facts.digests == (self.COMMIT,)
         assert facts.latest == "7.0.1" and facts.releases == 2 and not facts.yanked
@@ -1112,7 +1120,7 @@ class TestActionTags(RegistryFixtures):
     def test_a_release_no_tag_names_and_a_missing_repository(self, serve) -> None:
         serve({self.URL: self.refs()})
         assert (
-            MoreRegistries.actions("actions/checkout", "9.9.9").yanked_reason
+            InfraRegistries.actions("actions/checkout", "9.9.9").yanked_reason
             == "no tag of the repository names this release"
         )
         serve(
@@ -1123,18 +1131,18 @@ class TestActionTags(RegistryFixtures):
             }
         )
         with pytest.raises(PackageNotFound):
-            MoreRegistries.actions("acme/gone", "1.0.0")
+            InfraRegistries.actions("acme/gone", "1.0.0")
 
     @pytest.mark.conformance("actions", "UNI-22")
     def test_unreachable_unreadable_and_hostile(self, serve) -> None:
         serve({self.URL: RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.actions("actions/checkout", "7.0.1")
+            InfraRegistries.actions("actions/checkout", "7.0.1")
         serve({self.URL: b"zzzz-not-pkt-lines"})
         with pytest.raises(RegistryError):
-            MoreRegistries.actions("actions/checkout", "7.0.1")
+            InfraRegistries.actions("actions/checkout", "7.0.1")
         with pytest.raises(RegistryError):
-            MoreRegistries.actions("../../etc/passwd", "1")
+            InfraRegistries.actions("../../etc/passwd", "1")
 
 
 class TestGalaxy(RegistryFixtures):
@@ -1161,7 +1169,7 @@ class TestGalaxy(RegistryFixtures):
     @pytest.mark.conformance("ansible", "UNI-16", "UNI-22", "ansible.identity")
     def test_a_collection_version_and_its_artefact(self, serve) -> None:
         serve(self.collection())
-        facts = MoreRegistries.ansible("ansible.posix", "1.5.4")
+        facts = InfraRegistries.ansible("ansible.posix", "1.5.4")
         assert (
             facts.digests == (f"sha256:{self.SHA}",)
             and facts.latest == "2.2.2"
@@ -1172,9 +1180,11 @@ class TestGalaxy(RegistryFixtures):
     def test_a_deprecated_collection_and_a_missing_version(self, serve) -> None:
         index = self.collection()[self.INDEX]
         serve(self.collection(**{self.INDEX: {**index, "deprecated": True}}))
-        assert MoreRegistries.ansible("ansible.posix", "1.5.4").deprecated == "deprecated on Galaxy"
         assert (
-            MoreRegistries.ansible("ansible.posix", "0.0.1").yanked_reason
+            InfraRegistries.ansible("ansible.posix", "1.5.4").deprecated == "deprecated on Galaxy"
+        )
+        assert (
+            InfraRegistries.ansible("ansible.posix", "0.0.1").yanked_reason
             == "not a version Galaxy holds"
         )
 
@@ -1193,12 +1203,12 @@ class TestGalaxy(RegistryFixtures):
                 }
             }
         )
-        facts = MoreRegistries.ansible("geerlingguy.docker", "7.4.1")
+        facts = InfraRegistries.ansible("geerlingguy.docker", "7.4.1")
         assert (
             facts.latest == "7.4.1"
             and facts.repository == "https://github.com/geerlingguy/ansible-role-docker"
         )
-        assert MoreRegistries.ansible("geerlingguy.docker", "1.0.0").yanked
+        assert InfraRegistries.ansible("geerlingguy.docker", "1.0.0").yanked
         serve(
             {
                 "https://galaxy.ansible.com/api/v1/roles/?owner__username=acme&name=gone": {
@@ -1207,17 +1217,17 @@ class TestGalaxy(RegistryFixtures):
             }
         )
         with pytest.raises(PackageNotFound):
-            MoreRegistries.ansible("acme.gone", "1.0")
+            InfraRegistries.ansible("acme.gone", "1.0")
 
     @pytest.mark.conformance("ansible", "UNI-22")
     def test_unreachable_and_hostile(self, serve) -> None:
         serve({self.INDEX: RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.ansible("ansible.posix", "1.5.4")
+            InfraRegistries.ansible("ansible.posix", "1.5.4")
         with pytest.raises(RegistryError):
-            MoreRegistries.ansible("../../x", "1")
+            InfraRegistries.ansible("../../x", "1")
         with pytest.raises(RegistryError):
-            MoreRegistries.ansible("ansible.posix", "1/../../x")
+            InfraRegistries.ansible("ansible.posix", "1/../../x")
 
 
 class TestTerraformRegistry(RegistryFixtures):
@@ -1253,7 +1263,7 @@ class TestTerraformRegistry(RegistryFixtures):
                 "https://releases.hashicorp.com/terraform-provider-null/3.3.2/terraform-provider-null_3.3.2_SHA256SUMS": f"{self.LINUX}  terraform-provider-null_3.3.2_linux_amd64.zip\n{self.DARWIN}  terraform-provider-null_3.3.2_darwin_arm64.zip\n",
             }
         )
-        facts = MoreRegistries.terraform("hashicorp/null", "3.3.2")
+        facts = InfraRegistries.terraform("hashicorp/null", "3.3.2")
         assert set(facts.digests) == {f"sha256:{self.LINUX}", f"sha256:{self.DARWIN}"}
         assert facts.latest == "3.3.2" and not facts.yanked
 
@@ -1271,7 +1281,7 @@ class TestTerraformRegistry(RegistryFixtures):
             }
         )
         # Never one platform's hash alone: every other platform's would read as a mismatch.
-        assert set(MoreRegistries.terraform("hashicorp/null", "3.3.2").digests) == {
+        assert set(InfraRegistries.terraform("hashicorp/null", "3.3.2").digests) == {
             f"sha256:{self.LINUX}",
             f"sha256:{self.DARWIN}",
         }
@@ -1293,13 +1303,13 @@ class TestTerraformRegistry(RegistryFixtures):
                 f"{self.BASE}/versions": self.VERSIONS,
             }
         )
-        assert MoreRegistries.terraform("cloudposse/label/null", "0.25.0").latest == "0.25.0"
+        assert InfraRegistries.terraform("cloudposse/label/null", "0.25.0").latest == "0.25.0"
         assert (
-            MoreRegistries.terraform("cloudposse/label/null", "0.24.1").deprecated
+            InfraRegistries.terraform("cloudposse/label/null", "0.24.1").deprecated
             == "deprecated on the registry: use 0.25"
         )
         assert (
-            MoreRegistries.terraform("hashicorp/null", "9.9.9").yanked_reason
+            InfraRegistries.terraform("hashicorp/null", "9.9.9").yanked_reason
             == "not a version the registry holds"
         )
 
@@ -1307,11 +1317,11 @@ class TestTerraformRegistry(RegistryFixtures):
     def test_unreachable_and_hostile(self, serve) -> None:
         serve({f"{self.BASE}/versions": RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.terraform("hashicorp/null", "3.3.2")
+            InfraRegistries.terraform("hashicorp/null", "3.3.2")
         with pytest.raises(RegistryError):
-            MoreRegistries.terraform("../../etc/passwd", "1")
+            InfraRegistries.terraform("../../etc/passwd", "1")
         with pytest.raises(RegistryError):
-            MoreRegistries.terraform("hashicorp/null", "1/../../x")
+            InfraRegistries.terraform("hashicorp/null", "1/../../x")
 
 
 class TestHelmRepositories(RegistryFixtures):
@@ -1337,10 +1347,10 @@ class TestHelmRepositories(RegistryFixtures):
             and not facts.yanked
         )
         assert (
-            MoreRegistries.helm("prometheus-node-exporter", "4.58.0", self.REPO).deprecated
+            InfraRegistries.helm("prometheus-node-exporter", "4.58.0", self.REPO).deprecated
             == "deprecated in its repository"
         )
-        assert MoreRegistries.helm("prometheus-node-exporter", "1.0.0", self.REPO).yanked
+        assert InfraRegistries.helm("prometheus-node-exporter", "1.0.0", self.REPO).yanked
 
     @pytest.mark.conformance("helm", "UNI-16", "helm.local-oci")
     def test_an_oci_registry_behind_an_anonymous_token(self, monkeypatch) -> None:
@@ -1357,12 +1367,12 @@ class TestHelmRepositories(RegistryFixtures):
                 ]
             },
         }
-        monkeypatch.setattr(MoreRegistries, "_oci", staticmethod(lambda url, accept: answers[url]))
-        facts = MoreRegistries.helm(
+        monkeypatch.setattr(RegistryHttp, "oci", staticmethod(lambda url, accept: answers[url]))
+        facts = InfraRegistries.helm(
             "postgresql", "15.5.38", "oci://registry.example.invalid/charts"
         )
         assert facts.digests == (f"sha256:{self.DIGEST}",) and facts.latest == "15.5.38"
-        assert MoreRegistries.helm(
+        assert InfraRegistries.helm(
             "postgresql", "9.9.9", "oci://registry.example.invalid/charts"
         ).yanked
 
@@ -1375,8 +1385,10 @@ class TestHelmRepositories(RegistryFixtures):
                 "layers": [{"mediaType": "application/tar+gzip", "digest": f"sha256:{self.DIGEST}"}]
             },
         }
-        monkeypatch.setattr(MoreRegistries, "_oci", staticmethod(lambda url, accept: answers[url]))
-        facts = MoreRegistries.helm("app", "1.0.0+build.1", "oci://registry.example.invalid/charts")
+        monkeypatch.setattr(RegistryHttp, "oci", staticmethod(lambda url, accept: answers[url]))
+        facts = InfraRegistries.helm(
+            "app", "1.0.0+build.1", "oci://registry.example.invalid/charts"
+        )
         assert not facts.yanked
         assert facts.latest == "1.0.0+build.1"
         assert facts.digests == (f"sha256:{self.DIGEST}",)
@@ -1385,16 +1397,16 @@ class TestHelmRepositories(RegistryFixtures):
     def test_unreachable_absent_and_unaskable(self, serve) -> None:
         serve({f"{self.REPO}/index.yaml": RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.helm("prometheus-node-exporter", "4.59.0", self.REPO)
+            InfraRegistries.helm("prometheus-node-exporter", "4.59.0", self.REPO)
         serve({f"{self.REPO}/index.yaml": "apiVersion: v1\nentries: {}\n"})
         with pytest.raises(PackageNotFound):
-            MoreRegistries.helm("acme-internal", "1.0.0", self.REPO)
+            InfraRegistries.helm("acme-internal", "1.0.0", self.REPO)
         # A repository named only, or a chart of the project's own: nothing to ask, nothing claimed.
-        assert MoreRegistries.helm("redis", "17.3.14", "registry:internal") == PackageFacts(
+        assert InfraRegistries.helm("redis", "17.3.14", "registry:internal") == PackageFacts(
             name="redis", version="17.3.14"
         )
         with pytest.raises(RegistryError):
-            MoreRegistries.helm("../../x", "1", self.REPO)
+            InfraRegistries.helm("../../x", "1", self.REPO)
 
 
 class TestContainerImages:
@@ -1415,8 +1427,8 @@ class TestContainerImages:
         def install(answers: dict[str, Any]) -> Served:
             served = Served(answers)
             monkeypatch.setattr(
-                MoreRegistries,
-                "_oci_bytes",
+                RegistryHttp,
+                "oci_bytes",
                 staticmethod(lambda url, accept, follow=False: served(url)),
             )
             return served
@@ -1462,7 +1474,7 @@ class TestContainerImages:
                 f"{self.GHCR}/blobs/{self.sha(config)}": config,
             }
         )
-        facts = MoreRegistries.image("ghcr.io/acme/app", "1.0")
+        facts = ImageRegistries.image("ghcr.io/acme/app", "1.0")
         # The index's own digest, then each platform's: a pin may name either.
         assert facts.digests == (self.sha(index), self.sha(manifest), "sha256:" + "c" * 64)
         assert facts.repository == "https://github.com/acme/app" and not facts.yanked
@@ -1479,16 +1491,16 @@ class TestContainerImages:
                 f"{self.HUB}/manifests/{digest}": index,
             }
         )
-        assert MoreRegistries.image("alpine", digest).digests[0] == digest
+        assert ImageRegistries.image("alpine", digest).digests[0] == digest
         assert (
-            MoreRegistries.image("alpine", "sha256:" + "0" * 64).yanked_reason
+            ImageRegistries.image("alpine", "sha256:" + "0" * 64).yanked_reason
             == "not a digest the registry holds"
         )
         assert (
-            MoreRegistries.image("alpine", "9.99").yanked_reason == "not a tag the registry holds"
+            ImageRegistries.image("alpine", "9.99").yanked_reason == "not a tag the registry holds"
         )
         with pytest.raises(PackageNotFound):
-            MoreRegistries.image("acme/nothing", "1.0")
+            ImageRegistries.image("acme/nothing", "1.0")
 
     @pytest.mark.conformance("image", "UNI-22")
     def test_private_registries_and_hostile_references_are_never_asked(self, oci) -> None:
@@ -1500,7 +1512,7 @@ class TestContainerImages:
             ("alpine", "a/../b"),
         ):
             with pytest.raises(RegistryError):
-                MoreRegistries.image(name, version)
+                ImageRegistries.image(name, version)
         assert served.asked == []
 
     @pytest.mark.conformance("image", "UNI-17")
@@ -1535,7 +1547,7 @@ class TestContainerImages:
                 f"{self.GHCR}/blobs/{self.sha(bundle)}": bundle,
             }
         )
-        assert MoreRegistries.image_attestations("ghcr.io/acme/app", digest) == {
+        assert ImageRegistries.image_attestations("ghcr.io/acme/app", digest) == {
             "bundles": [json.loads(bundle)]
         }
 
@@ -1543,7 +1555,7 @@ class TestContainerImages:
     def test_a_blob_whose_bytes_do_not_match_its_digest_is_refused(self, oci) -> None:
         oci({f"{self.GHCR}/blobs/sha256:{'e' * 64}": b"not those bytes"})
         with pytest.raises(RegistryError, match="do not match"):
-            MoreRegistries._oci_blob(self.GHCR, "sha256:" + "e" * 64)
+            ImageRegistries.oci_blob(self.GHCR, "sha256:" + "e" * 64)
 
     def test_a_blob_redirect_is_followed_over_https_only(self, monkeypatch) -> None:
         import urllib.error
@@ -1556,12 +1568,10 @@ class TestContainerImages:
                 "https://ghcr.io/v2/x/blobs/y", 307, "redirect", headers, None
             )
 
-        monkeypatch.setattr(MoreRegistries, "_get", staticmethod(lambda url, accept="": b"blob"))
-        assert (
-            MoreRegistries._redirected(redirect("https://pkg-containers.example/blob")) == b"blob"
-        )
+        monkeypatch.setattr(RegistryHttp, "get", staticmethod(lambda url, accept="": b"blob"))
+        assert RegistryHttp.redirected(redirect("https://pkg-containers.example/blob")) == b"blob"
         with pytest.raises(RegistryError, match="HTTPS"):
-            MoreRegistries._redirected(redirect("http://pkg-containers.example/blob"))
+            RegistryHttp.redirected(redirect("http://pkg-containers.example/blob"))
 
 
 class TestHomebrewApi(RegistryFixtures):
@@ -1592,14 +1602,14 @@ class TestHomebrewApi(RegistryFixtures):
     @pytest.mark.conformance("homebrew", "UNI-16", "UNI-22", "homebrew.urls-checksums")
     def test_the_source_and_bottle_checksums_of_the_current_version(self, serve) -> None:
         serve({"https://formulae.brew.sh/api/formula/jq.json": self.FORMULA})
-        facts = MoreRegistries.homebrew("jq", "1.8.2")
+        facts = InfraRegistries.homebrew("jq", "1.8.2")
         assert facts.digests == (
             "sha256:71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af",
             "sha256:90b0fe4ad51959380f16fe8d84c5be8ab525478c32f1f7034c72d99de2442c9b",
         )
         assert facts.latest == "1.8.2" and not facts.yanked
         # Homebrew keeps one version: an older one has nothing to compare against.
-        assert MoreRegistries.homebrew("jq", "1.7.1").digests == ()
+        assert InfraRegistries.homebrew("jq", "1.7.1").digests == ()
 
     @pytest.mark.conformance("homebrew", "UNI-16")
     def test_disabled_deprecated_and_casks(self, serve) -> None:
@@ -1623,8 +1633,8 @@ class TestHomebrewApi(RegistryFixtures):
                 },
             }
         )
-        assert MoreRegistries.homebrew("old", "1.8.2").yanked_reason == "disabled: unmaintained"
-        cask = MoreRegistries.homebrew("firefox", "157.0.1")
+        assert InfraRegistries.homebrew("old", "1.8.2").yanked_reason == "disabled: unmaintained"
+        cask = InfraRegistries.homebrew("firefox", "157.0.1")
         assert cask.digests == (
             "sha256:40a0a649120635460256dae9ad63e40377f77326cbc9c449a5d0a1d7f5dd7982",
         )
@@ -1634,9 +1644,9 @@ class TestHomebrewApi(RegistryFixtures):
     def test_unreachable_and_hostile(self, serve) -> None:
         serve({"https://formulae.brew.sh/api/formula/jq.json": RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.homebrew("jq", "1.8.2")
+            InfraRegistries.homebrew("jq", "1.8.2")
         with pytest.raises(RegistryError):
-            MoreRegistries.homebrew("../../x", "1")
+            InfraRegistries.homebrew("../../x", "1")
 
 
 class TestBazelCentralRegistry(RegistryFixtures):
@@ -1658,7 +1668,7 @@ class TestBazelCentralRegistry(RegistryFixtures):
                 f"{self.BASE}/0.0.11/source.json": self.SOURCE,
             }
         )
-        facts = MoreRegistries.bazel("platforms", "0.0.11")
+        facts = InfraRegistries.bazel("platforms", "0.0.11")
         # What a 7.2+ lock records (the file's hash), and what a 7.0 lock records (the archive's).
         assert facts.digests == (
             f"sha256:{hashlib.sha256(self.SOURCE).hexdigest()}",
@@ -1678,25 +1688,25 @@ class TestBazelCentralRegistry(RegistryFixtures):
             }
         )
         assert (
-            MoreRegistries.bazel("platforms", "0.0.10").yanked_reason
+            InfraRegistries.bazel("platforms", "0.0.10").yanked_reason
             == "yanked: a broken constraint_setting"
         )
         assert (
-            MoreRegistries.bazel("platforms", "9.9.9").yanked_reason
+            InfraRegistries.bazel("platforms", "9.9.9").yanked_reason
             == "not a version the registry holds"
         )
         with pytest.raises(PackageNotFound):
-            MoreRegistries.bazel("acme_internal", "1.0")
+            InfraRegistries.bazel("acme_internal", "1.0")
 
     @pytest.mark.conformance("bazel", "UNI-22")
     def test_unreachable_and_hostile(self, serve) -> None:
         serve({f"{self.BASE}/metadata.json": RegistryError("connection reset")})
         with pytest.raises(RegistryError):
-            MoreRegistries.bazel("platforms", "0.0.11")
+            InfraRegistries.bazel("platforms", "0.0.11")
         with pytest.raises(RegistryError):
-            MoreRegistries.bazel("../../x", "1")
+            InfraRegistries.bazel("../../x", "1")
         with pytest.raises(RegistryError):
-            MoreRegistries.bazel("platforms", "1/../../x")
+            InfraRegistries.bazel("platforms", "1/../../x")
 
 
 class TestCondaForge(RegistryFixtures):
@@ -1725,7 +1735,7 @@ class TestCondaForge(RegistryFixtures):
                 ]
             }
         )
-        facts = MoreRegistries.conda("bzip2", "1.0.8")
+        facts = PackageRegistries.conda("bzip2", "1.0.8")
         assert set(facts.digests) == {
             f"sha256:{'b' * 64}",
             f"md5:{'a' * 32}",
@@ -1737,14 +1747,14 @@ class TestCondaForge(RegistryFixtures):
     @pytest.mark.conformance("conda", "UNI-16")
     def test_a_version_every_build_of_which_is_broken_is_withdrawn(self, serve) -> None:
         serve({self.URL: [{"version": "1.0.8", "md5": "a" * 32, "labels": ["broken"]}]})
-        facts = MoreRegistries.conda("bzip2", "1.0.8")
+        facts = PackageRegistries.conda("bzip2", "1.0.8")
         assert facts.yanked and facts.yanked_reason == "labelled broken by conda-forge"
 
     @pytest.mark.conformance("conda", "UNI-22")
     def test_a_package_conda_forge_lacks_is_not_checked_rather_than_missing(self, serve) -> None:
         serve({})
         with pytest.raises(RegistryError) as raised:
-            MoreRegistries.conda("bzip2", "1.0.8")
+            PackageRegistries.conda("bzip2", "1.0.8")
         assert not isinstance(raised.value, PackageNotFound)
 
 

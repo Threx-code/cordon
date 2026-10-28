@@ -1,4 +1,4 @@
-"""`scan --model` (`model/client.py`, `CommandLine._with_model`), against a stub model server that
+"""`scan --model` (`model/client.py`, `ScanEnrichment.add_model_findings`), against a stub model server that
 records what it was sent: features only, never a path or a line of source; a model that cannot be
 asked makes the scan incomplete; HTTPS beyond loopback; the token from the environment."""
 

@@ -26,16 +26,16 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
+from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets.secrets import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import (
     AUTHOR_TIME_HOOKS,
     INSTALL_TIME_HOOKS,
-    Capability,
     Category,
     Confidence,
     Evidence,
@@ -495,7 +495,7 @@ class ManifestScripts:
     def _capable(path: str, source: str, ctx: ScanContext) -> bool:
         """Whether the capability rules label anything in a hook's inline program."""
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         if not ManifestScripts._loads_only_what_was_read(path, source, ctx):
@@ -654,7 +654,7 @@ class ManifestScripts:
         every install; the benign ones are GitHub archives and release tarballs on a vendor's CDN
         (`cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`). Those two are reported below the gate.
         """
-        from cordon_scanner.intel.malware.hosts import ALL_HOSTS, INTERACTION_HOSTS
+        from cordon_scanner.analysis.shared.destinations import ALL_HOSTS, INTERACTION_HOSTS
 
         member = path.rpartition("!")[2]
         own_manifest = member == "package/package.json" or (
@@ -837,7 +837,7 @@ READABLE_HOOK_TARGETS = frozenset(
 #: program whose entire effect is a line of text.
 #:
 #: The engine already draws this distinction for hook PATHS -- `PRINTING_COMMANDS` and
-#: `Engine._runs` strip printer segments before resolving what a lifecycle script
+#: `Hooks.runs` strip printer segments before resolving what a lifecycle script
 #: reaches -- and the manifest detector had no equivalent for the program inside a `-e`.
 INERT_CALL = re.compile(
     r"(?:console\s*\.\s*(?:log|info|warn|error|debug)"
@@ -2020,7 +2020,7 @@ class ManifestDetector(BaseDetector):
         private = [i for i in indexes if i not in public]
         if not (extra and public and private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         hosts = ", ".join(
             sorted(
@@ -2106,7 +2106,7 @@ class ManifestDetector(BaseDetector):
         private = [i for i, s in enumerate(listed) if i not in public]
         if not public or not private or min(public) > min(private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
         yield self._finding(
@@ -2304,7 +2304,7 @@ class ManifestDetector(BaseDetector):
         private = [i for i, s in enumerate(listed) if i not in public and s]
         if not public or not private or min(public) > min(private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
         yield self._finding(
@@ -2342,7 +2342,7 @@ class ManifestDetector(BaseDetector):
         ]
         if len(set(global_sources)) < 2:
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(sorted({DependencySource.sanitise(s) or s for s in global_sources}))
         yield self._finding(
@@ -2375,7 +2375,7 @@ class ManifestDetector(BaseDetector):
         private = [s for s in sources if s not in public]
         if mapped or not (public and private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(sorted({(DependencySource.sanitise(s) or s) for s in private}))
         yield self._finding(

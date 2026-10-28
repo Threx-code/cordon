@@ -59,7 +59,7 @@ class TestDistanceIsPartOfTheClaim:
 
     A `setup.py` is an install hook, so the adjacent case satisfies
     `MALWARE.DROPPER.001` as well, and the two findings share a span -- where
-    `Engine._collapse_graded_pair` keeps the stronger one. Asserting on the
+    `ResultFolding.graded_pair` keeps the stronger one. Asserting on the
     family rather than on one id keeps distance the variable, which is what the
     class is for."""
 
@@ -171,27 +171,27 @@ class TestCiIsNotAnInstallHook:
 
 class TestTheContextsAreDistinctInTheScanContext:
     def test_a_workflow_is_a_ci_hook_and_not_an_install_hook(self, tmp_path) -> None:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
 
-        hooks = list(Engine._hooks_for(".github/workflows/ci.yml"))
+        hooks = list(Hooks.hooks_for(".github/workflows/ci.yml"))
         assert [h.kind for h in hooks] == ["ci"]
 
     def test_a_dependency_build_file_is_an_install_hook(self, tmp_path) -> None:
         """`pip install` executes a `setup.py`, for somebody who asked for a different
         package. Nobody asked for that, which is what the install-hook context means."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
 
-        assert [h.kind for h in Engine._hooks_for("setup.py")] == ["build"]
-        assert [h.kind for h in Engine._hooks_for("build.rs")] == ["build"]
+        assert [h.kind for h in Hooks.hooks_for("setup.py")] == ["build"]
+        assert [h.kind for h in Hooks.hooks_for("build.rs")] == ["build"]
 
     def test_a_project_build_file_is_neither(self, tmp_path) -> None:
         """And `make` runs when a developer typed it, on their own project. Both execute
         commands; only one of them does so without being asked. See
         `PROJECT_BUILD_FILENAMES`."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
 
-        assert [h.kind for h in Engine._hooks_for("Makefile")] == ["projectbuild"]
-        assert [h.kind for h in Engine._hooks_for("CMakeLists.txt")] == ["projectbuild"]
+        assert [h.kind for h in Hooks.hooks_for("Makefile")] == ["projectbuild"]
+        assert [h.kind for h in Hooks.hooks_for("CMakeLists.txt")] == ["projectbuild"]
 
 
 class TestAPinnedFetchIsNotEvidenceOfIntent:

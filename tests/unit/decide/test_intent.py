@@ -27,7 +27,7 @@ from cordon_scanner.decide.intent import (
     Observation,
 )
 from cordon_scanner.decide.verdict import VerdictFeatures
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Category, Severity
 from unit.foundation.test_npm_work_half_classes import Npm
 

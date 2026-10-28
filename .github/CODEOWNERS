@@ -1,0 +1,24 @@
+# Who reviews what. GitHub requests a review from the owners of every file a pull request touches,
+# and branch protection on the release branch requires it. The last matching line wins.
+#
+# The owner is one account for now; when the repository moves to an organisation this becomes the
+# dev team (@<org>/cordon-dev), here and nowhere else.
+
+# Everything, by default.
+*                                           @Threx-code
+
+# What the scan's own integrity rests on: the guard manifest and every file it pins.
+/.cordon-guard.sha256                       @Threx-code
+/cordon-history-baseline.json               @Threx-code
+/.github/workflows/                         @Threx-code
+
+# The package's arrangement and the test that holds it (CONTRIBUTING.md, "Package layout").
+/tests/unit/repository/test_package_layout.py   @Threx-code
+/tests/unit/package_layout.json             @Threx-code
+
+# What decides which code loads: the entry points, and the registries the engine reaches adapters by.
+/pyproject.toml                             @Threx-code
+/src/cordon_scanner/engine/registry.py      @Threx-code
+
+# This file.
+/.github/CODEOWNERS                         @Threx-code

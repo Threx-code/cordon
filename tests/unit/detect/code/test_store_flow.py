@@ -109,7 +109,7 @@ class TestTheGrade:
     @staticmethod
     def grade(tmp_path, text: str, name: str = "app/sync.py"):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)

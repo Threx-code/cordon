@@ -42,7 +42,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 
 #: A release published by the Sigstore project itself, with provenance that is
 #: genuine and verifiable. Pinned rather than resolved: the point of the check

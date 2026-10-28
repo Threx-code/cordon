@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.errors import ArchiveError, ConfigError
-from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.registry import ArchiveReader
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
@@ -174,14 +174,13 @@ class Bundle:
         """Whether `signature` (hex) is the pinned release key's Ed25519 signature over `manifest`."""
         if not signature:
             return False
-        from cordon_scanner.intel.provenance import _ed25519
-        from cordon_scanner.intel.store.dbsync import AdvisoryBundle
+        from cordon_scanner.intel.registry import AdvisoryBundle, Ed25519
 
         pinned = AdvisoryBundle.pinned_key_hex()
         if not pinned:
             return False
         try:
-            return _ed25519.Ed25519.verify(
+            return Ed25519.verify(
                 bytes.fromhex(pinned), manifest, bytes.fromhex(signature.decode().strip())
             )
         except (ValueError, UnicodeDecodeError):

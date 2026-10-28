@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.code.capability import CapabilityHit
+from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.keychain_owner import KeychainOwner
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.foundation.models import Capability
 
 #: The keychain lookup command, joined at run time: these fixtures are credential reads beside a
 #: request, and Cordon scans its own repository, so the file itself must not spell one out.

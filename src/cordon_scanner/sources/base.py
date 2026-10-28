@@ -23,16 +23,18 @@ how every other file in the repository is scored.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.limits import Limits
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from cordon_scanner.engine.walker import WalkEntry, Walker
     from cordon_scanner.foundation.content import Skipped
+    from cordon_scanner.foundation.files.walk import WalkEntry, Walker
     from cordon_scanner.foundation.limits import Limits
 
 
@@ -149,4 +151,91 @@ class WorkingTreeSource:
         return "working tree"
 
 
-__all__ = ["FileSource", "WorkingTreeSource"]
+class Rejection:
+    """Why a member or an archive was refused. Each becomes a finding."""
+
+    RATIO = "compression_ratio"
+    ENTRIES = "entry_count"
+    SIZE = "uncompressed_size"
+    DEPTH = "nesting_depth"
+    TRAVERSAL = "path_traversal"
+    ABSOLUTE = "absolute_path"
+    LINK = "link_member"
+    SPECIAL = "special_file"
+    UNREADABLE = "unreadable"
+    NAME = "unsafe_name"
+    POLYGLOT = "polyglot_archive"
+    HIDDEN = "hidden_zip_member"
+    PADDED = "padded_expansion"
+    """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
+    padding was not read, and padding is how a payload is put out of a scanner's reach."""
+
+
+@dataclass(frozen=True, slots=True)
+class RejectedMember:
+    name: str
+    reason: str
+    detail: str = ""
+
+
+# Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
+# each implementation typed by one of these, and the type checker proves the implementation
+# conforms, so the engine never sees a concrete adapter type.
+
+
+class ArchiveReading(Protocol):
+    """What the engine uses of the class `ArchiveReader`."""
+
+    def is_archive(self, path: str) -> bool: ...
+    def safe_member_name(self, name: str, *, collapse: bool = ...) -> str | None: ...
+    def walk_archive(
+        self,
+        data: bytes,
+        *,
+        path: str,
+        limits: Limits = ...,
+        depth: int = ...,
+        rejected: list[tuple[str, str, str]] | None = ...,
+        deadline: float | None = ...,
+    ) -> Iterator[tuple[str, bytes]]: ...
+
+
+class GitCheckout(Protocol):
+    """What the engine uses of instances of `GitRepository`."""
+
+    def run(self, args: list[str], *, check: bool = ..., harden: bool = ...) -> str: ...
+    def tree(self, rev: str) -> FileSource: ...
+    def tracked_files(self) -> list[str]: ...
+
+
+class GitRepositories(Protocol):
+    """What the engine uses of the class `GitRepository`."""
+
+    def __call__(self, root: str | Path) -> GitCheckout: ...
+    def binary(self) -> str: ...
+    def discover(self, path: str | Path) -> GitLocation | None: ...
+
+
+class GitLocation(Protocol):
+    """What the engine uses of the `GitInfo` discovering a repository gives: where it is and what is checked out."""
+
+    @property
+    def root(self) -> Path: ...
+    @property
+    def revision(self) -> str | None: ...
+    @property
+    def branch(self) -> str | None: ...
+    @property
+    def remote(self) -> str | None: ...
+
+
+__all__ = [
+    "ArchiveReading",
+    "FileSource",
+    "GitCheckout",
+    "GitLocation",
+    "GitRepositories",
+    "RejectedMember",
+    "Rejection",
+    "WorkingTreeSource",
+]

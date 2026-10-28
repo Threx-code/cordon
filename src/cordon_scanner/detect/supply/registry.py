@@ -67,8 +67,8 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.engine.inventory import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -86,7 +86,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.registries.registry_client import PackageFacts
 
 MAX_QUERIES = 200
@@ -1214,7 +1214,7 @@ class RegistryDetector(BaseDetector):
             return True
         import urllib.parse
 
-        from cordon_scanner.intel.registries.more_registries import PUBLIC_HOSTS
+        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
 
         resolved = dependency.resolved_from or ""
         if not resolved.startswith(("http://", "https://")):
@@ -1236,7 +1236,7 @@ class RegistryDetector(BaseDetector):
         if not resolved.startswith(("http://", "https://")):
             return False
         host = urllib.parse.urlsplit(resolved).hostname or ""
-        from cordon_scanner.intel.registries.more_registries import PUBLIC_HOSTS
+        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
 
         return host not in {
             "registry.npmjs.org",

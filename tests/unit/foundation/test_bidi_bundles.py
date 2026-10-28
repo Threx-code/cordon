@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
 RLO = "‮"  # U+202E RIGHT-TO-LEFT OVERRIDE -- the Trojan Source primitive

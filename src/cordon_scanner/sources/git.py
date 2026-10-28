@@ -31,14 +31,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.engine.walker import WalkEntry
 from cordon_scanner.foundation.content import FileContent, Skipped, SkipReason
 from cordon_scanner.foundation.errors import SourceError
+from cordon_scanner.foundation.files.walk import WalkEntry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-    from cordon_scanner.engine.walker import WalkEntry, Walker
+    from cordon_scanner.foundation.files.walk import WalkEntry, Walker
     from cordon_scanner.foundation.limits import Limits
 
 GIT_TIMEOUT = 30.0
@@ -331,6 +331,10 @@ class GitRepository:
         return completed.stdout.decode("utf-8", errors="replace")
 
     # -- Discovery -------------------------------------------------------
+
+    def tree(self, rev: str) -> GitTreeSource:
+        """The files at `rev`, read from git's objects, never from the working tree."""
+        return GitTreeSource(self, rev)
 
     @classmethod
     def discover(cls, path: str | Path) -> GitInfo | None:

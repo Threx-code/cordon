@@ -11,8 +11,8 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
-from cordon_scanner.engine.engine import Engine
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.engine.pipeline.history import History
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.intel.registries.release_history import Baseline, ReleaseHistory
@@ -98,7 +98,7 @@ class TestTheCeiling:
     ) -> None:
         finding = HistoryKit.suspicious(tmp_path / "s")
         HistoryKit.store(tmp_path / "h", hashlib.sha256(INSTALLER).hexdigest())
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [finding], HistoryKit.units(), "npm", root=tmp_path / "h"
         )
         assert out.severity is Severity.MEDIUM
@@ -107,14 +107,14 @@ class TestTheCeiling:
     def test_a_changed_file_keeps_its_grade(self, tmp_path) -> None:
         finding = HistoryKit.suspicious(tmp_path / "s")
         HistoryKit.store(tmp_path / "h", hashlib.sha256(b"older").hexdigest())
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [finding], HistoryKit.units(), "npm", root=tmp_path / "h"
         )
         assert out.severity is finding.severity
 
     def test_nothing_acquired_changes_nothing(self, tmp_path) -> None:
         finding = HistoryKit.suspicious(tmp_path / "s")
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [finding], HistoryKit.units(), "npm", root=tmp_path / "h"
         )
         assert out is finding
@@ -122,7 +122,7 @@ class TestTheCeiling:
     def test_no_established_release_changes_nothing(self, tmp_path) -> None:
         finding = HistoryKit.suspicious(tmp_path / "s")
         HistoryKit.store(tmp_path / "h", None, baseline_version=None)
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [finding], HistoryKit.units(), "npm", root=tmp_path / "h"
         )
         assert out is finding
@@ -130,7 +130,7 @@ class TestTheCeiling:
     def test_a_malicious_finding_is_never_lowered(self, tmp_path) -> None:
         finding = replace(HistoryKit.suspicious(tmp_path / "s"), category=Category.MALICIOUS)
         HistoryKit.store(tmp_path / "h", hashlib.sha256(INSTALLER).hexdigest())
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [finding], HistoryKit.units(), "npm", root=tmp_path / "h"
         )
         assert out.severity is finding.severity
@@ -183,7 +183,7 @@ class TestEstablished:
             ),
             (
                 "cargo",
-                "more_registries.MoreRegistries._json",
+                "more_registries.RegistryHttp.json",
                 {
                     "versions": [
                         {"num": "1.0.0", "created_at": "2025-01-01T00:00:00Z"},
@@ -211,18 +211,16 @@ class TestAcquireIsOnlineOnly:
     def test_refused_offline(self, tmp_path, monkeypatch) -> None:
         import argparse
 
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.commands.intel import IntelCommand
         from cordon_scanner.foundation.errors import ConfigError
 
         monkeypatch.setenv("CORDON_OFFLINE", "1")
         with pytest.raises(ConfigError):
-            CommandLine._intel_acquire(
-                argparse.Namespace(targets=[str(tmp_path / "x.tgz")], json=False)
-            )
+            IntelCommand.acquire(argparse.Namespace(targets=[str(tmp_path / "x.tgz")], json=False))
 
 
 class TestANewYoungDependency:
-    """`Engine._young_dependency_introduced`."""
+    """`History.young_dependency_introduced`."""
 
     @staticmethod
     def units(dependencies: dict[str, str], name: str = "tool") -> list[FileUnit]:
@@ -261,7 +259,7 @@ class TestANewYoungDependency:
 
         ctx = SimpleNamespace(scorer=RiskScorer())
         return [
-            f.rule_id for f in Engine._young_dependency_introduced(units, "npm", ctx, root=root)
+            f.rule_id for f in History.young_dependency_introduced(units, "npm", ctx, root=root)
         ]
 
     def test_a_dependency_created_days_before_the_release_is_reported(self, tmp_path) -> None:
@@ -283,12 +281,12 @@ class TestANewYoungDependency:
 
     def test_declared_dependencies_are_read_per_format(self) -> None:
         npm = self.units({"a": "1"})
-        assert Engine._declared_dependencies(npm, "npm") == {"a"}
+        assert ReleaseHistory.declared_dependencies(npm, "npm") == {"a"}
         metadata = b"Name: x\nVersion: 1\nRequires-Dist: Foo_Bar>=1\nRequires-Dist: pytest; extra == 'test'\n"
         pypi = [
             FileUnit(FileContent(path="x-1.tar.gz!x-1/PKG-INFO", raw=metadata, size=len(metadata)))
         ]
-        assert Engine._declared_dependencies(pypi, "pypi") == {"foo-bar"}
+        assert ReleaseHistory.declared_dependencies(pypi, "pypi") == {"foo-bar"}
 
 
 class TestObfuscatedSinceAnEstablishedRelease:
@@ -329,7 +327,7 @@ class TestObfuscatedSinceAnEstablishedRelease:
 
     def test_a_file_obfuscated_in_the_established_release_is_lowered(self, tmp_path) -> None:
         self.store(tmp_path / "h", ("package/lib.js",))
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [self.finding(tmp_path)], self.units(), "npm", root=tmp_path / "h"
         )
         assert out.severity is Severity.MEDIUM
@@ -338,7 +336,7 @@ class TestObfuscatedSinceAnEstablishedRelease:
     def test_a_file_newly_obfuscated_keeps_its_grade(self, tmp_path) -> None:
         self.store(tmp_path / "h", ())
         finding = self.finding(tmp_path)
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [finding], self.units(), "npm", root=tmp_path / "h"
         )
         assert out.severity is finding.severity
@@ -346,7 +344,7 @@ class TestObfuscatedSinceAnEstablishedRelease:
     def test_a_file_an_install_hook_runs_keeps_its_grade(self, tmp_path) -> None:
         self.store(tmp_path / "h", ("package/lib.js",))
         finding = self.finding(tmp_path)
-        [out] = Engine._established_release_ceiling(
+        [out] = History.established_release_ceiling(
             [finding],
             self.units(),
             "npm",
@@ -390,9 +388,9 @@ class TestOpenVsx:
 
     def test_a_vsix_is_known_to_release_history_by_its_publisher_and_name(self) -> None:
         units = self.vsix_units()
-        assert Engine._history_distribution(units) == "openvsx"
+        assert History.history_distribution(units) == "openvsx"
         # As published: the API redirects any other spelling to this one.
-        assert Engine._history_identity(units, "openvsx") == ("openvsx", "Acme.tool", "1.2.0")
+        assert History.history_identity(units, "openvsx") == ("openvsx", "Acme.tool", "1.2.0")
 
     def test_a_name_that_is_not_publisher_dot_extension_is_refused(self) -> None:
         from cordon_scanner.intel.registries.openvsx import OpenVsx

@@ -156,8 +156,20 @@ come only from the environment (`CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`,
 `CORDON_NOTIFY_WEBHOOK`). The webhook body is a `cordon.event/v1` envelope
 ([schema](https://github.com/Threx-code/cordon/blob/v0.6.0/schemas/cordon-event-v1.schema.json))
 signed with `CORDON_NOTIFY_WEBHOOK_SECRET` as `X-Cordon-Signature: t=<unix>,v1=<hex HMAC-SHA256 of
-"t.body">`; reject a delivery more than five minutes old. Messages carry rule, severity, path and
-fingerprint, never evidence. A failed delivery is reported on stderr and never changes the exit code.
+"t.body">`; reject a delivery more than five minutes old. To change the secret without dropping
+deliveries, have the receiver accept both the old and the new one while senders move over
+(`EventSignature.verify` in `cordon_scanner.notify.events` takes a list). Messages carry rule,
+severity, path and fingerprint, never evidence. Channels are sent at the same time. A delivery that
+fails on the way (a dropped connection, 408, 429 or 5xx) is tried again, three times at most and
+within twenty seconds for the whole scan, under the same `X-Cordon-Delivery` id so a receiver can
+drop a duplicate; `Retry-After` is honoured up to ten seconds. Any other 4xx is not retried. A
+failed delivery is reported on stderr and never changes the exit code.
+
+A channel of your own (PagerDuty, Google Chat, Mattermost) is a class with an `id`, the `variable`
+holding its URL, and `message(summary, occasion)` returning the body (the `Channel` protocol in
+`cordon_scanner.notify.channel`), registered under the `cordon_scanner.notifiers` entry point and
+loaded only with `--allow-plugins`. It is given the summary, never the scan result, and Cordon does
+the posting, so HTTPS only, no redirects and the retry limits hold for it too.
 
 ### Cordon Cloud
 

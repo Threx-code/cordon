@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cordon-dev/cordon-action@v1
+      - uses: Threx-code/cordon/action@v1
         with:
           severity: high
           sarif: true

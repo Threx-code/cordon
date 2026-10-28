@@ -25,7 +25,7 @@ from run import SuiteResult, Verdict
 from timesplit import Levels, TimeSplit
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 
 class TestLevels:

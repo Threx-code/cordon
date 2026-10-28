@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cli.main import CommandLine
+from support import ROOT
 
 PAYLOAD = "const p = atob(B);\neval(p);\n"
 
@@ -131,9 +132,10 @@ class TestReportConvert(ReviewCommandsFixtures):
         assert CommandLine.main(["report", "convert", str(path)]) == 3
 
     def test_an_oversized_document_is_refused(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.cli.commands.report import ReportCommand
         from cordon_scanner.cli.main import CommandLine
 
-        monkeypatch.setattr(CommandLine, "MAX_RESULT_BYTES", 32)
+        monkeypatch.setattr(ReportCommand, "MAX_RESULT_BYTES", 32)
         path = tmp_path / "big.json"
         path.write_text('{"findings": [' + ",".join(["{}"] * 100) + "]}", encoding="utf-8")
         assert CommandLine.main(["report", "convert", str(path)]) == 3
@@ -225,8 +227,6 @@ class TestRulesDiff(ReviewCommandsFixtures):
         assert "weakened" in capsys.readouterr().out
 
     def test_it_defaults_to_the_installed_packs(self, tmp_path, capsys) -> None:
-        builtin = (
-            Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "rules" / "builtin"
-        )
+        builtin = ROOT / "src" / "cordon_scanner" / "rules" / "builtin"
         assert CommandLine.main(["rules", "diff", str(builtin)]) == 0
         assert "no rule changes" in capsys.readouterr().out

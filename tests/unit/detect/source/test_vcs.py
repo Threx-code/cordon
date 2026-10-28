@@ -17,7 +17,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import RepositoryUnit, ScanContext
 from cordon_scanner.detect.source.vcs import VcsDetector
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
 requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")

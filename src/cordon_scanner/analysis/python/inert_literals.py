@@ -25,7 +25,7 @@ import re
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.foundation.capabilities import Capability
 
 
 class InertLiterals(PythonValueFlow):

@@ -12,8 +12,9 @@ import sys
 
 import pytest
 
-from cordon_scanner.engine.walker import PathGlob, Walker
 from cordon_scanner.foundation.content import FileContent, Skipped, SkipReason
+from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.files.walk import Walker
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
 EXT_MAP = (
@@ -424,7 +425,7 @@ class TestLineEndings(ContentWalkerFixtures):
         """The end-to-end version: the same payload in LF and CRLF form must
         produce the same findings."""
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         payload = b"const p = atob(BLOB);\neval(p);\n"
 
@@ -476,7 +477,7 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
     def test_config_detector_pattern_cache_gets_hits_across_files(self, tmp_path) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.detect.infra.config_files import ConfigDetector
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / "repo"
         for i in range(50):
@@ -493,7 +494,7 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
     def test_rule_selector_pattern_cache_gets_hits_across_files(self, tmp_path) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.detect.base import RuleSelector
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / "repo"
         root.mkdir()
@@ -508,7 +509,7 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
     def test_the_cache_does_not_change_which_findings_are_reported(self, tmp_path) -> None:
         """The optimisation must be invisible in the output, not just fast."""
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / "repo"
         root.mkdir()

@@ -122,7 +122,7 @@ class TestNoEcosystemHasCollapsed(AdvisoryCoverageFixtures):
         sorted(MINIMUM_VULNERABILITIES.items()),
     )
     def test_the_vulnerability_count_clears_its_floor(self, ecosystem: str, floor: int) -> None:
-        from cordon_scanner.intel.advisories.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         records = ShippedAdvisories._shipped(ecosystem)
         vulnerabilities = sum(1 for r in records if not r.malicious)
@@ -140,7 +140,7 @@ class TestNoEcosystemHasCollapsed(AdvisoryCoverageFixtures):
         so 'plenty of records, none of them ranged' is precisely the shape the
         npm data had while its CVE coverage was missing.
         """
-        from cordon_scanner.intel.advisories.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         for ecosystem in ("npm", "cargo", "gomod"):
             ranged = sum(1 for r in ShippedAdvisories._shipped(ecosystem) if r.is_range)
@@ -201,7 +201,7 @@ class TestOneAdvisoryCanNameSeveralPackages(AdvisoryCoverageFixtures):
     def test_every_window_of_a_split_advisory_survives(self, database: AdvisoryDatabase) -> None:
         """Django's records carry far fewer identifiers than records: an
         advisory becomes one record per affected window."""
-        from cordon_scanner.intel.advisories.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         django = [a for a in ShippedAdvisories._shipped("pypi") if a.name == "django"]
         identifiers = {a.identifier for a in django}
@@ -218,14 +218,14 @@ class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
     """
 
     def test_construction_reads_no_ecosystem(self) -> None:
-        from cordon_scanner.intel.advisories import advisories
+        from cordon_scanner.intel.advisories import shipped
 
-        advisories.ShippedAdvisories._shipped_raw.cache_clear()
+        shipped.ShippedAdvisories._shipped_raw.cache_clear()
         database = AdvisoryDatabase.bundled()
-        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 0
+        assert shipped.ShippedAdvisories._shipped_raw.cache_info().misses == 0
         # And the first question about one ecosystem reads that one only.
         database.matching("cargo", "smallvec", "0.6.13")
-        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 1
+        assert shipped.ShippedAdvisories._shipped_raw.cache_info().misses == 1
 
     @pytest.mark.conformance("x", "x.feeds")
     def test_an_ecosystem_with_no_records_is_not_claimed_as_covered(self) -> None:
@@ -246,7 +246,7 @@ class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
 
     def _advice(self, ecosystem: str, name: str, version: str) -> str:
         from cordon_scanner.detect.supply.advisory import AdvisoryDetector
-        from cordon_scanner.foundation.models import Dependency
+        from cordon_scanner.foundation.results import Dependency
 
         dependency = Dependency(
             purl=f"pkg:{ecosystem}/{name}@{version}",

@@ -21,7 +21,7 @@ from cordon_scanner.engine.parallel import (
     MIN_FILES_FOR_PARALLEL,
     ParallelScanner,
 )
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 
 class ParallelFixtures:
@@ -401,7 +401,7 @@ class TestEverySettingReachesTheWorkers:
         import dataclasses
 
         from cordon_scanner.engine.parallel import CARRIED_SETTINGS, PARENT_ONLY_SETTINGS
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         original = self._non_default(Config.default())
         rebuilt = Config.from_dict(original.to_dict(), source="<worker>")
@@ -422,7 +422,7 @@ class TestEverySettingReachesTheWorkers:
         import dataclasses
 
         from cordon_scanner.engine.parallel import CARRIED_SETTINGS, PARENT_ONLY_SETTINGS
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         schema = repr(Config.default().to_dict())
         renamed = {

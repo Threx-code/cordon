@@ -18,6 +18,7 @@ import pytest
 from cordon_scanner.intel.provenance import attest, sigstore_bundle
 from cordon_scanner.intel.provenance.attest import Outcome
 from cordon_scanner.intel.provenance.x509 import Certificate
+from cordon_scanner.intel.registries.registry_http import RegistryHttp
 from support import ROOT as REPO
 
 
@@ -388,27 +389,27 @@ class TestMavenCentralSignatures:
 
     @pytest.mark.conformance("maven", "UNI-17")
     def test_the_source_repository_comes_from_the_published_pom(self, monkeypatch) -> None:
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.package_registries import PackageRegistries
 
         pom = "<project><url>https://acme.example</url><scm><url>https://github.com/acme/lib</url></scm></project>"
-        monkeypatch.setattr(MoreRegistries, "_text", staticmethod(lambda url: pom))
+        monkeypatch.setattr(RegistryHttp, "text", staticmethod(lambda url: pom))
         assert (
-            MoreRegistries._maven_scm("https://repo.maven.apache.org/x.pom")
+            PackageRegistries.maven_scm("https://repo.maven.apache.org/x.pom")
             == "https://github.com/acme/lib"
         )
         monkeypatch.setattr(
-            MoreRegistries,
-            "_text",
+            RegistryHttp,
+            "text",
             staticmethod(lambda url: '<!DOCTYPE p [<!ENTITY e "x">]><project/>'),
         )
-        assert MoreRegistries._maven_scm("https://repo.maven.apache.org/x.pom") is None
+        assert PackageRegistries.maven_scm("https://repo.maven.apache.org/x.pom") is None
 
     @pytest.mark.conformance("maven", "UNI-17")
     @pytest.mark.conformance("gradle", "UNI-17")
     def test_a_classified_artefact_is_not_checked_against_the_plain_jar(self, monkeypatch) -> None:
         from cordon_scanner.detect.base import GraphUnit
         from cordon_scanner.detect.supply.provenance import ProvenanceDetector
-        from cordon_scanner.foundation.models import Dependency
+        from cordon_scanner.foundation.results import Dependency
         from cordon_scanner.intel.registries.registry_client import RegistryClient
 
         asked: list[str] = []

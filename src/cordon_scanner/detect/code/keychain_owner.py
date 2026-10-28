@@ -28,12 +28,12 @@ import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.detect.code.capability import CapabilityHit
+    from cordon_scanner.detect.code.capability.hits import CapabilityHit
     from cordon_scanner.foundation.content import FileContent
 
 #: Domains of one issuer. A file must name hosts from exactly one group.

@@ -25,7 +25,8 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.cache import KEY_NAME, ScanCache
-from cordon_scanner.foundation.config import Config, ConfigResolver
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.models import Severity
 

@@ -414,7 +414,7 @@ class McpCode:
         tree = cls._parse(text)
         if tree is None:
             return []
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         constants = {
             target.id: node.value.value

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.code.install_payload import InstallPayload
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
 DOWNLOAD = (

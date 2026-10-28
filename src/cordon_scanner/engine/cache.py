@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.models import Finding
+from cordon_scanner.foundation.paths import StatePaths
 from cordon_scanner.version import SCHEMA_VERSION
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ are rejected by verification, which is the correct outcome: they are exactly as
 trustworthy as an entry an attacker wrote.
 
 Version 3 is about the findings rather than the envelope. Every finding now carries
-the hash of the file it came from, which is what `Engine._collapse_repeats` groups on,
+the hash of the file it came from, which is what `ResultFolding.repeats` groups on,
 and an entry written by version 2 has no such field -- so a warm cache would have
 produced a report where some findings collapsed and some did not, according to which
 files happened to be cached. A detector version cannot express that: the change is in
@@ -140,65 +141,18 @@ class ScanCache:
 
     @staticmethod
     def default_cache_dir() -> Path:
-        """Where cache *entries* live when the user has not chosen.
-
-        Honours ``XDG_CACHE_HOME`` on Unix so it lands with everything else rather
-        than in the middle of the repository being scanned, which would then have to
-        be excluded and would appear in status output.
-
-        Environment-directed, and deliberately so -- CI needs to point this at a
-        restorable path. See `key_dir`, which is not, and why.
-        """
-        override = os.environ.get("CORDON_CACHE_DIR")
-        if override:
-            return Path(override)
-        xdg = os.environ.get("XDG_CACHE_HOME")
-        if xdg:
-            return Path(xdg) / "cordon"
-        return Path.home() / ".cache" / "cordon"
+        """Where cache entries live (`StatePaths.default_cache_dir`)."""
+        return StatePaths.default_cache_dir()
 
     @staticmethod
     def key_dir() -> Path:
-        """Where the authentication key lives. Not environment-directed.
-
-        The key used to live beside the entries, which meant one variable
-        decided both: anything able to set `CORDON_CACHE_DIR` in a build could
-        point it at a directory it had already filled with entries and a key of
-        its own, and every forged `{"findings": []}` would verify.
-
-        Moving it to `Path.home()` did not fix that. `Path.home()` reads `$HOME`,
-        which is a variable too -- the most basic one -- and the same attacker
-        sets it in the same `env:` block. An audit demonstrated the full bypass
-        against exactly that: plant a key under a redirected `$HOME`, compute
-        the cache key for each payload file from inputs that are all public,
-        write a correctly-MAC'd empty result, and the scan exits 0 over code it
-        never examined. The reasoning in this docstring was right and stopped
-        one variable short of applying it.
-
-        The password database is not a variable. `getpwuid` answers from the
-        system's own account store, so nothing in the process environment moves
-        it. `$HOME` is used only where that lookup is unavailable -- Windows, or
-        a container with no passwd entry for the running uid -- and there the
-        binding in `_mac` is what carries the weight instead.
-        """
-        return ScanCache._home() / ".cache" / "cordon"
+        """Where the authentication key lives, which no variable moves (`StatePaths.key_dir`)."""
+        return StatePaths.key_dir()
 
     @staticmethod
     def _home() -> Path:
-        """The running user's home directory, from the account store.
-
-        Falls back to `Path.home()` when there is no account entry, which is
-        ordinary inside minimal containers. The fallback is weaker and is not
-        silent: `_mac` binds the resolved key path, so a key obtained from a
-        different location does not validate entries.
-        """
-        try:
-            import pwd
-
-            return Path(pwd.getpwuid(os.getuid()).pw_dir)
-        except (ImportError, KeyError, AttributeError, OSError):
-            # pragma: no cover - Windows, or a uid with no passwd entry
-            return Path.home()
+        """The running user's home directory, from the account store (`StatePaths._home`)."""
+        return StatePaths._home()
 
     @staticmethod
     def detector_signature(detectors: Sequence[Any]) -> str:
@@ -278,8 +232,8 @@ class ScanCache:
         one everywhere downstream. That is what makes the equivalence test between a
         cold scan and a warm one meaningful.
         """
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.models import (
-            Capability,
             Category,
             Confidence,
             Evidence,

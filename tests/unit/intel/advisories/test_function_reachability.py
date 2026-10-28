@@ -21,7 +21,6 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
-    Dependency,
     Evidence,
     EvidenceKind,
     Explanation,
@@ -31,6 +30,7 @@ from cordon_scanner.foundation.models import (
     RiskScore,
     Severity,
 )
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
 
 

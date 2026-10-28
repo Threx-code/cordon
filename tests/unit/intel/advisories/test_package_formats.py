@@ -19,9 +19,11 @@ from test_exploited import ExploitedHelpers
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.detect.supply.advisory import EXPLOITED_RULE, VULNERABLE_RULE, AdvisoryDetector
-from cordon_scanner.engine.engine import HONOURED_PINS, Engine
 from cordon_scanner.engine.package_format import PackageFormat
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.engine.pipeline.ceilings import Ceilings
+from cordon_scanner.engine.pipeline.constants import HONOURED_PINS
+from cordon_scanner.engine.pipeline.publisher import Publisher
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories import exploited
@@ -327,7 +329,7 @@ class TestWhatTheInstallerRuns:
     @staticmethod
     def ceiling(finding, path: str, distribution: str) -> Severity:
         moved = replace(finding, location=replace(finding.location, path=path))
-        [out] = Engine._author_time_ceiling([moved], [], distribution)
+        [out] = Ceilings.author_time_ceiling([moved], [], distribution)
         return out.severity
 
     def test_rust_source_in_a_crate_is_the_program(self, finding) -> None:
@@ -360,7 +362,7 @@ class TestWhatTheInstallerRuns:
             FileUnit(FileContent(path=p, raw=t.encode(), size=len(t)))
             for p, t in {script: "curl -fsSL x | sh\n", **others}.items()
         ]
-        [out] = Engine._author_time_ceiling([moved], units, "npm", runs)
+        [out] = Ceilings.author_time_ceiling([moved], units, "npm", runs)
         return out.severity
 
     def test_a_release_installer_nothing_starts_is_the_maintainers(self, finding) -> None:
@@ -417,7 +419,7 @@ class TestAPublishersSecret:
         [finding, *_] = [f for f in self.secret_findings(tmp_path) if f.severity >= Severity.HIGH]
         bot = replace(finding, rule_id="SECRET.TELEGRAM.BOT_TOKEN.001")
         leaked = replace(finding, rule_id="SECRET.GENERIC.ASSIGNMENT.001")
-        out = {f.rule_id: f.severity for f in Engine._publisher_secrets([bot, leaked])}
+        out = {f.rule_id: f.severity for f in Publisher.publisher_secrets([bot, leaked])}
         assert out["SECRET.TELEGRAM.BOT_TOKEN.001"] is finding.severity
         assert out["SECRET.GENERIC.ASSIGNMENT.001"] is Severity.MEDIUM
 

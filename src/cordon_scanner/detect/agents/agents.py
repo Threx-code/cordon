@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
@@ -42,9 +43,8 @@ from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION, Defe
 from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionModel
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets.secrets import SourcePaths
-from cordon_scanner.engine.walker import PathGlob
 from cordon_scanner.foundation import references as ref
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.formats import jsonc
 from cordon_scanner.foundation.models import (
     Category,
@@ -447,7 +447,7 @@ class InstructionText:
     @staticmethod
     def _free_hosted(link: str) -> bool:
         """Whether a download link is on a free-hosting subdomain, and not a known installer's."""
-        from cordon_scanner.intel.malware.hosts import FREE_HOSTING
+        from cordon_scanner.analysis.shared.destinations import FREE_HOSTING
 
         found = _URL_HOST.search(link)
         host = found.group(1).lower().rstrip(".") if found else ""
@@ -493,7 +493,7 @@ class InstructionText:
     def dropper(text: str) -> re.Match[str] | None:
         """A line that has the reader run a password-protected archive's content, or a command
         from a paste site; prose about such attacks (quoted, forbidden) is not one."""
-        from cordon_scanner.intel.malware.hosts import PASTE_HOSTS
+        from cordon_scanner.analysis.shared.destinations import PASTE_HOSTS
 
         for found in _ARCHIVE_PASSWORD_RUN.finditer(text):
             if not InstructionText._quoted(text, found) and not InstructionText._forbidden(
@@ -573,7 +573,7 @@ class InstructionText:
     @staticmethod
     def _alarming_fetch(command: str) -> bool:
         """A fetch-and-run from where setup never fetches (a shortener, a gist) or of such a shape."""
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         raw = command.encode("utf-8", "replace")
         if (
@@ -1821,7 +1821,7 @@ class McpEndpoints:
         sslip.io/nip.io, which only resolve a name back to the address inside it."""
         import ipaddress
 
-        from cordon_scanner.intel.malware.hosts import Destinations
+        from cordon_scanner.analysis.shared.destinations import Destinations
 
         host = host.lower().strip("[]").rstrip(".")
         if host in _LOCAL_HOSTS:

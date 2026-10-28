@@ -16,8 +16,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
-from cordon_scanner.foundation.models import Capability, MatchKind
 from cordon_scanner.rules.loader import (
     PatternCompiler,
     RuleLoader,

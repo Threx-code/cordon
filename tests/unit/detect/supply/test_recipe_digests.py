@@ -15,8 +15,8 @@ from cordon_scanner.detect.supply.recipe_digests import (
     RecipeDigestDetector,
     RecipeDigests,
 )
-from cordon_scanner.foundation.config import Config
-from cordon_scanner.intel.advisories import advisories
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.intel.advisories import shipped
 from cordon_scanner.intel.malware.feed import FeedRoles
 from kits.feedkit import FeedKit, SignedFeed
 
@@ -63,9 +63,9 @@ class RecipeFixtures:
     def isolated(self, tmp_path, monkeypatch):
         monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
         monkeypatch.delenv("CORDON_OFFLINE", raising=False)
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
         yield
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
 
     @staticmethod
     def feed(**sections) -> None:

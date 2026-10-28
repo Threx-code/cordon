@@ -26,7 +26,8 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     Manifest,
 )
-from cordon_scanner.foundation.models import Dependency, Scope
+from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

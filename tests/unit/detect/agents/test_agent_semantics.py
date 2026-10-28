@@ -74,7 +74,7 @@ class TestPreciseChainsBlockInAServer:
     @staticmethod
     def blocked(tmp_path, description: str) -> bool:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.models import Severity
 
         source = (

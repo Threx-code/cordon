@@ -199,11 +199,12 @@ class Structure:
 
     #: The files a directory may hold at its top; everything else lives in a subdirectory.
     TOP_FILES: ClassVar[dict[str, frozenset[str]]] = {
-        "src/cordon_scanner": frozenset(
-            {"__init__.py", "__main__.py", "notify.py", "version.py", "py.typed"}
+        "src/cordon_scanner": frozenset({"__init__.py", "__main__.py", "version.py", "py.typed"}),
+        # An adapter layer's top holds its ports: `base` (the protocols) and `registry`.
+        "src/cordon_scanner/detect": frozenset(
+            {"__init__.py", "base.py", "catalogue.py", "registry.py"}
         ),
-        "src/cordon_scanner/detect": frozenset({"__init__.py", "base.py", "catalogue.py"}),
-        "src/cordon_scanner/intel": frozenset({"__init__.py"}),
+        "src/cordon_scanner/intel": frozenset({"__init__.py", "base.py", "registry.py"}),
         "tests": frozenset({"conftest.py", "support.py"}),
         "tests/unit": frozenset({"package_layout.json"}),
         "scripts": frozenset(),
@@ -218,6 +219,55 @@ class Structure:
             }
         ),
     }
+
+    #: Everything the repository root may hold, by why it is there. A new entry needs a reason that
+    #: fits one of these, or a home inside one of them.
+    REPOSITORY_ROOT: ClassVar[frozenset[str]] = frozenset(
+        {
+            # What GitHub, PyPI and the citation tools read at the root.
+            ".github",
+            "CITATION.cff",
+            "CODE_OF_CONDUCT.md",
+            "CONTRIBUTING.md",
+            "GOVERNANCE.md",
+            "LICENSE",
+            "NOTICE",
+            "README.md",
+            "SECURITY.md",
+            "SUPPORT.md",
+            "CHANGELOG.md",
+            # Version control and its hooks.
+            ".gitattributes",
+            ".gitignore",
+            ".githooks",
+            ".gitguardian.yaml",
+            ".pre-commit-hooks.yaml",
+            # Building and packaging.
+            "pyproject.toml",
+            "MANIFEST.in",
+            "Makefile",
+            "Dockerfile",
+            "requirements-build.txt",
+            "server.json",
+            # Cordon scanning itself (the guard's pinned digest, its history baseline).
+            ".cordon-guard.sha256",
+            "cordon-history-baseline.json",
+            # The code and its tests, scripts, data and documents.
+            "src",
+            "tests",
+            "scripts",
+            "schemas",
+            "corpus",
+            "bench",
+            "docs",
+            "tutorials",
+            # Where Cordon runs: the GitHub Action, the other CI systems, editors and the model server.
+            "action",
+            "ci",
+            "editors",
+            "model-server",
+        }
+    )
 
     @staticmethod
     def frozen() -> dict[str, Any]:
@@ -295,28 +345,42 @@ class Structure:
                 sizes[p.parent.relative_to(REPO).as_posix()] += 1
         return dict(sizes)
 
+    #: An adapter layer's port: its protocols (`base`) and the discovery of its implementations
+    #: (`registry`, which hands back objects typed by those protocols and names none).
+    PORTS: ClassVar[frozenset[str]] = frozenset({"", "base", "registry"})
+
     @classmethod
     def engine_adapters(cls) -> set[str]:
-        """`engine/x -> adapter` for each import of a concrete adapter by the engine; an adapter
-        layer's `base` (its protocol) is the way in and is not counted."""
+        """`engine -> adapter` for each concrete adapter module the engine imports, from any of its
+        modules: the rule is about the engine as a whole, so moving code between the engine's own
+        modules neither adds nor removes an entry. An adapter layer's port is not counted."""
         out = set()
         for m in Layout.modules():
             if not m.startswith("engine/"):
                 continue
             for dep in cls.imports(m):
                 layer, _, rest = dep.partition("/")
-                if layer in Layout.ADAPTERS and rest not in ("", "base"):
-                    out.add(f"{m} -> {dep}")
+                if layer in Layout.ADAPTERS and rest not in cls.PORTS:
+                    out.add(f"engine -> {dep}")
         return out
 
-    @staticmethod
-    def file_relative() -> set[str]:
+    #: The one place a path may be found from a file's own position: the tests' anchor, which every
+    #: test reaches the repository through (`support.ROOT`). The package finds its data through
+    #: `PackagePaths` and the scripts find the checkout from where they run.
+    ANCHORS: ClassVar[frozenset[str]] = frozenset({"tests/support.py"})
+
+    @classmethod
+    def file_relative(cls) -> set[str]:
         """Source files that locate something from their own position (`__file__`)."""
         out = set()
         for folder in ("src", "tests", "scripts"):
             for p in (REPO / folder).rglob("*.py"):
                 rel = p.relative_to(REPO).as_posix()
-                if "__pycache__" in p.parts or rel.startswith("tests/conformance/cases/"):
+                if (
+                    "__pycache__" in p.parts
+                    or rel.startswith("tests/conformance/cases/")
+                    or rel in cls.ANCHORS
+                ):
                     continue
                 tree = ast.parse(p.read_text(encoding="utf-8"))
                 if any(isinstance(n, ast.Name) and n.id == "__file__" for n in ast.walk(tree)):
@@ -376,6 +440,55 @@ class TestStructure:
         )
         assert not sorted(frozen - now), "these are gone: remove them from frozen"
 
+    #: What a registry may type a role by, besides its layer's own protocols: plain values.
+    VALUE_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {"str", "int", "bool", "frozenset", "tuple", "type", "Exception", "enum", "Enum"}
+    )
+
+    def test_the_engine_sees_adapters_only_as_protocols(self) -> None:
+        """Every role a layer's registry hands the engine is typed by a protocol from that layer's
+        `base` (or is a plain value), so the engine never holds a concrete adapter type and the type
+        checker proves each implementation conforms to the protocol it is handed out as."""
+        problems = []
+        for layer in sorted(Layout.ADAPTERS):
+            path = REPO / "src" / "cordon_scanner" / layer / "registry.py"
+            if not path.exists() or "ROLES" not in path.read_text(encoding="utf-8"):
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            roles = next(
+                {k.value for k in n.value.keys if isinstance(k, ast.Constant)}
+                for n in tree.body
+                if isinstance(n, ast.AnnAssign)
+                and isinstance(n.target, ast.Name)
+                and n.target.id == "ROLES"
+                and isinstance(n.value, ast.Dict)
+            )
+            guarded = [
+                s
+                for n in tree.body
+                if isinstance(n, ast.If) and ast.unparse(n.test) == "TYPE_CHECKING"
+                for s in n.body
+            ]
+            ports = {
+                a.asname or a.name
+                for s in guarded
+                if isinstance(s, ast.ImportFrom) and s.module == f"cordon_scanner.{layer}.base"
+                for a in s.names
+            }
+            typed = {
+                s.target.id: s.annotation
+                for s in guarded
+                if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)
+            }
+            for role in sorted(roles):
+                if role not in typed:
+                    problems.append(f"{layer}.registry.{role}: not typed for the engine")
+                    continue
+                names = {x.id for x in ast.walk(typed[role]) if isinstance(x, ast.Name)}
+                if names - ports - self.VALUE_TYPES:
+                    problems.append(f"{layer}.registry.{role}: typed by {sorted(names - ports)}")
+        assert not problems, f"type each role by a protocol in its layer's base: {problems}"
+
     def test_no_loose_files(self) -> None:
         for folder, allowed in Structure.TOP_FILES.items():
             here = {
@@ -405,6 +518,27 @@ class TestStructure:
         assert not sorted(now - frozen), "use PackagePaths or support.ROOT"
         assert not sorted(frozen - now), "these are gone: remove them from frozen"
 
+    #: What may not change without its owner's review: the rules here and what the guard pins.
+    OWNED: ClassVar[tuple[str, ...]] = (
+        "/.cordon-guard.sha256",
+        "/.github/CODEOWNERS",
+        "/.github/workflows/",
+        "/pyproject.toml",
+        "/tests/unit/package_layout.json",
+        "/tests/unit/repository/test_package_layout.py",
+    )
+
+    def test_the_layout_rules_have_an_owner(self) -> None:
+        lines = (REPO / ".github" / "CODEOWNERS").read_text(encoding="utf-8").splitlines()
+        owned = {
+            parts[0]: parts[1:]
+            for parts in (
+                line.split() for line in lines if line.strip() and not line.startswith("#")
+            )
+        }
+        unowned = [path for path in self.OWNED if not owned.get(path)]
+        assert not unowned, f"name an owner for these in .github/CODEOWNERS: {unowned}"
+
     def test_the_repository_root_holds_only_what_it_should(self) -> None:
         if not (REPO / ".git").exists():
             pytest.skip("not a git checkout")
@@ -412,7 +546,7 @@ class TestStructure:
             ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True
         ).stdout.split()
         top = {f.split("/")[0] for f in tracked}
-        allowed = set(Structure.frozen()["repository_root"])
+        allowed = Structure.REPOSITORY_ROOT
         assert not sorted(top - allowed), "a new entry at the repository root: give it a home"
 
 

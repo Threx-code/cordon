@@ -22,13 +22,17 @@ import sys
 import urllib.request
 from pathlib import Path
 
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
+
 SYFT_VERSION = "v1.18.1"
 """The Syft release the benchmark compares against (`bench/Dockerfile.images`)."""
 SOURCE = (
     "https://raw.githubusercontent.com/anchore/syft/{version}/"
     "syft/pkg/cataloger/internal/cpegenerate/java_groupid_map.go"
 )
-OUT = Path(__file__).resolve().parents[2] / "src/cordon_scanner/images/data/java-groups.json"
+OUT = ROOT / "src/cordon_scanner/images/data/java-groups.json"
 ENTRY = re.compile(r'^\s*"([^"]+)":\s*"([^"]+)",\s*$', re.MULTILINE)
 
 

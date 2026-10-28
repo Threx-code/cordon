@@ -21,7 +21,8 @@ import ast
 import pytest
 
 from cordon_scanner.analysis.python.pyast import PythonAnalyzer
-from cordon_scanner.foundation.models import Capability
+from cordon_scanner.analysis.python.pyfacts import PythonFacts
+from cordon_scanner.foundation.capabilities import Capability
 
 # Primitive names are assembled rather than written out. Cordon scans its own
 # repository, and a file carrying decode, execute, spawn and egress primitives
@@ -46,7 +47,7 @@ class PyastHelpers:
     @staticmethod
     def folded(expression: str) -> str | None:
         """What one expression evaluates to, if that is derivable statically."""
-        return PythonAnalyzer.constant(ast.parse(expression, mode="eval").body)
+        return PythonFacts.constant(ast.parse(expression, mode="eval").body)
 
     @staticmethod
     def _capabilities(source: str, **options) -> set[tuple[Capability, str]]:
@@ -209,8 +210,8 @@ class TestMalformedInput:
         assert PythonAnalyzer.analyse("def (:\n") == []
 
     def test_the_parse_check_agrees(self) -> None:
-        assert PythonAnalyzer.parses("x = 1")
-        assert not PythonAnalyzer.parses("def (:\n")
+        assert PythonFacts.parses("x = 1")
+        assert not PythonFacts.parses("def (:\n")
 
     def test_empty_source(self) -> None:
         assert PythonAnalyzer.analyse("") == []
@@ -285,7 +286,7 @@ class TestImportByCall:
     )
     def test_decode_then_execute_is_seen_through_the_call(self, tmp_path, source) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "setup.py").write_text(
             source + "\nfrom setuptools import setup\nsetup(name='x')\n", encoding="utf-8"
@@ -418,11 +419,11 @@ class TestCodeSpelledAsCharacterCodes:
     def test_join_map_chr_folds(self) -> None:
         codes = ", ".join(str(ord(c)) for c in "import os")
         node = ast.parse(f'"".join(map(chr, [{codes}]))', mode="eval").body
-        assert PythonAnalyzer.constant(node) == "import os"
+        assert PythonFacts.constant(node) == "import os"
 
     def test_chr_concatenation_folds(self) -> None:
         node = ast.parse("chr(103) + chr(104) + 'p_'", mode="eval").body
-        assert PythonAnalyzer.constant(node) == "ghp_"
+        assert PythonFacts.constant(node) == "ghp_"
 
     def test_executed_codes_are_read_as_code(self) -> None:
         payload = "import os\nos.system('id')\n"
@@ -440,7 +441,7 @@ class TestPersistenceThroughAnAssembledPath:
         node = ast.parse(
             "''.join([chr(x) for x in [46, 112, 114, 111, 102, 105, 108, 101]])", mode="eval"
         ).body
-        assert PythonAnalyzer.constant(node) == ".profile"
+        assert PythonFacts.constant(node) == ".profile"
 
     def test_appending_to_an_assembled_profile_is_persistence(self) -> None:
         source = (

@@ -20,8 +20,9 @@ from cordon_scanner.ecosystems.contract import (
     UNIVERSAL,
 )
 from kits.conformancekit import ConformanceCase
+from support import ROOT
 
-TESTS = Path(__file__).resolve().parents[1]
+TESTS = ROOT / "tests"
 #: Proven for an ecosystem by every one of its valid cases passing through `test_cases.py`.
 EVERY_CASE: tuple[str, ...] = ("UNI-03", "UNI-21", "UNI-24", "UNI-25", "UNI-29")
 KINDS = ("valid", "invalid", "edge", "adversarial", "regression", "real-world")
@@ -34,7 +35,7 @@ class Proofs:
         `app.csproj` is any project file the ecosystem's `**/*.csproj` glob matches, and the
         real file is `src/App/App.csproj`."""
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
-        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         implementation = EcosystemRegistry.get(ecosystem)
         if implementation is None:
@@ -92,7 +93,7 @@ class Proofs:
         import importlib.util
 
         spec = importlib.util.spec_from_file_location(
-            "conformance_universal", Path(__file__).parent / "test_universal.py"
+            "conformance_universal", ROOT / "tests/conformance" / "test_universal.py"
         )
         if spec is not None and spec.loader is not None:
             universal = importlib.util.module_from_spec(spec)

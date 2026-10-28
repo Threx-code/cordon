@@ -11,7 +11,7 @@ from pathlib import Path
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.agents import _SQUATTED_TOOL, McpServerSource
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 GO_HEADER = 'package main\n\nimport "github.com/mark3labs/mcp-go/mcp"\n\n'
 

@@ -16,7 +16,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import DetectorRequirements, ScanContext
 from cordon_scanner.engine.engine import Engine
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Category, Finding, Severity
 
 

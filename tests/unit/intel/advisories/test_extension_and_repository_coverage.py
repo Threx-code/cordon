@@ -19,7 +19,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.cloud import device
 from cordon_scanner.ecosystems.others import GitHubActionsEcosystem
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 from cordon_scanner.intel.advisories.osv_import import OsvImport

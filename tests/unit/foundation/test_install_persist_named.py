@@ -8,7 +8,7 @@ import tarfile
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 RULE = "MALWARE.INSTALL.PERSIST.001"
 
@@ -54,7 +54,7 @@ class TestNamedNotWritten:
     ) -> None:
         # opencv's sdist carries zlib-ng's `actions-runner.Dockerfile`; pip never builds it. A
         # directory scan skips vendored trees, so this is read as the sdist it ships in.
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         members = {
             "x-1.0/setup.py": 'from setuptools import setup\nsetup(name="x")\n',

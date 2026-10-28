@@ -29,19 +29,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.foundation.config import RestrictedYamlParser
+from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
-from cordon_scanner.foundation.models import (
-    Capability,
-    Category,
-    Confidence,
-    MatchKind,
-    RedactionMode,
-    Rule,
-    RuleProvenance,
-    RuleTests,
-    Severity,
-)
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
+from cordon_scanner.foundation.models import Category, Confidence, RedactionMode, Severity
+from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.version import ENGINE_API_VERSION
 
@@ -1348,8 +1340,8 @@ class RuleLoader:
         A rule that cannot be evaluated is a broken pack, and a broken pack
         should not load. Failing here names the rule instead.
         """
-        from cordon_scanner.engine.walker import PathGlob
         from cordon_scanner.foundation.errors import ConfigError
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         for key in ("include", "exclude"):
             for pattern in RuleLoader._str_tuple(paths.get(key)):

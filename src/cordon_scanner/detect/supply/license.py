@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import ScanContext, Unit
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 COPYLEFT_RULE = "POLICY.LICENSE.COPYLEFT.001"
 WEAK_COPYLEFT_RULE = "POLICY.LICENSE.WEAK_COPYLEFT.001"
@@ -136,7 +136,7 @@ class LicenseDetector(BaseDetector):
         if not isinstance(unit, GraphUnit):
             return ()
 
-        from cordon_scanner.engine.inventory import OS_ECOSYSTEMS
+        from cordon_scanner.foundation.dependencies import OS_ECOSYSTEMS
 
         findings: list[Finding] = []
         for dependency in unit.dependencies:

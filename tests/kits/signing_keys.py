@@ -11,9 +11,10 @@ pinned files disagree.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from support import ROOT
+
+sys.path.insert(0, str(ROOT / "src"))
 
 REPOSITORY = "Threx-code/cordon"
 WORKFLOW = f"https://github.com/{REPOSITORY}/.github/workflows/release.yml"

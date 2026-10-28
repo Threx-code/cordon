@@ -8,6 +8,7 @@ question is being asked.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
@@ -33,12 +34,22 @@ from cordon_scanner.ecosystems.others import (
 )
 from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
-from cordon_scanner.engine.walker import PathGlob
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.paths import ContainerPaths
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from cordon_scanner.ecosystems.base import ImageReferences, InstallTimeSpans, LockScoping
+    from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
+    from cordon_scanner.ecosystems.packages import homebrew as _ecosystems_packages_homebrew
+    from cordon_scanner.ecosystems.packages import npm as _ecosystems_packages_npm
+
+    # Each implementation, as the engine sees it: by its protocol (the type checker proves the
+    # implementation conforms) or, for a plain value, by the value's type.
+    ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
+    LockScopes: LockScoping = _ecosystems_packages_npm.LockScopes
+    NotRunAtInstall: InstallTimeSpans = _ecosystems_packages_homebrew.NotRunAtInstall
 
 _MAX_ANSWERS = 1 << 20
 """Past this many distinct paths the memo starts over, so its memory stays bounded."""
@@ -276,4 +287,52 @@ class EcosystemRegistry:
         return cls.ECOSYSTEMS
 
 
-__all__ = ["EcosystemRegistry"]
+class RegistryFacts:
+    """`foundation.dependencies.EcosystemFacts`, answered by the registered ecosystems; installed
+    through the `cordon_scanner.ecosystem_facts` entry point."""
+
+    @staticmethod
+    def is_registry_host(ecosystem: str, url: str) -> bool:
+        implementation = EcosystemRegistry.get(ecosystem)
+        return implementation is not None and implementation.is_registry_host(url)
+
+    @staticmethod
+    def lockfile_ecosystem(path: str) -> str | None:
+        return EcosystemRegistry.lockfile_ecosystem(path)
+
+
+#: What the engine uses of this layer by name, and the module that provides each: the one place
+#: that knows, so the layer's modules can move without the engine changing. Each is imported
+#: when it is first asked for (PEP 562), as the engine's own imports were.
+ROLES: dict[str, tuple[str, str]] = {
+    "ImageReference": ("cordon_scanner.ecosystems.infra.image", "ImageReference"),
+    "LockScopes": ("cordon_scanner.ecosystems.packages.npm", "LockScopes"),
+    "NotRunAtInstall": ("cordon_scanner.ecosystems.packages.homebrew", "NotRunAtInstall"),
+}
+
+if TYPE_CHECKING:
+    from cordon_scanner.ecosystems.infra.image import ImageReference
+    from cordon_scanner.ecosystems.packages.homebrew import NotRunAtInstall
+    from cordon_scanner.ecosystems.packages.npm import LockScopes
+
+
+def __getattr__(name: str) -> object:
+    """The implementation of one of `ROLES`, imported on first use."""
+    try:
+        module, attribute = ROLES[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    found: object = importlib.import_module(module)
+    for part in attribute.split("."):  # a class's member: `Class.MEMBER`
+        found = getattr(found, part)
+    return found
+
+
+__all__ = [
+    "ROLES",
+    "EcosystemRegistry",
+    "ImageReference",
+    "LockScopes",
+    "NotRunAtInstall",
+    "RegistryFacts",
+]

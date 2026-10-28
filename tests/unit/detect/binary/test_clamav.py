@@ -12,7 +12,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary import clamav
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 MARKER = b"cordon-clamav-test-marker"
 
@@ -127,7 +127,7 @@ class TestInAScan(ClamavFixtures):
         assert not result.complete
 
     def test_a_repository_config_cannot_turn_it_on(self, tmp_path, clamd) -> None:
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
 
         (tmp_path / ".cordon.yml").write_text(
             f"version: 1\nscan:\n  clamav: {clamd.path}\n", encoding="utf-8"

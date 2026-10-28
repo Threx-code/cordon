@@ -348,7 +348,7 @@ class TestDependenciesTheCodeNeverUses:
 class TestWhatRunsOnItsOwn:
     def test_the_profile_names_what_install_time_code_can_do(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / "demo-1.0"
         root.mkdir()
@@ -531,7 +531,7 @@ class TestVerdictHoldsMinimalPackages:
 
     def test_a_minimal_install_hook_package_is_held_as_a_warning(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         tgz = self._npm_tarball(
             tmp_path,

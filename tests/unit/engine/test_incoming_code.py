@@ -15,7 +15,7 @@ import pytest
 
 from cordon_scanner.engine.guard import INCOMING_HOOKS, SHIM_MARKER, Guard
 from cordon_scanner.engine.incoming import Incoming
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.sources.git import GitRepository, GitTreeSource
 

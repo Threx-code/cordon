@@ -18,11 +18,13 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from cordon_scanner.foundation.models import Capability, Category, Severity
+from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.foundation.taxonomy import AttackCategory
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 RELEASE_NEW_HOOK = "SUSPECT.RELEASE.NEW_INSTALL_HOOK.001"
 RELEASE_NEW_CAPABILITY = "SUSPECT.RELEASE.NEW_CAPABILITY.001"
@@ -117,7 +119,7 @@ class ReleaseDiff:
     @staticmethod
     def as_findings(changes: list[Change], result: ScanResult) -> list[Finding]:
         """The changes as findings anchored in the newer release's own paths."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 
         archive = next(
             (f.location.path.partition("!")[0] for f in result.findings if "!" in f.location.path),
@@ -127,7 +129,7 @@ class ReleaseDiff:
         for change in changes:
             path = f"{archive}!{change.path}" if archive and change.path != "." else change.path
             out.append(
-                Engine.release_change(
+                ReleaseChecks.release_change(
                     path=path,
                     rule_id=change.rule_id,
                     message=change.message,

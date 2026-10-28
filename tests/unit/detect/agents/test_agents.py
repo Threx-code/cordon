@@ -9,7 +9,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.agents import AgentChainDetector, McpConfigs
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from support import Support
 
@@ -530,7 +530,7 @@ class TestMcpPackagesLocalFirst:
 class TestInstructionFetchExecHosts:
     def _found(self, tmp_path, text: str):
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "AGENTS.md").write_text(text, encoding="utf-8")
         return [
@@ -583,7 +583,7 @@ class TestAnInstructionToCopyAnEnvFileLocally:
     @staticmethod
     def _rules(tmp_path, text: str) -> set[str]:
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         (tmp_path / "AGENTS.md").write_text(text, encoding="utf-8")
         return {

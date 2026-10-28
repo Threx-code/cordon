@@ -67,7 +67,7 @@ class PackMatch:
 
     @staticmethod
     def touches(rules: list[tuple[Any, tuple[str, ...], tuple[str, ...]]], path: str) -> bool:
-        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         for name, blob in UnitText.files(path):
             for regex, include, exclude in rules:

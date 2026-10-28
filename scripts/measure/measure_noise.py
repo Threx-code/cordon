@@ -56,7 +56,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 
 
 @dataclass(frozen=True)

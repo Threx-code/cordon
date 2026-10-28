@@ -30,7 +30,7 @@ from cordon_scanner.foundation.files.windows import WindowSourceChanged
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from cordon_scanner.analysis.python.pyast import AstCall
+    from cordon_scanner.analysis.python.pyfacts import AstCall
     from cordon_scanner.foundation.files.windows import WindowSource
 
     Read = Callable[[int, int], bytes]

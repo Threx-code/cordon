@@ -199,9 +199,10 @@ class TestCommandsSentToAnotherMachine:
         assert embedded.EmbeddedCommands.extract(text, "javascript")
 
     def test_capabilities_inside_a_command_sent_over_ssh_are_not_this_files(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector, CapabilityHit
+        from cordon_scanner.detect.code.capability.hits import CapabilityHit
+        from cordon_scanner.detect.code.capability.text_position import TextPosition
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.foundation.models import Capability
 
         inside = 'unit += "WantedBy=multi-user.target";\n'
         text = self.SESSION + "await ssh.exec([\n  `x`,\n].join());\n" + inside
@@ -212,15 +213,16 @@ class TestCommandsSentToAnotherMachine:
             CapabilityHit(Capability.PERSIST, "CAP.JS.PERSIST.001", remote, remote + 3, 4),
             CapabilityHit(Capability.PERSIST, "CAP.JS.PERSIST.001", here, here + 8, 6),
         ]
-        kept = CapabilityDetector()._off_this_machine(content, hits)
+        kept = TextPosition.off_this_machine(content, hits)
         assert [h.byte_start for h in kept] == [here]
 
     def test_without_an_ssh_client_every_hit_stays(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector, CapabilityHit
+        from cordon_scanner.detect.code.capability.hits import CapabilityHit
+        from cordon_scanner.detect.code.capability.text_position import TextPosition
+        from cordon_scanner.foundation.capabilities import Capability
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.foundation.models import Capability
 
         text = "await ssh.exec([\n  `x`,\n].join());\n"
         content = FileContent.from_bytes("deploy.js", text.encode())
         hit = CapabilityHit(Capability.PERSIST, "CAP.JS.PERSIST.001", text.index("`x`"), 0, 2)
-        assert CapabilityDetector()._off_this_machine(content, [hit]) == [hit]
+        assert TextPosition.off_this_machine(content, [hit]) == [hit]

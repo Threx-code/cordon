@@ -7,7 +7,7 @@ byte flips in the header region, field overwrites with extreme values, and a sca
 -- so the exact same bytes regenerate anywhere from the committed fixtures, with no corpus to ship. The
 seed is pinned; a per-file digest is recorded so the replay test fails loudly if the mutator drifts.
 
-The replay (``tests/unit/detect/binary/test_rule_malformed_replay.py``) imports ``Corpus.mutate`` and
+The replay (``tests/unit/detect/binary/modules/test_malformed_replay.py``) imports ``Corpus.mutate`` and
 holds Cordon's readers to the recorded values in ``malformed.json``. Recording those values is a
 maintainer's measurement step that needs the reference installed, and so is not part of Cordon:
 ``scripts/reference/record_binary_modules.py``.

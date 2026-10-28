@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.images import oci, osv
 from cordon_scanner.images import packages as pkgdb
 from cordon_scanner.intel.advisories import exploited

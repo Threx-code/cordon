@@ -9,7 +9,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.supply.manifest import CONFUSION_RULE, ManifestDetector
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 
 
 class ConfusionKit:

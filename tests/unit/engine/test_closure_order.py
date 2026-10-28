@@ -19,7 +19,9 @@ from support import ROOT as REPO
 _PROGRAM = r"""
 import json, sys, types
 from cordon_scanner.engine.closure import ImportClosure
-from cordon_scanner.engine.engine import JS_CLOSURE_LIMIT, Engine
+from cordon_scanner.engine.engine import Engine
+from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.constants import JS_CLOSURE_LIMIT
 
 def unit(path, text):
     return types.SimpleNamespace(path=path, content=types.SimpleNamespace(text=text, is_binary=False))
@@ -28,7 +30,7 @@ js = []
 for branch in ("lib", "es"):
     js.append(unit(f"{branch}/index.js", 'require("./m0")'))
     js += [unit(f"{branch}/m{i}.js", f'require("./m{i + 1}")') for i in range(300)]
-found_js = Engine._hook_js_closure(js, {"lib/index.js", "es/index.js"})
+found_js = Hooks.hook_js_closure(js, {"lib/index.js", "es/index.js"})
 
 py = {}
 for branch in ("x", "y"):

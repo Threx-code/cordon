@@ -17,8 +17,8 @@ from xml.etree import ElementTree
 
 import pytest
 
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Confidence,
     Evidence,
@@ -29,11 +29,10 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     RiskFactor,
     RiskScore,
-    ScanResult,
-    ScanStats,
     Severity,
     Suppression,
 )
+from cordon_scanner.foundation.results import ScanResult, ScanStats
 from cordon_scanner.report.base import ReportOptions
 from cordon_scanner.report.github import GithubReporter
 from cordon_scanner.report.json_ import JsonReporter

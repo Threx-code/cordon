@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path("src")))  # run from the repository root, as the README shows
-from cordon_scanner.detect.binary.rule_pe import Pe
+from cordon_scanner.detect.binary.modules.pe import Pe
 
 
 class FunctionArgs:

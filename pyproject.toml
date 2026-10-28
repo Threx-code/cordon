@@ -167,7 +167,7 @@ attestation = "cordon_scanner.detect.supply.attestation:AttestationDetector"
 campaign-sibling = "cordon_scanner.detect.supply.campaign_sibling:CampaignSiblingDetector"
 recipe-digest = "cordon_scanner.detect.supply.recipe_digests:RecipeDigestDetector"
 binary = "cordon_scanner.detect.binary.binary:BinaryDetector"
-capability = "cordon_scanner.detect.code.capability:CapabilityDetector"
+capability = "cordon_scanner.detect.code.capability.detector:CapabilityDetector"
 clamav = "cordon_scanner.detect.binary.clamav:ClamavDetector"
 rule-file = "cordon_scanner.detect.binary.rule_files:RuleFileDetector"
 config = "cordon_scanner.detect.infra.config_files:ConfigDetector"
@@ -201,6 +201,16 @@ markdown = "cordon_scanner.report.markdown:MarkdownReporter"
 github = "cordon_scanner.report.github:GithubReporter"
 codeclimate = "cordon_scanner.report.codeclimate:CodeClimateReporter"
 vex = "cordon_scanner.report.vex:VexReporter"
+
+[project.entry-points."cordon_scanner.ecosystem_facts"]
+# What classifying a dependency asks of the ecosystems (foundation.dependencies.EcosystemFacts):
+# provided by the ecosystems layer, so the domain names no ecosystem.
+builtin = "cordon_scanner.ecosystems.registry:RegistryFacts"
+
+[project.entry-points."cordon_scanner.notifiers"]
+webhook = "cordon_scanner.notify.channels.webhook:WebhookChannel"
+slack = "cordon_scanner.notify.channels.slack:SlackChannel"
+teams = "cordon_scanner.notify.channels.teams:TeamsChannel"
 
 [project.urls]
 Homepage = "https://github.com/Threx-code/cordon"

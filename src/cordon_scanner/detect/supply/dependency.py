@@ -34,7 +34,6 @@ from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
-    Dependency,
     Evidence,
     EvidenceKind,
     Explanation,
@@ -44,6 +43,7 @@ from cordon_scanner.foundation.models import (
     Scope,
     Severity,
 )
+from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.registries.popular import PackageIntel
 
 if TYPE_CHECKING:

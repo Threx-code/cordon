@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from cordon_scanner.intel.advisories import advisories
+from cordon_scanner.intel.advisories import advisories, shipped
 from cordon_scanner.intel.advisories.advisory_index import AdvisoryIndex
 
 
@@ -22,7 +22,7 @@ class IndexKit:
     @staticmethod
     def isolate(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
         monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
 
     @staticmethod
     def records() -> list[dict[str, object]]:
@@ -56,14 +56,14 @@ class TestEquivalence:
         self, ecosystem, monkeypatch, tmp_path
     ) -> None:
         IndexKit.isolate(monkeypatch, tmp_path)
-        verified = advisories.ShippedAdvisories._verified_file(ecosystem)
+        verified = shipped.ShippedAdvisories._verified_file(ecosystem)
         if verified is None:
             pytest.skip(f"no shipped {ecosystem} data in this checkout")
         path, digest = verified
         grouped: dict[str, list[dict[str, object]]] = {}
-        for raw in advisories.ShippedAdvisories._parse(path):
+        for raw in shipped.ShippedAdvisories._parse(path):
             grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
-        index = AdvisoryIndex.for_file(digest, lambda: advisories.ShippedAdvisories._parse(path))
+        index = AdvisoryIndex.for_file(digest, lambda: shipped.ShippedAdvisories._parse(path))
         assert index is not None
         assert sorted(index.names()) == sorted(grouped)
         for name, expected in grouped.items():
@@ -74,7 +74,7 @@ class TestEquivalence:
 
     def test_the_database_answers_the_same_through_the_index(self, monkeypatch, tmp_path) -> None:
         IndexKit.isolate(monkeypatch, tmp_path)
-        source = advisories.ShippedAdvisories._shipped_raw("cargo")
+        source = shipped.ShippedAdvisories._shipped_raw("cargo")
         if not isinstance(source, advisories.IndexedRecords):
             pytest.skip("no shipped cargo data in this checkout")
         database = advisories.AdvisoryDatabase.bundled()

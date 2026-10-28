@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.engine.cache import ScanCache
+from cordon_scanner.foundation.paths import StatePaths
 
 AMBIENT = ("CI", "CORDON_POLICY", "CORDON_CACHE_DIR", "XDG_CACHE_HOME")
 """Variables the tool reads that a developer's shell may also set.
@@ -65,7 +65,9 @@ class SharedFixtures:
     @pytest.fixture(autouse=True)
     def _isolated_cache_key(self, tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:
         directory = tmp_path_factory.mktemp("cordon-key")
-        monkeypatch.setattr(ScanCache, "key_dir", staticmethod(lambda: directory))
+        # The one place the key directory is decided: the scan cache, the evidence key and every
+        # other key-holder ask StatePaths, so patching it isolates them all.
+        monkeypatch.setattr(StatePaths, "key_dir", staticmethod(lambda: directory))
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -81,9 +83,9 @@ def hardening(monkeypatch: pytest.MonkeyPatch) -> None:
     The CI, container and infrastructure rules' own tests check what each rule reports; by
     default the engine records those domains at LOW (`Policy.hardening`), which is the tier's
     behaviour and has its own tests (`test_hardening_tier.py`)."""
-    from cordon_scanner.engine.engine import Engine
+    from cordon_scanner.engine.pipeline.ceilings import Ceilings
 
-    monkeypatch.setattr(Engine, "_hardening_tier", staticmethod(lambda findings, policy: findings))
+    monkeypatch.setattr(Ceilings, "hardening_tier", staticmethod(lambda findings, policy: findings))
 
 
 @pytest.fixture

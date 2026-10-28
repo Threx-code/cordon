@@ -1041,7 +1041,7 @@ class ImageConfig:
             value = runtime.get(key)
             if isinstance(value, list):
                 commands.append(f"{key.upper()} " + " ".join(str(v) for v in value))
-        # What the engine needs to know what the image runs on start (`Engine._image_start_ceiling`).
+        # What the engine needs to know what the image runs on start (`Ceilings.image_start_ceiling`).
         if isinstance(runtime.get("WorkingDir"), str) and runtime["WorkingDir"]:
             commands.append(f"WORKDIR {runtime['WorkingDir']}")
         healthcheck = runtime.get("Healthcheck")

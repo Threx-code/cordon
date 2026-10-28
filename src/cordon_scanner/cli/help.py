@@ -367,7 +367,7 @@ class Environment:
         return f"{source} · {age}", "ok"
 
     def _policy(self) -> tuple[str, str]:
-        from cordon_scanner.foundation.config import CONFIG_FILENAMES, Config
+        from cordon_scanner.foundation.config.settings import CONFIG_FILENAMES, Config
         from cordon_scanner.foundation.errors import CordonError
 
         name = next((n for n in CONFIG_FILENAMES if (self.cwd / n).is_file()), None)

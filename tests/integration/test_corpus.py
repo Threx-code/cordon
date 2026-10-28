@@ -23,13 +23,14 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config, RestrictedYamlParser
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Severity
-from support import requires_corpus, requires_malicious_corpus
+from support import ROOT, requires_corpus, requires_malicious_corpus
 
 pytestmark = requires_corpus
 
-CORPUS = Path(__file__).resolve().parents[2] / "corpus"
+CORPUS = ROOT / "corpus"
 BENIGN = CORPUS / "benign"
 MALICIOUS = CORPUS / "malicious"
 
@@ -344,7 +345,7 @@ class TestSelfScan(CorpusFixtures):
     """
 
     def test_the_repository_scans_clean(self, scanner: Scanner) -> None:
-        repository = Path(__file__).resolve().parents[2]
+        repository = ROOT
         result = self._scan_tracked(repository, scanner)
 
         offending = [
@@ -368,12 +369,12 @@ class TestSelfScan(CorpusFixtures):
             # The tool-call guard's tests are the calls it must refuse -- a cron write, an
             # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
             and f.location.path != "tests/unit/judge/test_tool_call_guard.py"
-            and f.location.path != "tests/unit/foundation/test_pattern_literals.py"
+            and f.location.path != "tests/unit/analysis/python/test_pattern_literals.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
-            and f.location.path != "tests/unit/detect/code/test_recovered_misses.py"
+            and f.location.path != "tests/unit/detect/code/capability/test_recovered_misses.py"
             # The spelling matrix lists every way JavaScript writes a capability primitive -- a
             # spawn, a beacon, a persistence write -- each a rule's test positive, by construction.
-            and f.location.path != "tests/unit/detect/code/test_js_spelling_matrix.py"
+            and f.location.path != "tests/unit/detect/code/capability/test_js_spelling_matrix.py"
             # Campaign behaviours rebuilt as inert fixtures, each a rule's test positive.
             and f.location.path != "tests/unit/detect/code/test_npm_campaign_classes.py"
             and f.location.path != "tests/unit/detect/agents/test_agents.py"
@@ -486,15 +487,12 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
         return declared
 
     def test_no_finding_exceeds_its_declaration(self) -> None:
-        from pathlib import Path
 
         from cordon_scanner import Scanner
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         declared = self._declared()
-        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
-            Path(__file__).resolve().parents[2] / "corpus"
-        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(ROOT / "corpus")
         over = [
             (f.rule_id, f.severity.name, declared[f.rule_id].name, f.location.path)
             for f in result.findings

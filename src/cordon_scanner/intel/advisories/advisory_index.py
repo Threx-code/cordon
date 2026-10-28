@@ -87,9 +87,9 @@ class AdvisoryIndex:
 
     @staticmethod
     def directory() -> Path:
-        from cordon_scanner.engine.cache import ScanCache
+        from cordon_scanner.foundation.paths import StatePaths
 
-        return ScanCache.default_cache_dir() / "advisory-index"
+        return StatePaths.default_cache_dir() / "advisory-index"
 
     @classmethod
     def for_file(
@@ -116,7 +116,7 @@ class AdvisoryIndex:
         """Open the index only if its seal is this install's and both digests agree."""
         import sqlite3
 
-        from cordon_scanner.engine.local_seal import LocalSeal
+        from cordon_scanner.foundation.files.seal import LocalSeal
         from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
 
         try:
@@ -156,7 +156,7 @@ class AdvisoryIndex:
         """Write the index to a temporary name, rename it into place, then seal it."""
         import sqlite3
 
-        from cordon_scanner.engine.local_seal import LocalSeal
+        from cordon_scanner.foundation.files.seal import LocalSeal
         from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
 
         try:

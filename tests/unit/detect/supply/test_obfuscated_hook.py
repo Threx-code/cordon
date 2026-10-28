@@ -85,7 +85,7 @@ class TestObfuscatedHook:
         # benign Open VSX extensions blocked here).
         from cordon_scanner.detect.base import FileUnit, ScanContext
         from cordon_scanner.detect.supply.obfuscated_hook import ObfuscatedHookDetector
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 

@@ -267,7 +267,7 @@ class PrivateRegistries:
         the token service a registry names in its challenge when it wants one."""
         import hashlib
 
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.image_registries import ImageRegistries
         from cordon_scanner.intel.registries.registry_client import (
             PackageFacts,
             PackageNotFound,
@@ -302,7 +302,7 @@ class PrivateRegistries:
                     registry,
                     f"{base_url}/manifests/{version}",
                     credential,
-                    accept=MoreRegistries.MANIFEST_TYPES,
+                    accept=ImageRegistries.MANIFEST_TYPES,
                     authorization=authorization,
                 )
             except PackageNotFound:

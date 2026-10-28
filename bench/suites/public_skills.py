@@ -53,7 +53,7 @@ class PublicSkills:
         """(target, blocked by the default gate, flagged at MEDIUM or above, rules at MEDIUM+)."""
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import PolicyGate
-        from cordon_scanner.foundation.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default().with_overrides(use_cache=False)
         result = Scanner(config).scan(Path(target))

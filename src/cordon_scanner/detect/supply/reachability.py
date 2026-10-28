@@ -46,7 +46,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from cordon_scanner.detect.base import Unit
-    from cordon_scanner.foundation.models import Dependency, Finding
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import Dependency
 
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
 VULNERABILITY_RULES = frozenset({VULNERABLE_RULE, "VULNERABLE.DEPENDENCY.EXPLOITED.001"})

@@ -15,11 +15,11 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.cache import ScanCache
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import UnsafePatternError
 from cordon_scanner.rules.loader import PatternCompiler
-from support import requires_malicious_corpus
+from support import ROOT, requires_malicious_corpus
 
 PAYLOAD = "const p = atob(B);\neval(p);\n"
 
@@ -135,7 +135,7 @@ class TestC02BinaryClassification:
     @requires_malicious_corpus
     def test_every_malicious_corpus_sample_survives_a_nul(self) -> None:
         """The regression test the review asked for, over the whole corpus."""
-        corpus = Path(__file__).resolve().parents[2] / "corpus" / "malicious"
+        corpus = ROOT / "corpus" / "malicious"
         checked = 0
         for sample in sorted(corpus.rglob("*")):
             if not sample.is_file() or sample.name == "expected.yaml":
@@ -261,9 +261,9 @@ class TestC05PerFileTimeout:
     documented at length, and referenced nowhere."""
 
     def test_the_limit_is_read_by_the_engine(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "engine" / "engine.py"
-        ).read_text(encoding="utf-8")
+        source = (ROOT / "src" / "cordon_scanner" / "engine" / "engine.py").read_text(
+            encoding="utf-8"
+        )
         assert "per_file_timeout" in source
 
     def test_an_exhausted_budget_marks_the_scan_incomplete(self, tmp_path) -> None:

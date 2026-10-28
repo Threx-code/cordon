@@ -9,7 +9,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.decide.vex import VexDocuments, VexError
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.report.base import ReportOptions
 from cordon_scanner.report.vex import VexReporter
 

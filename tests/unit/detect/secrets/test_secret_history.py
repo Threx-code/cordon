@@ -25,7 +25,7 @@ from cordon_scanner.detect.secrets.secret_history import (
     SecretLiveness,
     SecretValues,
 )
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Evidence
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from cordon_scanner.sources.git import GitRepository

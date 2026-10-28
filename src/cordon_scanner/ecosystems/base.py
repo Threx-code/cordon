@@ -26,12 +26,14 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.foundation.models import Dependency, Hook, Scope
+from cordon_scanner.foundation.models import Hook, Scope
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from cordon_scanner.foundation.content import FileContent
+    from cordon_scanner.foundation.models import Scope
 
 
 class Coordinate:
@@ -769,11 +771,54 @@ class BaseEcosystem:
                 )
 
 
+# Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
+# each implementation typed by one of these, and the type checker proves the implementation
+# conforms, so the engine never sees a concrete adapter type.
+
+
+class ImageName(Protocol):
+    """What the engine uses of an `ImageReference` parsed from a name."""
+
+    @property
+    def digest(self) -> str | None: ...
+    @property
+    def familiar(self) -> str: ...
+    @property
+    def registry(self) -> str | None: ...
+    @property
+    def tag(self) -> str | None: ...
+
+
+class ImageReferences(Protocol):
+    """What the engine uses of the class `ImageReference`."""
+
+    def parse(self, text: str) -> ImageName | None: ...
+
+
+class InstallTimeSpans(Protocol):
+    """What the engine uses of the class `NotRunAtInstall`."""
+
+    def spans(self, text: str) -> list[tuple[int, int]]: ...
+
+
+class LockScoping(Protocol):
+    """What the engine uses of the class `LockScopes`."""
+
+    def propagate(
+        self, roots: dict[str, set[Scope]], edges: dict[str, set[str]], limit: int = ...
+    ) -> dict[str, Scope]: ...
+    def rank(self, scope: Scope) -> int: ...
+
+
 __all__ = [
     "BaseEcosystem",
     "DeclaredDependency",
     "Ecosystem",
+    "ImageName",
+    "ImageReferences",
+    "InstallTimeSpans",
     "LockEntry",
     "LockGraph",
+    "LockScoping",
     "Manifest",
 ]

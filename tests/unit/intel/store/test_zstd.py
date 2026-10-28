@@ -130,7 +130,7 @@ class TestTheStream:
     def test_the_conda_reader_uses_it(self, monkeypatch) -> None:
         import builtins
 
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage
+        from cordon_scanner.intel.advisories.upstream.conda import CondaPackage
 
         real = builtins.__import__
 

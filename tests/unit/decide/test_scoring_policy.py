@@ -23,10 +23,12 @@ from cordon_scanner.decide.scoring import (
     RiskScorer,
     ScoringContext,
 )
-from cordon_scanner.foundation.config import Config, Policy, RestrictedYamlParser
+from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.config.policy import Policy
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ExitCode
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import (
-    Capability,
     Category,
     Confidence,
     Evidence,
@@ -36,11 +38,11 @@ from cordon_scanner.foundation.models import (
     Location,
     RedactionMode,
     RiskScore,
-    ScanResult,
     Scope,
     Severity,
     Suppression,
 )
+from cordon_scanner.foundation.results import ScanResult
 
 
 class ScoringPolicyHelpers:

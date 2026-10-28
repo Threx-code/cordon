@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="t d">
+<title id="t">What Cordon catches</title>
+<desc id="d">Six areas: malware and install-time behaviour; leaked credentials; AI agents and MCP servers; CI/CD pipelines; dependencies and provenance; containers and infrastructure. Each card names three of the rules that ship for it.</desc>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+.card{opacity:0;animation:in .6s ease-out forwards}
+.c1{animation-delay:.05s}.c2{animation-delay:.2s}.c3{animation-delay:.35s}.c4{animation-delay:.5s}.c5{animation-delay:.65s}.c6{animation-delay:.8s}
+.lit{opacity:0;animation:lit 12s ease-in-out infinite}
+.g1{animation-delay:1s}.g2{animation-delay:3s}.g3{animation-delay:5s}.g4{animation-delay:7s}.g5{animation-delay:9s}.g6{animation-delay:11s}
+@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes lit{0%{opacity:0}6%{opacity:1}16%{opacity:1}24%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.card{animation:none;opacity:1;transform:none}.lit{animation:none}}
+</style>
+<rect width="1200" height="640" rx="18" fill="#0b1110"/>
+<rect x=".5" y=".5" width="1199" height="639" rx="17.5" fill="none" stroke="#22302c"/>
+<text x="48" y="64" fill="#f2f7f5" font-size="26" font-weight="700">What it catches</text>
+<text x="48" y="92" fill="#8fa49d" font-size="14">Source, manifests, lockfiles, build scripts, CI config, Dockerfiles, IaC, images and agent config, read without running any of it.</text>
+
+<g font-size="13">
+<!-- 1 -->
+<g class="card c1">
+<rect x="48" y="120" width="358" height="236" rx="14" fill="#121a18" stroke="#22302c"/>
+<rect class="lit g1" x="48" y="120" width="358" height="236" rx="14" fill="none" stroke="#35c3b1" stroke-width="1.5"/>
+<rect x="70" y="142" width="40" height="40" rx="10" fill="#2a1416"/><path d="M90 150 l12 22 h-24 z" fill="none" stroke="#ff6b7a" stroke-width="2.4" stroke-linejoin="round"/><path d="M90 158 v7 M90 168.5 v.5" stroke="#ff6b7a" stroke-width="2.4" stroke-linecap="round"/>
+<text x="124" y="168" fill="#f2f7f5" font-size="16" font-weight="700">Malware</text>
+<text x="70" y="210" fill="#d6e2de">Install hooks that steal, droppers,</text>
+<text x="70" y="229" fill="#d6e2de">wipers, poisoned models, hidden</text>
+<text x="70" y="248" fill="#d6e2de">loaders, known-malicious releases.</text>
+<g font-size="11"><rect x="70" y="270" width="134" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="79" y="285" fill="#ff8a8a">MALWARE.EXFIL.001</text>
+<rect x="70" y="298" width="190" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="79" y="313" fill="#ff8a8a">MALWARE.PROTESTWARE.001</text>
+<rect x="70" y="326" width="246" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="79" y="341" fill="#ff8a8a">MALWARE.MODEL.PICKLE_EXEC.001</text></g>
+</g>
+<!-- 2 -->
+<g class="card c2">
+<rect x="421" y="120" width="358" height="236" rx="14" fill="#121a18" stroke="#22302c"/>
+<rect class="lit g2" x="421" y="120" width="358" height="236" rx="14" fill="none" stroke="#35c3b1" stroke-width="1.5"/>
+<rect x="443" y="142" width="40" height="40" rx="10" fill="#2a2312"/><circle cx="458" cy="162" r="7" fill="none" stroke="#e8c468" stroke-width="2.4"/><path d="M465 162 h11 M472 162 v5 M476 162 v4" stroke="#e8c468" stroke-width="2.4" stroke-linecap="round"/>
+<text x="497" y="168" fill="#f2f7f5" font-size="16" font-weight="700">Leaked credentials</text>
+<text x="443" y="210" fill="#d6e2de">Cloud keys, tokens and private</text>
+<text x="443" y="229" fill="#d6e2de">keys, even split across literals.</text>
+<text x="443" y="248" fill="#d6e2de">Reported by hash, never printed.</text>
+<g font-size="11"><rect x="443" y="270" width="206" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="452" y="285" fill="#e8c468">SECRET.AWS.ACCESS_KEY.001</text>
+<rect x="443" y="298" width="190" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="452" y="313" fill="#e8c468">SECRET.GITHUB.TOKEN.001</text>
+<rect x="443" y="326" width="166" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="452" y="341" fill="#e8c468">SECRET.NPM.TOKEN.001</text></g>
+</g>
+<!-- 3 -->
+<g class="card c3">
+<rect x="794" y="120" width="358" height="236" rx="14" fill="#121a18" stroke="#22302c"/>
+<rect class="lit g3" x="794" y="120" width="358" height="236" rx="14" fill="none" stroke="#35c3b1" stroke-width="1.5"/>
+<rect x="816" y="142" width="40" height="40" rx="10" fill="#22182e"/><rect x="825" y="151" width="22" height="22" rx="5" fill="none" stroke="#c792ea" stroke-width="2.4"/><circle cx="832" cy="160" r="1.8" fill="#c792ea"/><circle cx="840" cy="160" r="1.8" fill="#c792ea"/><path d="M831 166 h10" stroke="#c792ea" stroke-width="2" stroke-linecap="round"/>
+<text x="870" y="168" fill="#f2f7f5" font-size="16" font-weight="700">AI agents and MCP</text>
+<text x="816" y="210" fill="#d6e2de">Instruction files, skills, MCP</text>
+<text x="816" y="229" fill="#d6e2de">servers and their source, hooks;</text>
+<text x="816" y="248" fill="#d6e2de">815 Agent Threat Rules built in.</text>
+<g font-size="11"><rect x="816" y="270" width="262" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="825" y="285" fill="#c792ea">SUSPECT.MCP.TOOL_DESCRIPTION.001</text>
+<rect x="816" y="298" width="230" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="825" y="313" fill="#c792ea">SUSPECT.AGENT.HIDDEN_TEXT.001</text>
+<rect x="816" y="326" width="222" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="825" y="341" fill="#c792ea">SUSPECT.AGENT.FETCH_EXEC.001</text></g>
+</g>
+<!-- 4 -->
+<g class="card c4">
+<rect x="48" y="372" width="358" height="236" rx="14" fill="#121a18" stroke="#22302c"/>
+<rect class="lit g4" x="48" y="372" width="358" height="236" rx="14" fill="none" stroke="#35c3b1" stroke-width="1.5"/>
+<rect x="70" y="394" width="40" height="40" rx="10" fill="#10262a"/><circle cx="80" cy="414" r="4" fill="none" stroke="#56d4c4" stroke-width="2.4"/><circle cx="100" cy="404" r="4" fill="none" stroke="#56d4c4" stroke-width="2.4"/><circle cx="100" cy="424" r="4" fill="none" stroke="#56d4c4" stroke-width="2.4"/><path d="M84 412 l12 -6 M84 416 l12 6" stroke="#56d4c4" stroke-width="2"/>
+<text x="124" y="420" fill="#f2f7f5" font-size="16" font-weight="700">CI/CD pipelines</text>
+<text x="70" y="462" fill="#d6e2de">Secrets sent out, expression</text>
+<text x="70" y="481" fill="#d6e2de">injection, untrusted checkouts:</text>
+<text x="70" y="500" fill="#d6e2de">GitHub, GitLab, Jenkins and more.</text>
+<g font-size="11"><rect x="70" y="522" width="214" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="79" y="537" fill="#56d4c4">MALWARE.CI.SECRET_EXFIL.001</text>
+<rect x="70" y="550" width="262" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="79" y="565" fill="#56d4c4">SUSPECT.CI.EXPRESSION_INJECTION.001</text>
+<rect x="70" y="578" width="174" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="79" y="593" fill="#56d4c4">SUSPECT.CI.PR_TARGET.001</text></g>
+</g>
+<!-- 5 -->
+<g class="card c5">
+<rect x="421" y="372" width="358" height="236" rx="14" fill="#121a18" stroke="#22302c"/>
+<rect class="lit g5" x="421" y="372" width="358" height="236" rx="14" fill="none" stroke="#35c3b1" stroke-width="1.5"/>
+<rect x="443" y="394" width="40" height="40" rx="10" fill="#132a1c"/><rect x="452" y="402" width="22" height="9" rx="2" fill="none" stroke="#8bd49c" stroke-width="2.2"/><rect x="452" y="415" width="22" height="9" rx="2" fill="none" stroke="#8bd49c" stroke-width="2.2"/><path d="M457 406.5 h1 M457 419.5 h1" stroke="#8bd49c" stroke-width="2.4" stroke-linecap="round"/>
+<text x="497" y="420" fill="#f2f7f5" font-size="16" font-weight="700">Dependencies</text>
+<text x="443" y="462" fill="#d6e2de">Known-malicious and exploited</text>
+<text x="443" y="481" fill="#d6e2de">versions, typosquats, provenance</text>
+<text x="443" y="500" fill="#d6e2de">that does not verify, release diffs.</text>
+<g font-size="11"><rect x="443" y="522" width="222" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="452" y="537" fill="#8bd49c">MALWARE.DEPENDENCY.KNOWN.001</text>
+<rect x="443" y="550" width="262" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="452" y="565" fill="#8bd49c">VULNERABLE.DEPENDENCY.EXPLOITED.001</text>
+<rect x="443" y="578" width="238" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="452" y="593" fill="#8bd49c">SUSPECT.DEPENDENCY.TYPOSQUAT.001</text></g>
+</g>
+<!-- 6 -->
+<g class="card c6">
+<rect x="794" y="372" width="358" height="236" rx="14" fill="#121a18" stroke="#22302c"/>
+<rect class="lit g6" x="794" y="372" width="358" height="236" rx="14" fill="none" stroke="#35c3b1" stroke-width="1.5"/>
+<rect x="816" y="394" width="40" height="40" rx="10" fill="#14202e"/><path d="M836 401 l12 6.5 v13 l-12 6.5 l-12 -6.5 v-13 z M824 407.5 l12 6.5 l12 -6.5 M836 414 v13" fill="none" stroke="#7aa2f7" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="870" y="420" fill="#f2f7f5" font-size="16" font-weight="700">Containers and IaC</text>
+<text x="816" y="462" fill="#d6e2de">Images' OS packages, Dockerfiles,</text>
+<text x="816" y="481" fill="#d6e2de">Kubernetes, Terraform, Helm and</text>
+<text x="816" y="500" fill="#d6e2de">Ansible.</text>
+<g font-size="11"><rect x="816" y="522" width="230" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="825" y="537" fill="#7aa2f7">VULNERABLE.IMAGE.PACKAGE.001</text>
+<rect x="816" y="550" width="246" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="825" y="565" fill="#7aa2f7">SUSPECT.CONTAINER.FETCH_EXEC.001</text>
+<rect x="816" y="578" width="230" height="22" rx="5" fill="#0b1110" stroke="#2c3d38"/><text x="825" y="593" fill="#7aa2f7">SUSPECT.K8S.RBAC_WILDCARD.001</text></g>
+</g>
+</g>
+</svg>

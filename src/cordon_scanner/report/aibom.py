@@ -33,13 +33,14 @@ from cordon_scanner.detect.agents.agents import (
     WORKFLOW_PATHS,
     McpConfigs,
 )
-from cordon_scanner.engine.walker import PathGlob, Walker
+from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.files.walk import Walker
 from cordon_scanner.report.sbom import TOOL_NAME, SbomDocument
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.foundation.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 SPEC_VERSION: Final = "1.6"
 MAX_READ: Final = 1 << 20

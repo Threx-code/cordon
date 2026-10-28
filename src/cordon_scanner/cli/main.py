@@ -27,12 +27,20 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.cli.commands.advisories import AdvisoriesCommand
+from cordon_scanner.cli.commands.config import ConfigCommand
+from cordon_scanner.cli.commands.guard import GuardCommand
+from cordon_scanner.cli.commands.intel import IntelCommand
+from cordon_scanner.cli.commands.report import ReportCommand
+from cordon_scanner.cli.commands.rules import RulesCommand
+from cordon_scanner.cli.commands.sbom import SbomCommand
+from cordon_scanner.cli.commands.scan.enrichment import ScanEnrichment
 from cordon_scanner.cli.dependency_payload import DependencyPayload
 from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.engine.audit import AuditLog
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
-from cordon_scanner.foundation.models import Confidence, Severity
+from cordon_scanner.foundation.models import Confidence, Finding, Severity
 from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
 from cordon_scanner.version import __version__
@@ -41,8 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from cordon_scanner.engine.progress import Progress
-    from cordon_scanner.foundation.models import Finding, Rule, ScanResult
-    from cordon_scanner.rules.loader import RulePack, RuleTestFailure
+    from cordon_scanner.foundation.results import ScanResult
     from cordon_scanner.sources.base import FileSource
 
 EPILOG = f"""\
@@ -59,14 +66,6 @@ exit codes:
 
 tutorials for this version ({__version__}):
   https://github.com/Threx-code/cordon/tree/v{__version__}/tutorials
-"""
-
-
-_NO_DECLARED_VERSION = "0.0.0"
-"""Stands for "this target declares no version of its own".
-
-Also the value emitted when nothing better is found, so a document always
-carries a version string -- both specifications want one.
 """
 
 
@@ -95,13 +94,6 @@ class CommandLine:
     `cordon_scanner` for the same reason, and both now match the distribution
     name, which was already `cordon-scanner` and was already free.
     """
-
-    MAX_RESULT_BYTES = 256 * 1024 * 1024
-    """Ceiling on a document `report convert` will read.
-
-    The command is pointed at a file by a human, but that file may have come
-    from a scan of somebody else's repository, so it is not trusted to be
-    well-formed or small."""
 
     @classmethod
     def build_parser(cls) -> ColourArgumentParser:
@@ -501,99 +493,12 @@ class CommandLine:
         inventory.add_argument("target", nargs="?", default=".")
         inventory.add_argument("--format", "-f", default="text", choices=["text", "json"])
 
-        # -- rules -----------------------------------------------------------
-        rules_cmd = sub.add_parser("rules", help="inspect and validate rule packs")
-        rules_sub = rules_cmd.add_subparsers(dest="rules_command", metavar="<action>")
-        rules_sub.add_parser("list", help="list every loaded rule")
-        rules_sub.add_parser("test", help="run every rule's declared samples")
-        diff = rules_sub.add_parser(
-            "diff", help="compare rule packs and report removal or weakening"
-        )
-        diff.add_argument("before", help="a pack file, or a directory of packs")
-        diff.add_argument(
-            "after",
-            nargs="?",
-            default=None,
-            help="the pack to compare; defaults to the packs built into this install",
-        )
+        RulesCommand.add_parser(sub)
 
-        show = rules_sub.add_parser("show", help="show one rule in full")
-        show.add_argument("rule_id")
+        GuardCommand.add_parser(sub)
 
-        # -- guard -----------------------------------------------------------
-        guard_cmd = sub.add_parser("guard", help="scanner self-integrity and git hook installation")
-        guard_sub = guard_cmd.add_subparsers(dest="guard_command", metavar="<action>")
-        for action, description in (
-            ("verify", "check that the guard is intact"),
-            ("install", "install fail-closed git hooks"),
-            ("update", "regenerate the guard hash manifest"),
-        ):
-            parser_ = guard_sub.add_parser(action, help=description)
-            parser_.add_argument("path", nargs="?", default=".")
-            if action == "verify":
-                parser_.add_argument(
-                    "--manifest-only",
-                    action="store_true",
-                    help=(
-                        "check only that every file the guard manifest lists matches it; "
-                        "for CI, which has no hooks to check"
-                    ),
-                )
-            if action == "install":
-                parser_.add_argument(
-                    "--global",
-                    dest="global_",
-                    action="store_true",
-                    help=(
-                        "install into git's template directory, so every repository cloned "
-                        "or created from now on has the hooks"
-                    ),
-                )
-                parser_.add_argument(
-                    "--force",
-                    action="store_true",
-                    help=(
-                        "replace a pre-existing non-cordon hook. Without this such a "
-                        "hook is preserved and a backup is written beside it"
-                    ),
-                )
-
-        # The incoming shims' entry point: hidden, because nobody types it.
-        incoming_hook = guard_sub.add_parser("incoming")
-        incoming_hook.add_argument("hook", choices=("post-checkout", "post-merge"))
-        incoming_hook.add_argument("git_args", nargs="*")
-
-        # -- config ----------------------------------------------------------
-        config_cmd = sub.add_parser("config", help="check configuration")
-        config_sub = config_cmd.add_subparsers(dest="config_command", metavar="<action>")
-        validate = config_sub.add_parser("validate", help="validate a configuration file")
-        fetch_policy = config_sub.add_parser(
-            "fetch-policy",
-            help="fetch a digest-pinned organisation policy once, so scans read it offline",
-        )
-        fetch_policy.add_argument("url", help="https://host/policy.yaml#sha256=<64 hex>")
-        drift = config_sub.add_parser(
-            "policy-drift",
-            help="check a vendored policy copy against the published one (exit 1 when they differ)",
-        )
-        drift.add_argument("vendored", help="the copy in this repository")
-        drift.add_argument(
-            "--published",
-            required=True,
-            help="the published policy: a path, or its URL with #sha256=<hex> (compared by digest, nothing fetched)",
-        )
-        report = sub.add_parser(
-            "report", help="re-render a saved JSON result in another format"
-        ).add_subparsers(dest="report_command", metavar="<action>")
-        convert = report.add_parser("convert", help="render a saved result")
-        convert.add_argument("path", help="a result written with --format json")
-        convert.add_argument(
-            "--format",
-            "-f",
-            default="text",
-            help="text|json|sarif|junit|markdown|github",
-        )
-        convert.add_argument("--output", "-o", default=None, help="write to a file")
+        ConfigCommand.add_parser(sub)
+        ReportCommand.add_parser(sub)
 
         baseline = sub.add_parser(
             "baseline",
@@ -627,41 +532,7 @@ class CommandLine:
         bundle_install.add_argument("bundle_file", metavar="BUNDLE")
         bundle_install.add_argument("--into", required=True, metavar="DIR")
 
-        advisories = sub.add_parser(
-            "advisories",
-            help="manage the vulnerability/malicious-package advisory database",
-        ).add_subparsers(dest="advisories_command")
-        advisories_sync = advisories.add_parser(
-            "sync", help="refresh the local advisory data from OSV's bulk export"
-        )
-        advisories_sync.add_argument(
-            "--only",
-            nargs="+",
-            metavar="ECOSYSTEM",
-            default=None,
-            help="sync only these ecosystems, or nvd for NVD's data (default: all, and NVD)",
-        )
-        advisories_sync.add_argument(
-            "--os",
-            nargs="+",
-            metavar="FAMILY",
-            default=None,
-            help=(
-                "also sync these distributions' advisories (debian, ubuntu, alpine, wolfi, "
-                "chainguard, rocky, almalinux, redhat, suse, opensuse) so image scans match "
-                "operating-system packages offline"
-            ),
-        )
-        advisories_sync.add_argument(
-            "--bundle",
-            metavar="URL",
-            default=None,
-            help=(
-                "install a signed advisory bundle from URL instead of building "
-                "from OSV; the bundle's Ed25519 signature is verified against the "
-                "pinned release key before anything is unpacked"
-            ),
-        )
+        AdvisoriesCommand.add_parser(sub)
 
         login = sub.add_parser(
             "login", help="sign in to Cordon Cloud through your organisation's SSO (device flow)"
@@ -734,83 +605,8 @@ class CommandLine:
         sub.add_parser("logout", help="forget the stored Cordon Cloud sign-in")
         sub.add_parser("whoami", help="show the Cordon Cloud sign-in in use")
 
-        intel = sub.add_parser(
-            "intel", help="the signed threat-intel feed: how current it is, and refreshing it"
-        ).add_subparsers(dest="intel_command")
-        intel_status = intel.add_parser(
-            "status", help="show the intel's source, serial and age without fetching anything"
-        )
-        intel_status.add_argument("--json", action="store_true", help="print as JSON")
-        intel_update = intel.add_parser(
-            "update", help="verify and apply the latest signed feed now"
-        )
-        intel_update.add_argument("--json", action="store_true", help="print as JSON")
-        intel_acquire = intel.add_parser(
-            "acquire",
-            help=(
-                "fetch what a later offline scan compares a published package with: the newest "
-                "release at least 90 days older, hashed per file (network: registries only)"
-            ),
-        )
-        intel_acquire.add_argument(
-            "targets", nargs="+", metavar="ARCHIVE", help="published package archives"
-        )
-        intel_acquire.add_argument("--json", action="store_true", help="print as JSON")
-
-        sbom = sub.add_parser(
-            "sbom", help="generate or inspect a bill of materials for a scan target"
-        ).add_subparsers(dest="sbom_command")
-        sbom_generate = sbom.add_parser(
-            "generate", help="write a CycloneDX or SPDX document from the resolved graph"
-        )
-        sbom_generate.add_argument("target", nargs="?", default=".")
-        sbom_generate.add_argument("--format", choices=("cyclonedx", "spdx"), default="cyclonedx")
-        sbom_generate.add_argument("--output", "-o", metavar="PATH", default=None)
-        sbom_generate.add_argument(
-            "--exclude",
-            action="append",
-            default=[],
-            metavar="GLOB",
-            help="skip matching paths, as `scan --exclude` does (repeatable)",
-        )
-        sbom_generate.add_argument(
-            "--ai",
-            action="store_true",
-            help=(
-                "write the AI bill of materials instead (CycloneDX 1.6): agent instruction, skill "
-                "and prompt files, agent settings, MCP servers, models and AI SDKs"
-            ),
-        )
-        sbom_generate.add_argument(
-            "--vulnerabilities",
-            action="store_true",
-            help=(
-                "embed the advisory matches (CycloneDX `vulnerabilities`), marking those on "
-                "CISA KEV or ENISA EUVD as exploited: the per-release record the EU Cyber "
-                "Resilience Act asks a manufacturer to keep"
-            ),
-        )
-        sbom_generate.add_argument(
-            "--name",
-            metavar="NAME",
-            default=None,
-            help="root component name (default: directory name)",
-        )
-        sbom_generate.add_argument(
-            "--component-version",
-            metavar="VERSION",
-            default=_NO_DECLARED_VERSION,
-            help=(
-                "root component version (default: whatever the target's own manifest "
-                "declares, or 0.0.0 when it declares none)"
-            ),
-        )
-
-        validate.add_argument("path", nargs="?", default=None)
-        validate.add_argument("--policy", metavar="PATH")
-        explain = config_sub.add_parser("explain", help="show effective settings and their origin")
-        explain.add_argument("path", nargs="?", default=None)
-        explain.add_argument("--policy", metavar="PATH")
+        IntelCommand.add_parser(sub)
+        SbomCommand.add_parser(sub)
 
         from cordon_scanner.cli.completion import CompletionCommand
         from cordon_scanner.cli.deps import DepsCommand
@@ -954,88 +750,6 @@ class CommandLine:
         )
 
     @classmethod
-    def _with_model(
-        cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
-    ) -> ScanResult:
-        """`--model`: Cordon's own model scores the packages the scan holds (`model/client.py`).
-
-        A model that could not be asked is said, and the scan is incomplete: a check the operator
-        asked for and did not get is coverage lost, never a clean result."""
-        from dataclasses import replace as _replace
-
-        from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.agents.model import MALICIOUS_PACKAGE, UNAVAILABLE
-        from cordon_scanner.engine.engine import Engine
-        from cordon_scanner.intel.malware.feed import FeedClient
-        from cordon_scanner.model.client import ModelClient, ModelError, ModelTargets
-
-        spec = getattr(args, "model", None)
-        if not spec:
-            return result
-        forbidden = not config.constraints.allow_network
-        if args.offline or FeedClient.offline_requested() or forbidden:
-            raise ConfigError(
-                "--model asks a model server, and this scan may not use the network",
-                hint="Drop --offline (or CORDON_OFFLINE), or run without --model.",
-            )
-        added: list[Finding] = []
-        complete = result.complete
-        try:
-            units, capped = ModelTargets.collect(target)
-            if units:
-                client = ModelClient.for_target(spec, getattr(args, "cloud_url", None))
-                for verdict in client.score(units):
-                    if not verdict.malicious:
-                        continue
-                    by = " and ".join(
-                        {"package": "the package as a whole", "file": "its worst file"}[r]
-                        for r in verdict.reasons
-                    )
-                    file_score = (
-                        "" if verdict.file_score is None else f", file {verdict.file_score:.3f}"
-                    )
-                    added.append(
-                        Engine.package_check(
-                            path=verdict.location,
-                            rule_id=MALICIOUS_PACKAGE,
-                            message=(
-                                f"Cordon's model scores this package malicious, by {by or 'its score'} "
-                                f"(package {verdict.package_score:.3f}{file_score})."
-                            ),
-                            severity=Severity.HIGH,
-                            remediation="Do not install or run it until it has been reviewed.",
-                        )
-                    )
-            if capped:
-                complete = False
-                added.append(
-                    Engine._operational(
-                        path=".",
-                        rule_id=UNAVAILABLE,
-                        message="More packages were found than one scan sends to the model (2,000); the rest were not scored.",
-                        remediation="Scan the dependency tree in parts.",
-                    )
-                )
-        except ModelError as exc:
-            complete = False
-            added.append(
-                Engine._operational(
-                    path=".",
-                    rule_id=UNAVAILABLE,
-                    message=f"Cordon's model was not asked: {exc}",
-                    remediation="Check the --model address, the sign-in or CORDON_MODEL_TOKEN, and that the server is up.",
-                )
-            )
-        if not added and complete == result.complete:
-            return result
-        kept = list(SuppressionMatcher(config).apply(added))
-        return _replace(
-            result,
-            complete=complete,
-            findings=tuple(sorted((*result.findings, *kept), key=lambda f: -f.severity.value)),
-        )
-
-    @classmethod
     def _with_secret_history(
         cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
     ) -> ScanResult:
@@ -1112,7 +826,7 @@ class CommandLine:
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import PolicyGate
         from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
         from cordon_scanner.foundation.models import RedactionMode
         from cordon_scanner.report.base import ReportOptions
         from cordon_scanner.sources.package import PackageTarget
@@ -1275,7 +989,7 @@ class CommandLine:
         # corrected command line, not a message that silently never arrives.
         channels: tuple[str, ...] = ()
         if getattr(args, "notify", None):
-            from cordon_scanner.notify import Notifier
+            from cordon_scanner.notify.notifier import Notifier
 
             try:
                 channels = Notifier.parse_channels(args.notify)
@@ -1308,7 +1022,7 @@ class CommandLine:
             result = DependencyPayload.applied(args, target, result, config, selected)
             result = cls._with_manifest_confusion(args, target, result, config)
             result = cls._with_secret_history(args, target, result, config)
-            result = cls._with_model(args, target, result, config)
+            result = ScanEnrichment.add_model_findings(args, target, result, config)
 
         if args.baseline:
             from dataclasses import replace as _replace
@@ -1400,9 +1114,9 @@ class CommandLine:
         code = int(verdict.exit_code)
         if bundle is None or code == int(ExitCode.CLEAN):
             return code
-        from cordon_scanner.notify import Webhooks
+        from cordon_scanner.foundation.targets import TargetName
 
-        key = Webhooks._target_name(result)
+        key = TargetName.of(result)
         mode = bundle.gate_mode(key)
         if mode not in ("observe", "warn"):
             return code
@@ -1441,7 +1155,7 @@ class CommandLine:
     @staticmethod
     def _with_cloud_suppressions(config: Any, suppressions: tuple[Any, ...]) -> Any:
         """Add the organisation's approved suppressions, held to the same rules as any other."""
-        from cordon_scanner.foundation.config import ConfigParser
+        from cordon_scanner.foundation.config.parser import ConfigParser
 
         problems = [
             f"{s.rule} at {s.path}: {problem}"
@@ -1504,7 +1218,7 @@ class CommandLine:
         cls, channels: tuple[str, ...], result: ScanResult, verdict: Any, *, verbose: bool
     ) -> None:
         """Post the gate failure. Reported on stderr, never allowed to change the exit code."""
-        from cordon_scanner.notify import Notifier
+        from cordon_scanner.notify.notifier import Notifier
 
         deliveries = Notifier().send(
             channels, result, reason=str(verdict.reason), exit_code=int(verdict.exit_code)
@@ -1517,38 +1231,6 @@ class CommandLine:
                 )
             elif verbose:
                 print(f"{cls.PROGRAM}: notified {delivery.channel}", file=sys.stderr)
-
-    @staticmethod
-    def _reredact(finding: Finding) -> Finding:
-        """Re-apply masking to a snippet that came from a document, not a scan.
-
-        `report convert` reconstructs findings from JSON and hands them to a
-        reporter, and the snippet was taken verbatim. The common CI shape is an
-        unprivileged job that scans and uploads `cordon-result.json` and a
-        privileged job that renders it into a pull-request comment -- so
-        whoever controls the first job controls exactly the text that reaches
-        the second, which is the input the escaping fix is defending against and
-        a way to smuggle unredacted key material into a wider audience.
-
-        Masked rather than trusted: the document records no redaction mode that
-        can be believed, and re-masking already-masked text is a no-op.
-        """
-        from dataclasses import replace as _replace
-
-        from cordon_scanner.foundation.models import RedactionMode
-        from cordon_scanner.foundation.text.redact import Redactor
-
-        snippet = finding.evidence.snippet
-        if not snippet:
-            return finding
-        return _replace(
-            finding,
-            evidence=_replace(
-                finding.evidence,
-                snippet=Redactor.redact(snippet, RedactionMode.MASKED),
-                redaction=RedactionMode.MASKED,
-            ),
-        )
 
     @staticmethod
     def _use_color(disabled: bool) -> bool:
@@ -1816,354 +1498,6 @@ class CommandLine:
         return int(ExitCode.CLEAN)
 
     @classmethod
-    def cmd_rules(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.detect.catalogue import RuleCatalogue
-        from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.config import ConfigResolver
-        from cordon_scanner.rules.loader import RuleLoader, RuleSet, RuleTester
-
-        packs = RuleLoader.load_builtin()
-        rule_set = RuleSet(packs)
-        declared = RuleCatalogue.from_detectors(Registry().detectors())
-        disabled_ids = ConfigResolver.resolve(root=".").disabled_rules
-        action = args.rules_command or "list"
-
-        if action == "list":
-            total = len(rule_set) + len(declared)
-            print(f"{total} rules: {len(rule_set)} from {len(packs)} pack(s), ")
-            print(f"{len(declared)} declared by detectors\n")
-            for pack in packs:
-                print(f"{pack.id} {pack.version}  ({pack.license})")
-                for compiled in pack:
-                    rule = compiled.rule
-                    marker = " " if rule.enabled else "-"
-                    print(
-                        f" {marker} {rule.id:<34} {rule.severity!s:<9}"
-                        f"{rule.confidence!s:<10}{rule.title}"
-                    )
-                print()
-
-            # Listed separately, and labelled, because these do not carry the
-            # loader's guarantees: no mandatory samples, no provenance
-            # requirement, no independent version. Hiding the difference would
-            # be worse than the omission this fixes.
-            if declared:
-                print("declared by detectors (not pack rules)")
-                for declared_rule in declared:
-                    marker = "-" if declared_rule.id in disabled_ids else " "
-                    print(
-                        f" {marker} {declared_rule.id:<34} {declared_rule.severity!s:<9}"
-                        f"{declared_rule.confidence!s:<10}{declared_rule.title}"
-                    )
-                print()
-            return int(ExitCode.CLEAN)
-
-        if action == "test":
-            failures: list[RuleTestFailure] = []
-            for pack in packs:
-                failures.extend(RuleTester.run(pack))
-            if failures:
-                print(f"{len(failures)} rule sample(s) failed\n", file=sys.stderr)
-                for failure in failures:
-                    print(f"  {failure.rule_id} [{failure.kind}] {failure.detail}", file=sys.stderr)
-                    print(f"    sample: {failure.sample}", file=sys.stderr)
-                return int(ExitCode.FINDINGS)
-            testable = sum(1 for r in rule_set if r.rule.tests.positive or r.rule.tests.negative)
-            print(f"all samples passed ({testable} rules with inline samples)")
-            return int(ExitCode.CLEAN)
-
-        if action == "diff":
-            return cls._rules_diff(args, packs)
-
-        if action == "show":
-            found = rule_set.get(args.rule_id)
-            if found is None:
-                match = next((r for r in declared if r.id == args.rule_id), None)
-                if match is not None:
-                    print(f"{match.id}  (declared by the {match.detector!r} detector)")
-                    print(f"{match.title}\n")
-                    print(f"category    {match.category}")
-                    print(f"severity    {match.severity}")
-                    print(f"confidence  {match.confidence}")
-                    if match.message:
-                        print(f"\n{match.message}")
-                    if match.remediation:
-                        print(f"\nremediation\n  {match.remediation}")
-                    if match.references:
-                        print("\nreferences")
-                        for link in match.references:
-                            print(f"  {link}")
-                    print(
-                        "\nThis rule is declared in Python rather than in a YAML pack, "
-                        "so it does not\ncarry the pack guarantees: no mandatory test "
-                        "samples, no provenance requirement,\nno independent version. "
-                        "It can be disabled with `rules.disabled` in configuration."
-                    )
-                    return int(ExitCode.CLEAN)
-                raise CordonError(f"no such rule: {args.rule_id}")
-            rule = found.rule
-            print(f"{rule.id}  {rule.version}  ({rule.rulepack})")
-            print(f"{rule.title}\n")
-            print(f"category    {rule.category}")
-            print(f"severity    {rule.severity}")
-            print(f"confidence  {rule.confidence}")
-            print(f"match       {rule.match_kind}")
-            if rule.languages:
-                print(f"languages   {', '.join(rule.languages)}")
-            if rule.capability:
-                print(f"capability  {rule.capability}")
-            if rule.provenance:
-                protection = " (protected)" if rule.provenance.protected else ""
-                print(f"provenance  {rule.provenance.kind}{protection}")
-            print(f"\n{rule.message}\n")
-            if rule.remediation:
-                print(f"remediation\n  {rule.remediation}\n")
-            # Pack rules have carried references since the loader was written
-            # and this never printed them, so the one place a reader goes to
-            # ask "says who?" answered for neither kind of rule.
-            if rule.references:
-                print("references")
-                for link in rule.references:
-                    print(f"  {link}")
-                print()
-            return int(ExitCode.CLEAN)
-
-        raise ConfigError(f"unknown rules action: {action}")
-
-    @classmethod
-    def cmd_guard(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.engine.guard import Guard
-
-        action = args.guard_command or "verify"
-        root = Path(getattr(args, "path", "."))
-
-        if action == "incoming":
-            from cordon_scanner.cli.incoming import IncomingCommand
-
-            return IncomingCommand.run_hook(args)
-
-        if action == "install" and getattr(args, "global_", False):
-            template, installed = Guard.install_global(force=getattr(args, "force", False))
-            for hook in installed:
-                print(f"installed {template / 'hooks' / hook}")
-            print(
-                f"\nEvery repository cloned or created from now on starts with these hooks: a "
-                f"clone, branch\nswitch or pull is checked before anything acts on it, and "
-                f"undone if it is blocked.\nFor repositories you already have, run "
-                f"`{cls.PROGRAM} guard install` in each."
-            )
-            return int(ExitCode.CLEAN)
-
-        if action == "install":
-            installed = Guard.install_hooks(root, force=getattr(args, "force", False))
-            for hook in installed:
-                print(f"installed .git/hooks/{hook}")
-            print(
-                f"\nHooks live in .git/hooks, which git does not track, so no commit, "
-                f"branch\nswitch, merge or `git clean` removes them. Each fails closed: "
-                f"if {cls.PROGRAM}\ncannot run, the operation is refused rather than allowed."
-            )
-            return int(ExitCode.CLEAN)
-
-        if action == "update":
-            manifest = Guard.write_manifest(root)
-            print(f"wrote {manifest}")
-            print(
-                "\nCommit this file. Its only purpose is to be reviewed: an attacker who\n"
-                "edits a guard can regenerate it in the same commit, and no self-hosted\n"
-                "check can prevent that. What it guarantees is that the change cannot be\n"
-                "silent."
-            )
-            return int(ExitCode.CLEAN)
-
-        if action == "verify":
-            report = Guard.verify(root, manifest_only=getattr(args, "manifest_only", False))
-            if report.ok:
-                print("guard intact")
-                return int(ExitCode.CLEAN)
-            for problem in report.problems:
-                print(f"{problem.status}: {problem.detail}", file=sys.stderr)
-                print(f"  fix: {problem.remediation}", file=sys.stderr)
-            return int(ExitCode.FINDINGS)
-
-        raise ConfigError(f"unknown guard action: {action}")
-
-    @classmethod
-    def _rules_diff(cls, args: argparse.Namespace, packs: Sequence[RulePack]) -> int:
-        """Compare two rule sets and report removal or weakening.
-
-        `RuleProvenance.protected` exists solely so that this command "fails
-        when one is removed or weakened without an explicit review trailer".
-        The command had no implementation, so `provenance: incident` guaranteed
-        nothing at all.
-
-        A rule derived from a real incident is the easiest kind to lose: it
-        often looks arbitrary out of context -- an opaque string constant with
-        no obvious meaning is exactly what a well-intentioned cleanup deletes,
-        and a refactor that reorganises a rule set can drop one while the diff
-        appears to show nothing but an improvement.
-
-        Weakening means: disabled, severity lowered, or confidence lowered.
-        Those are the changes that reduce what a rule does while leaving it
-        present, and they do not read as removal in a text diff.
-        """
-        from cordon_scanner.rules.loader import RuleLoader
-
-        loader = RuleLoader()
-
-        def load(path_text: str) -> tuple[RulePack, ...]:
-            path = Path(path_text)
-            if path.is_dir():
-                return loader.load_dir(path)
-            if path.is_file():
-                return (loader.load_file(path),)
-            raise CordonError(f"no such pack: {path}")
-
-        before = {r.rule.id: r.rule for pack in load(args.before) for r in pack.rules}
-        after_packs = load(args.after) if args.after else packs
-        after = {r.rule.id: r.rule for pack in after_packs for r in pack.rules}
-
-        removed = sorted(set(before) - set(after))
-        added = sorted(set(after) - set(before))
-        weakened: list[tuple[str, str]] = []
-
-        for rule_id in sorted(set(before) & set(after)):
-            was, now = before[rule_id], after[rule_id]
-            if was.enabled and not now.enabled:
-                weakened.append((rule_id, "disabled"))
-            if now.severity < was.severity:
-                weakened.append((rule_id, f"severity {was.severity} -> {now.severity}"))
-            if now.confidence < was.confidence:
-                weakened.append((rule_id, f"confidence {was.confidence} -> {now.confidence}"))
-
-        for rule_id in added:
-            print(f"  added     {rule_id}")
-        for rule_id in removed:
-            marker = "PROTECTED " if cls._protected(before[rule_id]) else ""
-            print(f"  removed   {marker}{rule_id}")
-        for rule_id, how in weakened:
-            marker = "PROTECTED " if cls._protected(after[rule_id]) else ""
-            print(f"  weakened  {marker}{rule_id}: {how}")
-
-        if not (added or removed or weakened):
-            print("no rule changes")
-            return int(ExitCode.CLEAN)
-
-        protected = [r for r in removed if cls._protected(before[r])]
-        protected += [r for r, _ in weakened if cls._protected(after[r])]
-        if protected:
-            print(
-                f"\n{len(protected)} protected rule(s) removed or weakened: "
-                f"{', '.join(sorted(set(protected)))}",
-                file=sys.stderr,
-            )
-            print(
-                "  A rule marked `provenance: incident` matched something that "
-                "actually arrived.\n  Removing or weakening one needs an explicit "
-                "review, not a refactor that happens to drop it.",
-                file=sys.stderr,
-            )
-            return int(ExitCode.FINDINGS)
-
-        return int(ExitCode.CLEAN)
-
-    @staticmethod
-    def _protected(rule: Rule) -> bool:
-        provenance = getattr(rule, "provenance", None)
-        return bool(provenance and getattr(provenance, "protected", False))
-
-    @classmethod
-    def cmd_report(cls, args: argparse.Namespace) -> int:
-        """Re-render a saved JSON result in another format.
-
-        Exists so a single scan can produce every format anybody needs without
-        being re-run. A pipeline that wants SARIF for code scanning, markdown
-        for a pull-request comment and JUnit for its test reporter otherwise
-        scans three times, and three scans of a moving working tree are not
-        guaranteed to agree.
-
-        Documented in the interface specification and never implemented.
-        """
-        import json as _json
-
-        from cordon_scanner.engine.cache import ScanCache
-        from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.foundation.models import Repository, ScanResult, ScanStats
-        from cordon_scanner.report.base import ReportOptions
-
-        if (args.report_command or "convert") != "convert":
-            raise ConfigError(f"unknown report action: {args.report_command}")
-
-        source = Path(args.path)
-        if not source.is_file():
-            # ConfigError, not CordonError. The user named a path that is not
-            # there; that is exit 3, "fix your invocation", not exit 2, "this is
-            # a bug in cordon".
-            raise ConfigError(
-                f"result file not found: {source}",
-                hint=f"Produce one with `{cls.PROGRAM} scan . --format json:result.json`.",
-            )
-
-        size = source.stat().st_size
-        if size > cls.MAX_RESULT_BYTES:
-            raise ConfigError(
-                f"{source} is {size} bytes, over the {cls.MAX_RESULT_BYTES} byte limit",
-                hint="A result document this large is not one this command produced.",
-            )
-
-        try:
-            payload = _json.loads(source.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            raise ConfigError(f"{source}: not a readable JSON result: {exc}") from exc
-        except RecursionError as exc:
-            # A deeply nested document exhausts the decoder's stack. Reported as
-            # the malformed input it is: it reached the top-level handler as
-            # "internal error", exit 2, which blames the tool for a file
-            # somebody else wrote.
-            raise ConfigError(
-                f"{source}: JSON is nested too deeply to decode",
-                hint="A result document this deeply nested is not one this command produced.",
-            ) from exc
-
-        try:
-            findings = tuple(
-                cls._reredact(ScanCache.finding_from_dict(f)) for f in payload["findings"]
-            )
-        except (KeyError, TypeError, ValueError, AttributeError) as exc:
-            raise ConfigError(
-                f"{source}: not a cordon result document",
-                hint=f"Produce one with `{cls.PROGRAM} scan . --format json:result.json`.",
-            ) from exc
-
-        repository = payload.get("repository") or {}
-        result = ScanResult(
-            findings=findings,
-            repository=Repository(root=str(repository.get("root", "."))),
-            stats=ScanStats(files_scanned=int(payload.get("stats", {}).get("files_scanned", 0))),
-            complete=bool(payload.get("complete", True)),
-            schema_version=int(payload.get("schema_version", 1)),
-            engine_version=str(payload.get("engine_version", "")),
-            rulepack_version=str(payload.get("rulepack_version", "")),
-            rulepack_hash=str(payload.get("rulepack_hash", "")),
-            config_hash=str(payload.get("config_hash", "")),
-        )
-
-        reporter = Registry().reporter(args.format)
-        opts = ReportOptions(color=False, verbose=False)
-        chunks = reporter.render(result, opts)
-        if args.output:
-            destination = Path(args.output)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with destination.open("wb") as handle:
-                for chunk in chunks:
-                    handle.write(chunk)
-            print(f"wrote {destination}")
-        else:
-            for chunk in chunks:
-                sys.stdout.buffer.write(chunk)
-        return int(ExitCode.CLEAN)
-
-    @classmethod
     def cmd_bundle(cls, args: argparse.Namespace) -> int:
         """Build, check, or install an offline bundle.
 
@@ -2335,7 +1669,7 @@ class CommandLine:
         """List every remote MCP server's tools and record their fingerprints. A later `scan
         --online` reports any tool added or changed since (`SUSPECT.MCP.TOOLS_CHANGED.001`)."""
         from cordon_scanner.detect.agents.agents import MCP_PATHS, McpConfigs
-        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.foundation.files.globs import PathGlob
         from cordon_scanner.intel.store.live_mcp import LiveMcp, LiveMcpError, McpApprovals
 
         if not root.is_dir():
@@ -2413,446 +1747,6 @@ class CommandLine:
         print(f"{stored.subject or 'this device'} at {stored.org} ({stored.url}); {state}")
         return int(ExitCode.CLEAN)
 
-    @classmethod
-    def cmd_intel(cls, args: argparse.Namespace) -> int:
-        """Report on, or refresh, the signed intel feed.
-
-        `status` never touches the network. `update` is the operator asking for the feed, so it
-        is refused under CORDON_OFFLINE rather than quietly doing nothing, and a verification
-        failure exits non-zero so a scheduled job notices.
-        """
-        import json as _json
-
-        from cordon_scanner.intel.malware import feed
-
-        action = getattr(args, "intel_command", None)
-        if action not in ("status", "update", "acquire"):
-            print(f"{cls.PROGRAM}: intel needs status, update or acquire", file=sys.stderr)
-            return int(ExitCode.CONFIG_ERROR)
-        if action == "acquire":
-            return cls._intel_acquire(args)
-        if action == "update" and feed.FeedClient.offline_requested():
-            raise ConfigError("CORDON_OFFLINE is set, so the feed will not be fetched")
-
-        current = feed.FeedClient.status(use_feed=action == "update", max_age=None)
-        if args.json:
-            print(_json.dumps(current.to_dict(), indent=2, sort_keys=True))
-        else:
-            age = (
-                f"{current.age_seconds // 3600}h {current.age_seconds % 3600 // 60}m"
-                if current.age_seconds is not None
-                else "unknown"
-            )
-            print(
-                f"source:  {current.source}"
-                + (f" (serial {current.serial})" if current.serial else "")
-            )
-            print(f"age:     {age}" + (" -- STALE" if current.stale else ""))
-            print(
-                f"feed:    {'enabled' if current.feed_enabled else 'not available in this build'}"
-            )
-            if current.error:
-                print(f"note:    {current.error}")
-        # Updated means the intel is now current from either source: the signed feed, or -- in
-        # every build until the feed's root is pinned -- OSV's changes since the database was
-        # built (`intel/osv_delta`). Only the feed set `refreshed`, so an update that worked
-        # exited 2 with nothing to say.
-        updated = current.refreshed or current.osv_current
-        if action == "update" and not updated:
-            if not args.json and not current.error:
-                print("note:    no source could refresh the intel", file=sys.stderr)
-            return int(ExitCode.SCANNER_ERROR)
-        return int(ExitCode.CLEAN)
-
-    @classmethod
-    def _intel_acquire(cls, args: argparse.Namespace) -> int:
-        """`intel acquire`: for each published archive, store its established predecessor.
-
-        The one step of release comparison that uses the network, run when the operator asks,
-        and rerun whenever they want it current; the scan that follows reads only the store.
-        Refused under CORDON_OFFLINE. A package whose registry cannot answer is reported and
-        the rest are still acquired.
-        """
-        import json as _json
-
-        from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.engine import Engine
-        from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.intel.malware import feed
-        from cordon_scanner.intel.registries.registry_client import RegistryError
-        from cordon_scanner.intel.registries.registry_record import RegistryRecord
-        from cordon_scanner.intel.registries.release_history import ReleaseHistory
-        from cordon_scanner.sources.archive import ArchiveReader
-
-        if feed.FeedClient.offline_requested():
-            raise ConfigError("CORDON_OFFLINE is set, so release history will not be fetched")
-        results: list[dict[str, object]] = []
-        failed = False
-        for target in args.targets:
-            path = Path(target)
-            try:
-                data = path.read_bytes()
-            except OSError as exc:
-                results.append({"target": target, "error": str(exc)})
-                failed = True
-                continue
-            units = [
-                FileUnit(content=FileContent.from_bytes(member, payload))
-                for member, payload in ArchiveReader.walk_archive(data, path=path.name)
-            ]
-            distribution = Engine._history_distribution(units)
-            identity = Engine._history_identity(units, distribution) if distribution else None
-            if identity is not None and identity[0] in RegistryRecord.ECOSYSTEMS_READ:
-                # The registry's record of this release, for the second review's publisher facts.
-                try:
-                    RegistryRecord.acquire(*identity)
-                except RegistryError as exc:
-                    results.append(
-                        {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}
-                    )
-                    failed = True
-            if identity is None or identity[0] not in ReleaseHistory.ECOSYSTEMS:
-                results.append({"target": target, "skipped": "not a release this can compare"})
-                continue
-            try:
-                baseline = ReleaseHistory.acquire(
-                    *identity,
-                    current_dependencies=tuple(
-                        sorted(Engine._declared_dependencies(units, distribution))
-                    ),
-                )
-            except RegistryError as exc:
-                results.append(
-                    {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}
-                )
-                failed = True
-                continue
-            results.append(
-                {
-                    "target": target,
-                    "release": f"{identity[1]}@{identity[2]}",
-                    "baseline": baseline.baseline_version,
-                    "baseline_published": baseline.baseline_published,
-                    "files": len(baseline.files),
-                }
-            )
-        if args.json:
-            print(_json.dumps(results, indent=2, sort_keys=True))
-        else:
-            for row in results:
-                if "error" in row:
-                    print(f"{row['target']}: could not acquire: {row['error']}")
-                elif "skipped" in row:
-                    print(f"{row['target']}: skipped, {row['skipped']}")
-                elif row["baseline"]:
-                    print(
-                        f"{row['release']}: compared with {row['baseline']} "
-                        f"({str(row['baseline_published'])[:10]}, {row['files']} files)"
-                    )
-                else:
-                    print(f"{row['release']}: no release at least 90 days older")
-        return int(ExitCode.SCANNER_ERROR if failed else ExitCode.CLEAN)
-
-    @classmethod
-    def cmd_advisories(cls, args: argparse.Namespace) -> int:
-        """Refresh the local vulnerability/malicious-package data from OSV.
-
-        Writes to a user cache directory, never into the installed package --
-        see `intel/advisories.user_sync_dir`. This is the on-demand
-        counterpart to `.github/workflows/refresh-advisories.yml`'s scheduled
-        refresh: for an operator who wants current data now rather than
-        waiting for the next release to pick up the last scheduled run.
-        """
-        action = getattr(args, "advisories_command", None)
-        if action is None:
-            print(f"{cls.PROGRAM}: advisories needs sync", file=sys.stderr)
-            return int(ExitCode.CONFIG_ERROR)
-
-        if action != "sync":
-            raise ConfigError(f"unknown advisories action: {action}")
-
-        import tempfile
-
-        from cordon_scanner.intel.advisories import osv_import
-        from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
-
-        # A signed bundle: fetch and verify a prebuilt database rather than
-        # building one from OSV. The two share the same destination and the same
-        # per-file digest manifest, so a later scan cannot tell which produced
-        # the data -- only that it verified.
-        if getattr(args, "bundle", None):
-            from cordon_scanner.intel.store import dbsync
-
-            destination = AdvisoryFiles.user_sync_dir()
-            try:
-                dbsync.AdvisoryBundle.sync_from_url(args.bundle, destination)
-            except dbsync.BundleError as exc:
-                raise ConfigError(f"advisories sync: {exc}") from exc
-            print(f"installed a verified advisory bundle into {destination}")
-            return int(ExitCode.CLEAN)
-
-        families = getattr(args, "os", None)
-        if families:
-            from cordon_scanner.images.distrodb import FAMILIES, DistroDatabase
-
-            unknown_families = [f for f in families if f not in FAMILIES]
-            if unknown_families:
-                raise ConfigError(
-                    f"unknown distribution(s) for --os: {', '.join(unknown_families)}",
-                    hint=f"choose from: {', '.join(FAMILIES)}",
-                )
-            with tempfile.TemporaryDirectory(prefix="cordon-osv-os-") as tmp:
-                for family in families:
-                    try:
-                        count = DistroDatabase.sync(family, tmp_dir=Path(tmp))
-                    except osv_import.OsvImportError as exc:
-                        raise ConfigError(f"advisories sync --os {family}: {exc}") from exc
-                    print(f"  {family}: {count:,} package advisor(y/ies)")
-            print(f"distribution advisories are in {DistroDatabase.directory()}")
-            if args.only is None:
-                return int(ExitCode.CLEAN)
-
-        # NVD (`intel/nvd`): with everything, or by name.
-        with_nvd = args.only is None or "nvd" in args.only
-        requested = [e for e in (args.only or sorted(osv_import.ECOSYSTEM_OSV_NAMES)) if e != "nvd"]
-        unknown = [e for e in requested if e not in osv_import.ECOSYSTEM_OSV_NAMES]
-        if unknown:
-            raise ConfigError(
-                f"unknown ecosystem(s) for --only: {', '.join(unknown)}",
-                hint=f"choose from: {', '.join(sorted(osv_import.ECOSYSTEM_OSV_NAMES))}",
-            )
-        ecosystems = tuple(sorted(requested))
-        if not ecosystems:
-            return cls._sync_nvd(AdvisoryFiles.user_sync_dir())
-
-        print(f"syncing {len(ecosystems)} ecosystem(s) from OSV...")
-        with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
-            try:
-                result = osv_import.OsvImport.sync_all(ecosystems, tmp_dir=Path(tmp))
-            except osv_import.OsvImportError as exc:
-                raise ConfigError(f"advisories sync: {exc}") from exc
-
-        destination = AdvisoryFiles.user_sync_dir()
-        osv_import.OsvImport.write_output(result, destination)
-        for ecosystem in ecosystems:
-            count = len(result.per_ecosystem.get(ecosystem, ()))
-            print(f"  {ecosystem}: {count:,} advisor(y/ies)")
-        print(
-            f"synced {result.meta.record_count:,} advisories to {destination}\n"
-            f"future scans on this machine will prefer this over the bundled snapshot "
-            f"until the next release ships something newer."
-        )
-        if with_nvd:
-            return cls._sync_nvd(destination)
-        return int(ExitCode.CLEAN)
-
-    @classmethod
-    def _sync_nvd(cls, destination: Path) -> int:
-        """Every NVD record, unfiltered, from NVD's own feeds, each checked against its published
-        SHA-256 (`intel/nvd_import`); and, for a CVE NVD gives no range, the ranges its CVE List
-        record states (`intel/cve_list`)."""
-        from cordon_scanner.intel.advisories import nvd_import
-        from cordon_scanner.intel.advisories.nvd import NvdData
-
-        print("syncing NVD's feeds...")
-        try:
-            built = nvd_import.NvdImport.build(
-                nvd_import.NvdImport.years(),
-                lambda identifier, rating: True,
-                cve_list=nvd_import.NvdImport.cve_list_records(),
-            )
-        except nvd_import.NvdImportError as exc:
-            raise ConfigError(f"advisories sync: NVD: {exc}") from exc
-        nvd_import.NvdImport.write(destination, built, filtered=False)
-        NvdData.reset()
-        print(
-            f"synced {len(built.text):,} NVD records across {len(built.products):,} products "
-            f"to {destination}"
-        )
-        return int(ExitCode.CLEAN)
-
-    @staticmethod
-    def _root_component(result: object, target: Path) -> tuple[str | None, str | None]:
-        """The name and version the target declares for itself, if it does.
-
-        The shallowest manifest wins, and ties break on path, so a monorepo
-        with several manifests names the same one on every run -- an SBOM that
-        described a different component depending on directory iteration order
-        would not be reproducible.
-
-        A manifest that carries no name contributes nothing: the caller falls
-        back to the directory, which is a guess clearly labelled as one.
-        """
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry
-        from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.foundation.limits import Limits
-
-        repository = getattr(result, "repository", None)
-        projects = sorted(
-            getattr(repository, "projects", ()) or (),
-            key=lambda p: (p.path.count("/"), p.path),
-        )
-        for project in projects:
-            ecosystem = EcosystemRegistry.get(project.ecosystem)
-            if ecosystem is None:
-                continue
-            for manifest_path in project.manifests:
-                loaded = FileContent.load(target / manifest_path, manifest_path, Limits())
-                if not isinstance(loaded, FileContent):
-                    continue
-                try:
-                    manifest = ecosystem.parse_manifest(loaded)
-                except Exception:  # noqa: BLE001, S112
-                    continue
-                if manifest.parse_error or not manifest.name:
-                    continue
-                return (manifest.name, manifest.version)
-        return (None, None)
-
-    @classmethod
-    def _embed_vulnerabilities(cls, document: dict[str, Any], result: Any) -> None:
-        """Add the advisory matches to a CycloneDX document, and say when one is exploited."""
-        from cordon_scanner.report.vex import EXPLOITED_RULE, VULNERABILITY_RULES, VexReporter
-
-        findings = [
-            f for f in result.findings if f.rule_id in VULNERABILITY_RULES and not f.is_suppressed
-        ]
-        document["vulnerabilities"] = [VexReporter._statement(f) for f in findings]
-        exploited = [f for f in findings if f.rule_id == EXPLOITED_RULE]
-        document["metadata"]["properties"] = [
-            {"name": "cordon:vulnerabilities", "value": str(len(findings))},
-            {"name": "cordon:exploited", "value": str(len(exploited))},
-        ]
-        if exploited:
-            print(
-                f"{cls.PROGRAM}: {len(exploited)} component vulnerabilit"
-                f"{'y is' if len(exploited) == 1 else 'ies are'} exploited in the wild (CISA KEV / "
-                f"ENISA EUVD). Under the EU Cyber Resilience Act, an actively exploited "
-                f"vulnerability in a product you ship is reportable within 24 hours.",
-                file=sys.stderr,
-            )
-
-    @classmethod
-    def cmd_sbom(cls, args: argparse.Namespace) -> int:
-        """Generate a bill of materials from the resolved dependency graph.
-
-        The counterpart to `SUSPECT.SBOM.DRIFT.001` (`detect/sbom.py`), which
-        only ever compares an existing document against this same graph.
-        Resolves the graph the same way a scan does -- reading lockfiles and
-        manifests, never invoking a package manager (`docs/01-ARCHITECTURE.md`
-        C4) -- but with no detectors registered, so nothing is matched against
-        a rule and this is materially faster than a full scan.
-        """
-        action = getattr(args, "sbom_command", None)
-        if action is None:
-            print(f"{cls.PROGRAM}: sbom needs generate", file=sys.stderr)
-            return int(ExitCode.CONFIG_ERROR)
-
-        if action != "generate":
-            raise ConfigError(f"unknown sbom action: {action}")
-
-        from cordon_scanner import Scanner
-        from cordon_scanner.report import sbom as sbom_report
-
-        target = Path(args.target)
-        if not target.exists():
-            raise CordonError(
-                f"target does not exist: {target}",
-                hint="Pass a directory, file or archive path.",
-            )
-
-        if getattr(args, "ai", False) and (args.format != "cyclonedx" or not target.is_dir()):
-            raise ConfigError(
-                "--ai writes CycloneDX for a directory",
-                hint="Pass a repository directory and --format cyclonedx (the default).",
-            )
-        detectors: tuple[Any, ...] = ()
-        if getattr(args, "vulnerabilities", False):
-            if args.format != "cyclonedx":
-                raise ConfigError(
-                    "--vulnerabilities needs --format cyclonedx",
-                    hint="SPDX 2.3 has no field for vulnerability status; use a VEX document beside it.",
-                )
-            from cordon_scanner.detect.supply.advisory import AdvisoryDetector
-
-            detectors = (AdvisoryDetector(),)
-        from cordon_scanner.foundation.config import Config
-
-        config = Config.default()
-        if getattr(args, "exclude", None):
-            config = config.with_overrides(exclude=tuple(args.exclude))
-        result = Scanner(config, detectors=detectors).scan(target)
-        # The scan has already parsed the target's own manifests, so the
-        # directory name is a fallback rather than the answer. A project whose
-        # package.json says `{"name": "g", "version": "1.0.0"}` was described in
-        # its own SBOM as `scan@0.0.0`, taken from whatever the directory
-        # happened to be called.
-        declared_name, declared_version = cls._root_component(result, target)
-        root_name = args.name or declared_name or target.resolve().name or "target"
-        root_version = (
-            args.component_version
-            if args.component_version != _NO_DECLARED_VERSION
-            else (declared_version or _NO_DECLARED_VERSION)
-        )
-
-        if getattr(args, "ai", False):
-            from cordon_scanner.report import aibom
-
-            document = aibom.AiBom.cyclonedx_document(
-                target,
-                result.dependencies,
-                root_name=root_name,
-                root_version=root_version,
-                tool_version=__version__,
-            )
-        elif args.format == "cyclonedx":
-            document = sbom_report.SbomDocument.cyclonedx_document(
-                result.dependencies,
-                root_name=root_name,
-                root_version=root_version,
-                tool_version=__version__,
-            )
-            if detectors:
-                cls._embed_vulnerabilities(document, result)
-        else:
-            document = sbom_report.SbomDocument.spdx_document(
-                result.dependencies,
-                root_name=root_name,
-                root_version=root_version,
-                tool_version=__version__,
-            )
-
-        import json
-
-        payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
-        if args.output:
-            destination = Path(args.output)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(payload, encoding="utf-8")
-            if "packages" in document:
-                # SPDX lists the root among its packages, as the one the document DESCRIBES;
-                # CycloneDX keeps it apart. Counted the same way, so the two formats agree.
-                described = {
-                    r.get("relatedSpdxElement")
-                    for r in document.get("relationships", ())
-                    if r.get("relationshipType") == "DESCRIBES"
-                }
-                written = sum(1 for p in document["packages"] if p.get("SPDXID") not in described)
-            else:
-                written = len(document.get("components", ())) + len(document.get("services", ()))
-            print(f"wrote {destination} ({written} component(s), {args.format})")
-        else:
-            sys.stdout.write(payload)
-
-        if not result.complete:
-            print(
-                f"{cls.PROGRAM}: the scan that produced this graph was incomplete; "
-                f"the bill of materials may be missing components",
-                file=sys.stderr,
-            )
-            return int(ExitCode.INCOMPLETE)
-        return int(ExitCode.CLEAN)
-
     @staticmethod
     def _add_baseline_scope(parser: argparse.ArgumentParser) -> None:
         """The one flag that decides which files a baseline is about.
@@ -2887,7 +1781,7 @@ class CommandLine:
         """
         from cordon_scanner import Scanner
         from cordon_scanner.decide.policy import Baseline
-        from cordon_scanner.foundation.config import ConfigResolver
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
 
         target = Path(args.target)
         if not target.exists():
@@ -2947,85 +1841,6 @@ class CommandLine:
         raise ConfigError(f"unknown baseline action: {action}")
 
     @classmethod
-    def cmd_config(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.foundation.config import Config, ConfigResolver
-
-        action = args.config_command or "validate"
-
-        if action == "validate":
-            config = Config.from_file(args.path) if args.path else Config.discover(".")
-            if args.policy:
-                from cordon_scanner.foundation.config import ConfigResolver
-
-                org, constraints = ConfigResolver.load_org_policy(args.policy)
-                config.clamped_by(org, constraints)
-            print("configuration is valid")
-            return int(ExitCode.CLEAN)
-
-        if action == "fetch-policy":
-            from cordon_scanner.engine.cache import ScanCache
-            from cordon_scanner.engine.distribution import PolicyDistribution
-
-            if not PolicyDistribution.is_remote(args.url):
-                raise ConfigError(
-                    "fetch-policy takes the policy's https URL with its #sha256= digest"
-                )
-            # The one network request this command exists for, to the URL the operator named, and
-            # its content is fixed by the digest. Scans then read the cached copy with the network
-            # off -- which is what a policy saying `allow_network: false` asks of them.
-            cached = PolicyDistribution.resolve(
-                args.url, allow_network=True, cache_dir=ScanCache.default_cache_dir()
-            )
-            ConfigResolver.load_org_policy(cached)
-            print(f"verified and cached: {cached}")
-            print(f"scan with --policy '{args.url}'; no network is needed from now on")
-            return int(ExitCode.CLEAN)
-
-        if action == "policy-drift":
-            from cordon_scanner.engine.distribution import PolicyDistribution
-
-            vendored = Path(args.vendored)
-            if not vendored.is_file():
-                raise ConfigError(f"no policy at {vendored}")
-            actual = PolicyDistribution.digest_of(vendored)
-            expected = PolicyDistribution.published_digest(args.published)
-            if actual == expected:
-                print(f"{vendored} matches the published policy (sha256 {actual})")
-                return int(ExitCode.CLEAN)
-            print(
-                f"{vendored} has drifted from the published policy: sha256 {actual}, published {expected}. "
-                "A drifted copy is a ceiling nobody set; replace it, or point --policy at the published one."
-            )
-            return int(ExitCode.FINDINGS)
-
-        if action == "explain":
-            config = ConfigResolver.resolve(
-                root=".", config_path=args.path, policy_path=args.policy
-            )
-            print("effective configuration\n")
-            print(f"  severity_threshold    {config.severity_threshold}")
-            print(f"  confidence_threshold  {config.confidence_threshold}")
-            print(f"  evidence              {config.evidence}")
-            print(f"  offline               {config.offline}")
-            print(f"  fail_on               {config.policy.fail_on_severity}")
-            print(
-                f"  fail_on_categories    "
-                f"{', '.join(sorted(str(c) for c in config.policy.fail_on_categories))}"
-            )
-            print(
-                f"  suppressions          {len(config.suppressions)} "
-                f"({len(config.active_suppressions())} active)"
-            )
-            print(f"  config hash           {config.fingerprint()}")
-            if config.provenance:
-                print("\norigins")
-                for entry in config.explain():
-                    print(f"  {entry}")
-            return int(ExitCode.CLEAN)
-
-        raise ConfigError(f"unknown config action: {action}")
-
-    @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
         from cordon_scanner.cli.completion import CompletionCommand
         from cordon_scanner.cli.deps import DepsCommand
@@ -3058,20 +1873,20 @@ class CommandLine:
         commands: dict[str, Callable[[argparse.Namespace], int]] = {
             "scan": cls.cmd_scan,
             "inventory": cls.cmd_inventory,
-            "rules": cls.cmd_rules,
-            "config": cls.cmd_config,
-            "guard": cls.cmd_guard,
+            "rules": RulesCommand.run,
+            "config": ConfigCommand.run,
+            "guard": GuardCommand.run,
             "baseline": cls.cmd_baseline,
             "bundle": cls.cmd_bundle,
-            "report": cls.cmd_report,
-            "advisories": cls.cmd_advisories,
-            "intel": cls.cmd_intel,
+            "report": ReportCommand.run,
+            "advisories": AdvisoriesCommand.run,
+            "intel": IntelCommand.run,
             "login": cls.cmd_login,
             "logout": cls.cmd_logout,
             "runner": cls.cmd_runner,
             "agent": cls.cmd_agent,
             "whoami": cls.cmd_whoami,
-            "sbom": cls.cmd_sbom,
+            "sbom": SbomCommand.run,
             "deps": DepsCommand.run,
             "review": ReviewCommand.run,
             "clone": IncomingCommand.run_clone,

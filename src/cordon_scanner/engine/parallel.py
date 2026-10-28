@@ -40,8 +40,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from concurrent.futures._base import Future
 
-    from cordon_scanner.foundation.config import Config
+    from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.foundation.config.settings import Config
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.models import Finding
 
@@ -307,7 +309,7 @@ class ParallelScanner:
         Collector.relax()  # a worker only scans: its collector stays relaxed
 
         from cordon_scanner.engine.engine import Engine
-        from cordon_scanner.foundation.config import Config as _Config
+        from cordon_scanner.foundation.config.settings import Config as _Config
 
         config = _Config.from_dict(config_payload, source="<worker>")
         if operator:
@@ -330,13 +332,42 @@ class ParallelScanner:
             inventory = engine.inventory(ParallelScanner._to_path(root))
         wanted = set(detector_ids)
         detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
-        from dataclasses import replace as _replace
 
         context = engine._context(inventory)
+        context = ParallelScanner.worker_context(
+            context,
+            install_hook_paths,
+            ci_hook_paths,
+            install_deferred_lines,
+            image,
+            install_entry_paths,
+            consumer_install_paths,
+            package_facts,
+        )
+        ParallelScanner._worker = _WorkerState(
+            engine=engine,
+            context=context,
+            detectors=detectors,
+        )
+
+    @staticmethod
+    def worker_context(
+        context: ScanContext,
+        install_hook_paths: frozenset[str],
+        ci_hook_paths: frozenset[str],
+        install_deferred_lines: frozenset[tuple[str, int, int]],
+        image: Any,
+        install_entry_paths: frozenset[str],
+        consumer_install_paths: frozenset[str],
+        package_facts: dict[str, Any] | None,
+    ) -> ScanContext:
+        """The worker's scan context, rebuilt from what the parent sent."""
+        from dataclasses import replace as _replace
+
         # Union rather than assignment. The inventory contributes paths the parent
         # does not recompute -- git hooks, and the manifests themselves -- so
         # overwriting would trade one set of missing paths for another.
-        context = _replace(
+        return _replace(
             context,
             install_hook_paths=context.install_hook_paths | install_hook_paths,
             ci_hook_paths=context.ci_hook_paths | ci_hook_paths,
@@ -358,11 +389,6 @@ class ParallelScanner:
             # worker reading single files cannot derive. Without them a large archive's files were
             # judged as a repository's (review 98, FP-2), so a verdict depended on the core count.
             **(package_facts or {}),
-        )
-        ParallelScanner._worker = _WorkerState(
-            engine=engine,
-            context=context,
-            detectors=detectors,
         )
 
     @staticmethod
@@ -393,9 +419,7 @@ class ParallelScanner:
 
         from pathlib import Path
 
-        from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.foundation.content import FileContent, Skipped
-        from cordon_scanner.foundation.files.windows import WindowPass
 
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
@@ -436,42 +460,9 @@ class ParallelScanner:
                 out.append((index, [], False))
                 continue
 
-            unit = FileUnit(content=loaded, language=ParallelScanner._language(relative, loaded))
-            produced: list[Any] = []
-            failures: list[dict[str, Any]] = []
-
-            def inspect(
-                detector: Any,
-                part: Any,
-                failures: list[dict[str, Any]] = failures,
-                relative: str = relative,
-            ) -> list[Any]:
-                try:
-                    return list(detector.inspect(part, ctx))
-                except Exception as exc:  # noqa: BLE001
-                    # A detector that fails in a worker must not silently reduce
-                    # coverage. It is reported the same way the serial path reports
-                    # it, so a broken detector looks identical either way.
-                    failures.append(
-                        ParallelScanner._operational_dict(
-                            path=relative,
-                            detector=getattr(detector, "id", "unknown"),
-                            error=f"{type(exc).__name__}: {exc}",
-                        )
-                    )
-                    return []
-
-            from cordon_scanner.detect.agents.agent_judge import JudgeGate
-
-            active = []
-            for detector in JudgeGate.last(list(detectors)):
-                # The judge on the grey band only, after the rest: as the serial path.
-                if getattr(detector, "id", "") == JudgeGate.ID and not JudgeGate.wants(produced):
-                    continue
-                active.append(detector)
-                produced.extend(inspect(detector, unit))
-            # The rest of an oversized file, a window at a time: the call the serial path makes.
-            windowed, intact = WindowPass.run(unit, active, inspect, produced)
+            produced, failures, windowed, intact = ParallelScanner._inspect_unit(
+                loaded, relative, ctx, detectors
+            )
             if not intact:
                 out.append((index, [], False))
                 continue
@@ -489,6 +480,52 @@ class ParallelScanner:
             out.append((index, findings, True))
 
         return out
+
+    @staticmethod
+    def _inspect_unit(
+        loaded: FileContent, relative: str, ctx: Any, detectors: tuple[Any, ...]
+    ) -> tuple[list[Any], list[dict[str, Any]], list[Finding], bool]:
+        """One unit inspected inside the worker: every detector, the judge last, then the windows past its prefix."""
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.engine.window_pass import WindowPass
+
+        unit = FileUnit(content=loaded, language=ParallelScanner._language(relative, loaded))
+        produced: list[Any] = []
+        failures: list[dict[str, Any]] = []
+
+        def inspect(
+            detector: Any,
+            part: Any,
+            failures: list[dict[str, Any]] = failures,
+            relative: str = relative,
+        ) -> list[Any]:
+            try:
+                return list(detector.inspect(part, ctx))
+            except Exception as exc:  # noqa: BLE001
+                # A detector that fails in a worker must not silently reduce
+                # coverage. It is reported the same way the serial path reports
+                # it, so a broken detector looks identical either way.
+                failures.append(
+                    ParallelScanner._operational_dict(
+                        path=relative,
+                        detector=getattr(detector, "id", "unknown"),
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                )
+                return []
+
+        from cordon_scanner.detect.registry import JudgeGate
+
+        active = []
+        for detector in JudgeGate.last(list(detectors)):
+            # The judge on the grey band only, after the rest: as the serial path.
+            if getattr(detector, "id", "") == JudgeGate.ID and not JudgeGate.wants(produced):
+                continue
+            active.append(detector)
+            produced.extend(inspect(detector, unit))
+        # The rest of an oversized file, a window at a time: the call the serial path makes.
+        windowed, intact = WindowPass.run(unit, active, inspect, produced)
+        return produced, failures, windowed, intact
 
     @staticmethod
     def _language(relative: str, content: FileContent) -> str | None:
@@ -575,7 +612,6 @@ class ParallelScanner:
         passing them. They are still the difference between finding an
         install-time payload and not; see `_initialise`.
         """
-        from cordon_scanner.engine.cache import ScanCache
 
         batches = ParallelScanner.batch_by_bytes(files)
         if not batches:
@@ -607,26 +643,7 @@ class ParallelScanner:
                 futures = [
                     pool.submit(ParallelScanner._inspect_batch, batch, root) for batch in batches
                 ]
-                # As each finishes, not in submission order. Waiting on futures
-                # in order means one slow batch holds back the reporting of
-                # every batch behind it that has already finished, so the count
-                # stalls and then leaps -- which is the appearance of a hang
-                # that reporting progress exists to remove.
-                #
-                # Safe because nothing downstream depends on this order: every
-                # result carries its own index, and `ScanResult.sorted` orders
-                # findings by severity, risk, path, line, rule and fingerprint,
-                # never by completion. A test asserts a parallel scan and a
-                # serial one produce identical output.
-                for future in as_completed(futures):
-                    completed: list[int] = []
-                    for index, findings, trusted in future.result():
-                        collected.append(
-                            (index, [ScanCache.finding_from_dict(f) for f in findings], trusted)
-                        )
-                        completed.append(index)
-                    if on_batch is not None:
-                        on_batch(completed)
+                ParallelScanner._collect(futures, collected, on_batch)
         except Exception:  # noqa: BLE001
             return None
 
@@ -634,6 +651,36 @@ class ParallelScanner:
         # identical inputs must produce identical output.
         collected.sort(key=lambda pair: pair[0])
         return collected
+
+    @staticmethod
+    def _collect(
+        futures: list[Future[list[tuple[int, list[dict[str, Any]], bool]]]],
+        collected: list[tuple[int, list[Finding], bool]],
+        on_batch: Callable[[Sequence[int]], None] | None,
+    ) -> None:
+        """Each batch's results as it finishes, reported to the caller as they arrive."""
+        from cordon_scanner.engine.cache import ScanCache
+
+        # As each finishes, not in submission order. Waiting on futures
+        # in order means one slow batch holds back the reporting of
+        # every batch behind it that has already finished, so the count
+        # stalls and then leaps -- which is the appearance of a hang
+        # that reporting progress exists to remove.
+        #
+        # Safe because nothing downstream depends on this order: every
+        # result carries its own index, and `ScanResult.sorted` orders
+        # findings by severity, risk, path, line, rule and fingerprint,
+        # never by completion. A test asserts a parallel scan and a
+        # serial one produce identical output.
+        for future in as_completed(futures):
+            completed: list[int] = []
+            for index, findings, trusted in future.result():
+                collected.append(
+                    (index, [ScanCache.finding_from_dict(f) for f in findings], trusted)
+                )
+                completed.append(index)
+            if on_batch is not None:
+                on_batch(completed)
 
 
 # ---------------------------------------------------------------------------

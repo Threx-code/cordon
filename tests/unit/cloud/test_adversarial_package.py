@@ -20,12 +20,14 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.engine.local_seal import LocalSeal
-from cordon_scanner.foundation.config import Config, ConfigResolver
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.seal import LocalSeal
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.foundation.models import Evidence, RedactionMode
-from cordon_scanner.sources.archive import ArchiveReader, Rejection
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.base import Rejection
 
 
 class AdversarialKit:
@@ -151,7 +153,7 @@ class TestPluginTrustRunsNoForeignCode:
         from cordon_scanner.engine import registry
 
         entry = types.SimpleNamespace(
-            module="cordon_scanner.detect.code.capability", value="", name="capability"
+            module="cordon_scanner.detect.code.capability.detector", value="", name="capability"
         )
         assert registry.Registry._is_ours(entry, registry.DISTRIBUTION) is True
 
@@ -161,19 +163,19 @@ class TestTheCacheDirectoryIsNotTrusted:
 
     @pytest.fixture
     def sync(self, tmp_path, monkeypatch):
-        from cordon_scanner.intel.advisories import advisories
+        from cordon_scanner.intel.advisories import advisories, shipped
 
         directory = tmp_path / "sync"
         directory.mkdir()
         monkeypatch.setattr(
             advisories.AdvisoryFiles, "user_sync_dir", staticmethod(lambda: directory)
         )
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
         yield directory
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
 
     def test_a_planted_empty_database_is_refused_and_the_shipped_one_used(self, sync) -> None:
-        from cordon_scanner.intel.advisories import advisories
+        from cordon_scanner.intel.advisories import advisories, shipped
 
         planted = sync / "advisories-npm.json.gz"
         planted.write_bytes(gzip.compress(b"[]"))
@@ -181,12 +183,12 @@ class TestTheCacheDirectoryIsNotTrusted:
         (sync / advisories.DIGESTS_NAME).write_text(
             json.dumps({"advisories-npm.json.gz": digest}), encoding="utf-8"
         )
-        records = advisories.ShippedAdvisories._read_shipped("npm")
+        records = shipped.ShippedAdvisories._read_shipped("npm")
         assert len(records) > 1000, "the shipped npm database is still the one in use"
         assert "advisories-npm.json.gz" in advisories.AdvisoryFiles.refused_synced_files()
 
     def test_a_sealed_sync_is_used(self, sync) -> None:
-        from cordon_scanner.intel.advisories import advisories
+        from cordon_scanner.intel.advisories import shipped
         from support import SealedSync
 
         record = {
@@ -198,18 +200,18 @@ class TestTheCacheDirectoryIsNotTrusted:
         }
         (sync / "advisories-npm.json.gz").write_bytes(gzip.compress(json.dumps([record]).encode()))
         SealedSync.seal(sync)
-        assert [r["name"] for r in advisories.ShippedAdvisories._read_shipped("npm")] == [
+        assert [r["name"] for r in shipped.ShippedAdvisories._read_shipped("npm")] == [
             "only-in-sync"
         ]
 
     def test_a_sealed_manifest_does_not_cover_a_file_changed_after_it(self, sync) -> None:
-        from cordon_scanner.intel.advisories import advisories
+        from cordon_scanner.intel.advisories import shipped
         from support import SealedSync
 
         (sync / "advisories-npm.json.gz").write_bytes(gzip.compress(b'[{"name": "a", "id": "x"}]'))
         SealedSync.seal(sync)
         (sync / "advisories-npm.json.gz").write_bytes(gzip.compress(b"[]"))
-        assert len(advisories.ShippedAdvisories._read_shipped("npm")) > 1000
+        assert len(shipped.ShippedAdvisories._read_shipped("npm")) > 1000
 
     def test_an_unsealed_overlay_withdraws_nothing(self, sync) -> None:
         from cordon_scanner.intel.malware.feed import FeedStore

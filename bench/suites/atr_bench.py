@@ -277,7 +277,7 @@ class AtrBench:
         global _SCANNER
         if _SCANNER is None:
             from cordon_scanner import Scanner
-            from cordon_scanner.foundation.config import Config
+            from cordon_scanner.foundation.config.settings import Config
 
             _SCANNER = Scanner(Config.default().with_overrides(use_cache=False))
         with tempfile.TemporaryDirectory(prefix="atr-") as work:

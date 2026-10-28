@@ -28,15 +28,16 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.engine.samples import SampleKinds
 from cordon_scanner.foundation.files.spill import SpilledBytes
 from cordon_scanner.foundation.files.windows import BytesWindows, DiskWindows, WindowSource
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from typing import BinaryIO
 
 BINARY_SNIFF_BYTES = 8192
 """How much of a file to inspect when deciding whether it is binary.
@@ -314,31 +315,7 @@ class FileContent:
         """
         import stat as stat_module
 
-        # Opened before it is examined, and examined through the descriptor.
-        #
-        # The previous order was `lstat(path)` then, later, `read_bytes(path)`.
-        # Between the two, the path could be replaced with a symlink and the
-        # open would follow it -- and the docstring below names exactly what
-        # that costs: a scanner made to read a private key outside the scan root
-        # and print it as evidence into a CI log. Cordon is pointed deliberately
-        # at code that may be actively hostile, and a `postinstall` that has
-        # already started is squarely inside the threat model.
-        #
-        # O_NOFOLLOW refuses at the final component, so the race has no window:
-        # the descriptor either refers to a regular file that was not a link, or
-        # there is no descriptor.
-        # O_NONBLOCK matters as much as O_NOFOLLOW here. Checking the path
-        # first and opening second was the race; opening first and checking
-        # second means the open happens before anything knows the file is a
-        # FIFO, and opening a FIFO for reading blocks until a writer appears --
-        # forever, on a repository that contains one. O_NONBLOCK returns
-        # immediately and the S_ISREG check below then rejects it.
-        flags = (
-            os.O_RDONLY
-            | getattr(os, "O_NOFOLLOW", 0)
-            | getattr(os, "O_NONBLOCK", 0)
-            | getattr(os, "O_BINARY", 0)
-        )
+        flags = FileContent._open_flags()
         try:
             descriptor = os.open(real_path, flags)
         except OSError as exc:
@@ -366,34 +343,9 @@ class FileContent:
             with os.fdopen(descriptor, "rb", closefd=True) as handle:
                 descriptor = -1  # ownership passed to the file object
                 if size > limits.max_file_bytes:
-                    # Every rule reads the prefix; the rest is read from disk a window at a time
-                    # by the rules that judge text (`core/windows.py`), never held. The whole is
-                    # hashed while it streams past, so two files that differ only after the
-                    # prefix never share a cached result.
-                    raw = handle.read(limits.max_file_bytes)
-                    text = TextEncoding.as_utf8(raw)
-                    source: WindowSource | None = None
-                    whole: str | None = None
-                    # Windows are cut on bytes. A file the prefix had to re-encode (UTF-16) would
-                    # be cut mid-character, so it keeps the prefix alone, as before.
-                    if limits.max_stream_bytes > 0 and text == raw:
-                        digest = hashlib.sha256(raw)
-                        remaining = min(size, limits.max_stream_bytes) - len(raw)
-                        while remaining > 0:
-                            chunk = handle.read(min(STREAM_HASH_CHUNK, remaining))
-                            if not chunk:
-                                break
-                            digest.update(chunk)
-                            remaining -= len(chunk)
-                        digest.update(f"\0{size}".encode())
-                        whole = digest.hexdigest()
-                        source = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
-                    archive: WindowSource | None = None
-                    if raw[:4] == b"PK\x03\x04":
-                        # A zip keeps its index at the end, past this prefix. A structured reader is
-                        # given the whole file on disk to seek through -- the one way to reach a
-                        # member (a PyTorch `data.pkl`) stored after the first `max_file_bytes`.
-                        archive = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
+                    text, source, whole, archive = FileContent._read_oversized(
+                        handle, limits, size, real_path, stat
+                    )
                     return cls(
                         path=rel_path,
                         raw=text,
@@ -429,6 +381,70 @@ class FileContent:
                     os.close(descriptor)
 
         return cls(path=rel_path, raw=TextEncoding.as_utf8(raw), size=len(raw), limits=limits)
+
+    @staticmethod
+    def _open_flags() -> int:
+        """How a scanned file is opened: never following a link, never blocking on a pipe, never as text."""
+        # Opened before it is examined, and examined through the descriptor.
+        #
+        # The previous order was `lstat(path)` then, later, `read_bytes(path)`.
+        # Between the two, the path could be replaced with a symlink and the
+        # open would follow it -- and the docstring below names exactly what
+        # that costs: a scanner made to read a private key outside the scan root
+        # and print it as evidence into a CI log. Cordon is pointed deliberately
+        # at code that may be actively hostile, and a `postinstall` that has
+        # already started is squarely inside the threat model.
+        #
+        # O_NOFOLLOW refuses at the final component, so the race has no window:
+        # the descriptor either refers to a regular file that was not a link, or
+        # there is no descriptor.
+        # O_NONBLOCK matters as much as O_NOFOLLOW here. Checking the path
+        # first and opening second was the race; opening first and checking
+        # second means the open happens before anything knows the file is a
+        # FIFO, and opening a FIFO for reading blocks until a writer appears --
+        # forever, on a repository that contains one. O_NONBLOCK returns
+        # immediately and the S_ISREG check below then rejects it.
+        return (
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
+
+    @staticmethod
+    def _read_oversized(
+        handle: BinaryIO, limits: Limits, size: int, real_path: Path, stat: os.stat_result
+    ) -> tuple[bytes, WindowSource | None, str | None, WindowSource | None]:
+        """A file past the size limit: its prefix, the whole file's hash while it streams past, and the windows past the prefix."""
+        # Every rule reads the prefix; the rest is read from disk a window at a time
+        # by the rules that judge text (`core/windows.py`), never held. The whole is
+        # hashed while it streams past, so two files that differ only after the
+        # prefix never share a cached result.
+        raw = handle.read(limits.max_file_bytes)
+        text = TextEncoding.as_utf8(raw)
+        source: WindowSource | None = None
+        whole: str | None = None
+        # Windows are cut on bytes. A file the prefix had to re-encode (UTF-16) would
+        # be cut mid-character, so it keeps the prefix alone, as before.
+        if limits.max_stream_bytes > 0 and text == raw:
+            digest = hashlib.sha256(raw)
+            remaining = min(size, limits.max_stream_bytes) - len(raw)
+            while remaining > 0:
+                chunk = handle.read(min(STREAM_HASH_CHUNK, remaining))
+                if not chunk:
+                    break
+                digest.update(chunk)
+                remaining -= len(chunk)
+            digest.update(f"\0{size}".encode())
+            whole = digest.hexdigest()
+            source = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
+        archive: WindowSource | None = None
+        if raw[:4] == b"PK\x03\x04":
+            # A zip keeps its index at the end, past this prefix. A structured reader is
+            # given the whole file on disk to seek through -- the one way to reach a
+            # member (a PyTorch `data.pkl`) stored after the first `max_file_bytes`.
+            archive = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
+        return text, source, whole, archive
 
     @classmethod
     def from_bytes(cls, path: str, raw: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:

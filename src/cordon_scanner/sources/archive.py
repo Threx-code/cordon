@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, cast
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.sources.base import RejectedMember, Rejection
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -75,33 +76,6 @@ READ_CHUNK = 65536
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _COMPRESSED_MAGIC = (b"\x1f\x8b", b"BZh", b"\xfd7zXZ\x00", ZSTD_MAGIC)
 """gzip, bzip2, xz and zstd: the streams a tarball is compressed in."""
-
-
-class Rejection:
-    """Why a member or an archive was refused. Each becomes a finding."""
-
-    RATIO = "compression_ratio"
-    ENTRIES = "entry_count"
-    SIZE = "uncompressed_size"
-    DEPTH = "nesting_depth"
-    TRAVERSAL = "path_traversal"
-    ABSOLUTE = "absolute_path"
-    LINK = "link_member"
-    SPECIAL = "special_file"
-    UNREADABLE = "unreadable"
-    NAME = "unsafe_name"
-    POLYGLOT = "polyglot_archive"
-    HIDDEN = "hidden_zip_member"
-    PADDED = "padded_expansion"
-    """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
-    padding was not read, and padding is how a payload is put out of a scanner's reach."""
-
-
-@dataclass(frozen=True, slots=True)
-class RejectedMember:
-    name: str
-    reason: str
-    detail: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1085,11 +1059,4 @@ class _BytesReader:
         return True
 
 
-__all__ = [
-    "ARCHIVE_SUFFIXES",
-    "ArchiveReader",
-    "ExtractedMember",
-    "ExtractionResult",
-    "RejectedMember",
-    "Rejection",
-]
+__all__ = ["ARCHIVE_SUFFIXES", "ArchiveReader", "ExtractedMember", "ExtractionResult"]

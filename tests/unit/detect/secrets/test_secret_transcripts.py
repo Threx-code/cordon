@@ -12,7 +12,7 @@ import pytest
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.secrets.secrets import SecretDetector
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from support import Support

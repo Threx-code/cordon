@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
 from cordon_scanner.intel.malware import hallucinated
 from cordon_scanner.intel.registries import registry_client
