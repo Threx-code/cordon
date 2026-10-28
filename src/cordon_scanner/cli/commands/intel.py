@@ -100,7 +100,7 @@ class IntelCommand:
         import json as _json
 
         from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.history import History
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.intel.malware import feed
         from cordon_scanner.intel.registries.registry_client import RegistryError
@@ -124,8 +124,8 @@ class IntelCommand:
                 FileUnit(content=FileContent.from_bytes(member, payload))
                 for member, payload in ArchiveReader.walk_archive(data, path=path.name)
             ]
-            distribution = Engine._history_distribution(units)
-            identity = Engine._history_identity(units, distribution) if distribution else None
+            distribution = History.history_distribution(units)
+            identity = History.history_identity(units, distribution) if distribution else None
             if identity is not None and identity[0] in RegistryRecord.ECOSYSTEMS_READ:
                 # The registry's record of this release, for the second review's publisher facts.
                 try:
@@ -142,7 +142,7 @@ class IntelCommand:
                 baseline = ReleaseHistory.acquire(
                     *identity,
                     current_dependencies=tuple(
-                        sorted(Engine._declared_dependencies(units, distribution))
+                        sorted(History.declared_dependencies(units, distribution))
                     ),
                 )
             except RegistryError as exc:

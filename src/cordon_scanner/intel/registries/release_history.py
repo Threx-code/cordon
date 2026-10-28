@@ -216,9 +216,9 @@ class ReleaseHistory:
     @staticmethod
     def declared(data: bytes, filename: str, ecosystem: str) -> frozenset[str]:
         """The runtime dependencies a published archive declares, read the way the scan reads
-        them (`Engine._declared_dependencies`)."""
+        them (`History.declared_dependencies`)."""
         from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.history import History
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.sources.archive import ArchiveReader
 
@@ -226,7 +226,7 @@ class ReleaseHistory:
             FileUnit(content=FileContent.from_bytes(member, payload))
             for member, payload in ArchiveReader.walk_archive(data, path=filename)
         ]
-        return Engine._declared_dependencies(units, ecosystem)
+        return History.declared_dependencies(units, ecosystem)
 
     # -- acquiring (online) -------------------------------------------------------------------
 
