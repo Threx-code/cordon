@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 
-from cordon_scanner.detect.code.obfuscation.detector import (
+from cordon_scanner.detect.code.obfuscation.text import (
     RTL_RANGES,
     RTL_RESOURCE_MIN_LETTERS,
     RTL_RESOURCE_SHARE,

@@ -28,7 +28,6 @@ type both gate it.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
@@ -58,6 +57,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 
 # Bidirectional overrides and zero-width characters, as UTF-8 byte sequences.
 # Matched as bytes so no decoding is required and no encoding surprise applies.
@@ -81,17 +81,6 @@ DIRECTIONAL_CONTROL = re.compile(
     rb"|\xe2\x81[\xa6-\xa9]"  # LRI, RLI, FSI, PDI
 )
 """The characters that actually REORDER text, which is what Trojan Source is."""
-
-#: Directional embedding/isolate openers (not the overrides, not the pops): a balanced one laying
-#: text out for display is not an attack, which needs an override or a span that re-reads the code.
-_EMBED_OPEN = frozenset(map(chr, (0x202A, 0x202B, 0x2066, 0x2067, 0x2068)))  # LRE RLE LRI RLI FSI
-_EMBED_CLOSE = frozenset(map(chr, (0x202C, 0x2069)))  # PDF PDI
-_DIR_CONTROLS = frozenset(
-    map(chr, (0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069))
-)  # all directional controls
-#: The overrides, as UTF-8 bytes: the Trojan Source primitive. Their presence anywhere in a file
-#: keeps every directional finding in it at full severity.
-_OVERRIDE_BYTES = (b"\xe2\x80\xad", b"\xe2\x80\xae")  # LRO, RLO
 
 NON_DIRECTIONAL_INVISIBLE = re.compile(
     # A BOM anywhere but the start. The assertion has to be a lookbehind: as a
@@ -139,6 +128,7 @@ real defect in that repository and is still reported; none of the four is Trojan
 
 TAG_SMUGGLING_RULE = "SUSPECT.OBFUSCATION.TAG_SMUGGLING.001"
 """Not ceilinged in documentation: a README is what an agent is told to read."""
+
 TAG_RUN = re.compile(rb"(?:\xf3\xa0[\x80\x81][\x80-\xbf]){4,}")
 """Four or more Unicode Tag characters in a row (U+E0000 to U+E007F as UTF-8)."""
 
@@ -159,208 +149,6 @@ SELF_DESCRIBING = re.compile(
     rb"|right[\s_-]?to[\s_-]?left[\s_-]?override|left[\s_-]?to[\s_-]?right[\s_-]?override"
     rb"|\bRLO\b|\bLRO\b|\bPDI\b|byte[\s_-]?order[\s_-]?mark|\bBOM_BYTE)"
 )
-
-
-#: Unicode ranges written right to left: Hebrew, Arabic, Syriac, Thaana, N'Ko,
-#: Samaritan, Mandaic, their presentation forms, and Adlam.
-RTL_RANGES = (
-    (0x0590, 0x08FF),
-    (0xFB1D, 0xFDFF),
-    (0xFE70, 0xFEFF),
-    (0x1E800, 0x1EFFF),
-)
-
-#: How far either side of the control to look for the text it is ordering.
-RTL_WINDOW = 24
-
-#: What share of a file's LETTERS must be right-to-left before the file is a
-#: right-to-left resource rather than code containing a stray character.
-#:
-#: Measured. Thunderbird's Persian Android resources are 25.2% -- a translation file
-#: caps somewhere near there, because the XML element and attribute names around the
-#: translated text are Latin. `dimagi/commcare-hq`'s 1.2MB webpack bundle is 0.01%,
-#: and this project's own source is 0.00%. Three orders of magnitude between the two,
-#: so the threshold is set well below the floor of a genuine translation rather than
-#: just above the noise: a source file with a handful of Arabic test strings in it
-#: does not become exempt, and a file that IS the translation does.
-RTL_RESOURCE_SHARE = 0.10
-
-#: Below this many letters a share means nothing, so the file is judged as code.
-RTL_RESOURCE_MIN_LETTERS = 200
-
-
-class ObfuscationText:
-    """Measurements of text that tell obfuscation from ordinary content."""
-
-    ASCII_LETTERS: ClassVar[bytes] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-    NON_ASCII: ClassVar[re.Pattern[str]] = re.compile("[^\x00-\x7f]+")
-
-    @staticmethod
-    def _is_rtl_resource(raw: bytes) -> bool:
-        """Whether this file is right-to-left text rather than code containing some.
-
-        `_orders_rtl_text` asks whether the control sits BESIDE right-to-left script, and
-        it is the right question almost everywhere. It cannot answer the case where the
-        string being ordered contains no script at all. Thunderbird's Persian resources
-        carry
-
-            <string name="message_view_single_attachment_summary">&lt;RLE&gt;&lt;RLM&gt;
-                <xliff:g id="name">%1$s</xliff:g> (<xliff:g id="size">%2$s</xliff:g>)</string>
-
-        -- a translated string whose entire content is two substituted placeholders, a
-        filename and a size. The embedding is there so that what gets substituted renders
-        the right way round inside a right-to-left interface, which is exactly what RLE is
-        for; there is no Persian within the window because there is no Persian in the
-        string. The lines above and below it are unmistakably Persian, and so is the file.
-
-        So the question is asked of the file as well. An override in a file that IS
-        right-to-left text is doing its documented job; an override in a file of code is
-        the attack, and Trojan Source needs the file to be code for the technique to have
-        a reviewer to mislead.
-
-        Deliberately a share of letters rather than a count, and deliberately not a path
-        test. `values-fa/` and `/locales/ar/` are the conventions of two ecosystems out of
-        many, and the content answers the question directly. See `RTL_RESOURCE_SHARE` for
-        why the threshold sits where it does, and note what this does NOT excuse: the
-        right-to-left OVERRIDE in a minified JavaScript bundle, which is 0.01%
-        right-to-left and stays a high-severity finding.
-        """
-        # Counted without visiting each character in Python: a bundle is megabytes of ASCII,
-        # and the per-character loop this replaces was 40% of the time on one 8.8MB page.
-        # The ASCII letters are counted on the bytes -- the decoder never folds an ASCII
-        # byte into a replaced sequence, so the count is the decoded text's -- and only the
-        # characters above ASCII, where every right-to-left range lies, are looked at one
-        # by one.
-        letters = len(raw) - len(raw.translate(None, ObfuscationText.ASCII_LETTERS))
-        right_to_left = 0
-        for run in ObfuscationText.NON_ASCII.findall(raw.decode("utf-8", "replace")):
-            for character in run:
-                if character.isalpha():
-                    letters += 1
-                    code = ord(character)
-                    right_to_left += any(low <= code <= high for low, high in RTL_RANGES)
-        if letters < RTL_RESOURCE_MIN_LETTERS:
-            return False
-        return right_to_left / letters >= RTL_RESOURCE_SHARE
-
-    @staticmethod
-    def _orders_rtl_text(raw: bytes, start: int, end: int) -> bool:
-        """Whether the control character is next to right-to-left script.
-
-        This is the difference between the attack and the feature. Trojan Source works by
-        putting an override beside LATIN text, so that the identifiers a reviewer reads are
-        reordered from the ones the compiler sees. An override beside Arabic or Hebrew is
-        the override doing the job it was added to Unicode for.
-
-        `RikkaApps/Shizuku`, `tiann/KernelSU`, `MatsuriDayo/NekoBoxForAndroid`,
-        `getgrav/grav` and `briannesbitt/Carbon` each carry exactly one of these, in an
-        Arabic or Kurdish resource string, and Notepad++'s language table carries a POP
-        DIRECTIONAL FORMATTING after the word Kurdish writes its own name with. Five of
-        those are `values-ar/strings.xml`, which is where Android PUTS Arabic.
-
-        A window rather than the whole file, and both sides of it: an attack hides the
-        override in the middle of code, where the nearest characters are ASCII, and no
-        amount of translated text elsewhere in the file changes that.
-        """
-        window = raw[max(0, start - RTL_WINDOW) : end + RTL_WINDOW]
-        for char in window.decode("utf-8", errors="replace"):
-            point = ord(char)
-            if any(low <= point <= high for low, high in RTL_RANGES):
-                return True
-        return False
-
-    @staticmethod
-    def _is_lone_quoted_mark(raw: bytes, start: int, end: int) -> bool:
-        """Whether the match is the entire contents of a quoted literal.
-
-        `"\ufeff"` in a BOM-stripping parser, `'\u202e'` in a table of control characters.
-        One character between two MATCHING quotes is a codepoint being handled; an attack
-        needs the override to sit next to the code it reorders.
-        """
-        if start == 0:
-            return False
-        before = raw[start - 1 : start]
-        return before in (b'"', b"'", b"`") and before == raw[end : end + 1]
-
-    @staticmethod
-    def _is_inert_embedded_data(raw: bytes, start: int) -> bool:
-        r"""Whether the control at `start` opens a BALANCED embedding (opener ... matching pop)
-        whose enclosed span is only inert text -- letters, digits, spaces and ordinary punctuation
-        -- inside a string literal, in a file with no directional OVERRIDE anywhere.
-
-        This is data laid out for display, not Trojan Source. A phone number wrapped in LRE..PDF in
-        an iOS accessibility label (``'\u202a158 8020 6986\u202c'``) renders right-to-left-aware but
-        reorders nothing a reviewer reads. The attack needs an OVERRIDE (LRO/RLO), or a span that
-        carries a quote or comment delimiter so the code after it re-reads -- the stretched-string
-        variant of CVE-2021-42574 -- and either of those keeps the finding (census D).
-        """
-        if any(override in raw for override in _OVERRIDE_BYTES):
-            return False
-        if not ObfuscationDetector._inside_quotes(raw, start):
-            return False
-        text = raw.decode("utf-8", "replace")
-        index = len(raw[:start].decode("utf-8", "replace"))
-        if index >= len(text) or text[index] not in _EMBED_OPEN:
-            return False
-        depth = 0
-        for char in text[index:]:
-            if char in _EMBED_OPEN:
-                depth += 1
-            elif char in _EMBED_CLOSE:
-                depth -= 1
-                if depth == 0:
-                    return True
-            elif char in _DIR_CONTROLS or not (char.isalnum() or char in " \t.,:!?"):
-                # A stray control, a quote, a comment marker, a bracket, a semicolon or an
-                # operator inside the span: it could change how the line reads. Keep the finding.
-                return False
-        return False  # never closed -- unbalanced, so keep the finding
-
-    @staticmethod
-    def _longest_padding_run(text: str) -> int:
-        """The longest run of whitespace that follows something, in a line.
-
-        Leading indentation is skipped: it is whitespace at the start of a line,
-        which every formatter produces. What this counts is a gap in the middle,
-        which is how a payload is pushed off the right-hand edge.
-        """
-        longest = 0
-        run = 0
-        seen_content = False
-        for char in text:
-            if char.isspace():
-                if seen_content:
-                    run += 1
-                    longest = max(longest, run)
-            else:
-                seen_content = True
-                run = 0
-        return longest
-
-    @staticmethod
-    def _longest_unbroken_run(text: str) -> int:
-        """The longest run of non-whitespace characters in a line."""
-        longest = 0
-        run = 0
-        for char in text:
-            if char.isspace():
-                longest = max(longest, run)
-                run = 0
-            else:
-                run += 1
-        return max(longest, run)
-
-    @staticmethod
-    def _obfuscator_io(hit: _Hit) -> bool:
-        """Whether this is obfuscator.io's output, which no bundler produces.
-
-        A bundle in `dist/` is build output and its minified shape is ceilinged for that reason. The
-        hex identifiers and rotated string array of javascript-obfuscator are not minification: they
-        are someone choosing to hide the code, and in a published bundle that is how the September
-        2025 npm compromise of `@duckdb/duckdb-wasm` spliced a wallet drainer into `dist/*.worker.js`.
-        """
-        return hit.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" and "obfuscator.io" in hit.title
-
 
 ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
 
@@ -564,7 +352,6 @@ GENERATED_HEADER_BYTES = 4096
 header, and scanning the whole file for one would mean any file that mentions
 the phrase is exempt."""
 
-
 TRANSLATION_PATHS = ("**/*.po", "**/*.mo", "**/*.pot", "**/LC_MESSAGES/**")
 """Message catalogues, which hold display text rather than code."""
 
@@ -593,9 +380,10 @@ MIN_DISTINCT_ENCODED = 6
 Below this the escapes are a serialiser's output rather than something hidden:
 one repeated escape is a convention, and a payload is text."""
 
-
 LONG_LINE_THRESHOLD = 2000
+
 ENTROPY_THRESHOLD = 4.5
+
 UNBROKEN_RUN_THRESHOLD = 250
 """How long a run of non-whitespace makes a long line a payload rather than text.
 
@@ -627,21 +415,6 @@ prose to a length test.
 Nothing writes a hundred consecutive spaces in the middle of a line on purpose.
 An indented line is whitespace at the START, which is not this: the run has to
 come after something."""
-
-
-@dataclass(frozen=True, slots=True)
-class _Hit:
-    rule_id: str
-    title: str
-    message: str
-    remediation: str
-    severity: Severity
-    confidence: Confidence
-    start: int
-    end: int
-    offscreen: bool = False
-    """Code placed after a run of padding, past the right edge of an editor."""
-
 
 MINIFIED_LINE_FOR_BIDI = 5_000
 """A line this long is generated output, as the long-line rule reads it."""
@@ -751,7 +524,7 @@ class ObfuscationDetector(BaseDetector):
         if content.is_binary:
             return ()
 
-        hits: list[_Hit] = []
+        hits: list[Hit] = []
         hits.extend(self._bidi(content, unit.language))
         hits.extend(self._tag_smuggling(content))
         hits.extend(self._escapes(content))
@@ -777,19 +550,11 @@ class ObfuscationDetector(BaseDetector):
         rb"(?m)\S[ \t]{200,4000}(?=[A-Za-z_$;(\[])(?!//|--)\S"
     )
 
-    @staticmethod
-    def _inside_quotes(raw: bytes, offset: int) -> bool:
-        """Whether a quote is open on this line before `offset`: padding in a string literal is a
-        table or a message laid out in columns (curl's test strings, Prettier's lexer tables)."""
-        line = raw[raw.rfind(b"\n", 0, offset) + 1 : offset + 1]
-        line = re.sub(rb"\\.", b"", line)
-        return any(line.count(quote) % 2 for quote in (b'"', b"'", b"`"))
-
     #: Code after hundreds of blank lines: the vertical form of the padding below, past the bottom
     #: of the screen instead of its right edge.
     BELOW_SCREEN_LINES: ClassVar[int] = 400
 
-    def _below_screen_code(self, content: FileContent, language: str | None) -> Iterable[_Hit]:
+    def _below_screen_code(self, content: FileContent, language: str | None) -> Iterable[Hit]:
         """Code placed after hundreds of empty lines, so a file opens on a screen of nothing and
         reads as ending where its visible part ends (review 98: bs58lite's preinstall runs its
         collector after 2,000 blank lines). Source languages only."""
@@ -810,7 +575,7 @@ class ObfuscationDetector(BaseDetector):
             offset += len(line) + 1
         if found_at < 0:
             return
-        yield _Hit(
+        yield Hit(
             rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
             title="Code pushed below the screen",
             message=(
@@ -826,7 +591,7 @@ class ObfuscationDetector(BaseDetector):
             offscreen=True,
         )
 
-    def _offscreen_code(self, content: FileContent, language: str | None) -> Iterable[_Hit]:
+    def _offscreen_code(self, content: FileContent, language: str | None) -> Iterable[Hit]:
         """Code pushed past the right edge of the screen by padding, whatever its entropy.
 
         The long-line rule wants the line to be high-entropy, because a long line of words is
@@ -842,13 +607,13 @@ class ObfuscationDetector(BaseDetector):
             (
                 m
                 for m in self.OFFSCREEN_CODE.finditer(raw)
-                if not ObfuscationDetector._inside_quotes(raw, m.start())
+                if not ObfuscationText.inside_quotes(raw, m.start())
             ),
             None,
         )
         if found is None:
             return
-        yield _Hit(
+        yield Hit(
             rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
             title="Code pushed past the edge of the screen",
             message=(
@@ -867,7 +632,7 @@ class ObfuscationDetector(BaseDetector):
 
     # -- Signals ---------------------------------------------------------
 
-    def _tag_smuggling(self, content: FileContent) -> Iterable[_Hit]:
+    def _tag_smuggling(self, content: FileContent) -> Iterable[Hit]:
         """Text spelled in Unicode Tag characters, outside a flag emoji.
 
         U+E0020 to U+E007E mirror printable ASCII and render as nothing, so a sentence written in
@@ -897,7 +662,7 @@ class ObfuscationDetector(BaseDetector):
         if match is None:
             return
         hidden = InstructionText._decode_tags(match.group(0)).strip()[:120]
-        yield _Hit(
+        yield Hit(
             rule_id="SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",
             title="Invisible text written in Unicode Tag characters",
             message=(
@@ -912,7 +677,7 @@ class ObfuscationDetector(BaseDetector):
             end=match.end(),
         )
 
-    def _bidi(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
+    def _bidi(self, content: FileContent, language: str | None = None) -> Iterable[Hit]:
         if content.raw.isascii():
             # Every alternative of both patterns consumes a byte above 0x7F, so neither can match
             # an ASCII file -- most files -- and the path globs and both searches are skipped.
@@ -1011,7 +776,7 @@ class ObfuscationDetector(BaseDetector):
             # unequal, which is a defect and occasionally a trick. `hashicorp/vagrant`
             # has one inside a download URL; `Fission-AI/OpenSpec` has one inside the
             # regex that strips it.
-            yield _Hit(
+            yield Hit(
                 rule_id="SUSPECT.OBFUSCATION.BIDI.001",
                 title="Invisible characters in source",
                 message=(
@@ -1036,7 +801,7 @@ class ObfuscationDetector(BaseDetector):
             )
             return
 
-        yield _Hit(
+        yield Hit(
             rule_id="SUSPECT.OBFUSCATION.BIDI.001",
             title="Bidirectional or invisible characters in source",
             message=(
@@ -1140,7 +905,7 @@ class ObfuscationDetector(BaseDetector):
         printable = sum(1 for value in values if 0x20 <= value <= 0x7E)
         return (len(values), printable, len(set(values)))
 
-    def _escapes(self, content: FileContent) -> Iterable[_Hit]:
+    def _escapes(self, content: FileContent) -> Iterable[Hit]:
         for pattern, label, unit_pattern, needed in (
             (ESCAPE_RUN, "escape sequences", ESCAPE_UNIT, (b"\\x", b"\\u")),
             (CHAR_CODE_RUN, "character codes", CHAR_CODE_UNIT, (b"chr", b"fromCharCode")),
@@ -1197,7 +962,7 @@ class ObfuscationDetector(BaseDetector):
                 first = unit_pattern.search(content.raw)
                 if first is None:  # pragma: no cover - findall implies a match
                     continue
-                yield _Hit(
+                yield Hit(
                     rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
                     title=f"String built from {label} spread across the file",
                     message=(
@@ -1234,7 +999,7 @@ class ObfuscationDetector(BaseDetector):
             if not CONCEALED_TEXT.search(self._decoded(match.group(0), unit_pattern)):
                 continue
 
-            yield _Hit(
+            yield Hit(
                 rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
                 title=f"String built from a long run of {label}",
                 message=(
@@ -1279,7 +1044,7 @@ class ObfuscationDetector(BaseDetector):
         start = content.comment_column(content.line_of(offset), language)
         return start is not None and content.column_of(offset) >= start
 
-    def _packers(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
+    def _packers(self, content: FileContent, language: str | None = None) -> Iterable[Hit]:
         # Computed once for the file, and only if a packer signature is actually
         # present -- most files match none and never pay for it.
         spans: tuple[tuple[int, int], ...] | None = None
@@ -1329,7 +1094,7 @@ class ObfuscationDetector(BaseDetector):
             #
             # This detector was the only one with no comment test at all, so the
             # signature matched wherever it appeared.
-            yield _Hit(
+            yield Hit(
                 rule_id="SUSPECT.OBFUSCATION.PACKED.001",
                 title=f"Output of an obfuscator ({label})",
                 message=(
@@ -1350,7 +1115,7 @@ class ObfuscationDetector(BaseDetector):
 
     def _long_lines(
         self, content: FileContent, ctx: ScanContext, language: str | None = None
-    ) -> Iterable[_Hit]:
+    ) -> Iterable[Hit]:
         """Report an extremely long line, with the minified case excluded.
 
         Length alone is a weak signal and a strong irritant: minified bundles
@@ -1427,7 +1192,7 @@ class ObfuscationDetector(BaseDetector):
             return
 
         start = content.line_starts[index - 1]
-        yield _Hit(
+        yield Hit(
             rule_id="SUSPECT.OBFUSCATION.LONGLINE.001",
             title="Very long high-entropy line in a source file",
             message=(
@@ -1504,7 +1269,7 @@ class ObfuscationDetector(BaseDetector):
         line = text[start : len(text) if end == -1 else end]
         return ObfuscationDetector.RUNS_LONG_LINE.search(line) is not None
 
-    def _finding(self, hit: _Hit, unit: FileUnit, ctx: ScanContext) -> Finding:
+    def _finding(self, hit: Hit, unit: FileUnit, ctx: ScanContext) -> Finding:
         content = unit.content
         # The same ceiling the secrets detector and the composites apply, and these
         # rules need it for a reason of their own: a file that DETECTS an obfuscation
@@ -1652,4 +1417,35 @@ class ObfuscationDetector(BaseDetector):
         )
 
 
-__all__ = ["ObfuscationDetector"]
+__all__ = [
+    "BIDI_AND_INVISIBLE",
+    "BUNDLER_PRELUDE",
+    "CHAR_CODE_RUN",
+    "CHAR_CODE_UNIT",
+    "CONCEALED_TEXT",
+    "CUMULATIVE_ENCODED_UNITS",
+    "DIRECTIONAL_CONTROL",
+    "ENTROPY_THRESHOLD",
+    "ESCAPE_RUN",
+    "ESCAPE_UNIT",
+    "GENERATED_HEADER_BYTES",
+    "GENERATED_MARKER",
+    "JAVASCRIPT_LANGUAGES",
+    "LONG_LINE_THRESHOLD",
+    "MINIFIED_LINE_FOR_BIDI",
+    "MINIFIED_PATHS",
+    "MIN_DISTINCT_ENCODED",
+    "NON_DIRECTIONAL_INVISIBLE",
+    "NUMERIC_ARG",
+    "PACKERS",
+    "PADDING_RUN_THRESHOLD",
+    "PRINTABLE_SHARE",
+    "PROSE_LANGUAGES",
+    "SELF_DESCRIBING",
+    "SOURCE_MAP_TRAILER",
+    "TAG_RUN",
+    "TAG_SMUGGLING_RULE",
+    "TRANSLATION_PATHS",
+    "UNBROKEN_RUN_THRESHOLD",
+    "ObfuscationDetector",
+]

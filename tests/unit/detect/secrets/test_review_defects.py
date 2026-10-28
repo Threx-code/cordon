@@ -11242,7 +11242,7 @@ class TestAFileThatIsRightToLeftText:
 
     @staticmethod
     def _is_resource(text: str) -> bool:
-        from cordon_scanner.detect.code.obfuscation.detector import ObfuscationText
+        from cordon_scanner.detect.code.obfuscation.text import ObfuscationText
 
         return ObfuscationText._is_rtl_resource(text.encode())
 
