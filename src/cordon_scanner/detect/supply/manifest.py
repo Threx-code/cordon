@@ -495,7 +495,7 @@ class ManifestScripts:
     def _capable(path: str, source: str, ctx: ScanContext) -> bool:
         """Whether the capability rules label anything in a hook's inline program."""
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         if not ManifestScripts._loads_only_what_was_read(path, source, ctx):

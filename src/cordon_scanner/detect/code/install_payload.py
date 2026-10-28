@@ -1,6 +1,6 @@
 """Census A (pypi-98): whether install-time code reaches a payload.
 
-Extracted from `capability.py` so the install-composite gate can grow without that module. The gate
+Extracted from `capability/detector.py` so the install-composite gate can grow without that module. The gate
 is the claim that a composite which says "code runs when the package is installed"
 (`MALWARE.INSTALL.CONSUMER_CODE.001`) is the malicious finding only when a payload is reachable from
 the install code -- egress, a fetch-and-run, a credential read, reconnaissance, a wallet/miner,
@@ -11,7 +11,7 @@ gated here; a dropper already requires a fetch-and-run, which is a payload.
 
 `CapabilityDetector` holds the escalation and calls these static methods. `CapabilityHit` and
 `FileContent` are imported only for typing, so this module imports no engine code and does not cycle
-with `capability.py`.
+with `capability/detector.py`.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import FileUnit, ScanContext
-    from cordon_scanner.detect.code.capability import CapabilityHit
+    from cordon_scanner.detect.code.capability.detector import CapabilityHit
     from cordon_scanner.foundation.content import FileContent
 
 

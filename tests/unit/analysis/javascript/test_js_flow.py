@@ -556,7 +556,7 @@ class TestOpeners:
         assert (["network_response"], "process") in [f[:2] for f in flows]
 
     def test_a_secret_in_the_link_is_still_sent(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         text = (
             'const { exec } = require("child_process"); const fs = require("fs");\n'
@@ -569,7 +569,7 @@ class TestOpeners:
         assert "open" not in sinks["CAP.JS.FLOW.REMOTE_CODE"]
 
     def test_the_host_name_in_the_link_is_still_sent(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         text = (
             'const { exec } = require("child_process"); const os = require("os");\n'

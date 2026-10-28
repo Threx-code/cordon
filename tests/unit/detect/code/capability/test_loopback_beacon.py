@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.code.capability import CapabilityDetector
+from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
 
 class TestLoopbackOnly:

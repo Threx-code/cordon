@@ -13,7 +13,7 @@ from pathlib import Path
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 from cordon_scanner.decide.policy import PolicyGate
-from cordon_scanner.detect.code.capability import CapabilityDetector
+from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 

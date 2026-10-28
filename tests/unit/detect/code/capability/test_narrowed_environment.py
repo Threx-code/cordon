@@ -47,7 +47,7 @@ class TestNarrowedEnvironment:
         ],
     )
     def test_the_whole_environment_is_not_narrowed(self, read: str) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("index.js", read.encode())

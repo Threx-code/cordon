@@ -158,7 +158,7 @@ class TestComputedRequire:
         assert "MALWARE.DYNAMIC_DISPATCH.001" in found
 
     def test_a_named_module_is_not_decoded(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         for text in (
@@ -169,7 +169,7 @@ class TestComputedRequire:
             assert CapabilityDetector._js_computed_require(content, "javascript") == []
 
     def test_a_path_helper_is_not_a_decoder(self, tmp_path) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         text = self.source("joinPath").replace("require(joinPath", "require(joinPath")

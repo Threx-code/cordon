@@ -4100,7 +4100,7 @@ class Engine:
         """Scripts an agent skill ships (`CapabilityDetector._skill_script`)."""
         from types import SimpleNamespace
 
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units))
         return {
@@ -4195,7 +4195,7 @@ class Engine:
         """When each effect of the package runs, and what hides it (`core/intent.py`); None for a
         package the intent layer does not read."""
         from cordon_scanner.decide.intent import IntentObserver
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.detect.code.download_flow import DownloadFlow
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
@@ -4229,7 +4229,7 @@ class Engine:
         repository and runs a script from it raised nothing). The verdict weighs the profile with
         everything else; on its own it blocks nothing.
         """
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.detect.code.download_flow import DownloadFlow
         from cordon_scanner.detect.code.reached_flows import ReachedFlows
 

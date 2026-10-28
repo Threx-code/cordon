@@ -1,6 +1,6 @@
 """Whether an IPv4 address is publicly routable (`PublicAddress.is_public`).
 
-Moved verbatim from `detect/code/capability.py`: a pure predicate over an octet list, with no class
+Moved verbatim from `detect/code/capability/detector.py`: a pure predicate over an octet list, with no class
 state, used to tell a beacon's destination from a private or reserved one. The ranges are the usual
 private, loopback, link-local, carrier-grade-NAT, documentation and benchmarking blocks, hand-listed
 rather than `ipaddress.is_global`, whose ranges differ.

@@ -628,7 +628,7 @@ class TestAPrintedCommandIsNotAnExecutedOne:
     def suppressed(source: str) -> bool:
         import re
 
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = source.encode()
@@ -2151,13 +2151,13 @@ class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
         return FileContent(path=path, raw=raw, size=len(raw))
 
     def test_a_hashed_bundle_is_recognised(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         bundle = "var a=1;" * 400
         assert CapabilityDetector._is_minified(self.content("assets/index-BTLZFAP9.js", bundle))
 
     def test_ordinary_source_is_not(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         source = "function add(a, b) {\n    return a + b;\n}\n" * 50
         assert not CapabilityDetector._is_minified(self.content("src/math.js", source))
@@ -2719,7 +2719,7 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         ],
     )
     def test_a_local_destination_is_not_egress(self, line: bytes) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
         assert CapabilityDetector._is_local_target(content, content.raw.index(line))
@@ -2739,7 +2739,7 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         still a fetch and is what this project's own malicious corpus uses; a real host;
         a destination held in a variable, which says nothing either way; and a metadata
         read piped straight to a collector, which is the attack."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
         assert not CapabilityDetector._is_local_target(content, content.raw.index(line))
@@ -3219,7 +3219,7 @@ class TestARegexMatchIsNotAProcess:
     @staticmethod
     def capability_lines(source: str, language: str, capability: str) -> set[int]:
         from cordon_scanner.detect.base import RuleSelector
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.foundation.models import Capability
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -4599,7 +4599,7 @@ class TestACiScriptIsNotADropper:
         ],
     )
     def test_naming_a_tool_is_not_using_it(self, line: bytes, probe: bool) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"#!/bin/sh\n" + line + b"\n"
@@ -4621,7 +4621,7 @@ class TestACiScriptIsNotADropper:
         just started, and the URL pattern needed a scheme to see it. The quoted form is
         vLLM's, where the port sits on the other side of a shell quote and the capture
         ends in a bare colon."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"#!/bin/sh\n" + line + b"\n"
@@ -4838,7 +4838,7 @@ class TestDefiningANameIsNotUsingIt:
 
     @staticmethod
     def declared(line: bytes, needle: bytes) -> bool:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"// file\n" + line + b"\n"
@@ -8591,7 +8591,7 @@ class TestAnImportBringsANameIntoScope:
 
     @staticmethod
     def _is_declaration(line: str, needle: str) -> bool:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("x.rs", line.encode())
@@ -8626,7 +8626,7 @@ class TestAHostWrittenAsAQuotedString:
 
     @staticmethod
     def _local(line: str) -> bool:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("x.rs", line.encode())
@@ -11641,7 +11641,7 @@ class TestWhatRealMalwareActuallyLooksLike:
         so the ceiling took `SUSPECT.DECODE_CHAIN.001` from critical to medium
         and a gate would have passed it. Python is not a language anybody
         minifies."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         long_line = b"x" * 6307
@@ -12024,7 +12024,7 @@ class TestTheSameActsInAnotherEcosystem:
     def test_a_real_bundle_is_still_minified(self, tmp_path) -> None:
         """The other direction, so the fix above does not simply remove the
         ceiling. A bundle is long lines and almost nothing else."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         bundle = ("var a=1,b=2,c=3;" * 400 + "\n") * 3
@@ -12046,7 +12046,7 @@ class TestTheSameActsInAnotherEcosystem:
         `ICompletionsFetchService`. `fetch(` was read as a network call against
         a TypeScript interface. The Tailwind case the existing comment cites
         happens to be written on one line, which is why this went unnoticed."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = (
@@ -12063,7 +12063,7 @@ class TestTheSameActsInAnotherEcosystem:
 
     def test_a_call_written_the_same_way_is_not_a_declaration(self) -> None:
         """The control. An argument list broken over lines is still a call."""
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b'const r = await fetch(\n\t"https://example.com/a",\n\t{ method: "POST" }\n);\n'
@@ -13604,7 +13604,7 @@ class TestMoreDecodersAndDestinations:
     def test_a_public_ip_literal_is_an_informative_destination(
         self, url: str, counted: bool
     ) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.py", f'URL = "{url}"\n'.encode())
@@ -13624,7 +13624,7 @@ class TestMoreDecodersAndDestinations:
         ],
     )
     def test_a_public_ip_given_as_a_host_is_one_too(self, line: str, counted: bool) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.js", f"{line}\n".encode())

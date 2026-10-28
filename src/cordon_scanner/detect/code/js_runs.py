@@ -3,7 +3,7 @@
 Three acts read whole-file, each from its own patterns: data arriving on a connection and run
 (`received_and_run`), a file the package carries decoded into a program and started
 (`decoded_program_run`), and a command's output put into a request (`command_output_sent`).
-Moved out of `capability.py` (0.7.0 layout: a long module only shrinks); `CapabilityDetector`
+Moved out of `capability/detector.py` (0.7.0 layout: a long module only shrinks); `CapabilityDetector`
 calls these and labels what they return.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.detect.code.capability import CapabilityHit
+from cordon_scanner.detect.code.capability.detector import CapabilityHit
 from cordon_scanner.foundation.models import Capability
 
 if TYPE_CHECKING:
@@ -175,7 +175,7 @@ class JsRuns:
         text = content.text
         # A bundle runs its tools' commands and calls its own APIs a line apart (a minified editor
         # extension calling `gh` and GitHub's API matched); the payloads were written by hand.
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         if len(text) > 4_000_000 or "exec" not in text or CapabilityDetector._is_minified(content):
             return []
@@ -225,7 +225,7 @@ class JsRuns:
         uses, and they call their own services with the user's name and the repository's by
         design (review 98: an extension's activation code, a CI helper, a commit tool).
         """
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         return (
             ctx is not None

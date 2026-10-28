@@ -151,7 +151,7 @@ class TestPluginTrustRunsNoForeignCode:
         from cordon_scanner.engine import registry
 
         entry = types.SimpleNamespace(
-            module="cordon_scanner.detect.code.capability", value="", name="capability"
+            module="cordon_scanner.detect.code.capability.detector", value="", name="capability"
         )
         assert registry.Registry._is_ours(entry, registry.DISTRIBUTION) is True
 

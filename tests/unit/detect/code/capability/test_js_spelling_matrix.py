@@ -28,7 +28,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.capability import CapabilityDetector
+from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 from cordon_scanner.foundation.config import Config
 from unit.foundation.test_npm_work_half_classes import Npm
 

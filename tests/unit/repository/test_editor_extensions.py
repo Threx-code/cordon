@@ -143,14 +143,14 @@ class TestWhatCountsAsRunningAFile:
     """`start` runs a file, or opens a link in the browser."""
 
     def test_opening_a_link_is_not_running_a_file(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         runs = CapabilityDetector._RUNS_A_FILE
         assert runs.search('`start "" "${extUrl}"`') is None
         assert runs.search("'start https://example.invalid/docs'") is None
 
     def test_starting_a_file_still_is(self) -> None:
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         runs = CapabilityDetector._RUNS_A_FILE
         assert runs.search('`start "" "${tmp}"`') is not None

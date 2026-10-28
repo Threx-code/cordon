@@ -42,7 +42,7 @@ class TestBrowserSecrets:
     @staticmethod
     def rules(text: str) -> set[str]:
         from cordon_scanner.detect.base import ScanContext
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.config import Config
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 

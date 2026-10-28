@@ -13,7 +13,7 @@ import tarfile
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.capability import CapabilityDetector
+from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 

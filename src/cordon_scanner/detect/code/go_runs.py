@@ -1,7 +1,7 @@
 """Go code that runs what it receives, or writes the CI job's environment, when it is imported.
 
 `received_and_run`: data read from a connection handed to a process start. `ci_environment_write`:
-a package whose load path writes `GITHUB_ENV` or `GITHUB_PATH`. Moved beside `capability.py` (0.7.0
+a package whose load path writes `GITHUB_ENV` or `GITHUB_PATH`. Moved beside `capability/detector.py` (0.7.0
 layout: a long module only shrinks); `CapabilityDetector` calls these and labels what they return.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.detect.code.capability import CapabilityHit
+from cordon_scanner.detect.code.capability.detector import CapabilityHit
 from cordon_scanner.foundation.models import Capability
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ class GoRuns:
         text = content.text
         if "exec.Command" not in text or ("Dial" not in text and "Accept" not in text):
             return []
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         for found in CapabilityDetector._GO_FUNC.finditer(text):
             depth, index = 1, found.end()
@@ -119,7 +119,7 @@ class GoRuns:
                     line=text.count("\n", 0, write.start()) + 1,
                 )
             )
-        from cordon_scanner.detect.code.capability import CapabilityDetector
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         on_load = [
             hit

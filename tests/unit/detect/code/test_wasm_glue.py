@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.code.capability import CapabilityDetector
+from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 from cordon_scanner.detect.code.wasm_glue import WasmBindgenGlue
 from cordon_scanner.foundation.content import FileContent
 

@@ -49,7 +49,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.addresses import PublicAddress
-from cordon_scanner.detect.code.capability_memo import CapabilityMemo
+from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
 from cordon_scanner.detect.code.install_payload import InstallPayload

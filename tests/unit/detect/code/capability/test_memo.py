@@ -1,12 +1,12 @@
 """The capability detector's pattern-tier hits kept per distinct whole file
-(`detect/code/capability_memo`)."""
+(`detect/code/capability/memo`)."""
 
 from __future__ import annotations
 
 import dataclasses
 from typing import Any
 
-from cordon_scanner.detect.code.capability_memo import CapabilityMemo
+from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.foundation.content import FileContent
 
 
