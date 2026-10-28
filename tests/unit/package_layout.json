@@ -76,7 +76,7 @@
   "cli/parser": "cli/parser",
   "cli/progress": "cli/progress",
   "cli/commands/review": "cli/commands/review",
-  "cli/suppressions": "cli/suppressions",
+  "cli/commands/suppressions": "cli/commands/suppressions",
   "cloud/_p256": "cloud/_p256",
   "cloud/auth": "cloud/auth",
   "cloud/ci_agent_token": "cloud/ci_agent_token",

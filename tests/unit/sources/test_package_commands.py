@@ -20,10 +20,14 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cli.commands.deps import DependencyView
+from cordon_scanner.cli.commands.suppressions import (
+    SuppressCommand,
+    SuppressionFile,
+    SuppressionRules,
+)
 from cordon_scanner.cli.completion import CommandTree, CompletionScript
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cli.parser import CommandParser
-from cordon_scanner.cli.suppressions import SuppressCommand, SuppressionFile, SuppressionRules
 from cordon_scanner.foundation.config.policy import OrgConstraints
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.models import Category, Suppression

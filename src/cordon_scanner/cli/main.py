@@ -81,8 +81,8 @@ class CommandLine:
         from cordon_scanner.cli.commands.deps import DepsCommand
         from cordon_scanner.cli.commands.incoming import IncomingCommand
         from cordon_scanner.cli.commands.review import ReviewCommand
+        from cordon_scanner.cli.commands.suppressions import SuppressCommand
         from cordon_scanner.cli.completion import CompletionCommand
-        from cordon_scanner.cli.suppressions import SuppressCommand
         from cordon_scanner.engine.netguard import NetworkGuard
 
         # Before anything can connect: with CORDON_PUBLIC_NETWORK_ONLY set, no name this process
