@@ -97,7 +97,8 @@ class JsPersistence:
     def named_only_lines(cls, text: str) -> frozenset[int]:
         """Lines that name a persistence location only in literals no sink receives; empty when
         the file is not analysed."""
-        from cordon_scanner.analysis.javascript.js_flow import MAX_BYTES, _Analysis, _OverBudget
+        from cordon_scanner.analysis.javascript.flow.vocabulary import MAX_BYTES, _OverBudget
+        from cordon_scanner.analysis.javascript.js_flow import _Analysis
 
         if len(text) > MAX_BYTES or not PERSIST_WORD.search(text):
             return frozenset()
@@ -183,7 +184,7 @@ class JsPersistence:
 
     @staticmethod
     def _spend(spent: list[int], reads: int) -> None:
-        from cordon_scanner.analysis.javascript.js_flow import _OverBudget
+        from cordon_scanner.analysis.javascript.flow.vocabulary import _OverBudget
 
         spent[0] += reads
         if spent[0] > BUDGET:

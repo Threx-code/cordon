@@ -37,7 +37,7 @@ from cordon_scanner.analysis.javascript.js_eval import JsEval
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
-    from cordon_scanner.analysis.javascript.js_eval import Tok
+    from cordon_scanner.analysis.javascript.evaluation.values import Tok
 
     #: A file's bytes, or a callable giving them in order a window at a time.
     Source = bytes | Callable[[], Iterator[bytes]]
