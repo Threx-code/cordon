@@ -399,12 +399,12 @@ class TestAnInstallHookInASubdirectory:
         import posixpath
         import unittest.mock
 
-        from cordon_scanner.engine import engine
+        from cordon_scanner.engine.pipeline import hooks
 
         # `ntpath` is what `os.path` *is* on Windows. Substituting it here
         # reproduces the Windows result on any host: if anything in the
         # resolution still reaches for the platform's own module, this fails.
-        with unittest.mock.patch.object(engine, "posixpath", posixpath):
+        with unittest.mock.patch.object(hooks, "posixpath", posixpath):
             assert self.resolve("package.json", "node scripts/setup.js") == {"scripts/setup.js"}
         assert ntpath.normpath("scripts/setup.js") == "scripts\\setup.js", (
             "the bug this guards against: the Windows normpath rewrites the separator"

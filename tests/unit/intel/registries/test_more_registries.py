@@ -29,7 +29,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.registries import more_registries
+from cordon_scanner.intel.registries import more_registries, registry_http
 from cordon_scanner.intel.registries.image_registries import ImageRegistries
 from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
@@ -75,7 +75,7 @@ class RegistryFixtures:
     def serve(self, monkeypatch):
         def install(answers: dict[str, Any]) -> Served:
             served = Served(answers)
-            monkeypatch.setattr(MoreRegistries, "_get", staticmethod(served))
+            monkeypatch.setattr(RegistryHttp, "get", staticmethod(served))
             return served
 
         return install
@@ -110,7 +110,7 @@ class TestTransport:
         def install(*outcomes: Any) -> None:
             fake = self._Opener(list(outcomes))
             monkeypatch.setattr(more_registries.urllib.request, "build_opener", lambda *a: fake)
-            monkeypatch.setattr(more_registries.time, "sleep", lambda s: None)
+            monkeypatch.setattr(registry_http.time, "sleep", lambda s: None)
 
         return install
 
@@ -138,7 +138,7 @@ class TestTransport:
         assert RegistryHttp.json("https://api.nuget.org/x") == {"ok": 1}
 
     def test_a_body_that_expands_past_the_ceiling_is_refused(self, opener, monkeypatch) -> None:
-        monkeypatch.setattr(more_registries, "_MAX_GZIP_BYTES", 1024)
+        monkeypatch.setattr(registry_http, "_MAX_GZIP_BYTES", 1024)
         opener(self._Response(gzip.compress(b"0" * 10_000), "gzip"))
         with pytest.raises(RegistryError, match="expands past"):
             RegistryHttp.get("https://api.nuget.org/x")
@@ -1367,7 +1367,7 @@ class TestHelmRepositories(RegistryFixtures):
                 ]
             },
         }
-        monkeypatch.setattr(MoreRegistries, "_oci", staticmethod(lambda url, accept: answers[url]))
+        monkeypatch.setattr(RegistryHttp, "oci", staticmethod(lambda url, accept: answers[url]))
         facts = InfraRegistries.helm(
             "postgresql", "15.5.38", "oci://registry.example.invalid/charts"
         )
@@ -1385,7 +1385,7 @@ class TestHelmRepositories(RegistryFixtures):
                 "layers": [{"mediaType": "application/tar+gzip", "digest": f"sha256:{self.DIGEST}"}]
             },
         }
-        monkeypatch.setattr(MoreRegistries, "_oci", staticmethod(lambda url, accept: answers[url]))
+        monkeypatch.setattr(RegistryHttp, "oci", staticmethod(lambda url, accept: answers[url]))
         facts = InfraRegistries.helm(
             "app", "1.0.0+build.1", "oci://registry.example.invalid/charts"
         )
@@ -1427,8 +1427,8 @@ class TestContainerImages:
         def install(answers: dict[str, Any]) -> Served:
             served = Served(answers)
             monkeypatch.setattr(
-                MoreRegistries,
-                "_oci_bytes",
+                RegistryHttp,
+                "oci_bytes",
                 staticmethod(lambda url, accept, follow=False: served(url)),
             )
             return served
@@ -1568,7 +1568,7 @@ class TestContainerImages:
                 "https://ghcr.io/v2/x/blobs/y", 307, "redirect", headers, None
             )
 
-        monkeypatch.setattr(MoreRegistries, "_get", staticmethod(lambda url, accept="": b"blob"))
+        monkeypatch.setattr(RegistryHttp, "get", staticmethod(lambda url, accept="": b"blob"))
         assert RegistryHttp.redirected(redirect("https://pkg-containers.example/blob")) == b"blob"
         with pytest.raises(RegistryError, match="HTTPS"):
             RegistryHttp.redirected(redirect("http://pkg-containers.example/blob"))

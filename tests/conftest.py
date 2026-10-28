@@ -83,9 +83,9 @@ def hardening(monkeypatch: pytest.MonkeyPatch) -> None:
     The CI, container and infrastructure rules' own tests check what each rule reports; by
     default the engine records those domains at LOW (`Policy.hardening`), which is the tier's
     behaviour and has its own tests (`test_hardening_tier.py`)."""
-    from cordon_scanner.engine.engine import Engine
+    from cordon_scanner.engine.pipeline.ceilings import Ceilings
 
-    monkeypatch.setattr(Engine, "_hardening_tier", staticmethod(lambda findings, policy: findings))
+    monkeypatch.setattr(Ceilings, "hardening_tier", staticmethod(lambda findings, policy: findings))
 
 
 @pytest.fixture

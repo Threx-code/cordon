@@ -17,7 +17,8 @@ import pytest
 
 from cordon_scanner.intel.provenance import openpgp
 from cordon_scanner.intel.provenance.helm_provenance import HelmProvenance
-from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.image_registries import ImageRegistries
+from cordon_scanner.intel.registries.registry_http import RegistryHttp
 from support import ROOT as REPO
 
 DATA = REPO / "tests" / "unit" / "data" / "openpgp"
@@ -189,8 +190,8 @@ class TestHelmProvenance:
             asked.append(url)
             return manifest
 
-        monkeypatch.setattr(MoreRegistries, "_oci", staticmethod(oci))
-        monkeypatch.setattr(MoreRegistries, "_oci_blob", staticmethod(lambda base, digest: PROV))
+        monkeypatch.setattr(RegistryHttp, "oci", staticmethod(oci))
+        monkeypatch.setattr(ImageRegistries, "oci_blob", staticmethod(lambda base, digest: PROV))
         # cert-manager's real OCI chart is tagged without the v its HTTPS repository uses; the
         # provenance file names the archive helm downloads it as, <name>-<version>.tgz.
         check = HelmProvenance.check(
@@ -204,8 +205,8 @@ class TestHelmProvenance:
     ) -> None:
         asked: list[str] = []
         monkeypatch.setattr(
-            MoreRegistries,
-            "_oci",
+            RegistryHttp,
+            "oci",
             staticmethod(lambda url, accept: asked.append(url) or {"layers": []}),
         )
         HelmProvenance.check(

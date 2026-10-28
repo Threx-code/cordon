@@ -18,8 +18,10 @@ import pytest
 
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
+from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.inference import Inference
 from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, Upstreams
+from cordon_scanner.intel.registries.package_registries import PackageRegistries
 from support import ROOT as REPO
 
 
@@ -47,8 +49,8 @@ class Stand:
                 raise OSError(f"not served: {url}")
             return pages[url]
 
-        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
-        monkeypatch.setattr(UpstreamAdvisories, "_cache", {})
+        monkeypatch.setattr(Fetch, "get", staticmethod(get))
+        monkeypatch.setattr(Fetch, "resolved", {})
         monkeypatch.setattr(UpstreamAdvisories, "_records", {})
         return asked
 
@@ -532,7 +534,7 @@ class TestVcpkgPortfiles:
             TagInference, "refs", staticmethod(lambda repository: {"v6.11.2": "c" * 40})
         )
         monkeypatch.setattr(
-            "cordon_scanner.intel.advisories.upstream_advisories.ContentProof.check",
+            "cordon_scanner.intel.advisories.upstream.tags.ContentProof.check",
             staticmethod(lambda archive, repository, commit, tag="": ("unprovable", "stood in")),
         )
         found = VcpkgPorts.qt("qtsvg", "6.11.2", lambda filename: data, "x")
@@ -787,7 +789,6 @@ class TestQtBeforePortData:
     def test_a_release_module_is_proved_by_its_digest(self, monkeypatch) -> None:
         from cordon_scanner.intel.advisories.upstream.base import Archive
         from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
-        from cordon_scanner.intel.advisories.upstream_advisories import Upstreams
 
         seen: list[Archive | None] = []
 
@@ -795,7 +796,7 @@ class TestQtBeforePortData:
             seen.append(archive)
             return first
 
-        monkeypatch.setattr(Upstreams, "inferred", staticmethod(inferred))
+        monkeypatch.setattr(Inference, "inferred", staticmethod(inferred))
         VcpkgPorts.qt("qtsvg", "6.8.2", self.missing, "x", self.qtbase)
         assert seen[0] is not None and seen[0].digest == "sha512:" + "a" * 128
         assert (
@@ -824,7 +825,7 @@ class TestHomebrewAliases:
                 raise PackageNotFound(f"no such page: {url}")
             return pages[url]
 
-        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        monkeypatch.setattr(Fetch, "get", staticmethod(get))
 
     def test_an_alias_is_followed_to_the_installed_versions_series(self, monkeypatch) -> None:
         from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
@@ -884,7 +885,7 @@ class TestHomebrewHistory:
             return files[url]
 
         monkeypatch.setattr(HomebrewProvenance, "_get", staticmethod(api))
-        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        monkeypatch.setattr(Fetch, "get", staticmethod(get))
         return asked
 
     @staticmethod
@@ -1189,7 +1190,7 @@ class TestVcpkgRegistryEras:
                 raise PackageNotFound(url)
             return pages[url]
 
-        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        monkeypatch.setattr(Fetch, "get", staticmethod(get))
 
     def test_a_control_file_is_the_ports_manifest(self, monkeypatch) -> None:
         from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
@@ -1248,8 +1249,8 @@ class TestACutShortAnswer:
         def cut(url: str, limit: int = 0) -> bytes:
             raise http.client.IncompleteRead(b"partial")
 
-        monkeypatch.setattr(Upstreams, "_get", staticmethod(cut))
-        monkeypatch.setattr(UpstreamAdvisories, "_cache", {})
+        monkeypatch.setattr(Fetch, "get", staticmethod(cut))
+        monkeypatch.setattr(Fetch, "resolved", {})
         found = UpstreamAdvisories.name(Stand.dep("conan", "zlib", "1.3.1"))
         assert isinstance(found, Unnamed) and "IncompleteRead" in found.reason
 
@@ -1260,7 +1261,7 @@ class TestACutShortAnswer:
             raise GitFetchError("not an https repository and object id")
 
         monkeypatch.setattr(Upstreams, "vcpkg", staticmethod(refuse))
-        monkeypatch.setattr(UpstreamAdvisories, "_cache", {})
+        monkeypatch.setattr(Fetch, "resolved", {})
         found = UpstreamAdvisories.name(Stand.dep("vcpkg", "qtbase", None, resolution_note="x"))
         assert isinstance(found, Unnamed) and "GitFetchError" in found.reason
 
@@ -1281,14 +1282,13 @@ class TestPodSiblings:
     )
 
     def pods(self, monkeypatch, podspec: str) -> tuple[list[Dependency], list]:
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
         from cordon_scanner.intel.registries.registry_client import PackageNotFound
 
         trunk = json.dumps(
             {"name": "FirebaseAnalytics", "version": "10.6.0", "source": {"http": self.URL}}
         )
         monkeypatch.setattr(
-            MoreRegistries, "_cocoapods_spec", staticmethod(lambda url: trunk.encode())
+            PackageRegistries, "cocoapods_spec", staticmethod(lambda url: trunk.encode())
         )
         files = {f"{self.RAW}/CocoaPods-10.6.0/FirebaseAnalytics.podspec": podspec.encode()}
 
@@ -1297,7 +1297,7 @@ class TestPodSiblings:
                 raise PackageNotFound(url)
             return files[url]
 
-        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        monkeypatch.setattr(Fetch, "get", staticmethod(get))
         core, analytics = (
             Dependency(
                 purl=f"pkg:cocoapods/{n}@10.6.0",
@@ -1674,7 +1674,7 @@ class TestGitLabHeadBuilds:
             asked.append(url)
             return json.dumps({"id": full}).encode()
 
-        monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
+        monkeypatch.setattr(Fetch, "get", staticmethod(get))
         data = {"urls": {"head": {"url": "https://gitlab.com/qemu-project/qemu.git"}}}
         found = HomebrewBottles.head(data, "HEAD-ae2b873", "qemu")
         assert isinstance(found, Upstream) and found.query == {"commit": full}
