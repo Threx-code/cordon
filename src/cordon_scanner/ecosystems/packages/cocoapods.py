@@ -447,6 +447,23 @@ class PodfileLock:
             found_sum = re.match(r'^  "?([^\s":]+)"?: (\S+)$', line)
             if found_sum:
                 checksums[found_sum.group(1)] = found_sum.group(2)
+        entries = PodfileLock._entries(pods, external, repositories, checksums, direct)
+        version = (sections.get("COCOAPODS") or [""])[0].strip()
+        if version:
+            entries.append(
+                LockEntry(name="cocoapods", version=version, scope=Scope.TOOL, direct=True)
+            )
+        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
+
+    @staticmethod
+    def _entries(
+        pods: dict[str, dict[str, object]],
+        external: dict[str, dict[str, str]],
+        repositories: dict[str, str],
+        checksums: dict[str | Any, str | Any],
+        direct: set[str],
+    ) -> list[LockEntry]:
+        """One entry per pod: its source repository or external location, subspecs and checksum."""
         entries: list[LockEntry] = []
         for name, slot in sorted(pods.items()):
             options = external.get(name, {})
@@ -479,12 +496,7 @@ class PodfileLock:
                     note=note,
                 )
             )
-        version = (sections.get("COCOAPODS") or [""])[0].strip()
-        if version:
-            entries.append(
-                LockEntry(name="cocoapods", version=version, scope=Scope.TOOL, direct=True)
-            )
-        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
+        return entries
 
 
 class CocoaPodsEcosystem(BaseEcosystem):

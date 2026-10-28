@@ -905,7 +905,6 @@
    "detect/supply/registry:RegistryDetector._compare": 115,
    "detect/supply/registry:RegistryDetector.declared_rules": 254,
    "detect/supply/registry:RegistryDetector.inspect": 209,
-   "ecosystems/packages/cocoapods:PodfileLock.parse": 104,
    "ecosystems/packages/conda:CondaLock.parse": 99,
    "ecosystems/packages/conda:Environment.parse": 97,
    "ecosystems/packages/cran:Description.parse": 98,
