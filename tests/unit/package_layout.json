@@ -901,7 +901,6 @@
    "cli/main:CommandLine.cmd_scan": 283,
    "cloud/device:DeviceInventory.collect": 115,
    "cloud/runner:CloudRunner.execute": 95,
-   "detect/agents/instruction_files:InstructionFileFindings.instructions": 203,
    "detect/agents/mcp_servers/findings:McpServerFindings._mcp_server": 117,
    "detect/agents/mcp_servers/findings:McpServerFindings.server_source": 165,
    "detect/agents/text_findings:AgentTextFindings.threat_rules": 115,

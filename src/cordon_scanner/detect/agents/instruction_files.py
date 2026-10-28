@@ -221,6 +221,17 @@ class InstructionFileFindings:
                 )
                 + ", so this is reported below the default gate.",
             )
+        yield from InstructionFileFindings._directive_findings(ctx, injection, text, unit)
+        yield from AgentTextFindings.intents(unit, ctx, text)
+        yield from InstructionFileFindings._hidden_and_rule_findings(
+            alarming, concealed, ctx, exfil, hidden, injection, text, unit
+        )
+
+    @staticmethod
+    def _directive_findings(
+        ctx: ScanContext, injection: re.Match[str] | None, text: str, unit: FileUnit
+    ) -> Iterator[Finding]:
+        """The findings for each single directive an instruction file states: an injection, a phantom prerequisite, a dropper, executable front matter, a sensitive import, remote instructions, credentials moved off the machine, an endpoint."""
         if injection is not None:
             start, end = InstructionText._byte_span(text, injection)
             yield AgentFinding.finding("SUSPECT.AGENT.INJECTION_TEXT.001", unit, ctx, start, end)
@@ -283,7 +294,19 @@ class InstructionFileFindings:
             yield AgentFinding.at_text(
                 "SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, endpoint
             )
-        yield from AgentTextFindings.intents(unit, ctx, text)
+
+    @staticmethod
+    def _hidden_and_rule_findings(
+        alarming: re.Match[str] | None,
+        concealed: bool,
+        ctx: ScanContext,
+        exfil: bool,
+        hidden: list[re.Match[bytes]],
+        injection: re.Match[str] | None,
+        text: str,
+        unit: FileUnit,
+    ) -> Iterator[Finding]:
+        """The findings that weigh the whole file: an instruction hidden from the reader by rendering, corroborated or not by what else the file does, and the Agent Threat Rules it matches."""
         # What the rendered page hides and the agent still reads (`detect/render_diff.py`).
         from cordon_scanner.analysis.shared.render_diff import HiddenInstruction
 
