@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import collections
+import itertools
 import json
 import subprocess
 from typing import Any, ClassVar
@@ -387,6 +388,31 @@ class Structure:
                     out.add(rel)
         return out
 
+    @staticmethod
+    def orphaned_docstrings() -> set[str]:
+        """Attribute docstrings cut off from what they document: a string statement in a module or
+        class body that is neither the body's first statement nor directly after an assignment.
+        Named by module and the docstring's first words, since its line moves with every edit."""
+        out = set()
+        for p in (REPO / "src" / "cordon_scanner").rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+            bodies = [tree.body] + [n.body for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+            for body in bodies:
+                for before, s in itertools.pairwise(body):
+                    if (
+                        isinstance(s, ast.Expr)
+                        and isinstance(s.value, ast.Constant)
+                        and isinstance(s.value.value, str)
+                        and not isinstance(before, ast.Assign | ast.AnnAssign)
+                    ):
+                        first = " ".join(s.value.value.split())[:60]
+                        out.add(
+                            f"{p.relative_to(REPO / 'src' / 'cordon_scanner').as_posix()}: {first}"
+                        )
+        return out
+
 
 class TestStructure:
     """The rules that keep the repository arranged (reviews 20-PACKAGE-STRUCTURE.md). Each list
@@ -528,6 +554,14 @@ class TestStructure:
         frozen = set(Structure.frozen()["file_relative_paths"])
         now = Structure.file_relative()
         assert not sorted(now - frozen), "use PackagePaths or support.ROOT"
+        assert not sorted(frozen - now), "these are gone: remove them from frozen"
+
+    def test_no_docstring_is_cut_off_from_what_it_documents(self) -> None:
+        # A move that leaves an attribute's docstring behind attaches it to nothing (or, worse, to
+        # the next reader's idea of what it describes): it belongs directly after its assignment.
+        frozen = set(Structure.frozen()["orphaned_docstrings"])
+        now = Structure.orphaned_docstrings()
+        assert not sorted(now - frozen), "put the docstring directly after what it documents"
         assert not sorted(frozen - now), "these are gone: remove them from frozen"
 
     #: What may not change without its owner's review: the rules here and what the guard pins.
