@@ -22,6 +22,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = next(
     (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
@@ -45,6 +46,9 @@ SESSIONS = (
     Session("npm", "cordon-scanner scan pkg:npm/express --online", 5200),
     Session("image", "cordon-scanner scan pkg:docker/nginx@1.27 --online", 6500),
 )
+
+
+PROMPT_MARK = "\u276f "  # the shell prompt the recordings are typed after
 
 
 class Grid:
@@ -84,12 +88,12 @@ class Palette:
     FG = "#d6e2de"
     DIM = "#6d827b"
     PROMPT = "#35c3b1"
-    FG_CODES = {
+    FG_CODES: ClassVar[dict[int, str]] = {
         30: "#0b1110", 31: "#ff6b7a", 32: "#8bd49c", 33: "#e8c468", 34: "#7aa2f7",
         35: "#c792ea", 36: "#56d4c4", 37: "#d6e2de", 90: "#4f625c", 91: "#ff8a8a",
         92: "#8bd49c", 93: "#f0d58a", 94: "#8fb3ff", 95: "#d7aefb", 96: "#7fe3d6", 97: "#f2f7f5",
     }  # fmt: skip
-    BG_CODES = {
+    BG_CODES: ClassVar[dict[int, str]] = {
         40: "#0b1110", 41: "#d42b3c", 42: "#3f8f5a", 43: "#e8c468", 44: "#3d5a99",
         45: "#8e5bb5", 46: "#56d4c4", 47: "#c9d4d0", 100: "#4f625c", 101: "#ff8a8a",
     }  # fmt: skip
@@ -173,7 +177,9 @@ class Screen:
         tail = re.search(r"\x1b(?:\[[0-9;?]*)?$", text)
         self.pending = tail.group(0) if tail else ""
         text = text[: tail.start()] if tail else text
-        for m in re.finditer(r"\x1b\[([0-9;?]*)([A-Za-z])|\x1b.|([\r\n\b\t])|([^\x1b\r\n\b\t]+)", text):
+        for m in re.finditer(
+            r"\x1b\[([0-9;?]*)([A-Za-z])|\x1b.|([\r\n\b\t])|([^\x1b\r\n\b\t]+)", text
+        ):
             params, final, ctrl, chars = m.groups()
             if chars:
                 for ch in chars:
@@ -189,7 +195,9 @@ class Screen:
             elif ctrl == "\t":
                 self.col = (self.col // 8 + 1) * 8
             elif final == "m":
-                self.style = self.style.apply([int(x) for x in (params or "0").split(";") if x.isdigit()])
+                self.style = self.style.apply(
+                    [int(x) for x in (params or "0").split(";") if x.isdigit()]
+                )
             elif final == "K":
                 line = self._line(self.row)
                 mode = int(params) if params and params.isdigit() else 0
@@ -221,7 +229,9 @@ class Recording:
         data = (RECORDINGS / f"{name}.typescript").read_bytes()
         start = data.index(b"\n") + 1  # the "Script started" header line
         out, at = [], start
-        decoder = codecs.getincrementaldecoder("utf-8")("replace")  # a character may span two writes
+        decoder = codecs.getincrementaldecoder("utf-8")(
+            "replace"
+        )  # a character may span two writes
         for line in (RECORDINGS / f"{name}.timing").read_text(encoding="utf-8").splitlines():
             delay, count = line.split()
             piece = data[at : at + int(count)]
@@ -247,7 +257,7 @@ class Timeline:
         screen = Screen()
         prompt = Style(fg=Palette.PROMPT, bold=True)
         screen.style = prompt
-        for ch in "❯ ":
+        for ch in PROMPT_MARK:
             screen.put(ch)
         screen.style = Style()
         screen.commit(t0)
@@ -279,7 +289,7 @@ class Timeline:
         last = screen.row if screen.col == 0 else screen.row + 1
         screen.row, screen.col = last, 0
         screen.style = prompt
-        for ch in "❯ ":
+        for ch in PROMPT_MARK:
             screen.put(ch)
         screen.style = Style()
         screen.commit(t)
@@ -304,7 +314,9 @@ class Svg:
         name = f"k{self.n}"
         self.n += 1
         body = "".join(f"{self.pct(t)}{{{prop}:{v}}}" for t, v in frames)
-        self.css.append(f"@keyframes {name}{{{body}}}.{name}{{animation:{name} {self.total}ms step-end infinite}}")
+        self.css.append(
+            f"@keyframes {name}{{{body}}}.{name}{{animation:{name} {self.total}ms step-end infinite}}"
+        )
         return name
 
     def visible(self, a: int, b: int) -> str:
@@ -319,7 +331,12 @@ class Svg:
         out: list[tuple[int, str, Style]] = []
         for col, (ch, st) in enumerate(cells):
             last = out[-1] if out else None
-            if last and last[2] == st and last[0] + len(last[1]) == col and (ch == "█") == (last[1][-1] == "█"):
+            if (
+                last
+                and last[2] == st
+                and last[0] + len(last[1]) == col
+                and (ch == "█") == (last[1][-1] == "█")
+            ):
                 out[-1] = (last[0], last[1] + ch, st)
             else:
                 out.append((col, ch, st))
@@ -335,7 +352,9 @@ class Svg:
                     f'<rect x="{x:.1f}" y="{y - Grid.LH + 4:.1f}" width="{len(text) * Grid.CW:.1f}" '
                     f'height="{Grid.LH:.0f}" rx="2" fill="{st.bg}"/>'
                 )
-            if set(text) == {"█"}:  # the wordmark's block letters: solid cells, as a terminal draws them
+            if set(text) == {
+                "█"
+            }:  # the wordmark's block letters: solid cells, as a terminal draws them
                 rects.append(
                     f'<rect x="{x:.1f}" y="{y - Grid.LH + 5:.1f}" width="{len(text) * Grid.CW + 0.6:.1f}" '
                     f'height="{Grid.LH + 0.6:.1f}" fill="{st.fg or Palette.FG}"/>'
@@ -357,7 +376,7 @@ class Svg:
     def session(self, p: Played) -> str:
         out = [f'<g class="{self.visible(p.start, p.end)}">']
         frames = [(t, f"translateY({-top * Grid.LH}px)") for t, top in p.scroll]
-        frames = [(0, "translateY(0px)")] + frames if frames[0][0] > 0 else frames
+        frames = [(0, "translateY(0px)"), *frames] if frames[0][0] > 0 else frames
         out.append(f'<g class="{self.keyed(frames, "transform")}">')
         top_y = Grid.BAR + Grid.PAD
         for r in sorted(p.history):
@@ -374,7 +393,10 @@ class Svg:
 
     def cursor(self, p: Played, top_y: float) -> str:
         """A block cursor that follows the typing, hidden while the scanner writes."""
-        place = [(t, f"translate({col * Grid.CW:.1f}px,{row * Grid.LH}px)") for t, row, col, _ in p.cursor]
+        place = [
+            (t, f"translate({col * Grid.CW:.1f}px,{row * Grid.LH}px)")
+            for t, row, col, _ in p.cursor
+        ]
         shown = [(t, "1" if on else "0") for t, _, _, on in p.cursor]
         if place[0][0] > 0:
             place.insert(0, (0, place[0][1]))
@@ -410,7 +432,7 @@ class Render:
             'role="img" aria-label="cordon-scanner in a terminal: its home screen, then a repository, an npm '
             'package and a container image scanned, recorded from the scanner itself">'
             "<title>cordon-scanner, recorded</title>"
-            "<style>text{font-family:ui-monospace,SFMono-Regular,\"SF Mono\",Menlo,Consolas,"
+            '<style>text{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,'
             f'"Liberation Mono",monospace;font-size:{Grid.FONT}px}}g{{transform-box:view-box}}'
             + "".join(svg.css)
             + "</style>"

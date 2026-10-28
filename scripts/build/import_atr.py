@@ -56,12 +56,12 @@ from typing import Any
 
 import yaml
 
-ROOT = next((p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None) or sys.exit(
-    "run this from inside the Cordon repository"
-)
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel.malware import atr
+from cordon_scanner.intel.malware import atr  # noqa: E402 (after the checkout's src is on the path)
 
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
 TARGET = DATA / "atr-rules.json.gz"
@@ -284,9 +284,7 @@ class AtrImport:
     @staticmethod
     def instruction_samples(corpus: Path) -> list[str]:
         """The calibration half's instruction files, as text."""
-        sys.path[:0] = [
-            str(ROOT / "bench" / d) for d in ("", "suites", "tools")
-        ]
+        sys.path[:0] = [str(ROOT / "bench" / d) for d in ("", "suites", "tools")]
         from fetch_agent_configs import INSTRUCTION_FILES, AgentConfigCorpus
 
         samples = []
