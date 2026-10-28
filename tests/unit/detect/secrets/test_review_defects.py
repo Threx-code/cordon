@@ -16,7 +16,7 @@ from typing import ClassVar
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.binary.binary import BinaryDetector
+from cordon_scanner.detect.binary.detector import BinaryDetector
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.text_position import TextPosition
@@ -3621,13 +3621,13 @@ class TestTheSecondPassOverTheCorpus:
         """Jest's `website/static/img/favicon.png` is a PSD. The mismatch check could
         only say "not png image" because PSD was not in the format table, and an image
         saved in the wrong format is a naming error whichever direction it goes."""
-        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
 
         psd = b"8BPS\x00\x01" + b"\x00" * 64
         assert BinaryDetector.mismatch("favicon.png", BinaryDetector.identify(psd)) is None
 
     def test_an_executable_named_png_still_is_not(self) -> None:
-        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
 
         assert BinaryDetector.mismatch("favicon.png", BinaryDetector.identify(ELF)) is not None
 
@@ -13094,13 +13094,13 @@ class TestStartupFilesRunAtInstall:
 
 class TestExecutablesNamedAsSource:
     def test_an_elf_named_py_contradicts_its_name(self) -> None:
-        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
 
         found = BinaryDetector.identify(b"\x7fELF\x02\x01\x01" + b"\x00" * 64)
         assert "executable" in (BinaryDetector.mismatch("pkg/_build.py", found) or "")
 
     def test_a_shell_script_named_txt_is_left_alone(self) -> None:
-        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
 
         found = BinaryDetector.identify(b"#!/bin/sh\necho hi\n")
         assert BinaryDetector.mismatch("notes.txt", found) is None
@@ -13185,18 +13185,18 @@ class TestRegistryAdvisoriesAreAboutRegistryPackages:
 
 class TestBinaryDataUnderASourceName:
     def test_nul_bytes_in_a_python_file_contradict_its_name(self) -> None:
-        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
 
         assert BinaryDetector.binary_source("pkg/_build.py", b"/* \x00 */\n\x7fELF\x02") is not None
 
     def test_utf16_text_is_not_binary_data(self) -> None:
-        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
 
         assert BinaryDetector.binary_source("run.ps1", "Write-Host hi".encode("utf-16")) is None
         assert BinaryDetector.binary_source("a.py", "﻿print(1)".encode("utf-16")) is None
 
     def test_formats_that_carry_nuls_are_not_judged(self) -> None:
-        from cordon_scanner.detect.binary.binary import BinaryDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
 
         assert BinaryDetector.binary_source("data.txt", b"a\x00b") is None
 

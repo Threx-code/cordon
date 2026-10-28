@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cli.main import CommandLine
-from cordon_scanner.detect.secrets.secret_history import (
+from cordon_scanner.detect.secrets.history import (
     HISTORY_INCOMPLETE_RULE,
     LIVE_RULE,
     REVOKED_RULE,
@@ -296,12 +296,12 @@ class TestLiveness:
         assert SecretLiveness._slack(200, body) is verdict
 
     def test_the_check_ceiling_is_respected(self, tmp_path, monkeypatch) -> None:
-        from cordon_scanner.detect.secrets import secret_history
+        from cordon_scanner.detect.secrets import history
 
         scan = HistoryKit.scan(tmp_path)
         HistoryKit.repository(tmp_path, HistoryKit.token("p"))
         findings = scan.run()
-        monkeypatch.setattr(secret_history, "MAX_VERIFICATIONS", 0)
+        monkeypatch.setattr(history, "MAX_VERIFICATIONS", 0)
         added = SecretLiveness(opener=lambda r: (200, b"")).verify(
             findings, SecretValues(tmp_path, scan.blob_contents)
         )

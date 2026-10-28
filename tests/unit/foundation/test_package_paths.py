@@ -14,7 +14,7 @@ from typing import ClassVar
 import cordon_scanner
 from cordon_scanner.decide import intent, verdict
 from cordon_scanner.detect.agents.mcp_servers import description_model
-from cordon_scanner.detect.binary import binary_imports, rule_files
+from cordon_scanner.detect.binary import imports, rule_files
 from cordon_scanner.detect.infra import generated_policies
 from cordon_scanner.engine import registry
 from cordon_scanner.foundation.paths import PackagePaths
@@ -43,7 +43,7 @@ class TestPackagePaths:
             assert path.is_file(), path
         folders = [
             generated_policies.DATA_DIR,
-            binary_imports.ImportCapabilities.DATA,
+            imports.ImportCapabilities.DATA,
             real.DATA_DIR,
             advisories.DATA_DIR,
         ]

@@ -31,15 +31,15 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
 from cordon_scanner.analysis.python.py_flow_facts import PythonFlowFacts
-from cordon_scanner.detect.binary.binary_features import BinaryFeatures
-from cordon_scanner.detect.code.code_features import CodeFeatures
+from cordon_scanner.detect.binary.features import BinaryFeatures
+from cordon_scanner.detect.code.features import CodeFeatures
 from cordon_scanner.foundation.files.windows import BytesWindows, WindowSourceChanged
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from cordon_scanner.detect.base import FileUnit, ScanContext
-    from cordon_scanner.detect.code.code_features import Source
+    from cordon_scanner.detect.code.features import Source
 
 
 class ReachedFlows:

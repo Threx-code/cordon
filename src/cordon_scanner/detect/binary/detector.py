@@ -691,7 +691,7 @@ class BinaryDetector(BaseDetector):
         self, unit: FileUnit, ctx: ScanContext, content: FileContent, found: Format
     ) -> Iterable[Finding]:
         """What the binary can do, from the calls its own import table names (G12)."""
-        from cordon_scanner.detect.binary.binary_imports import ImportCapabilities, ImportReader
+        from cordon_scanner.detect.binary.imports import ImportCapabilities, ImportReader
 
         table = ImportReader.read(content.raw)
         if table is None:

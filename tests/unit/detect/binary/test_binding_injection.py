@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.binary.binary_imports import ImportCapabilities, ImportTable
+from cordon_scanner.detect.binary.imports import ImportCapabilities, ImportTable
 
 INJECT = ("VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread")
 

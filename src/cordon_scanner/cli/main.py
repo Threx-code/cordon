@@ -759,7 +759,7 @@ class CommandLine:
         if not getattr(args, "history", False) and not getattr(args, "verify_secrets", False):
             return result
         from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.secrets.secret_history import (
+        from cordon_scanner.detect.secrets.history import (
             HistorySecretScan,
             SecretLiveness,
             SecretValues,
