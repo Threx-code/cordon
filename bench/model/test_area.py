@@ -9,10 +9,14 @@ from bench.model import area
 
 class TestTrainingListSha:
     def test_order_and_dupes_do_not_matter(self):
-        assert area.Contract.training_list_sha(["b", "a", "a"]) == area.Contract.training_list_sha(["a", "b"])
+        assert area.Contract.training_list_sha(["b", "a", "a"]) == area.Contract.training_list_sha(
+            ["a", "b"]
+        )
 
     def test_different_set_different_sha(self):
-        assert area.Contract.training_list_sha(["a", "b"]) != area.Contract.training_list_sha(["a", "c"])
+        assert area.Contract.training_list_sha(["a", "b"]) != area.Contract.training_list_sha(
+            ["a", "c"]
+        )
 
     def test_prefixed(self):
         assert area.Contract.training_list_sha(["a"]).startswith("sha256:")

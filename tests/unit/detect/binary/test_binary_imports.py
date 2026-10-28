@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.binary.binary_imports import (
+from cordon_scanner.detect.binary.imports import (
     ImportCapabilities,
     ImportReader,
     ImportTable,
@@ -179,9 +179,9 @@ class TestReaders:
             ImportReader.read(data[:cut])
 
     def test_symbol_counts_are_capped(self, monkeypatch) -> None:
-        from cordon_scanner.detect.binary import binary_imports
+        from cordon_scanner.detect.binary import imports
 
-        monkeypatch.setattr(binary_imports, "MAX_SYMBOLS", 3)
+        monkeypatch.setattr(imports, "MAX_SYMBOLS", 3)
         table = ImportReader.read(Build.elf([f"f{i}" for i in range(10)], []))
         assert table is not None and len(table.symbols) <= 3
 

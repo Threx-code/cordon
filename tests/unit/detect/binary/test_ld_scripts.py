@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.detect.binary.binary import BinaryDetector
+from cordon_scanner.detect.binary.detector import BinaryDetector
 
 
 class TestLdScripts:

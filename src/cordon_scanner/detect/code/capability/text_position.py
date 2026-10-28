@@ -193,8 +193,25 @@ class TextPosition:
         $
         """,
     )
+    """Asking whether a tool exists, which is not using it.
+
+    vLLM's `run-benchmarks.sh` opens with
+    `(which wget && which curl) || (apt-get update && apt-get install -y wget curl)`,
+    and the egress primitive matched the word `curl`. With `bash -c` on another line
+    that was `MALWARE.DROPPER.001` at CRITICAL, and pm2's `setup.deb.sh` does the same
+    thing with `if command -v curl > /dev/null`.
+
+    Anchored at the end, so it is the text immediately before the match that decides:
+    `which curl` is a probe and `curl https://x/y` one line later is still a fetch."""
 
     FETCH_COMMAND = re.compile(rb"(?i)\b(?:curl|wget|nc|scp|rsync|Invoke-WebRequest)\b")
+    """The commands an egress pattern is looking for, so their position can be found.
+
+    The shell egress patterns are anchored at the start of the line, with a
+    comment-excluding prefix before the command name, which means the MATCH begins at
+    the line start and says nothing about what sits
+    immediately before the command. Rather than rewrite six patterns in the pack and
+    lose their own comment guard, the commands are located again here."""
 
     DECLARATION = re.compile(
         rb"""(?ix)
@@ -216,6 +233,11 @@ class TextPosition:
         $
         """,
     )
+    """The keywords that make what follows a definition rather than a call.
+
+    `google/zx` exports a function called `fetch`, and the egress pattern matched it:
+    `export function fetch(` was that repository's only blocking finding. Defining a
+    name is not using the thing it is named after."""
 
     SIGNATURE_ARGUMENT = re.compile(
         rb"""(?x)
@@ -226,8 +248,15 @@ class TextPosition:
         )
         """,
     )
+    """A typed parameter list, which only a declaration has.
+
+    Tailwind's integration helpers declare
+    `exec(command: string, options?: ChildProcessOptions): Promise<string>` on an
+    interface. A call passes values; `name: Type` in the parentheses is a signature, and
+    so is an empty list followed by a return type."""
 
     OPEN_PAREN_ONLY = re.compile(rb"^\([ \t]*(?://.*)?$")
+    """An opening parenthesis that ends its line, so the parameters are below it."""
 
     CONTINUED_PARAMETER = re.compile(
         rb"""(?x)
@@ -236,8 +265,13 @@ class TextPosition:
         [A-Za-z_$][\w$]{0,40}[ \t]{0,4}\?{0,1}[ \t]{0,4}:[ \t]{0,4}[A-Za-z_$\[({]
         """,
     )
+    """`name: Type` opening a line: a parameter in a signature laid out one to a line."""
 
     SIGNATURE_LOOKAHEAD = 3
+    """How many lines below an open parenthesis to look for a typed parameter.
+
+    Three. A signature that has not named a typed parameter within three lines of
+    its parenthesis is not being recognised from its first line either."""
 
     @staticmethod
     def is_declaration(content: FileContent, offset: int, end: int) -> bool:

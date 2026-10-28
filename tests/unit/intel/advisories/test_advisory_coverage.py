@@ -245,7 +245,7 @@ class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
     """ "Upgrade to a version the advisory does not name" is true and useless."""
 
     def _advice(self, ecosystem: str, name: str, version: str) -> str:
-        from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+        from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
         from cordon_scanner.foundation.results import Dependency
 
         dependency = Dependency(

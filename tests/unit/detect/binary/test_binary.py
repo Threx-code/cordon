@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
-from cordon_scanner.detect.binary.binary import BinaryDetector
+from cordon_scanner.detect.binary.detector import BinaryDetector
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Category, Severity

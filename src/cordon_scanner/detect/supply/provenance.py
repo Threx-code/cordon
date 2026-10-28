@@ -33,7 +33,8 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.supply.registry import NETWORK_CAVEAT, RegistryEvidence
+from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
+from cordon_scanner.detect.supply.registries.findings import NETWORK_CAVEAT
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -50,11 +51,12 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.intel.provenance import attest
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.provenance.openpgp import Keyring
+    from cordon_scanner.intel.registries.registry_client import PackageFacts
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
@@ -173,7 +175,7 @@ class ProvenanceDetector(BaseDetector):
         # lockfile is the slowest thing the scanner can be asked to do. Direct
         # dependencies first, so a truncated pass spends the budget where
         # provenance is most likely to be claimed.
-        from cordon_scanner.detect.supply.registry import MAX_QUERIES, RegistryDetector
+        from cordon_scanner.detect.supply.registries.detector import MAX_QUERIES, RegistryDetector
         from cordon_scanner.ecosystems.infra.image import ImageEcosystem
 
         candidates = [
@@ -328,6 +330,17 @@ class ProvenanceDetector(BaseDetector):
             )
             return
 
+        yield from self._verdict(bundles, ctx, dependency, digest, observed)
+
+    def _verdict(
+        self,
+        bundles: tuple[str, ...],
+        ctx: ScanContext,
+        dependency: Dependency,
+        digest: tuple[str, str],
+        observed: PackageFacts,
+    ) -> Iterator[Finding]:
+        """The findings the attestation bundles support: a source repository renamed since it was attested, a verified attestation, or one that is present and does not verify."""
         source = self._source_identity(observed.repository)
         algorithm, digest_hex = digest
 

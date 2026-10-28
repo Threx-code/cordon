@@ -58,10 +58,10 @@ class DocumentTruth:
 
     @staticmethod
     def iac(kind: str) -> int:
-        from cordon_scanner.detect.infra import iac_policies
+        from cordon_scanner.detect.infra import generated_policies
 
-        generated = len(iac_policies.GeneratedPolicies.generated_policies())
-        total = len(iac_policies.GeneratedPolicies.all_policies())
+        generated = len(generated_policies.GeneratedPolicies.generated_policies())
+        total = len(generated_policies.GeneratedPolicies.all_policies())
         return {"total": total, "generated": generated, "curated": total - generated}[kind]
 
     @staticmethod

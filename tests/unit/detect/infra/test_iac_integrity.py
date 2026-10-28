@@ -15,8 +15,8 @@ import json
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.infra import iac_policies
-from cordon_scanner.detect.infra.iac_policies import (
+from cordon_scanner.detect.infra import generated_policies
+from cordon_scanner.detect.infra.generated_policies import (
     DATA_DIR,
     GENERATED_DIGESTS,
     GENERATED_META,
@@ -33,13 +33,13 @@ class IacIntegrityFixtures:
     @pytest.fixture
     def clean_caches(self):
         """The loaders are process-cached, which these tests deliberately defeat."""
-        iac_policies.GeneratedPolicies.generated_rows.cache_clear()
-        iac_policies.GeneratedPolicies.generated_meta.cache_clear()
-        iac_policies._REFUSED.clear()
+        generated_policies.GeneratedPolicies.generated_rows.cache_clear()
+        generated_policies.GeneratedPolicies.generated_meta.cache_clear()
+        generated_policies._REFUSED.clear()
         yield
-        iac_policies.GeneratedPolicies.generated_rows.cache_clear()
-        iac_policies.GeneratedPolicies.generated_meta.cache_clear()
-        iac_policies._REFUSED.clear()
+        generated_policies.GeneratedPolicies.generated_rows.cache_clear()
+        generated_policies.GeneratedPolicies.generated_meta.cache_clear()
+        generated_policies._REFUSED.clear()
 
 
 class TestTheManifestShips(IacIntegrityFixtures):
@@ -73,10 +73,10 @@ class TestAnEditedSetIsRefused(IacIntegrityFixtures):
         (tampered / GENERATED_DIGESTS).write_text(
             (DATA_DIR / GENERATED_DIGESTS).read_text(encoding="utf-8"), encoding="utf-8"
         )
-        monkeypatch.setattr(iac_policies, "DATA_DIR", tampered)
+        monkeypatch.setattr(generated_policies, "DATA_DIR", tampered)
 
-        assert iac_policies.GeneratedPolicies.generated_rows() == {}
-        assert GENERATED_NAME in iac_policies.GeneratedPolicies.refused_files()
+        assert generated_policies.GeneratedPolicies.generated_rows() == {}
+        assert GENERATED_NAME in generated_policies.GeneratedPolicies.refused_files()
 
     def test_the_scan_reports_the_refusal_and_calls_itself_partial(
         self, tmp_path, monkeypatch, clean_caches
@@ -88,7 +88,7 @@ class TestAnEditedSetIsRefused(IacIntegrityFixtures):
         (tampered / GENERATED_DIGESTS).write_text(
             json.dumps({GENERATED_NAME: "0" * 64}), encoding="utf-8"
         )
-        monkeypatch.setattr(iac_policies, "DATA_DIR", tampered)
+        monkeypatch.setattr(generated_policies, "DATA_DIR", tampered)
 
         project = tmp_path / "repo"
         project.mkdir()
@@ -102,9 +102,9 @@ class TestAnEditedSetIsRefused(IacIntegrityFixtures):
         """A checkout that never ran the generator has neither file."""
         empty = tmp_path / "data"
         empty.mkdir()
-        monkeypatch.setattr(iac_policies, "DATA_DIR", empty)
-        assert iac_policies.GeneratedPolicies.generated_rows() == {}
-        assert iac_policies.GeneratedPolicies.refused_files() == ()
+        monkeypatch.setattr(generated_policies, "DATA_DIR", empty)
+        assert generated_policies.GeneratedPolicies.generated_rows() == {}
+        assert generated_policies.GeneratedPolicies.refused_files() == ()
 
 
 class TestAStaleSetSaysSo(IacIntegrityFixtures):
@@ -116,7 +116,7 @@ class TestAStaleSetSaysSo(IacIntegrityFixtures):
         meta = json.loads((DATA_DIR / GENERATED_META).read_text(encoding="utf-8"))
         meta["built_at"] = "2020-01-01T00:00:00Z"
         (aged / GENERATED_META).write_text(json.dumps(meta), encoding="utf-8")
-        monkeypatch.setattr(iac_policies, "DATA_DIR", aged)
+        monkeypatch.setattr(generated_policies, "DATA_DIR", aged)
 
         project = tmp_path / "repo"
         project.mkdir()
@@ -134,7 +134,9 @@ class TestAStaleSetSaysSo(IacIntegrityFixtures):
         from cordon_scanner.detect.infra.iac import STALE_AFTER_DAYS
 
         built = datetime.fromisoformat(
-            str(iac_policies.GeneratedPolicies.generated_meta()["built_at"]).replace("Z", "+00:00")
+            str(generated_policies.GeneratedPolicies.generated_meta()["built_at"]).replace(
+                "Z", "+00:00"
+            )
         )
         assert (datetime.now(UTC) - built).days <= STALE_AFTER_DAYS
 

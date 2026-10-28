@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.binary.binary import BinaryDetector
+from cordon_scanner.detect.binary.detector import BinaryDetector
 from cordon_scanner.foundation.config.settings import Config
 from kits.imagekit import DEBIAN_RELEASE, ImageKit
 

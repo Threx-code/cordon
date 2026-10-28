@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from cordon_scanner.detect.base import FileUnit
-from cordon_scanner.detect.code.code_features import CodeFeatures
+from cordon_scanner.detect.code.features import CodeFeatures
 from cordon_scanner.detect.code.reached_flows import ReachedFlows
 from cordon_scanner.foundation.content import FileContent
 

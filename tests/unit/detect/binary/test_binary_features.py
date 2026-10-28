@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from cordon_scanner.detect.binary.binary_features import BinaryFeatures
+from cordon_scanner.detect.binary.features import BinaryFeatures
 
 ELF = b"\x7fELF\x02\x01\x01" + b"\x00" * 57
 PE = b"MZ" + b"\x00" * 62

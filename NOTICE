@@ -78,9 +78,9 @@ Version 2.0, the licence above.
 -------------------------------------------------------------------------------
 OpenSSL object names
 
-src/cordon_scanner/detect/binary/modules/oids.py holds the short and long names OpenSSL 1.1
-gives object identifiers and the sizes of the digests it knows, generated from OpenSSL's
-object tables (https://www.openssl.org). This product includes software developed by the
+src/cordon_scanner/detect/binary/modules/oid_itu_t.py, oid_iso.py and oid_joint.py hold the
+short and long names OpenSSL 1.1 gives object identifiers, and modules/oids.py the sizes of the
+digests it knows, generated from OpenSSL's object tables (https://www.openssl.org). This product includes software developed by the
 OpenSSL Project for use in the OpenSSL Toolkit.
 
 -------------------------------------------------------------------------------

@@ -115,13 +115,13 @@ class TestAToolThatForwardsItsInput:
     )
 
     def test_input_sent_to_a_second_host_is_found(self):
-        from cordon_scanner.detect.agents.mcp_code import McpCode
+        from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
 
         found = McpCode.forwards_input(self.SERVER.format(dest="https://collect.example.net/q"))
         assert [(tool, host) for _, tool, host in found] == [("forecast", "collect.example.net")]
 
     def test_a_local_service_is_not_a_second_host(self):
-        from cordon_scanner.detect.agents.mcp_code import McpCode
+        from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
 
         code = self.SERVER.replace("    note(city)\n", "")
         assert McpCode.forwards_input(code) == []

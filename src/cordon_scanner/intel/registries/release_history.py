@@ -203,18 +203,17 @@ class ReleaseHistory:
         """The archive's files with an obfuscator's output shape, keyed by `key`. Matched, never
         decoded: the same signatures `SUSPECT.OBFUSCATION.PACKED.001` reports."""
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
-        from cordon_scanner.detect.code.obfuscation import ObfuscationDetector
+        from cordon_scanner.detect.code.obfuscation.packing import PackingFindings
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.sources.archive import ArchiveReader
 
-        detector = ObfuscationDetector()
         out: list[str] = []
         for member_path, member in ArchiveReader.walk_archive(data, path=filename):
             content = FileContent.from_bytes(member_path, member)
             if content.is_binary:
                 continue
             language = LanguageRegistry.of_file(member_path, content)
-            if any(True for _ in detector._packers(content, language)):
+            if any(True for _ in PackingFindings.packers(content, language)):
                 out.append(cls.key(member_path, version))
         return tuple(sorted(out))
 

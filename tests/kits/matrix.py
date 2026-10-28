@@ -169,7 +169,7 @@ class CoverageMatrix:
         and the provenance, which are what a reader actually wants from them, fit in
         a paragraph.
         """
-        from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
+        from cordon_scanner.detect.infra.generated_policies import GeneratedPolicies
 
         return {policy.id for policy in GeneratedPolicies.generated_policies()}
 
@@ -224,7 +224,7 @@ class CoverageMatrix:
         """The generated infrastructure policies, by family, with their provenance."""
         from collections import Counter
 
-        from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
+        from cordon_scanner.detect.infra.generated_policies import GeneratedPolicies
 
         policies = GeneratedPolicies.generated_policies()
         if not policies:

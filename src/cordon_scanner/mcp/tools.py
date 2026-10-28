@@ -541,9 +541,9 @@ class PackageTools:
     def shell_risk(command: str) -> ScanSummary | None:
         """What the scanner's agent-command classifier says about the command as a whole: piping a
         download into a shell, decoding and running, and the other fetch-and-run shapes."""
-        from cordon_scanner.detect.agents import agent_config
+        from cordon_scanner.detect.agents import configuration
 
-        verdict = agent_config.CommandClassifier.classify(command)
+        verdict = configuration.CommandClassifier.classify(command)
         if verdict is None:
             return None
         finding = {
@@ -959,7 +959,7 @@ class AgentTools:
 
     @staticmethod
     def check_mcp_tools(settings: Settings, args: dict[str, Any], token: CancelToken) -> Outcome:
-        from cordon_scanner.detect.agents.agents import McpServerSource
+        from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
 
         tools = args.get("tools")
         if not isinstance(tools, list) or not tools or len(tools) > 1000:
