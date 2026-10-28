@@ -42,6 +42,7 @@ from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
 from cordon_scanner.cli.commands.sbom import SbomCommand
 from cordon_scanner.cli.commands.scan.enrichment import ScanEnrichment
+from cordon_scanner.cli.commands.scan.organisation_policy import OrganisationPolicy
 from cordon_scanner.cli.commands.scan.output import ScanOutput
 from cordon_scanner.cli.dependency_payload import DependencyPayload
 from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
@@ -57,7 +58,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from cordon_scanner.engine.progress import Progress
-    from cordon_scanner.foundation.results import ScanResult
+    from cordon_scanner.foundation.models import Finding
     from cordon_scanner.sources.base import FileSource
 
 EPILOG = f"""\
@@ -685,7 +686,7 @@ class CommandLine:
                     "--cloud-policy and --policy both name the organisation policy",
                     hint="Use one: the cloud bundle is the organisation policy when --cloud-policy is set.",
                 )
-            cloud_bundle, policy_path = cls._cloud_policy(args)
+            cloud_bundle, policy_path = OrganisationPolicy.fetch(args)
 
         config = ConfigResolver.resolve(
             root=target if target.is_dir() else target.parent,
@@ -695,7 +696,7 @@ class CommandLine:
             **overrides,
         )
         if cloud_bundle is not None and cloud_bundle.suppressions:
-            config = cls._with_cloud_suppressions(config, cloud_bundle.suppressions)
+            config = OrganisationPolicy.add_suppressions(config, cloud_bundle.suppressions)
 
         if args.no_detector:
             detectors = dict(config.detectors)
@@ -872,70 +873,7 @@ class CommandLine:
         if getattr(args, "upload", False):
             # The upload carries the verdict as it is; Cordon applies the repository's mode too.
             ScanOutput.upload(args, result, verdict, target)
-        return cls._gated_exit(verdict, cloud_bundle, result, quiet=args.quiet)
-
-    @classmethod
-    def _gated_exit(cls, verdict: Any, bundle: Any, result: ScanResult, *, quiet: bool) -> int:
-        """The exit code the pipeline sees: the verdict's, unless the organisation's bundle puts
-        this repository's gate in `observe` or `warn`, where a failing verdict is reported and
-        recorded but does not fail the build. Without a bundle the verdict stands unchanged."""
-        code = int(verdict.exit_code)
-        if bundle is None or code == int(ExitCode.CLEAN):
-            return code
-        from cordon_scanner.foundation.targets import TargetName
-
-        key = TargetName.of(result)
-        mode = bundle.gate_mode(key)
-        if mode not in ("observe", "warn"):
-            return code
-        if not quiet:
-            print(
-                f"{cls.PROGRAM}: {key} is in {mode} mode: the verdict is recorded, the build is not failed",
-                file=sys.stderr,
-            )
-        return int(ExitCode.CLEAN)
-
-    @classmethod
-    def _cloud_policy(cls, args: argparse.Namespace) -> tuple[Any, str | None]:
-        """Fetch and verify the organisation's bundle; no bundle, no scan."""
-        from cordon_scanner.cloud import CloudError, auth, policy
-        from cordon_scanner.intel.malware.feed import FeedClient
-
-        try:
-            credentials = auth.CloudAuth.current(args.cloud_url)
-            bundle = policy.CloudPolicy.fetch(
-                credentials, offline=bool(args.offline) or FeedClient.offline_requested()
-            )
-        except CloudError as exc:
-            raise ConfigError(
-                f"the organisation policy could not be applied: {exc}",
-                hint=f"Run `{cls.PROGRAM} login`, or connect once so a current bundle is cached.",
-            ) from exc
-        if args.verbose:
-            print(
-                f"{cls.PROGRAM}: organisation policy v{bundle.version} ({bundle.source}, "
-                f"key {bundle.key_id}, {len(bundle.suppressions)} approved suppression(s))",
-                file=sys.stderr,
-            )
-        path = policy.CloudPolicy.materialise(bundle)
-        return bundle, str(path) if path is not None else None
-
-    @staticmethod
-    def _with_cloud_suppressions(config: Any, suppressions: tuple[Any, ...]) -> Any:
-        """Add the organisation's approved suppressions, held to the same rules as any other."""
-        from cordon_scanner.foundation.config.parser import ConfigParser
-
-        problems = [
-            f"{s.rule} at {s.path}: {problem}"
-            for s in suppressions
-            if (problem := ConfigParser._suppression_violation(s, config.constraints))
-        ]
-        if problems:
-            raise ConfigError(
-                "suppressions in the organisation's policy bundle are not acceptable:\n  - "
-                + "\n  - ".join(problems)
-            )
-        return config.with_overrides(suppressions=(*config.suppressions, *suppressions))
+        return OrganisationPolicy.exit_code(verdict, cloud_bundle, result, quiet=args.quiet)
 
     @staticmethod
     def _baseline_notice(silenced: Sequence[Finding], path: Path) -> Finding:
