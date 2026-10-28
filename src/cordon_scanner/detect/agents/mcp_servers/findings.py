@@ -127,7 +127,7 @@ class McpServerFindings:
                 chain = AgentSemantics.precise(description)
                 if chain is not None:
                     reason = f"gives {AgentSemantics.explain(chain)}"
-            # The learned reading (`detect/mcp_model.py`): poisoning written as ordinary prose,
+            # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as ordinary prose,
             # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
             # reported for review between `warn` and `block`.
             score = McpDescriptionModel.score(description)
