@@ -639,6 +639,39 @@ class NuGetEcosystem(BaseEcosystem):
         if build is not None:
             layers.append((build, " (Directory.Build.props)"))
         layers.append((own, ""))
+        self._layer_references(
+            layers, content, declared, properties, managed, versions, test_project, mapping
+        )
+        NuGetEcosystem._global_references(central, managed, properties, declared)
+        return Manifest(
+            path=content.path,
+            ecosystem=self.id,
+            name=properties.get("PackageId") or None,
+            version=properties.get("Version") or None,
+            dependencies=tuple(declared),
+            source_patterns={p: s for p, s in mapping.items() if "nuget.org" not in s.lower()},
+            # Transitive pinning: every central version also pins the packages this project
+            # only reaches transitively. One it references directly simply uses the version.
+            overrides={
+                name: version
+                for name, version in central_versions.items()
+                if pinning and version and name.lower() not in {d.name.lower() for d in declared}
+            },
+            override_origin=central_path if pinning else None,
+        )
+
+    def _layer_references(
+        self,
+        layers: list[tuple[MSBuildFile, str]],
+        content: FileContent,
+        declared: list[DeclaredDependency],
+        properties: dict[str, str],
+        managed: bool,
+        versions: dict[str, str],
+        test_project: bool,
+        mapping: dict[str, str],
+    ) -> None:
+        """The package and project references each layer declares, mapped to their sources."""
         for layer, origin in layers:
             for item in layer.items:
                 if item.kind == "ProjectReference":
@@ -678,6 +711,16 @@ class NuGetEcosystem(BaseEcosystem):
                         source=mapped,
                     )
                 declared.append(reference)
+
+    @staticmethod
+    def _global_references(
+        central: MSBuildFile | None,
+        managed: bool,
+        properties: dict[str, str],
+        declared: list[DeclaredDependency],
+    ) -> None:
+        """With central package management, the GlobalPackageReference items every project gets, as
+        build dependencies."""
         if central is not None and managed:
             for item in central.items:
                 if item.kind == "GlobalPackageReference" and item.include:
@@ -693,22 +736,6 @@ class NuGetEcosystem(BaseEcosystem):
                             platform=MSBuildConditions.phrase(item.condition),
                         )
                     )
-        return Manifest(
-            path=content.path,
-            ecosystem=self.id,
-            name=properties.get("PackageId") or None,
-            version=properties.get("Version") or None,
-            dependencies=tuple(declared),
-            source_patterns={p: s for p, s in mapping.items() if "nuget.org" not in s.lower()},
-            # Transitive pinning: every central version also pins the packages this project
-            # only reaches transitively. One it references directly simply uses the version.
-            overrides={
-                name: version
-                for name, version in central_versions.items()
-                if pinning and version and name.lower() not in {d.name.lower() for d in declared}
-            },
-            override_origin=central_path if pinning else None,
-        )
 
     def _reference(
         self,
