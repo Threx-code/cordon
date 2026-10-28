@@ -71,7 +71,7 @@
   "cli/dependency_payload": "cli/dependency_payload",
   "cli/commands/deps": "cli/commands/deps",
   "cli/help": "cli/help",
-  "cli/incoming": "cli/incoming",
+  "cli/commands/incoming": "cli/commands/incoming",
   "cli/main": "cli/main",
   "cli/parser": "cli/parser",
   "cli/progress": "cli/progress",
