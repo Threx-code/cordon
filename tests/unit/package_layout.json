@@ -140,7 +140,7 @@
   "detect/infra/iac_policies": "detect/infra/iac_policies",
   "detect/secrets/secret_history": "detect/secrets/secret_history",
   "detect/secrets/secrets": "detect/secrets/secrets",
-  "detect/secrets/test_material": "detect/secrets/test_material",
+  "analysis/shared/test_material": "analysis/shared/test_material",
   "detect/source/submodules": "detect/source/submodules",
   "detect/source/vcs": "detect/source/vcs",
   "detect/supply/advisory": "detect/supply/advisory",

@@ -32,10 +32,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.analysis.shared.test_material import SCANNER_CONFIG_PATHS, TEST_MATERIAL_PATHS
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets.test_material import SCANNER_CONFIG_PATHS, TEST_MATERIAL_PATHS
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
