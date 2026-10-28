@@ -15,7 +15,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.supply.manifest_confusion import RULE_ID, ManifestConfusion
+from cordon_scanner.detect.supply.manifests.confusion import RULE_ID, ManifestConfusion
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 from cordon_scanner.sources.previous import Identity, PreviousRelease

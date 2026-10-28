@@ -17,7 +17,7 @@ from cordon_scanner.detect.infra.config_files import ConfigDetector
 from cordon_scanner.detect.secrets.secrets import SecretDetector
 from cordon_scanner.detect.supply.dependency import DependencyDetector
 from cordon_scanner.detect.supply.lockfile import LockfileDetector
-from cordon_scanner.detect.supply.manifest import ManifestDetector
+from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent

@@ -735,7 +735,7 @@ class CommandLine:
         from dataclasses import replace as _replace
 
         from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.supply.manifest_confusion import ManifestConfusion
+        from cordon_scanner.detect.supply.manifests.confusion import ManifestConfusion
         from cordon_scanner.intel.malware.feed import FeedClient
 
         offline = not args.online or args.offline or FeedClient.offline_requested()

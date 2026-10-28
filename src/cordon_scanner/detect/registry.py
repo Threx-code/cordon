@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 ROLES: dict[str, tuple[str, str]] = {
     "BinaryDetector": ("cordon_scanner.detect.binary.binary", "BinaryDetector"),
     "ComposerPluginHooks": ("cordon_scanner.detect.supply.composer_plugins", "ComposerPluginHooks"),
-    "DeclaredSource": ("cordon_scanner.detect.supply.manifest", "DeclaredSource"),
+    "DeclaredSource": ("cordon_scanner.detect.supply.manifests.detector", "DeclaredSource"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
     "JudgeGate": ("cordon_scanner.detect.agents.agent_judge", "JudgeGate"),
@@ -50,15 +50,15 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.code.capability import load_path as _detect_code_capability_load_path
     from cordon_scanner.detect.source import submodules as _detect_source_submodules
     from cordon_scanner.detect.supply import composer_plugins as _detect_supply_composer_plugins
-    from cordon_scanner.detect.supply import manifest as _detect_supply_manifest
     from cordon_scanner.detect.supply import reachability as _detect_supply_reachability
     from cordon_scanner.detect.supply import sbom as _detect_supply_sbom
+    from cordon_scanner.detect.supply.manifests import detector as _detect_supply_manifests_detector
 
     # Each implementation, as the engine sees it: by its protocol (the type checker proves the
     # implementation conforms) or, for a plain value, by the value's type.
     BinaryDetector: BinaryIdentification = _detect_binary_binary.BinaryDetector
     ComposerPluginHooks: ComposerPluginPaths = _detect_supply_composer_plugins.ComposerPluginHooks
-    DeclaredSource: DeclaredSourceKinds = _detect_supply_manifest.DeclaredSource
+    DeclaredSource: DeclaredSourceKinds = _detect_supply_manifests_detector.DeclaredSource
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
     JudgeGate: JudgeScheduling = _detect_agents_agent_judge.JudgeGate

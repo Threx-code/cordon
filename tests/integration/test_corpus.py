@@ -472,7 +472,7 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
         from cordon_scanner.detect.supply.advisory import AdvisoryDetector
         from cordon_scanner.detect.supply.dependency import DependencyDetector
         from cordon_scanner.detect.supply.lockfile import LockfileDetector
-        from cordon_scanner.detect.supply.manifest import ManifestDetector
+        from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
 
         declared: dict[str, object] = {}
         for detector in (
