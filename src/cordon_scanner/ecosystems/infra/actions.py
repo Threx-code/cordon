@@ -33,6 +33,8 @@ from cordon_scanner.ecosystems.base import (
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -286,17 +288,7 @@ class ActionsFile:
             seen.add(key)
             declared.append(dependency)
         if workflow:
-            # A job's `container:` and its `services:` run as images on the runner.
-            for found in ActionsFile.IMAGE_KEY.finditer(text):
-                if text.count("\n", 0, found.start()) in scalars:
-                    continue
-                value = found.group("image")
-                reference = value if value.startswith("docker://") else f"docker://{value}"
-                container = ActionReference.declare(reference, None, found.group("key"))
-                if container is not None and (container.name, container.spec) not in {
-                    (d.name, d.spec) for d in declared
-                }:
-                    declared.append(container)
+            ActionsFile._job_images(text, scalars, declared)
         sources: list[str] = []
         hooks: list[Hook] = []
         if not workflow:
@@ -317,52 +309,7 @@ class ActionsFile:
                 return BaseEcosystem._err(
                     content, ecosystem, "a composite action whose steps hold no step"
                 )
-            # A published action -- `action.yml` at the root of what was scanned, not a local
-            # action under `.github/` -- runs on the runner of every workflow that uses it, with
-            # that job's token and secrets: install-time code for its consumers, not its author's
-            # CI. The reviewdog and Trivy action compromises (2025, 2026) ran their payload from
-            # a composite step's `run:` and the script it named (review 98).
-            # Inside a downloaded action archive the action sits under one wrapper directory
-            # (`owner-repo-sha/action.yml`); in a checkout, a subdirectory's action.yml is the
-            # repository's own local action, run by its own CI.
-            member = content.path.rpartition("!")[2]
-            depth = 1 if "!" in content.path else 0
-            published = member.count("/") <= depth and "/.github/" not in f"/{member}"
-            # Graded as CI, not as install-time code: running a tool it downloads and sending
-            # results to a service is what a published action is for (review 98: marked as
-            # consumer install, 305 of 2,978 benign actions blocked). What is read is the act
-            # every compromised action measured shared -- a program decoded into an interpreter.
-            kind_of_hook = "ci"
-            if kind == "composite" and published:
-                for index, run in enumerate(ActionsFile.run_blocks(text)):
-                    hooks.append(
-                        Hook(
-                            kind=kind_of_hook,
-                            path=content.path,
-                            name=f"steps-{index}",
-                            command=run,
-                            ecosystem=ecosystem,
-                        )
-                    )
-            # A JavaScript action's main, pre and post scripts (and a container action's
-            # entrypoint) run in every job that uses the action, with that job's token.
-            for stage in ("pre", "main", "post", "entrypoint", "pre-entrypoint", "post-entrypoint"):
-                script = re.search(
-                    rf"""(?m)^[ \t]+{stage}[ \t]*:[ \t]*["']?(?P<script>[^\s"'#]+)""", text
-                )
-                if script and (kind.startswith("node") or kind == "docker"):
-                    hooks.append(
-                        Hook(
-                            kind=kind_of_hook,
-                            path=content.path,
-                            name=f"runs.{stage}",
-                            command=script.group("script"),
-                            ecosystem=ecosystem,
-                        )
-                    )
-            sources.append(
-                f"{'composite' if kind == 'composite' else 'container' if kind == 'docker' else 'JavaScript' if kind.startswith('node') else kind} action ({kind})"
-            )
+            ActionsFile._action_hooks(content, kind, text, hooks, ecosystem, sources)
             image = ActionsFile.RUNS_IMAGE.search(text) if kind == "docker" else None
             if image is not None:
                 value = image.group("image")
@@ -387,6 +334,78 @@ class ActionsFile:
             dependencies=tuple(declared),
             hooks=tuple(hooks),
             sources=tuple(sources),
+        )
+
+    @staticmethod
+    def _job_images(text: str, scalars: set[int], declared: list[DeclaredDependency]) -> None:
+        """A job's container and services: the images it runs on the runner, once each."""
+        # A job's `container:` and its `services:` run as images on the runner.
+        for found in ActionsFile.IMAGE_KEY.finditer(text):
+            if text.count("\n", 0, found.start()) in scalars:
+                continue
+            value = found.group("image")
+            reference = value if value.startswith("docker://") else f"docker://{value}"
+            container = ActionReference.declare(reference, None, found.group("key"))
+            if container is not None and (container.name, container.spec) not in {
+                (d.name, d.spec) for d in declared
+            }:
+                declared.append(container)
+
+    @staticmethod
+    def _action_hooks(
+        content: FileContent,
+        kind: str | Any,
+        text: str,
+        hooks: list[Hook],
+        ecosystem: str,
+        sources: list[str],
+    ) -> None:
+        """What an action runs: its pre, main and post steps and entrypoints as hooks, and how it runs as a source."""
+        # A published action -- `action.yml` at the root of what was scanned, not a local
+        # action under `.github/` -- runs on the runner of every workflow that uses it, with
+        # that job's token and secrets: install-time code for its consumers, not its author's
+        # CI. The reviewdog and Trivy action compromises (2025, 2026) ran their payload from
+        # a composite step's `run:` and the script it named (review 98).
+        # Inside a downloaded action archive the action sits under one wrapper directory
+        # (`owner-repo-sha/action.yml`); in a checkout, a subdirectory's action.yml is the
+        # repository's own local action, run by its own CI.
+        member = content.path.rpartition("!")[2]
+        depth = 1 if "!" in content.path else 0
+        published = member.count("/") <= depth and "/.github/" not in f"/{member}"
+        # Graded as CI, not as install-time code: running a tool it downloads and sending
+        # results to a service is what a published action is for (review 98: marked as
+        # consumer install, 305 of 2,978 benign actions blocked). What is read is the act
+        # every compromised action measured shared -- a program decoded into an interpreter.
+        kind_of_hook = "ci"
+        if kind == "composite" and published:
+            for index, run in enumerate(ActionsFile.run_blocks(text)):
+                hooks.append(
+                    Hook(
+                        kind=kind_of_hook,
+                        path=content.path,
+                        name=f"steps-{index}",
+                        command=run,
+                        ecosystem=ecosystem,
+                    )
+                )
+        # A JavaScript action's main, pre and post scripts (and a container action's
+        # entrypoint) run in every job that uses the action, with that job's token.
+        for stage in ("pre", "main", "post", "entrypoint", "pre-entrypoint", "post-entrypoint"):
+            script = re.search(
+                rf"""(?m)^[ \t]+{stage}[ \t]*:[ \t]*["']?(?P<script>[^\s"'#]+)""", text
+            )
+            if script and (kind.startswith("node") or kind == "docker"):
+                hooks.append(
+                    Hook(
+                        kind=kind_of_hook,
+                        path=content.path,
+                        name=f"runs.{stage}",
+                        command=script.group("script"),
+                        ecosystem=ecosystem,
+                    )
+                )
+        sources.append(
+            f"{'composite' if kind == 'composite' else 'container' if kind == 'docker' else 'JavaScript' if kind.startswith('node') else kind} action ({kind})"
         )
 
 
