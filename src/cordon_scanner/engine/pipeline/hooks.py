@@ -706,26 +706,7 @@ class Hooks:
                 if hooks_from_tree is not None:
                     manifest = hooks_from_tree(manifest, known)
             except Exception as exc:  # noqa: BLE001
-                # Same containment as the lockfile path, and reported for the
-                # same reason. Catching it and moving on quietly would trade one
-                # failure mode (the scan dies) for the worse one (the manifest
-                # was never read and nothing says so), which is the trade this
-                # whole audit is about.
-                if acc is not None:
-                    acc.complete = False
-                    acc.append(
-                        OperationalFinding.build(
-                            path=unit.path,
-                            rule_id="OPERATIONAL.PARSER.FAILED",
-                            message=(
-                                f"The {ecosystem_id} manifest parser failed on this file, "
-                                f"so its install hooks were not identified: "
-                                f"{type(exc).__name__}"
-                            ),
-                            remediation="Report this with the file that triggered it.",
-                            severity=Severity.MEDIUM,
-                        )
-                    )
+                Hooks.manifest_parser_failed(acc, unit, ecosystem_id, exc)
                 continue
             # Consumer-time hooks only. A `prepare` or a `prepack` runs on the author's
             # machine, not on the machine of anybody who installs the package from a
@@ -744,6 +725,32 @@ class Hooks:
                 manifest, ci_scripts, unit, known, paths, consumer
             )
         return paths, consumer, ci_scripts
+
+    @staticmethod
+    def manifest_parser_failed(
+        acc: Accumulator | None, unit: FileUnit, ecosystem_id: str, exc: Exception
+    ) -> None:
+        """A manifest parser that raised: the file's install hooks are unknown, and the scan says so."""
+        # Same containment as the lockfile path, and reported for the
+        # same reason. Catching it and moving on quietly would trade one
+        # failure mode (the scan dies) for the worse one (the manifest
+        # was never read and nothing says so), which is the trade this
+        # whole audit is about.
+        if acc is not None:
+            acc.complete = False
+            acc.append(
+                OperationalFinding.build(
+                    path=unit.path,
+                    rule_id="OPERATIONAL.PARSER.FAILED",
+                    message=(
+                        f"The {ecosystem_id} manifest parser failed on this file, "
+                        f"so its install hooks were not identified: "
+                        f"{type(exc).__name__}"
+                    ),
+                    remediation="Report this with the file that triggered it.",
+                    severity=Severity.MEDIUM,
+                )
+            )
 
     @staticmethod
     def hook_reach(

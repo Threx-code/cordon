@@ -966,8 +966,6 @@
    "ecosystems/packages/rubygems:RubyGemsEcosystem.parse_in_tree": 118,
    "ecosystems/packages/swift:SwiftManifest.parse": 127,
    "ecosystems/packages/vcpkg:VcpkgManifest.parse": 99,
-   "engine/parallel:ParallelScanner._inspect_batch": 117,
-   "engine/parallel:ParallelScanner.run": 101,
    "foundation/config:Config._withhold_untrusted_powers": 115,
    "foundation/config:ConfigParser._parse_config": 108,
    "foundation/config:ConfigParser._parse_policy": 137,
@@ -998,8 +996,7 @@
    "rules/loader:RuleLoader._compile_match": 129,
    "rules/loader:RuleLoader._parse_rule": 138,
    "sources/archive:ArchiveReader._extract_tar": 162,
-   "sources/archive:ArchiveReader._extract_zip": 94,
-   "engine/pipeline/hooks:Hooks.manifest_hook_paths": 91
+   "sources/archive:ArchiveReader._extract_zip": 94
   },
   "large_directories": {
    "tests/unit/foundation": 44,
