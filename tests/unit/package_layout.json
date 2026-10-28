@@ -521,6 +521,7 @@
   "report/vex": "report/vex",
   "rules/loader": "rules/loader",
   "sources/archive": "sources/archive",
+  "sources/budget": "sources/budget",
   "sources/base": "sources/base",
   "sources/git": "sources/git",
   "sources/history": "sources/history",
@@ -883,8 +884,7 @@
    "analysis/javascript/front/parser": 1759,
    "analysis/javascript/js_eval": 1085,
    "analysis/javascript/js_flow": 2328,
-   "rules/loader": 1642,
-   "sources/archive": 1062
+   "rules/loader": 1642
   },
   "outward_imports": [],
   "file_relative_paths": [
@@ -912,9 +912,7 @@
    "rules/loader:PatternCompiler._reject_unsafe.walk": 102,
    "rules/loader:PatternCompiler.required_literals": 181,
    "rules/loader:RuleLoader._compile_match": 129,
-   "rules/loader:RuleLoader._parse_rule": 138,
-   "sources/archive:ArchiveReader._extract_tar": 162,
-   "sources/archive:ArchiveReader._extract_zip": 94
+   "rules/loader:RuleLoader._parse_rule": 138
   },
   "large_directories": {},
   "engine_adapter_imports": []

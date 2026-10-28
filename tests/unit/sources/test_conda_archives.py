@@ -10,7 +10,8 @@ from pathlib import Path
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
-from cordon_scanner.sources.archive import ZSTD_MAGIC, ArchiveReader
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.budget import ZSTD_MAGIC
 
 
 class CondaKit:
