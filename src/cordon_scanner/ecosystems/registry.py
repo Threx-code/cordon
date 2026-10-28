@@ -40,14 +40,10 @@ from cordon_scanner.foundation.paths import ContainerPaths
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from cordon_scanner.ecosystems.base import ImageReferences, InstallTimeSpans, LockScoping
+    from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
-    from cordon_scanner.ecosystems.packages import homebrew as _ecosystems_packages_homebrew
-    from cordon_scanner.ecosystems.packages import npm as _ecosystems_packages_npm
 
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
-    LockScopes: LockScoping = _ecosystems_packages_npm.LockScopes
-    NotRunAtInstall: InstallTimeSpans = _ecosystems_packages_homebrew.NotRunAtInstall
 
 _MAX_ANSWERS = 1 << 20
 """Past this many distinct paths the memo starts over, so its memory stays bounded."""
@@ -84,15 +80,15 @@ class _GlobIndex:
     suffix: Mapping[str, str]
     residual: tuple[tuple[str, str], ...]
     bounds: tuple[tuple[str, str], ...] = ()
+    """For each residual pattern, what its last segment fixes about a file name: the literal text
+    before its first wildcard and after its last. A name that does not start and end with them
+    cannot match, and saying so is a string comparison rather than a glob walk -- which is the
+    answer for nearly every file, since most are no manifest. Empty when nothing is fixed."""
     rank: Mapping[str, int] = field(default_factory=dict)
     """Each ecosystem's place in the registration order, which decides between two that both
     claim a path, as the linear scan did by returning on the first match. The index looked up
     exact names first whatever their order, so `.github/workflows/requirements.yml` was read as
     an Ansible requirements file rather than the workflow it is."""
-    """For each residual pattern, what its last segment fixes about a file name: the literal text
-    before its first wildcard and after its last. A name that does not start and end with them
-    cannot match, and saying so is a string comparison rather than a glob walk -- which is the
-    answer for nearly every file, since most are no manifest. Empty when nothing is fixed."""
     answers: dict[str, str | None] = field(default_factory=dict, compare=False, repr=False)
     """Each path's answer, once. A scan asks about the same path from many places -- the graph's
     workspace, lockfile-reference, hook-path, source and manifest-join passes each walk every
@@ -304,8 +300,6 @@ class RegistryFacts:
 #: when it is first asked for (PEP 562), as the engine's own imports were.
 ROLES: dict[str, tuple[str, str]] = {
     "ImageReference": ("cordon_scanner.ecosystems.infra.image", "ImageReference"),
-    "LockScopes": ("cordon_scanner.ecosystems.packages.npm", "LockScopes"),
-    "NotRunAtInstall": ("cordon_scanner.ecosystems.packages.homebrew", "NotRunAtInstall"),
 }
 
 
@@ -325,7 +319,5 @@ __all__ = [
     "ROLES",
     "EcosystemRegistry",
     "ImageReference",
-    "LockScopes",
-    "NotRunAtInstall",
     "RegistryFacts",
 ]

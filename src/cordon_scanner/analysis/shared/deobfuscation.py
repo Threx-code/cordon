@@ -292,7 +292,7 @@ class Checksum:
         self._at += 1
         kind, value = token
         if kind == "num":
-            return cast(float, value)
+            return cast("float", value)
         if kind == "call":
             fn, args = value
             return self.parse_int(self._lookup(fn, args) or "")

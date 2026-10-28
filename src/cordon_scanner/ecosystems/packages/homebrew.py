@@ -821,6 +821,11 @@ class InstallReceipt:
 class HomebrewEcosystem(BaseEcosystem):
     """Homebrew bundles, formulae and casks."""
 
+    def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
+        """A formula's or cask's `service`, `test`, `caveats` and metadata blocks
+        (`NotRunAtInstall`). A Brewfile is no hook, so it has none."""
+        return NotRunAtInstall.spans(text) if path.endswith(".rb") else []
+
     id = "homebrew"
     purl_type = "brew"
     manifest_globs: tuple[str, ...] = (
