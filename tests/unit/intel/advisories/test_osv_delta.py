@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from cordon_scanner.intel.advisories import advisories, osv_delta
+from cordon_scanner.intel.advisories import osv_delta, shipped
 from cordon_scanner.intel.advisories.osv_delta import OsvDelta, OsvDeltaError
 
 NOW = 1_800_000_000.0
@@ -67,9 +67,9 @@ class TestRefresh:
         monkeypatch.setattr(osv_delta, "ENABLED", True)
         monkeypatch.setattr(OsvDelta, "_get", staticmethod(fake.get))
         monkeypatch.setattr(OsvDelta, "state_dir", staticmethod(lambda: tmp_path / "delta"))
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
         yield fake
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
 
     def test_an_advisory_published_after_the_build_is_matched(self, osv: FakeOsv) -> None:
         osv.lists["npm"] = [
@@ -83,8 +83,8 @@ class TestRefresh:
         assert result.error == ""
         assert result.records == 1
         assert result.through == NOW
-        advisories.ShippedAdvisories.reset_caches()
-        found = advisories.ShippedAdvisories._shipped_raw("npm")["made-up-pkg"]
+        shipped.ShippedAdvisories.reset_caches()
+        found = shipped.ShippedAdvisories._shipped_raw("npm")["made-up-pkg"]
         assert [r["id"] for r in found] == ["GHSA-new1-0000-0001"]
 
     def test_only_changes_after_the_build_are_fetched(self, osv: FakeOsv) -> None:
@@ -163,9 +163,9 @@ class TestIntelUpdate:
         monkeypatch.setattr(osv_delta, "ENABLED", True)
         monkeypatch.setattr(OsvDelta, "_get", staticmethod(fake.get))
         monkeypatch.setattr(OsvDelta, "state_dir", staticmethod(lambda: tmp_path / "delta"))
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
         yield fake
-        advisories.ShippedAdvisories.reset_caches()
+        shipped.ShippedAdvisories.reset_caches()
 
     @staticmethod
     def update(capsys) -> tuple[int, dict]:
