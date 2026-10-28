@@ -1,10 +1,10 @@
 """cordon-rule's condition compiler: each condition checked against the modules' declarations and
 built into Python closures, once, when the rules compile.
 
-`Builder.test` takes a condition tree (`rule_syntax`) and returns a function of a `Frame` -- one
+`Builder.test` takes a condition tree (`rule_engine.syntax`) and returns a function of a `Frame` -- one
 file's state: its bytes, the matches of each string, the rules already decided, the loop
 variables, the module data read so far. Every node is built with its type: a value's is a
-`Scalar` or a module declaration (`rule_values`), a test's is `Scalar.BOOL`. Types are checked as
+`Scalar` or a module declaration (`modules.values`), a test's is `Scalar.BOOL`. Types are checked as
 the tree is built, every branch of it, so a rule that could fail on some file is refused before
 any file is read. Expressions made of literals alone are worked out once: one that cannot be valid
 (an overflow, a division by zero, a negative shift) is refused.
@@ -18,7 +18,16 @@ import math
 from collections.abc import Callable, Iterator
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_syntax import (
+from cordon_scanner.detect.binary.modules.values import (
+    Call,
+    Data,
+    Keyed,
+    Module,
+    Record,
+    Scalar,
+    Seq,
+)
+from cordon_scanner.detect.binary.rule_engine.syntax import (
     Arith,
     Both,
     Compare,
@@ -55,7 +64,6 @@ from cordon_scanner.detect.binary.rule_syntax import (
     Span,
     Truth,
 )
-from cordon_scanner.detect.binary.rule_values import Call, Data, Keyed, Module, Record, Scalar, Seq
 
 INT64_MAX, INT64_MIN = 2**63 - 1, -(2**63)
 INT, FLOAT, TEXT, BOOL = Scalar.INT, Scalar.FLOAT, Scalar.TEXT, Scalar.BOOL
@@ -639,7 +647,7 @@ class Builder:
             v = fn(f)
             if v is None:
                 return None
-            from cordon_scanner.detect.binary.rule_pattern import RunError
+            from cordon_scanner.detect.binary.rule_engine.pattern import RunError
 
             try:
                 return matcher.test(v)

@@ -20,9 +20,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_layout import ABSENT, Cursor
-from cordon_scanner.detect.binary.rule_oids import ObjectIds
-from cordon_scanner.detect.binary.rule_values import Call, Record, Scalar, Seq, Sig
+from cordon_scanner.detect.binary.modules.layout import ABSENT, Cursor
+from cordon_scanner.detect.binary.modules.oids import ObjectIds
+from cordon_scanner.detect.binary.modules.values import Call, Record, Scalar, Seq, Sig
 from cordon_scanner.intel.provenance._dsa import Dsa
 from cordon_scanner.intel.provenance._ecdsa import Ecdsa
 

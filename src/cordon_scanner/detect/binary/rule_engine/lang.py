@@ -4,18 +4,18 @@
 library reading attacker-supplied bytes is the attack surface this project refuses, so the engine is
 Cordon's own, in four parts:
 
-- `rule_syntax` reads rule text into rules whose conditions are trees;
-- `rule_scan` (with `rule_pattern`) finds every string's matches in a file;
-- `rule_build` checks each condition against the modules' declared types and builds it into
+- `rule_engine.syntax` reads rule text into rules whose conditions are trees;
+- `rule_engine.scan` (with `rule_engine.pattern`) finds every string's matches in a file;
+- `rule_engine.build` checks each condition against the modules' declared types and builds it into
   closures, once;
 - this module ties them together: `Rules.compile(text)`, then `rules.match(data)`.
 
 The language it reads, and what each part means, is documented for operators in
-`tutorials/31-rule-files.md`; the conformance suite (`tests/unit/detect/binary/test_rule_lang.py`)
+`tutorials/31-rule-files.md`; the conformance suite (`tests/unit/detect/binary/rule_engine/test_lang.py`)
 and the differentials over generated rules hold the engine to it.
 
 No file can make a scan unbounded: a string records at most `MAX_MATCHES` matches, a pattern
-never reads more than `rule_pattern.REACH` bytes past where a run of it starts, and the search
+never reads more than `rule_engine.pattern.REACH` bytes past where a run of it starts, and the search
 gives up at the deadline `match` is given.
 """
 
@@ -28,9 +28,10 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_build import Builder, Frame
-from cordon_scanner.detect.binary.rule_builtin import Builtin
-from cordon_scanner.detect.binary.rule_syntax import (
+from cordon_scanner.detect.binary.modules.builtin import Builtin
+from cordon_scanner.detect.binary.modules.values import Module
+from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
+from cordon_scanner.detect.binary.rule_engine.syntax import (
     Both,
     Either,
     Found,
@@ -44,7 +45,6 @@ from cordon_scanner.detect.binary.rule_syntax import (
     RuleError,
     StringDef,
 )
-from cordon_scanner.detect.binary.rule_values import Module
 
 MAX_MATCHES = 1_000_000
 
@@ -109,8 +109,8 @@ class Strings:
 
     @staticmethod
     def prepare(rules: list[RuleDef]) -> None:
-        from cordon_scanner.detect.binary.rule_pattern import PatternError
-        from cordon_scanner.detect.binary.rule_scan import Search
+        from cordon_scanner.detect.binary.rule_engine.pattern import PatternError
+        from cordon_scanner.detect.binary.rule_engine.scan import Search
 
         for s in (s for rule in rules for s in rule.strings):
             try:
@@ -124,7 +124,7 @@ class Strings:
     ) -> list[tuple[int, int]]:
         """Where `s` matches in `data`, as (offset, length) pairs in offset order. Running out of
         time, or a pattern needing more than its bounds allow, refuses the file."""
-        from cordon_scanner.detect.binary.rule_pattern import RunError
+        from cordon_scanner.detect.binary.rule_engine.pattern import RunError
 
         why: str | None = None
         cause: BaseException | None = None
@@ -207,7 +207,7 @@ class Rules:
     def compile(
         text: str, externals: dict[str, Any] | None = None, modules: dict[str, Any] | None = None
     ) -> Rules:
-        """`modules` adds modules (`rule_values.Module`s) to the built-in ones."""
+        """`modules` adds modules (`modules.values.Module`s) to the built-in ones."""
         loaded = Rules.loaded(modules)
         given = dict(externals or {})
         try:
@@ -235,7 +235,7 @@ class Rules:
     def index(self) -> tuple[Any, list[StringDef]]:
         """One index of every string's anchors, built once for the rule set."""
         if self._index is None:
-            from cordon_scanner.detect.binary.rule_scan import AnchorIndex
+            from cordon_scanner.detect.binary.rule_engine.scan import AnchorIndex
 
             strings = [s for r in self.rules for s in r.strings]
             self._index = (AnchorIndex([s.search for s in strings]), strings)

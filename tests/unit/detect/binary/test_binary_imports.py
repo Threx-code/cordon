@@ -372,7 +372,7 @@ class TestTheDetectorReportsThem:
 
 
 class RuleFileFixtures:
-    """Real rules, compiled and matched by Cordon's own engine (`detect/binary/rule_lang`)."""
+    """Real rules, compiled and matched by Cordon's own engine (`detect/binary/rule_engine/lang`)."""
 
     @pytest.fixture
     def scan(self, tmp_path):
@@ -445,16 +445,16 @@ class TestRuleFile(RuleFileFixtures):
         )
 
     def test_an_engine_error_on_one_file_does_not_end_the_scan(self, scan, monkeypatch) -> None:
-        from cordon_scanner.detect.binary import rule_lang
+        from cordon_scanner.detect.binary.rule_engine import lang
 
-        original = rule_lang.Rules.match
+        original = lang.Rules.match
 
         def match(self, data, timeout=None):
             if b"EVIL" in data:
-                raise rule_lang.RuleError("matching took longer than the time allowed")
+                raise lang.RuleError("matching took longer than the time allowed")
             return original(self, data, timeout)
 
-        monkeypatch.setattr(rule_lang.Rules, "match", match)
+        monkeypatch.setattr(lang.Rules, "match", match)
         result = scan(self.rule("x"), {"a.bin": b"EVIL", "b.txt": b"hello"})
         assert any(f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE" for f in result.findings)
 

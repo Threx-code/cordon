@@ -1,4 +1,4 @@
-"""The PE reader (rule_pe) against the reference engine's recorded values for the real-file fixtures. The
+"""The PE reader (modules.pe) against the reference engine's recorded values for the real-file fixtures. The
 reader returns plain, schema-shaped data; recode() renders it the way the reference reports a module (bytes
 as hex, a sequence as its set slots in order, integers signed) so the two compare leaf by leaf. The
 malformed-file and full-corpus differentials live in the review harness; these fixtures pin the values a
@@ -13,9 +13,9 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_lang import Rules
-from cordon_scanner.detect.binary.rule_pe import Pe
-from cordon_scanner.detect.binary.rule_values import Call, Data, Keyed, Record, Scalar, Seq
+from cordon_scanner.detect.binary.modules.pe import Pe
+from cordon_scanner.detect.binary.modules.values import Call, Data, Keyed, Record, Scalar, Seq
+from cordon_scanner.detect.binary.rule_engine.lang import Rules
 from support import ROOT
 
 DIR = ROOT / "tests" / "unit" / "data" / "rule_reference" / "modules"

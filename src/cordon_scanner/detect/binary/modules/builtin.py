@@ -18,7 +18,7 @@ import zlib
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_values import Call, Data, Module, Record, Scalar, Sig
+from cordon_scanner.detect.binary.modules.values import Call, Data, Module, Record, Scalar, Sig
 
 INT, FLOAT, TEXT = Scalar.INT, Scalar.FLOAT, Scalar.TEXT
 
@@ -412,9 +412,9 @@ class Builtin:
 
     @staticmethod
     def modules() -> dict[str, Module]:
-        from cordon_scanner.detect.binary.rule_dotnet import Dotnet
-        from cordon_scanner.detect.binary.rule_elf import Elf
-        from cordon_scanner.detect.binary.rule_pe import Pe
+        from cordon_scanner.detect.binary.modules.dotnet import Dotnet
+        from cordon_scanner.detect.binary.modules.elf import Elf
+        from cordon_scanner.detect.binary.modules.pe import Pe
 
         return {
             "math": Module(MathModule.SCHEMA, lambda file: MathModule(file).values()),

@@ -1,5 +1,5 @@
-"""The ELF reader (rule_elf) against the reference engine's recorded values for the real-file fixtures, with
-telfhash and import_md5 invoked directly (telfhash runs through rule_tlsh). The reader returns plain,
+"""The ELF reader (modules.elf) against the reference engine's recorded values for the real-file fixtures, with
+telfhash and import_md5 invoked directly (telfhash runs through modules.tlsh). The reader returns plain,
 schema-shaped data; recode() renders it the way the reference engine reports a module so the two compare leaf
 by leaf (the Call fields telfhash/import_md5 are skipped there and checked separately). The malformed-file
 and full-corpus differentials live in the review harness; these fixtures pin the values a change must not move.
@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_elf import Elf
-from cordon_scanner.detect.binary.rule_values import Call, Data, Keyed, Record, Scalar, Seq
+from cordon_scanner.detect.binary.modules.elf import Elf
+from cordon_scanner.detect.binary.modules.values import Call, Data, Keyed, Record, Scalar, Seq
 from support import ROOT
 
 DIR = ROOT / "tests" / "unit" / "data" / "rule_reference" / "modules"
@@ -84,7 +84,7 @@ class TestElfValues:
 
     @pytest.mark.parametrize("name", ELF_FIXTURES)
     def test_telfhash_and_import_md5(self, name: str) -> None:
-        """The import digest (through rule_tlsh) and import MD5, invoked on the returned callables."""
+        """The import digest (through modules.tlsh) and import MD5, invoked on the returned callables."""
         d = Elf.data((DIR / name).read_bytes())
         functions = EXPECTED[name]["functions"]
         assert d["telfhash"][0]() == functions["elf.telfhash()"].encode()

@@ -1,11 +1,11 @@
-"""The object-identifier registry (rule_oids) is OpenSSL's object table held as declared data. These pin a
-sample of the resolutions rule_signature depends on -- a certificate's key and signature algorithms, a
+"""The object-identifier registry (modules.oids) is OpenSSL's object table held as declared data. These pin a
+sample of the resolutions modules.signature depends on -- a certificate's key and signature algorithms, a
 digest, a name attribute type -- and the table's size, so an edit that drops or changes an entry is caught.
 """
 
 from __future__ import annotations
 
-from cordon_scanner.detect.binary.rule_oids import ObjectIds
+from cordon_scanner.detect.binary.modules.oids import ObjectIds
 
 
 class TestObjectIds:

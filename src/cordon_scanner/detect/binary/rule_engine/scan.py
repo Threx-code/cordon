@@ -16,8 +16,8 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_chain import Chain
-from cordon_scanner.detect.binary.rule_pattern import (
+from cordon_scanner.detect.binary.rule_engine.chain import Chain
+from cordon_scanner.detect.binary.rule_engine.pattern import (
     ANY,
     CLASS,
     COUNT,
@@ -155,7 +155,7 @@ class Part:
         #: Runs every match of the part holds: (the forward entry of the term read, at least how
         #: many of it in a row), longest first (`Part.factors_of`).
         self.factors: list[tuple[int, int]] = []
-        #: The part as a chain of class repeats, when it is one (`rule_chain.Chain`).
+        #: The part as a chain of class repeats, when it is one (`rule_engine.chain.Chain`).
         self.chain: Chain | None = None
         #: Runs of literal bytes every match of the part holds (`Part.literals_in`).
         self.required: list[bytes] = []
@@ -164,7 +164,7 @@ class Part:
         self.heavy = False
         self.anchors: list[AnchorAt] = []
         self.fits = False  # text short enough that an anchor occurrence is the match
-        #: Steps the layouts have taken, kept across runs and files (`rule_pattern.Memo`).
+        #: Steps the layouts have taken, kept across runs and files (`rule_engine.pattern.Memo`).
         self.memo: dict[tuple[bool, ...], Any] = {}
         self._runners: tuple[Threads, Threads] | None = None
         self._gates: dict[int, Any] = {}  # entry -> its forward gate (None: none helps)
@@ -651,7 +651,7 @@ class _Hunt:
             self._check(part, anchor, offset)
 
     def _chained(self, events: list[Event]) -> list[tuple[int, int]] | None:
-        """Every match of a string that is one chain of class repeats (`rule_chain`), worked out
+        """Every match of a string that is one chain of class repeats (`rule_engine.chain`), worked out
         directly from its anchors' offsets when they occur often enough to make running them
         dear; None to run them as usual (as for an anchor outside the chain's first term)."""
         parts, f = self.s.parts, self.s.flags

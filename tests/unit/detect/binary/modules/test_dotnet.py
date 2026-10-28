@@ -1,4 +1,4 @@
-"""The .NET reader (rule_dotnet) against the reference engine's recorded values for the real-file fixtures.
+"""The .NET reader (modules.dotnet) against the reference engine's recorded values for the real-file fixtures.
 The reader returns plain, schema-shaped data; recode() renders it the way the reference engine reports a
 module (bytes as hex, a sequence as the list of its set slots, integers signed) so the two compare leaf by
 leaf. The
@@ -15,9 +15,9 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_dotnet import Dotnet, Tables
-from cordon_scanner.detect.binary.rule_layout import Cursor, LazySeq
-from cordon_scanner.detect.binary.rule_values import Data, Keyed, Record, Scalar, Seq
+from cordon_scanner.detect.binary.modules.dotnet import Dotnet, Tables
+from cordon_scanner.detect.binary.modules.layout import Cursor, LazySeq
+from cordon_scanner.detect.binary.modules.values import Data, Keyed, Record, Scalar, Seq
 from support import ROOT
 
 DIR = ROOT / "tests" / "unit" / "data" / "rule_reference" / "modules"

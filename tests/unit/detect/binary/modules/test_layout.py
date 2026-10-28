@@ -1,4 +1,4 @@
-"""Unit tests for the declarative layout primitives (rule_layout), independently of any binary format:
+"""Unit tests for the declarative layout primitives (modules.layout), independently of any binary format:
 the bulk tuple reader (``Grid.tuples``), the lazy record view (``Row``) and the deferred sequence
 (``LazySeq``). The readers' value tests exercise these through real files; these pin the primitives' own
 contract so a change to them is caught directly.
@@ -10,7 +10,7 @@ import struct
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_layout import (
+from cordon_scanner.detect.binary.modules.layout import (
     ABSENT,
     U8,
     U16,
@@ -160,8 +160,8 @@ class TestLazyRecord:
 
 
 class TestImageMapStrict:
-    """ImageMap's two RVA rules on a truncated section table: rule_pe (strict) fails the whole mapping,
-    rule_dotnet (the default) maps an address below the sections straight through."""
+    """ImageMap's two RVA rules on a truncated section table: modules.pe (strict) fails the whole mapping,
+    modules.dotnet (the default) maps an address below the sections straight through."""
 
     @staticmethod
     def truncated_pe() -> bytes:
@@ -198,7 +198,7 @@ class TestImageMapStrict:
 class TestCursorWideInteger:
     """``Cursor.uint`` reads an integer of any width -- an ASN.1 bignum such as an RSA modulus is just a
     512-byte big-endian read -- with the cursor's own byte order or an explicit one, unsigned or two's
-    complement, and reports ABSENT past the end. rule_signature reads every ASN.1 INTEGER through this."""
+    complement, and reports ABSENT past the end. modules.signature reads every ASN.1 INTEGER through this."""
 
     def test_reads_a_4096_bit_modulus(self) -> None:
         modulus = (1 << 4095) | (7**500) | 1  # a 4096-bit odd number

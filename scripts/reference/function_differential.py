@@ -4,7 +4,7 @@ With ``function_args.py``: a fixed battery of ``pe.*`` calls (absent names, out-
 regex and delayed forms) plus the per-file "hitting" calls built from ``args.json``, each run as a
 ``console.log`` rule through either our engine or the reference. The two runs are compared; the
 reference's output is kept as ``functions.json`` only once it is confirmed identical to ours, and
-``test_rule_pe.py`` replays it through our engine. The reference is imported only when this is asked to
+``test_pe.py`` replays it through our engine. The reference is imported only when this is asked to
 run it.
 
 A maintainer's tool, not part of Cordon. Run inside Docker, from the repository root, once per engine:
@@ -133,7 +133,7 @@ class FunctionDifferential:
 
     @staticmethod
     def _ours() -> Callable[[str, bytes], list[str]]:
-        from cordon_scanner.detect.binary.rule_lang import Rules
+        from cordon_scanner.detect.binary.rule_engine.lang import Rules
 
         def execute(source: str, data: bytes) -> list[str]:
             logs: list[str] = []

@@ -70,7 +70,7 @@ SOFTWARE.
 -------------------------------------------------------------------------------
 TLSH
 
-src/cordon_scanner/detect/binary/rule_tlsh.py computes the TLSH locality-sensitive hash
+src/cordon_scanner/detect/binary/modules/tlsh.py computes the TLSH locality-sensitive hash
 (https://github.com/trendmicro/tlsh), Copyright Trend Micro Incorporated, and carries its
 fixed Pearson permutation and length-code tables. They are used under the Apache License,
 Version 2.0, the licence above.
@@ -78,7 +78,7 @@ Version 2.0, the licence above.
 -------------------------------------------------------------------------------
 OpenSSL object names
 
-src/cordon_scanner/detect/binary/rule_oids.py holds the short and long names OpenSSL 1.1
+src/cordon_scanner/detect/binary/modules/oids.py holds the short and long names OpenSSL 1.1
 gives object identifiers and the sizes of the digests it knows, generated from OpenSSL's
 object tables (https://www.openssl.org). This product includes software developed by the
 OpenSSL Project for use in the OpenSSL Toolkit.

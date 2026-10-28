@@ -1,4 +1,4 @@
-"""The chain matcher (`detect/binary/rule_chain`): patterns that are a chain of byte-class repeats,
+"""The chain matcher (`detect/binary/rule_engine/chain`): patterns that are a chain of byte-class repeats,
 matched from class-run lengths instead of thread by thread.
 
 It must give exactly the matches running the threads gives, and finish where running them would
@@ -13,9 +13,9 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.binary import rule_scan
-from cordon_scanner.detect.binary.rule_chain import Chain
-from cordon_scanner.detect.binary.rule_lang import RuleError, Rules
+from cordon_scanner.detect.binary.rule_engine import scan as search
+from cordon_scanner.detect.binary.rule_engine.chain import Chain
+from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
 
 
 class Runs:
@@ -27,16 +27,16 @@ class Runs:
 
     @staticmethod
     def matches(rules: Rules, data: bytes, *, chain: bool) -> Any:
-        busy, chained = rule_scan._Hunt.BUSY, rule_scan._Hunt._chained
+        busy, chained = search._Hunt.BUSY, search._Hunt._chained
         try:
-            rule_scan._Hunt.BUSY = -1
+            search._Hunt.BUSY = -1
             if not chain:
-                rule_scan._Hunt._chained = lambda self, events: None  # type: ignore[method-assign]
+                search._Hunt._chained = lambda self, events: None  # type: ignore[method-assign]
             return [(m.rule, m.strings) for m in rules.match(data, timeout=60)]
         except RuleError as exc:
             return ("refused", str(exc))
         finally:
-            rule_scan._Hunt.BUSY, rule_scan._Hunt._chained = busy, chained  # type: ignore[method-assign]
+            search._Hunt.BUSY, search._Hunt._chained = busy, chained  # type: ignore[method-assign]
 
     @staticmethod
     def brute(pattern: list[tuple[bytes, int, int | None]], data: bytes) -> list[tuple[int, int]]:

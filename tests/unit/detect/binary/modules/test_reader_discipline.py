@@ -1,10 +1,10 @@
-"""The binary-format readers read bytes only through ``rule_layout`` -- never ``struct`` or ``int.from_bytes``
-directly. Those two are how a reader hand-rolls an integer out of bytes; the point of ``rule_layout`` (Cursor,
+"""The binary-format readers read bytes only through ``modules.layout`` -- never ``struct`` or ``int.from_bytes``
+directly. Those two are how a reader hand-rolls an integer out of bytes; the point of ``modules.layout`` (Cursor,
 Layout, Grid, ImageMap) is that a structure is declared once and read in one place, so a reader that reaches
-past it is a regression. ``rule_layout`` itself holds the one allowed ``struct``/``int.from_bytes``;
-``rule_tlsh`` is a hash transform, not a format reader, so it is out of scope.
+past it is a regression. ``modules.layout`` itself holds the one allowed ``struct``/``int.from_bytes``;
+``modules.tlsh`` is a hash transform, not a format reader, so it is out of scope.
 
-Scoped to the format readers by name: rule_pe, rule_elf, rule_dotnet, rule_signature (and rule_oids once it
+Scoped to the format readers by name: modules.pe, modules.elf, modules.dotnet, modules.signature (and modules.oids once it
 lands). A new reader is added to READERS here.
 """
 
@@ -15,8 +15,8 @@ from pathlib import Path
 
 from support import ROOT
 
-READERS = ("rule_pe", "rule_elf", "rule_dotnet", "rule_signature")
-BINARY = ROOT / "src" / "cordon_scanner" / "detect" / "binary"
+READERS = ("pe", "elf", "dotnet", "signature")
+BINARY = ROOT / "src" / "cordon_scanner" / "detect" / "binary" / "modules"
 
 
 class Reads:
@@ -38,7 +38,7 @@ class Reads:
 
 
 class TestReadersUseRuleLayout:
-    """No struct / int.from_bytes in a format reader -- every byte read goes through rule_layout."""
+    """No struct / int.from_bytes in a format reader -- every byte read goes through modules.layout."""
 
     def test_no_struct_or_int_from_bytes_in_the_readers(self) -> None:
         offenders = {

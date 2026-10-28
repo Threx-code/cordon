@@ -5,7 +5,7 @@ the scan and never by the repository being scanned, and a report that says wheth
 file is where a security team keeps the signatures it trusts -- its own, its vendor's, a feed's --
 and this applies them to a scan as they are written.
 
-The rule language is Cordon's own code (`rule_lang`, with `rule_pattern` and `rule_scan` for the
+The rule language is Cordon's own code (`rule_engine.lang`, with `rule_engine.pattern` and `rule_engine.scan` for the
 strings): no native library reads a scanned file. Rules that cannot be used -- a file that does not
 compile, a module the engine does not implement -- are reported in an operational finding rather
 than as nothing, because "no rule matched" and "no rule ran" must never look alike. Rules are
@@ -61,7 +61,7 @@ class RuleFileEngine:
     """Compile once, match many, with cordon-rule."""
 
     def __init__(self, rules_path: str) -> None:
-        from cordon_scanner.detect.binary.rule_lang import Rules
+        from cordon_scanner.detect.binary.rule_engine.lang import Rules
 
         path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
         if not path.is_file():

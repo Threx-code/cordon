@@ -1,8 +1,8 @@
-"""Named constants and ordinal-to-name resolution for the binary readers (rule_tables)."""
+"""Named constants and ordinal-to-name resolution for the binary readers (modules.tables)."""
 
 from __future__ import annotations
 
-from cordon_scanner.detect.binary.rule_tables import Tables
+from cordon_scanner.detect.binary.modules.tables import Tables
 
 
 class TestTables:

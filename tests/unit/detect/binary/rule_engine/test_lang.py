@@ -1,4 +1,4 @@
-"""cordon-rule's language (`detect/binary/rule_lang`), held to the reference suite.
+"""cordon-rule's language (`detect/binary/rule_engine/lang`), held to the reference suite.
 
 `data/rule_reference/reference-suite-rules.json` holds the reference suite's cases whose rule and
 data are literals (where they come from: that directory's README): each rule matches, does not, or
@@ -16,8 +16,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_lang import RuleError, Rules
-from cordon_scanner.detect.binary.rule_values import (
+from cordon_scanner.detect.binary.modules.values import (
     Call,
     Data,
     Keyed,
@@ -27,6 +26,7 @@ from cordon_scanner.detect.binary.rule_values import (
     Seq,
     Sig,
 )
+from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
 from support import ROOT
 
 

@@ -1,10 +1,10 @@
-"""Digest vectors for the TLSH import hash (rule_tlsh): known results, fixed against the reference
+"""Digest vectors for the TLSH import hash (modules.tlsh): known results, fixed against the reference
 differential, and the boundaries where the hash is empty.
 """
 
 from __future__ import annotations
 
-from cordon_scanner.detect.binary.rule_tlsh import Tlsh
+from cordon_scanner.detect.binary.modules.tlsh import Tlsh
 
 
 class TestTlshDigest:

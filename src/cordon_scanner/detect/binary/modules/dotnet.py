@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from functools import partial
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_layout import (
+from cordon_scanner.detect.binary.modules.layout import (
     ABSENT,
     U8,
     U16,
@@ -32,7 +32,7 @@ from cordon_scanner.detect.binary.rule_layout import (
     LazySeq,
     Pad,
 )
-from cordon_scanner.detect.binary.rule_values import Record, Scalar, Seq
+from cordon_scanner.detect.binary.modules.values import Record, Scalar, Seq
 
 INT, TEXT = Scalar.INT, Scalar.TEXT
 

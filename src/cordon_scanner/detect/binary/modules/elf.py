@@ -8,8 +8,8 @@ most structures need only one Layout and the Cursor carries the byte order. The 
 *order* differs between the classes (program header, symbol) have a Layout per class. A Grid walks each
 table, reading only where the whole of a row fits, and the readers turn rows into the rule-visible values.
 
-telfhash and import_md5 are built from the dynamic symbols (static otherwise) through rule_tlsh, unchanged
-from the reference; the named constants come from rule_tables. A file that is not an ELF answers undefined.
+telfhash and import_md5 are built from the dynamic symbols (static otherwise) through modules.tlsh, unchanged
+from the reference; the named constants come from modules.tables. A file that is not an ELF answers undefined.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_layout import (
+from cordon_scanner.detect.binary.modules.layout import (
     U8,
     U16,
     U32,
@@ -29,9 +29,9 @@ from cordon_scanner.detect.binary.rule_layout import (
     LazySeq,
     Row,
 )
-from cordon_scanner.detect.binary.rule_tables import Tables
-from cordon_scanner.detect.binary.rule_tlsh import Tlsh
-from cordon_scanner.detect.binary.rule_values import Call, Record, Scalar, Seq, Sig
+from cordon_scanner.detect.binary.modules.tables import Tables
+from cordon_scanner.detect.binary.modules.tlsh import Tlsh
+from cordon_scanner.detect.binary.modules.values import Call, Record, Scalar, Seq, Sig
 
 INT, TEXT = Scalar.INT, Scalar.TEXT
 _W = Index("w")  # the ELF word: 4 bytes for a 32-bit object, 8 for a 64-bit one

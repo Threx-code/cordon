@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_lang import RuleError, Rules
-from cordon_scanner.detect.binary.rule_pattern import Memo, PatternError, RegexReader
+from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
+from cordon_scanner.detect.binary.rule_engine.pattern import Memo, PatternError, RegexReader
 
 DOTS = b"."
 
@@ -70,7 +70,7 @@ class TestRegexArguments:
 
     @staticmethod
     def module() -> Any:
-        from cordon_scanner.detect.binary.rule_values import Call, Module, Record, Scalar, Sig
+        from cordon_scanner.detect.binary.modules.values import Call, Module, Record, Scalar, Sig
 
         def match(m: Any, s: bytes) -> int:
             return int(m.run(s.split(b"\x00", 1)[0]))

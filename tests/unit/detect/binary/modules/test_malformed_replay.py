@@ -6,7 +6,7 @@ with extreme values, a scatter), and our ``pe``/``elf``/``dotnet`` readers are h
 trees the reference engine recorded for that set in ``malformed.json``. The mutated bytes are not
 shipped -- they regenerate here from the committed fixtures -- so anyone can re-prove this without a
 corpus. A per-file digest guards against the mutator drifting from what was recorded. ``expected.json``
-and ``test_rule_modules.py`` are the benign twin of this; here every value also matches the reference,
+and ``test_builtin.py`` are the benign twin of this; here every value also matches the reference,
 with no divergence to allow for.
 """
 
@@ -20,8 +20,8 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_builtin import Builtin
-from cordon_scanner.detect.binary.rule_values import Call, Data, Keyed, Record, Seq
+from cordon_scanner.detect.binary.modules.builtin import Builtin
+from cordon_scanner.detect.binary.modules.values import Call, Data, Keyed, Record, Seq
 from support import ROOT
 
 sys.path.insert(0, str(ROOT / "tests" / "conformance" / "generate"))

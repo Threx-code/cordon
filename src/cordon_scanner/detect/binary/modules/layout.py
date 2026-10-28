@@ -411,12 +411,12 @@ class LazyGroups(Mapping[str, Any]):
 
 class ImageMap:
     """A PE image's virtual-address space: accepts the header and maps a virtual address (RVA) to a file
-    offset through the section table, shared by the ``rule_pe`` and ``rule_dotnet`` readers. Built once from
+    offset through the section table, shared by the ``modules.pe`` and ``modules.dotnet`` readers. Built once from
     the file.
 
     The two reference modules differ on a truncated section table, so ``to_offset`` takes a ``strict`` mode:
-    ``rule_pe`` (strict) stops at the first section header that does not fit the file and returns -1 for every
-    address; ``rule_dotnet`` (the default) maps through the headers that do fit and ignores the rest."""
+    ``modules.pe`` (strict) stops at the first section header that does not fit the file and returns -1 for every
+    address; ``modules.dotnet`` (the default) maps through the headers that do fit and ignores the rest."""
 
     MAX_SECTIONS = 96
 
@@ -436,7 +436,7 @@ class ImageMap:
     @staticmethod
     def accept(cur: Cursor, strict: bool = False) -> ImageMap | None:
         """Accept the file as a PE: MZ stub, an e_lfanew to a PE\\0\\0 signature, and a COFF + optional
-        header of the magic's width present in the file. ``strict`` selects the ``rule_pe`` RVA rule."""
+        header of the magic's width present in the file. ``strict`` selects the ``modules.pe`` RVA rule."""
         if cur.n < 64 or cur.blob(0, 2) != b"MZ":
             return None
         nt = cur.uint(0x3C, 4)
@@ -499,7 +499,7 @@ class ImageMap:
             usable = True
             if (
                 self.strict
-            ):  # rule_pe: a section header that does not fit the file fails the whole mapping
+            ):  # modules.pe: a section header that does not fit the file fails the whole mapping
                 count = cur.uint(self.nt + 6, 2)
                 first = self.opt + cur.uint(self.nt + 20, 2)
                 if not isinstance(count, int) or not isinstance(first, int):

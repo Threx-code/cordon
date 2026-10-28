@@ -2,7 +2,7 @@
 
 The field-by-field differentials against the reference engine ran over every real executable in
 the corpus; these tests hold what they settled, so a change that breaks one is caught here. The
-real-file values are read through the engine's own module table (`rule_builtin`), as a scan reads
+real-file values are read through the engine's own module table (`modules.builtin`), as a scan reads
 them, and compared with the reference's recorded values
 (`tests/unit/data/rule_reference/modules/README.md` says where those come from).
 """
@@ -16,9 +16,9 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_builtin import Builtin
-from cordon_scanner.detect.binary.rule_lang import Rules
-from cordon_scanner.detect.binary.rule_values import Call, Data, Keyed, Record, Seq
+from cordon_scanner.detect.binary.modules.builtin import Builtin
+from cordon_scanner.detect.binary.modules.values import Call, Data, Keyed, Record, Seq
+from cordon_scanner.detect.binary.rule_engine.lang import Rules
 from support import ROOT
 
 

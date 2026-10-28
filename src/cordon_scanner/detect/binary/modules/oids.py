@@ -4,7 +4,7 @@
 be empty); ``DIGEST_SIZES`` maps a digest's long name to its output length in bytes. The values are
 OpenSSL's own object table -- the reference a certificate's algorithm, a name's attribute type and a
 timestamp's imprint are resolved against -- so they are held here verbatim as a constant table and
-read by rule_signature; nothing computes them."""
+read by modules.signature; nothing computes them."""
 
 from __future__ import annotations
 

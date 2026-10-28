@@ -3,7 +3,7 @@
 A PE file is reached through its DOS stub (MZ, e_lfanew) to the PE signature, the COFF file header and the
 optional header (PE32 or PE32+); from there the section table, the data directories, the import, delayed-
 import and export tables, resources and their version information, the Rich stub, the debug (PDB) entry and
-the certificate table. `ImageMap` (rule_layout) accepts the image and maps a virtual address to a file
+the certificate table. `ImageMap` (modules.layout) accepts the image and maps a virtual address to a file
 offset, shared with the .NET reader. Each fixed structure is described once as a `Layout` and read through a
 `Cursor`; the heavy arrays decode on access. `data()` returns plain dicts and lists, an absent key being
 undefined, exactly as the reference reports an undefined field by omitting it.
@@ -19,8 +19,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary import rule_signature
-from cordon_scanner.detect.binary.rule_layout import (
+from cordon_scanner.detect.binary.modules.layout import (
     ABSENT,
     U8,
     U16,
@@ -33,8 +32,9 @@ from cordon_scanner.detect.binary.rule_layout import (
     Layout,
     LazyGroups,
 )
-from cordon_scanner.detect.binary.rule_tables import Tables
-from cordon_scanner.detect.binary.rule_values import (
+from cordon_scanner.detect.binary.modules.signature import SIGNATURE, Signatures
+from cordon_scanner.detect.binary.modules.tables import Tables
+from cordon_scanner.detect.binary.modules.values import (
     Call,
     Keyed,
     Record,
@@ -190,7 +190,7 @@ class Pe:
     "export_details":Seq (Record (
     {"name":TEXT ,"ordinal":INT ,"rva":INT ,"offset":INT ,"forward_name":TEXT }
     )),
-    "signatures":Seq (rule_signature .SIGNATURE ),
+    "signatures":Seq (SIGNATURE ),
     "version_info":Keyed (TEXT ),"version_info_list":Seq (Record ({"key":TEXT ,"value":TEXT })),
     **{name :Call (*sigs )for name ,sigs in CALLS .items ()},
     })  # fmt: skip
@@ -924,9 +924,9 @@ class Pe:
 
     @staticmethod
     def _signature_fields(file: bytes) -> dict[str, Any]:
-        """pe.signatures and pe.is_signed: the file's Authenticode signatures, read by rule_signature from
+        """pe.signatures and pe.is_signed: the file's Authenticode signatures, read by modules.signature from
         the certificate table (it locates and bounds-checks the security directory itself)."""
-        found, signed = rule_signature.Signatures.signature_values(file)
+        found, signed = Signatures.signature_values(file)
         return {"number_of_signatures": len(found), "is_signed": signed, "signatures": found}
 
     @staticmethod

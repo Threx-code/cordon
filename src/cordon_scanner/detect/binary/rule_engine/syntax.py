@@ -451,7 +451,7 @@ class StringDef:
     kind: str  # text, hex, regex
     value: Any
     modifiers: dict[str, Any]
-    #: The string ready to be searched for (`rule_scan.Search`).
+    #: The string ready to be searched for (`rule_engine.scan.Search`).
     search: Any = None
     #: The one offset the string can count at, when the condition only asks `$a at <constant>`.
     fixed: int | None = None
@@ -470,12 +470,12 @@ class RuleDef:
     condition: Node
     private: bool = False
     is_global: bool = False
-    #: The condition, ready to run (`rule_build`).
+    #: The condition, ready to run (`rule_engine.build`).
     run: Any = None
     #: The condition is false whenever none of the rule's strings matched, and calls nothing:
     #: it needs no running then.
     needs_match: bool = False
-    #: How many loop variables the condition holds at once (`rule_build`).
+    #: How many loop variables the condition holds at once (`rule_engine.build`).
     width: int = 0
 
 
@@ -747,8 +747,8 @@ class Grammar:
 
     @staticmethod
     def matcher(source: str, flags: str) -> Any:
-        from cordon_scanner.detect.binary.rule_pattern import PatternError
-        from cordon_scanner.detect.binary.rule_scan import Matcher
+        from cordon_scanner.detect.binary.rule_engine.pattern import PatternError
+        from cordon_scanner.detect.binary.rule_engine.scan import Matcher
 
         try:
             return Matcher(source.encode("utf-8", "surrogateescape"), flags)

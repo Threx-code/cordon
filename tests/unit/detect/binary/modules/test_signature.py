@@ -1,4 +1,4 @@
-"""The Authenticode signature reader (rule_signature) against the reference engine's recorded values, plus
+"""The Authenticode signature reader (modules.signature) against the reference engine's recorded values, plus
 the ASN.1 primitives it is built on. ``values()`` returns schema-shaped data; recode() renders it the way
 the reference reports ``pe.signatures`` (bytes as hex, a sequence as its slots in order, integers signed) so
 the two compare leaf by leaf. The real-file and malformed-file differentials live in the review harness;
@@ -12,9 +12,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from cordon_scanner.detect.binary import rule_signature as rs
-from cordon_scanner.detect.binary.rule_signature import X500, BadDer, Clock, Tlv
-from cordon_scanner.detect.binary.rule_values import Call, Data, Record, Scalar, Seq
+from cordon_scanner.detect.binary.modules import signature as rs
+from cordon_scanner.detect.binary.modules.signature import X500, BadDer, Clock, Tlv
+from cordon_scanner.detect.binary.modules.values import Call, Data, Record, Scalar, Seq
 from support import ROOT
 
 DIR = ROOT / "tests" / "unit" / "data" / "rule_reference" / "modules"
