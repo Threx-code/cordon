@@ -7,6 +7,7 @@ from __future__ import annotations
 import bisect
 from collections.abc import Callable
 
+from cordon_scanner.analysis.javascript.evaluation.values import Tok
 from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _CLOSE,
     _CONTEXTUAL,
@@ -17,7 +18,7 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import (
     Label,
     _Fn,
 )
-from cordon_scanner.analysis.javascript.js_eval import JsEval, Tok
+from cordon_scanner.analysis.javascript.js_eval import JsEval
 
 
 class Structure:

@@ -26,62 +26,22 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
-MAX_STEPS: Final = 40_000
-MAX_STRING: Final = 20_000
-#: Template literals nested inside `${}` deeper than this are read as code (see `tokens`).
-MAX_TEMPLATE_DEPTH: Final = 16
-MAX_REGEX: Final = 2_000
-MAX_DEPTH: Final = 60
-MAX_TEXT: Final = 600_000
-#: What a decoded value has to be to count as something hidden: a module that reaches the system or
-#: the network, a URL or host, a shell command, code. Bundles decode ordinary strings constantly.
-_HIDDEN_SIGNIFICANT: Final = re.compile(
-    r"^(?:child_process|os|dns|net|https?|fs|vm|crypto|process|util|tls|dgram|worker_threads)$"
-    r"|https?://|\b(?:curl|wget|powershell|cmd(?:\.exe)?|bash|sh -c|chmod|nc|certutil|rundll32)\b"
-    r"|\brequire\s*\(|\beval\s*\(|\b(?:exec|spawn|execSync|userInfo|hostname|homedir|lookup|resolve4)\b"
-    r"|\.(?:exe|dll|ps1|bat|sh|vbs)\b|[a-z0-9-]+\.(?:com|net|org|io|xyz|top|ru|cn|site|online|me)\b"
+from cordon_scanner.analysis.javascript.evaluation.values import (
+    _HIDDEN_SIGNIFICANT,
+    HOLE,
+    MAX_DEPTH,
+    MAX_REGEX,
+    MAX_STEPS,
+    MAX_STRING,
+    MAX_TEMPLATE_DEPTH,
+    MAX_TEXT,
+    UNKNOWN,
+    Buf,
+    Fn,
+    Holey,
+    Tok,
+    Unknown,
 )
-HOLE: Final = "_"
-"""How an unknown piece of a string is written in the view."""
-
-
-class Unknown:
-    """A value the evaluator cannot know."""
-
-    __slots__ = ()
-
-
-UNKNOWN: Final = Unknown()
-
-
-@dataclass
-class Holey:
-    """A string with unknown pieces: known text, holes written as `HOLE`."""
-
-    text: str
-
-
-@dataclass
-class Buf:
-    data: bytes
-
-
-@dataclass
-class Fn:
-    params: list[str]
-    body: list[Any]  # tokens of a single expression
-    kind: str = "expr"  # "expr" or "charcodes" (a loop of fromCharCode over its argument)
-    prelude: list[tuple[str, list[Any]]] = field(default_factory=list)
-    """`const name = <tokens>;` statements evaluated, in order, before the returned expression."""
-
-
-@dataclass
-class Tok:
-    kind: str  # str longstr num name punct tmpl regex
-    value: Any
-    start: int
-    end: int
-
 
 _PUNCT: Final = (
     "===",
