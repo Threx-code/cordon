@@ -17,6 +17,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary.binary import BinaryDetector
+from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.secrets import ASSIGNMENT, NOT_A_SECRET, SecretNames
 from cordon_scanner.foundation.models import Category, Severity
 from support import Support
@@ -628,14 +629,13 @@ class TestAPrintedCommandIsNotAnExecutedOne:
     def suppressed(source: str) -> bool:
         import re
 
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = source.encode()
         content = FileContent(path="Makefile", raw=raw, size=len(raw))
         match = re.search(rb"curl", raw)
         assert match is not None
-        return CapabilityDetector._is_printed_text(content, match.start(), match.end())
+        return TextPosition.is_printed_text(content, match.start(), match.end())
 
     @pytest.mark.parametrize(
         "source",
@@ -2719,10 +2719,9 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         ],
     )
     def test_a_local_destination_is_not_egress(self, line: bytes) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
-        assert CapabilityDetector._is_local_target(content, content.raw.index(line))
+        assert TextPosition.is_local_target(content, content.raw.index(line))
 
     @pytest.mark.parametrize(
         "line",
@@ -2739,10 +2738,9 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         still a fetch and is what this project's own malicious corpus uses; a real host;
         a destination held in a variable, which says nothing either way; and a metadata
         read piped straight to a collector, which is the attack."""
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
-        assert not CapabilityDetector._is_local_target(content, content.raw.index(line))
+        assert not TextPosition.is_local_target(content, content.raw.index(line))
 
     def test_metadata_credentials_posted_out_are_still_reported(self, tmp_path) -> None:
         """The guard that matters. Reading IMDS role credentials and sending them
@@ -4599,12 +4597,11 @@ class TestACiScriptIsNotADropper:
         ],
     )
     def test_naming_a_tool_is_not_using_it(self, line: bytes, probe: bool) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"#!/bin/sh\n" + line + b"\n"
         content = FileContent(path="x.sh", raw=raw, size=len(raw))
-        assert CapabilityDetector._is_tool_probe(content, raw.index(line)) is probe
+        assert TextPosition.is_tool_probe(content, raw.index(line)) is probe
 
     @pytest.mark.parametrize(
         ("line", "local"),
@@ -4621,12 +4618,11 @@ class TestACiScriptIsNotADropper:
         just started, and the URL pattern needed a scheme to see it. The quoted form is
         vLLM's, where the port sits on the other side of a shell quote and the capture
         ends in a bare colon."""
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"#!/bin/sh\n" + line + b"\n"
         content = FileContent(path="x.sh", raw=raw, size=len(raw))
-        assert CapabilityDetector._is_local_target(content, raw.index(line)) is local
+        assert TextPosition.is_local_target(content, raw.index(line)) is local
 
     @pytest.mark.parametrize(
         ("line", "reported"),
@@ -4838,13 +4834,12 @@ class TestDefiningANameIsNotUsingIt:
 
     @staticmethod
     def declared(line: bytes, needle: bytes) -> bool:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b"// file\n" + line + b"\n"
         content = FileContent(path="x.ts", raw=raw, size=len(raw))
         start = raw.index(needle)
-        return CapabilityDetector._is_declaration(content, start, start + len(needle))
+        return TextPosition.is_declaration(content, start, start + len(needle))
 
     @pytest.mark.parametrize(
         ("line", "needle"),
@@ -8591,12 +8586,11 @@ class TestAnImportBringsANameIntoScope:
 
     @staticmethod
     def _is_declaration(line: str, needle: str) -> bool:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("x.rs", line.encode())
         offset = line.index(needle)
-        return CapabilityDetector._is_declaration(content, offset, offset + len(needle))
+        return TextPosition.is_declaration(content, offset, offset + len(needle))
 
     @pytest.mark.parametrize(
         ("line", "needle"),
@@ -8626,11 +8620,10 @@ class TestAHostWrittenAsAQuotedString:
 
     @staticmethod
     def _local(line: str) -> bool:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("x.rs", line.encode())
-        return CapabilityDetector._is_local_target(content, 4)
+        return TextPosition.is_local_target(content, 4)
 
     @pytest.mark.parametrize(
         "line",
@@ -12046,7 +12039,6 @@ class TestTheSameActsInAnotherEcosystem:
         `ICompletionsFetchService`. `fetch(` was read as a network call against
         a TypeScript interface. The Tailwind case the existing comment cites
         happens to be written on one line, which is why this went unnoticed."""
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = (
@@ -12059,17 +12051,16 @@ class TestTheSameActsInAnotherEcosystem:
         )
         content = FileContent(path="service.ts", raw=raw, size=len(raw))
         start = raw.index(b"fetch(")
-        assert CapabilityDetector._is_declaration(content, start, start + len(b"fetch("))
+        assert TextPosition.is_declaration(content, start, start + len(b"fetch("))
 
     def test_a_call_written_the_same_way_is_not_a_declaration(self) -> None:
         """The control. An argument list broken over lines is still a call."""
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         raw = b'const r = await fetch(\n\t"https://example.com/a",\n\t{ method: "POST" }\n);\n'
         content = FileContent(path="call.ts", raw=raw, size=len(raw))
         start = raw.index(b"fetch(")
-        assert not CapabilityDetector._is_declaration(content, start, start + len(b"fetch("))
+        assert not TextPosition.is_declaration(content, start, start + len(b"fetch("))
 
     def test_proximity_is_not_defeated_by_a_minifier(self, tmp_path) -> None:
         """Proximity is a line count, and a minifier deletes lines.

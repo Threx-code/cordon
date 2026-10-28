@@ -7085,7 +7085,7 @@ class Engine:
         Split on the shell's own separators and drop the segments whose command is
         a printer. `sh -c "python x.py"` keeps its payload, because `sh` is not a
         printer and that shape is a real one: the distinction is the same one
-        `CapabilityDetector._is_printed_text` draws inside file contents.
+        `TextPosition.is_printed_text` draws inside file contents.
         """
         segments = re.split(r"(?:&&|\|\||[;&|\n])", command)
         kept = []
