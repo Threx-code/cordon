@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.detect.agents.mcp.configs import McpConfigs
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.agents.paths import (
     AGENT_SETTINGS_PATHS,
     INSTRUCTION_PATHS,

@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from cordon_scanner.detect.agents.live_mcp import (
+from cordon_scanner.detect.agents.mcp_servers.live import (
     CHANGED_RULE,
     POISONED_RULE,
     UNREAD_RULE,

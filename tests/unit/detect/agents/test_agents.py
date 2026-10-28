@@ -9,7 +9,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.chain import AgentChainDetector
-from cordon_scanner.detect.agents.mcp.configs import McpConfigs
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from support import Support
@@ -656,7 +656,7 @@ class TestAgents:
         ],
     )
     def test_split_spec(self, ecosystem, spec, expected) -> None:
-        from cordon_scanner.detect.agents.mcp.configs import McpConfigs
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 
         assert McpConfigs.split_spec(ecosystem, spec) == expected
 

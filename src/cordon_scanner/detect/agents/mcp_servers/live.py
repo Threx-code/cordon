@@ -104,8 +104,8 @@ class LiveMcpDetector(BaseDetector):
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
-        from cordon_scanner.detect.agents.mcp.configs import McpConfigs
-        from cordon_scanner.detect.agents.mcp.server_source import McpServerSource
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+        from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
         from cordon_scanner.detect.agents.paths import MCP_PATHS, AgentPaths
         from cordon_scanner.intel.store.live_mcp import LiveMcp, LiveMcpError, McpApprovals
 

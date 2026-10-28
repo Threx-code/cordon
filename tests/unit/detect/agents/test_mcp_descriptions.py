@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.detect.agents.mcp.server_source import RESULT_SENDS_TO_URL, McpServerSource
+from cordon_scanner.detect.agents.mcp_servers.source import RESULT_SENDS_TO_URL, McpServerSource
 
 
 class TestASteeringDescription:

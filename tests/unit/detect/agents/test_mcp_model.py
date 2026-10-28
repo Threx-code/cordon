@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.detect.agents.mcp_model import McpDescriptionModel
+from cordon_scanner.detect.agents.mcp_servers.description_model import McpDescriptionModel
 
 
 class TestTheModel:

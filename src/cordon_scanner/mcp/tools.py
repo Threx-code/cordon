@@ -959,7 +959,7 @@ class AgentTools:
 
     @staticmethod
     def check_mcp_tools(settings: Settings, args: dict[str, Any], token: CancelToken) -> Outcome:
-        from cordon_scanner.detect.agents.mcp.server_source import McpServerSource
+        from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
 
         tools = args.get("tools")
         if not isinstance(tools, list) or not tools or len(tools) > 1000:

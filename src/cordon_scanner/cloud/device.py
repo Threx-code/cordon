@@ -170,7 +170,7 @@ class DeviceInventory:
 
     @staticmethod
     def _mcp_entries(tool: str, logical: str, servers: Any) -> list[dict[str, Any]]:
-        from cordon_scanner.detect.agents.mcp.configs import McpConfigs
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 
         entries: list[dict[str, Any]] = []
         for name, server in servers.items() if isinstance(servers, dict) else ():

@@ -13,7 +13,7 @@ from typing import ClassVar
 
 import cordon_scanner
 from cordon_scanner.decide import intent, verdict
-from cordon_scanner.detect.agents import mcp_model
+from cordon_scanner.detect.agents.mcp_servers import description_model
 from cordon_scanner.detect.binary import binary_imports, rule_files
 from cordon_scanner.detect.infra import iac_policies
 from cordon_scanner.engine import registry
@@ -34,8 +34,8 @@ class TestPackagePaths:
 
     def test_every_bundled_path_exists(self) -> None:
         files = [
-            mcp_model.MODEL_PATH,
-            mcp_model.SKILL_MODEL_PATH,
+            description_model.MODEL_PATH,
+            description_model.SKILL_MODEL_PATH,
             intent.MODEL_PATH,
             rule_files.BUILTIN_PACK,
         ]
@@ -86,7 +86,9 @@ class TestPackagePaths:
 
     def test_the_same_paths_as_before_the_anchor(self) -> None:
         assert intent.MODEL_PATH == PACKAGE / "detect" / "data" / "intent.json.gz"
-        assert mcp_model.MODEL_PATH == PACKAGE / "detect" / "data" / "mcp-descriptions.json.gz"
+        assert (
+            description_model.MODEL_PATH == PACKAGE / "detect" / "data" / "mcp-descriptions.json.gz"
+        )
         assert real.DATA_DIR == PACKAGE / "intel" / "data"
         assert advisories.DATA_DIR == PACKAGE / "intel" / "data"
         assert iac_policies.DATA_DIR == PACKAGE / "detect" / "data"

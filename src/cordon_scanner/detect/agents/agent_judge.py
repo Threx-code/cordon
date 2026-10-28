@@ -88,8 +88,8 @@ class AgentText:
 
     @staticmethod
     def of(unit: FileUnit) -> list[tuple[str, str]]:
-        from cordon_scanner.detect.agents.mcp.configs import McpConfigs
-        from cordon_scanner.detect.agents.mcp.server_source import (
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+        from cordon_scanner.detect.agents.mcp_servers.source import (
             MCP_SDK,
             SERVER_SOURCE_SUFFIXES,
             McpServerSource,

@@ -9,7 +9,11 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.detect.agents.agent_semantics import CHAINS, NAMES, SIZE, AgentSemantics
-from cordon_scanner.detect.agents.mcp_model import BUCKETS, MCP_MODEL, SKILL_MODEL
+from cordon_scanner.detect.agents.mcp_servers.description_model import (
+    BUCKETS,
+    MCP_MODEL,
+    SKILL_MODEL,
+)
 
 
 class Kit:

@@ -37,7 +37,10 @@ from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
 from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS, Autorun
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
-from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionModel
+from cordon_scanner.detect.agents.mcp_servers.description_model import (
+    SKILL_MODEL,
+    McpDescriptionModel,
+)
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation.models import (
@@ -62,9 +65,13 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext, Unit
 from cordon_scanner.detect.agents.extensions import ExtensionNames, ExtensionVerdicts
 from cordon_scanner.detect.agents.instructions import InstructionText
-from cordon_scanner.detect.agents.mcp.configs import McpConfigs
-from cordon_scanner.detect.agents.mcp.endpoints import LOCAL_HOSTS, PLACEHOLDER, McpEndpoints
-from cordon_scanner.detect.agents.mcp.server_source import (
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+from cordon_scanner.detect.agents.mcp_servers.endpoints import (
+    LOCAL_HOSTS,
+    PLACEHOLDER,
+    McpEndpoints,
+)
+from cordon_scanner.detect.agents.mcp_servers.source import (
     MCP_SDK,
     RESULT_SENDS_TO_URL,
     SERVER_SOURCE_SUFFIXES,
@@ -335,7 +342,7 @@ class AgentChainDetector(BaseDetector):
             yield self._finding("SUSPECT.AGENT.SKILL_HOOK_FETCH.001", unit, ctx, start, end)
         if unit.content.path.endswith(".py"):
             # What the agent gets when it calls the script's functions (`detect/mcp_code.py`).
-            from cordon_scanner.detect.agents.mcp_code import McpCode
+            from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
 
             text = unit.content.text
             starts = [0, *(m.end() for m in re.finditer(r"\n", text))]
@@ -410,7 +417,7 @@ class AgentChainDetector(BaseDetector):
             yield from self._threat_rules(unit, ctx, name, ("tool_name",), within=text)
         if unit.content.path.endswith(".py"):
             # What the handlers do with the agent's input (`detect/mcp_code.py`).
-            from cordon_scanner.detect.agents.mcp_code import McpCode
+            from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
 
             starts = [0, *(m.end() for m in re.finditer(r"\n", text))]
 

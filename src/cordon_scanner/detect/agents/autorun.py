@@ -85,7 +85,7 @@ class Autorun:
         detector: AgentChainDetector, unit: FileUnit, ctx: ScanContext
     ) -> Iterator[Finding]:
         """Commands an editor or agent runs when the folder is opened or the environment built."""
-        from cordon_scanner.detect.agents.mcp.configs import McpConfigs
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
         from cordon_scanner.detect.agents.rule_catalogue import RULES
 
         document = McpConfigs._json(unit.content)

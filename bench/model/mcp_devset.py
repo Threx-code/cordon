@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mcp_poisoning import McpSafetyBench, McpTox
 
 from cordon_scanner.detect.agents.agent_semantics import TRAILER
-from cordon_scanner.detect.agents.mcp.server_source import (
+from cordon_scanner.detect.agents.mcp_servers.source import (
     MCP_SDK,
     SERVER_SOURCE_SUFFIXES,
     McpServerSource,

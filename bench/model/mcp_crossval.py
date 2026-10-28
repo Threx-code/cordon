@@ -32,7 +32,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from cordon_scanner.detect.agents.mcp_model import FEATURES, McpDescriptionModel
+from cordon_scanner.detect.agents.mcp_servers.description_model import FEATURES, McpDescriptionModel
 
 
 class McpCrossVal:

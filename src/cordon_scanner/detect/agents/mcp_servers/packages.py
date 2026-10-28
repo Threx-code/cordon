@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import ScanContext, Unit
 from cordon_scanner.detect.agents.chain import AgentChainDetector
-from cordon_scanner.detect.agents.mcp.configs import McpConfigs
-from cordon_scanner.detect.agents.mcp.server_source import McpServerSource
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
 from cordon_scanner.detect.agents.paths import MCP_PATHS, AgentPaths
 from cordon_scanner.detect.agents.rule_catalogue import AgentRule
 from cordon_scanner.detect.agents.text_patterns import FETCH_EXEC, HIDDEN, INJECTION, INJECTION_INTL

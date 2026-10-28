@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.agents.mcp_code import McpCode
+from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
 
 HEADER = "import os, subprocess\nfrom mcp.server.fastmcp import FastMCP\nmcp = FastMCP('x')\n\n"
 
