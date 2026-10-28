@@ -901,7 +901,6 @@
   "long_functions": {
    "analysis/javascript/front/parser:Parser._statement": 107,
    "analysis/javascript/front/parser:Parser.left_hand_side": 95,
-   "analysis/javascript/js_eval:JsEval._scan": 91,
    "rules/loader:PatternCompiler._reject_unsafe": 121,
    "rules/loader:PatternCompiler._reject_unsafe.walk": 102,
    "rules/loader:PatternCompiler.required_literals": 181,

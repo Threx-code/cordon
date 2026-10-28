@@ -120,34 +120,7 @@ class JsEval:
                     pos = end
                     continue
             if c in "\"'`":
-                # To the literal's real end however long it is: giving up at a length and resuming
-                # one character later re-read the same string from every quote inside it, which on
-                # a long escaped JSON string was quadratic (review 98).
-                j = pos + 1
-                while j < n and text[j] != c:
-                    if text[j] == "\\":
-                        j += 2
-                        continue
-                    if c != "`" and text[j] == "\n":
-                        break
-                    if c == "`" and text.startswith("${", j):
-                        break
-                    j += 1
-                if j < n and text[j] == c:
-                    if j - pos <= MAX_STRING:
-                        out.append(Tok("str", JsEval._unquote(text[pos : j + 1]), pos, j + 1))
-                    else:
-                        out.append(Tok("longstr", "", pos, j + 1))  # too long to evaluate
-                    pos = j + 1
-                elif c == "`":
-                    end = (
-                        JsEval._template(text, pos, out, depth)
-                        if templates and depth < MAX_TEMPLATE_DEPTH
-                        else -1
-                    )
-                    pos = end if end > 0 else pos + 1  # else: read what is inside as code
-                else:
-                    pos = max(j, pos + 1)  # unterminated on its line: what it held is not code
+                pos = JsEval._string(text, pos, out, templates, depth)
                 continue
             if c in _NAME_START:
                 j = pos + 1
@@ -180,6 +153,38 @@ class JsEval:
                     out.append(Tok("punct", c, pos, pos + 1))
                 pos += 1
         return out
+
+    @staticmethod
+    def _string(text: str, pos: int, out: list[Tok], templates: bool, depth: int) -> int:
+        """Read the string or template literal opening at `pos` into `out`; the position after it."""
+        c, n = text[pos], len(text)
+        # To the literal's real end however long it is: giving up at a length and resuming
+        # one character later re-read the same string from every quote inside it, which on
+        # a long escaped JSON string was quadratic (review 98).
+        j = pos + 1
+        while j < n and text[j] != c:
+            if text[j] == "\\":
+                j += 2
+                continue
+            if c != "`" and text[j] == "\n":
+                break
+            if c == "`" and text.startswith("${", j):
+                break
+            j += 1
+        if j < n and text[j] == c:
+            if j - pos <= MAX_STRING:
+                out.append(Tok("str", JsEval._unquote(text[pos : j + 1]), pos, j + 1))
+            else:
+                out.append(Tok("longstr", "", pos, j + 1))  # too long to evaluate
+            return j + 1
+        if c == "`":
+            end = (
+                JsEval._template(text, pos, out, depth)
+                if templates and depth < MAX_TEMPLATE_DEPTH
+                else -1
+            )
+            return end if end > 0 else pos + 1  # else: read what is inside as code
+        return max(j, pos + 1)  # unterminated on its line: what it held is not code
 
     #: After these a `/` starts a regular expression, not a division.
     _REGEX_AFTER_NAME: ClassVar[frozenset[str]] = frozenset(
