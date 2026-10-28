@@ -82,6 +82,7 @@
   "detect/agents/agent_judge": "detect/agents/agent_judge",
   "detect/agents/agent_semantics": "detect/agents/agent_semantics",
   "detect/agents/chain": "detect/agents/chain",
+  "detect/agents/ci_workflows": "detect/agents/ci_workflows",
   "detect/agents/extensions": "detect/agents/extensions",
   "detect/agents/extension_files": "detect/agents/extension_files",
   "detect/agents/findings": "detect/agents/findings",
