@@ -1,6 +1,6 @@
-Script started on 2026-10-28 15:02:35+00:00 [COMMAND="cordon-scanner scan pkg:docker/nginx@1.27 --online" <not executed on terminal>]
+Script started on 2026-10-28 18:14:18+00:00 [COMMAND="cordon-scanner scan pkg:docker/nginx@1.27 --online" <not executed on terminal>]
 Fetched image:library/nginx@1.27 as image.tar; digest verified against the registry.
-[1mintel     [0m[K[1mscanning  [0m  [36m[--------------------][0m  0/77    0%[0m[K[1mscanning  [0m  [36m[##------------------][0m  11/77   14%  [2m...ar!etc/apt/keyrings/nginx-archive-keyring.gpg[0m[K[1mscanning  [0m  [36m[#################---][0m  67/77   87%  [2m...r!usr/lib/x86_64-linux-gnu/libicudata.so.72.1[0m[K[1mscanning  [0m  [36m[#################---][0m  68/77   88%  [2m...e.tar!usr/lib/x86_64-linux-gnu/libx265.so.199[0m[K[1mdependencies[0m[K[Kcordon-scanner: release comparison skipped: no version list for image
+[1mintel     [0m[K[1mscanning  [0m  [36m[--------------------][0m  0/77    0%[0m[K[1mscanning  [0m  [36m[#-------------------][0m  4/77    5%  [2m...cker-entrypoint.d/30-tune-worker-processes.sh[0m[K[1mscanning  [0m  [36m[#######-------------][0m  27/77   35%  [2mimage.tar!etc/pam.d/common-password[0m[K[1mscanning  [0m  [36m[###########---------][0m  44/77   57%  [2mimage.tar!var/lib/apt/extended_states[0m[K[1mscanning  [0m  [36m[#################---][0m  67/77   87%  [2m...r!usr/lib/x86_64-linux-gnu/libicudata.so.72.1[0m[K[1mscanning  [0m  [36m[#################---][0m  68/77   88%  [2m...e.tar!usr/lib/x86_64-linux-gnu/libx265.so.199[0m[K[1mdependencies[0m[K[Kcordon-scanner: release comparison skipped: no version list for image
 [2mcordon 0.6.0 · rulepack 0.2.0 (5c3d561bc857cfc0)[0m
 
 
@@ -423,7 +423,7 @@ Fetched image:library/nginx@1.27 as image.tar; digest verified against the regis
 [2m314 signals below the failure policy in 1 file, worth a look when reviewing this code; `-v` lists them.[0m
 [2m----------------------------------------------------------------------------[0m
 [1;97;41m 37 critical [0m · [1;30;101m 377 high [0m · [1;30;43m 280 medium [0m · [1;30;46m 34 low [0m
-[2m77 files · 26934ms[0m
+[2m77 files · 31026ms[0m
 [2mintel: osv, 0h old[0m
 [2mscan complete[0m
 
@@ -431,4 +431,4 @@ Fetched image:library/nginx@1.27 as image.tar; digest verified against the regis
 
 FAILED: 414 finding(s) met the failure policy (highest: critical)
 
-Script done on 2026-10-28 15:03:45+00:00 [COMMAND_EXIT_CODE="1"]
+Script done on 2026-10-28 18:15:37+00:00 [COMMAND_EXIT_CODE="1"]
