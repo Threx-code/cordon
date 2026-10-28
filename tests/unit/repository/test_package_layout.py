@@ -199,9 +199,7 @@ class Structure:
 
     #: The files a directory may hold at its top; everything else lives in a subdirectory.
     TOP_FILES: ClassVar[dict[str, frozenset[str]]] = {
-        "src/cordon_scanner": frozenset(
-            {"__init__.py", "__main__.py", "notify.py", "version.py", "py.typed"}
-        ),
+        "src/cordon_scanner": frozenset({"__init__.py", "__main__.py", "version.py", "py.typed"}),
         "src/cordon_scanner/detect": frozenset({"__init__.py", "base.py", "catalogue.py"}),
         "src/cordon_scanner/intel": frozenset({"__init__.py"}),
         "tests": frozenset({"conftest.py", "support.py"}),

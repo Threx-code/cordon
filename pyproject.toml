@@ -202,6 +202,11 @@ github = "cordon_scanner.report.github:GithubReporter"
 codeclimate = "cordon_scanner.report.codeclimate:CodeClimateReporter"
 vex = "cordon_scanner.report.vex:VexReporter"
 
+[project.entry-points."cordon_scanner.notifiers"]
+webhook = "cordon_scanner.notify.channels.webhook:WebhookChannel"
+slack = "cordon_scanner.notify.channels.slack:SlackChannel"
+teams = "cordon_scanner.notify.channels.teams:TeamsChannel"
+
 [project.urls]
 Homepage = "https://github.com/Threx-code/cordon"
 Documentation = "https://github.com/Threx-code/cordon#readme"

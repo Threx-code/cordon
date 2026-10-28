@@ -1275,7 +1275,7 @@ class CommandLine:
         # corrected command line, not a message that silently never arrives.
         channels: tuple[str, ...] = ()
         if getattr(args, "notify", None):
-            from cordon_scanner.notify import Notifier
+            from cordon_scanner.notify.notifier import Notifier
 
             try:
                 channels = Notifier.parse_channels(args.notify)
@@ -1400,9 +1400,9 @@ class CommandLine:
         code = int(verdict.exit_code)
         if bundle is None or code == int(ExitCode.CLEAN):
             return code
-        from cordon_scanner.notify import Webhooks
+        from cordon_scanner.foundation.targets import TargetName
 
-        key = Webhooks._target_name(result)
+        key = TargetName.of(result)
         mode = bundle.gate_mode(key)
         if mode not in ("observe", "warn"):
             return code
@@ -1504,7 +1504,7 @@ class CommandLine:
         cls, channels: tuple[str, ...], result: ScanResult, verdict: Any, *, verbose: bool
     ) -> None:
         """Post the gate failure. Reported on stderr, never allowed to change the exit code."""
-        from cordon_scanner.notify import Notifier
+        from cordon_scanner.notify.notifier import Notifier
 
         deliveries = Notifier().send(
             channels, result, reason=str(verdict.reason), exit_code=int(verdict.exit_code)

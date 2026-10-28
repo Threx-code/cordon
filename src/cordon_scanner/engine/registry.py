@@ -47,6 +47,7 @@ DETECTOR_GROUP = "cordon_scanner.detectors"
 REPORTER_GROUP = "cordon_scanner.reporters"
 SOURCE_GROUP = "cordon_scanner.sources"
 ECOSYSTEM_GROUP = "cordon_scanner.ecosystems"
+NOTIFIER_GROUP = "cordon_scanner.notifiers"
 
 # Components shipped with Cordon. Named explicitly so that a third-party package
 # cannot shadow a built-in by registering the same entry-point name: an attacker
@@ -152,6 +153,13 @@ BUILTIN_REPORTERS = (
     "vex",
 )
 
+BUILTIN_NOTIFIERS = (
+    "webhook",
+    "slack",
+    "teams",
+)
+"""In the order `--notify` lists them and sends them."""
+
 
 class Registry:
     """Discovers and instantiates plugins for one Scanner."""
@@ -202,6 +210,12 @@ class Registry:
                 hint=f"Available formats: {available}",
             )
         return found[0]
+
+    def notifiers(self) -> tuple[Any, ...]:
+        """Notification channels: the built-in ones in their fixed order, then any plugin's by name."""
+        loaded = self._load(NOTIFIER_GROUP, BUILTIN_NOTIFIERS, None)
+        rank = {name: index for index, name in enumerate(BUILTIN_NOTIFIERS)}
+        return tuple(sorted(loaded, key=lambda c: (rank.get(str(c.id), len(rank)), str(c.id))))
 
     def _load(
         self, group: str, builtin: Sequence[str], only: Sequence[str] | None
@@ -358,10 +372,12 @@ class Registry:
 
 __all__ = [
     "BUILTIN_DETECTORS",
+    "BUILTIN_NOTIFIERS",
     "BUILTIN_REPORTERS",
     "DETECTOR_GROUP",
     "DISTRIBUTION",
     "ECOSYSTEM_GROUP",
+    "NOTIFIER_GROUP",
     "REPORTER_GROUP",
     "SOURCE_GROUP",
     "Registry",

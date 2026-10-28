@@ -108,14 +108,14 @@ class SignedResults:
         if not root.is_dir():
             return None
         try:
-            from cordon_scanner.notify import Webhooks
+            from cordon_scanner.foundation.targets import TargetName
             from cordon_scanner.report import aibom
 
             repository = result.repository
             return aibom.AiBom.cyclonedx_document(
                 root,
                 result.dependencies,
-                root_name=Webhooks._target_name(result),
+                root_name=TargetName.of(result),
                 root_version=(repository.revision if repository else None) or "unversioned",
                 tool_version=__version__,
             )
@@ -137,7 +137,7 @@ class SignedResults:
         reason: str,
         ai_inventory: bytes | None = None,
     ) -> dict[str, Any]:
-        from cordon_scanner.notify import Webhooks
+        from cordon_scanner.foundation.targets import TargetName
 
         repository = result.repository
         severities = Counter(
@@ -156,7 +156,7 @@ class SignedResults:
                     "rulepack_hash": result.rulepack_hash,
                 },
                 "target": {
-                    "name": Webhooks._target_name(result),
+                    "name": TargetName.of(result),
                     "revision": (repository.revision if repository else None) or "",
                     "branch": (repository.branch if repository else None) or "",
                     # source, image, package or archive: lets the console list images apart.

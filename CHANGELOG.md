@@ -17,6 +17,13 @@ test or conformance case that fails on the old code.
 
 ### Added
 
+- **Notifications are a feature of their own** (`cordon_scanner.notify`). Every channel is sent at
+  the same time. A delivery that fails on the way (a dropped connection, 408, 429, 5xx) is tried
+  again, three times at most and within twenty seconds for the whole scan, under one delivery id;
+  `Retry-After` is honoured up to ten seconds. A receiver can accept two webhook secrets while
+  changing one. A notification channel is now a plugin point (`cordon_scanner.notifiers`), loaded
+  only with `--allow-plugins`, and is handed only the safe summary. The Slack, Teams and webhook
+  messages for a failed gate are byte for byte what they were.
 - **No optional runtime dependencies for provenance or signing.** Sigstore bundles (npm, PyPI PEP
   740, Maven Central, RubyGems, Homebrew, Bazel) and OpenPGP signatures (Helm, Ansible) are
   verified by Cordon's own code against trust material it pins, and CI uploads are signed

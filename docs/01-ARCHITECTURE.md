@@ -724,6 +724,7 @@ Full treatment in `02-THREAT-MODEL.md`. The architectural hooks:
 | New detector | `Detector` implementation, entry point `cordon_scanner.detectors` | none |
 | New reporter | `Reporter` implementation, entry point `cordon_scanner.reporters` | none |
 | New source | `Source` implementation, entry point `cordon_scanner.sources` | none |
+| New notification channel | `Channel` implementation, entry point `cordon_scanner.notifiers` | none |
 | New intel feed | `IntelProvider` implementation | none |
 | Organisation policy | YAML | none |
 
