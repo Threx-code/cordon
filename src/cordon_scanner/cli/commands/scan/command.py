@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.cli.commands.scan.enrichment import ScanEnrichment
 from cordon_scanner.cli.commands.scan.git_modes import GitModes
+from cordon_scanner.cli.commands.scan.options import ScanOptions
 from cordon_scanner.cli.commands.scan.organisation_policy import OrganisationPolicy
 from cordon_scanner.cli.commands.scan.output import ScanOutput
 from cordon_scanner.cli.commands.scan.suppression import ScanSuppression
@@ -30,6 +31,10 @@ if TYPE_CHECKING:
 
 
 class ScanCommand:
+    @staticmethod
+    def add_parser(sub: argparse._SubParsersAction, epilog: str) -> None:  # type: ignore[type-arg]
+        ScanOptions.add_parser(sub, epilog)
+
     @classmethod
     def _scan_package(cls, args: argparse.Namespace) -> int:
         """`scan pkg:<type>/<name>@<version>`: fetch the published archive, verify it, scan it."""
