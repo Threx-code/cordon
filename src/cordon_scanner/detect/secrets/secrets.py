@@ -36,7 +36,6 @@ from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.test_material import SCANNER_CONFIG_PATHS, TEST_MATERIAL_PATHS
-from cordon_scanner.engine.samples import SampleKinds
 from cordon_scanner.engine.walker import PathGlob
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
@@ -51,6 +50,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.text.comments import SourceComments
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.foundation.text.prose import Prose

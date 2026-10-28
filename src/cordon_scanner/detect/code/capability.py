@@ -64,7 +64,6 @@ from cordon_scanner.detect.secrets.secrets import (
     SourcePaths,
     SourceSpans,
 )
-from cordon_scanner.engine.samples import SampleKinds
 from cordon_scanner.foundation.models import (
     Capability,
     Category,
@@ -75,6 +74,7 @@ from cordon_scanner.foundation.models import (
     MatchKind,
     Severity,
 )
+from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.text.comments import SourceComments
 from cordon_scanner.foundation.text.redact import Redactor
 

@@ -28,11 +28,11 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.engine.samples import SampleKinds
 from cordon_scanner.foundation.files.spill import SpilledBytes
 from cordon_scanner.foundation.files.windows import BytesWindows, DiskWindows, WindowSource
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:

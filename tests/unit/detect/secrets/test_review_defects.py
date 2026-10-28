@@ -3010,7 +3010,7 @@ class TestProvisioningAMachineIsNotAFoothold:
     )
 
     def test_the_predicate(self) -> None:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         assert SampleKinds.is_machine_provisioning(self.BOOTSTRAP)
         assert SampleKinds.is_machine_provisioning(b"#cloud-config\npackages:\n  - curl\n")
@@ -8464,7 +8464,7 @@ class TestInstallingSoftwareIsWhatAnInstallerDoes:
 
     @staticmethod
     def _provisioning(text: str, path: str = "x.sh") -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.is_machine_provisioning(text.encode(), path)
 
@@ -8746,7 +8746,7 @@ class TestAFileNamedForAuthenticationOwnsWhatItReads:
 
     @staticmethod
     def _names(path: str) -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.names_authentication(path)
 
@@ -9925,7 +9925,7 @@ class TestAPublishedExploitIsPublishedToBeRun:
 
     @staticmethod
     def _exploit(raw: bytes) -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.is_exploit_material(raw)
 
@@ -10016,7 +10016,7 @@ class TestAKeyTheSitesOwnPlayerHolds:
 
     @staticmethod
     def _extractor(raw: bytes) -> bool:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         return SampleKinds.is_media_extractor(raw)
 
@@ -11556,7 +11556,7 @@ class TestAnUninstallerTakesThePersistenceAway:
         ],
     )
     def test_a_path_that_says_installer(self, path: str) -> None:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         assert SampleKinds.names_installer(path)
 
@@ -11571,7 +11571,7 @@ class TestAnUninstallerTakesThePersistenceAway:
         ],
     )
     def test_a_path_that_merely_contains_one(self, path: str) -> None:
-        from cordon_scanner.engine.samples import SampleKinds
+        from cordon_scanner.foundation.samples import SampleKinds
 
         assert not SampleKinds.names_installer(path)
 
