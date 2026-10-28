@@ -44,7 +44,7 @@ class Recorder:
 
 
 class AgentJudgeHelpers:
-    """Helpers for test_agent_judge.py."""
+    """Helpers for test_language_model_judge.py."""
 
     @staticmethod
     def _verdict(verdict: str, evidence: str = "") -> str:
@@ -273,7 +273,7 @@ class TestTheCloudContract:
         assert len(body["text"]) <= request["properties"]["text"]["maxLength"]
 
     def test_every_kind_the_package_sends_is_in_the_schema(self) -> None:
-        from cordon_scanner.detect.agents.agent_judge import AgentText
+        from cordon_scanner.detect.agents.language_model_judge import AgentText
 
         source = Path(AgentText.__module__.replace(".", "/") + ".py")
         sent = {
@@ -282,7 +282,7 @@ class TestTheCloudContract:
             "MCP tool description",
         }
         assert sent == set(self.SCHEMA["$defs"]["request"]["properties"]["kind"]["enum"])
-        assert source.name == "agent_judge.py"
+        assert source.name == "language_model_judge.py"
 
     def test_the_package_reads_the_schema_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
         response = self.SCHEMA["$defs"]["response"]["properties"]["verdict"]
@@ -357,12 +357,12 @@ class TestTheJudgeReadsTheGreyBandOnly:
         return SimpleNamespace(rule_id=rule, severity=Severity[severity])
 
     def test_a_medium_agent_finding_is_judged(self) -> None:
-        from cordon_scanner.detect.agents.agent_judge import JudgeGate
+        from cordon_scanner.detect.agents.language_model_judge import JudgeGate
 
         assert JudgeGate.wants([self._finding("SUSPECT.MCP.TOOL_DESCRIPTION.001", "MEDIUM")])
 
     def test_a_clean_or_blocked_file_is_not(self) -> None:
-        from cordon_scanner.detect.agents.agent_judge import JudgeGate
+        from cordon_scanner.detect.agents.language_model_judge import JudgeGate
 
         assert not JudgeGate.wants([])
         assert not JudgeGate.wants([self._finding("SUSPECT.EXFIL.001", "MEDIUM")])
@@ -376,7 +376,7 @@ class TestTheJudgeReadsTheGreyBandOnly:
     def test_it_runs_after_every_other_detector(self) -> None:
         from types import SimpleNamespace
 
-        from cordon_scanner.detect.agents.agent_judge import JudgeGate
+        from cordon_scanner.detect.agents.language_model_judge import JudgeGate
 
         ids = [SimpleNamespace(id=i) for i in ("advisory", "agent-judge", "agents", "rule-file")]
         assert [d.id for d in JudgeGate.last(ids)] == [

@@ -18,7 +18,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "DeclaredSource": ("cordon_scanner.detect.supply.manifests.sources", "DeclaredSource"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
-    "JudgeGate": ("cordon_scanner.detect.agents.agent_judge", "JudgeGate"),
+    "JudgeGate": ("cordon_scanner.detect.agents.language_model_judge", "JudgeGate"),
     "LoadPath": ("cordon_scanner.detect.code.capability.load_path", "LoadPath"),
     "NATIVE_FORMATS": ("cordon_scanner.detect.binary.binary", "NATIVE_FORMATS"),
     "ReachedFlows": ("cordon_scanner.detect.code.reached_flows", "ReachedFlows"),
@@ -32,7 +32,9 @@ ROLES: dict[str, tuple[str, str]] = {
 }
 
 if TYPE_CHECKING:
-    from cordon_scanner.detect.agents import agent_judge as _detect_agents_agent_judge
+    from cordon_scanner.detect.agents import (
+        language_model_judge as _detect_agents_language_model_judge,
+    )
     from cordon_scanner.detect.base import (
         BinaryIdentification,
         ComposerPluginPaths,
@@ -61,7 +63,7 @@ if TYPE_CHECKING:
     DeclaredSource: DeclaredSourceKinds = _detect_supply_manifests_sources.DeclaredSource
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
-    JudgeGate: JudgeScheduling = _detect_agents_agent_judge.JudgeGate
+    JudgeGate: JudgeScheduling = _detect_agents_language_model_judge.JudgeGate
     LoadPath: SkillScripts = _detect_code_capability_load_path.LoadPath
     NATIVE_FORMATS: frozenset[str] = _detect_binary_binary.NATIVE_FORMATS
     ReachedFlows: ReachedFlowFacts = _detect_code_reached_flows.ReachedFlows

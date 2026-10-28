@@ -11,7 +11,7 @@ import re
 import tomllib
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.detect.agents import agent_config
+from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.autorun import Autorun
 from cordon_scanner.detect.agents.findings import AgentFinding
 from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
@@ -53,13 +53,13 @@ class SettingsFileFindings:
                     command,
                     atr.TEXT_KINDS,
                     within=text,
-                    local=not agent_config.CommandClassifier.reaches_out(command),
+                    local=not configuration.CommandClassifier.reaches_out(command),
                 )
             attack = next(
                 (
                     (c, v)
                     for c in commands
-                    if (v := agent_config.CommandClassifier.classify(c)) is not None
+                    if (v := configuration.CommandClassifier.classify(c)) is not None
                 ),
                 None,
             )
@@ -78,8 +78,8 @@ class SettingsFileFindings:
                 unfamiliar = [
                     c
                     for c in commands
-                    if not agent_config.CommandClassifier.is_routine(c)
-                    and agent_config.CommandClassifier.reaches_out(c)
+                    if not configuration.CommandClassifier.is_routine(c)
+                    and configuration.CommandClassifier.reaches_out(c)
                 ]
                 yield AgentFinding.at_text(
                     "SUSPECT.AGENT.HOOK.001",
@@ -143,7 +143,7 @@ class SettingsFileFindings:
         for key, command in commands:
             if not isinstance(command, str):
                 continue
-            verdict = agent_config.CommandClassifier.classify(command)
+            verdict = configuration.CommandClassifier.classify(command)
             if verdict is not None:
                 yield AgentFinding.at_text(
                     "MALWARE.AGENT.AUTORUN.001",
@@ -163,7 +163,7 @@ class SettingsFileFindings:
         env = settings.get("env")
         if isinstance(env, dict):
             for name, value in env.items():
-                if agent_config.ApiTraffic.redirects_api(str(name), value):
+                if configuration.ApiTraffic.redirects_api(str(name), value):
                     yield AgentFinding.at_text(
                         "SUSPECT.AGENT.API_REDIRECT.001",
                         unit,
@@ -171,7 +171,7 @@ class SettingsFileFindings:
                         text,
                         str(value),
                         message=RULES["SUSPECT.AGENT.API_REDIRECT.001"].message
-                        + f" ({name} -> {agent_config.ApiTraffic.host_of(str(value))})",
+                        + f" ({name} -> {configuration.ApiTraffic.host_of(str(value))})",
                     )
         permissions = settings.get("permissions")
         if isinstance(permissions, dict):
@@ -179,7 +179,7 @@ class SettingsFileFindings:
                 (
                     d
                     for d in permissions.get("additionalDirectories") or ()
-                    if agent_config.ServerExposure.wide_directory(d)
+                    if configuration.ServerExposure.wide_directory(d)
                 ),
                 None,
             )
@@ -274,7 +274,7 @@ class SettingsFileFindings:
         providers = document.get("model_providers")
         for provider in providers.values() if isinstance(providers, dict) else ():
             base = provider.get("base_url") if isinstance(provider, dict) else None
-            if isinstance(base, str) and agent_config.ApiTraffic.redirects_api(
+            if isinstance(base, str) and configuration.ApiTraffic.redirects_api(
                 "OPENAI_BASE_URL", base
             ):
                 yield AgentFinding.at_text(
@@ -284,7 +284,7 @@ class SettingsFileFindings:
                     text,
                     base,
                     message=RULES["SUSPECT.AGENT.API_REDIRECT.001"].message
-                    + f" (model provider -> {agent_config.ApiTraffic.host_of(base)})",
+                    + f" (model provider -> {configuration.ApiTraffic.host_of(base)})",
                 )
 
     @classmethod

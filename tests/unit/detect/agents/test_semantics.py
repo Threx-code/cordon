@@ -1,4 +1,4 @@
-"""What a tool's text asks the agent to do (`detect/agent_semantics.py`).
+"""What a tool's text asks the agent to do (`detect/agents/semantics.py`).
 
 The quiet side is the real descriptions that made the first draft noisy (review 98): constraints on
 a value, guidance about the tool itself, an argument list.
@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.detect.agents.agent_semantics import CHAINS, NAMES, SIZE, AgentSemantics
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
     BUCKETS,
     MCP_MODEL,
     SKILL_MODEL,
 )
+from cordon_scanner.detect.agents.semantics import CHAINS, NAMES, SIZE, AgentSemantics
 
 
 class Kit:

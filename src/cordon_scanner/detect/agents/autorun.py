@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.detect.agents import agent_config
+from cordon_scanner.detect.agents import configuration
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 
@@ -119,7 +119,7 @@ class Autorun:
                     for c in McpConfigs._command_strings(terminal.get("command"))
                 )
         for where, command in commands:
-            verdict = agent_config.CommandClassifier.classify(command)
+            verdict = configuration.CommandClassifier.classify(command)
             if verdict is None:
                 continue
             rule_id = "MALWARE.AGENT.AUTORUN.001"

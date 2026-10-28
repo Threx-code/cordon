@@ -11,8 +11,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.detect.agents import agent_config
-from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
+from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.findings import AgentFinding
 from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
@@ -28,6 +27,7 @@ from cordon_scanner.detect.agents.mcp_servers.source import (
     McpServerSource,
 )
 from cordon_scanner.detect.agents.rule_catalogue import RULES
+from cordon_scanner.detect.agents.semantics import AgentSemantics
 from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 from cordon_scanner.detect.agents.text_patterns import (
     FETCH_EXEC,
@@ -123,7 +123,7 @@ class McpServerFindings:
             reason = McpServerSource._poisoned_description(description)
             if reason is None:
                 # The steps an attack on the agent takes, in a combination no real server's own
-                # description carries (`agent_semantics.PRECISE`).
+                # description carries (`semantics.PRECISE`).
                 chain = AgentSemantics.precise(description)
                 if chain is not None:
                     reason = f"gives {AgentSemantics.explain(chain)}"
@@ -370,7 +370,7 @@ class McpServerFindings:
             yield from AgentTextFindings.threat_rules(
                 unit, ctx, launch, atr.TEXT_KINDS, within=text
             )
-            verdict = agent_config.CommandClassifier.classify(launch)
+            verdict = configuration.CommandClassifier.classify(launch)
             if verdict is not None or FETCH_EXEC.search(launch):
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.SHELL_LAUNCH.001",
@@ -381,7 +381,7 @@ class McpServerFindings:
                     message=RULES["SUSPECT.MCP.SHELL_LAUNCH.001"].message
                     + (f" The launch {verdict.reason}." if verdict is not None else ""),
                 )
-            scope = agent_config.ServerExposure.broad_filesystem_scope(args)
+            scope = configuration.ServerExposure.broad_filesystem_scope(args)
             if scope is not None:
                 yield AgentFinding.at_text(
                     "POLICY.AGENT.MCP_BROAD_SCOPE.001", unit, ctx, text, scope
@@ -398,7 +398,7 @@ class McpServerFindings:
         spec = McpConfigs.launched_package(command, args)
         if spec is not None:
             ecosystem, package, pinned = spec
-            imitated = agent_config.PackageLookalike.lookalike_of(package)
+            imitated = configuration.PackageLookalike.lookalike_of(package)
             if imitated is not None:
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.LOOKALIKE.001",
@@ -420,7 +420,7 @@ class McpServerFindings:
                     + f" ({ecosystem}: {package})",
                 )
         elif command.rsplit("/", 1)[-1] in ("docker", "podman") and "run" in args:
-            launched = agent_config.ServerExposure.docker_run(args)
+            launched = configuration.ServerExposure.docker_run(args)
             image = launched.image if launched is not None else None
             if launched is not None and launched.host_access:
                 yield AgentFinding.at_text(
@@ -457,7 +457,7 @@ class McpServerFindings:
         environment = server.get("env")
         if isinstance(environment, dict):
             for name, value in environment.items():
-                if agent_config.ServerExposure.injects_code(str(name), value):
+                if configuration.ServerExposure.injects_code(str(name), value):
                     yield AgentFinding.at_text(
                         "SUSPECT.MCP.ENV_INJECTION.001",
                         unit,
@@ -493,7 +493,7 @@ class McpServerFindings:
         cls, unit: FileUnit, ctx: ScanContext, text: str, url: str
     ) -> Iterator[Finding]:
         """A remote MCP server: how it is reached, where, and what its URL carries."""
-        host = agent_config.ApiTraffic.host_of(url)
+        host = configuration.ApiTraffic.host_of(url)
         local = host in LOCAL_HOSTS
         # Both can hold: `http://bore.pub:44876/...` is a tunnel reached in cleartext, and the
         # tunnel is the finding that blocks.
@@ -501,7 +501,7 @@ class McpServerFindings:
             yield AgentFinding.at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, url)
         if url.lower().startswith("http://") and not local:
             yield AgentFinding.at_text("SUSPECT.MCP.INSECURE_TRANSPORT.001", unit, ctx, text, url)
-        secret = agent_config.ServerExposure.credential_in_url(url)
+        secret = configuration.ServerExposure.credential_in_url(url)
         if secret is not None:
             yield AgentFinding.at_text(
                 "SECRET.MCP.INLINE_CREDENTIAL.001", unit, ctx, text, secret, secret=True

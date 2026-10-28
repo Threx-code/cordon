@@ -161,7 +161,7 @@ cordon-sandbox = "cordon_sandbox.cli:SandboxCli.main"
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
 advisory = "cordon_scanner.detect.supply.advisories.detector:AdvisoryDetector"
-agent-judge = "cordon_scanner.detect.agents.agent_judge:AgentJudgeDetector"
+agent-judge = "cordon_scanner.detect.agents.language_model_judge:AgentJudgeDetector"
 agents = "cordon_scanner.detect.agents.chain:AgentChainDetector"
 attestation = "cordon_scanner.detect.supply.attestation:AttestationDetector"
 campaign-sibling = "cordon_scanner.detect.supply.campaign_sibling:CampaignSiblingDetector"

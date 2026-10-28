@@ -35,7 +35,7 @@ MODEL_PATH: Final = PackagePaths.data("detect") / "mcp-descriptions.json.gz"
 SKILL_MODEL_PATH: Final = PackagePaths.data("detect") / "skill-instructions.json.gz"
 BUCKETS: Final = 1 << 18
 FEATURES: Final = BUCKETS + 64
-"""Word buckets, then reserved slots for `agent_semantics` (it uses fewer than 64)."""
+"""Word buckets, then reserved slots for `semantics` (it uses fewer than 64)."""
 MAX_TEXT: Final = 8_000
 """A description longer than this is scored on its first part: none in either corpus is."""
 MAX_SKILL_TEXT: Final = 40_000
@@ -57,7 +57,7 @@ class LinearTextModel:
     def __init__(self, path: Path, limit: int, *, semantic: bool = False) -> None:
         self.path = path
         self.limit = limit
-        # Tool text also carries what it asks the agent to do (`agent_semantics`), in fixed slots
+        # Tool text also carries what it asks the agent to do (`semantics`), in fixed slots
         # after the word buckets. Skill instructions are orders to the agent by design, so the
         # skill model does not read them this way.
         self.semantic = semantic
@@ -74,7 +74,7 @@ class LinearTextModel:
         norm = math.sqrt(sum(v * v for v in counts.values())) or 1.0
         features = {k: v / norm for k, v in counts.items()}
         if self.semantic:
-            from cordon_scanner.detect.agents.agent_semantics import SCALE, AgentSemantics
+            from cordon_scanner.detect.agents.semantics import SCALE, AgentSemantics
 
             for slot, value in enumerate(AgentSemantics.vector(text[: self.limit])):
                 if value:

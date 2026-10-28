@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final
 
-from cordon_scanner.detect.agents import agent_config
+from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
 from cordon_scanner.detect.agents.findings import AgentFinding
 from cordon_scanner.detect.agents.instructions import InstructionText
@@ -271,7 +271,7 @@ class InstructionFileFindings:
                 (
                     m
                     for m in re.finditer(r"(?:[^\n]*\\\n)*[^\n]+", text)  # with its `\` lines
-                    if (verdict := agent_config.CommandClassifier.classify(m.group(0))) is not None
+                    if (verdict := configuration.CommandClassifier.classify(m.group(0))) is not None
                     and verdict.kind != "fetch-exec"
                 ),
                 None,
@@ -286,7 +286,7 @@ class InstructionFileFindings:
             (
                 url
                 for url in McpEndpoints.in_text(text)
-                if McpEndpoints.untrusted(agent_config.ApiTraffic.host_of(url))
+                if McpEndpoints.untrusted(configuration.ApiTraffic.host_of(url))
             ),
             None,
         )

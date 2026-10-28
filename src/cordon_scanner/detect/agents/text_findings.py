@@ -2,7 +2,7 @@
 
 An instruction file, a settings file's command, an MCP server's tool description: each is text an
 agent reads and acts on. The Agent Threat Rules that match it give one finding per ATR category, and
-the semantic layer (`agent_intent.py`) one per intent the text states, graded by the words that
+the semantic layer (`instruction_intent.py`) one per intent the text states, graded by the words that
 state it. Every part of the agent chain that reads such text asks here."""
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ class AgentTextFindings:
     def intents(
         cls, unit: FileUnit, ctx: ScanContext, text: str, *, within: str | None = None
     ) -> Iterator[Finding]:
-        """The semantic layer (`detect/agent_intent.py`): one finding per intent the text states,
+        """The semantic layer (`detect/agents/instruction_intent.py`): one finding per intent the text states,
         and, for an instruction file, the intent of a file it tells the agent to follow."""
-        from cordon_scanner.detect.agents.agent_intent import InstructionIntent
+        from cordon_scanner.detect.agents.instruction_intent import InstructionIntent
 
         seen: set[str] = set()
         for intent in InstructionIntent.find(text):

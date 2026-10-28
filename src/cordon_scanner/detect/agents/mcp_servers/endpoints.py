@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar, Final
 
-from cordon_scanner.detect.agents import agent_config
+from cordon_scanner.detect.agents import configuration
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -71,7 +71,7 @@ class McpEndpoints:
                 span = span.split("\n", 1)[0]
             for found in McpEndpoints._URL.finditer(span):
                 url = found.group(0).rstrip(".,;")
-                if not McpEndpoints._PLACEHOLDER.search(agent_config.ApiTraffic.host_of(url)):
+                if not McpEndpoints._PLACEHOLDER.search(configuration.ApiTraffic.host_of(url)):
                     yield url
 
 

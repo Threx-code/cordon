@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from cordon_scanner.detect.agents import agent_config
+from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
     EXFIL_PATHS,
@@ -335,7 +335,7 @@ class McpServerSource:
             return "makes calling another tool a condition of using this one"
         if _SCRIPTED_MESSAGE.search(description):
             return "scripts an alarm for the agent to tell the user"
-        if agent_config.CommandClassifier.classify(description) is not None or any(
+        if configuration.CommandClassifier.classify(description) is not None or any(
             McpServerSource._moves_credentials(sentence) for sentence in sentences
         ):
             return "points the agent at credential files or a command that moves them"

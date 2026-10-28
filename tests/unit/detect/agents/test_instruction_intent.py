@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.agents.agent_intent import InstructionIntent
+from cordon_scanner.detect.agents.instruction_intent import InstructionIntent
 from cordon_scanner.foundation.config.settings import Config
 
 
