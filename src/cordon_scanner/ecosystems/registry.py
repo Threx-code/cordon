@@ -40,12 +40,10 @@ from cordon_scanner.foundation.paths import ContainerPaths
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from cordon_scanner.ecosystems.base import ImageReferences, InstallTimeSpans
+    from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
-    from cordon_scanner.ecosystems.packages import homebrew as _ecosystems_packages_homebrew
 
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
-    NotRunAtInstall: InstallTimeSpans = _ecosystems_packages_homebrew.NotRunAtInstall
 
 _MAX_ANSWERS = 1 << 20
 """Past this many distinct paths the memo starts over, so its memory stays bounded."""
@@ -302,7 +300,6 @@ class RegistryFacts:
 #: when it is first asked for (PEP 562), as the engine's own imports were.
 ROLES: dict[str, tuple[str, str]] = {
     "ImageReference": ("cordon_scanner.ecosystems.infra.image", "ImageReference"),
-    "NotRunAtInstall": ("cordon_scanner.ecosystems.packages.homebrew", "NotRunAtInstall"),
 }
 
 
@@ -322,6 +319,5 @@ __all__ = [
     "ROLES",
     "EcosystemRegistry",
     "ImageReference",
-    "NotRunAtInstall",
     "RegistryFacts",
 ]

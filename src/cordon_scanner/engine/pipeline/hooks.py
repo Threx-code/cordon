@@ -620,17 +620,17 @@ class Hooks:
         reachable, and why every approximation there keeps the finding.
         """
         from cordon_scanner.analysis.python.reachability import CallReachability
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry, NotRunAtInstall
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
-        # A formula or cask is a hook as a whole; its `service`, `test` and `caveats` blocks are
-        # not run by `brew install` (`NotRunAtInstall`).
+        # A manifest can be a hook as a whole and still hold code its install never runs: a
+        # Homebrew formula's `service`, `test` and `caveats` blocks. Its ecosystem says which.
         brew = frozenset(
             (unit.path, first, last)
             for unit in units
             if unit.path in hooks
-            and unit.path.endswith(".rb")
-            and EcosystemRegistry.manifest_ecosystem(unit.path) == "homebrew"
-            for first, last in NotRunAtInstall.spans(unit.content.text)
+            and (eco := EcosystemRegistry.manifest_ecosystem(unit.path)) is not None
+            and (ecosystem := EcosystemRegistry.get(eco)) is not None
+            for first, last in ecosystem.not_run_at_install(unit.path, unit.content.text)
         )
         sources = {
             unit.path: unit.content.text

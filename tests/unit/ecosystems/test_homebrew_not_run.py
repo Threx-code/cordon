@@ -121,3 +121,25 @@ class TestAFormula:
 
     def test_whose_one_line_caveats_and_desc_name_a_profile_is_not(self, tmp_path: Path) -> None:
         assert "MALWARE.INSTALL.PERSIST.001" not in HomebrewKit.rules(tmp_path, ONE_LINE)
+
+
+class TestTheCapability:
+    """What the engine reads: each ecosystem's `not_run_at_install`, so it names no ecosystem."""
+
+    def test_a_formula_answers_with_its_spans(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        brew = EcosystemRegistry.get("homebrew")
+        assert brew is not None
+        spans = brew.not_run_at_install("Formula/demo.rb", CAVEATS)
+        assert spans and spans == NotRunAtInstall.spans(CAVEATS)
+
+    def test_a_brewfile_and_every_other_ecosystem_have_none(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        brew = EcosystemRegistry.get("homebrew")
+        assert brew is not None
+        assert brew.not_run_at_install("Brewfile", CAVEATS) == []
+        others = [e for e in EcosystemRegistry.all_ecosystems() if e.id != "homebrew"]
+        assert others
+        assert all(e.not_run_at_install("Formula/demo.rb", CAVEATS) == [] for e in others)

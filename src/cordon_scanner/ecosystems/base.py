@@ -493,6 +493,12 @@ class Ecosystem(Protocol):
         """Package URL qualifiers telling apart artefacts of one name and version."""
         ...
 
+    def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
+        """The line spans of a manifest that is an install hook as a whole which installing it
+        never runs (a Homebrew formula's `service` and `test` blocks): code there is not
+        install-time code. Most ecosystems have none."""
+        ...
+
 
 class RegistryHosts:
     """Whether a URL is served by one of an ecosystem's registry hosts."""
@@ -525,6 +531,9 @@ class RegistryHosts:
 
 class BaseEcosystem:
     """Shared behaviour. Implementing the protocol directly is equally valid."""
+
+    def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
+        return []
 
     @staticmethod
     def _json_object(text: str) -> dict[str, Any]:
@@ -795,19 +804,12 @@ class ImageReferences(Protocol):
     def parse(self, text: str) -> ImageName | None: ...
 
 
-class InstallTimeSpans(Protocol):
-    """What the engine uses of the class `NotRunAtInstall`."""
-
-    def spans(self, text: str) -> list[tuple[int, int]]: ...
-
-
 __all__ = [
     "BaseEcosystem",
     "DeclaredDependency",
     "Ecosystem",
     "ImageName",
     "ImageReferences",
-    "InstallTimeSpans",
     "LockEntry",
     "LockGraph",
     "Manifest",
