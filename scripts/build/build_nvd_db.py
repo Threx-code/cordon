@@ -27,9 +27,9 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = next((p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None) or sys.exit(
-    "run this from inside the Cordon repository"
-)
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 sys.path.insert(0, str(ROOT / "src"))
 
 from cordon_scanner.intel.advisories import exploited, nvd, nvd_import  # noqa: E402

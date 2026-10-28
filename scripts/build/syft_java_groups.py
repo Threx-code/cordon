@@ -22,9 +22,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
-ROOT = next((p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None) or sys.exit(
-    "run this from inside the Cordon repository"
-)
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 
 SYFT_VERSION = "v1.18.1"
 """The Syft release the benchmark compares against (`bench/Dockerfile.images`)."""

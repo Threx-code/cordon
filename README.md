@@ -1,6 +1,6 @@
 <!-- mcp-name: io.github.threx-code/cordon -->
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Threx-code/cordon/release/0.7.0/docs/assets/readme/hero.svg" alt="Cordon: every dependency, read before it runs. A supply-chain security scanner for source, packages, container images, CI pipelines and AI agents." width="100%">
+  <img src="docs/assets/readme/hero.svg" alt="Cordon: every dependency, read before it runs. A supply-chain security scanner for source, packages, container images, CI pipelines and AI agents." width="100%">
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ cordon-scanner scan .
 ```
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Threx-code/cordon/release/0.7.0/docs/assets/terminal.svg" alt="cordon-scanner in a terminal: its home screen, then a repository scanned (nine findings fail the build), an npm package fetched and verified (clean), and a container image (414 findings across its OS packages)" width="100%">
+  <img src="docs/assets/terminal.svg" alt="cordon-scanner in a terminal: its home screen, then a repository scanned (nine findings fail the build), an npm package fetched and verified (clean), and a container image (414 findings across its OS packages)" width="100%">
 </p>
 
 <sub>Not a mock-up. Each session is a recording of the scanner itself, replayed as text:
@@ -48,7 +48,7 @@ that flags committed binaries should not ship one to advertise itself.</sub>
 <a name="what-it-catches"></a>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Threx-code/cordon/release/0.7.0/docs/assets/readme/coverage.svg" alt="What Cordon catches: malware and install-time behaviour, leaked credentials, AI agents and MCP servers, CI/CD pipelines, dependencies and provenance, containers and infrastructure as code" width="100%">
+  <img src="docs/assets/readme/coverage.svg" alt="What Cordon catches: malware and install-time behaviour, leaked credentials, AI agents and MCP servers, CI/CD pipelines, dependencies and provenance, containers and infrastructure as code" width="100%">
 </p>
 
 For AI coding agents it reads the instruction files, skills, MCP server configs and their source,
@@ -62,7 +62,7 @@ Every rule that ships, by threat domain:
 <a name="measured-not-claimed"></a>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Threx-code/cordon/release/0.7.0/docs/assets/readme/proof.svg" alt="94.2% of 39,328 real malicious packages detected; 1.6% of popular packages wrongly blocked against GuardDog's 16.8%; 97.7% of 4,034 AI-agent attacks detected; 99.6% agreement with Trivy across 190,274 lockfile packages" width="100%">
+  <img src="docs/assets/readme/proof.svg" alt="94.2% of 39,328 real malicious packages detected; 1.6% of popular packages wrongly blocked against GuardDog's 16.8%; 97.7% of 4,034 AI-agent attacks detected; 99.6% agreement with Trivy across 190,274 lockfile packages" width="100%">
 </p>
 
 <details>
@@ -92,7 +92,7 @@ Per ecosystem and per attack technique, with the method for each and what the nu
 <a name="how-it-works"></a>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Threx-code/cordon/release/0.7.0/docs/assets/readme/pipeline.svg" alt="How a scan works: target, identify, detect, decide, report. It reads and never executes, nothing about the code leaves the machine unless asked, and the same input gives the same findings." width="100%">
+  <img src="docs/assets/readme/pipeline.svg" alt="How a scan works: target, identify, detect, decide, report. It reads and never executes, nothing about the code leaves the machine unless asked, and the same input gives the same findings." width="100%">
 </p>
 
 > **Cordon reads.** It never executes the code it scans, and never sends anything about your code
@@ -102,7 +102,7 @@ Per ecosystem and per attack technique, with the method for each and what the nu
 > reproducible.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Threx-code/cordon/release/0.7.0/docs/assets/readme/ecosystems.svg" alt="Twenty-eight ecosystems: npm, PyPI, Cargo, Go modules, Maven, Gradle, NuGet, RubyGems, Composer, Hex, Pub, CocoaPods, Swift, Conan, vcpkg, Conda, CRAN, Hackage, Julia, opam, Nix, Homebrew, Bazel, GitHub Actions, Terraform, Helm, Ansible and container images" width="100%">
+  <img src="docs/assets/readme/ecosystems.svg" alt="Twenty-eight ecosystems: npm, PyPI, Cargo, Go modules, Maven, Gradle, NuGet, RubyGems, Composer, Hex, Pub, CocoaPods, Swift, Conan, vcpkg, Conda, CRAN, Hackage, Julia, opam, Nix, Homebrew, Bazel, GitHub Actions, Terraform, Helm, Ansible and container images" width="100%">
 </p>
 
 The file-by-file list, and which checks each ecosystem gets:
