@@ -89,3 +89,13 @@ YARA
 Cordon's rule engine reads rule files in the YARA format and was inspired by YARA
 (https://github.com/VirusTotal/yara); it is Cordon's own code, and Cordon is not affiliated
 with or endorsed by the YARA project or VirusTotal.
+
+-------------------------------------------------------------------------------
+Ecosystem and agent marks
+
+docs/assets/readme/marks.json holds the marks the README shows beside each ecosystem and AI
+agent Cordon reads, as the project's website draws them: from SVG Logos (@iconify-json/logos,
+CC0-1.0, https://github.com/gilbarbara/logos), Simple Icons (simple-icons, CC0-1.0,
+https://simpleicons.org) and the website's own source files. Each mark is its owner's
+trademark, shown only to name the product or ecosystem it stands for; Cordon is not
+affiliated with or endorsed by any of them.

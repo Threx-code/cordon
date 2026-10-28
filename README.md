@@ -59,6 +59,10 @@ hooks and approvals for every agent in common use, against Cordon's own rules an
 Every rule that ships, by threat domain:
 [docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/05-COVERAGE-MATRIX.md).
 
+<p align="center">
+  <img src="docs/assets/readme/agents.svg" alt="Seventeen AI coding agents whose configuration Cordon reads: Claude Code, Cursor, GitHub Copilot, Windsurf, Gemini CLI, OpenAI Codex, Kiro, Amazon Q, JetBrains Junie, Augment, Trae, Roo Code, Continue, Zed, goose, opencode and Cline" width="100%">
+</p>
+
 <a name="measured-not-claimed"></a>
 
 <p align="center">
