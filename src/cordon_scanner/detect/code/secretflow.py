@@ -349,13 +349,30 @@ class JavaScriptLeak:
     _CONNECTION_CALL = r"""\s*\.\s*(?:request|get|connect|createConnection)\s*\("""
     _SEND = re.compile(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\s*\.\s*(?:write|end|send)\s*\(""")
     MAX_STATEMENT: Final = 4000
+    #: The characters `_statement` and `_blank_strings` act on; everything between is skipped in C.
+    _STATEMENT_STOPS: Final = re.compile(r"[()\[\]{};\n]")
+    _STRING_STOPS: Final = {
+        "'": re.compile(r"['\\\n]"),
+        '"': re.compile(r'["\\\n]'),
+        "`": re.compile(r"[`\\$]"),
+    }
+    _BRACES: Final = re.compile(r"[{}]")
+    _QUOTES: Final = re.compile(r"['\"`]")
 
     @staticmethod
     def _statement(text: str, start: int) -> str:
         """From `start` to the `;` or line end that closes the statement at bracket depth 0."""
         depth, index = 0, start
         end = min(len(text), start + JavaScriptLeak.MAX_STATEMENT)
-        while index < end:
+        # Only a bracket, `;` or a line break changes anything, so the scan jumps from one to the
+        # next in C rather than visiting the characters between them in Python.
+        stops = JavaScriptLeak._STATEMENT_STOPS
+        while True:
+            stop = stops.search(text, index, end)
+            if stop is None:
+                index = end
+                break
+            index = stop.start()
             character = text[index]
             if character in "([{":
                 depth += 1
@@ -363,7 +380,7 @@ class JavaScriptLeak:
                 depth -= 1
                 if depth < 0:
                     break
-            elif character in ";\n" and depth == 0:
+            elif depth == 0:  # `;` or a line break
                 break
             index += 1
         return text[start:index]
@@ -427,42 +444,61 @@ class JavaScriptLeak:
         the shape the pattern guard refuses, and one character at a time is linear by construction.
         `"debug"` is text, not the variable `debug`; `${os.hostname()}` in a template is code.
         """
+        # The same steps as one character at a time, taken only at the characters that change
+        # something: a quote, a backslash, a line break, `${` or a brace. Each run between them is
+        # found in C, and kept (outside a string) or dropped (inside one) whole.
         out: list[str] = []
         quote = ""
         depth = 0  # `${` nesting inside a template
         index = 0
         length = len(fragment)
         while index < length:
-            char = fragment[index]
             if quote:
+                stop = JavaScriptLeak._STRING_STOPS[quote].search(fragment, index)
+                if stop is None:
+                    break  # the string runs to the end: none of it is kept
+                index = stop.start()
+                char = fragment[index]
                 if char == "\\":
                     index += 2
                     continue
-                if quote == "`" and fragment.startswith("${", index):
-                    quote, depth = "", 1
-                    out.append(" ")
-                    index += 2
+                if char == "$":  # only a template stops here
+                    if fragment.startswith("${", index):
+                        quote, depth = "", 1
+                        out.append(" ")
+                        index += 2
+                    else:
+                        index += 1
                     continue
-                if char == quote or (char == "\n" and quote != "`"):
-                    out.append('""')
-                    quote = ""
+                out.append('""')  # the closing quote, or a line break ending '...' or "..."
+                quote = ""
                 index += 1
                 continue
             if depth:
-                if char == "{":
+                stop = JavaScriptLeak._BRACES.search(fragment, index)
+                if stop is None:
+                    out.append(fragment[index:])
+                    break
+                out.append(fragment[index : stop.start()])
+                index = stop.start()
+                if fragment[index] == "{":
                     depth += 1
-                elif char == "}":
+                else:
                     depth -= 1
                     if depth == 0:
                         quote = "`"
                         index += 1
                         continue
-            elif char in "'\"`":
-                quote = char
+                out.append(fragment[index])
                 index += 1
                 continue
-            out.append(char)
-            index += 1
+            stop = JavaScriptLeak._QUOTES.search(fragment, index)
+            if stop is None:
+                out.append(fragment[index:])
+                break
+            out.append(fragment[index : stop.start()])
+            quote = fragment[stop.start()]
+            index = stop.start() + 1
         return "".join(out)
 
     @staticmethod

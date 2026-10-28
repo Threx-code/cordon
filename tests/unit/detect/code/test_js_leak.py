@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 from cordon_scanner.detect.code.secretflow import JavaScriptLeak
 
 SENDS_IDENTITY_AND_ENV = """
@@ -161,3 +163,107 @@ class TestStillNotIdentity:
     def test_another_librarys_hostname_method_is_not_the_machine(self) -> None:
         text = "const u = new URL(x);\nfetch('https://c.invalid/p?h=' + u.hostname);\n"
         assert JavaScriptLeak.findings(text) == []
+
+
+class TestTheScansMatchTheirDefinition:
+    """`_statement` and `_blank_strings` jump between the characters they act on; held here to the
+    one-character-at-a-time definitions they replaced, on fragments built to stress every state:
+    nested brackets, `;` and line breaks inside and outside them, all three quotes, escapes
+    (including a trailing backslash), `${...}` with braces and quotes inside it, and unclosed
+    strings and templates."""
+
+    PIECES = (
+        "a",
+        "x1",
+        " ",
+        "\n",
+        ";",
+        "(",
+        ")",
+        "[",
+        "]",
+        "{",
+        "}",
+        "'",
+        '"',
+        "`",
+        "\\",
+        "$",
+        "${",
+        "${a}",
+        "os.hostname()",
+        "process.env",
+        "=",
+        "=>",
+        "'ab'",
+        '"c\\"d"',
+        "`t${x}u`",
+        "\\\n",
+    )
+
+    @staticmethod
+    def statement_reference(text: str, start: int) -> str:
+        depth, index = 0, start
+        end = min(len(text), start + JavaScriptLeak.MAX_STATEMENT)
+        while index < end:
+            character = text[index]
+            if character in "([{":
+                depth += 1
+            elif character in ")]}":
+                depth -= 1
+                if depth < 0:
+                    break
+            elif character in ";\n" and depth == 0:
+                break
+            index += 1
+        return text[start:index]
+
+    @staticmethod
+    def blank_reference(fragment: str) -> str:
+        out: list[str] = []
+        quote, depth, index, length = "", 0, 0, len(fragment)
+        while index < length:
+            char = fragment[index]
+            if quote:
+                if char == "\\":
+                    index += 2
+                    continue
+                if quote == "`" and fragment.startswith("${", index):
+                    quote, depth = "", 1
+                    out.append(" ")
+                    index += 2
+                    continue
+                if char == quote or (char == "\n" and quote != "`"):
+                    out.append('""')
+                    quote = ""
+                index += 1
+                continue
+            if depth:
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        quote = "`"
+                        index += 1
+                        continue
+            elif char in "'\"`":
+                quote = char
+                index += 1
+                continue
+            out.append(char)
+            index += 1
+        return "".join(out)
+
+    def test_both_agree_with_their_definitions_on_thirty_thousand_fragments(self) -> None:
+        rng = random.Random(20261027)  # noqa: S311 -- a fixture, not key material
+        for _ in range(30_000):
+            text = "".join(rng.choice(self.PIECES) for _ in range(rng.choice((0, 3, 20, 120, 600))))
+            assert JavaScriptLeak._blank_strings(text) == self.blank_reference(text), text
+            start = rng.randrange(len(text) + 1)
+            assert JavaScriptLeak._statement(text, start) == self.statement_reference(text, start)
+
+    def test_a_statement_stops_at_its_length_bound(self) -> None:
+        text = "x" * (JavaScriptLeak.MAX_STATEMENT + 50) + ";"
+        assert JavaScriptLeak._statement(text, 0) == self.statement_reference(text, 0)
+        assert len(JavaScriptLeak._statement(text, 0)) == JavaScriptLeak.MAX_STATEMENT
