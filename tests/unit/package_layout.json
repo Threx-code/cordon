@@ -864,7 +864,6 @@
    "analysis/javascript/js_flow:_Analysis._call": 144,
    "analysis/javascript/js_flow:_Analysis._facts": 108,
    "analysis/javascript/js_flow:_Analysis.deferred": 102,
-   "cloud/device:DeviceInventory.collect": 115,
    "cloud/runner:CloudRunner.execute": 95,
    "detect/agents/agents:AgentChainDetector._instructions": 199,
    "detect/agents/agents:AgentChainDetector._mcp_server": 113,

@@ -360,13 +360,39 @@ class DeviceInventory:
     @staticmethod
     def collect(home: Path | None = None) -> dict[str, Any]:
         """The payload: device, inventory and findings. Nothing else leaves the machine."""
-        from cordon_scanner.detect.agents.agents import AgentChainDetector
-        from cordon_scanner.detect.base import FileUnit, ScanContext
-        from cordon_scanner.foundation.config.settings import Config
-        from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.rules.loader import RuleSet
-
         home = home or Path.home()
+        tools, mcp, registries, files, read = DeviceInventory._read_sources(home)
+        installed = DeviceInventory.installed_extensions(home)
+        extensions = [f"{e['id']}-{e['version']}" if e["version"] else e["id"] for e in installed][
+            :MAX_EXTENSIONS
+        ]
+        for entry in installed:
+            tools.add(entry["editor"].removesuffix("-server").removesuffix("-insiders") or "vscode")
+
+        findings = DeviceInventory._agent_findings(files)
+        findings.extend(DeviceInventory.extension_findings(installed))
+        return {
+            "schema": SCHEMA,
+            "agent_version": __version__,
+            "device": DeviceInventory._device(),
+            "read": sorted(read),
+            "inventory": {
+                "tools": sorted(tools),
+                "mcp_servers": mcp,
+                "extensions": extensions,
+                "installed_extensions": installed,
+                "registries": registries,
+            },
+            "findings": findings,
+        }
+
+    @staticmethod
+    def _read_sources(
+        home: Path,
+    ) -> tuple[
+        set[str], list[dict[str, Any]], list[dict[str, Any]], list[tuple[str, bytes]], list[str]
+    ]:
+        """Each source's tools, MCP servers and registries, and the files the detector reads."""
         tools: set[str] = set()
         mcp: list[dict[str, Any]] = []
         registries: list[dict[str, Any]] = []
@@ -419,12 +445,16 @@ class DeviceInventory:
                     servers = {}
                 mcp += DeviceInventory._mcp_entries(source.tool, source.logical, servers)
             files.append((source.logical, raw))
-        installed = DeviceInventory.installed_extensions(home)
-        extensions = [f"{e['id']}-{e['version']}" if e["version"] else e["id"] for e in installed][
-            :MAX_EXTENSIONS
-        ]
-        for entry in installed:
-            tools.add(entry["editor"].removesuffix("-server").removesuffix("-insiders") or "vscode")
+        return tools, mcp, registries, files, read
+
+    @staticmethod
+    def _agent_findings(files: list[tuple[str, bytes]]) -> list[dict[str, Any]]:
+        """What the agent detector finds in the files read, as the payload reports it."""
+        from cordon_scanner.detect.agents.agents import AgentChainDetector
+        from cordon_scanner.detect.base import FileUnit, ScanContext
+        from cordon_scanner.foundation.config.settings import Config
+        from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.rules.loader import RuleSet
 
         config = Config.default()
         context = ScanContext(config=config, rules=RuleSet(()), offline=True)
@@ -444,34 +474,25 @@ class DeviceInventory:
                         "fingerprint": finding.fingerprint,
                     }
                 )
-        findings.extend(DeviceInventory.extension_findings(installed))
+        return findings
+
+    @staticmethod
+    def _device() -> dict[str, str]:
+        """This device: its name and system, and the keyed identifiers of its user and install."""
         user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
         return {
-            "schema": SCHEMA,
-            "agent_version": __version__,
-            "device": {
-                "hostname": socket.gethostname(),
-                "os": f"{platform.system()} {platform.release()}",
-                # Keyed with this install's secret: an unkeyed hash of a known hostname and a
-                # short user name is the user name, to anyone who tries the likely ones.
-                "user": hmac.new(
-                    EvidenceKey.key(), b"device-user\0" + user.encode(), "sha256"
-                ).hexdigest()[:16],
-                # Stable for this install and unforgeable without its key; what the cloud binds the
-                # device record to, so one laptop's token cannot overwrite another laptop's report.
-                "install_id": hmac.new(
-                    EvidenceKey.key(), b"device-install-id", "sha256"
-                ).hexdigest()[:32],
-            },
-            "read": sorted(read),
-            "inventory": {
-                "tools": sorted(tools),
-                "mcp_servers": mcp,
-                "extensions": extensions,
-                "installed_extensions": installed,
-                "registries": registries,
-            },
-            "findings": findings,
+            "hostname": socket.gethostname(),
+            "os": f"{platform.system()} {platform.release()}",
+            # Keyed with this install's secret: an unkeyed hash of a known hostname and a
+            # short user name is the user name, to anyone who tries the likely ones.
+            "user": hmac.new(
+                EvidenceKey.key(), b"device-user\0" + user.encode(), "sha256"
+            ).hexdigest()[:16],
+            # Stable for this install and unforgeable without its key; what the cloud binds the
+            # device record to, so one laptop's token cannot overwrite another laptop's report.
+            "install_id": hmac.new(EvidenceKey.key(), b"device-install-id", "sha256").hexdigest()[
+                :32
+            ],
         }
 
     @staticmethod
