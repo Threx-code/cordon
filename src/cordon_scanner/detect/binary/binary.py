@@ -59,7 +59,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.prose import Prose
+from cordon_scanner.foundation.text.prose import Prose
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

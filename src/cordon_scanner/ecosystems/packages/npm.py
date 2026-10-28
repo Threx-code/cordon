@@ -664,7 +664,7 @@ class PnpmLock:
         dropped, and the project's whole dependency tree with it. Each document is read, and the
         ones whose importers declare dependencies are merged; the environment is the tool that
         installs, not a dependency of the project."""
-        from cordon_scanner.foundation.datayaml import DataYaml
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
 
         pieces = [p for p in cls.DOCUMENT_BREAK.split(content.text) if p.strip()]
         if len(pieces) <= 1:
@@ -692,7 +692,7 @@ class PnpmLock:
 
     @classmethod
     def parse(cls, content: FileContent, ecosystem: str) -> LockGraph:
-        from cordon_scanner.foundation.datayaml import DataYamlError
+        from cordon_scanner.foundation.formats.datayaml import DataYamlError
 
         try:
             data = cls._project_document(content)
@@ -1021,7 +1021,7 @@ class YarnLock:
 
     @classmethod
     def _berry(cls, content: FileContent, ecosystem: str) -> LockGraph:
-        from cordon_scanner.foundation.datayaml import DataYaml, DataYamlError
+        from cordon_scanner.foundation.formats.datayaml import DataYaml, DataYamlError
 
         try:
             data = DataYaml.load(content.text, source=content.path)

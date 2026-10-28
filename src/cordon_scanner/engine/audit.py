@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ConfigError
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.redact import Redactor
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:

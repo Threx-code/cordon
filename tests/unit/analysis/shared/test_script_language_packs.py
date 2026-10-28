@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
-from cordon_scanner.foundation.comments import LINE_COMMENT_OPENERS
+from cordon_scanner.foundation.text.comments import LINE_COMMENT_OPENERS
 from cordon_scanner.rules.loader import RuleLoader
 from support import ROOT as REPO
 

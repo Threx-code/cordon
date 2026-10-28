@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.config import RestrictedYamlParser
 from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
-from cordon_scanner.foundation.literals import LiteralGate
 from cordon_scanner.foundation.models import (
     Capability,
     Category,
@@ -43,6 +42,7 @@ from cordon_scanner.foundation.models import (
     RuleTests,
     Severity,
 )
+from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.version import ENGINE_API_VERSION
 
 if TYPE_CHECKING:

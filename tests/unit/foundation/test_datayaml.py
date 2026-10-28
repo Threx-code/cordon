@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.foundation.datayaml import MAX_DEPTH, DataYaml, DataYamlError
+from cordon_scanner.foundation.formats.datayaml import MAX_DEPTH, DataYaml, DataYamlError
 
 
 class TestLockfileShapes:

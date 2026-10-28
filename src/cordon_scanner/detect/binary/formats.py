@@ -24,6 +24,11 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.secrets import SourcePaths
 from cordon_scanner.foundation import references as ref
+from cordon_scanner.foundation.files.windows import (
+    SeekableReader,
+    WindowSource,
+    WindowSourceChanged,
+)
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -35,7 +40,6 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.foundation.windows import SeekableReader, WindowSource, WindowSourceChanged
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

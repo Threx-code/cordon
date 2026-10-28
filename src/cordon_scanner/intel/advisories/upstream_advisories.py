@@ -2899,7 +2899,7 @@ class ConanCenter:
         all its recipe folders; None when the index cannot be read."""
         if name in ConanCenter._index:
             return ConanCenter._index[name]
-        from cordon_scanner.foundation.datayaml import DataYaml
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
 
         package = urllib.parse.quote(name, safe="")
         found: dict[str, object] | None = {}
@@ -3223,7 +3223,7 @@ class Upstreams:
                 conanfile = Upstreams._get(
                     f"{base}/{locked}/files/conanfile.py", MAX_EXPORT_BYTES
                 ).decode("utf-8", "replace")
-        from cordon_scanner.foundation.datayaml import DataYaml
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
 
         data = DataYaml.load(text) if text else {}
         sources = (data.get("sources") or {}) if isinstance(data, dict) else {}
@@ -3611,7 +3611,7 @@ class Upstreams:
         recipe = CondaPackage.recipe(url, seen)
         if recipe is None:
             return Unnamed("its package carries no rendered recipe")
-        from cordon_scanner.foundation.datayaml import DataYaml
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
 
         data = DataYaml.load(recipe)
         finalized: list[object] = []

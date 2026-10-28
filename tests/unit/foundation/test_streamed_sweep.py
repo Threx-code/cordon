@@ -11,10 +11,10 @@ import zipfile
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.comments import SourceComments
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.limits import Limits
+from cordon_scanner.foundation.text.comments import SourceComments
 
 #: The shape of the compromised Amazon Q 1.84.0 activation code, inert: `run` is not defined.
 HIJACK = (

@@ -6,7 +6,7 @@ import pytest
 
 from cordon_scanner.analysis.shared import ast_providers
 from cordon_scanner.analysis.shared.segmented_parse import Segments, SegmentView, WholeFileCalls
-from cordon_scanner.foundation.windows import BytesWindows
+from cordon_scanner.foundation.files.windows import BytesWindows
 
 BODY = (
     'const cp = require("child_process");\n'

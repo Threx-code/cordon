@@ -98,7 +98,7 @@ class HelmProvenance:
     def signed_sums(signed: bytes) -> dict[str, str] | None:
         """The `files` the signed text lists, `{file name: "sha256:<hex>"}`, read as helm's
         `ParseMessageBlock` reads it: split at every `\\n...\\n`, the second part's YAML."""
-        from cordon_scanner.foundation.datayaml import DataYaml
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
 
         parts = signed.decode("utf-8", "replace").split("\n...\n")
         if len(parts) < 2:
@@ -118,7 +118,7 @@ class HelmProvenance:
     ) -> tuple[bytes | None, str, str | None] | ChartCheck:
         """`(provenance file, archive name, archive URL)` from an HTTPS repository: the archive is
         downloaded only once the signature has passed, and only where nothing pinned its hash."""
-        from cordon_scanner.foundation.datayaml import DataYaml
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
 
         base = source.rstrip("/") + "/"
         index_body = HelmProvenance._get(urllib.parse.urljoin(base, "index.yaml"), MAX_INDEX_BYTES)

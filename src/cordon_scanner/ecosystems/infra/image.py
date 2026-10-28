@@ -978,7 +978,7 @@ class Kubernetes:
     def documents(text: str) -> list[dict[str, Any]]:
         """Each `---`-separated document that is a Kubernetes object. A Helm template (`{{ }}`)
         is not YAML until it is rendered, and is skipped rather than misread."""
-        from cordon_scanner.foundation.datayaml import DataYaml, DataYamlError
+        from cordon_scanner.foundation.formats.datayaml import DataYaml, DataYamlError
 
         found: list[dict[str, Any]] = []
         for chunk in Kubernetes.DOCUMENT_BREAK.split(text)[: Kubernetes.MAX_DOCUMENTS]:

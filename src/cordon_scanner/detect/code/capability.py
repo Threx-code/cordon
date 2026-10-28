@@ -65,7 +65,6 @@ from cordon_scanner.detect.secrets.secrets import (
     SourceSpans,
 )
 from cordon_scanner.engine.samples import SampleKinds
-from cordon_scanner.foundation.comments import SourceComments
 from cordon_scanner.foundation.models import (
     Capability,
     Category,
@@ -76,7 +75,8 @@ from cordon_scanner.foundation.models import (
     MatchKind,
     Severity,
 )
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.comments import SourceComments
+from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -391,7 +391,7 @@ class CapabilityDetector(BaseDetector):
                 # (bounded above), or padding a DLL past the limit would hide what it calls.
                 from contextlib import suppress
 
-                from cordon_scanner.foundation.windows import WindowSourceChanged
+                from cordon_scanner.foundation.files.windows import WindowSourceChanged
 
                 with suppress(OSError, WindowSourceChanged), content.window_source.reader() as read:
                     data = read(0, content.size)
@@ -3444,7 +3444,7 @@ class CapabilityDetector(BaseDetector):
         # see `core.comments.docstring_spans` for the case that found it. The
         # later occurrences are still considered, because the first being prose
         # says nothing about the rest of the file.
-        from cordon_scanner.foundation.comments import SourceComments
+        from cordon_scanner.foundation.text.comments import SourceComments
 
         ignore = SourceComments.docstring_spans(raw, language)
         blocks = SourceComments.block_comment_spans(content.text, language)
@@ -3524,7 +3524,7 @@ class CapabilityDetector(BaseDetector):
         cloud metadata service at 169.254.169.254 -- and the documentation ranges are ordinary
         in code and tests and are not counted.
         """
-        from cordon_scanner.foundation.comments import SourceComments
+        from cordon_scanner.foundation.text.comments import SourceComments
 
         ignore: tuple[tuple[int, int], ...] | None = None
         raw = content.raw

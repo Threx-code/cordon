@@ -37,7 +37,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.foundation.datayaml import DataYaml
+from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:

@@ -61,7 +61,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.redact import Redactor
 from cordon_scanner.intel.malware.hosts import Destinations
 from cordon_scanner.intel.registries.installers import OfficialInstallers
 

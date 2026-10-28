@@ -661,7 +661,7 @@ class MoreRegistries:
             return MoreRegistries._helm_oci(name, version, source)
         if not source or not source.startswith("https://"):
             return PackageFacts(name=name, version=version)
-        from cordon_scanner.foundation.datayaml import DataYaml
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
 
         text = MoreRegistries._text(f"{source.rstrip('/')}/index.yaml")
         try:
@@ -1792,7 +1792,7 @@ class MoreRegistries:
         """The source repository a published POM declares (`<scm><url>`, else `<url>`), the
         identity a Sigstore signature is tied to. Read structurally and never expanded
         (`core/safexml.py`); a POM that cannot be read declares nothing."""
-        from cordon_scanner.foundation.safexml import SafeXml, SafeXmlError
+        from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
 
         try:
             root = SafeXml.parse(MoreRegistries._text(pom_url), source=pom_url)

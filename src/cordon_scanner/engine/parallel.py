@@ -395,7 +395,7 @@ class ParallelScanner:
 
         from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.foundation.content import FileContent, Skipped
-        from cordon_scanner.foundation.windows import WindowPass
+        from cordon_scanner.foundation.files.windows import WindowPass
 
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context

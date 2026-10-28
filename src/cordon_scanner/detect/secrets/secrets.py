@@ -39,8 +39,6 @@ from cordon_scanner.detect.secrets.test_material import SCANNER_CONFIG_PATHS, TE
 from cordon_scanner.engine.samples import SampleKinds
 from cordon_scanner.engine.walker import PathGlob
 from cordon_scanner.foundation import references
-from cordon_scanner.foundation.comments import SourceComments
-from cordon_scanner.foundation.literals import LiteralGate
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -53,8 +51,10 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.prose import Prose
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.comments import SourceComments
+from cordon_scanner.foundation.text.literals import LiteralGate
+from cordon_scanner.foundation.text.prose import Prose
+from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator

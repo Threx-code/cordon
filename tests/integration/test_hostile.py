@@ -29,9 +29,9 @@ from cordon_scanner import Scanner
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.spill import SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.foundation.models import Category, Severity
-from cordon_scanner.foundation.spill import SpilledBytes
 from cordon_scanner.sources.archive import ArchiveReader, Rejection
 from support import Support
 

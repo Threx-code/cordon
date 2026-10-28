@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.foundation import jsonc
+from cordon_scanner.foundation.formats import jsonc
 
 
 class TestLoads:

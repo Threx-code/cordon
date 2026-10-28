@@ -41,7 +41,6 @@ from cordon_scanner.detect.secrets.secrets import (
 )
 from cordon_scanner.engine.walker import PathGlob
 from cordon_scanner.foundation import references
-from cordon_scanner.foundation.comments import SourceComments
 from cordon_scanner.foundation.models import (
     Capability,
     Category,
@@ -54,7 +53,8 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.comments import SourceComments
+from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

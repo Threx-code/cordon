@@ -36,8 +36,8 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
-from cordon_scanner.foundation.spill import Spill, SpilledBytes
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -657,7 +657,7 @@ class ArchiveReader:
     def member_limit(limits: Limits) -> int:
         """The largest member a declared size may be refused at, and the largest nested archive
         opened in memory. A member past it is not refused for its size: past `max_file_bytes` every
-        member is kept on disk as it is read (`foundation/spill.py`), and only the ratio and total
+        member is kept on disk as it is read (`foundation/files/spill.py`), and only the ratio and total
         budgets stop one."""
         return max(limits.max_file_bytes, limits.max_member_bytes)
 
@@ -746,7 +746,7 @@ class ArchiveReader:
         chunks: list[bytes] = []
         read_total = 0
         # Past `max_file_bytes` the member is written to disk as it arrives and read from there
-        # (`foundation/spill.py`): memory holds its prefix, and no size of member is refused.
+        # (`foundation/files/spill.py`): memory holds its prefix, and no size of member is refused.
         spill: BinaryIO | None = None
         spill_path, prefix = "", b""
         try:

@@ -32,7 +32,7 @@ from cordon_scanner.foundation.models import (
     MatchKind,
     Severity,
 )
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext

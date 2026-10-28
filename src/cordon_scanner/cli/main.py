@@ -1536,7 +1536,7 @@ class CommandLine:
         from dataclasses import replace as _replace
 
         from cordon_scanner.foundation.models import RedactionMode
-        from cordon_scanner.foundation.redact import Redactor
+        from cordon_scanner.foundation.text.redact import Redactor
 
         snippet = finding.evidence.snippet
         if not snippet:

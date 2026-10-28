@@ -15,7 +15,7 @@ import pytest
 
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import EvidenceKind, RedactionMode
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.redact import Redactor
 from support import Support
 
 # Fabricated values with real shapes. None is a live credential.

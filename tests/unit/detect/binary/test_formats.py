@@ -23,8 +23,8 @@ from cordon_scanner import Scanner
 from cordon_scanner.analysis.formats import FormatError, documents, media, ole, pickles
 from cordon_scanner.detect.binary.formats import FormatDetector
 from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.files.windows import BytesWindows
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
-from cordon_scanner.foundation.windows import BytesWindows
 from kits.formatkit import FormatKit, Reduces
 
 

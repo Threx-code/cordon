@@ -12,7 +12,7 @@ import stat
 
 import pytest
 
-from cordon_scanner.foundation.trees import Trees
+from cordon_scanner.foundation.files.trees import Trees
 
 
 class TreesKit:

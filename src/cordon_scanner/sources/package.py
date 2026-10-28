@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from cordon_scanner.foundation.trees import Trees
+from cordon_scanner.foundation.files.trees import Trees
 from cordon_scanner.sources.archive import ArchiveReader
 
 

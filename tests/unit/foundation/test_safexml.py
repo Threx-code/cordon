@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.foundation.safexml import MAX_DEPTH, SafeXml, SafeXmlError
+from cordon_scanner.foundation.formats.safexml import MAX_DEPTH, SafeXml, SafeXmlError
 
 
 class TestStructure:

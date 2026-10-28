@@ -40,8 +40,8 @@ from cordon_scanner.ecosystems.packages.nuget import NuGetEcosystem
 from cordon_scanner.ecosystems.packages.pub import PubEcosystem
 from cordon_scanner.ecosystems.packages.rubygems import RubyGemsEcosystem
 from cordon_scanner.ecosystems.packages.swift import SwiftEcosystem
+from cordon_scanner.foundation.formats.safexml import Element, SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
-from cordon_scanner.foundation.safexml import Element, SafeXml, SafeXmlError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

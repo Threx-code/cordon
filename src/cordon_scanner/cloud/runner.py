@@ -34,7 +34,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
-from cordon_scanner.foundation.trees import Trees
+from cordon_scanner.foundation.files.trees import Trees
 from cordon_scanner.version import PROGRAM
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30

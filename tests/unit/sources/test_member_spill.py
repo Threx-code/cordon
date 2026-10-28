@@ -10,8 +10,8 @@ import zipfile
 from pathlib import Path
 
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.files.spill import SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
-from cordon_scanner.foundation.spill import SpilledBytes
 from cordon_scanner.sources.archive import ArchiveReader, Rejection
 
 LIMITS = DEFAULT_LIMITS.merged(max_member_bytes=4096, max_file_bytes=1024)

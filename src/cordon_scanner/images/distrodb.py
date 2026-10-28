@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.foundation.atomic import AtomicFile
+from cordon_scanner.foundation.files.atomic import AtomicFile
 
 if TYPE_CHECKING:
     from cordon_scanner.images.osv import Matches, Query

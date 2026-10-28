@@ -44,8 +44,8 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.secrets import SourcePaths
 from cordon_scanner.engine.walker import PathGlob
-from cordon_scanner.foundation import jsonc
 from cordon_scanner.foundation import references as ref
+from cordon_scanner.foundation.formats import jsonc
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -58,7 +58,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.redact import Redactor
 from cordon_scanner.intel.malware import atr
 from cordon_scanner.intel.registries.installers import KNOWN_INSTALLERS, OfficialInstallers
 

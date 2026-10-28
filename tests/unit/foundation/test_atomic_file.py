@@ -7,7 +7,7 @@ import re
 import stat
 from pathlib import Path
 
-from cordon_scanner.foundation.atomic import AtomicFile
+from cordon_scanner.foundation.files.atomic import AtomicFile
 
 
 class AtomicFileWorker:

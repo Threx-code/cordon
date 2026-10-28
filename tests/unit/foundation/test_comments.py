@@ -16,7 +16,7 @@ import itertools
 
 import pytest
 
-from cordon_scanner.foundation.comments import SourceComments
+from cordon_scanner.foundation.text.comments import SourceComments
 
 
 class CommentsHelpers:

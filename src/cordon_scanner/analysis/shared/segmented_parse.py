@@ -25,13 +25,13 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.foundation.windows import WindowSourceChanged
+from cordon_scanner.foundation.files.windows import WindowSourceChanged
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
     from cordon_scanner.analysis.python.pyast import AstCall
-    from cordon_scanner.foundation.windows import WindowSource
+    from cordon_scanner.foundation.files.windows import WindowSource
 
     Read = Callable[[int, int], bytes]
 

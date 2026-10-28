@@ -64,6 +64,7 @@ from cordon_scanner.foundation.collector import Collector
 from cordon_scanner.foundation.config import Config, Policy
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import ArchiveError, SourceError
+from cordon_scanner.foundation.files.windows import WindowPass
 from cordon_scanner.foundation.models import (
     AUTHOR_TIME_HOOKS,
     Category,
@@ -86,7 +87,6 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.windows import WindowPass
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from cordon_scanner.sources.archive import ArchiveReader, Rejection
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource

@@ -48,7 +48,7 @@ from cordon_scanner.foundation.models import (
     Scope,
     Severity,
 )
-from cordon_scanner.foundation.redact import Redactor
+from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -2239,7 +2239,7 @@ class ManifestDetector(BaseDetector):
             # An apiVersion v1 chart's dependencies: Helm's `dependencies:` key, where Ansible's
             # file of the same name holds `roles:` and `collections:`.
             from cordon_scanner.ecosystems.infra.helm import ChartFile
-            from cordon_scanner.foundation.datayaml import DataYaml
+            from cordon_scanner.foundation.formats.datayaml import DataYaml
 
             try:
                 data = DataYaml.load(unit.content.text, source=unit.path)

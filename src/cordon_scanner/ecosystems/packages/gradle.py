@@ -35,8 +35,8 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
-from cordon_scanner.foundation.safexml import SafeXml, SafeXmlError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
