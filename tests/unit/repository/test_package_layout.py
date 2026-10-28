@@ -220,6 +220,55 @@ class Structure:
         ),
     }
 
+    #: Everything the repository root may hold, by why it is there. A new entry needs a reason that
+    #: fits one of these, or a home inside one of them.
+    REPOSITORY_ROOT: ClassVar[frozenset[str]] = frozenset(
+        {
+            # What GitHub, PyPI and the citation tools read at the root.
+            ".github",
+            "CITATION.cff",
+            "CODE_OF_CONDUCT.md",
+            "CONTRIBUTING.md",
+            "GOVERNANCE.md",
+            "LICENSE",
+            "NOTICE",
+            "README.md",
+            "SECURITY.md",
+            "SUPPORT.md",
+            "CHANGELOG.md",
+            # Version control and its hooks.
+            ".gitattributes",
+            ".gitignore",
+            ".githooks",
+            ".gitguardian.yaml",
+            ".pre-commit-hooks.yaml",
+            # Building and packaging.
+            "pyproject.toml",
+            "MANIFEST.in",
+            "Makefile",
+            "Dockerfile",
+            "requirements-build.txt",
+            "server.json",
+            # Cordon scanning itself (the guard's pinned digest, its history baseline).
+            ".cordon-guard.sha256",
+            "cordon-history-baseline.json",
+            # The code and its tests, scripts, data and documents.
+            "src",
+            "tests",
+            "scripts",
+            "schemas",
+            "corpus",
+            "bench",
+            "docs",
+            "tutorials",
+            # Where Cordon runs: the GitHub Action, the other CI systems, editors and the model server.
+            "action",
+            "ci",
+            "editors",
+            "model-server",
+        }
+    )
+
     @staticmethod
     def frozen() -> dict[str, Any]:
         return Layout.data()["frozen"]
@@ -427,7 +476,7 @@ class TestStructure:
             ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True
         ).stdout.split()
         top = {f.split("/")[0] for f in tracked}
-        allowed = set(Structure.frozen()["repository_root"])
+        allowed = Structure.REPOSITORY_ROOT
         assert not sorted(top - allowed), "a new entry at the repository root: give it a home"
 
 
