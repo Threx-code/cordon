@@ -131,9 +131,10 @@ class TestReportConvert(ReviewCommandsFixtures):
         assert CommandLine.main(["report", "convert", str(path)]) == 3
 
     def test_an_oversized_document_is_refused(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.cli.commands.report import ReportCommand
         from cordon_scanner.cli.main import CommandLine
 
-        monkeypatch.setattr(CommandLine, "MAX_RESULT_BYTES", 32)
+        monkeypatch.setattr(ReportCommand, "MAX_RESULT_BYTES", 32)
         path = tmp_path / "big.json"
         path.write_text('{"findings": [' + ",".join(["{}"] * 100) + "]}", encoding="utf-8")
         assert CommandLine.main(["report", "convert", str(path)]) == 3
