@@ -352,90 +352,18 @@ class ModuleFile:
         sources: list[str] = []
         extensions: dict[str, str] = {}
         repo_rules: dict[str, str] = {}
-        module_name = module_version = None
         hooks: list[Hook] = []
-        for call in calls:
-            kw = call.keywords
-            if call.name == "module":
-                module_name = kw.get("name") if isinstance(kw.get("name"), str) else None
-                module_version = kw.get("version") if isinstance(kw.get("version"), str) else None
-            elif (
-                call.name == "git_override"
-                and isinstance(kw.get("module_name"), str)
-                and isinstance(kw.get("remote"), str)
-            ):
-                pin = next(
-                    (kw[k] for k in ("commit", "tag", "branch") if isinstance(kw.get(k), str)), ""
-                )
-                overrides[kw["module_name"]] = (
-                    f"git+{kw['remote']}" + (f"#{pin}" if pin else ""),
-                    None,
-                    "git_override",
-                )
-            elif call.name == "archive_override" and isinstance(kw.get("module_name"), str):
-                urls = kw.get("urls") or ([kw["url"]] if isinstance(kw.get("url"), str) else [])
-                url = (
-                    next((u for u in urls if isinstance(u, str)), "*")
-                    if isinstance(urls, list)
-                    else "*"
-                )
-                integrity = kw.get("integrity") if isinstance(kw.get("integrity"), str) else None
-                overrides[kw["module_name"]] = (url, integrity, "archive_override")
-            elif call.name == "local_path_override" and isinstance(kw.get("module_name"), str):
-                overrides[kw["module_name"]] = (
-                    f"path:{kw.get('path')}",
-                    None,
-                    "local_path_override",
-                )
-            elif call.name == "single_version_override" and isinstance(kw.get("module_name"), str):
-                if isinstance(kw.get("version"), str) and kw["version"]:
-                    version_overrides[kw["module_name"]] = kw["version"]
-                if isinstance(kw.get("registry"), str):
-                    sources.append(f"registry for {kw['module_name']}: {kw['registry']}")
-            elif call.name == "multiple_version_override" and isinstance(
-                kw.get("module_name"), str
-            ):
-                versions = kw.get("versions")
-                sources.append(
-                    f"multiple versions of {kw['module_name']}: {', '.join(v for v in versions if isinstance(v, str)) if isinstance(versions, list) else '?'}"
-                )
-            elif call.name == "use_extension" and call.target and len(call.positional) >= 2:
-                extensions[call.target] = (
-                    f"{call.positional[0]}%{call.positional[1]}"
-                    if all(isinstance(p, str) for p in call.positional[:2])
-                    else "an extension"
-                )
-                label = call.positional[0]
-                if isinstance(label, str) and not label.startswith("@bazel_tools//"):
-                    # A module extension's implementation runs during resolution, with network and
-                    # filesystem access: code of the module's own, run for every build.
-                    hooks.append(
-                        Hook(
-                            kind="build",
-                            path=content.path,
-                            name=f"module extension {extensions[call.target]}",
-                            command=label,
-                            ecosystem=ecosystem,
-                        )
-                    )
-            elif (
-                call.name == "use_repo_rule"
-                and call.target
-                and len(call.positional) >= 2
-                and isinstance(call.positional[1], str)
-            ):
-                repo_rules[call.target] = call.positional[1]
-                label = call.positional[0]
-                if isinstance(label, str) and not label.startswith("@bazel_tools//"):
-                    hooks.append(
-                        Hook(
-                            kind="build",
-                            path=content.path,
-                            name=f"repository rule {call.positional[1]}",
-                            command=label,
-                            ecosystem=ecosystem,
-                        )
-                    )
+        module_name, module_version = ModuleFile._read_calls(
+            calls,
+            overrides,
+            version_overrides,
+            sources,
+            extensions,
+            hooks,
+            content,
+            ecosystem,
+            repo_rules,
+        )
         declared: list[DeclaredDependency] = []
         for call in calls:
             kw = call.keywords
@@ -483,6 +411,121 @@ class ModuleFile:
             overrides=version_overrides,
             sources=tuple(sources),
         )
+
+    @staticmethod
+    def _override(
+        call: Call,
+        kw: dict[str, Any],
+        overrides: dict[str, tuple[str, str | None, str]],
+        version_overrides: dict[str, str],
+        sources: list[str],
+    ) -> None:
+        """A git, archive, local path, single- or multiple-version override: where the module it
+        names comes from, or the version it is held to."""
+        if (
+            call.name == "git_override"
+            and isinstance(kw.get("module_name"), str)
+            and isinstance(kw.get("remote"), str)
+        ):
+            pin = next(
+                (kw[k] for k in ("commit", "tag", "branch") if isinstance(kw.get(k), str)), ""
+            )
+            overrides[kw["module_name"]] = (
+                f"git+{kw['remote']}" + (f"#{pin}" if pin else ""),
+                None,
+                "git_override",
+            )
+        elif call.name == "archive_override" and isinstance(kw.get("module_name"), str):
+            urls = kw.get("urls") or ([kw["url"]] if isinstance(kw.get("url"), str) else [])
+            url = (
+                next((u for u in urls if isinstance(u, str)), "*")
+                if isinstance(urls, list)
+                else "*"
+            )
+            integrity = kw.get("integrity") if isinstance(kw.get("integrity"), str) else None
+            overrides[kw["module_name"]] = (url, integrity, "archive_override")
+        elif call.name == "local_path_override" and isinstance(kw.get("module_name"), str):
+            overrides[kw["module_name"]] = (
+                f"path:{kw.get('path')}",
+                None,
+                "local_path_override",
+            )
+        elif call.name == "single_version_override" and isinstance(kw.get("module_name"), str):
+            if isinstance(kw.get("version"), str) and kw["version"]:
+                version_overrides[kw["module_name"]] = kw["version"]
+            if isinstance(kw.get("registry"), str):
+                sources.append(f"registry for {kw['module_name']}: {kw['registry']}")
+        elif call.name == "multiple_version_override" and isinstance(kw.get("module_name"), str):
+            versions = kw.get("versions")
+            sources.append(
+                f"multiple versions of {kw['module_name']}: {', '.join(v for v in versions if isinstance(v, str)) if isinstance(versions, list) else '?'}"
+            )
+
+    @staticmethod
+    def _read_calls(
+        calls: list[Call],
+        overrides: dict[str, tuple[str, str | None, str]],
+        version_overrides: dict[str, str],
+        sources: list[str],
+        extensions: dict[str, str],
+        hooks: list[Hook],
+        content: FileContent,
+        ecosystem: str,
+        repo_rules: dict[str, str],
+    ) -> tuple[Any | None, Any | None]:
+        """What each call sets: the module's name and version, overrides, extensions, repository rules, sources and hooks."""
+        module_name = module_version = None
+        for call in calls:
+            kw = call.keywords
+            if call.name == "module":
+                module_name = kw.get("name") if isinstance(kw.get("name"), str) else None
+                module_version = kw.get("version") if isinstance(kw.get("version"), str) else None
+            elif call.name in (
+                "git_override",
+                "archive_override",
+                "local_path_override",
+                "single_version_override",
+                "multiple_version_override",
+            ):
+                ModuleFile._override(call, kw, overrides, version_overrides, sources)
+            elif call.name == "use_extension" and call.target and len(call.positional) >= 2:
+                extensions[call.target] = (
+                    f"{call.positional[0]}%{call.positional[1]}"
+                    if all(isinstance(p, str) for p in call.positional[:2])
+                    else "an extension"
+                )
+                label = call.positional[0]
+                if isinstance(label, str) and not label.startswith("@bazel_tools//"):
+                    # A module extension's implementation runs during resolution, with network and
+                    # filesystem access: code of the module's own, run for every build.
+                    hooks.append(
+                        Hook(
+                            kind="build",
+                            path=content.path,
+                            name=f"module extension {extensions[call.target]}",
+                            command=label,
+                            ecosystem=ecosystem,
+                        )
+                    )
+            elif (
+                call.name == "use_repo_rule"
+                and call.target
+                and len(call.positional) >= 2
+                and isinstance(call.positional[1], str)
+            ):
+                repo_rules[call.target] = call.positional[1]
+                label = call.positional[0]
+                if isinstance(label, str) and not label.startswith("@bazel_tools//"):
+                    hooks.append(
+                        Hook(
+                            kind="build",
+                            path=content.path,
+                            name=f"repository rule {call.positional[1]}",
+                            command=label,
+                            ecosystem=ecosystem,
+                        )
+                    )
+        return module_name, module_version
 
 
 class Workspace:

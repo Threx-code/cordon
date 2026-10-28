@@ -906,7 +906,6 @@
    "detect/supply/registry:RegistryDetector.declared_rules": 254,
    "detect/supply/registry:RegistryDetector.inspect": 209,
    "ecosystems/infra/actions:ActionsFile.parse": 135,
-   "ecosystems/infra/bazel:ModuleFile.parse": 141,
    "ecosystems/packages/cocoapods:Podfile.parse": 120,
    "ecosystems/packages/cocoapods:PodfileLock.parse": 104,
    "ecosystems/packages/conda:CondaLock.parse": 99,
