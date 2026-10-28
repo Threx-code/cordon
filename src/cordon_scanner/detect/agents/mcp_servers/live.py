@@ -49,7 +49,7 @@ class LiveMcpDetector(BaseDetector):
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS, Category.OPERATIONAL})
     # A remote server is asked over the network, so the detector declares it: skipped offline,
-    # and exercised against a substituted server in tests/unit/detect/agents/test_live_mcp.py.
+    # and exercised against a substituted server in tests/unit/detect/agents/mcp_servers/test_live_mcp.py.
     requires = DetectorRequirements(content=True, network=True)
 
     def applicable(self, ctx: ScanContext) -> bool:
