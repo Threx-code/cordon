@@ -18,6 +18,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary.binary import BinaryDetector
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
+from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.secrets import ASSIGNMENT, NOT_A_SECRET, SecretNames
 from cordon_scanner.foundation.models import Category, Severity
@@ -3216,7 +3217,6 @@ class TestARegexMatchIsNotAProcess:
     @staticmethod
     def capability_lines(source: str, language: str, capability: str) -> set[int]:
         from cordon_scanner.detect.base import RuleSelector
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.foundation.models import Capability
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -3228,7 +3228,7 @@ class TestARegexMatchIsNotAProcess:
         # Ruby and PHP and a pattern match in JavaScript, and the packs are allowed to
         # disagree about a spelling because only one of them runs on a given file.
         rules = RuleSet(RuleLoader.load_builtin())
-        hits = CapabilityDetector()._match_capabilities(
+        hits = Labelling.match_capabilities(
             content,
             RuleSelector.select_rules(rules, language=language, path=content.path),
             language,
@@ -12523,7 +12523,7 @@ class TestAModuleThatExplainsWhatItDrives:
     That is an accurate description of the tool the module drives, and
     `trycloudflare.com` is on the drop-point host list precisely because the
     property being described -- no account, reachable anywhere -- makes it a
-    good exfiltration endpoint. `_destination_capabilities` searched the raw
+    good exfiltration endpoint. `Labelling.destination_capabilities` searched the raw
     bytes and took the first hit, so the sentence counted as contacting it, and
     a `platform.machine()` call a hundred lines below completed the pair.
 
@@ -13592,11 +13592,10 @@ class TestMoreDecodersAndDestinations:
     def test_a_public_ip_literal_is_an_informative_destination(
         self, url: str, counted: bool
     ) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.py", f'URL = "{url}"\n'.encode())
-        assert bool(CapabilityDetector._public_ip_url(content, "python")) is counted
+        assert bool(Labelling.public_ip_url(content, "python")) is counted
 
     @pytest.mark.parametrize(
         ("line", "counted"),
@@ -13612,11 +13611,10 @@ class TestMoreDecodersAndDestinations:
         ],
     )
     def test_a_public_ip_given_as_a_host_is_one_too(self, line: str, counted: bool) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         content = FileContent.from_bytes("a.js", f"{line}\n".encode())
-        assert bool(CapabilityDetector._public_ip_url(content, "javascript")) is counted
+        assert bool(Labelling.public_ip_url(content, "javascript")) is counted
 
 
 class TestAnInlineRequireRunsTheFile:

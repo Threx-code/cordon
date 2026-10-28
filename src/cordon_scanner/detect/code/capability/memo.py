@@ -18,16 +18,16 @@ if TYPE_CHECKING:
 
 
 class CapabilityMemo:
-    """`CapabilityDetector._match_capabilities`, through the memo."""
+    """`Labelling.match_capabilities`, through the memo."""
 
     MATCHES: ClassVar[ContentMemo] = ContentMemo()
 
     @staticmethod
     def hits(
-        detector: Any, content: FileContent, candidates: tuple[Any, ...], language: str | None
+        labelling: Any, content: FileContent, candidates: tuple[Any, ...], language: str | None
     ) -> list[Any]:
         def work() -> list[Any]:
-            found: list[Any] = detector._match_capabilities(content, candidates, language)
+            found: list[Any] = labelling.match_capabilities(content, candidates, language)
             return found
 
         if content.window_of is not None or content.truncated or content.streamed is not None:

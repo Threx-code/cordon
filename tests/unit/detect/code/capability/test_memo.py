@@ -16,9 +16,7 @@ class Matcher:
     def __init__(self) -> None:
         self.runs = 0
 
-    def _match_capabilities(
-        self, content: FileContent, candidates: Any, language: Any
-    ) -> list[Any]:
+    def match_capabilities(self, content: FileContent, candidates: Any, language: Any) -> list[Any]:
         self.runs += 1
         return [("hit", len(content.raw), language)]
 
