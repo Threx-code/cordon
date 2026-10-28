@@ -17,13 +17,9 @@ from typing import ClassVar
 import pytest
 
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.advisories.upstream_advisories import (
-    RepositoryArchive,
-    Unnamed,
-    Upstream,
-    UpstreamAdvisories,
-    Upstreams,
-)
+from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
+from cordon_scanner.intel.advisories.upstream.inference import Inference
+from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, Upstreams
 from support import ROOT as REPO
 
 
@@ -369,18 +365,18 @@ class TestTagInference:
         ],
     )
     def test_only_a_repository_is_a_repository(self, given: str, expected: str | None) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         assert TagInference.repository(given) == expected
 
     @staticmethod
     def tags(monkeypatch, tags: dict[str, str]) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(TagInference, "refs", staticmethod(lambda repository: tags))
 
     def test_the_one_tag_spelled_as_the_version_is_asked_by_its_commit(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         self.tags(monkeypatch, {"v1.25.0": "a" * 40, "v1.25.1": "b" * 40, "latest": "c" * 40})
         found = TagInference.infer("https://example.invalid/wget.git", "1.25.0", ("wget",), "x")
@@ -389,28 +385,28 @@ class TestTagInference:
         assert "inferred: the tag v1.25.0" in found.how
 
     def test_tags_that_disagree_are_not_chosen_between(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         self.tags(monkeypatch, {"1.0": "a" * 40, "v1.0": "b" * 40})
         found = TagInference.infer("https://example.invalid/r.git", "1.0", (), "x")
         assert isinstance(found, Unnamed) and "different commits" in found.reason
 
     def test_two_spellings_of_one_commit_agree(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         self.tags(monkeypatch, {"1.0": "a" * 40, "v1.0": "a" * 40})
         found = TagInference.infer("https://example.invalid/r.git", "1.0", (), "x")
         assert isinstance(found, Upstream) and found.query == {"commit": "a" * 40}
 
     def test_no_tag_spelled_as_the_version_is_no_guess(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         self.tags(monkeypatch, {"curl-8_0_1": "a" * 40, "8.0.1": "b" * 40, "8.0.0-rc1": "c" * 40})
         found = TagInference.infer("https://example.invalid/curl.git", "8.0.0", ("curl",), "x")
         assert isinstance(found, Unnamed) and "no tag spelled as version 8.0.0" in found.reason
 
     def test_dots_written_as_underscores_are_the_same_version(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         # curl tags `curl-8_0_0`; a tag spelled otherwise naming another commit would refuse it.
         self.tags(monkeypatch, {"curl-8_0_0": "a" * 40})
@@ -424,7 +420,7 @@ class TestTagInference:
     def test_an_exact_upstream_is_never_replaced_by_an_inferred_one(self, monkeypatch) -> None:
         exact = Upstream({"commit": "a" * 40}, "exact")
         self.tags(monkeypatch, {"1.0": "b" * 40})
-        assert Upstreams.inferred(exact, ["https://github.com/a/b"], "1.0", (), "x") is exact
+        assert Inference.inferred(exact, ["https://github.com/a/b"], "1.0", (), "x") is exact
 
 
 class TestConfidence:
@@ -462,7 +458,7 @@ class TestVcpkgPortfiles:
 
     @staticmethod
     def read(portfile: str, version: str, port: str) -> Upstream | Unnamed:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         return VcpkgPorts.source(portfile, version, port, "x")
 
@@ -525,7 +521,8 @@ class TestVcpkgPortfiles:
         assert isinstance(found, Unnamed) and found.nothing
 
     def test_a_qt_module_is_proved_or_inferred_from_its_port_data(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference, VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         data = (
             'set(qtsvg_HASH "' + "a" * 128 + '")\n'
@@ -552,10 +549,8 @@ class TestHomebrewTaps:
     def test_an_old_version_without_a_bottle_is_inferred_from_the_formulas_repository(
         self, monkeypatch
     ) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import (
-            HomebrewBottles,
-            TagInference,
-        )
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         head = "b" * 40
         formula = b'class Bat < Formula\n  url "https://github.com/sharkdp/bat/archive/refs/tags/v0.26.0.tar.gz"\n  head "https://github.com/sharkdp/bat.git", branch: "master"\nend\n'
@@ -588,7 +583,7 @@ class TestHomebrewTaps:
 
 class TestConanCenterSources:
     def test_a_binary_tools_sources_keyed_by_platform(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import ConanCenter
+        from cordon_scanner.intel.advisories.upstream.conan import ConanCenter
 
         source = {
             "Linux": {
@@ -611,7 +606,7 @@ class TestConanCenterSources:
         assert isinstance(found, Upstream) and found.query["version"] == "v3.31.12"
 
     def test_sources_naming_different_tags_are_not_one_upstream(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import ConanCenter
+        from cordon_scanner.intel.advisories.upstream.conan import ConanCenter
 
         found = ConanCenter.exact(
             [
@@ -623,12 +618,12 @@ class TestConanCenterSources:
         assert isinstance(found, Unnamed)
 
     def test_a_tag_with_underscores_for_dots_is_the_version(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"v3_2_2": "f" * 40})
         )
-        found = Upstreams.inferred(
+        found = Inference.inferred(
             Unnamed("x"), ["https://github.com/ruby/ruby"], "3.2.2", ("ruby",), "x"
         )
         assert isinstance(found, Upstream) and found.query == {"commit": "f" * 40}
@@ -652,7 +647,7 @@ class TestCocoaPodsCheckouts:
         assert isinstance(found, Upstream) and found.query == {"commit": "c" * 40}
 
     def test_a_tag_checkout_is_exact_once_the_repository_shows_the_tag(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"1.0": "d" * 40})
@@ -665,14 +660,14 @@ class TestCocoaPodsCheckouts:
 
 class TestCMakeArguments:
     def test_nested_parentheses_separate_arguments_and_end(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         assert VcpkgPorts._arguments('A AND (B OR "C") ( )', {}) == ["A", "AND", "B", "OR", "C"]
 
 
 class TestMoreSourceHosts:
     def test_one_file_at_a_commit_is_that_commit(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import RepositoryArchive
+        from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive
 
         sha = "8e729daa702d45597ccffa0c964bba1eca10a9e6"
         for url in (
@@ -687,7 +682,7 @@ class TestMoreSourceHosts:
         assert RepositoryArchive.parse("https://github.com/o/r/raw/main/x.h") is None
 
     def test_download_hosts_imply_repositories_to_prove_against(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import Conventions
+        from cordon_scanner.intel.advisories.upstream.tags import Conventions
 
         assert Conventions.repositories(
             ["https://archive.apache.org/dist/apr/apr-1.7.6.tar.bz2"]
@@ -708,7 +703,7 @@ class TestMoreSourceHosts:
 
 class TestConanRemovedVersions:
     def test_a_version_the_index_still_lists_is_read_from_its_data(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import ConanCenter
+        from cordon_scanner.intel.advisories.upstream.conan import ConanCenter
 
         monkeypatch.setattr(
             ConanCenter,
@@ -732,7 +727,7 @@ class TestConanRemovedVersions:
 
 class TestGoRelease:
     def test_gos_source_release_is_the_standard_library(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import RegistryArchive
+        from cordon_scanner.intel.advisories.upstream.base import RegistryArchive
 
         assert RegistryArchive.parse("https://go.dev/dl/go1.23.3.src.tar.gz") == (
             "Go",
@@ -780,7 +775,7 @@ class TestQtBeforePortData:
         raise OSError("404")
 
     def test_a_module_mirrored_on_github_is_its_tag(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         found = VcpkgPorts.qt("qtmqtt", "6.8.2", self.missing, "x", self.qtbase)
         assert isinstance(found, Upstream)
@@ -790,11 +785,9 @@ class TestQtBeforePortData:
         }
 
     def test_a_release_module_is_proved_by_its_digest(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import (
-            Archive,
-            Upstreams,
-            VcpkgPorts,
-        )
+        from cordon_scanner.intel.advisories.upstream.base import Archive
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream_advisories import Upstreams
 
         seen: list[Archive | None] = []
 
@@ -811,7 +804,7 @@ class TestQtBeforePortData:
         )
 
     def test_another_qt_version_than_the_baselines_is_not_read(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         found = VcpkgPorts.qt("qtsvg", "6.7.0", self.missing, "x", self.qtbase)
         assert isinstance(found, Unnamed) and "no Qt 6.7.0" in found.reason
@@ -834,7 +827,7 @@ class TestHomebrewAliases:
         monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
 
     def test_an_alias_is_followed_to_the_installed_versions_series(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewBottles
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
 
         record = json.dumps({"versions": {"stable": "3.13.9"}}).encode()
         self.registry(
@@ -849,7 +842,7 @@ class TestHomebrewAliases:
         assert not isinstance(found, Unnamed) and found[0] == "python@3.13"
 
     def test_a_formula_homebrew_no_longer_has_is_said_so(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewBottles
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
 
         HomebrewBottles._renames = None
         self.registry(monkeypatch, {f"{self.CORE}/formula_renames.json": b'{"annie": "lux"}'})
@@ -899,7 +892,7 @@ class TestHomebrewHistory:
         return {"sha": sha * 40, "commit": {"message": message}}
 
     def test_the_revision_holding_the_bottle_digest_is_the_formula(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewHistory
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewHistory
 
         path = f"{self.COMMITS}?path=Formula/exa.rb&per_page=100&page=1"
         asked = self.serve(
@@ -925,7 +918,7 @@ class TestHomebrewHistory:
         assert not any("a" * 40 in url or "d" * 40 in url for url in asked)
 
     def test_a_deleted_formula_is_read_from_the_history(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewBottles
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
 
         self.serve(
             monkeypatch,
@@ -958,7 +951,7 @@ class TestHomebrewHistory:
         assert "homebrew-core bbbbbbbbbbbb, which holds its bottle's digest" in answer.how
 
     def test_no_revision_with_the_digest_is_said_so(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewHistory
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewHistory
 
         self.serve(monkeypatch, {}, {})
         exa = Dependency(
@@ -973,7 +966,7 @@ class TestHomebrewHistory:
         assert isinstance(answer, Unnamed) and "no revision of its formula" in answer.reason
 
     def test_without_a_digest_the_newest_revision_building_the_version(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewHistory
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewHistory
 
         path = f"{self.COMMITS}?path=Formula/exa.rb&per_page=100&page=1"
         revised = self.FORMULA.replace("  bottle do", "  revision 1\n  bottle do")
@@ -997,7 +990,7 @@ class TestHomebrewHistory:
         assert not HomebrewHistory.builds(self.FORMULA, "0.9.1")
 
     def test_a_head_build_is_its_commit(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewBottles
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
         from cordon_scanner.intel.provenance.homebrew_provenance import HomebrewProvenance
 
         full = "6598940" + "c" * 33
@@ -1012,7 +1005,7 @@ class TestHomebrewHistory:
         assert isinstance(HomebrewBottles.head({}, "HEAD-6598940", "node-build"), Unnamed)
 
     def test_the_sharded_path(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewHistory
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewHistory
 
         assert HomebrewHistory.paths("cmake") == ("Formula/cmake.rb", "Formula/c/cmake.rb")
         assert HomebrewHistory.paths("libpng") == ("Formula/libpng.rb", "Formula/lib/libpng.rb")
@@ -1023,7 +1016,7 @@ class TestProtocolTwoRefs:
         import io as _io
         import urllib.request
 
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
         from cordon_scanner.intel.provenance.gitfetch import GitFetch
 
         answer = b"".join(
@@ -1052,7 +1045,7 @@ class TestProtocolTwoRefs:
         assert b"command=ls-refs" in asked[0] and b"ref-prefix refs/tags/" in asked[0]
 
     def test_postgresqls_tag_spelling(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"REL_14_5": "e" * 40})
@@ -1075,7 +1068,7 @@ class TestCondaInfoStream:
         return bytes(out)
 
     def test_the_recipe_is_read_past_a_large_info_member(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage
+        from cordon_scanner.intel.advisories.upstream.conda import CondaPackage
 
         raw = io.BytesIO()
         with tarfile.open(fileobj=raw, mode="w") as archive:
@@ -1093,7 +1086,7 @@ class TestCondaInfoStream:
 
 class TestGnuProjectsElsewhere:
     def test_gnu_projects_not_on_savannah(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import Conventions
+        from cordon_scanner.intel.advisories.upstream.tags import Conventions
 
         assert Conventions.repositories(
             ["https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.gz"]
@@ -1106,11 +1099,8 @@ class TestGnuProjectsElsewhere:
         )
 
     def test_the_release_files_name_is_a_tag_prefix(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import (
-            Archive,
-            ContentProof,
-            TagInference,
-        )
+        from cordon_scanner.intel.advisories.upstream.base import Archive
+        from cordon_scanner.intel.advisories.upstream.tags import ContentProof, TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"releases/gcc-13.2.0": "f" * 40})
@@ -1121,7 +1111,7 @@ class TestGnuProjectsElsewhere:
             staticmethod(lambda archive, repository, commit, tag="": ("proven", "all files")),
         )
         url = "https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.gz"
-        found = Upstreams.inferred(
+        found = Inference.inferred(
             Unnamed("x"), [], "13.2.0", ("libgcc-ng",), "x", Archive((url,), "sha256:" + "0" * 64)
         )
         assert (
@@ -1133,7 +1123,7 @@ class TestGnuProjectsElsewhere:
 
 class TestExactCommitsAndHosts:
     def test_a_conan_source_cloned_at_a_commit(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import ConanCenter
+        from cordon_scanner.intel.advisories.upstream.conan import ConanCenter
 
         sha = "191bcb948f7191c36eefe634336f5fc5c0c4c2be"
         found = ConanCenter.committed(
@@ -1143,7 +1133,7 @@ class TestExactCommitsAndHosts:
         assert ConanCenter.committed({"url": "https://x/y.git", "commit": "main"}, "x") is None
 
     def test_a_cgit_snapshot_of_a_commit(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import RepositoryArchive
+        from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive
 
         sha = "191bcb948f7191c36eefe634336f5fc5c0c4c2be"
         assert RepositoryArchive.parse(
@@ -1154,7 +1144,7 @@ class TestExactCommitsAndHosts:
         )
 
     def test_hosts_and_spellings(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import Conventions, TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import Conventions, TagInference
 
         for url, repository in (
             (
@@ -1202,7 +1192,7 @@ class TestVcpkgRegistryEras:
         monkeypatch.setattr(Upstreams, "_get", staticmethod(get))
 
     def test_a_control_file_is_the_ports_manifest(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         control = b"Source: pybind11\nVersion: 2.6.0\nPort-Version: 1\nHomepage: https://github.com/pybind/pybind11\n\nFeature: x\n"
         self.registry(monkeypatch, {f"{self.RAW}/{self.BASE}/ports/pybind11/CONTROL": control})
@@ -1213,7 +1203,7 @@ class TestVcpkgRegistryEras:
         }
 
     def test_a_port_that_downloads_nothing_is_vcpkgs_own_files(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         assert not VcpkgPorts.DOWNLOADS.search(
             'file(INSTALL "${CMAKE_CURRENT_LIST_DIR}/x.cmake" DESTINATION y)'
@@ -1227,7 +1217,7 @@ class TestVcpkgRegistryEras:
             assert VcpkgPorts.DOWNLOADS.search(fetching), fetching
 
     def test_nuget_package_downloads(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import RegistryArchive
+        from cordon_scanner.intel.advisories.upstream.base import RegistryArchive
 
         assert RegistryArchive.parse(
             "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.3800.47"
@@ -1238,7 +1228,7 @@ class TestVcpkgRegistryEras:
         )
 
     def test_a_tag_spelled_in_another_case(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"OpenSSL_1_1_1n": "c" * 40})
@@ -1334,7 +1324,7 @@ class TestPodSiblings:
         return [core, analytics], answers
 
     def test_a_binary_pod_published_from_a_siblings_repository(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import PodSiblings
+        from cordon_scanner.intel.advisories.upstream.cocoapods import PodSiblings
 
         deps, answers = self.pods(monkeypatch, self.PODSPEC)
         resolved = PodSiblings.resolve(deps, answers)
@@ -1343,7 +1333,7 @@ class TestPodSiblings:
         assert "with the same download" in resolved[1].how
 
     def test_another_download_is_not_the_pod(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import PodSiblings
+        from cordon_scanner.intel.advisories.upstream.cocoapods import PodSiblings
 
         deps, answers = self.pods(
             monkeypatch, self.PODSPEC.replace("c549faaa5cd321b5", "0000000000000000")
@@ -1351,7 +1341,7 @@ class TestPodSiblings:
         assert isinstance(PodSiblings.resolve(deps, answers)[1], Unnamed)
 
     def test_another_declared_version_is_not_the_pod(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import PodSiblings
+        from cordon_scanner.intel.advisories.upstream.cocoapods import PodSiblings
 
         deps, answers = self.pods(monkeypatch, self.PODSPEC.replace("'10.6.0'", "'10.5.0'"))
         assert isinstance(PodSiblings.resolve(deps, answers)[1], Unnamed)
@@ -1359,20 +1349,20 @@ class TestPodSiblings:
 
 class TestRawFileAtATag:
     def test_a_raw_file_at_a_tag_names_the_release(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"v1.8.2505": "a" * 40})
         )
         url = "https://raw.githubusercontent.com/microsoft/DirectXShaderCompiler/v1.8.2505/LICENSE.TXT"
-        found = Upstreams.from_urls([url], "x")
+        found = Inference.from_urls([url], "x")
         assert isinstance(found, Upstream) and found.query["version"] == "v1.8.2505"
         # A branch moves: not a release.
         branch = url.replace("v1.8.2505", "main")
-        assert isinstance(Upstreams.from_urls([branch], "x"), Unnamed)
+        assert isinstance(Inference.from_urls([branch], "x"), Unnamed)
 
     def test_a_file_of_another_repository_is_not_the_package(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"v1.0": "a" * 40})
@@ -1382,12 +1372,12 @@ class TestRawFileAtATag:
             "https://raw.githubusercontent.com/other/helper/v1.0/cmake/Find.cmake",
             "https://github.com/pkg/pkg/commit/" + "b" * 40 + ".patch",
         ]
-        assert isinstance(Upstreams.from_urls(urls, "x"), Unnamed)
+        assert isinstance(Inference.from_urls(urls, "x"), Unnamed)
 
 
 class TestVcpkgFromAnyGit:
     def test_a_commit_on_any_https_git_server(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         found = VcpkgPorts._fetched(
             "vcpkg_from_git",
@@ -1478,7 +1468,7 @@ class TestVcpkgPatchDownloads:
     )
 
     def test_a_patch_download_is_not_the_source(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         found, _ = VcpkgPorts.read(self.PORTFILE, "2023-08-06", "g2o", "x")
         assert isinstance(found, Upstream) and found.query == {
@@ -1488,7 +1478,7 @@ class TestVcpkgPatchDownloads:
 
 class TestVcpkgOverrides:
     def test_an_override_is_the_version_not_a_minimum(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import VcpkgPorts
+        from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 
         asked: list[str] = []
         monkeypatch.setattr(
@@ -1563,7 +1553,7 @@ class TestCondaZip64:
 
     def test_a_zip64_package_is_read(self, monkeypatch) -> None:
 
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage
+        from cordon_scanner.intel.advisories.upstream.conda import CondaPackage
 
         member = (REPO / "tests" / "unit" / "data" / "zstd" / "conda-info.tar.zst").read_bytes()
         body = self.package(member)
@@ -1582,7 +1572,7 @@ class TestCondaZip64:
 
 class TestHttpGitHubArchives:
     def test_an_http_github_archive_is_the_https_one(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import RepositoryArchive
+        from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive
 
         assert RepositoryArchive.parse(
             "http://github.com/google/re2/archive/2025-11-05.tar.gz"
@@ -1607,7 +1597,7 @@ class TestCondaMetapackages:
         return raw.getvalue()
 
     def test_paths_after_the_recipe_are_read_only_when_wanted(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage
+        from cordon_scanner.intel.advisories.upstream.conda import CondaPackage
 
         seen: dict[str, int] = {}
         with tarfile.open(fileobj=io.BytesIO(self.info([])), mode="r|") as archive:
@@ -1619,7 +1609,7 @@ class TestCondaMetapackages:
         assert seen["paths"] == 0
 
     def test_a_package_installing_files_counts_them(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage
+        from cordon_scanner.intel.advisories.upstream.conda import CondaPackage
 
         seen: dict[str, int] = {"want_paths": 1}
         with tarfile.open(fileobj=io.BytesIO(self.info(["lib/x.so"])), mode="r|") as archive:
@@ -1629,7 +1619,7 @@ class TestCondaMetapackages:
 
 class TestVersionInAnUnderscoredName:
     def test_cf_cli_6_48_0_osx(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewHistory
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewHistory
 
         formula = (
             'class CfCli < Formula\n  url "https://packages.cloudfoundry.org/homebrew/cf-cli_6.48.0_osx.tgz"\n'
@@ -1643,7 +1633,7 @@ class TestDumbHttpRefs:
     def test_a_plain_info_refs_list(self, monkeypatch) -> None:
         import urllib.request
 
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         body = (
             b"e9a53e8922fbebe825f74ffbe309d4e57d6b09d5\trefs/heads/master\n"
@@ -1675,7 +1665,7 @@ class TestDumbHttpRefs:
 
 class TestGitLabHeadBuilds:
     def test_gitlab_resolves_the_abbreviation(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import HomebrewBottles
+        from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
 
         full = "ae2b873" + "d" * 33
         asked: list[str] = []
@@ -1730,7 +1720,7 @@ class TestRattlerFinalizedSources:
     )
 
     def test_a_shared_stages_source(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage, CondaSiblings
+        from cordon_scanner.intel.advisories.upstream.conda import CondaPackage, CondaSiblings
 
         monkeypatch.setattr(
             CondaPackage, "recipe", staticmethod(lambda url, seen=None: self.RENDERED)
@@ -1748,7 +1738,7 @@ class TestRattlerFinalizedSources:
         )
 
     def test_an_output_naming_no_source_takes_its_builds(self) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaSiblings
+        from cordon_scanner.intel.advisories.upstream.conda import CondaSiblings
 
         build = ("https://github.com/conda-forge/x-feedstock", "e" * 40)
         main_url, other_url = (
@@ -1776,7 +1766,7 @@ class TestRattlerFinalizedSources:
 
 class TestGnomeTags:
     def test_upper_case_underscored_name_and_version(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         monkeypatch.setattr(
             TagInference, "refs", staticmethod(lambda repository: {"AT_SPI2_CORE_2_40_3": "b" * 40})
@@ -1812,7 +1802,7 @@ class TestCondaFonts:
         ],
     )
     def test_fonts_only(self, paths: list[str], fonts_only: bool) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import CondaPackage
+        from cordon_scanner.intel.advisories.upstream.conda import CondaPackage
 
         seen: dict[str, int] = {"want_paths": 1}
         with tarfile.open(fileobj=io.BytesIO(self.info(paths)), mode="r|") as archive:

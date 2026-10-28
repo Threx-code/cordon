@@ -8,7 +8,8 @@ from typing import ClassVar
 
 from cordon_scanner.ecosystems.packages.cocoapods import CocoaPodsEcosystem
 from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.intel.advisories.upstream_advisories import NpmPodspec, Unnamed, Upstream
+from cordon_scanner.intel.advisories.upstream.base import Unnamed, Upstream
+from cordon_scanner.intel.advisories.upstream.cocoapods import NpmPodspec
 
 LOCK = """PODS:
   - DoubleConversion (1.1.6)
@@ -212,7 +213,7 @@ class TestNewerReleases:
         assert isinstance(found, Unnamed)
 
     def test_hermes_named_by_version_properties(self, monkeypatch) -> None:
-        from cordon_scanner.intel.advisories.upstream_advisories import TagInference
+        from cordon_scanner.intel.advisories.upstream.tags import TagInference
 
         self.serve(monkeypatch)
         asked: list[tuple[str, str]] = []

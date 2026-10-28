@@ -11,7 +11,8 @@ import tarfile
 
 import pytest
 
-from cordon_scanner.intel.advisories.upstream_advisories import Archive, ContentProof, TagInference
+from cordon_scanner.intel.advisories.upstream.base import Archive
+from cordon_scanner.intel.advisories.upstream.tags import ContentProof, TagInference
 from cordon_scanner.intel.provenance import gitfetch
 from cordon_scanner.intel.provenance.gitfetch import GitPack
 
@@ -114,7 +115,7 @@ class TestTheDownloadDeadline:
         import time
         import urllib.request
 
-        from cordon_scanner.intel.advisories.upstream_advisories import ContentProof
+        from cordon_scanner.intel.advisories.upstream.tags import ContentProof
 
         class Trickle:
             def __enter__(self):
