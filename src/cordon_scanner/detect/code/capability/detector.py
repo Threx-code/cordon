@@ -3691,7 +3691,7 @@ class CapabilityDetector(BaseDetector):
         matched: tuple[Capability, ...],
         hits: list[CapabilityHit],
     ) -> Evidence:
-        """Carry a second hash: the one `Engine._collapse_idiom` groups on.
+        """Carry a second hash: the one `ResultFolding.idiom` groups on.
 
         Those two questions had one answer and they are not the same question.
         The evidence should point at the hit that carries the claim -- that is

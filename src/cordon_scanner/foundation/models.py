@@ -735,7 +735,7 @@ class Finding:
     """Metadata key holding the hash of the file a finding came from.
 
     Recorded so that two findings can be told apart by the bytes they came out of
-    rather than by the bytes they matched. `Engine._collapse_repeats` is the only
+    rather than by the bytes they matched. `ResultFolding.repeats` is the only
     reader, and the distinction matters: every 2048-bit RSA key begins with the same
     twelve characters, so the matched value cannot tell one committed key from
     another."""

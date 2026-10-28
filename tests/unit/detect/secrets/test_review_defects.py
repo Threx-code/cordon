@@ -11004,19 +11004,19 @@ class TestOneObservationIsOneFinding:
     def test_a_different_span_is_a_different_observation(self) -> None:
         """Only an identical span collapses. A second place in the same file
         that reads a credential and sends it is a second finding."""
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.results import ResultFolding
 
         first = self._at("MALWARE.EXFIL.001", 3)
         same = self._at("SUSPECT.EXFIL.001", 3)
         elsewhere = self._at("SUSPECT.EXFIL.001", 90)
-        kept = Engine._collapse_graded_pair((first, same, elsewhere))
+        kept = ResultFolding.graded_pair((first, same, elsewhere))
         assert [f.location.line for f in kept] == [3, 90]
 
     def test_an_unrelated_family_is_untouched(self) -> None:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.results import ResultFolding
 
         pair = (self._at("MALWARE.EXFIL.001", 3), self._at("SUSPECT.DROPPER.001", 3))
-        assert len(Engine._collapse_graded_pair(pair)) == 2
+        assert len(ResultFolding.graded_pair(pair)) == 2
 
 
 class TestAHostEndsWhereTheStringEndsIt:
@@ -12729,7 +12729,7 @@ class TestAFixtureIsNotTheDistributionsInstaller:
 
 
 class TestTheAnchorAndTheCollapseAreDifferentQuestions:
-    """`Engine._collapse_idiom` groups on the evidence's hash, and `_anchor`
+    """`ResultFolding.idiom` groups on the evidence's hash, and `_anchor`
     moved the evidence. So the collapse silently stopped collapsing.
 
     `community-scripts/ProxmoxVE` ships six hundred container install scripts

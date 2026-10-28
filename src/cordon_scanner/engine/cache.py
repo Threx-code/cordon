@@ -53,7 +53,7 @@ are rejected by verification, which is the correct outcome: they are exactly as
 trustworthy as an entry an attacker wrote.
 
 Version 3 is about the findings rather than the envelope. Every finding now carries
-the hash of the file it came from, which is what `Engine._collapse_repeats` groups on,
+the hash of the file it came from, which is what `ResultFolding.repeats` groups on,
 and an entry written by version 2 has no such field -- so a warm cache would have
 produced a report where some findings collapsed and some did not, according to which
 files happened to be cached. A detector version cannot express that: the change is in

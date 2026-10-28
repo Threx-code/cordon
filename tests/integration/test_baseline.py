@@ -254,7 +254,7 @@ class TestABaselineCoversTrackedFilesOnly(BaselineFixtures):
         root.mkdir(exist_ok=True)
         # Different bytes in the two files, deliberately. This test is about which
         # PATHS a baseline covers, and two byte-identical files are now one finding with
-        # a count -- see `Engine._collapse_repeats` -- so writing the same content twice
+        # a count -- see `ResultFolding.repeats` -- so writing the same content twice
         # would make the assertion about collapsing rather than about `.gitignore`.
         (root / "tracked.js").write_text(LEGACY, encoding="utf-8")
         (root / ".gitignore").write_text("ignored.js\n", encoding="utf-8")

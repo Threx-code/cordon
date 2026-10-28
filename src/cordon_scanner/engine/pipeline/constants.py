@@ -9,16 +9,13 @@ the engine.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from cordon_scanner.foundation.models import (
     Confidence,
     RiskScore,
     Severity,
 )
-
-if TYPE_CHECKING:
-    pass
 
 NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
 
@@ -141,7 +138,7 @@ KEY_TABLE_SIZE = 3
 
 Lower than `PRIVATE_KEY_CORPUS`, and the asymmetry is the point: a directory is a
 place a leak can land in, and a file is not. A leak is one key in a file. See
-`Engine._collapse_key_table`."""
+`ResultFolding.key_table`."""
 
 PRIVATE_KEY_RULE = "SECRET.PRIVATE_KEY.001"
 PRIVATE_KEY_CORPUS = 5
@@ -149,7 +146,7 @@ PRIVATE_KEY_CORPUS = 5
 
 One or two is what a leak looks like. Five is a hierarchy somebody generated, and
 every repository that implements TLS has at least one such directory. See
-`Engine._collapse_key_corpus`."""
+`ResultFolding.key_corpus`."""
 
 CREDENTIAL_NAME_CEILING = Severity.MEDIUM
 """What a collapsed credential-name group reports at. The step down a key corpus takes."""
@@ -187,7 +184,7 @@ to tell a reader that. Any fuzzing or upload-test corpus has the same shape.
 
 Ceilinged rather than dropped, with the count in the message, for the reason the key
 corpus is: a directory of real polyglots is still in the report and still says how many.
-See `Engine._collapse_polyglot_corpus`."""
+See `ResultFolding.polyglot_corpus`."""
 
 POLYGLOT_CORPUS_CEILING = Severity.MEDIUM
 """What a collapsed polyglot corpus reports at. The same step down a key corpus takes."""
@@ -197,7 +194,7 @@ MIN_IDIOM_SNIPPET = 40
 """When the same construct in many files becomes one finding.
 
 Ten files, and a snippet specific enough that ten copies cannot be coincidence. See
-`Engine._collapse_idiom`, which explains why both numbers are needed."""
+`ResultFolding.idiom`, which explains why both numbers are needed."""
 
 MAX_REPEAT_PATHS_LISTED = 5
 """How many of the repeated paths a collapsed finding names.

@@ -59,7 +59,7 @@ class TestDistanceIsPartOfTheClaim:
 
     A `setup.py` is an install hook, so the adjacent case satisfies
     `MALWARE.DROPPER.001` as well, and the two findings share a span -- where
-    `Engine._collapse_graded_pair` keeps the stronger one. Asserting on the
+    `ResultFolding.graded_pair` keeps the stronger one. Asserting on the
     family rather than on one id keeps distance the variable, which is what the
     class is for."""
 
