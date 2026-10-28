@@ -33,7 +33,8 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.supply.registries.detector import NETWORK_CAVEAT, RegistryEvidence
+from cordon_scanner.detect.supply.registries.detector import NETWORK_CAVEAT
+from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
