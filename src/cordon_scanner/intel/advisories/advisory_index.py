@@ -87,9 +87,9 @@ class AdvisoryIndex:
 
     @staticmethod
     def directory() -> Path:
-        from cordon_scanner.engine.cache import ScanCache
+        from cordon_scanner.foundation.paths import StatePaths
 
-        return ScanCache.default_cache_dir() / "advisory-index"
+        return StatePaths.default_cache_dir() / "advisory-index"
 
     @classmethod
     def for_file(

@@ -198,16 +198,16 @@ class AdvisoryFiles:
 
         Not inside the installed package -- a running CLI has no business writing
         into `site-packages`, and a system install usually cannot anyway.
-        `ScanCache.default_cache_dir()` is the same environment-directed cache
+        `StatePaths.default_cache_dir()` is the same environment-directed cache
         root scan results already use (honours `CORDON_CACHE_DIR`/
         `XDG_CACHE_HOME`, falls back to `~/.cache/cordon`); safe to share here
         because, unlike the cache's MAC key (`ScanCache.key_dir`), nothing about
         this location needs to resist an attacker who controls the environment --
         a sync is an operator running a command, not a scan reading a target.
         """
-        from cordon_scanner.engine.cache import ScanCache
+        from cordon_scanner.foundation.paths import StatePaths
 
-        return ScanCache.default_cache_dir() / "advisories"
+        return StatePaths.default_cache_dir() / "advisories"
 
     @staticmethod
     def _read_meta(root: Path) -> DatabaseMeta:

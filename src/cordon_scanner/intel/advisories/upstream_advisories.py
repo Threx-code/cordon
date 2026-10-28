@@ -521,9 +521,9 @@ class VcpkgPorts:
     def _cached(kind: str, key: str, fetch: Any) -> bytes:
         """A git object by its id never changes, so it is kept: a project's pinned ports cost the
         GitHub API (sixty anonymous requests an hour) once."""
-        from cordon_scanner.engine.cache import ScanCache
+        from cordon_scanner.foundation.paths import StatePaths
 
-        path = ScanCache.default_cache_dir() / "upstream" / f"vcpkg-{kind}-{key}"
+        path = StatePaths.default_cache_dir() / "upstream" / f"vcpkg-{kind}-{key}"
         try:
             return path.read_bytes()
         except (OSError, http.client.HTTPException):

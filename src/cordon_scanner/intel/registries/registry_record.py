@@ -282,9 +282,9 @@ class RegistryRecord:
 
     @staticmethod
     def store_dir() -> Path:
-        from cordon_scanner.engine.cache import ScanCache
+        from cordon_scanner.foundation.paths import StatePaths
 
-        return ScanCache.default_cache_dir() / "registry-record"
+        return StatePaths.default_cache_dir() / "registry-record"
 
     @staticmethod
     def _entry(root: Path, ecosystem: str, name: str, version: str) -> Path:

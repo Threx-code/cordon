@@ -28,6 +28,7 @@ reimplementing `rpartition("/")` against a string that may not be a plain path.
 from __future__ import annotations
 
 import functools
+import os
 import sys
 from pathlib import Path
 
@@ -68,7 +69,76 @@ class ContainerPaths:
         return any(segment.lower() in FIXTURE_DIRECTORIES for segment in path.split("/")[:-1])
 
 
-__all__ = ["CONTAINER", "ContainerPaths"]
+class StatePaths:
+    """Where Cordon keeps what it remembers between runs: the cache's entries, which the
+    environment may direct, and the keys that authenticate them, which it may not. The scan
+    cache, the evidence key and the intelligence caches all ask here, so the rule about what an
+    environment variable can move is stated once."""
+
+    @staticmethod
+    def default_cache_dir() -> Path:
+        """Where cache *entries* live when the user has not chosen.
+
+        Honours ``XDG_CACHE_HOME`` on Unix so it lands with everything else rather
+        than in the middle of the repository being scanned, which would then have to
+        be excluded and would appear in status output.
+
+        Environment-directed, and deliberately so -- CI needs to point this at a
+        restorable path. See `key_dir`, which is not, and why.
+        """
+        override = os.environ.get("CORDON_CACHE_DIR")
+        if override:
+            return Path(override)
+        xdg = os.environ.get("XDG_CACHE_HOME")
+        if xdg:
+            return Path(xdg) / "cordon"
+        return Path.home() / ".cache" / "cordon"
+
+    @staticmethod
+    def key_dir() -> Path:
+        """Where the authentication key lives. Not environment-directed.
+
+        The key used to live beside the entries, which meant one variable
+        decided both: anything able to set `CORDON_CACHE_DIR` in a build could
+        point it at a directory it had already filled with entries and a key of
+        its own, and every forged `{"findings": []}` would verify.
+
+        Moving it to `Path.home()` did not fix that. `Path.home()` reads `$HOME`,
+        which is a variable too -- the most basic one -- and the same attacker
+        sets it in the same `env:` block. An audit demonstrated the full bypass
+        against exactly that: plant a key under a redirected `$HOME`, compute
+        the cache key for each payload file from inputs that are all public,
+        write a correctly-MAC'd empty result, and the scan exits 0 over code it
+        never examined. The reasoning in this docstring was right and stopped
+        one variable short of applying it.
+
+        The password database is not a variable. `getpwuid` answers from the
+        system's own account store, so nothing in the process environment moves
+        it. `$HOME` is used only where that lookup is unavailable -- Windows, or
+        a container with no passwd entry for the running uid -- and there the
+        binding in `_mac` is what carries the weight instead.
+        """
+        return StatePaths._home() / ".cache" / "cordon"
+
+    @staticmethod
+    def _home() -> Path:
+        """The running user's home directory, from the account store.
+
+        Falls back to `Path.home()` when there is no account entry, which is
+        ordinary inside minimal containers. The fallback is weaker and is not
+        silent: `_mac` binds the resolved key path, so a key obtained from a
+        different location does not validate entries.
+        """
+        try:
+            import pwd
+
+            return Path(pwd.getpwuid(os.getuid()).pw_dir)
+        except (ImportError, KeyError, AttributeError, OSError):
+            # pragma: no cover - Windows, or a uid with no passwd entry
+            return Path.home()
+
+
+__all__ = ["CONTAINER", "ContainerPaths", "StatePaths"]
 
 
 FIXTURE_DIRECTORIES = frozenset(

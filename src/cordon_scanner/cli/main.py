@@ -2964,7 +2964,7 @@ class CommandLine:
 
         if action == "fetch-policy":
             from cordon_scanner.engine.cache import ScanCache
-            from cordon_scanner.engine.distribution import PolicyDistribution
+            from cordon_scanner.foundation.distribution import PolicyDistribution
 
             if not PolicyDistribution.is_remote(args.url):
                 raise ConfigError(
@@ -2982,7 +2982,7 @@ class CommandLine:
             return int(ExitCode.CLEAN)
 
         if action == "policy-drift":
-            from cordon_scanner.engine.distribution import PolicyDistribution
+            from cordon_scanner.foundation.distribution import PolicyDistribution
 
             vendored = Path(args.vendored)
             if not vendored.is_file():

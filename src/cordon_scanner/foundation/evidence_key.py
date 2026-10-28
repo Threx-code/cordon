@@ -19,6 +19,8 @@ import secrets
 import threading
 from pathlib import Path
 
+from cordon_scanner.foundation.paths import StatePaths
+
 KEY_NAME = ".cordon-evidence-key"
 KEY_BYTES = 32
 
@@ -38,10 +40,8 @@ class EvidenceKey:
 
     @classmethod
     def _load_or_create(cls) -> bytes | None:
-        from cordon_scanner.engine.cache import ScanCache
-
         try:
-            directory = ScanCache.key_dir()
+            directory = StatePaths.key_dir()
             path = directory / KEY_NAME
             if path.is_file() and not path.is_symlink():
                 raw = path.read_bytes()

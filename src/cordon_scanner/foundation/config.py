@@ -40,7 +40,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.engine.distribution import PolicyDistribution
+from cordon_scanner.foundation.distribution import PolicyDistribution
 from cordon_scanner.foundation.errors import ConfigError, PolicyViolationError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.models import (
@@ -50,6 +50,7 @@ from cordon_scanner.foundation.models import (
     Severity,
     Suppression,
 )
+from cordon_scanner.foundation.paths import StatePaths
 from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.foundation.taxonomy import ThreatDomain
 from cordon_scanner.version import PROGRAM
@@ -2184,12 +2185,10 @@ class ConfigResolver:
         if not PolicyDistribution.is_remote(source) and "#sha256=" in source:
             path = PolicyDistribution.verify_local(source)
         elif PolicyDistribution.is_remote(source):
-            from cordon_scanner.engine.cache import ScanCache
-
             path = PolicyDistribution.resolve(
                 source,
                 allow_network=allow_network,
-                cache_dir=cache_dir or ScanCache.default_cache_dir(),
+                cache_dir=cache_dir or StatePaths.default_cache_dir(),
             )
 
         p = Path(path)

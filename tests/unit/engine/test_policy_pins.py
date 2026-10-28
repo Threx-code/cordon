@@ -14,8 +14,8 @@ import hashlib
 import pytest
 
 from cordon_scanner.cli.main import CommandLine
-from cordon_scanner.engine.distribution import PolicyDistribution
 from cordon_scanner.foundation.config import ConfigResolver
+from cordon_scanner.foundation.distribution import PolicyDistribution
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 
 POLICY = """version: 1
@@ -93,7 +93,7 @@ class TestFetchOnceThenOffline:
 
         monkeypatch.setattr(PolicyDistribution, "_fetch", staticmethod(fetch))
         monkeypatch.setattr(
-            "cordon_scanner.engine.cache.ScanCache.default_cache_dir",
+            "cordon_scanner.foundation.paths.StatePaths.default_cache_dir",
             staticmethod(lambda: tmp_path / "cache"),
         )
         assert CommandLine.run(["config", "fetch-policy", url]) == int(ExitCode.CLEAN)
