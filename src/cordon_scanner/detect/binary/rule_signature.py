@@ -21,8 +21,8 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_layout import ABSENT, Cursor
+from cordon_scanner.detect.binary.rule_oids import ObjectIds
 from cordon_scanner.detect.binary.rule_values import Call, Record, Scalar, Seq, Sig
-from cordon_scanner.detect.binary.yara_oids import Oids
 from cordon_scanner.intel.provenance._dsa import Dsa
 from cordon_scanner.intel.provenance._ecdsa import Ecdsa
 
@@ -281,28 +281,28 @@ class Hash:
     def identifier(name: str) -> str | None:
         """The OID of a digest, by its long name (the digests OpenSSL keys by name)."""
         if not Hash._BY_NAME:
-            for oid, (_short, long) in Oids.NAMES.items():
-                if long in Oids.DIGEST_SIZES and long not in Hash.BASE:
+            for oid, (_short, long) in ObjectIds.NAMES.items():
+                if long in ObjectIds.DIGEST_SIZES and long not in Hash.BASE:
                     Hash._BY_NAME[long] = oid
         return Hash._BY_NAME.get(name)
 
     @staticmethod
     def oid_long_name(oid: str) -> str:
         """``OBJ_nid2ln(OBJ_obj2nid(oid))``: "undefined" for an identifier OpenSSL does not know."""
-        names = Oids.NAMES.get(oid)
+        names = ObjectIds.NAMES.get(oid)
         return (names[1] or "undefined") if names else "undefined"
 
     @staticmethod
     def base(name: str | None) -> str | None:
         """The digest ``EVP_get_digestbyname`` gives, or None."""
-        if name is None or name not in Oids.DIGEST_SIZES:
+        if name is None or name not in ObjectIds.DIGEST_SIZES:
             return None
         return Hash.BASE.get(name, name)
 
     @staticmethod
     def compute(name: str, data: bytes) -> bytes | None:
         """The digest, or None where this hashlib lacks one OpenSSL has."""
-        size = Oids.DIGEST_SIZES[name]
+        size = ObjectIds.DIGEST_SIZES[name]
         try:
             digest = hashlib.new(Hash.TO_HASHLIB.get(name, name), data)
         except ValueError:
@@ -500,7 +500,7 @@ class X500:
         out = bytearray()
         for rdn in self.rdns:
             for oid, tag, data in rdn:
-                names = Oids.NAMES.get(oid)
+                names = ObjectIds.NAMES.get(oid)
                 label = (names[0] or names[1] or oid) if names else oid
                 keep = [0, 1, 2, 3]
                 if tag == 27 and len(data) % 4 == 0:
@@ -639,7 +639,7 @@ class Certificate:
         serial: Any = None
         if 1 <= len(self.serial_bytes) <= 20:
             serial = ":".join(f"{b:02x}" for b in self.serial_bytes).encode()
-        names = Oids.NAMES.get(self.sig_oid)
+        names = ObjectIds.NAMES.get(self.sig_oid)
         return {
             "thumbprint": hashlib.sha1(self.raw).hexdigest().encode(),  # noqa: S324 - the thumbprint is a SHA-1 digest
             "issuer": self.issuer.one_line(),
@@ -1094,7 +1094,7 @@ class Countersign:
         recovered = PublicKey.rsa_recover(cert.spki, si.signature, exact=False)
         if over_attrs is None or recovered is None:
             return out
-        size = Oids.DIGEST_SIZES[name]
+        size = ObjectIds.DIGEST_SIZES[name]
         if len(recovered) == size:
             good = recovered == over_attrs
         else:

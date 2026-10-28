@@ -1,19 +1,25 @@
-"""The names OpenSSL 1.1 gives object identifiers, and the digests it knows.
+"""OpenSSL's object identifiers as declared data: the OID registry and the digest sizes.
 
-YARA's `pe` module names a certificate's attributes, signature algorithm and digests through the
-OpenSSL its releases are built with (1.1, in yara-python 4.5.1's wheels), so these are its tables:
-`OBJ_nid2sn`, `OBJ_nid2ln` and `EVP_MD_size` for every identifier it defines (OpenSSL 1.1,
-Apache License 2.0). Generated; not edited by hand.
-"""
+``NAMES`` maps an object identifier to the short and long names OpenSSL keeps for it (either may
+be empty); ``DIGEST_SIZES`` maps a digest's long name to its output length in bytes. The values are
+OpenSSL's own object table -- the reference a certificate's algorithm, a name's attribute type and a
+timestamp's imprint are resolved against -- so they are held here verbatim as a constant table and
+read by rule_signature; nothing computes them."""
 
 from __future__ import annotations
 
 from typing import ClassVar
 
+#: the short and long names an identifier carries, either of which OpenSSL may leave empty
+OidNames = tuple[str | None, str | None]
+#: a digest's output length in bytes, by its long name
+DigestSizes = dict[str, int]
 
-class Oids:
-    #: dotted identifier -> (short name, long name)
-    NAMES: ClassVar[dict[str, tuple[str | None, str | None]]] = {
+
+class ObjectIds:
+    """The object-identifier registry and digest sizes, looked up by OID or digest name."""
+
+    NAMES: ClassVar[dict[str, OidNames]] = {
         "0.3.4401.5.3.1.9.1": ("CAMELLIA-128-ECB", "camellia-128-ecb"),
         "0.3.4401.5.3.1.9.3": ("CAMELLIA-128-OFB", "camellia-128-ofb"),
         "0.3.4401.5.3.1.9.4": ("CAMELLIA-128-CFB", "camellia-128-cfb"),
@@ -1355,8 +1361,8 @@ class Oids:
         "2.23.43.1.4.11": ("wap-wsg-idm-ecid-wtls11", "wap-wsg-idm-ecid-wtls11"),
         "2.23.43.1.4.12": ("wap-wsg-idm-ecid-wtls12", "wap-wsg-idm-ecid-wtls12"),
     }
-    #: digest long name -> its size in bytes
-    DIGEST_SIZES: ClassVar[dict[str, int]] = {
+
+    DIGEST_SIZES: ClassVar[DigestSizes] = {
         "RSA-SHA3-224": 28,
         "RSA-SHA3-256": 32,
         "RSA-SHA3-384": 48,
@@ -1395,6 +1401,3 @@ class Oids:
         "sm3WithRSAEncryption": 32,
         "whirlpool": 64,
     }
-
-
-__all__ = ["Oids"]

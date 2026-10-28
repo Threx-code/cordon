@@ -12,7 +12,7 @@ import json
 from typing import Any
 
 from cordon_scanner.detect.binary import rule_signature as rs
-from cordon_scanner.detect.binary.rule_signature import BadDer, Tlv
+from cordon_scanner.detect.binary.rule_signature import X500, BadDer, Clock, Tlv
 from cordon_scanner.detect.binary.rule_values import Call, Data, Record, Scalar, Seq
 from support import ROOT
 
@@ -134,3 +134,80 @@ class TestAsn1Decoder:
         garbage_der = bytes([0x30, 0x7F, 0x02])  # a SEQUENCE claiming 127 bytes with 1 present
         node = Tlv.decode_whole(self.tlv(0x30, self.tlv(0x04, garbage_der)))
         assert node.row(1)[0].bytes_of() == garbage_der
+
+
+class TestClock:
+    """ASN.1 time to seconds since the epoch, matching OpenSSL's ASN1_TIME_to_tm then timegm."""
+
+    @staticmethod
+    def utc(text: bytes) -> Tlv:
+        return Tlv(0, False, 23, b"\x17" + bytes([len(text)]) + text, text)
+
+    @staticmethod
+    def generalized(text: bytes) -> Tlv:
+        return Tlv(0, False, 24, b"\x18" + bytes([len(text)]) + text, text)
+
+    def test_utc_time_and_its_century(self) -> None:
+        assert Clock.seconds(self.utc(b"200101000000Z")) == 1577836800
+        assert Clock.seconds(self.utc(b"500101000000Z")) == -631152000
+
+    def test_offset_and_omitted_seconds(self) -> None:
+        assert Clock.seconds(self.utc(b"2001010000Z")) == 1577836800
+        assert Clock.seconds(self.utc(b"200101010000+0100")) == 1577836800
+
+    def test_fractional_seconds_only_in_generalized_time(self) -> None:
+        assert Clock.seconds(self.generalized(b"20200101000000.123Z")) == 1577836800
+        assert Clock.seconds(self.utc(b"200101000000.1Z")) is None
+
+    def test_an_impossible_date_reads_as_the_fallback(self) -> None:
+        bad = self.utc(b"200230000000Z")
+        assert Clock.seconds(bad) is None
+        assert Clock.at_or_fallback(bad) == Clock.FALLBACK == -2209075200
+
+    def test_timegm_reaches_any_year(self) -> None:
+        assert Clock.timegm(1970, 1, 1, 0, 0, 0) == 0
+        assert Clock.timegm(1, 1, 1, 0, 0, 0) == -62135596800
+
+
+class TestX500Names:
+    """X.509 names: the one-line form and the folded comparison key, as OpenSSL builds them."""
+
+    @staticmethod
+    def name(*entries: tuple[str, int, bytes]) -> X500:
+        rdns = []
+        for oid, tag, value in entries:
+            arcs = [int(x) for x in oid.split(".")]
+            body = bytes([arcs[0] * 40 + arcs[1], *arcs[2:]])
+            atv = b"\x06" + bytes([len(body)]) + body + bytes([tag, len(value)]) + value
+            atv = b"\x30" + bytes([len(atv)]) + atv
+            rdns.append(b"\x31" + bytes([len(atv)]) + atv)
+        raw = b"".join(rdns)
+        return X500.parse(Tlv.decode(b"\x30" + bytes([len(raw)]) + raw))
+
+    def test_oneline_short_names_and_escapes(self) -> None:
+        n = self.name(("2.5.4.6", 19, b"US"), ("2.5.4.3", 12, b"caf\xc3\xa9"))
+        assert n.one_line() == b"/C=US/CN=caf\\xC3\\xA9"
+
+    def test_names_fold_as_openssl_compares_them(self) -> None:
+        spaced = self.name(("2.5.4.3", 19, b"  Example   CA "))
+        plain = self.name(("2.5.4.3", 12, b"example ca"))
+        assert spaced.key == plain.key
+
+    def test_a_refused_value_type_fails_the_name(self) -> None:
+        try:
+            self.name(("2.5.4.3", 26, b"visible"))
+        except BadDer:
+            pass
+        else:
+            raise AssertionError("expected BadDer on a value type OpenSSL refuses")
+
+
+class TestMoreAsn1:
+    def test_integer_signed_values(self) -> None:
+        assert Tlv.number_from(b"\x00\x80") == 128
+        assert Tlv.number_from(b"\xff\x00") == -256
+
+    def test_indefinite_length_is_read(self) -> None:
+        node = Tlv.decode(b"\x30\x80\x02\x01\x05\x00\x00")
+        assert node.indefinite
+        assert node.unpack()[0].whole_number() == 5
