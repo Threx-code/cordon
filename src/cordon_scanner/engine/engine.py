@@ -490,22 +490,7 @@ class Engine:
         for real_path, rel_path, eco in deferred:
             hooks.extend(self._manifest_hooks(real_path, rel_path, eco, frozen))
 
-        stats = tuple(
-            LanguageStat(
-                language=language,
-                files=files,
-                bytes=size,
-                share=(size / total_bytes) if total_bytes else 0.0,
-                evidence=tuple(sorted(evidence.get(language, ()))),
-            )
-            # Sorted by size then name: byte-weighted ranking reflects what the
-            # repository actually is better than file count, which over-weights
-            # many small config files. The name breaks ties so the order is
-            # deterministic.
-            for language, (files, size) in sorted(
-                languages.items(), key=lambda kv: (-kv[1][1], kv[0])
-            )
-        )
+        stats = Engine.inventory_stats(languages, total_bytes, evidence)
 
         hooks = [hook for hook in hooks if Hooks.hook_executes(hook, package_directories)]
 
@@ -531,6 +516,28 @@ class Engine:
             total_bytes=total_bytes,
             revision=revision,
             remote=remote,
+        )
+
+    @staticmethod
+    def inventory_stats(
+        languages: dict[str, tuple[int, int]], total_bytes: int, evidence: dict[str, set[str]]
+    ) -> tuple[LanguageStat, ...]:
+        """The tree's languages as statistics, largest first."""
+        return tuple(
+            LanguageStat(
+                language=language,
+                files=files,
+                bytes=size,
+                share=(size / total_bytes) if total_bytes else 0.0,
+                evidence=tuple(sorted(evidence.get(language, ()))),
+            )
+            # Sorted by size then name: byte-weighted ranking reflects what the
+            # repository actually is better than file count, which over-weights
+            # many small config files. The name breaks ties so the order is
+            # deterministic.
+            for language, (files, size) in sorted(
+                languages.items(), key=lambda kv: (-kv[1][1], kv[0])
+            )
         )
 
     def inventory_walk(

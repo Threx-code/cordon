@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.foundation.config import Config
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.models import Finding
@@ -330,13 +331,42 @@ class ParallelScanner:
             inventory = engine.inventory(ParallelScanner._to_path(root))
         wanted = set(detector_ids)
         detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
-        from dataclasses import replace as _replace
 
         context = engine._context(inventory)
+        context = ParallelScanner.worker_context(
+            context,
+            install_hook_paths,
+            ci_hook_paths,
+            install_deferred_lines,
+            image,
+            install_entry_paths,
+            consumer_install_paths,
+            package_facts,
+        )
+        ParallelScanner._worker = _WorkerState(
+            engine=engine,
+            context=context,
+            detectors=detectors,
+        )
+
+    @staticmethod
+    def worker_context(
+        context: ScanContext,
+        install_hook_paths: frozenset[str],
+        ci_hook_paths: frozenset[str],
+        install_deferred_lines: frozenset[tuple[str, int, int]],
+        image: Any,
+        install_entry_paths: frozenset[str],
+        consumer_install_paths: frozenset[str],
+        package_facts: dict[str, Any] | None,
+    ) -> ScanContext:
+        """The worker's scan context, rebuilt from what the parent sent."""
+        from dataclasses import replace as _replace
+
         # Union rather than assignment. The inventory contributes paths the parent
         # does not recompute -- git hooks, and the manifests themselves -- so
         # overwriting would trade one set of missing paths for another.
-        context = _replace(
+        return _replace(
             context,
             install_hook_paths=context.install_hook_paths | install_hook_paths,
             ci_hook_paths=context.ci_hook_paths | ci_hook_paths,
@@ -358,11 +388,6 @@ class ParallelScanner:
             # worker reading single files cannot derive. Without them a large archive's files were
             # judged as a repository's (review 98, FP-2), so a verdict depended on the core count.
             **(package_facts or {}),
-        )
-        ParallelScanner._worker = _WorkerState(
-            engine=engine,
-            context=context,
-            detectors=detectors,
         )
 
     @staticmethod

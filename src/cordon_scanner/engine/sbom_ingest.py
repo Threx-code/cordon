@@ -314,6 +314,34 @@ class SbomDocument:
             flat.append(component)
             pending.extend(c for c in component.get("components") or [] if isinstance(c, dict))
         seen: set[str] = set()
+        SbomDocument.cyclonedx_components(flat, seen, reading)
+        root = SbomDocument._mapping(metadata.get("component"))
+        root_key = str(root.get("bom-ref") or root.get("purl") or "")
+        dependencies = [
+            d
+            for d in data.get("dependencies") or []
+            if isinstance(d, dict) and isinstance(d.get("ref"), str)
+        ]
+        if dependencies:
+            reading.graphed = True
+            known = {c.key for c in reading.components} | {root_key}
+            for entry in dependencies:
+                targets = [str(t) for t in entry.get("dependsOn") or [] if isinstance(t, str)]
+                unknown = [t for t in targets if t not in known]
+                if unknown:
+                    reading.problems.append(
+                        f"{entry['ref'][:60]} depends on {unknown[0][:60]!r}, which the document does not hold"
+                    )
+                reading.edges.setdefault(entry["ref"], []).extend(t for t in targets if t in known)
+            reading.roots = set(reading.edges.get(root_key, [])) if root_key else set()
+        SbomDocument.cyclonedx_vulnerabilities(data, reading)
+        return reading
+
+    @staticmethod
+    def cyclonedx_components(
+        flat: list[dict[str, Any]], seen: set[str], reading: SbomReading
+    ) -> None:
+        """CycloneDX components as dependencies: name, version, purl, licence and hashes."""
         for index, component in enumerate(flat):
             if component.get("type") in SbomDocument.NOT_PACKAGES:
                 continue
@@ -352,25 +380,10 @@ class SbomDocument:
             )
             if parsed is not None:
                 reading.components.append(parsed)
-        root = SbomDocument._mapping(metadata.get("component"))
-        root_key = str(root.get("bom-ref") or root.get("purl") or "")
-        dependencies = [
-            d
-            for d in data.get("dependencies") or []
-            if isinstance(d, dict) and isinstance(d.get("ref"), str)
-        ]
-        if dependencies:
-            reading.graphed = True
-            known = {c.key for c in reading.components} | {root_key}
-            for entry in dependencies:
-                targets = [str(t) for t in entry.get("dependsOn") or [] if isinstance(t, str)]
-                unknown = [t for t in targets if t not in known]
-                if unknown:
-                    reading.problems.append(
-                        f"{entry['ref'][:60]} depends on {unknown[0][:60]!r}, which the document does not hold"
-                    )
-                reading.edges.setdefault(entry["ref"], []).extend(t for t in targets if t in known)
-            reading.roots = set(reading.edges.get(root_key, [])) if root_key else set()
+
+    @staticmethod
+    def cyclonedx_vulnerabilities(data: dict[str, Any], reading: SbomReading) -> None:
+        """CycloneDX vulnerabilities, attached to the components they affect."""
         for entry in [v for v in data.get("vulnerabilities") or [] if isinstance(v, dict)][
             :MAX_COMPONENTS
         ]:
@@ -407,7 +420,6 @@ class SbomDocument:
                     else None,
                 )
             )
-        return reading
 
     @staticmethod
     def _spdx(data: dict[str, Any]) -> SbomReading:
@@ -434,6 +446,17 @@ class SbomDocument:
                 described.add(str(relation.get("relatedSpdxElement")))
         packages = [p for p in data.get("packages") or [] if isinstance(p, dict)][:MAX_COMPONENTS]
         seen: set[str] = set()
+        SbomDocument.spdx_packages(packages, seen, reading, described)
+        known = {c.key for c in reading.components} | described
+        SbomDocument.spdx_relations(relationships, known, reading)
+        reading.roots = {t for root in described for t in reading.edges.get(root, [])}
+        return reading
+
+    @staticmethod
+    def spdx_packages(
+        packages: list[dict[Any, Any]], seen: set[str], reading: SbomReading, described: set[str]
+    ) -> None:
+        """SPDX packages as dependencies: name, version, purl, licence and checksums."""
         for index, package in enumerate(packages):
             key = str(package.get("SPDXID") or f"#{index}")
             if key in seen:
@@ -495,7 +518,12 @@ class SbomDocument:
                                 locator if locator.startswith("https://") else None,
                             )
                         )
-        known = {c.key for c in reading.components} | described
+
+    @staticmethod
+    def spdx_relations(
+        relationships: list[dict[Any, Any]], known: set[str], reading: SbomReading
+    ) -> None:
+        """SPDX relationships: which package depends on which, as the graph's edges."""
         for relation in relationships:
             kind = relation.get("relationshipType")
             source, target = (
@@ -514,8 +542,6 @@ class SbomDocument:
                 continue
             reading.graphed = True
             reading.edges.setdefault(source, []).append(target)
-        reading.roots = {t for root in described for t in reading.edges.get(root, [])}
-        return reading
 
 
 class SbomInventory:
