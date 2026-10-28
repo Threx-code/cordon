@@ -488,7 +488,7 @@ class RuleSelector:
         across rules with otherwise-different `paths_include`/`paths_exclude`
         tuples.
         """
-        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         return PathGlob.matches(path, pattern)
 

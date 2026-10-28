@@ -39,8 +39,8 @@ from cordon_scanner.detect.secrets.secrets import (
     RULE_MATERIAL_CEILING,
     SourcePaths,
 )
-from cordon_scanner.engine.walker import PathGlob
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
     Capability,
     Category,

@@ -314,7 +314,7 @@ class SuppressionMatcher:
         if pattern.endswith("/"):
             return path.startswith(pattern)
         if "*" in pattern or "?" in pattern or "[" in pattern:
-            from cordon_scanner.engine.walker import PathGlob
+            from cordon_scanner.foundation.files.globs import PathGlob
 
             # `compile().match`, not `matches()`. The latter additionally treats
             # a pattern with no `/` as matching that name at any depth, which is

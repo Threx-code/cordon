@@ -1677,7 +1677,7 @@ class CapabilityDetector(BaseDetector):
             )
 
         if "path_glob" in term and path is not None:
-            from cordon_scanner.engine.walker import PathGlob
+            from cordon_scanner.foundation.files.globs import PathGlob
 
             entry = getattr(self, "_in_entry", False) or getattr(self, "_in_import_entry", False)
             return not entry and PathGlob.in_package(path, str(term["path_glob"]))

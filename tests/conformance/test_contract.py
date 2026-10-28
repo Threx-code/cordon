@@ -34,7 +34,7 @@ class Proofs:
         `app.csproj` is any project file the ecosystem's `**/*.csproj` glob matches, and the
         real file is `src/App/App.csproj`."""
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
-        from cordon_scanner.engine.walker import PathGlob
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         implementation = EcosystemRegistry.get(ecosystem)
         if implementation is None:

@@ -1348,8 +1348,8 @@ class RuleLoader:
         A rule that cannot be evaluated is a broken pack, and a broken pack
         should not load. Failing here names the rule instead.
         """
-        from cordon_scanner.engine.walker import PathGlob
         from cordon_scanner.foundation.errors import ConfigError
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         for key in ("include", "exclude"):
             for pattern in RuleLoader._str_tuple(paths.get(key)):

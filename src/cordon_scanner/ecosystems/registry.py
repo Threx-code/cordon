@@ -33,7 +33,7 @@ from cordon_scanner.ecosystems.others import (
 )
 from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
-from cordon_scanner.engine.walker import PathGlob
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.paths import ContainerPaths
 
 if TYPE_CHECKING:

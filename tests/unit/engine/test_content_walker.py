@@ -12,8 +12,9 @@ import sys
 
 import pytest
 
-from cordon_scanner.engine.walker import PathGlob, Walker
+from cordon_scanner.engine.walker import Walker
 from cordon_scanner.foundation.content import FileContent, Skipped, SkipReason
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
 EXT_MAP = (

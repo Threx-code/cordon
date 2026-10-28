@@ -43,8 +43,8 @@ from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionMo
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.secrets import SourcePaths
-from cordon_scanner.engine.walker import PathGlob
 from cordon_scanner.foundation import references as ref
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.formats import jsonc
 from cordon_scanner.foundation.models import (
     Category,

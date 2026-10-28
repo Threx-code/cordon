@@ -33,7 +33,8 @@ from cordon_scanner.detect.agents.agents import (
     WORKFLOW_PATHS,
     McpConfigs,
 )
-from cordon_scanner.engine.walker import PathGlob, Walker
+from cordon_scanner.engine.walker import Walker
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.report.sbom import TOOL_NAME, SbomDocument
 
 if TYPE_CHECKING:
