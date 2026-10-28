@@ -936,7 +936,6 @@
    "images/oci:ImageLayers.added_files": 101,
    "images/oci:ImageLayers.databases": 95,
    "report/aibom:AiBom.inventory": 92,
-   "report/vex:VexReporter._statement": 109,
    "rules/loader:PatternCompiler._reject_unsafe": 121,
    "rules/loader:PatternCompiler._reject_unsafe.walk": 102,
    "rules/loader:PatternCompiler.required_literals": 181,
