@@ -923,7 +923,6 @@
    "detect/secrets/detector:SecretDetector.inspect": 100,
    "detect/supply/advisories/detector:AdvisoryDetector._no_feed_note": 92,
    "detect/supply/advisories/detector:AdvisoryDetector.inspect": 135,
-   "detect/supply/advisories/findings:AdvisoryFinding.finding": 204,
    "detect/supply/dependency:DependencyDetector._check": 200,
    "detect/supply/dependency:DependencyDetector._slip_kind": 101,
    "detect/supply/dependency:DependencyDetector.declared_rules": 101,

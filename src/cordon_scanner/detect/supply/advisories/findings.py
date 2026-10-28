@@ -231,6 +231,44 @@ class AdvisoryFinding:
         if exploitation is not None:
             rule_id = EXPLOITED_RULE
             severity = Severity.CRITICAL
+        bundled_in_extension, go_minimum, in_test_fixture, maintainers_only, severity = (
+            AdvisoryFinding._conditions(ctx, dependency, exploitation, malicious, severity)
+        )
+
+        message, remediation = AdvisoryFinding._message_and_remediation(
+            advice,
+            advisory,
+            bundled_in_extension,
+            dependency,
+            exploitation,
+            go_minimum,
+            maintainers_only,
+            malicious,
+        )
+
+        return cls._scored(
+            advisory,
+            confidence,
+            ctx,
+            dependency,
+            exploitation,
+            in_test_fixture,
+            malicious,
+            message,
+            remediation,
+            rule_id,
+            severity,
+        )
+
+    @staticmethod
+    def _conditions(
+        ctx: ScanContext,
+        dependency: Dependency,
+        exploitation: exploited.Exploitation | None,
+        malicious: bool,
+        severity: Severity,
+    ) -> tuple[bool, bool, bool, bool, Severity]:
+        """What about this match changes its grade: fixed only for maintainers, a Go minimum version, bundled inside an editor extension, or a malicious name sitting in test fixtures."""
         # In a published package, a lockfile is its maintainers' development environment: what
         # installing the package brings in comes from its declared metadata instead. Reported, at
         # LOW, so it informs without blocking the package. A malicious release is never lowered.
@@ -272,7 +310,20 @@ class AdvisoryFinding:
         )
         if in_test_fixture:
             severity = Severity.MEDIUM
+        return bundled_in_extension, go_minimum, in_test_fixture, maintainers_only, severity
 
+    @staticmethod
+    def _message_and_remediation(
+        advice: Callable[[Dependency], str],
+        advisory: Advisory,
+        bundled_in_extension: bool,
+        dependency: Dependency,
+        exploitation: exploited.Exploitation | None,
+        go_minimum: bool,
+        maintainers_only: bool,
+        malicious: bool,
+    ) -> tuple[str, str]:
+        """What the finding says and what to do: a malicious release's message and removal, or a vulnerability's advisories, likelihood of exploitation and upgrade advice, with each condition that changes the advice."""
         if malicious:
             message = (
                 f"{dependency.name} {dependency.version} is a known-malicious release. "
@@ -332,7 +383,24 @@ class AdvisoryFinding:
                     "can upgrade it: reported at MEDIUM rather than blocking. Raise it with "
                     "--fail-on medium or the organisation's policy to block such extensions."
                 )
+        return message, remediation
 
+    @classmethod
+    def _scored(
+        cls,
+        advisory: Advisory,
+        confidence: Confidence,
+        ctx: ScanContext,
+        dependency: Dependency,
+        exploitation: exploited.Exploitation | None,
+        in_test_fixture: bool,
+        malicious: bool,
+        message: str,
+        remediation: str,
+        rule_id: str,
+        severity: Severity,
+    ) -> Finding:
+        """The finding, scored: the confidence a version range gives, the test-fixture ceiling, the evidence and the risk."""
         if advisory.is_range:
             match_summary = (
                 f"{dependency.purl} falls within the affected range "
