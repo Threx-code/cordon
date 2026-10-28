@@ -29,11 +29,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.engine.samples import SampleKinds
-from cordon_scanner.foundation.comments import SourceComments
+from cordon_scanner.foundation.files.spill import SpilledBytes
+from cordon_scanner.foundation.files.windows import BytesWindows, DiskWindows, WindowSource
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.spill import SpilledBytes
-from cordon_scanner.foundation.windows import BytesWindows, DiskWindows, WindowSource
+from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -282,7 +282,7 @@ class FileContent:
     `max_file_bytes`: computed while streaming it, so it is never held."""
 
     spill: SpilledBytes | None = field(default=None, repr=False, compare=False)
-    """The archive member this was read from, kept on disk (`foundation/spill.py`): held so the
+    """The archive member this was read from, kept on disk (`foundation/files/spill.py`): held so the
     file stays for as long as this content is scanned, and what a worker is given to read."""
 
     window_of: tuple[WindowSource, int] | None = field(default=None, repr=False, compare=False)
