@@ -369,7 +369,7 @@ class TestSelfScan(CorpusFixtures):
             # The tool-call guard's tests are the calls it must refuse -- a cron write, an
             # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
             and f.location.path != "tests/unit/judge/test_tool_call_guard.py"
-            and f.location.path != "tests/unit/foundation/test_pattern_literals.py"
+            and f.location.path != "tests/unit/analysis/python/test_pattern_literals.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
             and f.location.path != "tests/unit/detect/code/capability/test_recovered_misses.py"
             # The spelling matrix lists every way JavaScript writes a capability primitive -- a

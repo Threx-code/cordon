@@ -27,7 +27,7 @@ release tag, so editing a tutorial here is the only edit there is.
                  28  every rule              python tests/kits/tutorial_reference.py rules
 ```
 
-`tests/unit/repository/test_tutorial_reference.py` fails when a generated tutorial disagrees with the
+`tests/unit/repository/documentation/test_tutorial_reference.py` fails when a generated tutorial disagrees with the
 code: add an ecosystem, a flag, an agent path or a rule, and the test tells you which file
 to regenerate, with the command. Regenerate inside the project's container:
 

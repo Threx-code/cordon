@@ -2,7 +2,7 @@
 
 A finding travels further than the file it came from: into CI logs, into
 pull-request comments, into SARIF uploaded to a third party. The redactor
-governs *evidence*, and it is tested hard in `tests/unit/foundation/test_redact.py`. This
+governs *evidence*, and it is tested hard in `tests/unit/foundation/text/test_redact.py`. This
 file is about everything that is not evidence.
 
 Package coordinates, parse-error text and detector-failure messages are all
