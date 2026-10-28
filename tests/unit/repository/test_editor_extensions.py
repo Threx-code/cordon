@@ -64,14 +64,14 @@ class TestRecognisedInstallSteps:
     """What an install script may run without review: a native build, or a message."""
 
     def test_the_prebuilt_binary_loader_and_a_message_are_build_steps(self) -> None:
-        from cordon_scanner.detect.supply.manifests.detector import ManifestScripts
+        from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 
         assert ManifestScripts._is_safe_lifecycle("node-gyp-build")
         assert ManifestScripts._is_safe_lifecycle("echo Installing native bindings")
         assert ManifestScripts._is_safe_lifecycle("node-gyp-build || echo optional build skipped")
 
     def test_an_echo_that_writes_or_runs_is_not(self) -> None:
-        from cordon_scanner.detect.supply.manifests.detector import ManifestScripts
+        from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 
         assert not ManifestScripts._is_safe_lifecycle("echo x >> ~/.bashrc")
         assert not ManifestScripts._is_safe_lifecycle("echo $(curl -s https://example.invalid)")
