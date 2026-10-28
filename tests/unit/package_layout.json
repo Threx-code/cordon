@@ -233,7 +233,7 @@
   "engine/registry": "engine/registry",
   "foundation/samples": "foundation/samples",
   "engine/sbom_ingest": "engine/sbom_ingest",
-  "engine/walker": "engine/walker",
+  "foundation/files/walk": "foundation/files/walk",
   "foundation/files/globs": "foundation/files/globs",
   "engine/window_pass": "engine/window_pass",
   "foundation/files/atomic": "foundation/files/atomic",
@@ -787,9 +787,7 @@
    "detect/supply/registry -> decide/scoring",
    "detect/supply/release_diff -> engine/pipeline/releases",
    "detect/supply/sbom -> decide/scoring",
-   "foundation/dependencies -> ecosystems/registry",
-   "sources/base -> engine/walker",
-   "sources/git -> engine/walker"
+   "foundation/dependencies -> ecosystems/registry"
   ],
   "file_relative_paths": [
    "src/cordon_scanner/images/binmeta.py",

@@ -17,7 +17,7 @@ from cordon_scanner.engine.pipeline.constants import (
     REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.pipeline.operational import OperationalFinding
-from cordon_scanner.engine.walker import WalkStats
+from cordon_scanner.foundation.files.walk import WalkStats
 from cordon_scanner.foundation.models import (
     Category,
     Finding,

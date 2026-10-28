@@ -33,8 +33,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from cordon_scanner.engine.walker import WalkEntry, Walker
     from cordon_scanner.foundation.content import Skipped
+    from cordon_scanner.foundation.files.walk import WalkEntry, Walker
     from cordon_scanner.foundation.limits import Limits
 
 

@@ -51,14 +51,14 @@ from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.pipeline.units import Units
 from cordon_scanner.engine.progress import NullProgress, Progress
-from cordon_scanner.engine.walker import (
-    WalkEntry,
-    Walker,
-)
 from cordon_scanner.foundation.collector import Collector
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import SourceError
+from cordon_scanner.foundation.files.walk import (
+    WalkEntry,
+    Walker,
+)
 from cordon_scanner.foundation.models import Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import (

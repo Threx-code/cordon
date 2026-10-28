@@ -238,8 +238,8 @@ class TestSourceContract(GitModesFixtures):
     ) -> None:
         """Falling back would reopen the bypass for any path an attacker can
         make unreadable from the index."""
-        from cordon_scanner.engine.walker import WalkEntry
         from cordon_scanner.foundation.content import Skipped
+        from cordon_scanner.foundation.files.walk import WalkEntry
         from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
         source = GitIndexSource(GitRepository(repository), ["missing.js"])

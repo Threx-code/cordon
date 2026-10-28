@@ -34,7 +34,7 @@ from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.engine.pipeline.results import ResultFolding
-from cordon_scanner.engine.walker import (
+from cordon_scanner.foundation.files.walk import (
     WalkEntry,
     Walker,
 )
