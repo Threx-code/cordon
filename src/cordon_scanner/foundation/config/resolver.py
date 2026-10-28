@@ -123,6 +123,28 @@ class ConfigResolver:
         data = RestrictedYamlParser._load_yaml_subset(Config.read_bounded(p), source=str(p))
         ConfigParser._reject_unknown(data, cls._ORG_TOP_KEYS, str(p))
 
+        enforce, sup, forbid = cls._enforced_sections(data, p)
+
+        constraints = ConfigResolver._constraints(enforce, p, sup, forbid)
+
+        # The policy's own scan settings form the upper configuration layer.
+        body = {k: v for k, v in data.items() if k in TOP_LEVEL_KEYS and k != "suppressions"}
+        body.setdefault("version", CONFIG_VERSION)
+        org_config = ConfigParser._parse_config(body, source=str(p), layer=Layer.ORG)
+
+        if constraints.max_total_timeout is not None:
+            org_config = replace(
+                org_config,
+                limits=org_config.limits.merged(total_timeout=constraints.max_total_timeout),
+            )
+
+        return org_config, constraints
+
+    @classmethod
+    def _enforced_sections(
+        cls, data: dict[str, Any], p: Path
+    ) -> tuple[dict[Any, Any], dict[Any, Any], frozenset[Category]]:
+        """The enforce and suppression sections of an organisation policy, every key checked."""
         enforce = data.get("enforce") or {}
         if not isinstance(enforce, dict):
             raise ConfigError(f"{p}: `enforce` must be a mapping")
@@ -141,8 +163,14 @@ class ConfigResolver:
             forbid = frozenset(Category(c) for c in forbid_raw)
         except ValueError as exc:
             raise ConfigError(f"{p}: suppressions.forbid_categories: {exc}") from exc
+        return enforce, sup, forbid
 
-        constraints = OrgConstraints(
+    @staticmethod
+    def _constraints(
+        enforce: dict[Any, Any], p: Path, sup: dict[Any, Any], forbid: frozenset[Category]
+    ) -> OrgConstraints:
+        """The organisation's constraints, from its enforce and suppression sections."""
+        return OrgConstraints(
             detectors_required=frozenset(
                 ConfigParser._as_str_tuple(
                     enforce.get("detectors_required"), f"{p}: enforce.detectors_required"
@@ -179,19 +207,6 @@ class ConfigResolver:
             forbid_path_only_suppressions=bool(sup.get("forbid_path_only", True)),
             forbid_suppressing=forbid,
         )
-
-        # The policy's own scan settings form the upper configuration layer.
-        body = {k: v for k, v in data.items() if k in TOP_LEVEL_KEYS and k != "suppressions"}
-        body.setdefault("version", CONFIG_VERSION)
-        org_config = ConfigParser._parse_config(body, source=str(p), layer=Layer.ORG)
-
-        if constraints.max_total_timeout is not None:
-            org_config = replace(
-                org_config,
-                limits=org_config.limits.merged(total_timeout=constraints.max_total_timeout),
-            )
-
-        return org_config, constraints
 
     @staticmethod
     def resolve(

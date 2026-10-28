@@ -971,9 +971,6 @@
    "ecosystems/packages/rubygems:RubyGemsEcosystem.parse_in_tree": 118,
    "ecosystems/packages/swift:SwiftManifest.parse": 127,
    "ecosystems/packages/vcpkg:VcpkgManifest.parse": 99,
-   "foundation/content:FileContent.load": 129,
-   "foundation/formats/datayaml:_Reader.__init__": 92,
-   "foundation/formats/safexml:_Reader.document": 91,
    "images/host:HostFilesystem._language_packages": 104,
    "images/oci:ImageLayers.added_files": 101,
    "images/oci:ImageLayers.databases": 95,
@@ -997,10 +994,7 @@
    "rules/loader:RuleLoader._compile_match": 129,
    "rules/loader:RuleLoader._parse_rule": 138,
    "sources/archive:ArchiveReader._extract_tar": 162,
-   "sources/archive:ArchiveReader._extract_zip": 94,
-   "foundation/config/parser:ConfigParser._parse_config": 108,
-   "foundation/config/parser:ConfigParser._parse_policy": 137,
-   "foundation/config/resolver:ConfigResolver.load_org_policy": 104
+   "sources/archive:ArchiveReader._extract_zip": 94
   },
   "large_directories": {
    "tests/unit/foundation": 44,

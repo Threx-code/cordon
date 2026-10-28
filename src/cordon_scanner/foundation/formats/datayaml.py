@@ -100,20 +100,7 @@ class _Reader:
                     quoted = quoted[:-1]  # `\` at the end of a line escapes the line break
                 else:
                     quoted += " "
-                quoted += stripped
-                empty = 0
-                scalar = quoted[quoted_at[2] :]
-                end = _Reader._closing_quote(scalar, quoting)
-                if end >= 0:
-                    tail = _Reader._strip_comment(scalar[end + 1 :])
-                    self.lines.append(
-                        (
-                            quoted_at[0],
-                            quoted[: quoted_at[2]] + scalar[: end + 1] + tail,
-                            quoted_at[1],
-                        )
-                    )
-                    quoting = ""
+                quoted, empty, quoting = self._continue_quote(quoted, stripped, quoted_at, quoting)
                 continue
             if pending:
                 pending.append(stripped)
@@ -156,6 +143,26 @@ class _Reader:
             raise DataYamlError(f"{source}:{pending_number}: unterminated flow collection")
         if quoting:
             raise DataYamlError(f"{source}:{quoted_at[1]}: unterminated quoted string")
+
+    def _continue_quote(
+        self, quoted: str, stripped: str, quoted_at: tuple[int, int, int], quoting: str
+    ) -> tuple[str, int, str]:
+        """One more line of a quoted scalar that spans lines, closed when its quote is."""
+        quoted += stripped
+        empty = 0
+        scalar = quoted[quoted_at[2] :]
+        end = _Reader._closing_quote(scalar, quoting)
+        if end >= 0:
+            tail = _Reader._strip_comment(scalar[end + 1 :])
+            self.lines.append(
+                (
+                    quoted_at[0],
+                    quoted[: quoted_at[2]] + scalar[: end + 1] + tail,
+                    quoted_at[1],
+                )
+            )
+            quoting = ""
+        return quoted, empty, quoting
 
     # -- lines ---------------------------------------------------------------------------------
 

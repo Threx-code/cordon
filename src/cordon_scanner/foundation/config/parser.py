@@ -185,34 +185,9 @@ class ConfigParser:
             provenance.append(Provenance(key, value, layer, source))
             return value
 
-        scan = data.get("scan") or {}
-        if not isinstance(scan, dict):
-            raise ConfigError(f"{source}: `scan` must be a mapping")
-        ConfigParser._reject_unknown(scan, _SCAN_KEYS, f"{source}: scan")
-
-        try:
-            severity = Severity.parse(scan.get("severity_threshold", "low"))
-            confidence = Confidence.parse(scan.get("confidence_threshold", "low"))
-        except ValueError as exc:
-            raise ConfigError(f"{source}: {exc}") from exc
-
-        detectors_raw = scan.get("detectors") or {}
-        if not isinstance(detectors_raw, dict) or not all(
-            isinstance(v, bool) for v in detectors_raw.values()
-        ):
-            raise ConfigError(f"{source}: scan.detectors must map detector ids to booleans")
-        # a detector named by the ID it had before a rename is the detector it became
-        detectors_raw = {Renamed.detector(k): v for k, v in detectors_raw.items()}
-
-        limits_raw = scan.get("limits") or {}
-        if not isinstance(limits_raw, dict):
-            raise ConfigError(f"{source}: scan.limits must be a mapping")
-        explicit_limits = frozenset(limits_raw)
-        try:
-            limits = DEFAULT_LIMITS.merged(**limits_raw) if limits_raw else DEFAULT_LIMITS
-            Limits.from_dict({**DEFAULT_LIMITS.to_dict(), **limits_raw})  # key validation
-        except (ValueError, TypeError) as exc:
-            raise ConfigError(f"{source}: scan.limits: {exc}") from exc
+        scan, severity, confidence, detectors_raw, explicit_limits, limits = (
+            ConfigParser._parse_scan(data, source)
+        )
 
         evidence_raw = data.get("evidence", "masked")
         try:
@@ -228,15 +203,7 @@ class ConfigParser:
             data.get("suppressions") or [], source=source
         )
 
-        rules = data.get("rules") or {}
-        if not isinstance(rules, dict):
-            raise ConfigError(f"{source}: `rules` must be a mapping")
-        ConfigParser._reject_unknown(rules, _RULES_KEYS, f"{source}: rules")
-        packs = ConfigParser._as_str_tuple(rules.get("packs"), f"{source}: rules.packs") or (
-            "cordon-builtin",
-        )
-        extra = ConfigParser._as_str_tuple(rules.get("extra"), f"{source}: rules.extra")
-        disabled = ConfigParser._as_str_tuple(rules.get("disabled"), f"{source}: rules.disabled")
+        packs, extra, disabled = ConfigParser._parse_rules(data, source)
 
         record("scan.severity_threshold", str(severity))
         record("scan.confidence_threshold", str(confidence))
@@ -276,6 +243,57 @@ class ConfigParser:
         )
 
     @staticmethod
+    def _parse_scan(
+        data: dict[Any, Any], source: str
+    ) -> tuple[dict[Any, Any], Severity, Confidence, dict[Any, Any], frozenset[Any], Limits]:
+        """The scan section: thresholds, detectors and limits, every key checked."""
+        scan = data.get("scan") or {}
+        if not isinstance(scan, dict):
+            raise ConfigError(f"{source}: `scan` must be a mapping")
+        ConfigParser._reject_unknown(scan, _SCAN_KEYS, f"{source}: scan")
+
+        try:
+            severity = Severity.parse(scan.get("severity_threshold", "low"))
+            confidence = Confidence.parse(scan.get("confidence_threshold", "low"))
+        except ValueError as exc:
+            raise ConfigError(f"{source}: {exc}") from exc
+
+        detectors_raw = scan.get("detectors") or {}
+        if not isinstance(detectors_raw, dict) or not all(
+            isinstance(v, bool) for v in detectors_raw.values()
+        ):
+            raise ConfigError(f"{source}: scan.detectors must map detector ids to booleans")
+        # a detector named by the ID it had before a rename is the detector it became
+        detectors_raw = {Renamed.detector(k): v for k, v in detectors_raw.items()}
+
+        limits_raw = scan.get("limits") or {}
+        if not isinstance(limits_raw, dict):
+            raise ConfigError(f"{source}: scan.limits must be a mapping")
+        explicit_limits = frozenset(limits_raw)
+        try:
+            limits = DEFAULT_LIMITS.merged(**limits_raw) if limits_raw else DEFAULT_LIMITS
+            Limits.from_dict({**DEFAULT_LIMITS.to_dict(), **limits_raw})  # key validation
+        except (ValueError, TypeError) as exc:
+            raise ConfigError(f"{source}: scan.limits: {exc}") from exc
+        return scan, severity, confidence, detectors_raw, explicit_limits, limits
+
+    @staticmethod
+    def _parse_rules(
+        data: dict[Any, Any], source: str
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """The rules section: packs, extra rule files and disabled rule ids."""
+        rules = data.get("rules") or {}
+        if not isinstance(rules, dict):
+            raise ConfigError(f"{source}: `rules` must be a mapping")
+        ConfigParser._reject_unknown(rules, _RULES_KEYS, f"{source}: rules")
+        packs = ConfigParser._as_str_tuple(rules.get("packs"), f"{source}: rules.packs") or (
+            "cordon-builtin",
+        )
+        extra = ConfigParser._as_str_tuple(rules.get("extra"), f"{source}: rules.extra")
+        disabled = ConfigParser._as_str_tuple(rules.get("disabled"), f"{source}: rules.disabled")
+        return packs, extra, disabled
+
+    @staticmethod
     def _max_intel_age(raw: Any, source: str) -> int | None:
         if raw is None:
             return None
@@ -295,46 +313,7 @@ class ConfigParser:
         severity: Severity | None = Severity.HIGH
         categories: set[Category] = {Category.MALICIOUS}
 
-        if fail_on is not None:
-            if not isinstance(fail_on, list):
-                raise ConfigError(f"{source}: policy.fail_on must be a list")
-            if not fail_on:
-                # Refused from every layer, operator input included. "Fail on
-                # nothing" is not a setting anybody means: it produces a scan
-                # that reports findings and exits 0, which is a scan whose
-                # verdict has been deleted while its output still looks like a
-                # verdict. Somebody who wants that writes `--fail-on` never, or
-                # ignores the exit code; they do not write an empty list.
-                raise ConfigError(
-                    f"{source}: policy.fail_on is empty, which would fail on nothing",
-                    hint=(
-                        "Omit the key to keep the default gate, or list the severities "
-                        "and categories that should fail the build."
-                    ),
-                )
-            severity = None
-            categories = set()
-            for entry in fail_on:
-                if isinstance(entry, str):
-                    try:
-                        level = Severity.parse(entry)
-                    except ValueError as exc:
-                        raise ConfigError(f"{source}: policy.fail_on: {exc}") from exc
-                    severity = level if severity is None else min(severity, level)
-                elif isinstance(entry, dict) and set(entry) == {"category"}:
-                    try:
-                        categories.add(Category(entry["category"]))
-                    except ValueError:
-                        valid = ", ".join(c.value for c in Category)
-                        raise ConfigError(
-                            f"{source}: policy.fail_on: unknown category {entry['category']!r}; "
-                            f"expected one of: {valid}"
-                        ) from None
-                else:
-                    raise ConfigError(
-                        f"{source}: policy.fail_on entries must be a severity name "
-                        f"or {{category: <name>}}, got {entry!r}"
-                    )
+        severity, categories = ConfigParser._fail_on(fail_on, source)
 
         min_conf = Confidence.MEDIUM
         if "min_confidence_to_fail" in raw:
@@ -385,21 +364,7 @@ class ConfigParser:
             )
 
         accepted: frozenset[str] | None = None
-        if "accept_no_feed" in raw:
-            from cordon_scanner.foundation.dependencies import ECOSYSTEM_IDS
-
-            ecosystems = ConfigParser._as_str_tuple(
-                raw["accept_no_feed"], f"{source}: policy.accept_no_feed"
-            )
-            known = ECOSYSTEM_IDS
-            unknown_names = [n for n in ecosystems if n not in known]
-            if unknown_names:
-                raise ConfigError(
-                    f"{source}: policy.accept_no_feed names no ecosystem Cordon reads: "
-                    f"{', '.join(unknown_names)}",
-                    hint=f"one of: {', '.join(sorted(known))}",
-                )
-            accepted = frozenset(ecosystems)
+        accepted = ConfigParser._accept_no_feed(raw, source)
         return Policy(
             fail_on_severity=severity,
             fail_on_categories=frozenset(categories),
@@ -423,6 +388,71 @@ class ConfigParser:
             ),
             license_unknown=unknown,
         )
+
+    @staticmethod
+    def _fail_on(fail_on: Any | None, source: str) -> tuple[Severity | None, set[Category]]:
+        """What fails the gate: a severity and the categories that fail whatever their severity."""
+        if fail_on is not None:
+            if not isinstance(fail_on, list):
+                raise ConfigError(f"{source}: policy.fail_on must be a list")
+            if not fail_on:
+                # Refused from every layer, operator input included. "Fail on
+                # nothing" is not a setting anybody means: it produces a scan
+                # that reports findings and exits 0, which is a scan whose
+                # verdict has been deleted while its output still looks like a
+                # verdict. Somebody who wants that writes `--fail-on` never, or
+                # ignores the exit code; they do not write an empty list.
+                raise ConfigError(
+                    f"{source}: policy.fail_on is empty, which would fail on nothing",
+                    hint=(
+                        "Omit the key to keep the default gate, or list the severities "
+                        "and categories that should fail the build."
+                    ),
+                )
+            severity = None
+            categories = set()
+            for entry in fail_on:
+                if isinstance(entry, str):
+                    try:
+                        level = Severity.parse(entry)
+                    except ValueError as exc:
+                        raise ConfigError(f"{source}: policy.fail_on: {exc}") from exc
+                    severity = level if severity is None else min(severity, level)
+                elif isinstance(entry, dict) and set(entry) == {"category"}:
+                    try:
+                        categories.add(Category(entry["category"]))
+                    except ValueError:
+                        valid = ", ".join(c.value for c in Category)
+                        raise ConfigError(
+                            f"{source}: policy.fail_on: unknown category {entry['category']!r}; "
+                            f"expected one of: {valid}"
+                        ) from None
+                else:
+                    raise ConfigError(
+                        f"{source}: policy.fail_on entries must be a severity name "
+                        f"or {{category: <name>}}, got {entry!r}"
+                    )
+        return severity, categories
+
+    @staticmethod
+    def _accept_no_feed(raw: dict[Any, Any], source: str) -> frozenset[str] | None:
+        """The ecosystems a policy accepts without an advisory feed, each one Cordon reads."""
+        if "accept_no_feed" in raw:
+            from cordon_scanner.foundation.dependencies import ECOSYSTEM_IDS
+
+            ecosystems = ConfigParser._as_str_tuple(
+                raw["accept_no_feed"], f"{source}: policy.accept_no_feed"
+            )
+            known = ECOSYSTEM_IDS
+            unknown_names = [n for n in ecosystems if n not in known]
+            if unknown_names:
+                raise ConfigError(
+                    f"{source}: policy.accept_no_feed names no ecosystem Cordon reads: "
+                    f"{', '.join(unknown_names)}",
+                    hint=f"one of: {', '.join(sorted(known))}",
+                )
+            accepted = frozenset(ecosystems)
+        return accepted
 
     @staticmethod
     def _parse_suppressions(raw: Any, *, source: str) -> tuple[Suppression, ...]:
