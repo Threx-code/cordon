@@ -1438,19 +1438,21 @@ class Dotnet:
         if block is not None:
             rows, pos, total = block
             ni, si, qi, fi = pos["name"], pos["sig"], pos["params"], pos["flags"]
+            pblock = tables.bulk("param")  # the param table's extent, read once here not per method
+            ptotal = pblock[2] if pblock is not None else 0
+            pfit = len(pblock[0]) if pblock is not None else 0
+            generic = bool(gparams)  # look up generic parameters only if the assembly has any
             for off in range(count):
                 idx = method_list - 1 + off
                 if not 0 <= idx < total:  # out of the declared table ends the class's methods
                     break
-                if idx >= len(
-                    rows
-                ):  # a row past the fitting region is skipped, as the reference does
-                    continue
+                if idx >= len(rows):
+                    continue  # a row past the fitting region is skipped, as the reference does
                 t = rows[idx]
                 name = heaps.text(t[ni])
                 if not name:
                     continue
-                method_gp = gparams.get((1, method_list + off), [])
+                method_gp = gparams.get((1, method_list + off), []) if generic else []
                 start, length = heaps.blob_at(t[si])
                 if not start or length < 3:
                     continue
@@ -1458,32 +1460,23 @@ class Dotnet:
                 if sig is None:  # return type did not decode, or an absurd parameter count
                     continue
                 n_params, ret, ptypes = sig
-                if not Dotnet._params_ok(tables, t[qi], n_params, ptypes):
-                    continue  # a parameter type did not decode, or a parameter row does not fit
+                params = t[qi]
+                # the old _params_ok inline: drop the method if a parameter type did not decode, or a
+                # parameter row lies within the declared table but past its fitting region
+                drop = False
+                if params:
+                    for poff in range(n_params):
+                        pidx = params - 1 + poff
+                        if ptypes[poff] is None or (pidx < ptotal and pidx >= pfit):
+                            drop = True
+                            break
+                if drop:
+                    continue
                 # the method is kept; its fields (its parameter list especially) are built only when read
-                descriptor = (name, t[fi], method_gp, ret, ptypes, t[qi], n_params)
+                descriptor = (name, t[fi], method_gp, ret, ptypes, params, n_params)
                 methods[kept] = _Method(descriptor, heaps, tables)
                 kept += 1
         return {"methods": methods, "number_of_methods": kept}
-
-    @staticmethod
-    def _params_ok(tables: Tables, param_list: int, count: int, ptypes: list[bytes | None]) -> bool:
-        """Whether every parameter the signature declares is representable (its type decoded, and any row it
-        has within the table fits) -- the drop test ``_build_params`` applies, without building a dict."""
-        if not param_list:
-            return True
-        block = tables.bulk("param")
-        total = block[2] if block is not None else 0
-        fit = len(block[0]) if block is not None else 0
-        for off in range(count):
-            if ptypes[off] is None:
-                return False
-            idx = param_list - 1 + off
-            if (
-                0 <= idx < total and idx >= fit
-            ):  # within the declared table but not fitting: drop the method
-                return False
-        return True
 
     @staticmethod
     def _build_params(
