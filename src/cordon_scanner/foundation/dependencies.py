@@ -77,6 +77,40 @@ _USERINFO: Final = re.compile(r"(?<=://)[^/@\s]{1,512}@")
 PROVENANCE_ECOSYSTEMS: Final = frozenset({"npm", "pypi"})
 #: Where a dependency was found installed rather than declared: an image's packages.
 INSTALLED_MARKERS: Final = frozenset({"installed-in-image"})
+ECOSYSTEM_IDS: Final = frozenset(
+    {
+        "npm",
+        "pypi",
+        "cargo",
+        "gomod",
+        "maven",
+        "gradle",
+        "nuget",
+        "composer",
+        "rubygems",
+        "cocoapods",
+        "pub",
+        "swift",
+        "hex",
+        "cran",
+        "conan",
+        "conda",
+        "bazel",
+        "actions",
+        "terraform",
+        "helm",
+        "ansible",
+        "nix",
+        "vcpkg",
+        "homebrew",
+        "hackage",
+        "julia",
+        "opam",
+        "image",
+    }
+)
+"""Every ecosystem Cordon reads, by the id `ecosystems/registry.py` gives it: what a policy may name.
+Kept equal to the registry by `tests/unit/ecosystems/test_ecosystem_matrix.py`."""
 OS_ECOSYSTEMS: Final = frozenset({"deb", "apk", "rpm", "alpm", "ebuild"})
 """A distribution's packages, as their purl types name them (`images/packages.py` OsPackage)."""
 OS_ADVISORY_ECOSYSTEMS: Final = frozenset({"deb", "apk", "rpm"})
@@ -373,6 +407,7 @@ class CheckLog:
 
 
 __all__ = [
+    "ECOSYSTEM_IDS",
     "PROVENANCE_ECOSYSTEMS",
     "CheckLog",
     "DependencyIdentity",

@@ -1897,12 +1897,12 @@ class ConfigParser:
 
         accepted: frozenset[str] | None = None
         if "accept_no_feed" in raw:
-            from cordon_scanner.ecosystems.registry import EcosystemRegistry
+            from cordon_scanner.foundation.dependencies import ECOSYSTEM_IDS
 
             ecosystems = ConfigParser._as_str_tuple(
                 raw["accept_no_feed"], f"{source}: policy.accept_no_feed"
             )
-            known = {e.id for e in EcosystemRegistry.all_ecosystems()}
+            known = ECOSYSTEM_IDS
             unknown_names = [n for n in ecosystems if n not in known]
             if unknown_names:
                 raise ConfigError(

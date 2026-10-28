@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from cordon_scanner import Scanner
+from cordon_scanner.analysis.shared.documentation import DocumentationSpans
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.text.comments import SourceComments
 
@@ -54,18 +55,18 @@ class TestSpans:
         raw = json.dumps(
             {"name": "x", "homepage": "h", "config": {"homepage": "c"}, "author": {"url": "a"}}
         ).encode()
-        spans = SourceComments.manifest_metadata_spans(raw)
+        spans = DocumentationSpans.manifest_metadata(raw)
         covered = {raw[s:e].decode() for s, e in spans}
         assert covered == {'"h"', '{"url": "a"}'}
 
     def test_an_object_without_a_name_is_not_a_manifest(self) -> None:
-        assert SourceComments.manifest_metadata_spans(b'{"homepage": "h"}') == ()
+        assert DocumentationSpans.manifest_metadata(b'{"homepage": "h"}') == ()
 
     def test_a_dependency_fetched_from_a_host_is_not_metadata(self) -> None:
         # The remote-tarball shape: npm fetches it at install.
         raw = json.dumps(
             {"name": "x", "homepage": "h", "dependencies": {"y": f"{HOST}/y.tgz"}}
         ).encode()
-        spans = SourceComments.manifest_metadata_spans(raw)
+        spans = DocumentationSpans.manifest_metadata(raw)
         at = raw.index(HOST.encode())
         assert not SourceComments.inside_spans(spans, at)

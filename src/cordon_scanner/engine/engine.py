@@ -60,11 +60,11 @@ from cordon_scanner.engine.walker import (
     Walker,
     WalkStats,
 )
+from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.collector import Collector
 from cordon_scanner.foundation.config import Config, Policy
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import ArchiveError, SourceError
-from cordon_scanner.foundation.files.windows import WindowPass
 from cordon_scanner.foundation.models import (
     AUTHOR_TIME_HOOKS,
     Category,

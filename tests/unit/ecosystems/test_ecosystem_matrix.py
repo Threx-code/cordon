@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.foundation.dependencies import ECOSYSTEM_IDS
 from kits.ecosystems import EcosystemsPage
 from support import ROOT as REPO
 
@@ -30,6 +31,14 @@ class TestTheEcosystemTableIsCurrent:
         text = DOCUMENT.read_text(encoding="utf-8")
         missing = [eco for eco in EcosystemRegistry.BY_ID if f"`{eco}`" not in text]
         assert not missing, f"ecosystems absent from the table: {sorted(missing)}"
+
+
+class TestTheDomainKnowsEveryEcosystem:
+    """A policy's `accept_no_feed` is checked against `foundation.dependencies.ECOSYSTEM_IDS`, so the
+    domain needs no import of this layer; the two must stay the same set."""
+
+    def test_the_ids_are_the_registry_ids(self) -> None:
+        assert {e.id for e in EcosystemRegistry.all_ecosystems()} == ECOSYSTEM_IDS
 
 
 class TestTheTableIsNotVacuous:

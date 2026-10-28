@@ -40,6 +40,7 @@ from cordon_scanner.analysis.python.inert_literals import InertLiterals
 from cordon_scanner.analysis.python.pyast import CREDENTIAL_VARIABLE, PythonSource
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared import embedded
+from cordon_scanner.analysis.shared.documentation import DocumentationSpans
 from cordon_scanner.decide.scoring import RiskScorer, ScoringContext
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -3441,12 +3442,11 @@ class CapabilityDetector(BaseDetector):
         # Skipping documentation, which names a host without contacting one.
         # This searched the raw bytes and took the first hit, so a module whose
         # opening paragraph explains what it drives was read as driving it --
-        # see `core.comments.docstring_spans` for the case that found it. The
+        # see `analysis.shared.documentation.DocumentationSpans.of` for the case that found it. The
         # later occurrences are still considered, because the first being prose
         # says nothing about the rest of the file.
-        from cordon_scanner.foundation.text.comments import SourceComments
 
-        ignore = SourceComments.docstring_spans(raw, language)
+        ignore = DocumentationSpans.of(raw, language)
         blocks = SourceComments.block_comment_spans(content.text, language)
 
         match = None
@@ -3524,7 +3524,6 @@ class CapabilityDetector(BaseDetector):
         cloud metadata service at 169.254.169.254 -- and the documentation ranges are ordinary
         in code and tests and are not counted.
         """
-        from cordon_scanner.foundation.text.comments import SourceComments
 
         ignore: tuple[tuple[int, int], ...] | None = None
         raw = content.raw
@@ -3541,7 +3540,7 @@ class CapabilityDetector(BaseDetector):
             # Docstrings are worked out only once a public address is found: almost no file has
             # one, and the spans mean parsing the file.
             if ignore is None:
-                ignore = SourceComments.docstring_spans(content.raw, language)
+                ignore = DocumentationSpans.of(content.raw, language)
             if SourceComments.inside_spans(ignore, match.start()) or cls._is_comment(
                 content, match.start(), language
             ):

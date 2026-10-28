@@ -8,7 +8,7 @@ is cheap: an inert token placed after twelve megabytes of filler was found by no
 
 Here the rest of the file is cut into windows of at most `max_file_bytes`, each overlapping the one
 before by `OVERLAP` and starting on a line where it can, and every detector that judges text
-(`WINDOW_DETECTORS`) reads each window as it would a small file. Findings are moved to their place
+(`engine.window_pass.WINDOW_DETECTORS`) reads each window as it would a small file. Findings are moved to their place
 in the whole file and repeats from the overlaps dropped. A file on disk is read from disk, window
 by window, so memory holds one window rather than the file; an archive member is already in memory
 as the archive's bytes.
@@ -31,19 +31,16 @@ from __future__ import annotations
 import contextlib
 import os
 import stat as stat_module
-from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import Finding
+    pass
 
 OVERLAP = 64 * 1024
 """How far each window reaches back into the one before: a construct that straddles a cut -- a
 command and the prompt it carries, a key split across two lines -- is whole in one of them."""
-
-WINDOW_DETECTORS = frozenset({"capability", "secrets", "obfuscation", "agents", "rule-file"})
-"""Detectors that judge the text in front of them, and so read a window as they read a file."""
 
 
 class WindowSourceChanged(Exception):
@@ -196,80 +193,3 @@ class Windows:
                 yield Window(begin=begin, lines_before=lines, data=data)
                 known_at, known_lines, reference = begin, lines, data
                 start = begin + len(data)
-
-
-class WindowPass:
-    @staticmethod
-    def run(
-        unit: Any,
-        detectors: Iterable[Any],
-        inspect: Callable[[Any, Any], Iterable[Finding]],
-        already: Iterable[Finding],
-    ) -> tuple[list[Finding], bool]:
-        """What the window-reading detectors find past the prefix of `unit`'s file, placed in the
-        whole file and without what `already` holds. False as the second value when the file could
-        not be read again as the same file: the caller reports it, as an unreadable file is."""
-        from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.foundation.content import FileContent
-
-        content = unit.content
-        source = content.window_source
-        if source is None:
-            return [], True
-        picked = [d for d in detectors if getattr(d, "id", "") in WINDOW_DETECTORS]
-        if not picked:
-            return [], True
-        seen = {(f.rule_id, f.location.line) for f in already}
-        out: list[Finding] = []
-        try:
-            for window in Windows.iterate(
-                source,
-                content.raw,
-                size=content.limits.max_file_bytes,
-                overlap=OVERLAP,
-                limit=content.limits.max_stream_bytes,
-            ):
-                part = FileUnit(
-                    content=FileContent(
-                        path=content.path,
-                        raw=window.data,
-                        size=len(window.data),
-                        limits=content.limits,
-                        window_of=(source, window.begin),
-                    ),
-                    language=unit.language,
-                    project=unit.project,
-                )
-                for detector in picked:
-                    for finding in inspect(detector, part):
-                        moved = (
-                            WindowPass.shifted(finding, window.lines_before, window.begin)
-                            if finding.location.path == content.path
-                            else finding
-                        )
-                        key = (moved.rule_id, moved.location.line)
-                        if key not in seen:
-                            seen.add(key)
-                            out.append(moved)
-        except WindowSourceChanged:
-            return out, False
-        return out, True
-
-    @staticmethod
-    def shifted(finding: Finding, lines: int, offset: int) -> Finding:
-        """A finding from a window, placed in the whole file."""
-        at = finding.location
-
-        def plus(value: int | None, by: int) -> int | None:
-            return None if value is None else value + by
-
-        return replace(
-            finding,
-            location=replace(
-                at,
-                line=plus(at.line, lines),
-                end_line=plus(at.end_line, lines),
-                byte_start=plus(at.byte_start, offset),
-                byte_end=plus(at.byte_end, offset),
-            ),
-        )
