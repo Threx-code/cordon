@@ -218,6 +218,8 @@
   "ecosystems/packages/opam": "ecosystems/packages/opam",
   "ecosystems/packages/pub": "ecosystems/packages/pub",
   "ecosystems/packages/pypi": "ecosystems/packages/pypi",
+  "ecosystems/packages/python/lockfiles": "ecosystems/packages/python/lockfiles",
+  "ecosystems/packages/python/requirements": "ecosystems/packages/python/requirements",
   "ecosystems/packages/rubygems": "ecosystems/packages/rubygems",
   "ecosystems/packages/swift": "ecosystems/packages/swift",
   "ecosystems/packages/vcpkg": "ecosystems/packages/vcpkg",
@@ -814,7 +816,6 @@
    "ecosystems/others": 1417,
    "ecosystems/packages/gradle": 1270,
    "ecosystems/packages/opam": 1004,
-   "ecosystems/packages/pypi": 1319,
    "images/oci": 1074,
    "rules/loader": 1642,
    "sources/archive": 1062
@@ -857,8 +858,7 @@
    "detect/code/capability/detector:CapabilityDetector": 2458,
    "detect/code/obfuscation:ObfuscationDetector": 1002,
    "detect/supply/advisory:AdvisoryDetector": 1065,
-   "detect/supply/manifest:ManifestDetector": 1843,
-   "ecosystems/packages/pypi:PypiEcosystem": 1138
+   "detect/supply/manifest:ManifestDetector": 1843
   },
   "long_functions": {
    "analysis/javascript/front/parser:Parser._statement": 107,
@@ -906,9 +906,6 @@
    "detect/supply/registry:RegistryDetector._compare": 115,
    "detect/supply/registry:RegistryDetector.declared_rules": 254,
    "detect/supply/registry:RegistryDetector.inspect": 209,
-   "ecosystems/packages/pypi:PypiEcosystem._parse_pep_style_lock": 124,
-   "ecosystems/packages/pypi:PypiEcosystem._parse_pyproject": 98,
-   "ecosystems/packages/pypi:PypiEcosystem._parse_setup_py": 97,
    "images/host:HostFilesystem._language_packages": 104,
    "images/oci:ImageLayers.added_files": 101,
    "images/oci:ImageLayers.databases": 95,

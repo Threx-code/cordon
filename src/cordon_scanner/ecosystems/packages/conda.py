@@ -123,7 +123,7 @@ class Environment:
         declared: list[DeclaredDependency] = []
         for item in dependencies or []:
             if isinstance(item, dict) and isinstance(item.get("pip"), list):
-                from cordon_scanner.ecosystems.packages.pypi import PypiRequirement
+                from cordon_scanner.ecosystems.packages.python.requirements import PypiRequirement
 
                 for requirement in item["pip"]:
                     parsed = PypiRequirement.parse(str(requirement))

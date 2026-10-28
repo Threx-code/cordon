@@ -234,7 +234,7 @@ class ExecutionEnvironment:
             )
         elif isinstance(galaxy, str):
             sources.append(f"galaxy requirements from {galaxy}")
-        from cordon_scanner.ecosystems.packages.pypi import PypiRequirement
+        from cordon_scanner.ecosystems.packages.python.requirements import PypiRequirement
 
         pip: list[tuple[str, str]] = []
         python = dependencies.get("python")
