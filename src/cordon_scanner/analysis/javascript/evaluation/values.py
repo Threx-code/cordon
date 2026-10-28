@@ -22,6 +22,11 @@ _HIDDEN_SIGNIFICANT: Final = re.compile(
     r"|\brequire\s*\(|\beval\s*\(|\b(?:exec|spawn|execSync|userInfo|hostname|homedir|lookup|resolve4)\b"
     r"|\.(?:exe|dll|ps1|bat|sh|vbs)\b|[a-z0-9-]+\.(?:com|net|org|io|xyz|top|ru|cn|site|online|me)\b"
 )
+#: A loop that builds a string one `String.fromCharCode` at a time over an array: the decoder a
+#: small local function is (`JsEval.BUILTIN_DECODER_LOOP`).
+BUILTIN_DECODER_LOOP: Final = re.compile(
+    r"for\s*\([^)]{0,80}\)\s*\{?\s*[\w$]+\s*\+=\s*String\s*\.\s*fromCharCode\s*\(\s*([\w$]+)\s*\[\s*[\w$]+\s*\]\s*\)"
+)
 HOLE: Final = "_"
 """How an unknown piece of a string is written in the view."""
 
