@@ -19,8 +19,9 @@ from test_exploited import ExploitedHelpers
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.detect.supply.advisory import EXPLOITED_RULE, VULNERABLE_RULE, AdvisoryDetector
-from cordon_scanner.engine.engine import HONOURED_PINS, Engine
+from cordon_scanner.engine.engine import Engine
 from cordon_scanner.engine.package_format import PackageFormat
+from cordon_scanner.engine.pipeline.constants import HONOURED_PINS
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
