@@ -469,7 +469,7 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
     @staticmethod
     def _declared() -> dict[str, object]:
         from cordon_scanner.detect.binary.binary import BinaryDetector
-        from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+        from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
         from cordon_scanner.detect.supply.dependency import DependencyDetector
         from cordon_scanner.detect.supply.lockfile import LockfileDetector
         from cordon_scanner.detect.supply.manifests.detector import ManifestDetector

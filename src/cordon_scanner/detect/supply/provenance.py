@@ -33,7 +33,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.supply.registry import NETWORK_CAVEAT, RegistryEvidence
+from cordon_scanner.detect.supply.registries.detector import NETWORK_CAVEAT, RegistryEvidence
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -173,7 +173,7 @@ class ProvenanceDetector(BaseDetector):
         # lockfile is the slowest thing the scanner can be asked to do. Direct
         # dependencies first, so a truncated pass spends the budget where
         # provenance is most likely to be claimed.
-        from cordon_scanner.detect.supply.registry import MAX_QUERIES, RegistryDetector
+        from cordon_scanner.detect.supply.registries.detector import MAX_QUERIES, RegistryDetector
         from cordon_scanner.ecosystems.infra.image import ImageEcosystem
 
         candidates = [

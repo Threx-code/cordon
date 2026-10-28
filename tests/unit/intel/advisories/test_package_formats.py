@@ -18,7 +18,11 @@ from test_exploited import ExploitedHelpers
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
-from cordon_scanner.detect.supply.advisory import EXPLOITED_RULE, VULNERABLE_RULE, AdvisoryDetector
+from cordon_scanner.detect.supply.advisories.detector import (
+    EXPLOITED_RULE,
+    VULNERABLE_RULE,
+    AdvisoryDetector,
+)
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import HONOURED_PINS
