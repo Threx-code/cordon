@@ -201,6 +201,7 @@
   "foundation/dependencies": "foundation/dependencies",
   "foundation/distribution": "foundation/distribution",
   "engine/engine": "engine/engine",
+  "engine/pipeline/archive_stages": "engine/pipeline/archive_stages",
   "engine/pipeline/stages": "engine/pipeline/stages",
   "engine/pipeline/coverage": "engine/pipeline/coverage",
   "engine/pipeline/facts": "engine/pipeline/facts",
@@ -742,7 +743,7 @@
    "ecosystems/packages/npm": 1524,
    "ecosystems/packages/opam": 1004,
    "ecosystems/packages/pypi": 1319,
-   "engine/engine": 2701,
+   "engine/engine": 2354,
    "foundation/config": 2356,
    "foundation/models": 1702,
    "images/oci": 1074,
@@ -872,7 +873,7 @@
    "detect/supply/advisory:AdvisoryDetector": 1065,
    "detect/supply/manifest:ManifestDetector": 1843,
    "ecosystems/packages/pypi:PypiEcosystem": 1138,
-   "engine/engine:Engine": 2590,
+   "engine/engine:Engine": 2252,
    "intel/registries/more_registries:MoreRegistries": 2009
   },
   "long_functions": {
@@ -968,7 +969,6 @@
    "engine/engine:Engine._declared_graph": 169,
    "engine/engine:Engine._image_inventory": 99,
    "engine/engine:Engine._inspect_file": 118,
-   "engine/engine:Engine._scan_archive": 421,
    "engine/engine:Engine._scan_parallel": 143,
    "engine/engine:Engine._units": 414,
    "engine/engine:Engine.inventory": 139,

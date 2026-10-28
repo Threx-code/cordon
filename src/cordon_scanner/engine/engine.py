@@ -41,32 +41,24 @@ from cordon_scanner.detect.base import (
     ScanContext,
     Unit,
 )
-from cordon_scanner.detect.supply.composer_plugins import ComposerPluginHooks
 from cordon_scanner.ecosystems.base import Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.cache import CacheKey, ScanCache
-from cordon_scanner.engine.entries import PackageEntries
-from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.parallel import ParallelScanner, WorkItem
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
+from cordon_scanner.engine.pipeline.archive_stages import ArchiveStages
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
-from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import (
     ADVISORY_DETECTORS,
     ALWAYS_RUN,
-    ARCHIVE_SLICE,
-    HONOURED_PINS,
     REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.pipeline.coverage import Coverage
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
-from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.operational import OperationalFinding
-from cordon_scanner.engine.pipeline.publisher import Publisher
-from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.progress import NullProgress, Progress
 from cordon_scanner.engine.walker import (
@@ -91,7 +83,6 @@ from cordon_scanner.foundation.models import (
     Repository,
     ScanResult,
     ScanStats,
-    Scope,
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
@@ -148,6 +139,7 @@ class Engine:
         self._scanning_archive = False
         self.coverage = Coverage(self)
         self.stages = ScanStages(self)
+        self.archive_stages = ArchiveStages(self)
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
@@ -410,358 +402,19 @@ class Engine:
         )
         retained = 0
 
-        # A container image is read the way a runtime assembles it -- layers squashed, whiteouts
-        # applied -- rather than as nested tarballs, whose layer members are far past any per-member
-        # limit and whose files would be scanned once per layer that touched them.
-        image = self._image_inventory(data, acc)
-        members: Iterable[tuple[str, bytes]]
-        if image is not None:
-            from cordon_scanner.images import oci
+        image, members = self.archive_stages.source(data, acc, path, rejected, deadline)
 
-            members = (
-                (f"{path.name}!{member}", payload)
-                for member, payload in oci.ImageLayers.added_files(
-                    data,
-                    image,
-                    max_file_bytes=self.config.limits.max_file_bytes,
-                    max_total_bytes=self.config.limits.max_memory_bytes or (1 << 30),
-                )
-            )
-        else:
-            members = ArchiveReader.walk_archive(
-                data,
-                path=path.name,
-                limits=self.config.limits,
-                rejected=rejected,
-                deadline=deadline if self.config.limits.total_timeout > 0 else None,
-            )
-
-        try:
-            for member_path, member_data in members:
-                if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                    acc.complete = False
-                    acc.append(
-                        OperationalFinding.build(
-                            path=path.name,
-                            rule_id="OPERATIONAL.SCAN.TIMEOUT",
-                            message=(
-                                f"Expanding this archive exceeded the "
-                                f"{self.config.limits.total_timeout:.0f}s budget, so the "
-                                f"remaining members were not examined."
-                            ),
-                            remediation=(
-                                "Raise --timeout, or treat an archive this large as "
-                                "something to unpack and scan as a directory."
-                            ),
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                    break
-
-                retained += len(member_data)
-                if (
-                    self.config.limits.max_memory_bytes > 0
-                    and retained > self.config.limits.max_memory_bytes
-                ):
-                    acc.complete = False
-                    acc.append(
-                        OperationalFinding.build(
-                            path=path.name,
-                            rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
-                            message=(
-                                f"Expanded members reached the "
-                                f"{self.config.limits.max_memory_bytes} byte ceiling, so "
-                                f"the remaining members were not examined."
-                            ),
-                            remediation="Raise limits.max_memory_bytes, or scan unpacked.",
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                    break
-
-                member_content = FileContent.from_member(
-                    member_path, member_data, self.config.limits
-                )
-                if member_content.truncated:
-                    acc.complete = acc.complete and ArchiveMembers.read_to_end(member_content)
-                    acc.append(ArchiveMembers.truncated_note(member_path, member_content))
-                units.append(
-                    FileUnit(
-                        content=member_content,
-                        language=LanguageRegistry.of_file(member_path, member_content),
-                    )
-                )
-                acc.files_scanned += 1
-                acc.bytes_scanned += len(member_data)
-        except ArchiveError as exc:
-            acc.complete = False
-            acc.append(
-                OperationalFinding.build(
-                    path=path.name,
-                    rule_id="OPERATIONAL.ARCHIVE.REJECTED",
-                    message=f"The archive was refused and not scanned: {exc.message}",
-                    remediation=(
-                        "Treat a refused archive as unexamined. If the limits are wrong "
-                        "for this input, raise them deliberately rather than assuming "
-                        "the archive is clean."
-                    ),
-                    severity=Severity.MEDIUM,
-                )
-            )
-
-        for member_path, reason, detail in rejected:
-            # A link has no content of its own: refusing it leaves nothing unread.
-            acc.complete = acc.complete and reason == Rejection.LINK
-            acc.append(
-                ArchiveMembers.rejected(member_path, reason, detail, image=image is not None)
-            )
-
-        # Manifests inside a package determine whether its code runs at install
-        # time, which is the whole reason a package archive is worth scanning.
-        units.extend(self._inline_hook_units(units))
-        units.extend(self._deobfuscated_units(units))
-        hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
-        # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
-        # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
-        # commonest thing to vet, and it was the one target that skipped all three.
-        hook_paths |= {
-            unit.path
-            for unit in units
-            if not Hooks.under_fixture_directory(unit.path)
-            and any(
-                hook.kind not in ("ci", "projectbuild")
-                for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
-            )
-        }
-        hook_paths |= Hooks.nuget_hooks(units)
-        hook_paths |= Hooks.gem_extension_hooks(units)
-        hook_paths |= ComposerPluginHooks.paths(units)
-        skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ReleaseChecks.mcp_server_sources(units)
-        agent_tools = self._agent_tool_paths(units, agent_run, hook_paths)
-        # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
-        # a tool the user asked it to use: downloading a browser, starting a detached emulator or
-        # writing its config is the tool's work, and graded as install code it blocked 40 of 863
-        # real MCP packages (review 98). What a server's handlers do with the agent's input is
-        # read by `detect/mcp_code.py` instead -- a shell behind a secret prefix, a hidden copy of
-        # every argument, a gate that turns the tool later, secrets gathered by name.
-        hook_paths |= skill_scripts
-        entries = frozenset(hook_paths)
-        hook_paths |= Hooks.hook_import_closure(units, hook_paths)
-        hook_paths |= Hooks.hook_js_closure(units, hook_paths)
-        hook_paths, entries, consumer_hooks = Hooks.outside_extensions(
-            units, hook_paths, entries, consumer_hooks
+        self.archive_stages.read_members(
+            members, deadline, acc, path, retained, units, rejected, image
         )
-        ctx = replace(
-            ctx,
-            install_hook_paths=frozenset(hook_paths),
-            tree_paths=frozenset(unit.path for unit in units),
-            shipped_native_paths=TreeFacts.shipped_native(units),
-            install_entry_paths=entries,
-            agent_run_paths=agent_tools,
-            consumer_install_paths=frozenset(consumer_hooks),
-            ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
-            install_deferred_lines=TreeFacts.entry_points_reached(
-                Hooks.hook_deferred_lines(units, hook_paths, entries), agent_run
-            ),
-            # Known before any file is examined, so a detector can tell an image's files from a
-            # source tree's: an image's executables are what it ships.
-            image=image if image is not None else ctx.image,
-            # And so can a published package's: its `build/` and `bin/` are what runs, and the
-            # typosquat grading asks which format it is.
-            package_distribution=bool(early_format := PackageFormat.of(units)),
-            distribution=early_format,
-            import_entry_paths=PackageEntries.of(units, early_format),
-            library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
-            library_closure_paths=frozenset(
-                Hooks.hook_js_closure(
-                    units, set(PackageEntries.of(units, early_format, with_bin=False))
-                )
-            ),
-            declared_dependencies=History.declared_dependencies(units, early_format),
-            package_repository=PackageEntries.repository(units, early_format),
-        )
-        ctx = Hooks.lifted_inherit(ctx)
 
-        detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
-        self.progress.phase("scanning", total=len(units))
-        # An image or a large archive is thousands of members (a Grafana image adds eleven
-        # thousand files): across the worker pool, as a directory is, with each member's bytes
-        # carried since it has no path on disk. In slices, so the scan's deadline is still checked.
-        content_detectors = [
-            d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
-        ]
-        workers = ParallelScanner.worker_count(
-            self.config.limits.max_workers, len(units), sum(len(u.content.raw) for u in units)
-        )
-        if workers > 1:
-            from cordon_scanner.engine.cache import ScanCache
+        ctx = self.archive_stages.context(units, acc, ctx, image)
 
-            signature = ScanCache.detector_signature(content_detectors)
-            for start in range(0, len(units), ARCHIVE_SLICE):
-                if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                    acc.complete = False
-                    acc.append(
-                        OperationalFinding.build(
-                            path=path.name,
-                            rule_id="OPERATIONAL.SCAN.TIMEOUT",
-                            message=f"The {self.config.limits.total_timeout:.0f}s budget was reached with members still unexamined.",
-                            remediation="Raise --timeout, or unpack and scan as a directory.",
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                    break
-                acc.add(
-                    self._scan_parallel(
-                        units[start : start + ARCHIVE_SLICE],
-                        path.parent,
-                        ctx,
-                        acc,
-                        content_detectors,
-                        signature,
-                        carry_content=True,
-                    )
-                )
-            units_left: list[FileUnit] = []
-        else:
-            units_left = units
-        for unit in units_left:
-            # The same budget the directory path applies between units. Most of
-            # the cost of a hostile archive is here rather than in extraction --
-            # a fifty-thousand-member archive expands in a second and then takes
-            # eight to match against -- so a deadline that only covered
-            # expansion bounded the wrong half.
-            if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                acc.complete = False
-                acc.append(
-                    OperationalFinding.build(
-                        path=path.name,
-                        rule_id="OPERATIONAL.SCAN.TIMEOUT",
-                        message=(
-                            f"The {self.config.limits.total_timeout:.0f}s budget was reached "
-                            f"with members still unexamined."
-                        ),
-                        remediation="Raise --timeout, or unpack and scan as a directory.",
-                        severity=Severity.MEDIUM,
-                    )
-                )
-                break
-            member_detectors = [
-                d
-                for d in detectors
-                if not (d.requires.dependencies and d.requires.content is False)
-            ]
-            produced: list[Finding] = []
-            for detector in member_detectors:
-                produced.extend(self._run(detector, unit, ctx, acc))
-            # The rest of an oversized member, a window at a time, as `_inspect_file` reads one.
-            windowed, intact = WindowPass.run(
-                unit,
-                member_detectors,
-                lambda detector, part: self._run(detector, part, ctx, acc),
-                produced,
-            )
-            produced.extend(windowed)
-            if not intact:
-                acc.complete = False
-                produced.append(ArchiveMembers.changed_while_read(unit.path))
-            acc.add(produced)
-            self.progress.advance(unit.path)
-        acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
-        acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
-        acc.add(ReleaseChecks.known_malicious_release(units, ctx))
-        acc.add(ReleaseChecks.placeholder_release(units, ctx))
-        acc.add(ReleaseChecks.borrowed_server_name(units, ctx))
+        detectors, units_left = self.archive_stages.parallel(units, deadline, acc, path, ctx)
+        self.archive_stages.serial(units_left, deadline, acc, path, detectors, ctx, units)
 
-        # A published archive carries its own manifests and lockfiles, and
-        # "is this tarball a known-malicious release?" is the question most
-        # people open one to ask. Building the graph from the members is what
-        # lets the advisory, licence and dependency detectors answer it --
-        # without it they had no `GraphUnit` to inspect, so scanning a package
-        # archive silently skipped every check about its dependencies.
-        self.progress.phase("dependencies")
-        dependencies = self._build_graph(units, acc)
-        if image is not None:
-            Images.report_image_contents(image, acc)
-        package = PackageFormat.of(units)
-        target_kind = "image" if image is not None else "package" if package else "archive"
-        if package:
-            # A consumer's installer resolves from the package's declared metadata, never from a
-            # lockfile shipped inside it: those pins are the maintainers' own environment. The
-            # exception is a file that installer reads and obeys (`HONOURED_PINS`): what it pins
-            # is what installing the package brings in. An archive that may be a repository
-            # snapshot instead is graded both ways (`PackageFormat.union`, review 98 #18).
-            both = PackageFormat.renamed_npm(units)
-            repository = Ceilings.person_run_ceiling(list(acc.findings), units, ctx) if both else []
-            ctx = replace(ctx, package_distribution=True, distribution=package)
-            acc.add(History.young_dependency_introduced(units, package, ctx))
-            acc.findings[:] = Ceilings.impersonator_runs_downloads(
-                Publisher.publisher_hygiene(
-                    Publisher.publisher_secrets(
-                        History.established_release_ceiling(
-                            Ceilings.author_time_ceiling(
-                                acc.findings, units, package, ctx.install_hook_paths
-                            ),
-                            units,
-                            package,
-                            hook_paths=ctx.install_hook_paths,
-                        )
-                    ),
-                    self.config.policy.advisory_domains,
-                )
-            )
-            acc.findings[:] = PackageFormat.union(acc.findings, repository)
-            honoured = HONOURED_PINS.get(package)
-            dependencies = tuple(
-                replace(d, scope=Scope.DEV)
-                if not both
-                and d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
-                and not (honoured and honoured.search(d.declared_in or ""))
-                else d
-                for d in dependencies
-            )
-        elif image is None:
-            # A source tree read from an archive: graded as a repository (`_person_run_ceiling`).
-            acc.findings[:] = Ceilings.person_run_ceiling(acc.findings, units, ctx)
-            if History.history_distribution(units) == "openvsx":
-                # An editor extension against its own established release (`intel/openvsx.py`).
-                acc.findings[:] = History.established_release_ceiling(
-                    acc.findings, units, "openvsx", hook_paths=ctx.install_hook_paths
-                )
-        acc.findings[:] = Ceilings.graded_by_what_it_does(acc.findings, ctx)
-        if image is not None:
-            acc.findings[:] = Ceilings.image_start_ceiling(acc.findings, units)
-            ctx = replace(ctx, image=image)
-            installed = Images.image_dependencies(image)
-            present = {(d.ecosystem, d.name.lower(), d.version) for d in installed}
-            # An image's inventory is what is installed in it. A lockfile or manifest inside it
-            # names what the application was built from, development packages and ranges
-            # included; an entry counts only where the same package is installed.
-            dependencies = (
-                *(d for d in dependencies if (d.ecosystem, d.name.lower(), d.version) in present),
-                *installed,
-            )
-        if dependencies:
-            ctx = replace(ctx, dependencies=Graph.packages(dependencies))
-            graph_unit = GraphUnit(dependencies=Graph.packages(dependencies))
-            for detector in self.detectors:
-                if not detector.requires.dependencies:
-                    continue
-                if not self._detector_enabled(detector, ctx):
-                    continue
-                acc.add(self._run(detector, graph_unit, ctx, acc))
-
-        labels: dict[str, Any] = {}
-        acc.findings[:], verdict = Ceilings.verdict(
-            Ceilings.hardening_tier(
-                Hooks.onto_manifest(Publisher.test_identity_keys(acc.findings, units), units),
-                self.config.policy,
-            ),
-            units,
-            {**self._capability_profile(units, ctx, labels), **History.registry_facts(units)},
-            self._intent_observation(units, ctx, labels),
-        )
-        dependencies = self._annotated(dependencies, acc.findings, ctx, units)
+        dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
+        dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         result = ScanResult(
             findings=tuple(acc.findings),
             verdict=verdict,
