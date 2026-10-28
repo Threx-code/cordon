@@ -272,7 +272,7 @@ class ArchiveStages:
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext
     ) -> tuple[list[Detector], list[FileUnit]]:
         """The members detectors read in parallel, when the archive is large enough to be worth it."""
-        detectors = [d for d in self.detectors if self.engine._detector_enabled(d, ctx)]
+        detectors = [d for d in self.detectors if self.engine.detection.enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
         # An image or a large archive is thousands of members (a Grafana image adds eleven
         # thousand files): across the worker pool, as a directory is, with each member's bytes
@@ -301,7 +301,7 @@ class ArchiveStages:
                     )
                     break
                 acc.add(
-                    self.engine._scan_parallel(
+                    self.engine.detection.parallel(
                         units[start : start + ARCHIVE_SLICE],
                         path.parent,
                         ctx,
@@ -355,12 +355,12 @@ class ArchiveStages:
             ]
             produced: list[Finding] = []
             for detector in member_detectors:
-                produced.extend(self.engine._run(detector, unit, ctx, acc))
+                produced.extend(self.engine.detection.run(detector, unit, ctx, acc))
             # The rest of an oversized member, a window at a time, as `_inspect_file` reads one.
             windowed, intact = WindowPass.run(
                 unit,
                 member_detectors,
-                lambda detector, part: self.engine._run(detector, part, ctx, acc),
+                lambda detector, part: self.engine.detection.run(detector, part, ctx, acc),
                 produced,
             )
             produced.extend(windowed)
@@ -464,9 +464,9 @@ class ArchiveStages:
             for detector in self.detectors:
                 if not detector.requires.dependencies:
                     continue
-                if not self.engine._detector_enabled(detector, ctx):
+                if not self.engine.detection.enabled(detector, ctx):
                     continue
-                acc.add(self.engine._run(detector, graph_unit, ctx, acc))
+                acc.add(self.engine.detection.run(detector, graph_unit, ctx, acc))
 
         labels: dict[str, Any] = {}
         acc.findings[:], verdict = Ceilings.verdict(
@@ -481,7 +481,7 @@ class ArchiveStages:
             },
             self.engine._intent_observation(units, ctx, labels),
         )
-        dependencies = self.engine._annotated(dependencies, acc.findings, ctx, units)
+        dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
 
 

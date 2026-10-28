@@ -21,7 +21,7 @@ NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
 
 ALWAYS_RUN = frozenset({"capability", "obfuscation", "secrets", "binary"})
 """Detectors the per-file budget never skips: the ones that find malware, hidden code, secrets and
-committed executables. See `Engine._inspect_file`."""
+committed executables. See `Detection.inspect_file`."""
 
 BLINDING_SETTINGS = frozenset(
     {

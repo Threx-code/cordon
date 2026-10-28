@@ -186,7 +186,7 @@ class ScanStages:
         file_detectors = [
             d
             for d in self.detectors
-            if self.engine._detector_enabled(d, ctx)
+            if self.engine.detection.enabled(d, ctx)
             and not (d.requires.dependencies and d.requires.content is False)
         ]
         signature = ScanCache.detector_signature(file_detectors)
@@ -214,7 +214,7 @@ class ScanStages:
         with self.engine._sealed_scan():
             if workers > 1:
                 acc.add(
-                    self.engine._scan_parallel(
+                    self.engine.detection.parallel(
                         units,
                         root,
                         ctx,
@@ -226,7 +226,11 @@ class ScanStages:
                 )
             else:
                 for unit in units:
-                    acc.add(self.engine._inspect_file(unit, ctx, acc, file_detectors, signature))
+                    acc.add(
+                        self.engine.detection.inspect_file(
+                            unit, ctx, acc, file_detectors, signature
+                        )
+                    )
                     self.progress.advance(unit.path)
             acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
             acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
@@ -240,9 +244,9 @@ class ScanStages:
                 for detector in self.detectors:
                     if not detector.requires.dependencies:
                         continue
-                    if not self.engine._detector_enabled(detector, ctx):
+                    if not self.engine.detection.enabled(detector, ctx):
                         continue
-                    acc.add(self.engine._run(detector, graph_unit, ctx, acc))
+                    acc.add(self.engine.detection.run(detector, graph_unit, ctx, acc))
             acc.add(self.engine._sbom_listed_findings(acc.findings, ctx))
 
     def after_detection(
@@ -278,9 +282,9 @@ class ScanStages:
             for detector in self.detectors:
                 if not detector.requires.repository:
                     continue
-                if not self.engine._detector_enabled(detector, ctx):
+                if not self.engine.detection.enabled(detector, ctx):
                     continue
-                acc.add(self.engine._run(detector, repository_unit, ctx, acc))
+                acc.add(self.engine.detection.run(detector, repository_unit, ctx, acc))
 
         if acc.capped:
             # Appended directly: the cap is full by definition, and the one
@@ -342,7 +346,7 @@ class ScanStages:
             self.engine._intent_observation(units, ctx, labels),
         )
         findings = tuple(graded)
-        dependencies = self.engine._annotated(dependencies, findings, ctx, units)
+        dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies
 
     @staticmethod
