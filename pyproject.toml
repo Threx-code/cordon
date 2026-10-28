@@ -202,6 +202,11 @@ github = "cordon_scanner.report.github:GithubReporter"
 codeclimate = "cordon_scanner.report.codeclimate:CodeClimateReporter"
 vex = "cordon_scanner.report.vex:VexReporter"
 
+[project.entry-points."cordon_scanner.ecosystem_facts"]
+# What classifying a dependency asks of the ecosystems (foundation.dependencies.EcosystemFacts):
+# provided by the ecosystems layer, so the domain names no ecosystem.
+builtin = "cordon_scanner.ecosystems.registry:RegistryFacts"
+
 [project.entry-points."cordon_scanner.notifiers"]
 webhook = "cordon_scanner.notify.channels.webhook:WebhookChannel"
 slack = "cordon_scanner.notify.channels.slack:SlackChannel"

@@ -32,9 +32,11 @@ verified), which no finding records because nothing was wrong.
 
 from __future__ import annotations
 
+import functools
 import re
 import threading
-from typing import TYPE_CHECKING, Final
+from importlib.metadata import entry_points
+from typing import TYPE_CHECKING, Final, Protocol
 
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
@@ -144,6 +146,38 @@ INTEGRITY_MISMATCH_RULES: Final = frozenset(
 PROVENANCE_INVALID_RULES: Final = frozenset({"VULNERABLE.PROVENANCE.INVALID.001"})
 
 
+class EcosystemFacts(Protocol):
+    """What classifying a dependency asks of the ecosystems, without naming one: the port the
+    ecosystems layer provides (`ecosystems.registry.RegistryFacts`), so the domain imports nothing
+    above it."""
+
+    def is_registry_host(self, ecosystem: str, url: str) -> bool:
+        """Whether the URL is on one of that ecosystem's own registry hosts."""
+        ...
+
+    def lockfile_ecosystem(self, path: str) -> str | None:
+        """Which ecosystem's lockfile the path is, if any."""
+        ...
+
+
+class EcosystemFactsProvider:
+    """The installed `EcosystemFacts`: the built-in one, registered through an entry point as the
+    built-in detectors are."""
+
+    GROUP: Final = "cordon_scanner.ecosystem_facts"
+
+    @staticmethod
+    @functools.cache
+    def facts() -> EcosystemFacts:
+        found = [e for e in entry_points(group=EcosystemFactsProvider.GROUP) if e.name == "builtin"]
+        if not found:
+            raise RuntimeError(
+                f"no {EcosystemFactsProvider.GROUP} entry point named builtin: reinstall cordon-scanner"
+            )
+        facts: EcosystemFacts = found[0].load()()
+        return facts
+
+
 class DependencyIdentity:
     """The namespace part of a package's identity, where its ecosystem has one."""
 
@@ -226,10 +260,7 @@ class DependencySource:
         if lowered.startswith(PATH_PREFIXES):
             return "path"
         if lowered.startswith(("http://", "https://", "oci://")):
-            from cordon_scanner.ecosystems.registry import EcosystemRegistry
-
-            implementation = EcosystemRegistry.get(ecosystem)
-            if implementation is not None and implementation.is_registry_host(value):
+            if EcosystemFactsProvider.facts().is_registry_host(ecosystem, value):
                 return "registry"
             path = lowered.partition("?")[0].partition("#")[0]
             # A code host's snapshot of a repository at a ref is that repository, not an
@@ -290,10 +321,8 @@ class DependencyResolution:
             return False
         if dependency.declared_in != dependency.manifest_path:
             return True
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry
-
         return (
-            EcosystemRegistry.lockfile_ecosystem(dependency.declared_in) is not None
+            EcosystemFactsProvider.facts().lockfile_ecosystem(dependency.declared_in) is not None
             and dependency.version is not None
         )
 
@@ -355,9 +384,7 @@ class DependencyResolution:
             # A SNAPSHOT is re-published in place: the same version names whatever was deployed last.
             return "partially_resolved", "a SNAPSHOT version, which is re-published in place"
         if dependency.version:
-            from cordon_scanner.ecosystems.registry import EcosystemRegistry
-
-            if dependency.declared_in and EcosystemRegistry.lockfile_ecosystem(
+            if dependency.declared_in and EcosystemFactsProvider.facts().lockfile_ecosystem(
                 dependency.declared_in
             ):
                 return "resolved", "resolved by the lockfile"
@@ -414,4 +441,6 @@ __all__ = [
     "DependencyIdentity",
     "DependencyResolution",
     "DependencySource",
+    "EcosystemFacts",
+    "EcosystemFactsProvider",
 ]

@@ -819,8 +819,7 @@
    "detect/supply/provenance -> decide/scoring",
    "detect/supply/registry -> decide/scoring",
    "detect/supply/release_diff -> engine/pipeline/releases",
-   "detect/supply/sbom -> decide/scoring",
-   "foundation/dependencies -> ecosystems/registry"
+   "detect/supply/sbom -> decide/scoring"
   ],
   "file_relative_paths": [
    "src/cordon_scanner/rules/loader.py"

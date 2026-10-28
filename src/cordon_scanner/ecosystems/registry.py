@@ -277,6 +277,20 @@ class EcosystemRegistry:
         return cls.ECOSYSTEMS
 
 
+class RegistryFacts:
+    """`foundation.dependencies.EcosystemFacts`, answered by the registered ecosystems; installed
+    through the `cordon_scanner.ecosystem_facts` entry point."""
+
+    @staticmethod
+    def is_registry_host(ecosystem: str, url: str) -> bool:
+        implementation = EcosystemRegistry.get(ecosystem)
+        return implementation is not None and implementation.is_registry_host(url)
+
+    @staticmethod
+    def lockfile_ecosystem(path: str) -> str | None:
+        return EcosystemRegistry.lockfile_ecosystem(path)
+
+
 #: What the engine uses of this layer by name, and the module that provides each: the one place
 #: that knows, so the layer's modules can move without the engine changing. Each is imported
 #: when it is first asked for (PEP 562), as the engine's own imports were.
@@ -301,4 +315,11 @@ def __getattr__(name: str) -> object:
     return getattr(importlib.import_module(module), attribute)
 
 
-__all__ = ["ROLES", "EcosystemRegistry", "ImageReference", "LockScopes", "NotRunAtInstall"]
+__all__ = [
+    "ROLES",
+    "EcosystemRegistry",
+    "ImageReference",
+    "LockScopes",
+    "NotRunAtInstall",
+    "RegistryFacts",
+]
