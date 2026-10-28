@@ -14,6 +14,7 @@
   "analysis/javascript/front/syntax": "analysis/javascript/front/syntax",
   "analysis/javascript/js_eval": "analysis/javascript/js_eval",
   "analysis/javascript/js_flow": "analysis/javascript/js_flow",
+  "analysis/javascript/flow/vocabulary": "analysis/javascript/flow/vocabulary",
   "analysis/javascript/js_fold": "analysis/javascript/js_fold",
   "analysis/javascript/js_persist": "analysis/javascript/js_persist",
   "analysis/javascript/js_string_code": "analysis/javascript/js_string_code",
@@ -877,7 +878,7 @@
   "long_modules": {
    "analysis/javascript/front/parser": 1759,
    "analysis/javascript/js_eval": 1085,
-   "analysis/javascript/js_flow": 2328,
+   "analysis/javascript/js_flow": 2082,
    "rules/loader": 1642,
    "sources/archive": 1062
   },
