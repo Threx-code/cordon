@@ -907,8 +907,6 @@
    "detect/supply/registry:RegistryDetector.inspect": 209,
    "ecosystems/packages/conda:CondaLock.parse": 99,
    "ecosystems/packages/conda:Environment.parse": 97,
-   "ecosystems/packages/cran:Description.parse": 98,
-   "ecosystems/packages/cran:RenvLock.parse": 105,
    "ecosystems/packages/hackage:CabalFile.parse": 92,
    "ecosystems/packages/hackage:Hpack.parse": 98,
    "ecosystems/packages/hex:BeamTerms.term": 103,

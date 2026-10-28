@@ -199,6 +199,25 @@ class Description:
                         else None,
                     )
                 )
+        hooks = Description._system_needs(fields, declared, content, ecosystem)
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            name=fields.get("Package"),
+            version=fields.get("Version"),
+            dependencies=tuple(declared),
+            sources=("repository bioconductor",) if bioconductor else (),
+            hooks=hooks,
+        )
+
+    @staticmethod
+    def _system_needs(
+        fields: dict[str, str],
+        declared: list[DeclaredDependency],
+        content: FileContent,
+        ecosystem: str,
+    ) -> tuple[Hook, ...]:
+        """The system libraries and tools the package needs, and the build hook when it compiles from source."""
         for requirement in re.split(r"[,;]", fields.get("SystemRequirements", "")):
             text = requirement.strip()
             if text:
@@ -222,15 +241,7 @@ class Description:
                     ecosystem=ecosystem,
                 ),
             )
-        return Manifest(
-            path=content.path,
-            ecosystem=ecosystem,
-            name=fields.get("Package"),
-            version=fields.get("Version"),
-            dependencies=tuple(declared),
-            sources=("repository bioconductor",) if bioconductor else (),
-            hooks=hooks,
-        )
+        return hooks
 
     #: What `R CMD INSTALL` runs from a source package before and after building it.
     INSTALL_SCRIPTS: ClassVar[tuple[str, ...]] = (
@@ -346,36 +357,8 @@ class RenvLock:
                 continue
             resolved_from = None
             local = False
-            if source in ("GitHub", "GitLab", "Bitbucket"):
-                host = {
-                    "GitHub": "github.com",
-                    "GitLab": "gitlab.com",
-                    "Bitbucket": "bitbucket.org",
-                }[source]
-                user, repo = package.get("RemoteUsername", ""), package.get("RemoteRepo", name)
-                sha = package.get("RemoteSha") or package.get("RemoteRef") or ""
-                resolved_from = f"git+https://{host}/{user}/{repo}#{sha}"
-            elif source == "Git":
-                resolved_from = f"git+{package.get('RemoteUrl', '')}#{package.get('RemoteSha', '')}"
-            elif source == "Bioconductor":
-                resolved_from = "registry:bioconductor"
-            elif source in ("Local", "Cellar"):
-                local = True
-            elif source == "URL":
-                resolved_from = BaseEcosystem._s(package.get("RemoteUrl"))
-            digest = package.get("Hash")
-            entries.append(
-                LockEntry(
-                    name=name,
-                    version=str(package.get("Version", "")),
-                    # renv's hash of the package's DESCRIPTION record: what renv checks a
-                    # restored package against.
-                    # A value that is not an md5 is kept, and reported as malformed.
-                    integrity=f"md5:{digest}" if isinstance(digest, str) and digest else None,
-                    resolved_from=resolved_from,
-                    local=local,
-                    dependencies=RenvLock.requirements(package),
-                )
+            resolved_from, local = RenvLock._entry(
+                source, package, name, entries, resolved_from, local
             )
         # A snapshot records only what is reachable from the project, and marks nothing direct: a
         # package no other locked package requires is one the project asked for.
@@ -406,6 +389,49 @@ class RenvLock:
             entries=tuple(entries),
             integrity_elsewhere=not any(e.integrity for e in entries),
         )
+
+    @staticmethod
+    def _entry(
+        source: str,
+        package: dict[Any, Any],
+        name: str,
+        entries: list[LockEntry],
+        resolved_from: str | None,
+        local: bool,
+    ) -> tuple[str | None, bool]:
+        """A package's entry: from its git host at a commit, or from its repository, with its hash."""
+        if source in ("GitHub", "GitLab", "Bitbucket"):
+            host = {
+                "GitHub": "github.com",
+                "GitLab": "gitlab.com",
+                "Bitbucket": "bitbucket.org",
+            }[source]
+            user, repo = package.get("RemoteUsername", ""), package.get("RemoteRepo", name)
+            sha = package.get("RemoteSha") or package.get("RemoteRef") or ""
+            resolved_from = f"git+https://{host}/{user}/{repo}#{sha}"
+        elif source == "Git":
+            resolved_from = f"git+{package.get('RemoteUrl', '')}#{package.get('RemoteSha', '')}"
+        elif source == "Bioconductor":
+            resolved_from = "registry:bioconductor"
+        elif source in ("Local", "Cellar"):
+            local = True
+        elif source == "URL":
+            resolved_from = BaseEcosystem._s(package.get("RemoteUrl"))
+        digest = package.get("Hash")
+        entries.append(
+            LockEntry(
+                name=name,
+                version=str(package.get("Version", "")),
+                # renv's hash of the package's DESCRIPTION record: what renv checks a
+                # restored package against.
+                # A value that is not an md5 is kept, and reported as malformed.
+                integrity=f"md5:{digest}" if isinstance(digest, str) and digest else None,
+                resolved_from=resolved_from,
+                local=local,
+                dependencies=RenvLock.requirements(package),
+            )
+        )
+        return resolved_from, local
 
 
 class RenvSettings:
