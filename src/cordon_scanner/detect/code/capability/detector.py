@@ -51,6 +51,7 @@ from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
 from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
+from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
@@ -388,11 +389,6 @@ class CapabilityDetector(BaseDetector):
     Three. A signature that has not named a typed parameter within three lines of
     its parenthesis is not being recognised from its first line either."""
 
-    #: Composites whose severity does not depend on where the code runs. An orchestrator starts
-    #: its agent with the checks off on purpose, from its activation code as anywhere; what makes
-    #: that an attack is the instruction it carries, which is `MALWARE.AGENT.HIJACK.001`.
-    CONTEXT_FREE: ClassVar[frozenset[str]] = frozenset({"SUSPECT.AGENT.UNATTENDED.001"})
-
     """What a CI check asks beside, when it is a courtesy and not an evasion.
 
     `if (process.env.DO_NOT_TRACK === '1' || process.env.CI) return;` before a licence ping, and
@@ -419,9 +415,6 @@ class CapabilityDetector(BaseDetector):
     and `ELECTRON_RUN_AS_NODE` is vscode-languageclient starting its server. Each is bundled into
     thousands of extensions, and 6 of 8 benign ones blocked as credential theft were these (review
     98). The environment dumped whole, or sent anywhere, still matches."""
-
-    PERSIST_RULE = "MALWARE.INSTALL.PERSIST.001"
-    CALLBACK_RULE = "MALWARE.EXFIL.INSTALL_CALLBACK.001"
 
     """A write, or the command that installs a unit, close to where persistence is named."""
 
@@ -465,22 +458,8 @@ class CapabilityDetector(BaseDetector):
     The fifth time in this release a ceiling meant for noise was found holding
     malware below the line, and the second time for this particular ceiling."""
 
-    EXFIL_RULES = frozenset({"SUSPECT.EXFIL.001", "MALWARE.EXFIL.001"})
-
     """Callees that run a function they are handed, without anybody asking again."""
 
-    ON_REQUEST_RULES = frozenset(
-        {
-            "SUSPECT.DROPPER.001",
-            "SUSPECT.DROPPER.REMOTE_CODE.001",
-            "SUSPECT.DYNAMIC_DISPATCH.001",
-            "SUSPECT.EXFIL.BEACON.001",
-            "SUSPECT.ANTI_ANALYSIS.001",
-            "SUSPECT.DECODE_EXEC.001",
-            "SUSPECT.MODEL.LOADED_ON_IMPORT.001",
-            "SUSPECT.PERSIST.001",
-        }
-    )
     """Composites lowered when nothing on the load path runs them. A dynamic import in the method
     of a YAML library that resolves `!!python/name:` tags is that library's feature, and a
     function that checks for GitHub Actions before minting its OIDC token is doing its job; the
@@ -488,29 +467,6 @@ class CapabilityDetector(BaseDetector):
     """Dunders that run when a class is defined, subclassed or parameterised, not when it is
     instantiated. `__new__` is here because a metaclass's `__new__` runs at class definition."""
 
-    DROPPER_RULE = "SUSPECT.DROPPER.001"
-    #: The flow dropper (a response reaching execute/process, including written to disk then run --
-    #: review 98 round 2 B). Lowered like DROPPER_RULE when the download is a verified own release,
-    #: so a sha256-checked self-update stays below the gate; kept out of VERIFIABLE_DROPPERS so the
-    #: no-download-run escalations do not apply to it.
-    REMOTE_CODE_RULE = "SUSPECT.DROPPER.REMOTE_CODE.001"
-    #: Malware grade -> its suspect grade, which a verified download leaves reporting (review 98 #28).
-    WITHDRAWN_WHEN_VERIFIED: ClassVar[dict[str, str]] = {
-        "MALWARE.DROPPER.001": DROPPER_RULE,
-        "MALWARE.INSTALL.REMOTE_CODE.001": REMOTE_CODE_RULE,
-    }
-
-    #: Rules whose act is destroying data. They keep their severity in build tooling: a recipe
-    #: runs unattended on every machine that builds, so "written to be read" does not hold.
-    DESTRUCTION_RULES: ClassVar[frozenset[str]] = frozenset(
-        {"SUSPECT.DESTROY.HOME_OR_ROOT.001", "MALWARE.PROTESTWARE.001"}
-    )
-
-    BEACON_RULE: ClassVar[str] = "MALWARE.EXFIL.BEACON.001"
-    #: The two grades of the same dropper pattern, the only findings `VerifiedDownload` may lower.
-    VERIFIABLE_DROPPERS: ClassVar[frozenset[str]] = frozenset(
-        {"MALWARE.DROPPER.001", "SUSPECT.DROPPER.001"}
-    )
     VERIFIED_DOWNLOAD_REASON = (
         "a checksum-verified download of the package's own release; whoever owns the release "
         "also owns the checksum, so the binary itself is not vouched for"
@@ -522,7 +478,7 @@ class CapabilityDetector(BaseDetector):
         ctx: ScanContext,
         path: str,
         hits: list[CapabilityHit],
-        rule: str = DROPPER_RULE,
+        rule: str = CompositeRuleIds.DROPPER_RULE,
     ) -> bool:
         """Whether the suspect grade (`SUSPECT.DROPPER.001`) fires on the window its malware grade
         matched: its `unless` excludes test paths, and withdrawing the one where the other does
@@ -578,7 +534,6 @@ class CapabilityDetector(BaseDetector):
         re.VERBOSE | re.IGNORECASE,
     )
 
-    CREDENTIAL_STORE_RULE = "SUSPECT.EXFIL.CREDENTIAL_STORE.001"
     """The one composite the authentication-filename ceiling applies to."""
 
     """Egress to an out-of-band interaction service. See `intel.hosts.INTERACTION_HOSTS`."""
@@ -646,12 +601,12 @@ class CapabilityDetector(BaseDetector):
 
             rule_hits = (
                 [h for h in hits if not LegitimateUse.a_setting(unit.content, h)]
-                if compiled.rule.id in self.SETTINGS_ARE_NOT_LOOT
+                if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
                 else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
-                if compiled.rule.id in self.VERIFIABLE_DROPPERS
+                if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS
                 else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
             )
-            if compiled.rule.id in self.CONTEXT_FREE:
+            if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
                 window = evaluator.satisfying_window(
                     compiled, rule_hits, unit.path, False, False, False, frozenset()
                 )
@@ -675,7 +630,7 @@ class CapabilityDetector(BaseDetector):
                 )
                 or (
                     not in_hook
-                    and compiled.rule.id == self.CREDENTIAL_STORE_RULE
+                    and compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
                     and KeychainOwner.excuses(unit.content, window, hits)
                 )
             ):
@@ -696,10 +651,6 @@ class CapabilityDetector(BaseDetector):
             )
             if finding is not None:
                 yield finding
-
-    #: Composites whose source half is what a file sends: a setting it reads to configure itself is
-    #: not that. See `LegitimateUse.a_setting`.
-    SETTINGS_ARE_NOT_LOOT: ClassVar[frozenset[str]] = frozenset({"SUSPECT.EXFIL.DROP_POINT.001"})
 
     """One environment variable read by its literal name: `os.getenv("TELEGRAM_BOT_TOKEN")`,
     `process.env.DINGTALK_TOKEN`, `std::env::var("SMTP_SERVER")`. A name computed at run time
@@ -880,9 +831,9 @@ class CapabilityDetector(BaseDetector):
         # before anything runs (review 98, FP-2: `@ohos-ports/larksuite-cli`). Read over the whole
         # file's hits, not this window's: a credential read anywhere in it keeps the dropper.
         verified = (
-            rule.id in self.VERIFIABLE_DROPPERS
-            or rule.id == self.REMOTE_CODE_RULE
-            or rule.id in self.WITHDRAWN_WHEN_VERIFIED
+            rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS
+            or rule.id == CompositeRuleIds.REMOTE_CODE_RULE
+            or rule.id in CompositeRuleIds.WITHDRAWN_WHEN_VERIFIED
         ) and LegitimateUse.verified_release_download(
             unit, ctx, hits if file_hits is None else file_hits
         )
@@ -895,7 +846,7 @@ class CapabilityDetector(BaseDetector):
         in_hook = ctx.in_install_hook(content.path)
         if (
             in_hook
-            and rule.id == self.DROPPER_RULE
+            and rule.id == CompositeRuleIds.DROPPER_RULE
             and SourcePaths.is_editor_extension(content.path)
             and not LoadPath.runs_a_downloaded_file(hits)
         ):
@@ -903,16 +854,19 @@ class CapabilityDetector(BaseDetector):
             # reported as one; a download it then starts is how extensions fetch their own tools,
             # and is not escalated as an install-time dropper. See `MALWARE.DROPPER.001` above.
             in_hook = False
-        if rule.id in self.CONTEXT_FREE:
+        if rule.id in CompositeRuleIds.CONTEXT_FREE:
             in_hook = False
-        no_download_runs = rule.id in self.VERIFIABLE_DROPPERS and (
+        no_download_runs = rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS and (
             in_hook and LegitimateUse.tool_runs_nothing_downloaded(unit, ctx)
         )
-        if no_download_runs and rule.id == self.DROPPER_RULE:
+        if no_download_runs and rule.id == CompositeRuleIds.DROPPER_RULE:
             # An agent's tool that never runs what it fetched is not escalated as an install-time
             # dropper; `SUSPECT.DROPPER.001` reports the pair below the gate.
             in_hook = False
-        if verified and rule.id in (self.DROPPER_RULE, self.REMOTE_CODE_RULE):
+        if verified and rule.id in (
+            CompositeRuleIds.DROPPER_RULE,
+            CompositeRuleIds.REMOTE_CODE_RULE,
+        ):
             # Not escalated as an install-time dropper either: the hook escalation would put the
             # span straight back at CRITICAL. The ceiling below says why it is still reported.
             in_hook = False
@@ -963,13 +917,14 @@ class CapabilityDetector(BaseDetector):
         # being said is "treat the host as compromised and report the package to the
         # registry", which is advice about a package somebody installed and means
         # nothing to the owner of a `.buildkite` script.
-        if compiled.rule.id in self.EXFIL_RULES and LegitimateUse.credential_for_its_own_service(
-            content
+        if (
+            compiled.rule.id in CompositeRuleIds.EXFIL_RULES
+            and LegitimateUse.credential_for_its_own_service(content)
         ):
             return None
 
         if (
-            compiled.rule.id == self.BEACON_RULE
+            compiled.rule.id == CompositeRuleIds.BEACON_RULE
             and content.path in ctx.agent_run_paths
             and content.path not in ctx.consumer_install_paths
             and not IntentSignals.identity_in_what_is_sent(
@@ -1004,9 +959,13 @@ class CapabilityDetector(BaseDetector):
 
         if (
             verified
-            and compiled.rule.id in self.WITHDRAWN_WHEN_VERIFIED
+            and compiled.rule.id in CompositeRuleIds.WITHDRAWN_WHEN_VERIFIED
             and self._suspect_dropper_reports(
-                evaluator, ctx, content.path, hits, self.WITHDRAWN_WHEN_VERIFIED[compiled.rule.id]
+                evaluator,
+                ctx,
+                content.path,
+                hits,
+                CompositeRuleIds.WITHDRAWN_WHEN_VERIFIED[compiled.rule.id],
             )
         ):
             # Withdrawn for the reason above, and only where `SUSPECT.DROPPER.001` reports the same
@@ -1027,7 +986,7 @@ class CapabilityDetector(BaseDetector):
 
         if (
             in_hook
-            and rule.id == self.PERSIST_RULE
+            and rule.id == CompositeRuleIds.PERSIST_RULE
             and LegitimateUse.is_formula(content)
             and not IntentSignals.writes_near(content, hits)
             and not IntentSignals.writes_near(content, hits, writes=IntentSignals.RUBY_WRITE)
@@ -1044,9 +1003,11 @@ class CapabilityDetector(BaseDetector):
             # text names `~/.zshrc` and its secret redactor names `hooks.slack.com`, megabytes of
             # bundle away from any write or request (review 98). In an extension the persistence
             # has to be written and the drop point reached; `SUSPECT.*` still reports the span.
-            if rule.id == self.PERSIST_RULE and not IntentSignals.writes_near(content, hits):
+            if rule.id == CompositeRuleIds.PERSIST_RULE and not IntentSignals.writes_near(
+                content, hits
+            ):
                 return None
-            if rule.id == self.CALLBACK_RULE and not any(
+            if rule.id == CompositeRuleIds.CALLBACK_RULE and not any(
                 # A request, not the destination's name: the drop point is itself an egress hit.
                 h.capability is Capability.EGRESS and not h.rule_id.startswith("INTEL.")
                 for h in hits
@@ -1175,7 +1136,7 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "code a person or a program calls, with no destination of concern"
                 ceiling = Severity.LOW
             elif (
-                compiled.rule.id == self.CREDENTIAL_STORE_RULE
+                compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
                 and SampleKinds.names_authentication(content.path)
             ):
                 # A file named for authentication, reading a credential store. See
@@ -1183,7 +1144,7 @@ class CapabilityDetector(BaseDetector):
                 # its premise is a store "this component does not own".
                 ceilinged = "a file whose name says it handles authentication"
             elif (
-                compiled.rule.id == self.CREDENTIAL_STORE_RULE
+                compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
                 and not in_hook
                 and not ctx.in_consumer_install(content.path)
                 and not LoadPath.agent_run(content, ctx)
@@ -1251,7 +1212,7 @@ class CapabilityDetector(BaseDetector):
                 and not LegitimateUse.shipped_output(content.path, ctx)
                 # Nor when it wipes the machine: a build script that deletes `$HOME` or `/`
                 # runs on every machine that builds, exactly as a piped download does.
-                and compiled.rule.id not in CapabilityDetector.DESTRUCTION_RULES
+                and compiled.rule.id not in CompositeRuleIds.DESTRUCTION_RULES
                 # A skill's `scripts/` folder is not the project's tooling: the agent runs
                 # what is in it whenever the skill is invoked.
                 and not LoadPath.skill_script(content.path, ctx)
@@ -1265,7 +1226,7 @@ class CapabilityDetector(BaseDetector):
                 # came out at MEDIUM.
                 ceilinged = "the project's own build and release tooling"
             elif (
-                compiled.rule.id == self.DROPPER_RULE
+                compiled.rule.id == CompositeRuleIds.DROPPER_RULE
                 and SourcePaths.is_editor_extension(content.path)
                 and not LoadPath.runs_a_downloaded_file(hits)
             ):
@@ -1276,14 +1237,14 @@ class CapabilityDetector(BaseDetector):
                 # shape the malicious extensions use, `.bat` droppers included.
                 ceilinged = "an editor extension fetching and starting its own tools"
                 ceiling = Severity.MEDIUM
-            elif compiled.rule.id == self.DROPPER_RULE and no_download_runs:
+            elif compiled.rule.id == CompositeRuleIds.DROPPER_RULE and no_download_runs:
                 # An agent's tool that never runs what it fetched (`detect/download_flow.py`):
                 # reported, below the gate. Running, evaluating or making executable anything
                 # downloaded is not lowered.
                 ceilinged = "an agent's tool that never runs what it downloads"
                 ceiling = Severity.MEDIUM
             elif (
-                compiled.rule.id == self.REMOTE_CODE_RULE
+                compiled.rule.id == CompositeRuleIds.REMOTE_CODE_RULE
                 and content.path in ctx.import_entry_paths
                 and content.path not in ctx.library_entry_paths | ctx.library_closure_paths
                 and not in_hook
@@ -1337,11 +1298,14 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "minified output"
             elif PublishReach.unreached(compiled.rule.id, content.path, ctx):
                 ceilinged, ceiling = PublishReach.REASON, Severity.MEDIUM
-            elif verified and compiled.rule.id in (self.DROPPER_RULE, self.REMOTE_CODE_RULE):
+            elif verified and compiled.rule.id in (
+                CompositeRuleIds.DROPPER_RULE,
+                CompositeRuleIds.REMOTE_CODE_RULE,
+            ):
                 ceilinged = CapabilityDetector.VERIFIED_DOWNLOAD_REASON
                 ceiling = Severity.MEDIUM
             elif (
-                compiled.rule.id in self.ON_REQUEST_RULES
+                compiled.rule.id in CompositeRuleIds.ON_REQUEST_RULES
                 and not in_hook
                 and not ctx.in_ci_hook(content.path)
                 # A shell script that decodes on the way to running is the encoded-dropper shape
@@ -1369,7 +1333,7 @@ class CapabilityDetector(BaseDetector):
                 deferred = LoadPath.run_on_request(content, unit.language, hits, matched, ctx)
                 if (
                     deferred
-                    and compiled.rule.id != self.DROPPER_RULE
+                    and compiled.rule.id != CompositeRuleIds.DROPPER_RULE
                     and SourcePaths.is_editor_extension(content.path)
                 ):
                     # An extension's `activate` is called by the editor, so "runs only when called"
@@ -1388,8 +1352,9 @@ class CapabilityDetector(BaseDetector):
                 if deferred:
                     ceilinged = deferred
                     ceiling = Severity.MEDIUM
-                elif compiled.rule.id == self.DROPPER_RULE and LegitimateUse.official_installs_only(
-                    content, hits
+                elif (
+                    compiled.rule.id == CompositeRuleIds.DROPPER_RULE
+                    and LegitimateUse.official_installs_only(content, hits)
                 ):
                     ceilinged = "the tool's own official installer"
                     ceiling = Severity.MEDIUM
