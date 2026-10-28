@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from cordon_scanner.detect.code.secretflow import JavaScriptCommandFlow, JavaScriptLeak
 from cordon_scanner.foundation.models import Severity
-from unit.foundation.test_npm_work_half_classes import Npm
+from unit.detect.code.capability.test_npm_work_half_classes import Npm
 
 CP = "child_" + "process"
 EXEC_SYNC = "ex" + "ecSync"

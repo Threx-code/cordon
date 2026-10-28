@@ -4,7 +4,7 @@ did, and never covers a file an install hook runs or a consumer's `require()` lo
 
 from __future__ import annotations
 
-from unit.foundation.test_npm_work_half_classes import Npm
+from unit.detect.code.capability.test_npm_work_half_classes import Npm
 
 CP = "child_" + "process"
 #: Fetches a value, decodes it and runs it: `SUSPECT.DROPPER.001`, whose `unless` exempts

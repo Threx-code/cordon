@@ -29,7 +29,7 @@ from cordon_scanner.decide.intent import (
 from cordon_scanner.decide.verdict import VerdictFeatures
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Category, Severity
-from unit.foundation.test_npm_work_half_classes import Npm
+from unit.detect.code.capability.test_npm_work_half_classes import Npm
 
 CP = "child_" + "process"
 

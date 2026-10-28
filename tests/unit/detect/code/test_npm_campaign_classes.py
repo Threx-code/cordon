@@ -8,7 +8,7 @@ and each comes with the ordinary code of the same shape that must stay quiet.
 from __future__ import annotations
 
 from cordon_scanner.foundation.models import Severity
-from unit.foundation.test_npm_work_half_classes import Npm
+from unit.detect.code.capability.test_npm_work_half_classes import Npm
 
 PLANT = (
     "const fs = require('fs');\nconst path = require('path');\n"
