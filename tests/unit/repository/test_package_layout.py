@@ -469,6 +469,27 @@ class TestStructure:
         assert not sorted(now - frozen), "use PackagePaths or support.ROOT"
         assert not sorted(frozen - now), "these are gone: remove them from frozen"
 
+    #: What may not change without its owner's review: the rules here and what the guard pins.
+    OWNED: ClassVar[tuple[str, ...]] = (
+        "/.cordon-guard.sha256",
+        "/.github/CODEOWNERS",
+        "/.github/workflows/",
+        "/pyproject.toml",
+        "/tests/unit/package_layout.json",
+        "/tests/unit/repository/test_package_layout.py",
+    )
+
+    def test_the_layout_rules_have_an_owner(self) -> None:
+        lines = (REPO / ".github" / "CODEOWNERS").read_text(encoding="utf-8").splitlines()
+        owned = {
+            parts[0]: parts[1:]
+            for parts in (
+                line.split() for line in lines if line.strip() and not line.startswith("#")
+            )
+        }
+        unowned = [path for path in self.OWNED if not owned.get(path)]
+        assert not unowned, f"name an owner for these in .github/CODEOWNERS: {unowned}"
+
     def test_the_repository_root_holds_only_what_it_should(self) -> None:
         if not (REPO / ".git").exists():
             pytest.skip("not a git checkout")
