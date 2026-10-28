@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
+# The release and data-build scripts are source: tracked, and linted like every other script.
+!/scripts/build/
 dist/
 .venv/
 venv/

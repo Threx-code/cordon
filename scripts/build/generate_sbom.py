@@ -31,9 +31,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-ROOT = next((p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None) or sys.exit(
-    "run this from inside the Cordon repository"
-)
+ROOT = next(
+    (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
+) or sys.exit("run this from inside the Cordon repository")
 
 
 class ReleaseSbom:

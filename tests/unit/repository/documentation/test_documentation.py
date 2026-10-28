@@ -627,6 +627,37 @@ class TestDocumentationIsPinnedToThisVersion:
         assert result.returncode == 0, result.stderr
         assert re.search(r"/(?:blob|tree)/main/", (root / "README.md").read_text("utf-8")) is None
 
+    def test_the_readme_s_images_are_pinned_to_the_tag_at_release(self) -> None:
+        """In the repository the README names its images by relative path, so they render on every
+        branch and pull request; PyPI resolves no relative path, so the release pins each to the raw
+        file at its tag, as it does a raw URL naming a branch. An image from elsewhere is left be."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "pin_doc_links", REPO / "scripts" / "release" / "pin_doc_links.py"
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        raw = "https://raw.githubusercontent.com/Threx-code/cordon"
+        text = (
+            '<img src="docs/assets/readme/hero.svg">'
+            f'<img src="{raw}/release/0.7.0/docs/assets/terminal.svg">'
+            '<img src="https://img.shields.io/badge/rules-1-blue">'
+        )
+        pinned = module.DocLinks.pinned(text, "v9.9.9", images=True)
+        assert pinned == (
+            f'<img src="{raw}/v9.9.9/docs/assets/readme/hero.svg">'
+            f'<img src="{raw}/v9.9.9/docs/assets/terminal.svg">'
+            '<img src="https://img.shields.io/badge/rules-1-blue">'
+        )
+        assert module.DocLinks.pinned(text, "v9.9.9", images=False) == text
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        for path in re.findall(r'src="(docs/assets/[^"]+)"', readme):
+            assert (REPO / path).is_file(), (
+                f"the README shows {path}, which is not in the repository"
+            )
+
     def test_every_tutorial_says_which_version_it_is_for(self) -> None:
 
         from cordon_scanner.version import __version__

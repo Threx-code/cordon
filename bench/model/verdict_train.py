@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from cordon_scanner.decide.verdict import Verdict, VerdictFeatures, VerdictModel
-from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 from cordon_scanner.foundation.taxonomy import Taxonomy
 
