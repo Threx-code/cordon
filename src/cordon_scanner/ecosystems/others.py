@@ -33,8 +33,8 @@ from cordon_scanner.ecosystems.packages.composer import ComposerEcosystem
 from cordon_scanner.ecosystems.packages.conan import ConanEcosystem
 from cordon_scanner.ecosystems.packages.conda import CondaEcosystem
 from cordon_scanner.ecosystems.packages.cran import CranEcosystem
-from cordon_scanner.ecosystems.packages.gradle import GradleEcosystem
 from cordon_scanner.ecosystems.packages.hex import HexEcosystem
+from cordon_scanner.ecosystems.packages.jvm.gradle import GradleEcosystem
 from cordon_scanner.ecosystems.packages.nuget import NuGetEcosystem
 from cordon_scanner.ecosystems.packages.pub import PubEcosystem
 from cordon_scanner.ecosystems.packages.rubygems import RubyGemsEcosystem
