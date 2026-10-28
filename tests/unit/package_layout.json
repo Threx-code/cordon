@@ -218,7 +218,7 @@
   "ecosystems/packages/javascript/yarn": "ecosystems/packages/javascript/yarn",
   "ecosystems/packages/javascript/pnpm": "ecosystems/packages/javascript/pnpm",
   "ecosystems/packages/nuget": "ecosystems/packages/nuget",
-  "ecosystems/packages/opam": "ecosystems/packages/opam",
+  "ecosystems/packages/ocaml/opam": "ecosystems/packages/ocaml/opam",
   "ecosystems/packages/pub": "ecosystems/packages/pub",
   "ecosystems/packages/pypi": "ecosystems/packages/pypi",
   "ecosystems/packages/python/lockfiles": "ecosystems/packages/python/lockfiles",
@@ -817,7 +817,7 @@
    "detect/supply/manifest": 2749,
    "detect/supply/registry": 1310,
    "ecosystems/packages/jvm/gradle": 1270,
-   "ecosystems/packages/opam": 1004,
+   "ecosystems/packages/ocaml/opam": 1004,
    "images/oci": 1074,
    "rules/loader": 1642,
    "sources/archive": 1062
