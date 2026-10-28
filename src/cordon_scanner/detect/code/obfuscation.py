@@ -195,6 +195,9 @@ RTL_RESOURCE_MIN_LETTERS = 200
 class ObfuscationText:
     """Measurements of text that tell obfuscation from ordinary content."""
 
+    ASCII_LETTERS: ClassVar[bytes] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    NON_ASCII: ClassVar[re.Pattern[str]] = re.compile("[^\x00-\x7f]+")
+
     @staticmethod
     def _is_rtl_resource(raw: bytes) -> bool:
         """Whether this file is right-to-left text rather than code containing some.
@@ -225,16 +228,23 @@ class ObfuscationText:
         right-to-left OVERRIDE in a minified JavaScript bundle, which is 0.01%
         right-to-left and stays a high-severity finding.
         """
-        text = raw.decode("utf-8", "replace")
-        letters = [character for character in text if character.isalpha()]
-        if len(letters) < RTL_RESOURCE_MIN_LETTERS:
+        # Counted without visiting each character in Python: a bundle is megabytes of ASCII,
+        # and the per-character loop this replaces was 40% of the time on one 8.8MB page.
+        # The ASCII letters are counted on the bytes -- the decoder never folds an ASCII
+        # byte into a replaced sequence, so the count is the decoded text's -- and only the
+        # characters above ASCII, where every right-to-left range lies, are looked at one
+        # by one.
+        letters = len(raw) - len(raw.translate(None, ObfuscationText.ASCII_LETTERS))
+        right_to_left = 0
+        for run in ObfuscationText.NON_ASCII.findall(raw.decode("utf-8", "replace")):
+            for character in run:
+                if character.isalpha():
+                    letters += 1
+                    code = ord(character)
+                    right_to_left += any(low <= code <= high for low, high in RTL_RANGES)
+        if letters < RTL_RESOURCE_MIN_LETTERS:
             return False
-        right_to_left = sum(
-            1
-            for character in letters
-            if any(low <= ord(character) <= high for low, high in RTL_RANGES)
-        )
-        return right_to_left / len(letters) >= RTL_RESOURCE_SHARE
+        return right_to_left / letters >= RTL_RESOURCE_SHARE
 
     @staticmethod
     def _orders_rtl_text(raw: bytes, start: int, end: int) -> bool:

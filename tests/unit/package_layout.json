@@ -592,6 +592,7 @@
   "test_reporters.py": "report",
   "test_review98_classes.py": "detect/code",
   "test_review_defects.py": "detect/secrets",
+  "test_rtl_share.py": "detect/code",
   "test_ruby_php_behaviour.py": "ecosystems",
   "test_rubysec.py": "intel/advisories",
   "test_rule_claims.py": "rules",
