@@ -16,7 +16,8 @@ import pytest
 
 from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner, TimedOut
 from cordon_scanner.mcp.server import LEGACY, MODERN, Server
-from cordon_scanner.mcp.tools.catalogue import TOOLS, Args, Outcome, Settings, Tool, ToolError
+from cordon_scanner.mcp.tools.base import Args, Outcome, Settings, Tool, ToolError
+from cordon_scanner.mcp.tools.catalogue import TOOLS
 from cordon_scanner.mcp.workspace import Workspace
 
 MODERN_META = {
@@ -597,7 +598,7 @@ class TestModelPassThrough:
 
     def test_scans_carry_the_model_and_no_offline_switch(self, tmp_path: Path) -> None:
         from cordon_scanner.mcp.runner import Run
-        from cordon_scanner.mcp.tools.catalogue import Scans
+        from cordon_scanner.mcp.tools.base import Scans
 
         seen: list[list[str]] = []
 

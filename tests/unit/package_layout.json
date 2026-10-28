@@ -394,6 +394,7 @@
   "mcp/runner": "mcp/runner",
   "mcp/server": "mcp/server",
   "mcp/tools/catalogue": "mcp/tools/catalogue",
+  "mcp/tools/base": "mcp/tools/base",
   "mcp/untrusted": "mcp/untrusted",
   "mcp/warm": "mcp/warm",
   "mcp/workspace": "mcp/workspace",
@@ -806,7 +807,7 @@
    "ecosystems/packages/opam": 1004,
    "ecosystems/packages/pypi": 1319,
    "images/oci": 1074,
-   "mcp/tools/catalogue": 1802,
+   "mcp/tools/catalogue": 1510,
    "rules/loader": 1642,
    "sources/archive": 1062
   },
