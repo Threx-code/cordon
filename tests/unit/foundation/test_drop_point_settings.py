@@ -1,6 +1,6 @@
 """What a request to a drop point carries: a setting the file configures itself with is not loot.
 
-`CapabilityDetector._a_setting`. Hosts are the real drop points the rule exists for; the fixtures
+`LegitimateUse.a_setting`. Hosts are the real drop points the rule exists for; the fixtures
 send nothing anywhere -- they are scanned, never run.
 """
 
@@ -70,7 +70,7 @@ class StoreKit:
 
 
 class TestAStoreReadByItsOwnClient:
-    """`CapabilityDetector._store_used_by_its_own_client`."""
+    """`LegitimateUse.store_used_by_its_own_client`."""
 
     SSH_DEPLOY = (
         "import os, paramiko\n"
