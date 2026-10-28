@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.ecosystems.base import Ecosystem
     from cordon_scanner.engine.engine import Engine
+    from cordon_scanner.images.oci import ImageInventory
 
 
 class Dependencies:
@@ -126,6 +127,11 @@ class Dependencies:
         synced = inventory.release is not None and DistroDatabase.covers(
             inventory.release.osv_ecosystem
         )
+        self.offline_image(inventory, synced, acc)
+        return inventory
+
+    def offline_image(self, inventory: ImageInventory, synced: bool, acc: Accumulator) -> None:
+        """Image packages read offline without a synced database: the advisory check is incomplete."""
         if inventory.packages and self.config.offline and not synced:
             acc.append(
                 OperationalFinding.build(
@@ -144,7 +150,6 @@ class Dependencies:
                     ),
                 )
             )
-        return inventory
 
     def sbom(self, units: list[FileUnit], acc: Accumulator) -> tuple[Dependency, ...]:
         """The components of a CycloneDX or SPDX document, validated and attributed to it."""
@@ -328,11 +333,7 @@ class Dependencies:
                 continue
             if graph.parse_error or not graph.entries:
                 continue
-            project = unit.path.rpartition("/")[0]
-            # `.mvn/checksums/`, `gradle/verification-metadata.xml`, `gradle/dependency-locks/`:
-            # files that belong to the project directories above them.
-            for _ in range(max(0, min(graph.owner_levels, 8))):
-                project = project.rpartition("/")[0]
+            project = Dependencies.lockfile_project(unit, graph)
             if graph.fragment:
                 pieces = fragments.setdefault((project, ecosystem_id), (ecosystem, []))[1]
                 pieces.extend((entry, unit.path) for entry in graph.entries)
@@ -375,6 +376,16 @@ class Dependencies:
 
         resolved = self.deduplicate(collected)
         return tuple(sorted(resolved, key=lambda d: (d.purl, d.project or "")))
+
+    @staticmethod
+    def lockfile_project(unit: FileUnit, graph: Any) -> str:
+        """The project a lockfile belongs to: its directory, raised by the levels the lockfile says it sits below its owner."""
+        project = unit.path.rpartition("/")[0]
+        # `.mvn/checksums/`, `gradle/verification-metadata.xml`, `gradle/dependency-locks/`:
+        # files that belong to the project directories above them.
+        for _ in range(max(0, min(graph.owner_levels, 8))):
+            project = project.rpartition("/")[0]
+        return project
 
     @staticmethod
     def parse_lockfile(

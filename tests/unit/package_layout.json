@@ -966,7 +966,7 @@
    "ecosystems/packages/rubygems:RubyGemsEcosystem.parse_in_tree": 118,
    "ecosystems/packages/swift:SwiftManifest.parse": 127,
    "ecosystems/packages/vcpkg:VcpkgManifest.parse": 99,
-   "engine/engine:Engine.inventory": 139,
+   "engine/engine:Engine.inventory": 104,
    "engine/parallel:ParallelScanner._initialise": 107,
    "engine/parallel:ParallelScanner._inspect_batch": 117,
    "engine/parallel:ParallelScanner.run": 101,
@@ -1004,14 +1004,7 @@
    "rules/loader:RuleLoader._parse_rule": 138,
    "sources/archive:ArchiveReader._extract_tar": 162,
    "sources/archive:ArchiveReader._extract_zip": 94,
-   "engine/pipeline/hooks:Hooks.hook_script_paths": 91,
-   "engine/pipeline/archives:ArchiveMembers.rejected": 141,
-   "engine/pipeline/ceilings:Ceilings.author_time_ceiling": 97,
-   "engine/pipeline/ceilings:Ceilings.image_start_ceiling": 113,
-   "engine/pipeline/ceilings:Ceilings.verdict": 111,
-   "engine/pipeline/hooks:Hooks.manifest_hook_paths": 122,
-   "engine/pipeline/dependencies:Dependencies.build": 92,
-   "engine/pipeline/dependencies:Dependencies.image_inventory": 99
+   "engine/pipeline/hooks:Hooks.manifest_hook_paths": 91
   },
   "large_directories": {
    "tests/unit/foundation": 44,

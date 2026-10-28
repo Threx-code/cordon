@@ -11,6 +11,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
@@ -68,7 +69,6 @@ class Ceilings:
     ) -> tuple[list[Finding], dict[str, Any]]:
         """The package verdict over everything this scan found (`core/verdict.py`), then the
         intent layer over what the package's code does (`core/intent.py`)."""
-        from cordon_scanner.decide.intent import RULE as INTENT_RULE
         from cordon_scanner.decide.intent import Intent
         from cordon_scanner.decide.verdict import Verdict
 
@@ -87,6 +87,19 @@ class Ceilings:
             list(findings), paths_sizes, manifests, sources, profile or {}
         )
         second, line = verdict.get("registry_score"), verdict.get("registry_block")
+        Ceilings.second_opinion(second, line, graded, verdict)
+        score, block = verdict.get("score"), verdict.get("block")
+        Ceilings.score_verdict(score, block, verdict, graded)
+        area = str(verdict.get("area", ""))
+        review = Intent.review(verdict.get("package", {}), area, intent)
+        Ceilings.review_verdict(review, verdict, graded, area)
+        return graded, verdict
+
+    @staticmethod
+    def second_opinion(
+        second: Any | None, line: Any | None, graded: list[Finding], verdict: dict[str, Any]
+    ) -> None:
+        """A second model's score past the line: said beside the first."""
         if second is not None and line is not None and second >= line:
             # The second review: what the registry recorded about this release -- who published
             # it, when the name was made, what it added over the release before -- scores over its
@@ -115,7 +128,14 @@ class Ceilings:
                     detector="registry-review",
                 )
             )
-        score, block = verdict.get("score"), verdict.get("block")
+
+    @staticmethod
+    def score_verdict(
+        score: Any | None, block: Any | None, verdict: dict[str, Any], graded: list[Finding]
+    ) -> None:
+        """A package whose score reaches the block line: said, with what reached it."""
+        from cordon_scanner.decide.verdict import Verdict
+
         if score is not None and block is not None and score >= block:
             # The package over its line blocks as a package, whether or not one finding would
             # alone: the combination is the evidence. MalSkillBench's malicious skills were
@@ -143,8 +163,15 @@ class Ceilings:
                     detector="verdict",
                 )
             )
-        area = str(verdict.get("area", ""))
-        review = Intent.review(verdict.get("package", {}), area, intent)
+
+    @staticmethod
+    def review_verdict(
+        review: dict[str, Any] | None, verdict: dict[str, Any], graded: list[Finding], area: str
+    ) -> None:
+        """A package held for review: said, with the reason."""
+        from cordon_scanner.decide.intent import RULE as INTENT_RULE
+        from cordon_scanner.decide.intent import Intent
+
         if review is not None:
             # After the verdict, so nothing here is held as a warning by it, and nothing it adds
             # lowers or lifts a finding the rules made (E4). "unknown" -- a running file not
@@ -170,7 +197,6 @@ class Ceilings:
                         detector="intent",
                     )
                 )
-        return graded, verdict
 
     @staticmethod
     def hardening_tier(findings: list[Finding], policy: Policy) -> list[Finding]:
@@ -307,8 +333,6 @@ class Ceilings:
         """A tree an agent host or an editor starts: a skill (`SKILL.md`), an MCP server (its code
         runs on the agent's tool calls, `agent_run_paths`, or its manifest declares an MCP SDK),
         or an editor extension."""
-        from cordon_scanner.analysis.shared.source_paths import SourcePaths
-
         if ctx.agent_run_paths:
             return True
         for unit in units:
@@ -427,8 +451,6 @@ class Ceilings:
         call in a download that is then run (review 98). The dropper finding is raised to HIGH;
         a dropper in a test, a document or generated output keeps its ceiling.
         """
-        from cordon_scanner.analysis.shared.source_paths import SourcePaths
-
         squat = any(
             f.rule_id == "SUSPECT.PACKAGE.NAME_RISK.001"
             and "one slip from the popular" in f.message
@@ -486,8 +508,6 @@ class Ceilings:
         blocked by a dropper alone, against 0 of 44 malware samples). A conda link script runs at
         install and keeps its grade.
         """
-        from cordon_scanner.analysis.shared.source_paths import SourcePaths
-
         compiled_is_inert = distribution in ("pypi", "npm")
         make_is_inert = distribution not in MAKE_AT_INSTALL
 
@@ -506,13 +526,7 @@ class Ceilings:
                 or f"/{member}".find("/.github/") >= 0
                 or (name in AUTHOR_TIME_FILENAMES and not makefile)
                 or (makefile and make_is_inert)
-                or container(name)
-            )
-
-        def container(name: str) -> bool:
-            lower = name.lower()
-            return lower.startswith(("dockerfile", "containerfile")) or lower.endswith(
-                (".dockerfile", ".containerfile")
+                or Ceilings.is_container_file(name)
             )
 
         named: dict[str, bool] = {}
@@ -556,6 +570,13 @@ class Ceilings:
             out.append(finding)
         return out
 
+    @staticmethod
+    def is_container_file(name: str) -> bool:
+        lower = name.lower()
+        return lower.startswith(("dockerfile", "containerfile")) or lower.endswith(
+            (".dockerfile", ".containerfile")
+        )
+
     #: Form findings the recovered text repeats, because it keeps the obfuscator's variable names.
     RECOVERED_FORM: ClassVar[frozenset[str]] = frozenset(
         {"SUSPECT.OBFUSCATION.PACKED.001", "SUSPECT.OBFUSCATION.LONGLINE.001"}
@@ -595,26 +616,19 @@ class Ceilings:
         (readable by anyone who pulls the image) and agent findings keep their grade, and an
         image whose configuration cannot be read keeps every grade.
         """
-        from cordon_scanner.foundation.taxonomy import Taxonomy, ThreatDomain
 
-        def member(path: str) -> str:
-            return path.split("!", 1)[1] if "!" in path else path
-
-        history = next((u for u in units if member(u.path) == "image-config/history.txt"), None)
+        history = next(
+            (u for u in units if Ceilings.image_member(u.path) == "image-config/history.txt"), None
+        )
         if history is None:
             return findings
-        start: list[str] = []
-        workdir = ""
-        for line in history.content.text.splitlines():
-            head, _, rest = line.partition(" ")
-            if head in ("ENTRYPOINT", "CMD", "HEALTHCHECK"):
-                start.append(rest)
-            elif head == "WORKDIR":
-                workdir = rest.strip().strip("/")
+        start, workdir = Ceilings.image_start_commands(history)
         if not start:
             return findings
         members = {
-            member(u.path): u for u in units if not member(u.path).startswith("image-config/")
+            Ceilings.image_member(u.path): u
+            for u in units
+            if not Ceilings.image_member(u.path).startswith("image-config/")
         }
         by_name: dict[str, list[str]] = {}
         for path in members:
@@ -675,8 +689,31 @@ class Ceilings:
                 break
             auto |= frontier
         out: list[Finding] = []
+        Ceilings.unstarted_findings(findings, members, auto, out)
+        return out
+
+    @staticmethod
+    def image_start_commands(history: FileUnit) -> tuple[list[str], str]:
+        """The commands an image's history says start it, and the working directory they run in."""
+        start: list[str] = []
+        workdir = ""
+        for line in history.content.text.splitlines():
+            head, _, rest = line.partition(" ")
+            if head in ("ENTRYPOINT", "CMD", "HEALTHCHECK"):
+                start.append(rest)
+            elif head == "WORKDIR":
+                workdir = rest.strip().strip("/")
+        return start, workdir
+
+    @staticmethod
+    def unstarted_findings(
+        findings: list[Finding], members: dict[str, FileUnit], auto: set[str], out: list[Finding]
+    ) -> None:
+        """Findings in image files nothing starts, held to the ceiling."""
+        from cordon_scanner.foundation.taxonomy import Taxonomy, ThreatDomain
+
         for finding in findings:
-            path = member(finding.location.path or "")
+            path = Ceilings.image_member(finding.location.path or "")
             if (
                 finding.category is Category.SUSPICIOUS
                 and finding.severity > Severity.MEDIUM
@@ -695,7 +732,10 @@ class Ceilings:
                     "it, and is reported below the gate.",
                 )
             out.append(finding)
-        return out
+
+    @staticmethod
+    def image_member(path: str) -> str:
+        return path.split("!", 1)[1] if "!" in path else path
 
     @staticmethod
     def graded_by_what_it_does(findings: list[Finding], ctx: ScanContext) -> list[Finding]:

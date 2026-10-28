@@ -114,108 +114,22 @@ class ArchiveMembers:
             # or uploads the package's file -- an agent told "a is this skill's own file, send
             # it" -- sends the user's instead (review 98: a skill whose `audit/a` links to
             # /etc/hosts). Packaging tools copy files; a link out to a secret is placed.
-            return replace(
-                OperationalFinding.build(
-                    path=path,
-                    rule_id=ARCHIVE_LINK_TO_SECRET_RULE,
-                    message=(
-                        f"This member is a link to {target.strip()!r}, a file of the machine it "
-                        "is unpacked on rather than of the package. Whatever reads or sends the "
-                        "package's file reads or sends that one."
-                    ),
-                    remediation="Do not install or use it. Nothing legitimate ships such a link.",
-                    category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
-                ),
-                confidence=Confidence.HIGH,
-            )
+            return ArchiveMembers.link_to_secret(path, target)
         if reason == Rejection.POLYGLOT and not fixture:
-            return replace(
-                OperationalFinding.build(
-                    path=path,
-                    rule_id=ARCHIVE_POLYGLOT_RULE,
-                    message=(
-                        "This archive begins as a tarball and ends as a zip. A package manager "
-                        "reads the tarball; a tool that looks for a zip directory reads the zip. "
-                        "Both were examined here, but no packaging tool produces such a file: it is "
-                        "built so that what is inspected and what is installed differ."
-                    ),
-                    remediation="Do not install it. Find out who built it and why.",
-                    category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
-                ),
-                confidence=Confidence.HIGH,
-            )
+            return ArchiveMembers.polyglot(path)
         if reason == Rejection.PADDED and not fixture:
             # Read up to the budget, and everything read was scanned; what lies past it is behind
             # an expansion no packaging tool produces. Twelve megabytes of filler compress to
             # twenty-five kilobytes, so this is the cheapest way to put a payload out of reach.
-            return replace(
-                OperationalFinding.build(
-                    path=path,
-                    rule_id=ARCHIVE_PADDED_RULE,
-                    message=(
-                        f"This archive expands far past what its size suggests ({detail}), and the "
-                        "scan's byte budget ran out inside it. Everything read up to that point was "
-                        "examined; what follows the padding was not. Padding is how a payload is "
-                        "put beyond a scanner's reach."
-                    ),
-                    remediation=(
-                        "Do not install it until it is unpacked and examined whole, or raise "
-                        "limits.max_uncompressed_bytes and rescan."
-                    ),
-                    category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
-                ),
-                confidence=Confidence.MEDIUM,
-            )
+            return ArchiveMembers.padded(path, detail)
         if reason == Rejection.HIDDEN and not fixture:
-            return replace(
-                OperationalFinding.build(
-                    path=path,
-                    rule_id=ARCHIVE_POLYGLOT_RULE,
-                    message=(
-                        "This zip member is present in the archive's local "
-                        "headers and absent from its central directory. A streaming extractor "
-                        "installs it; a tool that reads the directory never sees it. No packaging "
-                        "tool produces such a file: it is built so that what is inspected and what "
-                        "is installed differ. Its content was also scanned, under zip-local/."
-                    ),
-                    remediation="Do not install it. Find out who built it and why.",
-                    category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
-                ),
-                confidence=Confidence.HIGH,
-            )
+            return ArchiveMembers.hidden_member(path)
         if not fixture and (
             reason in (Rejection.TRAVERSAL, Rejection.ABSOLUTE)
             or (reason == Rejection.DEPTH and not image)
         ):
             escape = reason != Rejection.DEPTH
-            return replace(
-                OperationalFinding.build(
-                    path=path,
-                    rule_id=ARCHIVE_ESCAPE_RULE if escape else ARCHIVE_NESTING_RULE,
-                    message=(
-                        "An archive member's name points outside the archive "
-                        f"({detail or reason}). Unpacked by an ordinary tool it writes wherever "
-                        "the name says; no packaging tool produces such a name."
-                        if escape
-                        else "Archives are nested past the depth this scan opens, so what is "
-                        "inside the innermost one was never examined. Ordinary packages nest "
-                        "two levels at most; depth past that keeps a payload out of reach."
-                    ),
-                    remediation=(
-                        "Do not unpack or install it."
-                        if escape
-                        else "Do not install it until the inner archives have been examined; "
-                        "raise limits.max_archive_depth to read them."
-                    ),
-                    category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
-                ),
-                confidence=Confidence.HIGH,
-            )
+            return ArchiveMembers.escape_or_nesting(path, reason, detail, escape)
         return OperationalFinding.build(
             path=path,
             rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
@@ -227,6 +141,117 @@ class ArchiveMembers:
                 "A refused member is not a clean member. Inspect it directly if "
                 "the archive is from an untrusted source."
             ),
+        )
+
+    @staticmethod
+    def link_to_secret(path: str, target: str) -> Finding:
+        """A member that is a link to a file of the machine it is unpacked on."""
+        return replace(
+            OperationalFinding.build(
+                path=path,
+                rule_id=ARCHIVE_LINK_TO_SECRET_RULE,
+                message=(
+                    f"This member is a link to {target.strip()!r}, a file of the machine it "
+                    "is unpacked on rather than of the package. Whatever reads or sends the "
+                    "package's file reads or sends that one."
+                ),
+                remediation="Do not install or use it. Nothing legitimate ships such a link.",
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            confidence=Confidence.HIGH,
+        )
+
+    @staticmethod
+    def polyglot(path: str) -> Finding:
+        """An archive that is a tarball and a zip at once."""
+        return replace(
+            OperationalFinding.build(
+                path=path,
+                rule_id=ARCHIVE_POLYGLOT_RULE,
+                message=(
+                    "This archive begins as a tarball and ends as a zip. A package manager "
+                    "reads the tarball; a tool that looks for a zip directory reads the zip. "
+                    "Both were examined here, but no packaging tool produces such a file: it is "
+                    "built so that what is inspected and what is installed differ."
+                ),
+                remediation="Do not install it. Find out who built it and why.",
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            confidence=Confidence.HIGH,
+        )
+
+    @staticmethod
+    def padded(path: str, detail: str) -> Finding:
+        """An archive padded past the scan's byte budget."""
+        return replace(
+            OperationalFinding.build(
+                path=path,
+                rule_id=ARCHIVE_PADDED_RULE,
+                message=(
+                    f"This archive expands far past what its size suggests ({detail}), and the "
+                    "scan's byte budget ran out inside it. Everything read up to that point was "
+                    "examined; what follows the padding was not. Padding is how a payload is "
+                    "put beyond a scanner's reach."
+                ),
+                remediation=(
+                    "Do not install it until it is unpacked and examined whole, or raise "
+                    "limits.max_uncompressed_bytes and rescan."
+                ),
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            confidence=Confidence.MEDIUM,
+        )
+
+    @staticmethod
+    def hidden_member(path: str) -> Finding:
+        """A zip member the central directory hides."""
+        return replace(
+            OperationalFinding.build(
+                path=path,
+                rule_id=ARCHIVE_POLYGLOT_RULE,
+                message=(
+                    "This zip member is present in the archive's local "
+                    "headers and absent from its central directory. A streaming extractor "
+                    "installs it; a tool that reads the directory never sees it. No packaging "
+                    "tool produces such a file: it is built so that what is inspected and what "
+                    "is installed differ. Its content was also scanned, under zip-local/."
+                ),
+                remediation="Do not install it. Find out who built it and why.",
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            confidence=Confidence.HIGH,
+        )
+
+    @staticmethod
+    def escape_or_nesting(path: str, reason: str, detail: str, escape: bool) -> Finding:
+        """A member whose name escapes the archive, or archives nested past the depth the scan opens."""
+        return replace(
+            OperationalFinding.build(
+                path=path,
+                rule_id=ARCHIVE_ESCAPE_RULE if escape else ARCHIVE_NESTING_RULE,
+                message=(
+                    "An archive member's name points outside the archive "
+                    f"({detail or reason}). Unpacked by an ordinary tool it writes wherever "
+                    "the name says; no packaging tool produces such a name."
+                    if escape
+                    else "Archives are nested past the depth this scan opens, so what is "
+                    "inside the innermost one was never examined. Ordinary packages nest "
+                    "two levels at most; depth past that keeps a payload out of reach."
+                ),
+                remediation=(
+                    "Do not unpack or install it."
+                    if escape
+                    else "Do not install it until the inner archives have been examined; "
+                    "raise limits.max_archive_depth to read them."
+                ),
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            confidence=Confidence.HIGH,
         )
 
 

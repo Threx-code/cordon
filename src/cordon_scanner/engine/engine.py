@@ -472,6 +472,82 @@ class Engine:
         seen_paths: set[str] = set()
         deferred: list[tuple[Path, str, str]] = []
 
+        file_count, total_bytes = self.inventory_walk(
+            traversal,
+            file_count,
+            total_bytes,
+            seen_paths,
+            languages,
+            evidence,
+            package_directories,
+            hooks,
+            manifests,
+            deferred,
+            lockfiles,
+        )
+
+        frozen = frozenset(seen_paths)
+        for real_path, rel_path, eco in deferred:
+            hooks.extend(self._manifest_hooks(real_path, rel_path, eco, frozen))
+
+        stats = tuple(
+            LanguageStat(
+                language=language,
+                files=files,
+                bytes=size,
+                share=(size / total_bytes) if total_bytes else 0.0,
+                evidence=tuple(sorted(evidence.get(language, ()))),
+            )
+            # Sorted by size then name: byte-weighted ranking reflects what the
+            # repository actually is better than file count, which over-weights
+            # many small config files. The name breaks ties so the order is
+            # deterministic.
+            for language, (files, size) in sorted(
+                languages.items(), key=lambda kv: (-kv[1][1], kv[0])
+            )
+        )
+
+        hooks = [hook for hook in hooks if Hooks.hook_executes(hook, package_directories)]
+
+        if acc is not None and walker.stats.limit_hit:
+            acc.complete = False
+
+        # A project is a subtree with its own manifest. Modelling a monorepo as
+        # N projects is what keeps detector selection correct: without it, a
+        # polyglot tree gets the union of every rule applied to every file.
+        projects: list[Project] = []
+        Engine.manifest_projects(manifests, projects, lockfiles)
+
+        is_git, revision, remote, at_repository_root = TreeFacts.provenance(root)
+        return Repository(
+            root=str(root),
+            is_git=is_git,
+            scanned_repository_root=at_repository_root,
+            languages=stats,
+            projects=tuple(projects),
+            ecosystems=tuple(sorted(set(manifests) | set(lockfiles))),
+            hooks=tuple(hooks),
+            file_count=file_count,
+            total_bytes=total_bytes,
+            revision=revision,
+            remote=remote,
+        )
+
+    def inventory_walk(
+        self,
+        traversal: Iterable[WalkEntry],
+        file_count: int,
+        total_bytes: int,
+        seen_paths: set[str],
+        languages: dict[str, tuple[int, int]],
+        evidence: dict[str, set[str]],
+        package_directories: set[str],
+        hooks: list[Hook],
+        manifests: dict[str, list[str]],
+        deferred: list[tuple[Path, str, str]],
+        lockfiles: dict[str, list[str]],
+    ) -> tuple[int, int]:
+        """The traversal's files, counted by language, with manifests and lockfiles noted."""
         for entry in traversal:
             if entry.is_symlink:
                 continue
@@ -506,37 +582,13 @@ class Engine:
             lock = EcosystemRegistry.lockfile_ecosystem(entry.rel_path)
             if lock:
                 lockfiles.setdefault(lock, []).append(entry.rel_path)
+        return file_count, total_bytes
 
-        frozen = frozenset(seen_paths)
-        for real_path, rel_path, eco in deferred:
-            hooks.extend(self._manifest_hooks(real_path, rel_path, eco, frozen))
-
-        stats = tuple(
-            LanguageStat(
-                language=language,
-                files=files,
-                bytes=size,
-                share=(size / total_bytes) if total_bytes else 0.0,
-                evidence=tuple(sorted(evidence.get(language, ()))),
-            )
-            # Sorted by size then name: byte-weighted ranking reflects what the
-            # repository actually is better than file count, which over-weights
-            # many small config files. The name breaks ties so the order is
-            # deterministic.
-            for language, (files, size) in sorted(
-                languages.items(), key=lambda kv: (-kv[1][1], kv[0])
-            )
-        )
-
-        hooks = [hook for hook in hooks if Hooks.hook_executes(hook, package_directories)]
-
-        if acc is not None and walker.stats.limit_hit:
-            acc.complete = False
-
-        # A project is a subtree with its own manifest. Modelling a monorepo as
-        # N projects is what keeps detector selection correct: without it, a
-        # polyglot tree gets the union of every rule applied to every file.
-        projects: list[Project] = []
+    @staticmethod
+    def manifest_projects(
+        manifests: dict[str, list[str]], projects: list[Project], lockfiles: dict[str, list[str]]
+    ) -> None:
+        """The projects each ecosystem's manifests describe."""
         for eco_id, paths in sorted(manifests.items()):
             for manifest_path in sorted(paths):
                 directory = manifest_path.rpartition("/")[0]
@@ -552,21 +604,6 @@ class Engine:
                         ),
                     )
                 )
-
-        is_git, revision, remote, at_repository_root = TreeFacts.provenance(root)
-        return Repository(
-            root=str(root),
-            is_git=is_git,
-            scanned_repository_root=at_repository_root,
-            languages=stats,
-            projects=tuple(projects),
-            ecosystems=tuple(sorted(set(manifests) | set(lockfiles))),
-            hooks=tuple(hooks),
-            file_count=file_count,
-            total_bytes=total_bytes,
-            revision=revision,
-            remote=remote,
-        )
 
     def _manifest_hooks(
         self,

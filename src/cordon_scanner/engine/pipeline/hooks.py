@@ -57,6 +57,8 @@ if TYPE_CHECKING:  # from the source
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
+    from cordon_scanner.ecosystems.base import Manifest
+
 
 class Hooks:
     """The code a package runs at install or import."""
@@ -519,6 +521,15 @@ class Hooks:
         base = PurePosixPath(manifest_path).parent
         found: set[str] = set()
 
+        Hooks.hook_command_scripts(hooks, base, known, found)
+
+        return found
+
+    @staticmethod
+    def hook_command_scripts(
+        hooks: Sequence[Hook], base: PurePosixPath, known: frozenset[str], found: set[str]
+    ) -> None:
+        """The scripts each lifecycle command names, resolved against the package."""
         for hook in hooks:
             # `node -e "try{require('./postinstall')}catch(e){}"` runs `postinstall.js` exactly as
             # `node postinstall.js` does; core-js declares it that way.
@@ -576,8 +587,6 @@ class Hooks:
                     continue
                 if resolved in known:
                     found.add(resolved)
-
-        return found
 
     @staticmethod
     def runs(command: str) -> str:
@@ -731,41 +740,52 @@ class Hooks:
             # which kind it is.
             if any(not hook.action_step for hook in manifest.hooks):
                 paths.add(unit.path)
-            if manifest.hooks:
-                # A published action's composite steps run on its consumers' runners as CI code:
-                # what they name is read in CI context, not install context (review 98: as
-                # install code, 305 of 2,978 benign actions blocked).
-                steps = [hook for hook in manifest.hooks if hook.action_step]
-                if steps:
-                    ci_scripts |= Hooks.hook_script_paths(unit.path, steps, known)
-                reaching = [
-                    hook
-                    for hook in manifest.hooks
-                    if hook.name.lower() not in AUTHOR_TIME_HOOKS and hook not in steps
-                ]
-                if reaching:
-                    paths |= Hooks.hook_script_paths(unit.path, reaching, known)
-                    paths |= {
-                        program.path
-                        for hook in reaching
-                        for program in InlinePrograms.lifted(
-                            unit.path, hook.name, hook.command or ""
-                        )
-                        if program.path in known
-                    }
-                consuming = [hook for hook in manifest.hooks if hook.kind == "consumerinstall"]
-                if consuming:
-                    consumer.add(unit.path)
-                    consumer |= Hooks.hook_script_paths(unit.path, consuming, known)
-                    consumer |= {
-                        program.path
-                        for hook in consuming
-                        for program in InlinePrograms.lifted(
-                            unit.path, hook.name, hook.command or ""
-                        )
-                        if program.path in known
-                    }
+            ci_scripts, paths, consumer = Hooks.hook_reach(
+                manifest, ci_scripts, unit, known, paths, consumer
+            )
         return paths, consumer, ci_scripts
+
+    @staticmethod
+    def hook_reach(
+        manifest: Manifest,
+        ci_scripts: set[str],
+        unit: FileUnit,
+        known: frozenset[str],
+        paths: set[str],
+        consumer: set[str],
+    ) -> tuple[set[str], set[str], set[str]]:
+        """Where a manifest's hooks reach: the action steps that run its scripts, and what a consumer's install runs."""
+        if manifest.hooks:
+            # A published action's composite steps run on its consumers' runners as CI code:
+            # what they name is read in CI context, not install context (review 98: as
+            # install code, 305 of 2,978 benign actions blocked).
+            steps = [hook for hook in manifest.hooks if hook.action_step]
+            if steps:
+                ci_scripts |= Hooks.hook_script_paths(unit.path, steps, known)
+            reaching = [
+                hook
+                for hook in manifest.hooks
+                if hook.name.lower() not in AUTHOR_TIME_HOOKS and hook not in steps
+            ]
+            if reaching:
+                paths |= Hooks.hook_script_paths(unit.path, reaching, known)
+                paths |= {
+                    program.path
+                    for hook in reaching
+                    for program in InlinePrograms.lifted(unit.path, hook.name, hook.command or "")
+                    if program.path in known
+                }
+            consuming = [hook for hook in manifest.hooks if hook.kind == "consumerinstall"]
+            if consuming:
+                consumer.add(unit.path)
+                consumer |= Hooks.hook_script_paths(unit.path, consuming, known)
+                consumer |= {
+                    program.path
+                    for hook in consuming
+                    for program in InlinePrograms.lifted(unit.path, hook.name, hook.command or "")
+                    if program.path in known
+                }
+        return ci_scripts, paths, consumer
 
 
 __all__ = ["Hooks"]
