@@ -47,7 +47,6 @@ from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
-from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
 from cordon_scanner.detect.code.capability.text_position import TextPosition
@@ -361,19 +360,11 @@ class CapabilityDetector(BaseDetector):
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
         # The rest of an oversized file is read by the engine, in windows, with every rule here
-        # and the other text detectors (`core/windows.py`), on the serial path and in the pool.
+        # and the other text detectors (`foundation/files/windows.py`), on the serial path and in the pool.
         if NixCode.is_nix(content.path):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
         return hits
-
-    # -- Labelling -------------------------------------------------------
-
-    @staticmethod
-    def _skill_script(path: str, ctx: ScanContext | None) -> bool:
-        """`LoadPath.skill_script`, asked through the detector: the engine's `_skill_scripts` reaches
-        it here, over the engine-to-detector import it already has."""
-        return LoadPath.skill_script(path, ctx)
 
     # -- Reasoning -------------------------------------------------------
 
