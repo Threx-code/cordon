@@ -8,14 +8,16 @@ tools that read beyond the workspace (the machine's own agents, the host's packa
 process (`runner`), a few by calling the same function the scanner calls -- so an agent gets the
 verdict the CLI, CI and the editor would give.
 
-    Args            argument checking, shared by every tool
-    Scans           running the scanner and shaping what it returns
-    PackageTools    packages, lists of packages, install commands, advisories
-    WorkspaceTools  paths in the workspace: scans, secrets, graphs, bills of materials, reviews
-    AgentTools      content an agent is about to use: files, skills, MCP servers, extensions
-    MachineTools    container images and this machine
-    KnowledgeTools  rules, intel and this server
-    Catalogue       the tool definitions
+    base.py       Tool, Settings, Outcome; Args (argument checking) and Scans (running the scanner
+                  and shaping what it returns), shared by every tool
+    packages.py   PackageTools: packages, lists of packages, install commands, advisories
+    workspace.py  WorkspaceTools: paths in the workspace: scans, secrets, graphs, bills of
+                  materials, reviews
+    agents.py     AgentTools: content an agent is about to use: files, skills, MCP servers,
+                  extensions
+    machine.py    MachineTools: container images and this machine
+    knowledge.py  KnowledgeTools: rules, intel and this server
+    catalogue.py  Catalogue: the tool definitions, in a fixed order
 """
 
 from __future__ import annotations
@@ -93,16 +95,20 @@ class Catalogue:
 
     @classmethod
     def build(cls) -> list[Tool]:
-        s, on, sev, path, mx, pkg, data = (
-            cls.schema,
-            cls.ONLINE,
-            cls.SEVERITY,
-            cls.PATH,
-            cls.MAX,
-            cls.PACKAGE,
-            cls.DATA,
-        )
-        strings = {"type": "array", "items": {"type": "string"}}
+        return [
+            *cls._package_tools(),
+            *cls._code_tools(),
+            *cls._agent_content_tools(),
+            *cls._agent_server_tools(),
+            *cls._image_and_change_tools(),
+            *cls._repository_tools(),
+            *cls._machine_and_knowledge_tools(),
+        ]
+
+    @classmethod
+    def _package_tools(cls) -> list[Tool]:
+        """Packages, lists of packages, install commands and advisories."""
+        s, on, mx, pkg, data = cls.schema, cls.ONLINE, cls.MAX, cls.PACKAGE, cls.DATA
         return [
             Tool(
                 "check_package",
@@ -171,6 +177,14 @@ class Catalogue:
                 PackageTools.get_package_advisories,
                 data,
             ),
+        ]
+
+    @classmethod
+    def _code_tools(cls) -> list[Tool]:
+        """Scans of a path in the workspace, and its secrets."""
+        s, on, sev, path, mx = cls.schema, cls.ONLINE, cls.SEVERITY, cls.PATH, cls.MAX
+        strings = {"type": "array", "items": {"type": "string"}}
+        return [
             Tool(
                 "scan_path",
                 "Scan a directory, file or archive",
@@ -235,6 +249,13 @@ class Catalogue:
                 SCAN_OUTPUT,
                 open_world=True,
             ),
+        ]
+
+    @classmethod
+    def _agent_content_tools(cls) -> list[Tool]:
+        """A file's text, agent instruction files and skills."""
+        s, sev, mx = cls.schema, cls.SEVERITY, cls.MAX
+        return [
             Tool(
                 "scan_file_content",
                 "Check a file's content before writing or using it",
@@ -301,6 +322,13 @@ class Catalogue:
                 AgentTools.check_skill,
                 SCAN_OUTPUT,
             ),
+        ]
+
+    @classmethod
+    def _agent_server_tools(cls) -> list[Tool]:
+        """MCP servers, the tools they serve, and editor extensions."""
+        s, on, sev, path, mx = cls.schema, cls.ONLINE, cls.SEVERITY, cls.PATH, cls.MAX
+        return [
             Tool(
                 "check_mcp_server",
                 "Check an MCP server before adding it",
@@ -371,6 +399,20 @@ class Catalogue:
                 SCAN_OUTPUT,
                 open_world=True,
             ),
+        ]
+
+    @classmethod
+    def _image_and_change_tools(cls) -> list[Tool]:
+        """Container images, dependency changes and release comparisons."""
+        s, on, sev, path, mx, data = (
+            cls.schema,
+            cls.ONLINE,
+            cls.SEVERITY,
+            cls.PATH,
+            cls.MAX,
+            cls.DATA,
+        )
+        return [
             Tool(
                 "scan_container_image",
                 "Scan a container image",
@@ -422,6 +464,21 @@ class Catalogue:
                 WorkspaceTools.compare_releases,
                 SCAN_OUTPUT,
             ),
+        ]
+
+    @classmethod
+    def _repository_tools(cls) -> list[Tool]:
+        """The repository's dependencies, description, bill of materials, baseline
+        and suppressions."""
+        s, on, sev, path, mx, data = (
+            cls.schema,
+            cls.ONLINE,
+            cls.SEVERITY,
+            cls.PATH,
+            cls.MAX,
+            cls.DATA,
+        )
+        return [
             Tool(
                 "list_dependencies",
                 "List the dependency graph",
@@ -478,6 +535,14 @@ class Catalogue:
                 WorkspaceTools.list_suppressions,
                 data,
             ),
+        ]
+
+    @classmethod
+    def _machine_and_knowledge_tools(cls) -> list[Tool]:
+        """This machine's agents and packages, the rules, the intel and this
+        server."""
+        s, on, sev, mx, data = cls.schema, cls.ONLINE, cls.SEVERITY, cls.MAX, cls.DATA
+        return [
             Tool(
                 "list_local_agents",
                 "List this machine's AI agents and MCP servers",
