@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from cordon_scanner.ecosystems.base import DeclaredDependency
+    from cordon_scanner.foundation.content import FileContent
 
 
 class Graph:
@@ -479,6 +480,41 @@ class Graph:
         forced: dict[tuple[str | None, str, str], tuple[str, str, str | None]] = {}
         routed: dict[tuple[str | None, str], dict[str, str]] = {}
         contents = {u.path: u.content for u in units}
+        Graph.manifest_declarations(
+            units, covered, members, contents, shared, routed, declared, declared_from_lock, forced
+        )
+        if not declared and not forced:
+            return collected
+        joined: list[Dependency] = []
+        matched: set[tuple[str | None, str, str]] = set()
+        present: set[tuple[str | None, str, str]] = set()
+        Graph.declared_onto_locked(collected, declared, present, forced, matched, joined, shared)
+        Graph.unlocked_declarations(declared, matched, present, units, joined)
+        joined = Graph.routed_sources(routed, joined)
+        return [
+            d
+            for d in joined
+            if not (
+                d.local
+                and not d.parents
+                and d.manifest_path is None
+                and d.ecosystem not in Graph.LOCKS_WITHOUT_ROOTS
+            )
+        ]
+
+    @staticmethod
+    def manifest_declarations(
+        units: list[FileUnit],
+        covered: set[tuple[str | None, str]],
+        members: dict[tuple[str, str], str | None] | None,
+        contents: dict[str, FileContent],
+        shared: dict[tuple[str | None, str, str], str],
+        routed: dict[tuple[str | None, str], dict[str, str]],
+        declared: dict[tuple[str | None, str, str], tuple[str, DeclaredDependency]],
+        declared_from_lock: dict[tuple[str | None, str, str], bool],
+        forced: dict[tuple[str | None, str, str], tuple[str, str, str | None]],
+    ) -> None:
+        """Every manifest's declarations, keyed by project, ecosystem and name, with what forces or routes them."""
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None:
@@ -524,11 +560,18 @@ class Graph:
                             selected,
                         ),
                     )
-        if not declared and not forced:
-            return collected
-        joined: list[Dependency] = []
-        matched: set[tuple[str | None, str, str]] = set()
-        present: set[tuple[str | None, str, str]] = set()
+
+    @staticmethod
+    def declared_onto_locked(
+        collected: list[Dependency],
+        declared: dict[tuple[str | None, str, str], tuple[str, DeclaredDependency]],
+        present: set[tuple[str | None, str, str]],
+        forced: dict[tuple[str | None, str, str], tuple[str, str, str | None]],
+        matched: set[tuple[str | None, str, str]],
+        joined: list[Dependency],
+        shared: dict[tuple[str | None, str, str], str],
+    ) -> None:
+        """Each locked dependency given the manifest entry that declared it, and marked direct."""
         # Lockfiles that say which entries are direct; for the rest (`Pipfile.lock`, `go.sum`),
         # the manifest beside them is the only record of what the project asked for.
         marked = {d.declared_in for d in collected if d.direct}
@@ -599,6 +642,16 @@ class Graph:
                     resolved_from=dependency.resolved_from or entry.source,
                 )
             )
+
+    @staticmethod
+    def unlocked_declarations(
+        declared: dict[tuple[str | None, str, str], tuple[str, DeclaredDependency]],
+        matched: set[tuple[str | None, str, str]],
+        present: set[tuple[str | None, str, str]],
+        units: list[FileUnit],
+        joined: list[Dependency],
+    ) -> None:
+        """Declared dependencies no lockfile resolved: added as declared, with what forced or shared them."""
         # Declared beside a lockfile that does not resolve it: the two have drifted, and what
         # installs is whatever the range resolves to on the day. Kept in the inventory, unresolved,
         # with the reason -- dropping it hid a dependency the project really asks for.
@@ -663,6 +716,12 @@ class Graph:
                     or "declared in the manifest but absent from the lockfile beside it",
                 )
             )
+
+    @staticmethod
+    def routed_sources(
+        routed: dict[tuple[str | None, str], dict[str, str]], joined: list[Dependency]
+    ) -> list[Dependency]:
+        """Dependencies a manifest routes to another source, given that source."""
         # A local entry that no manifest declares and nothing in its lockfile depends on is a
         # root of the workspace -- the project itself (a Cargo workspace's own crate, an
         # independent monorepo member) -- not one of its dependencies. A member another member
@@ -679,16 +738,7 @@ class Graph:
                 else d
                 for d in joined
             ]
-        return [
-            d
-            for d in joined
-            if not (
-                d.local
-                and not d.parents
-                and d.manifest_path is None
-                and d.ecosystem not in Graph.LOCKS_WITHOUT_ROOTS
-            )
-        ]
+        return joined
 
     #: Lockfiles that never list the project itself, so a local entry in one is always a
     #: dependency: Podfile.lock lists the pods installed, never the app. Flutter's Podfile adds

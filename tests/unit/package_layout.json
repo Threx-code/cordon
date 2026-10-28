@@ -1009,7 +1009,6 @@
    "engine/pipeline/ceilings:Ceilings.author_time_ceiling": 97,
    "engine/pipeline/ceilings:Ceilings.image_start_ceiling": 113,
    "engine/pipeline/ceilings:Ceilings.verdict": 111,
-   "engine/pipeline/graph:Graph.join_manifests": 229,
    "engine/pipeline/hooks:Hooks.manifest_hook_paths": 122,
    "engine/pipeline/dependencies:Dependencies.build": 92,
    "engine/pipeline/dependencies:Dependencies.image_inventory": 99
