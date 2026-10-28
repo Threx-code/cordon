@@ -929,7 +929,6 @@
    "detect/supply/dependency:DependencyDetector._slip_kind": 101,
    "detect/supply/dependency:DependencyDetector.declared_rules": 101,
    "detect/supply/lockfile:LockfileDetector._integrity_findings": 116,
-   "detect/supply/manifests/lifecycle_findings:LifecycleFindings.lifecycle_findings": 268,
    "detect/supply/manifests/source_findings:SourceFindings.source_findings": 177,
    "detect/supply/provenance:ProvenanceDetector._verify": 155,
    "detect/supply/registries/detector:RegistryDetector._compare": 115,
