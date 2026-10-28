@@ -552,148 +552,6 @@ class CommandLine:
     # ---------------------------------------------------------------------------
 
     @classmethod
-    def _with_release_diff(
-        cls, args: argparse.Namespace, target: Path, result: Any, config: Any, selected: Any
-    ) -> Any:
-        """The scan result, plus what this release adds over the one before it.
-
-        `--compare-with` names the earlier artefact. Without it, `--online` and a published npm or
-        PyPI artefact fetch the previous release from the registry. A comparison that cannot be
-        made is said, never silently skipped.
-        """
-        from dataclasses import replace as _replace
-
-        from cordon_scanner import Scanner
-        from cordon_scanner.detect.supply import release_diff
-        from cordon_scanner.sources import previous as previous_release
-
-        compare_with = getattr(args, "compare_with", None)
-        if not compare_with and not (args.online and target.is_file()):
-            return result
-        with previous_release.PreviousRelease.workspace() as work:
-            publisher_change = ""
-            try:
-                if compare_with:
-                    earlier = Path(compare_with)
-                    if not earlier.exists():
-                        raise CordonError(f"--compare-with: {earlier} does not exist")
-                    label = earlier.name
-                else:
-                    named = getattr(args, "package_identity", None)
-                    identity = (
-                        previous_release.Identity(*named)
-                        if named and named[0] not in ("npm", "pypi") and named[2]
-                        else previous_release.PreviousRelease.identify(target)
-                    )
-                    if identity is None:
-                        return result
-                    found = previous_release.PreviousRelease.fetch_previous(identity, work)
-                    if found is None:
-                        if not args.quiet:
-                            print(
-                                f"no earlier release of {identity.name} to compare with",
-                                file=sys.stderr,
-                            )
-                        return result
-                    earlier, label, publisher_change = (
-                        found.path,
-                        found.label,
-                        found.publisher_change,
-                    )
-            except (OSError, ValueError, KeyError) as exc:
-                print(f"{cls.PROGRAM}: release comparison skipped: {exc}", file=sys.stderr)
-                return result
-            old = Scanner(config, detectors=selected).scan(earlier)
-        changes = release_diff.ReleaseDiff.compare(
-            release_diff.Profile.of(result), release_diff.Profile.of(old), previous=label
-        )
-        if publisher_change:
-            changes.append(
-                release_diff.Change(
-                    release_diff.RELEASE_NEW_PUBLISHER,
-                    Severity.MEDIUM,
-                    "package.json",
-                    publisher_change
-                    + " A new publishing account on an established package is how most "
-                    "maintainer-takeover compromises first show.",
-                )
-            )
-        if not args.quiet:
-            print(
-                f"compared with {label}: "
-                + (
-                    ", ".join(sorted({c.rule_id.split(".")[2].lower() for c in changes}))
-                    if changes
-                    else "no new install hooks, capabilities, obfuscation or binaries"
-                ),
-                file=sys.stderr,
-            )
-        if not changes:
-            return result
-        added = release_diff.ReleaseDiff.as_findings(changes, result)
-        return _replace(
-            result,
-            findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
-        )
-
-    @classmethod
-    def _with_manifest_confusion(
-        cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
-    ) -> ScanResult:
-        """`--online` and a published npm tarball: does the registry describe this tarball?"""
-        from dataclasses import replace as _replace
-
-        from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.supply.manifest_confusion import ManifestConfusion
-        from cordon_scanner.intel.malware.feed import FeedClient
-
-        offline = not args.online or args.offline or FeedClient.offline_requested()
-        if offline or not target.is_file():
-            return result
-        added = list(SuppressionMatcher(config).apply(ManifestConfusion.check(target)))
-        if not added:
-            return result
-        return _replace(
-            result,
-            findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
-        )
-
-    @classmethod
-    def _with_secret_history(
-        cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
-    ) -> ScanResult:
-        """`--history` and `--verify-secrets`: findings from git history and from the issuers."""
-        from dataclasses import replace as _replace
-
-        if not getattr(args, "history", False) and not getattr(args, "verify_secrets", False):
-            return result
-        from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.secrets.secret_history import (
-            HistorySecretScan,
-            SecretLiveness,
-            SecretValues,
-        )
-        from cordon_scanner.rules.loader import RuleLoader, RuleSet
-
-        root = target if target.is_dir() else target.parent
-        added: list[Finding] = []
-        history_blobs: dict[tuple[str, str], bytes] = {}
-        if getattr(args, "history", False):
-            scan = HistorySecretScan(root, config, RuleSet(RuleLoader.load_builtin()))
-            added.extend(scan.run())
-            history_blobs = scan.blob_contents
-        if getattr(args, "verify_secrets", False):
-            values = SecretValues(root, history_blobs)
-            added.extend(SecretLiveness().verify([*result.findings, *added], values))
-            history_blobs.clear()
-        if not added:
-            return result
-        added = list(SuppressionMatcher(config).apply(added))
-        findings = tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value))
-        complete = result.complete and not any(f.degrades_coverage for f in added)
-        return _replace(result, findings=findings, complete=complete)
-
-    @classmethod
     def _scan_package(cls, args: argparse.Namespace) -> int:
         """`scan pkg:<type>/<name>@<version>`: fetch the published archive, verify it, scan it."""
         from cordon_scanner.foundation.errors import SourceError
@@ -927,10 +785,10 @@ class CommandLine:
             result = Scanner(config, detectors=selected, source=source, progress=progress).scan(
                 target
             )
-            result = cls._with_release_diff(args, target, result, config, selected)
+            result = ScanEnrichment.add_release_diff(args, target, result, config, selected)
             result = DependencyPayload.applied(args, target, result, config, selected)
-            result = cls._with_manifest_confusion(args, target, result, config)
-            result = cls._with_secret_history(args, target, result, config)
+            result = ScanEnrichment.add_manifest_confusion(args, target, result, config)
+            result = ScanEnrichment.add_secret_history(args, target, result, config)
             result = ScanEnrichment.add_model_findings(args, target, result, config)
 
         if args.baseline:
