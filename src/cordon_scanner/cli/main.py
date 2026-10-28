@@ -27,6 +27,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.cli.commands.account.login import LoginCommand
 from cordon_scanner.cli.commands.advisories import AdvisoriesCommand
 from cordon_scanner.cli.commands.baseline import BaselineCommand
 from cordon_scanner.cli.commands.bundle import BundleCommand
@@ -504,10 +505,7 @@ class CommandLine:
 
         AdvisoriesCommand.add_parser(sub)
 
-        login = sub.add_parser(
-            "login", help="sign in to Cordon Cloud through your organisation's SSO (device flow)"
-        )
-        login.add_argument("--url", default=None, help="Cordon Cloud API base")
+        LoginCommand.add_parser(sub)
         runner = sub.add_parser(
             "runner",
             help="run scan jobs from Cordon Cloud inside your own network (outbound only)",
@@ -1380,29 +1378,6 @@ class CommandLine:
                 buffer.flush()
 
     @classmethod
-    def cmd_login(cls, args: argparse.Namespace) -> int:
-        from cordon_scanner.cloud import CloudError, auth
-
-        try:
-            code = auth.CloudAuth.start_device_flow(args.url)
-            print(
-                f"To sign in, open {code.verification_uri} and enter the code {code.user_code}\n"
-                f"(or open {code.verification_uri_complete}). Waiting for approval...",
-                file=sys.stderr,
-            )
-            credentials = auth.CloudAuth.finish_device_flow(code, args.url)
-        except CloudError as exc:
-            print(f"{cls.PROGRAM}: {exc}", file=sys.stderr)
-            return int(ExitCode.CONFIG_ERROR)
-        path = auth.CloudAuth.save(credentials)
-        keys = len(credentials.policy_keys)
-        print(
-            f"Signed in to {credentials.org or 'Cordon Cloud'} as {credentials.subject or 'this device'}. "
-            f"{keys} policy key(s) pinned. Stored in {path} (mode 0600)."
-        )
-        return int(ExitCode.CLEAN)
-
-    @classmethod
     def cmd_runner(cls, args: argparse.Namespace) -> int:
         import socket
 
@@ -1609,7 +1584,7 @@ class CommandLine:
             "report": ReportCommand.run,
             "advisories": AdvisoriesCommand.run,
             "intel": IntelCommand.run,
-            "login": cls.cmd_login,
+            "login": LoginCommand.run,
             "logout": cls.cmd_logout,
             "runner": cls.cmd_runner,
             "agent": cls.cmd_agent,
