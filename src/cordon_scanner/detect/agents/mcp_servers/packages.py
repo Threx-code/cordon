@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import ScanContext, Unit
-from cordon_scanner.detect.agents.chain import AgentChainDetector
+from cordon_scanner.detect.agents.findings import AgentFinding
 from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
 from cordon_scanner.detect.agents.paths import MCP_PATHS, AgentPaths
@@ -200,7 +200,7 @@ class McpPackageDetector(BaseDetector):
     def _unresolved(
         unit: FileUnit, ctx: ScanContext, server: str, ecosystem: str, spec: str, why: str
     ) -> Finding:
-        return AgentChainDetector()._at_text(
+        return AgentFinding.at_text(
             "OPERATIONAL.MCP.UNRESOLVED",
             unit,
             ctx,

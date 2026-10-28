@@ -19,7 +19,6 @@ from cordon_scanner.foundation.models import Category, Confidence, Severity
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.detect.agents.chain import AgentChainDetector
     from cordon_scanner.detect.base import FileUnit, ScanContext
     from cordon_scanner.foundation.models import Finding
 
@@ -81,10 +80,9 @@ class Autorun:
         }
 
     @staticmethod
-    def autorun_findings(
-        detector: AgentChainDetector, unit: FileUnit, ctx: ScanContext
-    ) -> Iterator[Finding]:
+    def autorun_findings(unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """Commands an editor or agent runs when the folder is opened or the environment built."""
+        from cordon_scanner.detect.agents.findings import AgentFinding
         from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
         from cordon_scanner.detect.agents.rule_catalogue import RULES
 
@@ -132,7 +130,7 @@ class Autorun:
             # whoever opens it either way. A repo, skill or agent unit is unchanged.
             if ctx.package_distribution and verdict.kind == "fetch-exec":
                 rule_id = "SUSPECT.CI.DEVCONTAINER_FETCH.001"
-            yield detector._at_text(
+            yield AgentFinding.at_text(
                 rule_id,
                 unit,
                 ctx,
