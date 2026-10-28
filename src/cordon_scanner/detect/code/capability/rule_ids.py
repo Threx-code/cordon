@@ -40,6 +40,10 @@ class CompositeRuleIds:
             "SUSPECT.PERSIST.001",
         }
     )
+    """Composites lowered when nothing on the load path runs them. A dynamic import in the method
+    of a YAML library that resolves `!!python/name:` tags is that library's feature, and a
+    function that checks for GitHub Actions before minting its OIDC token is doing its job; the
+    same code at a module's top level, or in a hook, is not lowered."""
 
     DROPPER_RULE = "SUSPECT.DROPPER.001"
 
@@ -69,6 +73,7 @@ class CompositeRuleIds:
     )
 
     CREDENTIAL_STORE_RULE = "SUSPECT.EXFIL.CREDENTIAL_STORE.001"
+    """The one composite the authentication-filename ceiling applies to."""
 
     #: Composites whose source half is what a file sends: a setting it reads to configure itself is
     #: not that. See `LegitimateUse.a_setting`.

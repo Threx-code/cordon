@@ -291,8 +291,16 @@ class SecretAssembly:
         return printable / len(data) > 0.9
 
     ENCODED_BLOB = re.compile(rb"""["']([A-Za-z0-9+/]{24,4096}={0,2})["']""")
+    """A quoted run of base64, long enough to hold a credential.
+
+    Twenty-four characters is the floor because sixteen bytes is the shortest
+    thing worth hiding, and anything shorter matches identifiers, hashes
+    fragments and CSS class names in quantity."""
 
     MAX_DECODED_BLOBS = 64
+    """How many blobs to decode per file. A file with more encoded strings than
+    this is a data file, and the cost of decoding all of them is paid on every
+    scan for a case the first sixty-four already covers."""
 
     @staticmethod
     def _decoded_values(content: FileContent) -> Iterable[tuple[int, int, bytes, bool, str | None]]:

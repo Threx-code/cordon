@@ -51,10 +51,13 @@ class LoadPath:
             "execute",
         }
     )
+    """Callees that run a function they are handed, without anybody asking again."""
 
     DEFINITION_TIME_DUNDERS = frozenset(
         {"__init_subclass__", "__set_name__", "__class_getitem__", "__prepare__", "__new__"}
     )
+    """Dunders that run when a class is defined, subclassed or parameterised, not when it is
+    instantiated. `__new__` is here because a metaclass's `__new__` runs at class definition."""
 
     SCRIPT_LANGUAGES_RUN_BY_HAND = frozenset(
         {"shell", "powershell", "batch", "dockerfile", "makefile"}
@@ -63,6 +66,7 @@ class LoadPath:
     _SKILL_SCRIPT = re.compile(
         r"(?:^|/)skills/[^/\n]{1,200}/[^\n]{0,400}\.(?:py|js|mjs|cjs|ts|sh|bash|ps1|rb)$"
     )
+    """A file inside an agent skill's folder (`.claude/skills/<name>/scripts/x.py` and kin)."""
 
     @staticmethod
     def skill_script(path: str, ctx: ScanContext | None) -> bool:
@@ -90,6 +94,8 @@ class LoadPath:
     COMPILED_LANGUAGES = frozenset(
         {"go", "java", "kotlin", "csharp", "rust", "swift", "c", "cpp", "scala"}
     )
+    """Languages with no load path: importing a Go package or referencing a Java class runs none of
+    its functions, except the initialisers matched by `_LOAD_TIME_INITIALISER`."""
 
     _LOAD_TIME_INITIALISER = re.compile(
         r"^[ \t]{0,8}func[ \t]+init[ \t]*\([ \t]*\)[ \t]*\{|^[ \t]{0,40}static[ \t]*\{"
@@ -99,6 +105,9 @@ class LoadPath:
         r"|#\[ctor\][ \t\r\n]{0,40}(?:pub[ \t]{1,4})?(?:unsafe[ \t]{1,4})?fn[ \t]+\w{1,80}[ \t]*\([^)]{0,200}\)[^{;]{0,100}\{",
         re.MULTILINE,
     )
+    """Go's `func init()`, Java's `static { ... }`, a C# static constructor, a C/C++
+    `__attribute__((constructor))` and Rust's `#[ctor]`: code that runs when the package is imported,
+    the class is loaded or the library is mapped -- how malicious modules run their payload."""
 
     _JS_BODY_OPENER = re.compile(
         r"(?:\bfunction\b[^{;]{0,300}|=>[ \t]{0,8}|^[ \t]{0,40}(?:(?:async|static|get|set|public|private|protected)"

@@ -130,6 +130,7 @@ class SettingsFileFindings:
         "otelHeadersHelper",
         "gcpAuthRefresh",
     )
+    """Claude Code settings whose value is a shell command the agent runs itself."""
 
     @classmethod
     def _settings_commands(

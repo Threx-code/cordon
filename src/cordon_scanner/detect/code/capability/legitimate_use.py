@@ -40,10 +40,28 @@ class LegitimateUse:
         rb"\b[a-z0-9-]{1,63}\.(?:com|net|org|io|dev|app|xyz|ru|cn|top|me|co|sh|site|online)\b",
         re.IGNORECASE,
     )
+    """What a CI check asks beside, when it is a courtesy and not an evasion.
+
+    `if (process.env.DO_NOT_TRACK === '1' || process.env.CI) return;` before a licence ping, and
+    `if (!process.stderr.isTTY || process.env.CI) return;` before a progress line: 29 of
+    `@readystack`'s MCP linters, 37 MCP servers and 139 units of the 200K corpus were blocked as
+    code hiding from analysis for these. A payload gated on not being watched has no reason to
+    honour the user's opt-out or to care whether a terminal is attached; both are how a program
+    is polite, and an evasion that adds one still needs another environment check, a debugger or
+    a hostname test, each of which matches on its own.
+    """
 
     SHIPPED_OUTPUT: ClassVar[re.Pattern[str]] = re.compile(
         r"(?:^|/)(?:build|bin|dist)/[^!]{1,400}\.(?:c?js|mjs)$"
     )
+    """JavaScript under `build/`, `bin/` or `dist/` in a published npm package.
+
+    In a repository those directories hold the project's own tooling, and a decode beside a
+    spawn there is usually a release helper. In the tarball npm installs they are the compiled
+    library and the command npm links onto PATH: `@0xengine/meow` shipped `build/validate.js`,
+    which writes a base64 script to disk and runs it with bash, and the tooling ceiling held it
+    at MEDIUM (review 98).
+    """
 
     #: Findings whose evidence is a value followed from where it is read to where it goes
     #: (`analysis/javascript/js_flow.py`), not two patterns near each other: a server's reply reaching an
@@ -348,12 +366,17 @@ class LegitimateUse:
         )""",
         re.VERBOSE,
     )
+    """One environment variable read by its literal name: `os.getenv("TELEGRAM_BOT_TOKEN")`,
+    `process.env.DINGTALK_TOKEN`, `std::env::var("SMTP_SERVER")`. A name computed at run time
+    (`os.getenv(k)`) is not this: a loop over names is how a stealer reads a list of them."""
 
     _PLATFORM_LOOKUP: ClassVar[re.Pattern[str]] = re.compile(
         r"^\s{0,8}(?:platform\.(?:machine|system|architecture|processor|python_version)\s{0,4}\("
         r"|os\.(?:homedir|platform|arch|tmpdir|cpus|endianness)\s{0,4}\("
         r"|process\.(?:platform|arch)\b|sys\.platform\b)"
     )
+    """What the machine is, not who: the architecture a download is picked for, the home
+    directory a config file is kept under."""
 
     @classmethod
     def a_setting(cls, content: FileContent, hit: CapabilityHit) -> bool:

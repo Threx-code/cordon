@@ -52,8 +52,29 @@ class CompositeEvaluator:
         return content.raw[max(0, start - 200) : end + 200]
 
     BYTES_PER_LINE = 200
+    """How far apart in bytes `proximity` lines are allowed to be.
+
+    Proximity is a line count, and a minifier deletes lines. On a bundle the
+    whole file is line 1, so "within five lines" means "anywhere in the file"
+    and a composite that was written to say *this file does both things in the
+    same breath* silently becomes *this file does both things*.
+
+    `ethers`, the most used Ethereum library there is, showed this: two hits at
+    line 1 of `dist/ethers.min.js`, thousands of bytes apart, reported as
+    private key material sent to the network at CRITICAL. And a MALICIOUS
+    composite is deliberately exempt from the minified ceiling -- malware is not
+    excused for being generated -- so nothing downstream would have caught it.
+
+    Two hundred bytes a line is generous for real source, where the mean is
+    nearer forty, so this never narrows a window on code somebody wrote by hand.
+    What it does is stop a window from spanning a bundle."""
 
     MAX_PROXIMITY_HITS = 400
+    """Above this many capability hits, the pairwise search gives way to `CompositeEvaluator._dense_window`.
+
+    The search is quadratic in the number of hits, and a file with four hundred of them is
+    generated or enormous. It used to fall back to file scope there -- reporting more, on the
+    theory that more is safe -- which made every large bundle a single window."""
 
     def satisfying_window(
         self,
@@ -128,6 +149,7 @@ class CompositeEvaluator:
         return None
 
     SMALL_HOOK_LINES: ClassVar[int] = 300
+    """Install-time code whose every capability sits within this many lines is one window."""
 
     def _dense_window(
         self,

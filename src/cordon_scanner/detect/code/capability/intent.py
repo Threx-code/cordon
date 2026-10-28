@@ -25,6 +25,7 @@ class IntentSignals:
         rb"appendFile|writeFile|createWriteStream|\bfs\s*\.\s*write|\.write\s*\(|>>|"
         rb"\btee\s+-a\b|\bechos?\s[^\n]{0,80}>|\bcrontab\s+-|\bsystemctl\s"
     )
+    """A write, or the command that installs a unit, close to where persistence is named."""
 
     #: Ruby's ways of writing a file, which a formula would have to use to plant anything.
     RUBY_WRITE: ClassVar[re.Pattern[bytes]] = re.compile(
@@ -70,6 +71,7 @@ class IntentSignals:
         rb"|\brequire[ \t]{0,4}\([ \t]{0,4}['\"](?:discord\.js|node-telegram-bot-api|telegraf)['\"]"
         rb"|\bfrom[ \t]{1,4}['\"](?:discord\.js|node-telegram-bot-api|telegraf)['\"]"
     )
+    """A chat bot's client library: the channel a webhook URL is, without the URL."""
 
     @staticmethod
     def names_untrusted_destination(raw: bytes) -> bool:

@@ -44,6 +44,7 @@ class ObfuscationFinding:
     DESCRIPTION_VALUE: ClassVar[re.Pattern[str]] = re.compile(
         r"""(?:\b(?:long_)?description\s{0,4}=|["'](?:long_)?description["']\s{0,4}:)"""
     )
+    """A package description's value, keyword or dict entry: the README a build tool inlined."""
 
     #: What turns a long line in an install hook into a payload: it is run, or decoded to be run.
     RUNS_LONG_LINE: ClassVar[re.Pattern[str]] = re.compile(

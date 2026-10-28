@@ -361,6 +361,12 @@ class Labelling:
         rb"|\.\s{0,4}startsWith\s{0,4}\(\s{0,4}[\"'`][A-Za-z][A-Za-z0-9]{1,30}_"
         rb"|\bELECTRON_RUN_AS_NODE\b"
     )
+    """What follows an enumeration of `process.env` when it reads one family of variables or
+    passes the environment to a child: `Object.keys(process.env).filter(k => /^debug_/i.test(k))`
+    is the `debug` package's options, `startsWith("LANGCHAIN_")` is LangChain's configuration,
+    and `ELECTRON_RUN_AS_NODE` is vscode-languageclient starting its server. Each is bundled into
+    thousands of extensions, and 6 of 8 benign ones blocked as credential theft were these (review
+    98). The environment dumped whole, or sent anywhere, still matches."""
 
     @staticmethod
     def narrowed_environment(content: FileContent, end: int) -> bool:
@@ -551,8 +557,16 @@ class Labelling:
         return (start, max(start, end))
 
     DROP_POINT_RULE = "INTEL.EGRESS.DROP_POINT.001"
+    """Rule id for egress to a destination that is itself informative.
+
+    Named so composites can refer to it. It is a capability label rather than a
+    finding, like the AST tier's, and it exists because the capability model
+    deliberately cannot tell one outbound request from another -- posting to a
+    metrics endpoint and posting to a Discord webhook are both `egress`.
+    """
 
     INTERACTION_RULE = "INTEL.EGRESS.INTERACTION.001"
+    """Egress to an out-of-band interaction service. See `intel.hosts.INTERACTION_HOSTS`."""
 
     @classmethod
     def ast_rule_capabilities(

@@ -186,7 +186,5 @@ class ObfuscationDetector(BaseDetector):
 
     # -- Construction ----------------------------------------------------
 
-    """A package description's value, keyword or dict entry: the README a build tool inlined."""
-
 
 __all__ = ["BIDI_AND_INVISIBLE", "ObfuscationDetector"]

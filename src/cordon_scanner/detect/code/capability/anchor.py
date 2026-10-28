@@ -86,6 +86,12 @@ class FindingAnchor:
         return min(relevant or hits, key=lambda h: (rank(h), h.byte_start))
 
     MIN_IDIOM_BYTES = 40
+    """How long the shared construct must be to be worth grouping on.
+
+    The same forty bytes `Engine.MIN_IDIOM_SNIPPET` uses, and for its reason:
+    `cidr_blocks = ["0.0.0.0/0"]` is twenty-seven and hashes the same in a
+    hundred unrelated modules.
+    """
 
     @classmethod
     def with_idiom_key(

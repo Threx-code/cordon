@@ -420,16 +420,6 @@ class SecretDetector(BaseDetector):
             seen.add(digest)
             yield self._finding(spec, unit, ctx, start, end, value)
 
-    """A quoted run of base64, long enough to hold a credential.
-
-    Twenty-four characters is the floor because sixteen bytes is the shortest
-    thing worth hiding, and anything shorter matches identifiers, hashes
-    fragments and CSS class names in quantity."""
-
-    """How many blobs to decode per file. A file with more encoded strings than
-    this is a data file, and the cost of decoding all of them is paid on every
-    scan for a case the first sixty-four already covers."""
-
     # What every `ASSIGNMENT` match contains, read off the pattern and matched against the
     # lower-cased file: a credential word (`api_key`, `client_secret` and the rest each contain one
     # of these five), at most forty name characters, a colon or an equals sign, and a value of

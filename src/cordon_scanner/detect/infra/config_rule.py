@@ -124,7 +124,12 @@ class ConfigRule:
     webhook catcher, a bare IP address, a raw socket."""
 
     aggravation_in_file: bool = False
+    """Look for `aggravation` anywhere in the file rather than near the match: a workflow's
+    trigger is declared once at the top and decides what every job in it can be made to do."""
     require_aggravation: bool = False
+    """Report only a match whose window HAS the aggravation; one without it is not this rule's
+    claim at all. `MALWARE.CI.SECRET_TO_DROP_POINT.001` is the case: a secret sent somewhere is
+    `SUSPECT.CI.SECRET_EGRESS.001`; a secret sent to a bare IP or a paste site is theft."""
     one_command: bool = False
     """With `require_aggravation`: the match and its aggravation must be one shell command, not
     merely one step. A secret written to a file in one command and a request made in the next are
@@ -133,11 +138,6 @@ class ConfigRule:
     """With `require_aggravation`: decides, from (aggravation, window, whole file), whether the
     window really has it, where a regex search alone cannot -- `DropPoint.sends_to_one` resolves
     which addresses are the job's own and which secrets belong to the service receiving them."""
-    """Report only a match whose window HAS the aggravation; one without it is not this rule's
-    claim at all. `MALWARE.CI.SECRET_TO_DROP_POINT.001` is the case: a secret sent somewhere is
-    `SUSPECT.CI.SECRET_EGRESS.001`; a secret sent to a bare IP or a paste site is theft."""
-    """Look for `aggravation` anywhere in the file rather than near the match: a workflow's
-    trigger is declared once at the top and decides what every job in it can be made to do."""
 
     mitigation: re.Pattern[bytes] | None = None
     """Evidence, near the match, that the weakness this rule names is controlled.
