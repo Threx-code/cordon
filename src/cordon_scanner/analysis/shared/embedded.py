@@ -166,6 +166,46 @@ class EmbeddedCommands:
 
         commands: list[Command] = []
 
+        EmbeddedCommands._spawn_commands(text, commands, language)
+
+        # Builders, where the command is assembled across a chain rather than passed to one call:
+        # Rust `Command::new("sh").arg("-c").arg("curl ... | sh")`, Go `exec.Command(...)`, Java
+        # `new ProcessBuilder(...)`, C# `Process.Start(...)`, Gradle `commandLine "sh", "-c", ...`.
+        # The literals up to the end of the statement are the command line. A Rust `build.rs` is
+        # an install hook, and this is how one runs a download.
+        for call in _BUILDER_CALL.finditer(text):
+            if len(commands) >= MAX_COMMANDS:
+                break
+            window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
+            ends = [
+                i for i in (window.find(";"), window.find("\n\n"), window.find("\n}")) if i >= 0
+            ]
+            parts = EmbeddedCommands._literals(window[: min(ends)] if ends else window)
+            if parts:
+                commands.append(
+                    Command(
+                        text=" ".join(parts)[:MAX_COMMAND_CHARS],
+                        line=text.count("\n", 0, call.start()) + 1,
+                    )
+                )
+
+        # MSBuild: `<Exec Command="..." />`, the attribute value is the command line.
+        if language == "xml":
+            for task in _MSBUILD_EXEC.finditer(text):
+                if len(commands) >= MAX_COMMANDS:
+                    break
+                value = html.unescape(task.group(1))
+                commands.append(
+                    Command(
+                        text=value[:MAX_COMMAND_CHARS], line=text.count("\n", 0, task.start()) + 1
+                    )
+                )
+
+        return commands
+
+    @staticmethod
+    def _spawn_commands(text: str, commands: list[Command], language: str) -> None:
+        """Command strings passed to spawn calls, found by their call shape."""
         for call in _SPAWN_CALL.finditer(text):
             if len(commands) >= MAX_COMMANDS:
                 break
@@ -209,41 +249,6 @@ class EmbeddedCommands:
                     line=text.count("\n", 0, call.start()) + 1,
                 )
             )
-
-        # Builders, where the command is assembled across a chain rather than passed to one call:
-        # Rust `Command::new("sh").arg("-c").arg("curl ... | sh")`, Go `exec.Command(...)`, Java
-        # `new ProcessBuilder(...)`, C# `Process.Start(...)`, Gradle `commandLine "sh", "-c", ...`.
-        # The literals up to the end of the statement are the command line. A Rust `build.rs` is
-        # an install hook, and this is how one runs a download.
-        for call in _BUILDER_CALL.finditer(text):
-            if len(commands) >= MAX_COMMANDS:
-                break
-            window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
-            ends = [
-                i for i in (window.find(";"), window.find("\n\n"), window.find("\n}")) if i >= 0
-            ]
-            parts = EmbeddedCommands._literals(window[: min(ends)] if ends else window)
-            if parts:
-                commands.append(
-                    Command(
-                        text=" ".join(parts)[:MAX_COMMAND_CHARS],
-                        line=text.count("\n", 0, call.start()) + 1,
-                    )
-                )
-
-        # MSBuild: `<Exec Command="..." />`, the attribute value is the command line.
-        if language == "xml":
-            for task in _MSBUILD_EXEC.finditer(text):
-                if len(commands) >= MAX_COMMANDS:
-                    break
-                value = html.unescape(task.group(1))
-                commands.append(
-                    Command(
-                        text=value[:MAX_COMMAND_CHARS], line=text.count("\n", 0, task.start()) + 1
-                    )
-                )
-
-        return commands
 
     @staticmethod
     def _assignment(name: str) -> re.Pattern[str]:

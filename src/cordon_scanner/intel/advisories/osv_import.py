@@ -363,6 +363,36 @@ class OsvImport:
                 record, identifier, malicious, summary, reference, severity, aliases
             )
         results: list[Advisory] = []
+        OsvImport._affected_advisories(
+            affected,
+            osv_name,
+            ecosystem,
+            record,
+            results,
+            malicious,
+            summary,
+            reference,
+            identifier,
+            severity,
+            aliases,
+        )
+        return tuple(results)
+
+    @staticmethod
+    def _affected_advisories(
+        affected: list[Any],
+        osv_name: str | None,
+        ecosystem: str,
+        record: dict[str, Any],
+        results: list[Advisory],
+        malicious: bool,
+        summary: str,
+        reference: str,
+        identifier: str,
+        severity: str,
+        aliases: tuple[str, ...],
+    ) -> None:
+        """Each affected package of an OSV record as an advisory: its name, ranges and versions."""
         for entry in affected:
             if not isinstance(entry, dict):
                 continue
@@ -430,7 +460,6 @@ class OsvImport:
                     # above, but a malformed upstream record is not this sync's
                     # crash to have.
                     continue
-        return tuple(results)
 
     @staticmethod
     def sync_ecosystem(ecosystem: str, *, tmp_dir: Path) -> tuple[Advisory, ...]:

@@ -633,23 +633,7 @@ class Verdict:
         read as package facts beside the rest."""
         rules = VerdictFeatures.rules(findings)
         package = {**VerdictFeatures.package(paths_sizes, manifests, sources), **(profile or {})}
-        if package.get("skill_front_matter"):
-            # The skill's claim beside what its scripts can do (`VerdictFeatures._skill_claim`).
-            reaches = {
-                name[len("agent_can_") :]
-                for name, v in package.items()
-                if name.startswith("agent_can_") and v
-            }
-            package["skill_unclaimed_network"] = float(
-                bool(reaches & {"egress", "network"}) and not package.get("skill_claims_network")
-            )
-            package["skill_unclaimed_credentials"] = float(
-                "credential" in reaches and not package.get("skill_claims_credentials")
-            )
-            package["skill_unclaimed_process"] = float(
-                bool(reaches & {"spawn", "execute", "runs_download"})
-                and not package.get("skill_claims_shell")
-            )
+        Verdict._skill_claim(package)
         area = Verdict.area([p for p, _ in paths_sizes], manifests, package, rules)
         summary: dict[str, Any] = {"rules": rules, "package": package, "area": area}
         model = VerdictModel.load()
@@ -700,6 +684,42 @@ class Verdict:
         floor = frozenset(model["floor"])
         keep = frozenset(model.get("keep", ()))
         out: list[Finding] = []
+        Verdict._graded_findings(findings, score, block, liftable, floor, keep, area, out)
+        return out, summary
+
+    @staticmethod
+    def _skill_claim(package: dict[str, float]) -> None:
+        """What a skill says it is, from its front matter, for the intent comparison."""
+        if package.get("skill_front_matter"):
+            # The skill's claim beside what its scripts can do (`VerdictFeatures._skill_claim`).
+            reaches = {
+                name[len("agent_can_") :]
+                for name, v in package.items()
+                if name.startswith("agent_can_") and v
+            }
+            package["skill_unclaimed_network"] = float(
+                bool(reaches & {"egress", "network"}) and not package.get("skill_claims_network")
+            )
+            package["skill_unclaimed_credentials"] = float(
+                "credential" in reaches and not package.get("skill_claims_credentials")
+            )
+            package["skill_unclaimed_process"] = float(
+                bool(reaches & {"spawn", "execute", "runs_download"})
+                and not package.get("skill_claims_shell")
+            )
+
+    @staticmethod
+    def _graded_findings(
+        findings: list[Finding],
+        score: float,
+        block: float,
+        liftable: bool,
+        floor: frozenset[Any],
+        keep: frozenset[Any],
+        area: str,
+        out: list[Finding],
+    ) -> None:
+        """The findings that decide the verdict, each with what it contributes."""
         for finding in findings:
             if Verdict._lowers(
                 finding.rule_id,
@@ -722,4 +742,3 @@ class Verdict:
                     "kind of package it is.",
                 )
             out.append(finding)
-        return out, summary
