@@ -13,7 +13,7 @@ MAX_BYTES: Final = 1_500_000
 #: Fixpoint rounds over the bindings and summaries. Each round follows one more hop; real chains
 #: are a handful deep, and the bound keeps a pathological file linear.
 MAX_ROUNDS: Final = 8
-#: Parameter labels one binding may carry (see `_Analysis._grow`).
+#: Parameter labels one binding may carry (see `Calls._grow`).
 MAX_PARAMETER_LABELS: Final = 24
 
 _KEYWORDS: Final = frozenset(
@@ -139,14 +139,14 @@ _RAW_SOCKET_MODULES: Final = frozenset({"net", "tls", "dgram"})
 #: (a browser's DevTools port) reaches nothing outside it.
 _LOOPBACK: Final = re.compile(r"(?:localhost|127(?:\.\d{1,3}){3}|::1|\[::1\])\Z", re.I)
 #: The runtime's own objects: a member stored into one is not a value the file built
-#: (`_Analysis._assign_base`). `window`, `globalThis` and `module` are not among them -- a file
+#: (`Bindings._assign_base`). `window`, `globalThis` and `module` are not among them -- a file
 #: keeps its own values there.
 _HOST_OBJECTS: Final = frozenset(
     {"process", "console", "Math", "JSON", "Reflect", "Symbol", "Promise", "Number", "String"}
     | {"Boolean", "Date", "Error", "Buffer", "Intl"}
 )
 #: A command that hands its operand to the desktop's handler for it -- a URL to the browser
-#: (`_Analysis._opener`). `open -a <browser>` too, but not with a terminal or a script runner
+#: (`Calls._opener`). `open -a <browser>` too, but not with a terminal or a script runner
 #: named: `open -a Terminal x.command` runs it.
 _OPENER: Final = re.compile(
     r"\s*(?:open(?!\s+-[ab]\s+\"?(?:Terminal|iTerm|Script\s?Editor|Automator|Warp|Alacritty"
@@ -155,9 +155,9 @@ _OPENER: Final = re.compile(
     r"|explorer(?:\.exe)?)(?:\s|\"|$)",
     re.I,
 )
-#: Keywords only in context, ordinary names as a method's own name (`_Analysis._find_functions`).
+#: Keywords only in context, ordinary names as a method's own name (`Structure._find_functions`).
 _CONTEXTUAL: Final = frozenset({"get", "set", "of", "from", "as", "async", "static"})
-#: The public npm registries' own hosts, at the start of a URL (`_Analysis._registry_template`).
+#: The public npm registries' own hosts, at the start of a URL (`Taint._registry_template`).
 _REGISTRY_URL: Final = re.compile(
     r"https?://(?:registry\.npmjs\.org|registry\.yarnpkg\.com|registry\.npmmirror\.com)/"
 )
@@ -166,7 +166,7 @@ _BOT_SEND: Final = frozenset(
     {"sendMessage", "sendDocument", "sendPhoto", "sendAudio", "sendVideo", "sendMediaGroup"}
     | {"sendMail", "send", "editMessageText"}
 )
-#: Commands that print who and where this machine is (`_Analysis._identity_command`): their
+#: Commands that print who and where this machine is (`Taint._identity_command`): their
 #: output is the `identity` source `os.hostname()` and `os.userInfo()` are.
 _IDENTITY_COMMAND: Final = re.compile(
     r"\s*(?:whoami|hostname|uname|id|ipconfig|ifconfig|systeminfo|scutil\s+--get"
@@ -176,7 +176,7 @@ _IDENTITY_COMMAND: Final = re.compile(
 )
 #: TypeScript's member and parameter-property modifiers (`private async load(): Promise<void>`).
 _TS_MODIFIERS: Final = frozenset({"private", "public", "protected", "override", "readonly"})
-#: Options naming where a connection goes rather than what it sends (`_Analysis._sent`).
+#: Options naming where a connection goes rather than what it sends (`Calls._sent`).
 _DESTINATION_KEYS: Final = frozenset({"host", "hostname", "localAddress", "port"})
 _PROCESS_CALL: Final = frozenset(
     {"exec", "execSync", "spawn", "spawnSync", "execFile", "execFileSync", "fork"}
