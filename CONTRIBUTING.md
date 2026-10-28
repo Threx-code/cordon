@@ -66,19 +66,23 @@ gate and of CI, holds the rest of the arrangement:
   at most 1,000 lines a module                a module passes it
   at most 1,000 lines a class                 a class passes it
   at most 90 lines a function                 a function passes it
-  the engine reaches adapters through the     engine/ imports a concrete detector, reporter,
-    registry and the protocols only             ecosystem, source or intel module (an adapter
-                                              layer's `base`, its protocol, is the way in)
+  the engine reaches adapters through their   engine/ imports a concrete detector, reporter,
+    ports only                                  ecosystem, source or intel module: an adapter
+                                              layer's `base` (its protocols) and `registry`
+                                              (what implements them) are the way in
   imports point inward                        a NEW outward import (today's are frozen; each
                                               one removed comes off the list)
   no paths counted from a file's position     a new `__file__`: data is found with PackagePaths
                                               (foundation/paths.py), the repository from
-                                              support.ROOT in tests
-  the repository root stays as it is          a new tracked entry at the top of the repository
+                                              support.ROOT in tests, the checkout from where a
+                                              script runs
+  the repository root holds what it declares  a tracked entry at the top of the repository
+                                              that REPOSITORY_ROOT, in the test, does not name
+                                              with its reason
 ```
 
 What exceeds a limit today -- modules, classes, functions and directories past their size, the
-outward imports, the engine's adapter imports, the paths counted from a file -- is listed in
+outward imports -- is listed in
 `package_layout.json` under `frozen` with its size, and may only shrink: nothing new may join a list
 and nothing on one may grow. Shrinking one is a one-line edit there; the test also fails when an
 entry no longer applies, so the lists stay exact. The lists are being emptied (reviews
