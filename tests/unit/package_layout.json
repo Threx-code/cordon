@@ -67,7 +67,7 @@
   "cli/commands/scan/output": "cli/commands/scan/output",
   "cli/commands/scan/suppression": "cli/commands/scan/suppression",
   "cli/commands/sbom": "cli/commands/sbom",
-  "cli/completion": "cli/completion",
+  "cli/commands/completion": "cli/commands/completion",
   "cli/dependency_payload": "cli/dependency_payload",
   "cli/commands/deps": "cli/commands/deps",
   "cli/help": "cli/help",
