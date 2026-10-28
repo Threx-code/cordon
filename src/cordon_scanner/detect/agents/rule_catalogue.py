@@ -834,7 +834,8 @@ RULES.update(
             Category.SUSPICIOUS,
             Severity.HIGH,
             Confidence.MEDIUM,
-            "The learned reading of skill instructions (`detect/mcp_model.py`, trained on "
+            "The learned reading of skill instructions (`detect/agents/mcp_servers/description_model.py`, "
+            "trained on "
             "MalSkillBench and MaliciousSkillBench against real public skills) scores this "
             "SKILL.md as written to steer the agent -- to run something, send something, or "
             "set its rules aside -- rather than to describe a task. It blocks above a threshold "
