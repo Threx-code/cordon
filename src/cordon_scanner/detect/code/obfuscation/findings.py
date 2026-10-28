@@ -100,6 +100,13 @@ class ObfuscationFinding:
         # a real override smuggled into a fixture directory is still worth finding.
         # What changes is whether it fails a build.
         severity = hit.severity
+        severity = ObfuscationFinding._ceiling(content, ctx, hit, severity)
+        severity = ObfuscationFinding._escalated(content, ctx, hit, severity, unit)
+        return cls._scored(content, ctx, hit, severity, unit)
+
+    @staticmethod
+    def _ceiling(content: FileContent, ctx: ScanContext, hit: Hit, severity: Severity) -> Severity:
+        """The ceiling a hit's place puts on it: rule material, test material, documentation or generated output."""
         if content.is_rule_material:
             # Bandit's pair is the canonical case and is in this detector's own history:
             # `plugins/trojansource.py` finds Trojan Source attacks and
@@ -148,6 +155,13 @@ class ObfuscationFinding:
             )
         ):
             severity = min(severity, FIXTURE_CEILING)
+        return severity
+
+    @staticmethod
+    def _escalated(
+        content: FileContent, ctx: ScanContext, hit: Hit, severity: Severity, unit: FileUnit
+    ) -> Severity:
+        """The grade a hit's context raises it to: a long line or encoded run that runs at install time."""
         # Obfuscated code an install hook runs is never a build artefact somebody forgot to
         # exclude: it executes on every install, unread. `sensitive-paths-focus` named its
         # obfuscator.io payload `CHANGELOG.js` and ran it from `postinstall`.
@@ -190,6 +204,13 @@ class ObfuscationFinding:
             # entry points carry tables and data, so the line has to be what runs. The Roblox
             # cookie stealers in malregistry hide behind exactly this (review 98).
             severity = Severity.HIGH
+        return severity
+
+    @classmethod
+    def _scored(
+        cls, content: FileContent, ctx: ScanContext, hit: Hit, severity: Severity, unit: FileUnit
+    ) -> Finding:
+        """The obfuscation finding, scored, with its masked evidence."""
         return Finding(
             rule_id=hit.rule_id,
             category=Category.SUSPICIOUS,

@@ -757,6 +757,22 @@ class ConfigDetector(BaseDetector):
 
         severity = rule.severity
         message = rule.message
+        message, severity = ConfigDetector._ceiling(
+            content, match, message, mitigated, rule, severity
+        )
+
+        return self._scored(content, ctx, line, match, message, rule, severity, unit)
+
+    @staticmethod
+    def _ceiling(
+        content: FileContent,
+        match: re.Match[bytes],
+        message: str,
+        mitigated: bool,
+        rule: ConfigRule,
+        severity: Severity,
+    ) -> tuple[str, Severity]:
+        """The ceiling a configuration finding's place puts on it -- test material, generated output, another analyser's rule material -- and what the message says about it."""
         if rule.category is not Category.MALICIOUS and SourcePaths.is_test_material(content.path):
             # The ceiling every other content detector already applied, and this one
             # did not. `kubernetes/kubernetes` keeps one YAML per API type under
@@ -834,7 +850,20 @@ class ConfigDetector(BaseDetector):
                 f"lower - a verified fetch is still a fetch, and a build reaching the "
                 f"network is worth a line in the report."
             )
+        return message, severity
 
+    def _scored(
+        self,
+        content: FileContent,
+        ctx: ScanContext,
+        line: int,
+        match: re.Match[bytes],
+        message: str,
+        rule: ConfigRule,
+        severity: Severity,
+        unit: FileUnit,
+    ) -> Finding:
+        """The configuration finding, scored, with its evidence and the reasons for its grade."""
         return Finding(
             rule_id=rule.rule_id,
             category=rule.category,

@@ -781,6 +781,24 @@ class SecretDetector(BaseDetector):
             severity = min(severity, grade)
         confidence = min(spec.confidence, FIXTURE_CONFIDENCE) if ceilinged else spec.confidence
         caveat = ""
+        caveat = SecretDetector._caveat(
+            caveat, documentation, extractor, fixture, generated, rule_material
+        )
+
+        return self._scored(
+            caveat, confidence, content, ctx, end, line, note, raw, severity, spec, start, unit
+        )
+
+    @staticmethod
+    def _caveat(
+        caveat: str,
+        documentation: bool,
+        extractor: bool,
+        fixture: bool,
+        generated: bool,
+        rule_material: bool,
+    ) -> str:
+        """What the message adds about where the credential sits: rule material, a fixture, documentation, generated output or an extractor's own pattern."""
         if rule_material:
             caveat = (
                 " The file is another analyser's rule material -- a rule set, or a test "
@@ -817,7 +835,24 @@ class SecretDetector(BaseDetector):
                 "README leaks exactly as far as one in a settings file, and plenty "
                 "have been."
             )
+        return caveat
 
+    def _scored(
+        self,
+        caveat: str,
+        confidence: Confidence,
+        content: FileContent,
+        ctx: ScanContext,
+        end: int,
+        line: int,
+        note: str,
+        raw: bytes,
+        severity: Severity,
+        spec: SecretPattern,
+        start: int,
+        unit: FileUnit,
+    ) -> Finding:
+        """The secret finding, scored: its value never in the evidence, only a hash and the masked shape, and the rotation advice."""
         return Finding(
             rule_id=spec.rule_id,
             category=Category.SUSPICIOUS,
