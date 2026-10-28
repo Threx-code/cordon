@@ -6,7 +6,6 @@ reported as lost coverage rather than skipped silently.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
 
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_ESCAPE_RULE,
@@ -17,7 +16,6 @@ from cordon_scanner.engine.pipeline.constants import (
     SECRET_LINK_TARGET,
     SWEPT_NOTE,
 )
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import (
     Category,
@@ -25,10 +23,8 @@ from cordon_scanner.foundation.models import (
     Finding,
     Severity,
 )
+from cordon_scanner.foundation.results import OperationalFinding
 from cordon_scanner.sources.base import Rejection
-
-if TYPE_CHECKING:
-    pass
 
 
 class ArchiveMembers:

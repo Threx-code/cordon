@@ -9,7 +9,6 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
@@ -24,6 +23,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:

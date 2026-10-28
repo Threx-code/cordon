@@ -5,11 +5,6 @@ prefix, or one of the names that look like a secret's and are not.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 
 #: Name endings that say the value is configuration ABOUT a credential.
 #:

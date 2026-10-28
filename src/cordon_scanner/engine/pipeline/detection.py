@@ -26,10 +26,9 @@ from cordon_scanner.engine.pipeline.constants import (
     ADVISORY_DETECTORS,
     ALWAYS_RUN,
 )
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.models import Category, Finding, Severity
-from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence

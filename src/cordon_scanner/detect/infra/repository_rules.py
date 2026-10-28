@@ -4,8 +4,6 @@ build systems -- Make, CMake, MSBuild, Gradle and Maven -- that fetch and run co
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from cordon_scanner.detect.infra.config_paths import (
     DOCKER_PATHS,
     IAC_PATHS,
@@ -16,9 +14,6 @@ from cordon_scanner.detect.infra.config_rule import ConfigRule
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import Category, Confidence, Severity
-
-if TYPE_CHECKING:
-    pass
 
 MAKE_PATHS = (
     "**/Makefile",

@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.inert_literals import InertLiterals
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.decide.scoring import RiskScorer, ScoringContext
 from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
@@ -36,6 +35,7 @@ from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import Category, Explanation, Finding, Location, Severity
 from cordon_scanner.foundation.samples import SampleKinds
+from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:

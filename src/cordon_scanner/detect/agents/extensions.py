@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, ClassVar
-
-if TYPE_CHECKING:
-    pass
+from typing import ClassVar
 
 
 class ExtensionVerdicts:

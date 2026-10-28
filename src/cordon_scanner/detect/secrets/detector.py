@@ -28,7 +28,6 @@ import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.assembly import MIN_CHARACTER_CLASSES, SecretAssembly
@@ -61,6 +60,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.samples import SampleKinds
+from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.foundation.text.comments import SourceComments
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.foundation.text.prose import Prose

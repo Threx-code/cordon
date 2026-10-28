@@ -40,10 +40,9 @@ from cordon_scanner.engine.pipeline.constants import (
     PRINTING_COMMANDS,
     PROJECT_BUILD_FILENAMES,
 )
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.results import Repository
+from cordon_scanner.foundation.results import OperationalFinding, Repository
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -620,8 +619,8 @@ class Hooks:
         `core.reachability.CallReachability` for what is and is not treated as
         reachable, and why every approximation there keeps the finding.
         """
+        from cordon_scanner.analysis.python.reachability import CallReachability
         from cordon_scanner.ecosystems.registry import EcosystemRegistry, NotRunAtInstall
-        from cordon_scanner.engine.reachability import CallReachability
 
         # A formula or cask is a hook as a whole; its `service`, `test` and `caveats` blocks are
         # not run by `brew install` (`NotRunAtInstall`).

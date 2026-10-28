@@ -24,7 +24,6 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.decide.scoring import RiskScorer, ScoringContext
 from cordon_scanner.foundation.dependencies import CheckLog
 from cordon_scanner.foundation.models import (
     Category,
@@ -38,9 +37,10 @@ from cordon_scanner.foundation.models import (
     RiskScore,
     Severity,
 )
+from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
     from typing import Any
 
@@ -196,6 +196,10 @@ class ScanContext:
 
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
+    nested_scan: Callable[[Path, Config], tuple[Finding, ...]] | None = None
+    """How a detector scans something it fetched (an MCP server's package): set by the engine to
+    scan the target with the same engine under the configuration given, so a detector never names
+    the engine. None outside a scan (a detector run on its own), where nothing is scanned."""
 
     deadline: float | None = None
     """`time.monotonic()` after which a detector must stop, or `None` for no bound.
@@ -551,6 +555,29 @@ class CapabilityLabelling(Protocol):
     ) -> tuple[Sequence[CapabilityMark], Sequence[object]] | None: ...
 
 
+class ModelCompletion(Protocol):
+    """What a model returned, as the judge reads it."""
+
+    @property
+    def text(self) -> str: ...
+
+
+class ModelProvider(Protocol):
+    """A language model the judge asks (`--judge`): a plugin port. The built-in backends are in
+    `cordon_scanner.judge`, found through the `cordon_scanner.model_providers` entry point."""
+
+    @property
+    def label(self) -> str: ...
+    @property
+    def family(self) -> str: ...
+    @property
+    def remote(self) -> bool: ...
+    def complete(self, system: str, user: str) -> ModelCompletion: ...
+    def context(self, prompt_version: str, kind: str, path: str, text: str) -> None:
+        """What is being judged, for a backend that runs the prompt itself (Cordon Cloud)."""
+        ...
+
+
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
 # conforms, so the engine never sees a concrete adapter type.
@@ -610,6 +637,12 @@ class ReachedFlowFacts(Protocol):
     def of(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]: ...
 
 
+class ServerSourceFinding(Protocol):
+    """What the engine uses of the class `ServerSources`: which files are an MCP server's own source."""
+
+    def of(self, units: Sequence[FileUnit]) -> set[str]: ...
+
+
 class SkillScripts(Protocol):
     """What the engine uses of the class `LoadPath`."""
 
@@ -639,10 +672,13 @@ __all__ = [
     "GraphUnit",
     "ImportReachabilityNotes",
     "JudgeScheduling",
+    "ModelCompletion",
+    "ModelProvider",
     "ReachedFlowFacts",
     "RepositoryUnit",
     "RuleSelector",
     "ScanContext",
+    "ServerSourceFinding",
     "SkillScripts",
     "SubmoduleDependencies",
     "Unit",

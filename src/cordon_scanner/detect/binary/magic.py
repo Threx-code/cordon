@@ -6,11 +6,6 @@ file's format can be named whatever it is called, and a name that disagrees with
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 
 MAX_FAT_ARCHITECTURES = 20
 """How many slices a universal binary may declare and still be one.

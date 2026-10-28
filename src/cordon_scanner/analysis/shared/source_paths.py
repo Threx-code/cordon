@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from cordon_scanner.analysis.shared.test_material import SCANNER_CONFIG_PATHS, TEST_MATERIAL_PATHS
 from cordon_scanner.foundation.files.globs import PathGlob
@@ -18,9 +18,6 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
-
-if TYPE_CHECKING:
-    pass
 
 
 class EntryPaths(Protocol):

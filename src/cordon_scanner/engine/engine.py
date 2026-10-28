@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.decide.policy import PolicyGate
-from cordon_scanner.decide.scoring import RiskScorer
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -47,7 +46,6 @@ from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.pipeline.units import Units
 from cordon_scanner.engine.progress import NullProgress, Progress
@@ -63,11 +61,13 @@ from cordon_scanner.foundation.models import Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import (
     LanguageStat,
+    OperationalFinding,
     Project,
     Repository,
     ScanResult,
     ScanStats,
 )
+from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.sources.registry import ArchiveReader
@@ -77,6 +77,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
     from cordon_scanner.detect.base import Detector
+    from cordon_scanner.foundation.models import Finding
 
 
 class Engine:
@@ -664,7 +665,14 @@ class Engine:
             ci_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind == "ci"),
             scorer=self.scorer,
             offline=self.config.offline,
+            nested_scan=Engine._nested_scan,
         )
+
+    @staticmethod
+    def _nested_scan(target: Path, config: Config) -> tuple[Finding, ...]:
+        """A scan a detector asks for (`ScanContext.nested_scan`): this engine, the configuration
+        it gives."""
+        return Engine(config).scan(target).findings
 
     # -- Dependency graph ------------------------------------------------
 

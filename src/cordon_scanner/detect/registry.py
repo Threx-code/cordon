@@ -18,23 +18,21 @@ ROLES: dict[str, tuple[str, str]] = {
     "DeclaredSource": ("cordon_scanner.detect.supply.manifests.sources", "DeclaredSource"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
-    "JudgeGate": ("cordon_scanner.detect.agents.language_model_judge", "JudgeGate"),
+    "JudgeGate": ("cordon_scanner.detect.agents.language_model.detector", "JudgeGate"),
     "LoadPath": ("cordon_scanner.detect.code.capability.load_path", "LoadPath"),
     "NATIVE_FORMATS": ("cordon_scanner.detect.binary.detector", "NATIVE_FORMATS"),
     "ReachedFlows": ("cordon_scanner.detect.code.reached_flows", "ReachedFlows"),
     "SBOM_NAMES": ("cordon_scanner.detect.supply.sbom", "SBOM_NAMES"),
     "SBOM_SUFFIXES": ("cordon_scanner.detect.supply.sbom", "SBOM_SUFFIXES"),
-    "SERVER_SOURCE_SUFFIXES": (
-        "cordon_scanner.detect.agents.mcp_servers.source",
-        "SERVER_SOURCE_SUFFIXES",
-    ),
+    "ServerSources": ("cordon_scanner.detect.agents.mcp_servers.source", "ServerSources"),
     "Submodules": ("cordon_scanner.detect.source.submodules", "Submodules"),
 }
 
 if TYPE_CHECKING:
-    from cordon_scanner.detect.agents import (
-        language_model_judge as _detect_agents_language_model_judge,
+    from cordon_scanner.detect.agents.language_model import (
+        detector as _detect_agents_language_model_detector,
     )
+    from cordon_scanner.detect.agents.mcp_servers import source as _detect_agents_mcp_servers_source
     from cordon_scanner.detect.base import (
         BinaryIdentification,
         ComposerPluginPaths,
@@ -43,6 +41,7 @@ if TYPE_CHECKING:
         ImportReachabilityNotes,
         JudgeScheduling,
         ReachedFlowFacts,
+        ServerSourceFinding,
         SkillScripts,
         SubmoduleDependencies,
     )
@@ -63,13 +62,13 @@ if TYPE_CHECKING:
     DeclaredSource: DeclaredSourceKinds = _detect_supply_manifests_sources.DeclaredSource
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
-    JudgeGate: JudgeScheduling = _detect_agents_language_model_judge.JudgeGate
+    JudgeGate: JudgeScheduling = _detect_agents_language_model_detector.JudgeGate
     LoadPath: SkillScripts = _detect_code_capability_load_path.LoadPath
     NATIVE_FORMATS: frozenset[str] = _detect_binary_detector.NATIVE_FORMATS
     ReachedFlows: ReachedFlowFacts = _detect_code_reached_flows.ReachedFlows
     SBOM_NAMES: tuple[str, ...] = _detect_supply_sbom.SBOM_NAMES
     SBOM_SUFFIXES: tuple[str, ...] = _detect_supply_sbom.SBOM_SUFFIXES
-    SERVER_SOURCE_SUFFIXES: tuple[str, ...]  # (a value: its type is enough; the module's own Final)
+    ServerSources: ServerSourceFinding = _detect_agents_mcp_servers_source.ServerSources
     Submodules: SubmoduleDependencies = _detect_source_submodules.Submodules
 
 
@@ -90,7 +89,6 @@ __all__ = [
     "ROLES",
     "SBOM_NAMES",
     "SBOM_SUFFIXES",
-    "SERVER_SOURCE_SUFFIXES",
     "BinaryDetector",
     "ComposerPluginHooks",
     "DeclaredSource",
@@ -99,5 +97,6 @@ __all__ = [
     "JudgeGate",
     "LoadPath",
     "ReachedFlows",
+    "ServerSources",
     "Submodules",
 ]

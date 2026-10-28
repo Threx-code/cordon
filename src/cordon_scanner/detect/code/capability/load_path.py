@@ -15,9 +15,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
-from cordon_scanner.detect.base import (
-    ScanContext,
-)
+from cordon_scanner.detect.base import ScanContext
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.foundation.capabilities import Capability
 
@@ -311,7 +309,7 @@ class LoadPath:
             for inner in PythonSyntax.nodes(outer)
             if inner is not outer
         }
-        from cordon_scanner.engine.reachability import CallReachability
+        from cordon_scanner.analysis.python.reachability import CallReachability
 
         on_load: list[ast.AST] = []
         for node in PythonSyntax.nodes(tree):
@@ -524,13 +522,13 @@ class LoadPath:
             return True
         if ctx is not None and content.path in ctx.agent_run_paths:
             return True
-        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+        from cordon_scanner.detect.agents.mcp_servers.source import ServerSources
 
         member = content.path.rpartition("!")[2]
         return (
             member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
-            and not ReleaseChecks.NOT_A_SERVER_PATH.search(member)
-            and ReleaseChecks.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
+            and not ServerSources.NOT_A_SERVER_PATH.search(member)
+            and ServerSources.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
         )
 
 

@@ -29,8 +29,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.decide.scoring import RiskScorer
 from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.report.base import BaseReporter, ReportOptions
 from cordon_scanner.version import __version__
 

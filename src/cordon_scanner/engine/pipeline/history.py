@@ -19,7 +19,6 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.constants import YOUNG_DEPENDENCY_RULE
-from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.foundation.models import (
     Category,
@@ -27,6 +26,7 @@ from cordon_scanner.foundation.models import (
     Finding,
     Severity,
 )
+from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

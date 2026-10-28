@@ -24,10 +24,13 @@ import re
 import secrets
 import threading
 from dataclasses import asdict, dataclass
+from importlib.metadata import entry_points
 from pathlib import Path
-from typing import ClassVar, Final
+from typing import TYPE_CHECKING, ClassVar, Final
 
-from cordon_scanner.judge.providers import BaseProvider, CordonCloudProvider, JudgeError
+if TYPE_CHECKING:
+    from cordon_scanner.detect.base import ModelProvider
+
 
 PROMPT_VERSION: Final = "judge-1"
 DEFAULT_MAX_CALLS: Final = 200
@@ -216,6 +219,10 @@ class VerdictCache:
             pass
 
 
+class JudgeError(Exception):
+    """The judge could not be asked. The message is safe to show and never holds a key."""
+
+
 class BudgetExhausted(JudgeError):
     """The call budget for this scan is spent."""
 
@@ -225,7 +232,7 @@ class Judge:
 
     def __init__(
         self,
-        provider: BaseProvider,
+        provider: ModelProvider,
         *,
         cache: VerdictCache | None = None,
         max_calls: int = DEFAULT_MAX_CALLS,
@@ -253,9 +260,7 @@ class Judge:
             if self.calls >= self.max_calls:
                 raise BudgetExhausted(f"the judge's budget of {self.max_calls} calls is spent")
             self.calls += 1
-        if isinstance(self.provider, CordonCloudProvider):
-            self.provider.prompt_version, self.provider.kind = PROMPT_VERSION, kind
-            self.provider.path, self.provider.text = path, text
+        self.provider.context(PROMPT_VERSION, kind, path, text)
         completion = self.provider.complete(Prompt.SYSTEM, Prompt.user(kind, path, text))
         parsed = VerdictParser.parse(completion.text, text)
         if parsed is None:
@@ -267,12 +272,35 @@ class Judge:
         return verdict
 
 
+class ModelProviders:
+    """The installed model providers (`cordon_scanner.judge`), found through the
+    `cordon_scanner.model_providers` entry point as detectors are, so detection never imports
+    the backends: their transports, their keys, Cordon Cloud's sign-in."""
+
+    GROUP: Final = "cordon_scanner.model_providers"
+
+    @staticmethod
+    def from_spec(spec: str) -> ModelProvider:
+        """The provider `--judge` names (`ollama:<model>`, `anthropic`, `cordon-cloud`, ...).
+
+        Raises `JudgeError` when none is installed or the spec names nothing it knows."""
+        found = [e for e in entry_points(group=ModelProviders.GROUP) if e.name == "builtin"]
+        if not found:
+            raise JudgeError(
+                f"no {ModelProviders.GROUP} entry point named builtin: reinstall cordon-scanner"
+            )
+        provider: ModelProvider = found[0].load().from_spec(spec)
+        return provider
+
+
 __all__ = [
     "DEFAULT_MAX_CALLS",
     "PROMPT_VERSION",
     "BudgetExhausted",
     "Chunker",
     "Judge",
+    "JudgeError",
+    "ModelProviders",
     "Prompt",
     "Verdict",
     "VerdictCache",

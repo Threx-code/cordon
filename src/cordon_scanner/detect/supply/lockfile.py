@@ -26,7 +26,6 @@ from collections import Counter
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.ecosystems.base import Coordinate
@@ -45,6 +44,7 @@ from cordon_scanner.foundation.models import (
     Scope,
     Severity,
 )
+from cordon_scanner.foundation.scoring import ScoringContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

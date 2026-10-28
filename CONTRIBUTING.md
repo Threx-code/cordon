@@ -10,10 +10,14 @@ pip install --require-hashes -r ci/dev-requirements.txt
 pip install --no-deps -e .
 
 pytest -q
-ruff check src/ tests/
-ruff format --check src/ tests/
+ruff check src/ tests/ scripts/ bench/
+ruff format --check src/ tests/ scripts/
 cordon-scanner scan .            # the tool scans its own repository
 ```
+
+After pulling a change to `[project.entry-points]` in `pyproject.toml`, run
+`pip install --no-deps -e .` again: the built-in detectors, reporters, notifiers and the ecosystem
+facts are found through entry points, and an install made before the change cannot see the new one.
 
 Python 3.11 or newer. There are no runtime dependencies and there will not be
 any: it is what makes the air-gapped story real, and every proposal to add one

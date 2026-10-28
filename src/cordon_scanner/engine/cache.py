@@ -70,6 +70,12 @@ link."""
 DEFAULT_CACHE_DIRNAME = ".cordon-cache"
 
 MAX_ENTRY_BYTES = 1 * 1024 * 1024
+"""Cap on a single cached result.
+
+A file producing megabytes of findings is pathological, and caching it would
+turn one hostile input into a permanent disk-space problem. Such a result is
+simply not cached; the scan still works, it is only not accelerated.
+"""
 
 MAX_ENTRY_AGE_DAYS = 30
 """How long an entry stays useful.
@@ -78,12 +84,6 @@ A file not scanned in a month is one whose content has almost certainly changed,
 so the entry would miss anyway. Without eviction the cache grew without bound,
 which on a shared CI volume is a slow disk-space failure nobody attributes to
 the scanner."""
-"""Cap on a single cached result.
-
-A file producing megabytes of findings is pathological, and caching it would
-turn one hostile input into a permanent disk-space problem. Such a result is
-simply not cached; the scan still works, it is only not accelerated.
-"""
 
 
 @dataclass(frozen=True, slots=True)

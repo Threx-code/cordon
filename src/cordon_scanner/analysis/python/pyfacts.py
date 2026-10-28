@@ -16,10 +16,6 @@ from cordon_scanner.foundation.capabilities import Capability
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # from the source
-    from collections.abc import Callable
 
 # Dotted primitives, mapped to what they mean. The keys are what a resolved
 # call must look like once aliases and bindings are unwound, so `go(...)` where
