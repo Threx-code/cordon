@@ -79,7 +79,7 @@
   "decide/vex": "decide/vex",
   "detect/agents/configuration": "detect/agents/configuration",
   "detect/agents/instruction_intent": "detect/agents/instruction_intent",
-  "detect/agents/language_model_judge": "detect/agents/language_model_judge",
+  "detect/agents/language_model/detector": "detect/agents/language_model/detector",
   "detect/agents/semantics": "detect/agents/semantics",
   "detect/agents/chain": "detect/agents/chain",
   "detect/agents/ci_workflows": "detect/agents/ci_workflows",
@@ -446,7 +446,7 @@
   "intel/store/zstd": "intel/store/zstd",
   "judge/calls": "judge/calls",
   "judge/providers": "judge/providers",
-  "judge/review": "judge/review",
+  "detect/agents/language_model/review": "detect/agents/language_model/review",
   "mcp/brand": "mcp/brand",
   "mcp/clients": "mcp/clients",
   "mcp/extensions": "mcp/extensions",
@@ -855,9 +855,7 @@
    "rules/loader": 1642,
    "sources/archive": 1062
   },
-  "outward_imports": [
-   "detect/agents/language_model_judge -> judge"
-  ],
+  "outward_imports": [],
   "file_relative_paths": [
    "src/cordon_scanner/rules/loader.py"
   ],

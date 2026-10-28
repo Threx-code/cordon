@@ -17,6 +17,16 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.detect.agents.language_model.review import (
+    DEFAULT_MAX_CALLS,
+    BudgetExhausted,
+    Chunker,
+    Judge,
+    JudgeError,
+    ModelProviders,
+    Verdict,
+    VerdictCache,
+)
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, RepositoryUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references as ref
@@ -32,16 +42,6 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.text.redact import Redactor
-from cordon_scanner.judge import (
-    DEFAULT_MAX_CALLS,
-    BudgetExhausted,
-    Chunker,
-    Judge,
-    JudgeError,
-    ProviderFactory,
-    Verdict,
-    VerdictCache,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -206,7 +206,7 @@ class AgentJudgeDetector(BaseDetector):
                 return self._judge is not None
             self._resolved = True
             try:
-                provider = ProviderFactory.from_spec(str(ctx.config.judge))
+                provider = ModelProviders.from_spec(str(ctx.config.judge))
             except JudgeError as exc:
                 self._failure = str(exc)
                 return False

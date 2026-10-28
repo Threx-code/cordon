@@ -555,6 +555,29 @@ class CapabilityLabelling(Protocol):
     ) -> tuple[Sequence[CapabilityMark], Sequence[object]] | None: ...
 
 
+class ModelCompletion(Protocol):
+    """What a model returned, as the judge reads it."""
+
+    @property
+    def text(self) -> str: ...
+
+
+class ModelProvider(Protocol):
+    """A language model the judge asks (`--judge`): a plugin port. The built-in backends are in
+    `cordon_scanner.judge`, found through the `cordon_scanner.model_providers` entry point."""
+
+    @property
+    def label(self) -> str: ...
+    @property
+    def family(self) -> str: ...
+    @property
+    def remote(self) -> bool: ...
+    def complete(self, system: str, user: str) -> ModelCompletion: ...
+    def context(self, prompt_version: str, kind: str, path: str, text: str) -> None:
+        """What is being judged, for a backend that runs the prompt itself (Cordon Cloud)."""
+        ...
+
+
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
 # conforms, so the engine never sees a concrete adapter type.
@@ -649,6 +672,8 @@ __all__ = [
     "GraphUnit",
     "ImportReachabilityNotes",
     "JudgeScheduling",
+    "ModelCompletion",
+    "ModelProvider",
     "ReachedFlowFacts",
     "RepositoryUnit",
     "RuleSelector",

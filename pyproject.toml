@@ -161,7 +161,7 @@ cordon-sandbox = "cordon_sandbox.cli:SandboxCli.main"
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
 advisory = "cordon_scanner.detect.supply.advisories.detector:AdvisoryDetector"
-agent-judge = "cordon_scanner.detect.agents.language_model_judge:AgentJudgeDetector"
+agent-judge = "cordon_scanner.detect.agents.language_model.detector:AgentJudgeDetector"
 agents = "cordon_scanner.detect.agents.chain:AgentChainDetector"
 attestation = "cordon_scanner.detect.supply.attestation:AttestationDetector"
 campaign-sibling = "cordon_scanner.detect.supply.campaign_sibling:CampaignSiblingDetector"
@@ -206,6 +206,11 @@ vex = "cordon_scanner.report.vex:VexReporter"
 # What classifying a dependency asks of the ecosystems (foundation.dependencies.EcosystemFacts):
 # provided by the ecosystems layer, so the domain names no ecosystem.
 builtin = "cordon_scanner.ecosystems.registry:RegistryFacts"
+
+[project.entry-points."cordon_scanner.model_providers"]
+# The language-model backends `--judge` names (detect.agents.language_model.review.ModelProviders):
+# found by entry point, so detection never imports their transports or keys.
+builtin = "cordon_scanner.judge.providers:ProviderFactory"
 
 [project.entry-points."cordon_scanner.notifiers"]
 webhook = "cordon_scanner.notify.channels.webhook:WebhookChannel"
