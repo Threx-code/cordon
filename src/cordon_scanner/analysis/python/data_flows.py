@@ -20,13 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-if TYPE_CHECKING:  # from the source
-    from collections.abc import Callable
-
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
-
-if TYPE_CHECKING:  # from the source  # from the source
-    from collections.abc import Callable
 
 
 class DataFlows(AnalyzerCore):

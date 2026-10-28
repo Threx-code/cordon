@@ -5,7 +5,7 @@ The detector id they carry is named here, once: the detector and its findings re
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references
@@ -14,9 +14,6 @@ from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
-
-if TYPE_CHECKING:
-    pass
 
 #: The id every registry finding carries.
 DETECTOR: Final = "registry"

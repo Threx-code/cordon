@@ -9,16 +9,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
-
-if TYPE_CHECKING:
-    pass
-
 
 #: Directional embedding/isolate openers (not the overrides, not the pops): a balanced one laying
 #: text out for display is not an attack, which needs an override or a span that re-reads the code.

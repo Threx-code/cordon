@@ -34,9 +34,6 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 
-if TYPE_CHECKING:  # from the source
-    from collections.abc import Sequence
-
 
 @dataclass(frozen=True, slots=True)
 class LanguageStat:

@@ -5,7 +5,7 @@ context, publish what an outsider controls, pin actions to a mutable tag, or fet
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from cordon_scanner.analysis.shared.destinations import Destinations
 from cordon_scanner.detect.infra.ci_exfil import (
@@ -25,9 +25,6 @@ from cordon_scanner.detect.infra.config_rule import ConfigRule, PatternProximity
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import Category, Confidence, Severity
-
-if TYPE_CHECKING:
-    pass
 
 #: The whole secret context, serialised, in either spelling a workflow writes it.
 #:

@@ -8,11 +8,7 @@ exfiltration paths, agent channels, send verbs, secrecy and orders to run a comm
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Final
-
-if TYPE_CHECKING:
-    pass
-
+from typing import Final
 
 # -- A1: hidden characters -----------------------------------------------------------------
 #

@@ -17,9 +17,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-if TYPE_CHECKING:  # from the source
-    from collections.abc import Callable
-
 # Dotted primitives, mapped to what they mean. The keys are what a resolved
 # call must look like once aliases and bindings are unwound, so `go(...)` where
 # `go` is `subprocess.run` arrives here as `subprocess.run`.

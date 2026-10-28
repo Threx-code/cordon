@@ -8,7 +8,7 @@ raw-address links, secrets it hands to the agent, directives hidden in comments.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION
 from cordon_scanner.detect.agents.text_patterns import (
@@ -19,9 +19,6 @@ from cordon_scanner.detect.agents.text_patterns import (
     ZERO_WIDTH_ONLY,
 )
 from cordon_scanner.intel.registries.installers import KNOWN_INSTALLERS
-
-if TYPE_CHECKING:
-    pass
 
 _WORD_BYTE: Final = re.compile(rb"[A-Za-z0-9]")
 

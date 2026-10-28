@@ -7,13 +7,9 @@ agent acts on with the developer's rights.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from cordon_scanner.foundation.files.globs import PathGlob
-
-if TYPE_CHECKING:
-    pass
-
 
 INSTRUCTION_PATHS: Final = (
     "**/CLAUDE.md",

@@ -480,6 +480,18 @@ class TestStructure:
                 for s in guarded
                 if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)
             }
+            # A role's name bound by an import in the guarded block would win over its protocol
+            # declaration for the type checker, and hand the engine the concrete class after all.
+            imported = {
+                a.asname or a.name
+                for s in guarded
+                if isinstance(s, (ast.Import, ast.ImportFrom))
+                for a in s.names
+            }
+            problems += [
+                f"{layer}.registry.{r}: imported, not only declared"
+                for r in sorted(roles & imported)
+            ]
             for role in sorted(roles):
                 if role not in typed:
                     problems.append(f"{layer}.registry.{role}: not typed for the engine")

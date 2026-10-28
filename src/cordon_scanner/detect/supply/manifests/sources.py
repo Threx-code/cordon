@@ -9,11 +9,6 @@ from __future__ import annotations
 
 import posixpath
 import re
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 
 _FULL_COMMIT = re.compile(r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})(?![0-9a-fA-F])")
 
