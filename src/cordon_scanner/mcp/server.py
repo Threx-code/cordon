@@ -29,7 +29,7 @@ from typing import Any, Final, TextIO
 from cordon_scanner.engine.parallel import ParallelScanner
 from cordon_scanner.mcp.brand import ICONS
 from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner
-from cordon_scanner.mcp.tools import Outcome, Registry, Settings, ToolError
+from cordon_scanner.mcp.tools.catalogue import Outcome, Registry, Settings, ToolError
 from cordon_scanner.mcp.untrusted import Untrusted
 from cordon_scanner.mcp.workspace import Workspace
 
