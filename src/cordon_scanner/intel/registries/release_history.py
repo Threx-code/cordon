@@ -203,7 +203,7 @@ class ReleaseHistory:
         """The archive's files with an obfuscator's output shape, keyed by `key`. Matched, never
         decoded: the same signatures `SUSPECT.OBFUSCATION.PACKED.001` reports."""
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
-        from cordon_scanner.detect.code.obfuscation import ObfuscationDetector
+        from cordon_scanner.detect.code.obfuscation.detector import ObfuscationDetector
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.sources.archive import ArchiveReader
 

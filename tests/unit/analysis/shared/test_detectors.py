@@ -12,7 +12,7 @@ import pytest
 
 from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext
 from cordon_scanner.detect.code.capability.detector import CapabilityDetector
-from cordon_scanner.detect.code.obfuscation import ObfuscationDetector
+from cordon_scanner.detect.code.obfuscation.detector import ObfuscationDetector
 from cordon_scanner.detect.infra.config_files import ConfigDetector
 from cordon_scanner.detect.secrets.secrets import SecretDetector
 from cordon_scanner.detect.supply.dependency import DependencyDetector
