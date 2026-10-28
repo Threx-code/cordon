@@ -53,8 +53,17 @@ class Layout:
     }
     #: Places only tests have: the repository itself, the bench harness, the sandbox package.
     TEST_PLACES: ClassVar[frozenset[str]] = frozenset({"repository", "bench", "sandbox"})
-    MAX_MODULES: ClassVar[int] = 25
-    MAX_LINES: ClassVar[int] = 3_000
+    #: The limits of reviews 21-MAINTAINABILITY.md (the owner's, 2026-10-28): what exceeds one today is
+    #: frozen in package_layout.json with its size and may only shrink; when every list is empty the
+    #: limits hold with no exceptions.
+    MAX_MODULES: ClassVar[int] = 20
+    MAX_LINES: ClassVar[int] = 1_000
+    MAX_CLASS_LINES: ClassVar[int] = 1_000
+    MAX_FUNCTION_LINES: ClassVar[int] = 90
+    #: The adapter layers the engine may reach only through the registry and the protocols.
+    ADAPTERS: ClassVar[frozenset[str]] = frozenset(
+        {"detect", "report", "ecosystems", "sources", "intel"}
+    )
 
     @staticmethod
     def data() -> dict[str, Any]:
@@ -251,6 +260,56 @@ class Structure:
         }
 
     @staticmethod
+    def spans(kind: type) -> dict[str, int]:
+        """`module:Qualified.name` -> lines, for every class (or function) in src/cordon_scanner."""
+        out: dict[str, int] = {}
+        for module in Layout.modules():
+            tree = ast.parse((ROOT / f"{module}.py").read_text(encoding="utf-8"))
+            todo: list[tuple[ast.AST, str]] = [(tree, "")]
+            while todo:
+                node, prefix = todo.pop()
+                for child in ast.iter_child_nodes(node):
+                    named = isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                    here = f"{prefix}{child.name}" if named else prefix  # type: ignore[attr-defined]
+                    if named and isinstance(child, kind):
+                        out[f"{module}:{here}"] = child.end_lineno - child.lineno + 1  # type: ignore[attr-defined]
+                    todo.append((child, f"{here}." if named else prefix))
+        return out
+
+    @staticmethod
+    def classes() -> dict[str, int]:
+        return Structure.spans(ast.ClassDef)
+
+    @staticmethod
+    def functions() -> dict[str, int]:
+        return Structure.spans((ast.FunctionDef, ast.AsyncFunctionDef))  # type: ignore[arg-type]
+
+    @staticmethod
+    def directories() -> dict[str, int]:
+        """Python modules per directory, in the package and in the unit tests."""
+        sizes: collections.Counter[str] = collections.Counter(
+            "src/cordon_scanner/" + m.rsplit("/", 1)[0] for m in Layout.modules() if "/" in m
+        )
+        for p in (REPO / "tests" / "unit").rglob("*.py"):
+            if "__pycache__" not in p.parts and p.name != "__init__.py":
+                sizes[p.parent.relative_to(REPO).as_posix()] += 1
+        return dict(sizes)
+
+    @classmethod
+    def engine_adapters(cls) -> set[str]:
+        """`engine/x -> adapter` for each import of a concrete adapter by the engine; an adapter
+        layer's `base` (its protocol) is the way in and is not counted."""
+        out = set()
+        for m in Layout.modules():
+            if not m.startswith("engine/"):
+                continue
+            for dep in cls.imports(m):
+                layer, _, rest = dep.partition("/")
+                if layer in Layout.ADAPTERS and rest not in ("", "base"):
+                    out.add(f"{m} -> {dep}")
+        return out
+
+    @staticmethod
     def file_relative() -> set[str]:
         """Source files that locate something from their own position (`__file__`)."""
         out = set()
@@ -280,9 +339,42 @@ class TestStructure:
         modules = {p.stem for p in ROOT.glob("*.py") if p.stem != "__init__"}
         assert not sorted((packages | modules) - set(Layout.LAYERS)), "give it a layer, or a home"
 
-    def test_no_directory_holds_more_than_25_modules(self) -> None:
-        sizes = collections.Counter(m.rsplit("/", 1)[0] for m in Layout.modules() if "/" in m)
-        assert not {d: n for d, n in sizes.items() if n > Layout.MAX_MODULES}
+    @staticmethod
+    def within(
+        name: str, now: dict[str, int], frozen: dict[str, int], limit: int, what: str
+    ) -> None:
+        """Each measured size at most its limit, or its frozen size; each frozen entry still over
+        the limit (else remove it) -- so a frozen list only shrinks and stays exact."""
+        over = {k: v for k, v in now.items() if v > frozen.get(k, limit)}
+        assert not over, f"{name}: past {limit} {what} (or past its frozen size): split it: {over}"
+        gone = sorted(k for k in frozen if now.get(k, 0) <= limit)
+        assert not gone, f"{name}: back within {limit} {what}: remove from frozen: {gone}"
+
+    def test_no_directory_holds_more_than_20_modules(self) -> None:
+        TestStructure.within(
+            "directories", Structure.directories(), Structure.frozen()["large_directories"],
+            Layout.MAX_MODULES, "modules",
+        )  # fmt: skip
+
+    def test_no_class_grows_past_1000_lines(self) -> None:
+        TestStructure.within(
+            "classes", Structure.classes(), Structure.frozen()["long_classes"],
+            Layout.MAX_CLASS_LINES, "lines",
+        )  # fmt: skip
+
+    def test_no_function_grows_past_90_lines(self) -> None:
+        TestStructure.within(
+            "functions", Structure.functions(), Structure.frozen()["long_functions"],
+            Layout.MAX_FUNCTION_LINES, "lines",
+        )  # fmt: skip
+
+    def test_the_engine_reaches_adapters_only_through_the_registry(self) -> None:
+        frozen = set(Structure.frozen()["engine_adapter_imports"])
+        now = Structure.engine_adapters()
+        assert not sorted(now - frozen), (
+            "the engine imports an adapter: register it, use its protocol"
+        )
+        assert not sorted(frozen - now), "these are gone: remove them from frozen"
 
     def test_no_loose_files(self) -> None:
         for folder, allowed in Structure.TOP_FILES.items():
@@ -294,15 +386,10 @@ class TestStructure:
             assert not sorted(here - allowed), f"{folder}: put these in a subdirectory"
 
     def test_no_module_grows_past_its_length(self) -> None:
-        frozen = Structure.frozen()["long_modules"]
-        for module, lines in Structure.lengths().items():
-            limit = frozen.get(module, Layout.MAX_LINES)
-            assert lines <= limit, f"{module}: {lines} lines, at most {limit}; split it"
-        for module, limit in frozen.items():
-            assert Structure.lengths().get(module, 0) > Layout.MAX_LINES, (
-                f"{module} is back under {Layout.MAX_LINES} lines: remove it from frozen"
-            )
-            assert Structure.lengths()[module] <= limit
+        TestStructure.within(
+            "modules", Structure.lengths(), Structure.frozen()["long_modules"],
+            Layout.MAX_LINES, "lines",
+        )  # fmt: skip
 
     def test_no_new_outward_import(self) -> None:
         frozen = set(Structure.frozen()["outward_imports"])

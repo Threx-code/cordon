@@ -62,9 +62,13 @@ gate and of CI, holds the rest of the arrangement:
   no loose files                              a file at the top of src/cordon_scanner, detect/,
                                               intel/, tests/, scripts/ or bench/ beyond the few
                                               that belong there
-  at most 25 modules a directory              a directory grows past it
-  at most 3,000 lines a module                a module passes it (the seven longer today are
-                                              frozen at their length and may only shrink)
+  at most 20 modules a directory              a directory in src/ or tests/unit/ grows past it
+  at most 1,000 lines a module                a module passes it
+  at most 1,000 lines a class                 a class passes it
+  at most 90 lines a function                 a function passes it
+  the engine reaches adapters through the     engine/ imports a concrete detector, reporter,
+    registry and the protocols only             ecosystem, source or intel module (an adapter
+                                              layer's `base`, its protocol, is the way in)
   imports point inward                        a NEW outward import (today's are frozen; each
                                               one removed comes off the list)
   no paths counted from a file's position     a new `__file__`: data is found with PackagePaths
@@ -73,8 +77,12 @@ gate and of CI, holds the rest of the arrangement:
   the repository root stays as it is          a new tracked entry at the top of the repository
 ```
 
-The frozen lists live in `package_layout.json` under `frozen`. Shrinking one is a one-line edit
-there; the test also fails when an entry no longer applies, so the lists stay exact.
+What exceeds a limit today -- modules, classes, functions and directories past their size, the
+outward imports, the engine's adapter imports, the paths counted from a file -- is listed in
+`package_layout.json` under `frozen` with its size, and may only shrink: nothing new may join a list
+and nothing on one may grow. Shrinking one is a one-line edit there; the test also fails when an
+entry no longer applies, so the lists stay exact. The lists are being emptied (reviews
+`21-MAINTAINABILITY.md`); when they are, every rule above holds with no exceptions.
 
 ## Adding a detection rule
 

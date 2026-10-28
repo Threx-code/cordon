@@ -38,8 +38,10 @@ The dependency rule is one-directional: a layer imports only the layers inside i
 
 Every module's place, and every unit test's (`tests/unit/<place>/`), is listed in
 `tests/unit/package_layout.json`; `tests/unit/repository/test_package_layout.py` keeps the table
-complete and reports what does not yet follow the rule (imports that point outward today, the
-seven modules past 3,000 lines), the list that may only shrink.
+complete and holds the arrangement to its limits: imports point inward, the engine reaches the
+adapters only through the registry and the protocols, modules and classes stay within 1,000 lines,
+functions within 90, directories within 20 modules. What does not follow a rule yet is listed
+there with its size and may only shrink; when the lists are empty the rules hold with no exceptions.
 
 This is not architectural decoration. It buys four specific properties the
 product requires:
