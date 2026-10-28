@@ -13,7 +13,7 @@ from pathlib import Path
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 from cordon_scanner.decide.policy import PolicyGate
-from cordon_scanner.detect.code.capability.detector import CapabilityDetector
+from cordon_scanner.detect.code.capability.intent import IntentSignals
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 
@@ -33,7 +33,7 @@ class Flow:
     def shell_sends_identity(script: str) -> bool:
         raw = script.encode()
         content = FileContent(path="skills/x/scripts/run.sh", raw=raw, size=len(raw))
-        return CapabilityDetector._identity_in_what_is_sent("shell", content, [])
+        return IntentSignals.identity_in_what_is_sent("shell", content, [])
 
 
 class TestTheVariablesNamingTheMachine:
