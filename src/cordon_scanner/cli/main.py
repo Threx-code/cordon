@@ -40,40 +40,24 @@ from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
 from cordon_scanner.cli.commands.sbom import SbomCommand
 from cordon_scanner.cli.commands.scan.command import ScanCommand
-from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
+from cordon_scanner.cli.help import GroupHelp, HelpCommand
+from cordon_scanner.cli.parser import CommandParser
 from cordon_scanner.foundation.errors import CordonError, ExitCode
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
-from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 
-EPILOG = f"""\
-exit codes:
-  0  clean          the scan completed and nothing met the failure policy
-  1  findings       the scan completed and something met the failure policy
-  2  scanner error  cordon itself failed
-  3  config error   invalid configuration, policy, or a forbidden override
-  4  incomplete     the scan was degraded and --fail-on-incomplete was set
-
-  A plain `if cordon-scanner scan .` is correct with no flags, and any non-zero code
-  fails safe. The distinctions above matter because a pipeline that cannot tell
-  "the scanner broke" from "your code is bad" gets configured to ignore both.
-
-tutorials for this version ({__version__}):
-  https://github.com/Threx-code/cordon/tree/v{__version__}/tutorials
-"""
-
-
 class CommandLine:
-    """The command line: argument definitions and the commands behind them.
+    """The command line's dispatch: the handler for each command, and the exit codes.
 
-    One class because the two halves have to agree and nothing else checks that
-    they do. A flag defined here and read nowhere is dead; a flag read here and
-    defined nowhere is a crash on the invocation that uses it. That second one
-    shipped: the guard wrote hooks calling `cordon scan --staged` while no such
-    flag existed, so every installed hook failed and blocked every commit.
+    Each command is one class in `cli/commands/`, holding its arguments and the code that
+    reads them, because the two halves have to agree and nothing else checks that they
+    do. A flag defined and read nowhere is dead; a flag read and defined nowhere is a
+    crash on the invocation that uses it. That second one shipped: the guard wrote hooks
+    calling `cordon scan --staged` while no such flag existed, so every installed hook
+    failed and blocked every commit.
 
     Exit codes are the contract. 0 clean, 1 findings, 2 a bug in cordon, 3 a
     mistake in the invocation, 4 an incomplete scan. The distinction between 2
@@ -93,78 +77,6 @@ class CommandLine:
     """
 
     @classmethod
-    def build_parser(cls) -> ColourArgumentParser:
-        parser = ColourArgumentParser(
-            prog=cls.PROGRAM,
-            description="Language-agnostic software supply-chain security scanner.",
-            epilog=EPILOG,
-            formatter_class=argparse.RawDescriptionHelpFormatter,
-        )
-        parser.add_argument("--version", action="version", version=f"{cls.PROGRAM} {__version__}")
-
-        sub = parser.add_subparsers(dest="command", metavar="<command>")
-
-        ScanCommand.add_parser(sub, EPILOG)
-
-        InventoryCommand.add_parser(sub)
-
-        RulesCommand.add_parser(sub)
-
-        GuardCommand.add_parser(sub)
-
-        ConfigCommand.add_parser(sub)
-        ReportCommand.add_parser(sub)
-
-        BaselineCommand.add_parser(sub)
-
-        BundleCommand.add_parser(sub)
-
-        AdvisoriesCommand.add_parser(sub)
-
-        LoginCommand.add_parser(sub)
-        RunnerCommand.add_parser(sub)
-        AgentCommand.add_parser(sub)
-        LogoutCommand.add_parser(sub)
-        WhoamiCommand.add_parser(sub)
-
-        IntelCommand.add_parser(sub)
-        SbomCommand.add_parser(sub)
-
-        from cordon_scanner.cli.completion import CompletionCommand
-        from cordon_scanner.cli.deps import DepsCommand
-        from cordon_scanner.cli.suppressions import SuppressCommand
-
-        DepsCommand.add_parser(sub)
-        from cordon_scanner.cli.incoming import IncomingCommand
-        from cordon_scanner.cli.review import ReviewCommand
-
-        IncomingCommand.add_parser(sub)
-
-        ReviewCommand.add_parser(sub)
-        SuppressCommand.add_parser(sub)
-        CompletionCommand.add_parser(sub)
-        # `run` hands `mcp` the rest of the command line before this parser sees it; the same
-        # options are configured here so help, completion and the command reference show them.
-        from cordon_scanner.mcp.server import Server as McpServer
-
-        McpServer.configure(
-            sub.add_parser(
-                "mcp",
-                help="serve Cordon to AI agents over the Model Context Protocol (stdio)",
-            )
-        )
-        help_cmd = sub.add_parser("help", help="this screen, or the help for one command")
-        help_cmd.add_argument(
-            "topic", nargs="*", metavar="COMMAND", help="a command, or a command and its action"
-        )
-
-        return parser
-
-    # ---------------------------------------------------------------------------
-    # Commands
-    # ---------------------------------------------------------------------------
-
-    @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
         from cordon_scanner.cli.completion import CompletionCommand
         from cordon_scanner.cli.deps import DepsCommand
@@ -182,7 +94,7 @@ class CommandLine:
 
             return mcp_main(arguments[1:])
 
-        parser = cls.build_parser()
+        parser = CommandParser.build()
         args = parser.parse_args(argv)
 
         if not args.command:

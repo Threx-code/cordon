@@ -22,6 +22,7 @@ import pytest
 from cordon_scanner.cli.completion import CommandTree, CompletionScript
 from cordon_scanner.cli.deps import DependencyView
 from cordon_scanner.cli.main import CommandLine
+from cordon_scanner.cli.parser import CommandParser
 from cordon_scanner.cli.suppressions import SuppressCommand, SuppressionFile, SuppressionRules
 from cordon_scanner.foundation.config.policy import OrgConstraints
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
@@ -564,7 +565,7 @@ class TestDeps:
 class TestCompletion:
     @pytest.fixture
     def tree(self) -> CommandTree:
-        return CommandTree.from_parser(CommandLine.build_parser())
+        return CommandTree.from_parser(CommandParser.build())
 
     def test_every_command_is_completed(self, tree) -> None:
         assert {"scan", "deps", "suppress", "completion", "rules", "sbom"} <= set(
@@ -576,16 +577,16 @@ class TestCompletion:
 
     @pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
     def test_each_shell_renders(self, shell) -> None:
-        script = CompletionScript(CommandLine.build_parser(), "cordon-scanner").render(shell)
+        script = CompletionScript(CommandParser.build(), "cordon-scanner").render(shell)
         assert "cordon-scanner" in script and "suppress" in script
 
     def test_zsh_reuses_the_bash_script_through_bashcompinit(self) -> None:
-        script = CompletionScript(CommandLine.build_parser(), "cordon-scanner").render("zsh")
+        script = CompletionScript(CommandParser.build(), "cordon-scanner").render("zsh")
         assert script.startswith("autoload -U +X bashcompinit && bashcompinit\n")
 
     def test_an_unknown_shell_is_refused(self) -> None:
         with pytest.raises(ValueError, match="unsupported shell"):
-            CompletionScript(CommandLine.build_parser(), "cordon-scanner").render("powershell")
+            CompletionScript(CommandParser.build(), "cordon-scanner").render("powershell")
 
     def test_the_cli_prints_it(self, capsys) -> None:
         assert CommandLine.run(["completion", "bash"]) == 0

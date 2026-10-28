@@ -73,6 +73,7 @@
   "cli/help": "cli/help",
   "cli/incoming": "cli/incoming",
   "cli/main": "cli/main",
+  "cli/parser": "cli/parser",
   "cli/progress": "cli/progress",
   "cli/review": "cli/review",
   "cli/suppressions": "cli/suppressions",

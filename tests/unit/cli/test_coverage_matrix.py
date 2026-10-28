@@ -50,10 +50,10 @@ class TestTheMatrixIsCurrent:
         A rule that cannot be run is not coverage, and a document is not a
         control unless something checks it.
         """
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.parser import CommandParser
 
         text = MATRIX.read_text(encoding="utf-8")
-        parser = CommandLine.build_parser()
+        parser = CommandParser.build()
         known = set(parser.format_help().split())
         for action in parser._subparsers._group_actions:
             for sub in action.choices.values():

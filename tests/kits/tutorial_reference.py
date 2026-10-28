@@ -363,10 +363,10 @@ class CommandTutorial:
     @staticmethod
     def render() -> str:
         from cordon_scanner.cli.help import HelpScreen
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.parser import CommandParser
 
         os.environ["COLUMNS"] = "100"
-        parser = CommandLine.build_parser()
+        parser = CommandParser.build()
         commands = CommandTutorial.subparsers(parser)
         helps = CommandTutorial.helps(parser)
         head = f"""# 26 · Every command

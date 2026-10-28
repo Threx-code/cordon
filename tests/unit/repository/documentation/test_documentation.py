@@ -24,6 +24,7 @@ import pytest
 
 import cordon_scanner
 from cordon_scanner.cli.main import CommandLine
+from cordon_scanner.cli.parser import CommandParser
 from support import ROOT as REPO
 from support import requires_workflows
 
@@ -85,7 +86,7 @@ class DocumentationHelpers:
 
 class TestCommands:
     def real(self) -> set[str]:
-        parser = CommandLine.build_parser()
+        parser = CommandParser.build()
         return {name for action in parser._actions if action.choices for name in action.choices}
 
     def test_every_documented_command_exists_or_is_labelled(self) -> None:
@@ -639,10 +640,9 @@ class TestDocumentationIsPinnedToThisVersion:
             ), page.name
 
     def test_the_help_links_this_versions_tutorials(self) -> None:
-        from cordon_scanner.cli.main import EPILOG
         from cordon_scanner.version import __version__
 
-        assert f"/tree/v{__version__}/tutorials" in EPILOG
+        assert f"/tree/v{__version__}/tutorials" in CommandParser.EPILOG
 
 
 class TestRuleIdentifiers:
