@@ -16,6 +16,7 @@ from typing import ClassVar
 
 import pytest
 
+from cordon_scanner.detect.supply.advisories.findings import AdvisoryFinding
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
@@ -451,7 +452,9 @@ class TestConfidence:
             matched_through=matched_through,
         )
         ctx = ScanContext(config=Config.default(), rules=RuleSet(RuleLoader.load_builtin()))
-        finding = AdvisoryDetector()._finding(dependency, advisory, ctx)
+        finding = AdvisoryFinding.finding(
+            dependency, advisory, ctx, advice=AdvisoryDetector()._upgrade_advice
+        )
         assert finding.confidence.name == expected
 
 
