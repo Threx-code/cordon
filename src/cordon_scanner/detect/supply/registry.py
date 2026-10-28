@@ -67,8 +67,8 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.engine.inventory import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,

@@ -288,7 +288,7 @@ class TestCompiledArtefacts:
         )
 
     def test_a_name_only_jar_is_never_asked_of_a_registry(self, tmp_path) -> None:
-        from cordon_scanner.engine.inventory import NAMED_BY_FILE
+        from cordon_scanner.foundation.dependencies import NAMED_BY_FILE
 
         jar = BinaryFixtures.jar({"META-INF/MANIFEST.MF": b"Manifest-Version: 1.0\n"})
         image = tmp_path / "image.tar"

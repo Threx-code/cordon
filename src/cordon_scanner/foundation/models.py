@@ -1427,20 +1427,13 @@ class Dependency:
     def _resolved_by_lockfile(self) -> bool:
         """Whether `declared_in` is a lockfile (it may also be the manifest: a pinned
         `requirements.txt` is both)."""
-        if not self.declared_in:
-            return False
-        if self.declared_in != self.manifest_path:
-            return True
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.foundation.dependencies import DependencyResolution
 
-        return (
-            EcosystemRegistry.lockfile_ecosystem(self.declared_in) is not None
-            and self.version is not None
-        )
+        return DependencyResolution.by_lockfile(self)
 
     @property
     def namespace(self) -> str | None:
-        from cordon_scanner.engine.inventory import DependencyIdentity
+        from cordon_scanner.foundation.dependencies import DependencyIdentity
 
         # A Homebrew formula from a named tap is recorded by its own name, its tap the namespace
         # its full name (`user/repo/name`, kept as the alias) carries.
@@ -1450,14 +1443,14 @@ class Dependency:
     @property
     def source(self) -> tuple[str, str | None]:
         """`(source_type, source_url)`; the URL never carries credentials."""
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         return DependencySource.classify(self)
 
     @property
     def resolution(self) -> tuple[str, str]:
         """`(resolution_status, reason)`."""
-        from cordon_scanner.engine.inventory import DependencyResolution
+        from cordon_scanner.foundation.dependencies import DependencyResolution
 
         return DependencyResolution.status(self)
 

@@ -2020,7 +2020,7 @@ class ManifestDetector(BaseDetector):
         private = [i for i in indexes if i not in public]
         if not (extra and public and private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         hosts = ", ".join(
             sorted(
@@ -2106,7 +2106,7 @@ class ManifestDetector(BaseDetector):
         private = [i for i, s in enumerate(listed) if i not in public]
         if not public or not private or min(public) > min(private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
         yield self._finding(
@@ -2304,7 +2304,7 @@ class ManifestDetector(BaseDetector):
         private = [i for i, s in enumerate(listed) if i not in public and s]
         if not public or not private or min(public) > min(private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(DependencySource.sanitise(listed[i]) or listed[i] for i in private)
         yield self._finding(
@@ -2342,7 +2342,7 @@ class ManifestDetector(BaseDetector):
         ]
         if len(set(global_sources)) < 2:
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(sorted({DependencySource.sanitise(s) or s for s in global_sources}))
         yield self._finding(
@@ -2375,7 +2375,7 @@ class ManifestDetector(BaseDetector):
         private = [s for s in sources if s not in public]
         if mapped or not (public and private):
             return
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         named = ", ".join(sorted({(DependencySource.sanitise(s) or s) for s in private}))
         yield self._finding(

@@ -136,7 +136,7 @@ class LicenseDetector(BaseDetector):
         if not isinstance(unit, GraphUnit):
             return ()
 
-        from cordon_scanner.engine.inventory import OS_ECOSYSTEMS
+        from cordon_scanner.foundation.dependencies import OS_ECOSYSTEMS
 
         findings: list[Finding] = []
         for dependency in unit.dependencies:

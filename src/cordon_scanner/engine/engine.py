@@ -5415,7 +5415,7 @@ class Engine:
 
     @staticmethod
     def _image_dependencies_of(inventory: Any) -> tuple[Dependency, ...]:
-        from cordon_scanner.engine.inventory import NAMED_BY_FILE
+        from cordon_scanner.foundation.dependencies import NAMED_BY_FILE
         from cordon_scanner.images.packages import OsPackage
 
         where = OsPackage.DATABASE
@@ -5928,7 +5928,7 @@ class Engine:
     @staticmethod
     def _configured_sources(units: list[FileUnit]) -> tuple[tuple[str, str, str], ...]:
         """Every package source the scanned manifests configure, credentials removed."""
-        from cordon_scanner.engine.inventory import DependencySource
+        from cordon_scanner.foundation.dependencies import DependencySource
 
         found: list[tuple[str, str, str]] = []
         for unit in units:
