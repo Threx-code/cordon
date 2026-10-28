@@ -396,6 +396,7 @@
   "mcp/tools/catalogue": "mcp/tools/catalogue",
   "mcp/tools/base": "mcp/tools/base",
   "mcp/tools/packages": "mcp/tools/packages",
+  "mcp/tools/workspace": "mcp/tools/workspace",
   "mcp/untrusted": "mcp/untrusted",
   "mcp/warm": "mcp/warm",
   "mcp/workspace": "mcp/workspace",
@@ -808,7 +809,7 @@
    "ecosystems/packages/opam": 1004,
    "ecosystems/packages/pypi": 1319,
    "images/oci": 1074,
-   "mcp/tools/catalogue": 1256,
+   "mcp/tools/catalogue": 1086,
    "rules/loader": 1642,
    "sources/archive": 1062
   },
