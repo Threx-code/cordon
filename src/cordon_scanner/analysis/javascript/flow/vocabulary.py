@@ -249,6 +249,21 @@ _URL: Final = re.compile(
 )
 
 
+#: The source kinds a flow reports (`JsFlow.SOURCES`): what a value read from the machine or
+#: the network carries.
+SOURCES: Final[tuple[str, ...]] = (
+    "secret_file",
+    "home_file",
+    "network_response",
+    "decoded",
+    "environment",
+    "identity",
+    "browser",
+    "clipboard",
+    "wallet_key",
+)
+
+
 @dataclass(frozen=True)
 class Flow:
     """One source kind's value reaching a sink."""
