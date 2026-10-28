@@ -219,6 +219,7 @@
   "detect/supply/registries/evidence": "detect/supply/registries/evidence",
   "detect/supply/registries/notices": "detect/supply/registries/notices",
   "detect/supply/registries/detector": "detect/supply/registries/detector",
+  "detect/supply/registries/findings": "detect/supply/registries/findings",
   "detect/supply/registries/rule_declarations": "detect/supply/registries/rule_declarations",
   "detect/supply/release_diff": "detect/supply/release_diff",
   "detect/supply/sbom": "detect/supply/sbom",
@@ -863,7 +864,7 @@
    "detect/supply/manifests/confusion -> engine/pipeline/releases",
    "detect/supply/manifests/findings -> decide/scoring",
    "detect/supply/provenance -> decide/scoring",
-   "detect/supply/registries/detector -> decide/scoring",
+   "detect/supply/registries/findings -> decide/scoring",
    "detect/supply/release_diff -> engine/pipeline/releases",
    "detect/supply/sbom -> decide/scoring"
   ],

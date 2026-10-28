@@ -55,7 +55,6 @@ import re
 import urllib.parse
 from typing import TYPE_CHECKING
 
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import (
     BaseDetector,
     DetectorRequirements,
@@ -68,12 +67,7 @@ from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.dependencies import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.foundation.models import (
     Category,
-    Evidence,
-    EvidenceKind,
-    Explanation,
     Finding,
-    Location,
-    RedactionMode,
     Scope,
 )
 
@@ -84,6 +78,7 @@ if TYPE_CHECKING:
     from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.registries.registry_client import PackageFacts
 from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
+from cordon_scanner.detect.supply.registries.findings import RegistryFinding
 from cordon_scanner.detect.supply.registries.notices import RegistryNotices
 from cordon_scanner.detect.supply.registries.rule_declarations import DECLARED_RULES, DETECTOR
 
@@ -160,11 +155,6 @@ Earlier ones only, which the client counts. A package that adopted provenance
 last month has an attested latest and an unattested everything-else, and
 counting totals would put this finding on every pin that predates the practice
 -- `requests==2.31.0` among them, which skipped nothing."""
-
-NETWORK_CAVEAT = (
-    "This finding came from a live registry query. It is not reproducible from "
-    "the repository alone, and rerunning the scan offline will not produce it."
-)
 
 
 class RegistryDetector(BaseDetector):
@@ -310,7 +300,7 @@ class RegistryDetector(BaseDetector):
                     dependency
                 ):
                     findings.append(
-                        self._finding(
+                        RegistryFinding.finding(
                             "SUSPECT.DEPENDENCY.UNREGISTERED.001",
                             ctx,
                             dependency=dependency,
@@ -336,7 +326,7 @@ class RegistryDetector(BaseDetector):
             # It is still reported, because "we could not ask" and "the answer
             # was no" are different facts.
             findings.append(
-                self._finding(
+                RegistryFinding.finding(
                     "OPERATIONAL.REGISTRY.UNREACHABLE.001",
                     ctx,
                     dependency=None,
@@ -352,7 +342,7 @@ class RegistryDetector(BaseDetector):
         if unsupported:
             counted = sum(1 for d in unit.dependencies if d.ecosystem in unsupported and d.version)
             findings.append(
-                self._finding(
+                RegistryFinding.finding(
                     "OPERATIONAL.REGISTRY.NO_SOURCE.001",
                     ctx,
                     dependency=None,
@@ -380,7 +370,7 @@ class RegistryDetector(BaseDetector):
                     f"({private_images[0].name.split('/', 1)[0]}), which answers only with credentials"
                 )
             findings.append(
-                self._finding(
+                RegistryFinding.finding(
                     "OPERATIONAL.REGISTRY.NOT_ASKED.001",
                     ctx,
                     dependency=None,
@@ -451,7 +441,7 @@ class RegistryDetector(BaseDetector):
             f"one the published package names."
         )
         return [
-            self._finding(
+            RegistryFinding.finding(
                 "SUSPECT.PACKAGE.REPOSITORY.001",
                 ctx,
                 dependency=None,
@@ -480,7 +470,7 @@ class RegistryDetector(BaseDetector):
 
         unvetted = self._unvetted(dependency, observed)
         if unvetted:
-            yield self._finding(
+            yield RegistryFinding.finding(
                 "SUSPECT.DEPENDENCY.UNVETTED.001", ctx, dependency=dependency, detail=unvetted
             )
 
@@ -490,7 +480,7 @@ class RegistryDetector(BaseDetector):
             # the publisher's.
             reason = observed.yanked_reason or ""
             label = f"{dependency.name}@{dependency.version}"
-            yield self._finding(
+            yield RegistryFinding.finding(
                 "SUSPECT.DEPENDENCY.YANKED.001",
                 ctx,
                 dependency=dependency,
@@ -505,7 +495,7 @@ class RegistryDetector(BaseDetector):
 
         borrowed = self._starjacked(dependency, observed)
         if borrowed:
-            yield self._finding(
+            yield RegistryFinding.finding(
                 "SUSPECT.PACKAGE.STARJACKING.001",
                 ctx,
                 dependency=dependency,
@@ -521,7 +511,7 @@ class RegistryDetector(BaseDetector):
         elif observed.deprecated:
             notice = RegistryNotices.clean(observed.deprecated)
             security = RegistryNotices.cites_security(notice)
-            yield self._finding(
+            yield RegistryFinding.finding(
                 "SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001"
                 if security
                 else "POLICY.DEPENDENCY.DEPRECATED.001",
@@ -530,7 +520,7 @@ class RegistryDetector(BaseDetector):
                 detail=f"{dependency.name}@{dependency.version} is deprecated by its publisher: \u201c{notice}\u201d",
             )
         elif RegistryNotices.older_than(observed.last_published, UNMAINTAINED_DAYS):
-            yield self._finding(
+            yield RegistryFinding.finding(
                 "POLICY.DEPENDENCY.UNMAINTAINED.001",
                 ctx,
                 dependency=dependency,
@@ -548,7 +538,7 @@ class RegistryDetector(BaseDetector):
         ctx.checks.record(dependency.purl, "registry", "found")
 
         if self._digest_conflict(dependency, observed.digests):
-            yield self._finding(
+            yield RegistryFinding.finding(
                 "SUSPECT.PROVENANCE.MISMATCH.001",
                 ctx,
                 dependency=dependency,
@@ -559,7 +549,7 @@ class RegistryDetector(BaseDetector):
             )
 
         if observed.attested_versions >= MIN_ATTESTED_SIBLINGS and not observed.attested:
-            yield self._finding(
+            yield RegistryFinding.finding(
                 "SUSPECT.PACKAGE.PROVENANCE.001",
                 ctx,
                 dependency=dependency,
@@ -576,7 +566,7 @@ class RegistryDetector(BaseDetector):
         if observed.latest and dependency.version and observed.latest != dependency.version:
             behind = self._major_distance(dependency.version, observed.latest)
             if behind >= ctx.config.policy.max_major_drift:
-                yield self._finding(
+                yield RegistryFinding.finding(
                     "POLICY.DEPENDENCY.DOWNGRADE.001",
                     ctx,
                     dependency=dependency,
@@ -785,49 +775,6 @@ class RegistryDetector(BaseDetector):
             *PUBLIC_HOSTS,
         }
 
-    def _finding(
-        self,
-        rule_id: str,
-        ctx: ScanContext,
-        *,
-        dependency: Dependency | None,
-        detail: str,
-        path: str | None = None,
-        degrades_coverage: bool = False,
-    ) -> Finding:
-        declared = next(r for r in DECLARED_RULES if r.id == rule_id)
-        if path is None:
-            path = (dependency.declared_in or dependency.project or "") if dependency else ""
-
-        return Finding(
-            rule_id=rule_id,
-            category=declared.category,
-            severity=declared.severity,
-            confidence=declared.confidence,
-            message=detail,
-            location=Location(path=path, line=1),
-            evidence=Evidence(
-                kind=EvidenceKind.HASH,
-                match_hash=Evidence.hash_bytes(detail.encode("utf-8")),
-                redaction=RedactionMode.HASH_ONLY,
-                metadata=(("source", "registry"),),
-            ),
-            remediation=declared.remediation,
-            explanation=Explanation(
-                summary=detail,
-                matched_rule=rule_id,
-                escalations=(NETWORK_CAVEAT,),
-            ),
-            risk=ctx.scorer.score(
-                declared.severity,
-                declared.confidence,
-                ScoringContext(in_install_hook=False, capabilities=frozenset()),
-            ),
-            detector=DETECTOR,
-            always_report=declared.category is Category.OPERATIONAL,
-            degrades_coverage=degrades_coverage,
-        )
-
 
 STARJACK_YOUNG_DAYS = 90
 """A package younger than this that names a popular project's repository is reported."""
@@ -842,7 +789,6 @@ __all__ = [
     "MAX_MANIFEST_QUERIES",
     "MAX_QUERIES",
     "MIN_ATTESTED_SIBLINGS",
-    "NETWORK_CAVEAT",
     "REGISTRY_ECOSYSTEMS",
     "STARJACK_YOUNG_DAYS",
     "UNMAINTAINED_DAYS",
