@@ -299,7 +299,6 @@
   "engine/pipeline/history": "engine/pipeline/history",
   "engine/pipeline/releases": "engine/pipeline/releases",
   "engine/pipeline/archives": "engine/pipeline/archives",
-  "engine/pipeline/operational": "engine/pipeline/operational",
   "engine/pipeline/hooks": "engine/pipeline/hooks",
   "engine/pipeline/results": "engine/pipeline/results",
   "engine/entries": "engine/entries",
