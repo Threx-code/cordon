@@ -1,0 +1,35 @@
+Script started on 2026-10-28 15:01:31+00:00 [COMMAND="cordon-scanner scan ." <not executed on terminal>]
+[1mintel     [0m[K[1midentifying[0m[K[1mreading   [0m[K[1mdependencies[0m[K[1mscanning  [0m  [36m[--------------------][0m  0/40    0%[0m[K[1mscanning  [0m  [36m[--------------------][0m  1/40    2%  [2m.mcp.json[0m[K[1mscanning  [0m  [36m[##------------------][0m  5/40   12%  [2msetup.py[0m[K[1mscanning  [0m  [36m[###-----------------][0m  6/40   15%  [2m.claude/skills/setup/SKILL.md[0m[K[1mscanning  [0m  [36m[##########----------][0m  21/40   52%  [2m.github/workflows/release.yml[0m[K[1mscanning  [0m  [36m[####################][0m  40/40  100%  [2msrc/telemetry.js[0m[K[1mgraph     [0m[K[K[2mcordon 0.6.0 · rulepack 0.2.0 (5c3d561bc857cfc0)[0m
+
+
+[1;36m.github/workflows/release.yml[0m  [2m1 finding[0m
+ [2m8:35[0m [1;97;41mCRITICAL[0m  This workflow renders the whole secret ...          [2mMALWARE.CI.SECRET_EXFIL.001[0m
+
+[1;36mservices/api/deploy.js[0m  [2m1 finding[0m
+ [2m3:19[0m [1;97;41mCRITICAL[0m  An npm access token appears in this file.           [2mSECRET.NPM.TOKEN.001[0m
+
+[1;36mservices/api/settings.py[0m  [2m2 findings[0m
+ [2m8:1 [0m [1;97;41mCRITICAL[0m  An AWS access key id appears in this file.          [2mSECRET.AWS.ACCESS_KEY.001[0m
+ [2m9:1 [0m [1;97;41mCRITICAL[0m  A GitHub token appears in this file.                [2mSECRET.GITHUB.TOKEN.001[0m
+
+[1;36msrc/access.js[0m  [2m1 finding[0m
+ [2m2:20[0m [1;30;101m  HIGH  [0m  This file contains characters that change how ...   [2mSUSPECT.OBFUSCATION.BIDI.001[0m
+
+[1;36m.mcp.json[0m  [2m4 findings[0m
+ [2m3:1 [0m [1;30;101m  HIGH  [0m  MCP server 'notes' runs npm package ...             [2mSUSPECT.MCP.TOOL_DESCRIPTION.001[0m
+ [2m    [0m [1;30;101m  HIGH  [0m  MCP server 'notes' runs npm package ...             [2mSUSPECT.AGENT.ATR.AGENT_MANIPULATION.001[0m
+ [2m    [0m [1;30;101m  HIGH  [0m  MCP server 'notes' runs npm package ...             [2mSUSPECT.AGENT.ATR.PROMPT_INJECTION.001[0m
+ [2m    [0m [1;30;101m  HIGH  [0m  MCP server 'notes' runs npm package ...             [2mSUSPECT.AGENT.ATR.TOOL_POISONING.001[0m
+
+[2m25 signals below the failure policy in 12 files, worth a look when reviewing this code; `-v` lists them.[0m
+[2m----------------------------------------------------------------------------[0m
+[1;97;41m 4 critical [0m · [1;30;101m 5 high [0m · [1;30;43m 17 medium [0m · [1;30;46m 8 low [0m
+[2m40 files · 25506ms[0m
+[2mintel: osv, 0h old[0m
+[33mscan INCOMPLETE[0m [2m- results are partial; see the coverage notes above[0m
+
+[2mRun again with -v for the evidence, the score derivation and the fix for each finding.[0m
+
+FAILED: 9 finding(s) met the failure policy (highest: critical)
+
+Script done on 2026-10-28 15:01:59+00:00 [COMMAND_EXIT_CODE="1"]

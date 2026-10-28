@@ -1,0 +1,16 @@
+Script started on 2026-10-28 15:01:59+00:00 [COMMAND="cordon-scanner scan pkg:npm/express --online" <not executed on terminal>]
+Fetched npm:express@latest as express-5.3.0.tgz; digest verified against the registry.
+[1mintel     [0m[K[1mscanning  [0m  [36m[--------------------][0m  0/10    0%[0m[K[1mscanning  [0m  [36m[####----------------][0m  2/10   20%  [2mexpress-5.3.0.tgz!package/lib/application.js[0m[K[1mscanning  [0m  [36m[############--------][0m  6/10   60%  [2mexpress-5.3.0.tgz!package/lib/response.js[0m[K[1mscanning  [0m  [36m[##################--][0m  9/10   90%  [2mexpress-5.3.0.tgz!package/package.json[0m[K[1mdependencies[0m[K[Kcompared with express 4.22.3: no new install hooks, capabilities, obfuscation or binaries
+[2mcordon 0.6.0 · rulepack 0.2.0 (5c3d561bc857cfc0)[0m
+
+
+[2m8 signals below the failure policy in 1 file, worth a look when reviewing this code; `-v` lists them.[0m
+[2m----------------------------------------------------------------------------[0m
+[2m0 critical[0m · [2m0 high[0m · [1;30;43m 1 medium [0m · [1;30;46m 7 low [0m
+[2m10 files · 3293ms[0m
+[2mintel: osv, 0h old[0m
+[2mscan complete[0m
+
+[2mRun again with -v for the evidence, the score derivation and the fix for each finding.[0m
+
+Script done on 2026-10-28 15:02:35+00:00 [COMMAND_EXIT_CODE="0"]
