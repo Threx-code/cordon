@@ -11,6 +11,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final
 
+from cordon_scanner.detect.agents.extensions import ExtensionNames
+from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.instructions import InstructionText
+from cordon_scanner.detect.agents.rule_catalogue import RULES, AgentRules
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
     Finding,
@@ -21,10 +25,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cordon_scanner.detect.base import ScanContext
-from cordon_scanner.detect.agents.extensions import ExtensionNames
-from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.instructions import InstructionText
-from cordon_scanner.detect.agents.rule_catalogue import RULES, AgentRules
 
 _OUTPUT_TO_COMMENT: Final = re.compile(
     r"(?m)\bgh\s+(?:pr|issue)\s+comment\b|\bcreateComment\s*\(|\buse_sticky_comment\s*:\s*true"

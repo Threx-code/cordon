@@ -9,14 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents import agent_config
-from cordon_scanner.foundation.models import (
-    Finding,
-)
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-    from cordon_scanner.detect.base import ScanContext
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
     EXFIL_PATHS,
@@ -26,6 +18,14 @@ from cordon_scanner.detect.agents.text_patterns import (
     SEND,
     ZERO_WIDTH_ONLY,
 )
+from cordon_scanner.foundation.models import (
+    Finding,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from cordon_scanner.detect.base import ScanContext
 
 _QUOTED_DESCRIPTION: Final = re.compile(
     r"""(?:\bdescription\b[ \t]{0,8}[:=][ \t]{0,8}|\.describe\([ \t]{0,8})"""

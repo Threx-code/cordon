@@ -27,9 +27,27 @@ import functools
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets.assembly import MIN_CHARACTER_CLASSES, SecretAssembly
+from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
+from cordon_scanner.detect.secrets.patterns import (
+    ASSIGNMENT,
+    CONNECTION_STRING,
+    LOCAL_OR_RESERVED_HOST,
+    PEM_ARMOUR_ONLY,
+    PROVIDER_PATTERNS,
+    ROTATE,
+    SecretPattern,
+)
+from cordon_scanner.detect.secrets.secrets import (
+    FIXTURE_CONFIDENCE,
+    RULE_MATERIAL_CEILING,
+    SourceSpans,
+)
+from cordon_scanner.detect.secrets.values import CLIENT_CONFIG_RULES, PLACEHOLDER, SecretValues
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -53,24 +71,6 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.detect.secrets.assembly import MIN_CHARACTER_CLASSES, SecretAssembly
-from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
-from cordon_scanner.detect.secrets.patterns import (
-    ASSIGNMENT,
-    CONNECTION_STRING,
-    LOCAL_OR_RESERVED_HOST,
-    PEM_ARMOUR_ONLY,
-    PROVIDER_PATTERNS,
-    ROTATE,
-    SecretPattern,
-)
-from cordon_scanner.detect.secrets.secrets import (
-    FIXTURE_CONFIDENCE,
-    RULE_MATERIAL_CEILING,
-    SourceSpans,
-)
-from cordon_scanner.detect.secrets.values import CLIENT_CONFIG_RULES, PLACEHOLDER, SecretValues
 
 CANONICAL_UUID = re.compile(
     rb"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$"

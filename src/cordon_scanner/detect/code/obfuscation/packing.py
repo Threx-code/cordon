@@ -11,6 +11,11 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import ScanContext
+from cordon_scanner.detect.code.obfuscation.concealment import (
+    PROSE_LANGUAGES,
+)
+from cordon_scanner.detect.code.obfuscation.encoding import EncodingFindings
+from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
     Confidence,
@@ -23,11 +28,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.detect.code.obfuscation.concealment import (
-    PROSE_LANGUAGES,
-)
-from cordon_scanner.detect.code.obfuscation.encoding import EncodingFindings
-from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 
 #: Languages each packer signature can actually be the output of.
 #:

@@ -32,6 +32,15 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.code.obfuscation.concealment import (
+    DIRECTIONAL_CONTROL,
+    NON_DIRECTIONAL_INVISIBLE,
+    ConcealmentFindings,
+)
+from cordon_scanner.detect.code.obfuscation.encoding import EncodingFindings
+from cordon_scanner.detect.code.obfuscation.findings import ObfuscationFinding
+from cordon_scanner.detect.code.obfuscation.packing import PackingFindings
+from cordon_scanner.detect.code.obfuscation.text import Hit
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -44,15 +53,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
-from cordon_scanner.detect.code.obfuscation.concealment import (
-    DIRECTIONAL_CONTROL,
-    NON_DIRECTIONAL_INVISIBLE,
-    ConcealmentFindings,
-)
-from cordon_scanner.detect.code.obfuscation.encoding import EncodingFindings
-from cordon_scanner.detect.code.obfuscation.findings import ObfuscationFinding
-from cordon_scanner.detect.code.obfuscation.packing import PackingFindings
-from cordon_scanner.detect.code.obfuscation.text import Hit
 
 BIDI_AND_INVISIBLE = re.compile(
     DIRECTIONAL_CONTROL.pattern + rb"|" + NON_DIRECTIONAL_INVISIBLE.pattern

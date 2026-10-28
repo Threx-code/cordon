@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from cordon_scanner.detect.infra.config_paths import DOCKER_PATHS, IAC_PATHS, K8S_MARKER
+from cordon_scanner.detect.infra.config_rule import ConfigRule
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -15,8 +17,6 @@ from cordon_scanner.foundation.models import (
 
 if TYPE_CHECKING:
     pass
-from cordon_scanner.detect.infra.config_paths import DOCKER_PATHS, IAC_PATHS, K8S_MARKER
-from cordon_scanner.detect.infra.config_rule import ConfigRule
 
 _ADMIN_PORT = (
     r"(?:from_port|to_port|FromPort|ToPort|destination_port_range|port|Port)"

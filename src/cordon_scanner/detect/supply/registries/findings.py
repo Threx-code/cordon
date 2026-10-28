@@ -10,6 +10,7 @@ from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import (
     ScanContext,
 )
+from cordon_scanner.detect.supply.registries.rule_declarations import DECLARED_RULES, DETECTOR
 from cordon_scanner.foundation.models import (
     Category,
     Evidence,
@@ -22,7 +23,6 @@ from cordon_scanner.foundation.models import (
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.detect.supply.registries.rule_declarations import DECLARED_RULES, DETECTOR
 
 NETWORK_CAVEAT = (
     "This finding came from a live registry query. It is not reproducible from "

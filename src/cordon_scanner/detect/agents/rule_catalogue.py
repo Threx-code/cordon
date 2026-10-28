@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.detect.agents.autorun import Autorun
+from cordon_scanner.detect.agents.extensions import ExtensionNames
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import (
     Category,
@@ -19,8 +21,6 @@ from cordon_scanner.foundation.models import (
 
 if TYPE_CHECKING:
     pass
-from cordon_scanner.detect.agents.autorun import Autorun
-from cordon_scanner.detect.agents.extensions import ExtensionNames
 
 # -- A6: agent actions in CI -----------------------------------------------------------------
 AGENT_ACTIONS: Final = {

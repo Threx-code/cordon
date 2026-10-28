@@ -13,22 +13,11 @@ from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
+from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
     McpDescriptionModel,
 )
-from cordon_scanner.detect.base import FileUnit
-from cordon_scanner.foundation.models import (
-    Finding,
-    Severity,
-)
-from cordon_scanner.intel.malware import atr
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-    from cordon_scanner.detect.base import ScanContext
-from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     LOCAL_HOSTS,
     PLACEHOLDER,
@@ -44,6 +33,17 @@ from cordon_scanner.detect.agents.text_patterns import (
     FETCH_EXEC,
     ORDERS_A_COMMAND,
 )
+from cordon_scanner.detect.base import FileUnit
+from cordon_scanner.foundation.models import (
+    Finding,
+    Severity,
+)
+from cordon_scanner.intel.malware import atr
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from cordon_scanner.detect.base import ScanContext
 
 _SECRET_NAME: Final = re.compile(
     r"(?i)(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key|auth)"

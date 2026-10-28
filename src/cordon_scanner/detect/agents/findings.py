@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
+from cordon_scanner.detect.agents.rule_catalogue import RULES
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
     Category,
@@ -29,7 +30,6 @@ from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
-from cordon_scanner.detect.agents.rule_catalogue import RULES
 
 
 class AgentFinding:

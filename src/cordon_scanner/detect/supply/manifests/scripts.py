@@ -12,16 +12,16 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
+from cordon_scanner.detect.supply.manifests.rule_ids import (
+    MALICIOUS_REMOTE_TARBALL_RULE,
+    REMOTE_TARBALL_RULE,
+)
 from cordon_scanner.foundation.models import (
     Severity,
 )
 
 if TYPE_CHECKING:
     pass
-from cordon_scanner.detect.supply.manifests.rule_ids import (
-    MALICIOUS_REMOTE_TARBALL_RULE,
-    REMOTE_TARBALL_RULE,
-)
 
 RAW_IP_HOST = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,45}\]")
 

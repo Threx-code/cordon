@@ -63,6 +63,10 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
+from cordon_scanner.detect.supply.registries.findings import RegistryFinding
+from cordon_scanner.detect.supply.registries.notices import RegistryNotices
+from cordon_scanner.detect.supply.registries.rule_declarations import DECLARED_RULES, DETECTOR
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.dependencies import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.foundation.models import (
@@ -78,10 +82,6 @@ if TYPE_CHECKING:
     from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.registries.private_registries import PrivateRegistry
     from cordon_scanner.intel.registries.registry_client import PackageFacts
-from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
-from cordon_scanner.detect.supply.registries.findings import RegistryFinding
-from cordon_scanner.detect.supply.registries.notices import RegistryNotices
-from cordon_scanner.detect.supply.registries.rule_declarations import DECLARED_RULES, DETECTOR
 
 MAX_QUERIES = 200
 """How many packages one scan will ask about.

@@ -11,11 +11,12 @@ import itertools
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
+from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-from cordon_scanner.analysis.shared.source_paths import SourcePaths
-from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
 
 PASSWORD_HASH = re.compile(
     rb"^(?:\$(?:2[abxy]?|argon2(?:id|i|d)?|pbkdf2(?:-sha\d{1,3})?|scrypt|bcrypt|"

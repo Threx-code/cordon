@@ -29,18 +29,6 @@ import re
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS
-from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
-from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.foundation.models import (
-    Category,
-    Finding,
-)
-from cordon_scanner.foundation.paths import ContainerPaths
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    from cordon_scanner.detect.base import ScanContext, Unit
 from cordon_scanner.detect.agents.ci_workflows import WorkflowFindings
 from cordon_scanner.detect.agents.extension_files import ExtensionFileFindings
 from cordon_scanner.detect.agents.findings import AgentFinding
@@ -69,6 +57,18 @@ from cordon_scanner.detect.agents.paths import (
 from cordon_scanner.detect.agents.rule_catalogue import RULES
 from cordon_scanner.detect.agents.settings_files import SettingsFileFindings
 from cordon_scanner.detect.agents.skills import SkillScripts
+from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
+from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.foundation.models import (
+    Category,
+    Finding,
+)
+from cordon_scanner.foundation.paths import ContainerPaths
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from cordon_scanner.detect.base import ScanContext, Unit
 
 _SKILL_SCRIPT_SUFFIXES: Final = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".ps1", ".rb")
 

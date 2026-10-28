@@ -11,6 +11,15 @@ import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.detect.base import FileUnit
+from cordon_scanner.detect.secrets.patterns import (
+    ASSIGNMENT,
+    CREDENTIAL_NAME,
+    MIN_KEY_BODY,
+    PROVIDER_PATTERNS,
+    ROTATE,
+    SecretPattern,
+)
+from cordon_scanner.detect.secrets.values import SecretValues
 from cordon_scanner.foundation.models import (
     Confidence,
     Finding,
@@ -22,15 +31,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.detect.secrets.patterns import (
-    ASSIGNMENT,
-    CREDENTIAL_NAME,
-    MIN_KEY_BODY,
-    PROVIDER_PATTERNS,
-    ROTATE,
-    SecretPattern,
-)
-from cordon_scanner.detect.secrets.values import SecretValues
 
 MIN_ASSEMBLED_ENTROPY = 4.0
 """Entropy floor for a value built by concatenation.

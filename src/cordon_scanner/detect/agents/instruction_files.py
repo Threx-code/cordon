@@ -12,8 +12,22 @@ from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
+from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
     SKILL_MODEL,
+)
+from cordon_scanner.detect.agents.mcp_servers.endpoints import (
+    McpEndpoints,
+)
+from cordon_scanner.detect.agents.rule_catalogue import RULES
+from cordon_scanner.detect.agents.skills import SkillOrigin, SkillScripts
+from cordon_scanner.detect.agents.text_findings import AgentTextFindings
+from cordon_scanner.detect.agents.text_patterns import (
+    FETCH_EXEC,
+    HIDDEN,
+    INJECTION,
+    INJECTION_INTL,
 )
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
@@ -28,20 +42,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cordon_scanner.detect.base import ScanContext
-from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.instructions import InstructionText
-from cordon_scanner.detect.agents.mcp_servers.endpoints import (
-    McpEndpoints,
-)
-from cordon_scanner.detect.agents.rule_catalogue import RULES
-from cordon_scanner.detect.agents.skills import SkillOrigin, SkillScripts
-from cordon_scanner.detect.agents.text_findings import AgentTextFindings
-from cordon_scanner.detect.agents.text_patterns import (
-    FETCH_EXEC,
-    HIDDEN,
-    INJECTION,
-    INJECTION_INTL,
-)
 
 _FLAG_TAGS: Final = re.compile(rb"\xf0\x9f\x8f\xb4(?:\xf3\xa0[\x80\x81][\x80-\xbf]){1,16}")
 

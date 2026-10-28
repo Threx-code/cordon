@@ -7,6 +7,12 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
+from cordon_scanner.detect.agents.paths import MCP_PATHS, AgentPaths
+from cordon_scanner.detect.agents.rule_catalogue import AgentRule
+from cordon_scanner.detect.agents.text_patterns import FETCH_EXEC, HIDDEN, INJECTION, INJECTION_INTL
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references as ref
@@ -26,12 +32,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import ScanContext, Unit
-from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
-from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
-from cordon_scanner.detect.agents.paths import MCP_PATHS, AgentPaths
-from cordon_scanner.detect.agents.rule_catalogue import AgentRule
-from cordon_scanner.detect.agents.text_patterns import FETCH_EXEC, HIDDEN, INJECTION, INJECTION_INTL
 
 
 class McpPackageDetector(BaseDetector):

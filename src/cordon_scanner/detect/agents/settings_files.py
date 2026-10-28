@@ -13,6 +13,10 @@ from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.autorun import Autorun
+from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+from cordon_scanner.detect.agents.rule_catalogue import RULES
+from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
     Finding,
@@ -24,10 +28,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cordon_scanner.detect.base import ScanContext
-from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
-from cordon_scanner.detect.agents.rule_catalogue import RULES
-from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 
 
 class SettingsFileFindings:

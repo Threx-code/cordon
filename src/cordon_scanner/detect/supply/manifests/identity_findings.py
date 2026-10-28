@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import FileUnit, ScanContext
+from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
+from cordon_scanner.detect.supply.manifests.rule_ids import (
+    CONFUSION_RULE,
+)
+from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
     Category,
@@ -24,11 +29,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.ecosystems.base import Manifest
-from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
-from cordon_scanner.detect.supply.manifests.rule_ids import (
-    CONFUSION_RULE,
-)
-from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 
 
 class IdentityFindings:

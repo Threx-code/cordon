@@ -13,6 +13,17 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
+from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
+from cordon_scanner.detect.supply.manifests.rule_ids import (
+    CLEARTEXT_SOURCE_RULE,
+    FOREIGN_COMMIT_RULE,
+    MALICIOUS_REMOTE_TARBALL_RULE,
+    MUTABLE_REF_RULE,
+    SOURCE_PRIORITY_RULE,
+    WRAPPER_RULE,
+)
+from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
+from cordon_scanner.detect.supply.manifests.sources import DeclaredSource
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
     Category,
@@ -26,17 +37,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
     from cordon_scanner.ecosystems.base import DeclaredDependency, Ecosystem, Manifest
-from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
-from cordon_scanner.detect.supply.manifests.rule_ids import (
-    CLEARTEXT_SOURCE_RULE,
-    FOREIGN_COMMIT_RULE,
-    MALICIOUS_REMOTE_TARBALL_RULE,
-    MUTABLE_REF_RULE,
-    SOURCE_PRIORITY_RULE,
-    WRAPPER_RULE,
-)
-from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
-from cordon_scanner.detect.supply.manifests.sources import DeclaredSource
 
 
 class SourceFindings:

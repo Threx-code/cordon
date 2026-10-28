@@ -17,17 +17,17 @@ from cordon_scanner.detect.infra.ci_exfil import (
     DropPoint,
     SecretInventory,
 )
+from cordon_scanner.detect.infra.config_paths import (
+    CI_PATHS,
+    VERIFIED_FETCH,
+)
+from cordon_scanner.detect.infra.config_rule import ConfigRule, PatternProximity
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 if TYPE_CHECKING:
     pass
-from cordon_scanner.detect.infra.config_paths import (
-    CI_PATHS,
-    VERIFIED_FETCH,
-)
-from cordon_scanner.detect.infra.config_rule import ConfigRule, PatternProximity
 
 #: The whole secret context, serialised, in either spelling a workflow writes it.
 #:

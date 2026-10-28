@@ -25,6 +25,11 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
+from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
+from cordon_scanner.detect.supply.manifests.lifecycle_findings import LifecycleFindings
+from cordon_scanner.detect.supply.manifests.rule_declarations import DECLARED_RULES
+from cordon_scanner.detect.supply.manifests.source_findings import SourceFindings
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
     Category,
@@ -35,11 +40,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
-from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
-from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
-from cordon_scanner.detect.supply.manifests.lifecycle_findings import LifecycleFindings
-from cordon_scanner.detect.supply.manifests.rule_declarations import DECLARED_RULES
-from cordon_scanner.detect.supply.manifests.source_findings import SourceFindings
 
 
 class ManifestDetector(BaseDetector):

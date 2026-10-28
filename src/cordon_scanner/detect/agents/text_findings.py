@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
+from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.rule_catalogue import INTENT_WORDS, RULES, AgentRules
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
     Confidence,
@@ -24,8 +26,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cordon_scanner.detect.base import ScanContext
-from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.rule_catalogue import INTENT_WORDS, RULES, AgentRules
 
 _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
 

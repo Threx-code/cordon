@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import FileUnit, ScanContext
+from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.models import (
@@ -27,7 +28,6 @@ from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 
 TAG_SMUGGLING_RULE = "SUSPECT.OBFUSCATION.TAG_SMUGGLING.001"
 """Not ceilinged in documentation: a README is what an agent is told to read."""

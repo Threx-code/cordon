@@ -10,6 +10,9 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.detect.agents.extensions import ExtensionNames, ExtensionVerdicts
+from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
     Finding,
@@ -19,9 +22,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cordon_scanner.detect.base import ScanContext
-from cordon_scanner.detect.agents.extensions import ExtensionNames, ExtensionVerdicts
-from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 
 _EXTENSION_ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9._-]*$")
 

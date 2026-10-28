@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.detect.code.obfuscation.text import Hit
 from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.detect.code.obfuscation.text import Hit
 
 ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
 

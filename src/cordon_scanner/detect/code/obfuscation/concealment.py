@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
     Confidence,
@@ -19,7 +20,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
     from cordon_scanner.foundation.content import FileContent
-from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 
 # Bidirectional overrides and zero-width characters, as UTF-8 byte sequences.
 # Matched as bytes so no decoding is required and no encoding surprise applies.

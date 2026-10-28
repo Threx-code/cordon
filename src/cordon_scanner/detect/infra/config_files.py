@@ -34,28 +34,6 @@ from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.infra.ci_exfil import (
     ONE_COMMAND_BREAK,
 )
-from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
-from cordon_scanner.foundation.files.globs import PathGlob
-from cordon_scanner.foundation.models import (
-    Category,
-    Confidence,
-    Evidence,
-    EvidenceKind,
-    Explanation,
-    Finding,
-    Location,
-    RedactionMode,
-    Severity,
-)
-from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.text.redact import Redactor
-from cordon_scanner.intel.registries.installers import OfficialInstallers
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    from cordon_scanner.detect.base import Unit
-    from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.detect.infra.ci_rules import (
     CI_RULES,
     FORK_GUARD,
@@ -96,6 +74,28 @@ from cordon_scanner.detect.infra.repository_rules import (
     MSBUILD_PATHS,
     VERSION_CONTROL_RULES,
 )
+from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
+from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.models import (
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Location,
+    RedactionMode,
+    Severity,
+)
+from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.text.redact import Redactor
+from cordon_scanner.intel.registries.installers import OfficialInstallers
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from cordon_scanner.detect.base import Unit
+    from cordon_scanner.foundation.content import FileContent
 
 UNPINNED_RULE = "POLICY.BUILD.UNPINNED_DEPENDENCY.001"
 """What `^` becomes: start of line, then an optional byte-order mark.

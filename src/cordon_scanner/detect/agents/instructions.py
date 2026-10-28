@@ -11,10 +11,6 @@ import re
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION
-from cordon_scanner.intel.registries.installers import KNOWN_INSTALLERS
-
-if TYPE_CHECKING:
-    pass
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
     EXFIL_PATHS,
@@ -22,6 +18,10 @@ from cordon_scanner.detect.agents.text_patterns import (
     SEND,
     ZERO_WIDTH_ONLY,
 )
+from cordon_scanner.intel.registries.installers import KNOWN_INSTALLERS
+
+if TYPE_CHECKING:
+    pass
 
 _WORD_BYTE: Final = re.compile(rb"[A-Za-z0-9]")
 
