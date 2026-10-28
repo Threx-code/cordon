@@ -15,9 +15,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
-from cordon_scanner.detect.base import (
-    ScanContext,
-)
+from cordon_scanner.detect.base import ScanContext
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.foundation.capabilities import Capability
 
@@ -311,7 +309,7 @@ class LoadPath:
             for inner in PythonSyntax.nodes(outer)
             if inner is not outer
         }
-        from cordon_scanner.engine.reachability import CallReachability
+        from cordon_scanner.analysis.python.reachability import CallReachability
 
         on_load: list[ast.AST] = []
         for node in PythonSyntax.nodes(tree):

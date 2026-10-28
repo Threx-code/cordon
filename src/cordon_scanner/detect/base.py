@@ -24,7 +24,6 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.decide.scoring import RiskScorer, ScoringContext
 from cordon_scanner.foundation.dependencies import CheckLog
 from cordon_scanner.foundation.models import (
     Category,
@@ -38,6 +37,7 @@ from cordon_scanner.foundation.models import (
     RiskScore,
     Severity,
 )
+from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence

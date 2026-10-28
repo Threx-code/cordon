@@ -31,7 +31,6 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references
@@ -47,6 +46,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.scoring import ScoringContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

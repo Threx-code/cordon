@@ -25,7 +25,6 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import (
     BaseDetector,
     DetectorRequirements,
@@ -48,6 +47,7 @@ from cordon_scanner.foundation.models import (
     Scope,
     Severity,
 )
+from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.intel.provenance import attest
 
 if TYPE_CHECKING:

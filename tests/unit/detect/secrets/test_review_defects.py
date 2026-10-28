@@ -12600,7 +12600,7 @@ class TestTheCeilingThatTurnedTheAnalysisOff:
         return sources
 
     def test_a_closure_larger_than_the_old_ceiling_is_still_analysed(self) -> None:
-        from cordon_scanner.engine.reachability import CallReachability
+        from cordon_scanner.analysis.python.reachability import CallReachability
 
         sources = self._closure(6_000, 40)
         deferred = CallReachability.deferred_lines(sources.keys(), sources)
@@ -12611,8 +12611,8 @@ class TestTheCeilingThatTurnedTheAnalysisOff:
         `ImportClosure.MAX_FILES` files, and a file of thirty functions is
         unremarkable -- so the ceiling has to clear that product or it is a
         ceiling on the common case rather than on the pathological one."""
+        from cordon_scanner.analysis.python.reachability import MAX_FUNCTIONS
         from cordon_scanner.engine.closure import MAX_FILES
-        from cordon_scanner.engine.reachability import MAX_FUNCTIONS
 
         assert MAX_FUNCTIONS >= MAX_FILES * 30
 
@@ -12620,7 +12620,7 @@ class TestTheCeilingThatTurnedTheAnalysisOff:
         """The direction of the fallback, which is the part that must not
         change: an analysis that gave up by dropping context would turn its own
         ceiling into a way to hide a payload behind enough dead code."""
-        from cordon_scanner.engine import reachability
+        from cordon_scanner.analysis.python import reachability
 
         sources = self._closure(200, 20)
         assert reachability.CallReachability.deferred_lines(sources.keys(), sources)
@@ -13506,13 +13506,13 @@ class TestAnAliasedInstallCommandIsAnOverride:
 
 class TestAFunctionHandedToACallIsReached:
     def test_passed_as_an_argument(self) -> None:
-        from cordon_scanner.engine.reachability import CallReachability
+        from cordon_scanner.analysis.python.reachability import CallReachability
 
         source = "def _later():\n    x = 1\n\nimport atexit\natexit.register(_later)\n"
         assert CallReachability.deferred_lines({"a.py"}, {"a.py": source}) == frozenset()
 
     def test_never_mentioned_stays_deferred(self) -> None:
-        from cordon_scanner.engine.reachability import CallReachability
+        from cordon_scanner.analysis.python.reachability import CallReachability
 
         source = "def _later():\n    x = 1\n"
         assert CallReachability.deferred_lines({"a.py"}, {"a.py": source}) == frozenset(

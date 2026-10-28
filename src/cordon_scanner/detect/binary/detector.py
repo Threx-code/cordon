@@ -39,7 +39,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.binary.magic import FORMATS, Format, MachO
 from cordon_scanner.detect.binary.rule_declarations import DECLARED_RULES, DETECTOR
@@ -56,6 +55,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.foundation.text.prose import Prose
 
 if TYPE_CHECKING:

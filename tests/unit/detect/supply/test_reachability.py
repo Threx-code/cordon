@@ -428,7 +428,7 @@ class TestBranchesOnACommandTypedByHand:
     )
 
     def test_the_coverage_branch_is_not_install_time(self) -> None:
-        from cordon_scanner.engine.reachability import CallReachability
+        from cordon_scanner.analysis.python.reachability import CallReachability
 
         deferred = CallReachability.deferred_lines(
             ["setup.py"], {"setup.py": self.SOURCE}, ["setup.py"]
@@ -436,7 +436,7 @@ class TestBranchesOnACommandTypedByHand:
         assert ("setup.py", 3, 3) in deferred
 
     def test_an_install_command_branch_is(self) -> None:
-        from cordon_scanner.engine.reachability import CallReachability
+        from cordon_scanner.analysis.python.reachability import CallReachability
 
         deferred = CallReachability.deferred_lines(
             ["setup.py"], {"setup.py": self.SOURCE}, ["setup.py"]

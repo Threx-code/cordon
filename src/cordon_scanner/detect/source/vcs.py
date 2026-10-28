@@ -31,7 +31,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import (
     BaseDetector,
     DetectorRequirements,
@@ -51,6 +50,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.foundation.scoring import ScoringContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

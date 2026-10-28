@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.decide.policy import PolicyGate
-from cordon_scanner.decide.scoring import RiskScorer
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -68,6 +67,7 @@ from cordon_scanner.foundation.results import (
     ScanResult,
     ScanStats,
 )
+from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.sources.registry import ArchiveReader
