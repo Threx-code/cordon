@@ -201,6 +201,7 @@
   "foundation/dependencies": "foundation/dependencies",
   "foundation/distribution": "foundation/distribution",
   "engine/engine": "engine/engine",
+  "engine/pipeline/coverage": "engine/pipeline/coverage",
   "engine/pipeline/facts": "engine/pipeline/facts",
   "engine/pipeline/images": "engine/pipeline/images",
   "engine/pipeline/publisher": "engine/pipeline/publisher",
@@ -740,7 +741,7 @@
    "ecosystems/packages/npm": 1524,
    "ecosystems/packages/opam": 1004,
    "ecosystems/packages/pypi": 1319,
-   "engine/engine": 3282,
+   "engine/engine": 2939,
    "foundation/config": 2356,
    "foundation/models": 1702,
    "images/oci": 1074,
@@ -870,7 +871,7 @@
    "detect/supply/advisory:AdvisoryDetector": 1065,
    "detect/supply/manifest:ManifestDetector": 1843,
    "ecosystems/packages/pypi:PypiEcosystem": 1138,
-   "engine/engine:Engine": 3167,
+   "engine/engine:Engine": 2827,
    "intel/registries/more_registries:MoreRegistries": 2009
   },
   "long_functions": {
@@ -963,7 +964,6 @@
    "ecosystems/packages/swift:SwiftManifest.parse": 127,
    "ecosystems/packages/vcpkg:VcpkgManifest.parse": 99,
    "engine/engine:Engine._build_graph": 198,
-   "engine/engine:Engine._coverage_findings": 340,
    "engine/engine:Engine._declared_graph": 169,
    "engine/engine:Engine._image_inventory": 99,
    "engine/engine:Engine._inspect_file": 118,
@@ -1015,7 +1015,8 @@
    "engine/pipeline/ceilings:Ceilings.image_start_ceiling": 113,
    "engine/pipeline/ceilings:Ceilings.verdict": 111,
    "engine/pipeline/graph:Graph.join_manifests": 229,
-   "engine/pipeline/hooks:Hooks.manifest_hook_paths": 122
+   "engine/pipeline/hooks:Hooks.manifest_hook_paths": 122,
+   "engine/pipeline/coverage:Coverage.findings": 340
   },
   "large_directories": {
    "tests/unit/foundation": 44,
