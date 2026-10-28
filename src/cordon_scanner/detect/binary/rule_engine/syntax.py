@@ -748,7 +748,7 @@ class Grammar:
     @staticmethod
     def matcher(source: str, flags: str) -> Any:
         from cordon_scanner.detect.binary.rule_engine.pattern import PatternError
-        from cordon_scanner.detect.binary.rule_engine.scan import Matcher
+        from cordon_scanner.detect.binary.rule_engine.search_parts import Matcher
 
         try:
             return Matcher(source.encode("utf-8", "surrogateescape"), flags)
