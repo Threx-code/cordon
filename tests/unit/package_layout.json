@@ -907,7 +907,6 @@
    "detect/supply/registry:RegistryDetector.inspect": 209,
    "ecosystems/packages/hackage:CabalFile.parse": 92,
    "ecosystems/packages/hackage:Hpack.parse": 98,
-   "ecosystems/packages/hex:BeamTerms.term": 103,
    "ecosystems/packages/pypi:PypiEcosystem._parse_pep_style_lock": 124,
    "ecosystems/packages/pypi:PypiEcosystem._parse_pyproject": 98,
    "ecosystems/packages/pypi:PypiEcosystem._parse_setup_py": 97,

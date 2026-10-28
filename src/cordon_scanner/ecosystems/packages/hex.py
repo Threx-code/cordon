@@ -207,26 +207,30 @@ class BeamTerms:
             return float(value) if "." in value else int(value)
         word = re.compile(r"[A-Za-z_][\w.@]*[?!]?").match(text, self.position)
         if word:
-            self.position = word.end()
-            name = word.group(0)
-            if name in ("true", "false"):
-                return name == "true"
-            if name == "nil":
-                return None
-            if self.erlang and name[0].islower() and "." not in name:
-                return Atom(name)
-            if name == "fn" and not self.erlang:
-                # An anonymous function (`aliases: [mytask: fn _ -> ... end]`), to its `end`.
-                start = self.position - 2
-                self.to_end()
-                return Opaque(text[start : self.position])
-            # A call or a variable: consume its argument list and keep it opaque.
-            if self.peek() == "(":
-                start = self.position
-                self.balanced("(", ")")
-                return Opaque(name + text[start : self.position])
-            return Opaque(name)
+            return self._word(text, word)
         raise self.fail("unexpected character")
+
+    def _word(self, text: str, word: re.Match[str]) -> Any:
+        """A bare word: true, false, nil, an Erlang atom, an anonymous function, or a call or variable kept opaque."""
+        self.position = word.end()
+        name = word.group(0)
+        if name in ("true", "false"):
+            return name == "true"
+        if name == "nil":
+            return None
+        if self.erlang and name[0].islower() and "." not in name:
+            return Atom(name)
+        if name == "fn" and not self.erlang:
+            # An anonymous function (`aliases: [mytask: fn _ -> ... end]`), to its `end`.
+            start = self.position - 2
+            self.to_end()
+            return Opaque(text[start : self.position])
+        # A call or a variable: consume its argument list and keep it opaque.
+        if self.peek() == "(":
+            start = self.position
+            self.balanced("(", ")")
+            return Opaque(name + text[start : self.position])
+        return Opaque(name)
 
     #: A sigil's opening delimiters and what closes each (Elixir's `Kernel` sigil syntax).
     SIGIL_CLOSERS: ClassVar[dict[str, str]] = {
