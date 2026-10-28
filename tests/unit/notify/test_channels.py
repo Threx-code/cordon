@@ -76,9 +76,13 @@ class TestTheSameAsBefore:
         )
 
         golden = ChannelHelpers.golden()[case]
-        for (url, body, headers), channel in zip(sent, ("webhook", "slack", "teams"), strict=True):
+        # The channels are sent to concurrently, so the sends arrive in any order: each is matched
+        # to its channel by the URL it went to.
+        by_url = {url: (body, headers) for url, body, headers in sent}
+        assert len(sent) == 3 and sorted(by_url) == sorted(golden[c][0] for c in golden)
+        for channel in ("webhook", "slack", "teams"):
             want_url, want_body, want_headers = golden[channel]
-            assert url == want_url
+            body, headers = by_url[want_url]
             assert body.decode() == want_body
             signature = headers.pop("X-Cordon-Signature", None)
             headers.pop("X-Cordon-Delivery", None)
