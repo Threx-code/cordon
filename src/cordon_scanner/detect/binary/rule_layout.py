@@ -82,14 +82,22 @@ class Cursor:
     def fits(self, at: int, size: int) -> bool:
         return at >= 0 and 0 <= size <= self.n - at
 
-    def uint(self, at: int, width: int, order: Literal["little", "big"] | None = None) -> Any:
-        """The unsigned integer at ``at``; ``order`` ("little"/"big") overrides the cursor's own byte order
-        for a field whose endianness is fixed regardless of the file's (an ELF's little-endian e_shnum, a
-        .NET blob's big-endian compressed integers)."""
+    def uint(
+        self,
+        at: int,
+        width: int,
+        order: Literal["little", "big"] | None = None,
+        *,
+        signed: bool = False,
+    ) -> Any:
+        """The integer of ``width`` bytes at ``at``; ``order`` ("little"/"big") overrides the cursor's own
+        byte order for a field whose endianness is fixed regardless of the file's (an ELF's little-endian
+        e_shnum, a .NET blob's big-endian compressed integers). ``width`` may be any size, so a bignum -- an
+        ASN.1 INTEGER's content, an RSA modulus -- is a wide read; ``signed`` reads two's complement."""
         if at < 0 or at + width > self.n:
             return ABSENT
         return int.from_bytes(
-            self.data[at : at + width], order or ("big" if self.big else "little")
+            self.data[at : at + width], order or ("big" if self.big else "little"), signed=signed
         )
 
     def blob(self, at: int, width: int) -> Any:

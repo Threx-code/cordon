@@ -4,8 +4,8 @@ Layout, Grid, ImageMap) is that a structure is declared once and read in one pla
 past it is a regression. ``rule_layout`` itself holds the one allowed ``struct``/``int.from_bytes``;
 ``rule_tlsh`` is a hash transform, not a format reader, so it is out of scope.
 
-Scoped to the format readers by name: rule_pe, rule_elf, rule_dotnet (and rule_signature, rule_oids once they
-land). A new reader is added to READERS here.
+Scoped to the format readers by name: rule_pe, rule_elf, rule_dotnet, rule_signature (and rule_oids once it
+lands). A new reader is added to READERS here.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from support import ROOT
 
-READERS = ("rule_pe", "rule_elf", "rule_dotnet")
+READERS = ("rule_pe", "rule_elf", "rule_dotnet", "rule_signature")
 BINARY = ROOT / "src" / "cordon_scanner" / "detect" / "binary"
 
 

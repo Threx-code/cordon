@@ -11,6 +11,7 @@ import struct
 import pytest
 
 from cordon_scanner.detect.binary.rule_layout import (
+    ABSENT,
     U8,
     U16,
     U32,
@@ -192,3 +193,29 @@ class TestImageMapStrict:
         assert (
             tolerant.to_offset(0x10) == 0x10
         )  # dotnet: below the (empty) sections, straight through
+
+
+class TestCursorWideInteger:
+    """``Cursor.uint`` reads an integer of any width -- an ASN.1 bignum such as an RSA modulus is just a
+    512-byte big-endian read -- with the cursor's own byte order or an explicit one, unsigned or two's
+    complement, and reports ABSENT past the end. rule_signature reads every ASN.1 INTEGER through this."""
+
+    def test_reads_a_4096_bit_modulus(self) -> None:
+        modulus = (1 << 4095) | (7**500) | 1  # a 4096-bit odd number
+        raw = modulus.to_bytes(512, "big")
+        assert Cursor(raw).uint(0, 512, "big") == modulus
+
+    def test_leading_zero_byte_is_kept_unsigned(self) -> None:
+        raw = bytes([0x00, 0x80, 0x01])
+        assert Cursor(raw).uint(0, 3, "big") == 0x8001  # the padding zero does not change the value
+
+    def test_signed_reads_twos_complement(self) -> None:
+        assert Cursor(bytes([0xFF])).uint(0, 1, "big", signed=True) == -1
+        assert Cursor(bytes([0x80, 0x00])).uint(0, 2, "big", signed=True) == -32768
+        assert (
+            Cursor(bytes([0x00, 0x80])).uint(0, 2, "big", signed=True) == 128
+        )  # leading zero -> positive
+
+    def test_absent_past_the_end(self) -> None:
+        assert Cursor(bytes(4)).uint(0, 8, "big") is ABSENT
+        assert Cursor(bytes(4)).uint(2, 4, "big") is ABSENT

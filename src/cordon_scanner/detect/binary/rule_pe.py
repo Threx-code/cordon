@@ -18,6 +18,7 @@ import hashlib
 import re
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary import rule_signature
 from cordon_scanner.detect.binary.rule_layout import (
     ABSENT,
     U8,
@@ -34,13 +35,11 @@ from cordon_scanner.detect.binary.rule_tables import Tables
 from cordon_scanner.detect.binary.rule_values import (
     Call,
     Keyed,
-    Legacy,
     Record,
     Scalar,
     Seq,
     Sig,
 )
-from cordon_scanner.detect.binary.yara_authenticode import Authenticode
 
 INT, TEXT = Scalar.INT, Scalar.TEXT
 
@@ -189,9 +188,7 @@ class Pe:
     "export_details":Seq (Record (
     {"name":TEXT ,"ordinal":INT ,"rva":INT ,"offset":INT ,"forward_name":TEXT }
     )),
-    # bridged full-fidelity from yara_authenticode (nested certs, signer_info, valid_on); rule_signature
-    # replaces this one declaration and its data() call site.
-    "signatures":Seq (Legacy .declared (Authenticode .proto ())),
+    "signatures":Seq (rule_signature .SIGNATURE ),
     "version_info":Keyed (TEXT ),"version_info_list":Seq (Record ({"key":TEXT ,"value":TEXT })),
     **{name :Call (*sigs )for name ,sigs in CALLS .items ()},
     })  # fmt: skip
@@ -294,7 +291,7 @@ class Pe:
         out["number_of_version_infos"] = len(out["version_info_list"])
         Pe._read_pdb(out, cur, img)
         Pe._read_rich(out, cur)
-        Pe._read_signatures(out, cur, img.nt, is64)
+        Pe._read_signatures(out, cur)
         Pe._import_calls(out)
         Pe._import_rva_calls(out)
         Pe._export_calls(out)
@@ -849,20 +846,13 @@ class Pe:
         out["rich_signature"] = rich_signature
 
     @staticmethod
-    def _read_signatures(out: dict[str, Any], cur: Cursor, pe_off: int, is64: bool) -> None:
-        """The certificate table, read where the optional header's security directory points and checked to
-        lie within the file. The values are bridged from yara_authenticode through the Legacy adapter until
-        rule_signature replaces this reader (one declaration in SCHEMA and this call site change over then)."""
-        where = pe_off + 24 + (0x70 if is64 else 0x60) + 4 * 8
-        if where + 8 > cur.n:
-            return
-        va, size = cur.uint(where, 4), cur.uint(where + 4, 4)
-        if va == 0 or va > cur.n or size > cur.n or va + size > cur.n:
-            return
-        found, signed = Authenticode.module_values(cur.data)
+    def _read_signatures(out: dict[str, Any], cur: Cursor) -> None:
+        """pe.signatures and pe.is_signed: the file's Authenticode signatures, read by rule_signature from
+        the certificate table (it locates and bounds-checks the security directory itself)."""
+        found, signed = rule_signature.Signatures.signature_values(cur.data)
         out["number_of_signatures"] = len(found)
-        out["is_signed"] = int(signed)
-        out["signatures"] = {i: Legacy.data(sig) for i, sig in enumerate(found)}
+        out["is_signed"] = signed
+        out["signatures"] = found
 
     @staticmethod
     def _as_details(libraries: list[Any]) -> dict[int, Any]:
