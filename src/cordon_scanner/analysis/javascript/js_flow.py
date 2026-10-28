@@ -174,7 +174,34 @@ class _Analysis(Calls):
         if not self.fns:
             return []
         head = {fid: tok for tok, fid in self.fn_at_token.items()}
-        # The bracket each token sits directly inside, to tell an argument list from a group.
+        opener = self._openers()
+        names, own_name_token, at_once = self._entry_points(head, opener)
+        uses = self._uses(set(own_name_token.values()), opener)
+        reached = {0}
+        called = set(uses.get(0, ()))
+        for _ in range(_Analysis._REACH_ROUNDS):
+            grown = False
+            for fn in self.fns:
+                if fn.fid in reached or self.parent.get(fn.fid, 0) not in reached:
+                    continue
+                if fn.fid in at_once or names.get(fn.fid) in called:
+                    reached.add(fn.fid)
+                    called |= uses.get(fn.fid, set())
+                    grown = True
+            if not grown:
+                break
+        else:
+            return []
+        spans: list[tuple[int, int]] = []
+        for fn in self.fns:
+            if fn.fid in reached or fn.start >= n:
+                continue
+            spans.append((t[fn.start].start, t[min(max(fn.end - 1, fn.start), n - 1)].end))
+        return sorted(spans)
+
+    def _openers(self) -> list[int]:
+        """The bracket each token sits directly inside, to tell an argument list from a group."""
+        t, n = self.t, self.n
         opener = [-1] * n
         stack: list[int] = []
         for i, tok in enumerate(t):
@@ -183,18 +210,27 @@ class _Analysis(Calls):
                 stack.append(i)
             elif tok.kind == "punct" and tok.value in _CLOSE and stack and self.match[i] >= 0:
                 stack.pop()
+        return opener
 
-        def in_call_args(i: int) -> bool:
-            o = opener[i] if 0 <= i < n else -1
-            if o < 0 or not self.is_p(o, "("):
-                return False
-            before = o - 1
-            return before >= 0 and (
-                (t[before].kind == "name" and t[before].value not in _KEYWORDS - {"super"})
-                or self.is_p(before, ")")
-                or self.is_p(before, "]")
-            )
+    def _in_call_args(self, opener: list[int], i: int) -> bool:
+        """Whether token `i` is directly inside a call's argument list."""
+        t, n = self.t, self.n
+        o = opener[i] if 0 <= i < n else -1
+        if o < 0 or not self.is_p(o, "("):
+            return False
+        before = o - 1
+        return before >= 0 and (
+            (t[before].kind == "name" and t[before].value not in _KEYWORDS - {"super"})
+            or self.is_p(before, ")")
+            or self.is_p(before, "]")
+        )
 
+    def _entry_points(
+        self, head: dict[int, int], opener: list[int]
+    ) -> tuple[dict[int, str], dict[int, int], set[int]]:
+        """Each function's name and the token that spells it, and the functions that run as soon as
+        their scope does: invoked where they stand, handed to a call, or called by the language."""
+        t = self.t
         names: dict[int, str] = {}
         own_name_token: dict[int, int] = {}
         at_once: set[int] = set()
@@ -224,14 +260,17 @@ class _Analysis(Calls):
                     and self.is_name(after + 1)
                     and t[after + 1].value in ("call", "apply")
                 )
-                or in_call_args(first)
+                or self._in_call_args(opener, first)
                 or names.get(fn.fid) in _Analysis._IMPLICIT
                 or self.is_name(h - 1, "get")
                 or self.is_name(h - 1, "set")
             ):
                 at_once.add(fn.fid)
-        # Every name a scope calls or hands on: `f(`, `f.call(`, or `f` as a call's argument.
-        own = set(own_name_token.values())
+        return names, own_name_token, at_once
+
+    def _uses(self, own: set[int], opener: list[int]) -> dict[int, set[str]]:
+        """Every name a scope calls or hands on: `f(`, `f.call(`, or `f` as a call's argument."""
+        t, n = self.t, self.n
         uses: dict[int, set[str]] = {}
         for k in range(n):
             if t[k].kind != "name" or k in own:
@@ -243,30 +282,13 @@ class _Analysis(Calls):
                     and self.is_name(k + 2)
                     and t[k + 2].value in ("call", "apply", "bind")
                 )
-                or ((self.is_p(k - 1, "(") or self.is_p(k - 1, ",")) and in_call_args(k))
+                or (
+                    (self.is_p(k - 1, "(") or self.is_p(k - 1, ","))
+                    and self._in_call_args(opener, k)
+                )
             ):
                 uses.setdefault(self.scope_of(k), set()).add(t[k].value)
-        reached = {0}
-        called = set(uses.get(0, ()))
-        for _ in range(_Analysis._REACH_ROUNDS):
-            grown = False
-            for fn in self.fns:
-                if fn.fid in reached or self.parent.get(fn.fid, 0) not in reached:
-                    continue
-                if fn.fid in at_once or names.get(fn.fid) in called:
-                    reached.add(fn.fid)
-                    called |= uses.get(fn.fid, set())
-                    grown = True
-            if not grown:
-                break
-        else:
-            return []
-        spans: list[tuple[int, int]] = []
-        for fn in self.fns:
-            if fn.fid in reached or fn.start >= n:
-                continue
-            spans.append((t[fn.start].start, t[min(max(fn.end - 1, fn.start), n - 1)].end))
-        return sorted(spans)
+        return uses
 
     def run(self) -> list[Flow]:
         self._find_functions()

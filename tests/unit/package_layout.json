@@ -900,7 +900,6 @@
    "analysis/javascript/front/parser:Parser.left_hand_side": 95,
    "analysis/javascript/js_eval:JsEval._scan": 91,
    "analysis/javascript/js_eval:_Evaluator.rewrite": 103,
-   "analysis/javascript/js_flow:_Analysis.deferred": 102,
    "rules/loader:PatternCompiler._reject_unsafe": 121,
    "rules/loader:PatternCompiler._reject_unsafe.walk": 102,
    "rules/loader:PatternCompiler.required_literals": 181,
