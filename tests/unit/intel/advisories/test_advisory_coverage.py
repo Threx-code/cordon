@@ -218,14 +218,14 @@ class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
     """
 
     def test_construction_reads_no_ecosystem(self) -> None:
-        from cordon_scanner.intel.advisories import advisories
+        from cordon_scanner.intel.advisories import shipped
 
-        advisories.ShippedAdvisories._shipped_raw.cache_clear()
+        shipped.ShippedAdvisories._shipped_raw.cache_clear()
         database = AdvisoryDatabase.bundled()
-        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 0
+        assert shipped.ShippedAdvisories._shipped_raw.cache_info().misses == 0
         # And the first question about one ecosystem reads that one only.
         database.matching("cargo", "smallvec", "0.6.13")
-        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 1
+        assert shipped.ShippedAdvisories._shipped_raw.cache_info().misses == 1
 
     @pytest.mark.conformance("x", "x.feeds")
     def test_an_ecosystem_with_no_records_is_not_claimed_as_covered(self) -> None:
