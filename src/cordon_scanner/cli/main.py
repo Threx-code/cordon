@@ -45,12 +45,13 @@ from cordon_scanner.cli.commands.scan.enrichment import ScanEnrichment
 from cordon_scanner.cli.commands.scan.git_modes import GitModes
 from cordon_scanner.cli.commands.scan.organisation_policy import OrganisationPolicy
 from cordon_scanner.cli.commands.scan.output import ScanOutput
+from cordon_scanner.cli.commands.scan.suppression import ScanSuppression
 from cordon_scanner.cli.dependency_payload import DependencyPayload
 from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.engine.audit import AuditLog
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
-from cordon_scanner.foundation.models import Confidence, Finding, Severity
+from cordon_scanner.foundation.models import Confidence, Severity
 from cordon_scanner.foundation.renames import Renamed
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
 from cordon_scanner.version import __version__
@@ -59,7 +60,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from cordon_scanner.engine.progress import Progress
-    from cordon_scanner.foundation.models import Finding
 
 EPILOG = f"""\
 exit codes:
@@ -814,7 +814,7 @@ class CommandLine:
                 # without signing, and it can be made loud: the suppression is
                 # named in the output of every run that honours it, and the
                 # finding is one no reporting threshold can hide.
-                findings.append(cls._baseline_notice(silenced, Path(args.baseline)))
+                findings.append(ScanSuppression.baseline_notice(silenced, Path(args.baseline)))
             result = _replace(result, findings=tuple(findings))
 
         if getattr(args, "vex", None):
@@ -874,54 +874,6 @@ class CommandLine:
             # The upload carries the verdict as it is; Cordon applies the repository's mode too.
             ScanOutput.upload(args, result, verdict, target)
         return OrganisationPolicy.exit_code(verdict, cloud_bundle, result, quiet=args.quiet)
-
-    @staticmethod
-    def _baseline_notice(silenced: Sequence[Finding], path: Path) -> Finding:
-        """One always-reported finding naming what the baseline is hiding."""
-        from cordon_scanner.foundation.models import (
-            Category,
-            Confidence,
-            Evidence,
-            EvidenceKind,
-            Explanation,
-            Finding,
-            Location,
-            RedactionMode,
-            RiskScore,
-            Severity,
-        )
-
-        rules = sorted({f.rule_id for f in silenced})
-        listed = ", ".join(rules[:8]) + (" and others" if len(rules) > 8 else "")
-        return Finding(
-            rule_id="POLICY.BASELINE.APPLIED",
-            category=Category.POLICY,
-            severity=Severity.INFO,
-            confidence=Confidence.CONFIRMED,
-            message=(
-                f"{len(silenced)} finding(s) were suppressed by {path.name}: {listed}. "
-                f"A baseline records debt somebody chose to carry, and its entries are "
-                f"computable by whoever can commit to this repository, so what it "
-                f"hides is stated here on every run."
-            ),
-            location=Location(path=path.name),
-            evidence=Evidence(
-                kind=EvidenceKind.METADATA,
-                match_hash=Evidence.hash_bytes(",".join(rules).encode()),
-                redaction=RedactionMode.NONE,
-            ),
-            remediation=(
-                "Review the baseline. Every entry names the rule and the path it "
-                "silences, so a new one is legible in a diff."
-            ),
-            explanation=Explanation(
-                summary="Reported so that a baseline never hides its own contents.",
-                matched_rule="POLICY.BASELINE.APPLIED",
-            ),
-            risk=RiskScore(value=0, base=0, confidence_multiplier=1.0),
-            detector="engine",
-            always_report=True,
-        )
 
     @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
