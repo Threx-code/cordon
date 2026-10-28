@@ -504,56 +504,7 @@ class VcpkgPorts:
                     else ";".join(a for a in args[1:] if a is not None)
                 )
             elif name == "string" and len(args) >= 2 and args[0]:
-                operation = args[0].upper()
-                if operation == "REPLACE" and len(args) >= 5 and args[3]:
-                    inputs = args[4:]
-                    known = not depth and None not in (args[1], args[2], *inputs)
-                    values[args[3]] = (
-                        "".join(i for i in inputs if i is not None).replace(
-                            str(args[1]), str(args[2])
-                        )
-                        if known
-                        else None
-                    )
-                elif (
-                    operation == "REGEX"
-                    and len(args) >= 5
-                    and str(args[1]).upper() == "MATCH"
-                    and args[3]
-                ):
-                    # `string(REGEX MATCH <regex> <out> <input>...)`: the first match, or "".
-                    pattern, inputs = args[2], args[4:]
-                    values[args[3]] = (
-                        None
-                        if depth or pattern is None or None in inputs
-                        else VcpkgPorts._regex(pattern, "".join(i for i in inputs if i), None)
-                    )
-                elif (
-                    operation == "REGEX"
-                    and len(args) >= 6
-                    and str(args[1]).upper() == "REPLACE"
-                    and args[4]
-                ):
-                    # `string(REGEX REPLACE <regex> <replace> <out> <input>...)`: every match.
-                    pattern, replacement, inputs = args[2], args[3], args[5:]
-                    values[args[4]] = (
-                        None
-                        if depth or pattern is None or replacement is None or None in inputs
-                        else VcpkgPorts._regex(
-                            pattern, "".join(i for i in inputs if i), replacement
-                        )
-                    )
-                elif operation in ("TOLOWER", "TOUPPER") and len(args) >= 3 and args[2]:
-                    given = args[1]
-                    values[args[2]] = (
-                        None
-                        if depth or given is None
-                        else given.lower()
-                        if operation == "TOLOWER"
-                        else given.upper()
-                    )
-                elif len(args) >= 3 and args[-1]:
-                    values[args[-1]] = None  # any other string() result is not evaluated here
+                VcpkgPorts._string_command(args, depth, values)
             elif name in VcpkgPorts.FETCHES or name == "vcpkg_from_sourceforge":
                 keyed: dict[str, list[str | None]] = {}
                 current = ""
@@ -590,6 +541,56 @@ class VcpkgPorts:
         if named:
             return Unnamed("its portfile fetches different sources by platform or feature"), archive
         return found[0], archive
+
+    @staticmethod
+    def _string_command(args: list[str | None], depth: int, values: dict[str, str | None]) -> None:
+        """A portfile's string() command: the value it builds, kept in the variables it sets."""
+        first = args[0]
+        if first is None:  # the caller's test, restated for the type
+            return
+        operation = first.upper()
+        if operation == "REPLACE" and len(args) >= 5 and args[3]:
+            inputs = args[4:]
+            known = not depth and None not in (args[1], args[2], *inputs)
+            values[args[3]] = (
+                "".join(i for i in inputs if i is not None).replace(str(args[1]), str(args[2]))
+                if known
+                else None
+            )
+        elif (
+            operation == "REGEX" and len(args) >= 5 and str(args[1]).upper() == "MATCH" and args[3]
+        ):
+            # `string(REGEX MATCH <regex> <out> <input>...)`: the first match, or "".
+            pattern, inputs = args[2], args[4:]
+            values[args[3]] = (
+                None
+                if depth or pattern is None or None in inputs
+                else VcpkgPorts._regex(pattern, "".join(i for i in inputs if i), None)
+            )
+        elif (
+            operation == "REGEX"
+            and len(args) >= 6
+            and str(args[1]).upper() == "REPLACE"
+            and args[4]
+        ):
+            # `string(REGEX REPLACE <regex> <replace> <out> <input>...)`: every match.
+            pattern, replacement, inputs = args[2], args[3], args[5:]
+            values[args[4]] = (
+                None
+                if depth or pattern is None or replacement is None or None in inputs
+                else VcpkgPorts._regex(pattern, "".join(i for i in inputs if i), replacement)
+            )
+        elif operation in ("TOLOWER", "TOUPPER") and len(args) >= 3 and args[2]:
+            given = args[1]
+            values[args[2]] = (
+                None
+                if depth or given is None
+                else given.lower()
+                if operation == "TOLOWER"
+                else given.upper()
+            )
+        elif len(args) >= 3 and args[-1]:
+            values[args[-1]] = None  # any other string() result is not evaluated here
 
     @staticmethod
     def patch(name: str, keyed: dict[str, list[str | None]]) -> bool:

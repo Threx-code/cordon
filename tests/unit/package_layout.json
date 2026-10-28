@@ -985,8 +985,6 @@
    "images/host:HostFilesystem._language_packages": 104,
    "images/oci:ImageLayers.added_files": 101,
    "images/oci:ImageLayers.databases": 95,
-   "intel/provenance/attest:SigstoreVerification.verify": 95,
-   "intel/registries/more_registries:MoreRegistries.archive": 100,
    "mcp/packages:Lockfiles._pinned": 105,
    "mcp/tools:Catalogue.build": 459,
    "report/aibom:AiBom.inventory": 92,
@@ -998,10 +996,7 @@
    "rules/loader:RuleLoader._compile_match": 129,
    "rules/loader:RuleLoader._parse_rule": 138,
    "sources/archive:ArchiveReader._extract_tar": 162,
-   "sources/archive:ArchiveReader._extract_zip": 94,
-   "intel/advisories/upstream/conda:CondaPackage.recipe": 92,
-   "intel/advisories/upstream/tags:ContentProof._check": 110,
-   "intel/advisories/upstream/vcpkg:VcpkgPorts.read": 113
+   "sources/archive:ArchiveReader._extract_zip": 94
   },
   "large_directories": {},
   "engine_adapter_imports": [

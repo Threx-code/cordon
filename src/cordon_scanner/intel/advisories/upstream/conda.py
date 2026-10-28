@@ -189,20 +189,9 @@ class CondaPackage:
             # block, 8 bytes each, in the order uncompressed size, compressed size, offset.
             uncompressed = struct.unpack("<I", directory[position + 24 : position + 28])[0]
             extra = directory[position + 46 + name_len : position + 46 + name_len + extra_len]
-            at = 0
-            while at + 4 <= len(extra):
-                kind, length = struct.unpack("<HH", extra[at : at + 4])
-                if kind == 1:
-                    wide = iter(
-                        struct.unpack(
-                            f"<{min(length, 24) // 8}Q",
-                            extra[at + 4 : at + 4 + length // 8 * 8][:24],
-                        )
-                    )
-                    fields = [uncompressed, compressed, local]
-                    fields = [next(wide, f) if f == 0xFFFFFFFF else f for f in fields]
-                    uncompressed, compressed, local = fields
-                at += 4 + length
+            compressed, local, uncompressed = CondaPackage._zip64_fields(
+                extra, uncompressed, compressed, local
+            )
             position += 46 + name_len + extra_len + comment_len
             if not (name.startswith("info-") and name.endswith(".tar.zst")) or method != 0:
                 continue
@@ -218,6 +207,29 @@ class CondaPackage:
             with tarfile.open(fileobj=CondaPackage._zstd_stream(body), mode="r|") as archive:
                 return CondaPackage._from_tar(archive, seen)
         return None
+
+    @staticmethod
+    def _zip64_fields(
+        extra: bytes, uncompressed: Any, compressed: Any, local: Any
+    ) -> tuple[Any, Any, Any]:
+        """A central-directory entry's sizes and offset, from its ZIP64 extra field where the entry defers to it."""
+        import struct
+
+        at = 0
+        while at + 4 <= len(extra):
+            kind, length = struct.unpack("<HH", extra[at : at + 4])
+            if kind == 1:
+                wide = iter(
+                    struct.unpack(
+                        f"<{min(length, 24) // 8}Q",
+                        extra[at + 4 : at + 4 + length // 8 * 8][:24],
+                    )
+                )
+                fields = [uncompressed, compressed, local]
+                fields = [next(wide, f) if f == 0xFFFFFFFF else f for f in fields]
+                uncompressed, compressed, local = fields
+            at += 4 + length
+        return compressed, local, uncompressed
 
 
 class CondaSiblings:

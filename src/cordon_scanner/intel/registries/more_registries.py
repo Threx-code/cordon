@@ -263,39 +263,9 @@ class MoreRegistries:
                 )
             return base.PackageArchive(ecosystem, name, resolved, filename, data)
         if ecosystem in ("hex", "pub", "maven", "gradle"):
-            if ecosystem == "hex":
-                filename = f"{name}-{resolved}.tar"
-                url = f"https://repo.hex.pm/tarballs/{urllib.parse.quote(filename, safe='')}"
-            elif ecosystem == "pub":
-                filename = f"{name}-{resolved}.tar.gz"
-                url = f"{HOSTS['pub']}/api/archives/{urllib.parse.quote(filename, safe='')}"
-            else:
-                group, _, artifact = name.partition(":")
-                if not group or not artifact or "/" in name or ".." in name:
-                    raise RegistryError(f"{name} is not a Maven group:artifact")
-                filename = f"{artifact}-{resolved}.jar"
-                url = f"{HOSTS['maven']}/maven2/{group.replace('.', '/')}/{artifact}/{urllib.parse.quote(resolved, safe='')}/{urllib.parse.quote(filename, safe='')}"
-            # Hex and pub publish a SHA-256 of the archive; Maven Central the strongest of SHA-512,
-            # SHA-256 and SHA-1 it carries for the jar.
-            for algorithm, width in (("sha512", 128), ("sha256", 64), ("sha1", 40)):
-                expected = [
-                    d.partition(":")[2].lower()
-                    for d in facts.digests
-                    if d.startswith(f"{algorithm}:") and len(d.partition(":")[2]) == width
-                ]
-                if expected:
-                    break
-            else:
-                raise RegistryError(
-                    f"{ecosystem} publishes no digest for {name}@{resolved}; nothing to verify against"
-                )
-            data = base.RegistryClient._fetch_bytes(
-                url, "maven" if ecosystem == "gradle" else ecosystem
+            filename, url, expected, data = MoreRegistries._hex_pub_maven_archive(
+                ecosystem, name, resolved, facts
             )
-            if hashlib.new(algorithm, data).hexdigest() not in expected:
-                raise RegistryError(
-                    f"{name}@{resolved} does not match the {algorithm} {ecosystem} publishes"
-                )
             return base.PackageArchive(ecosystem, name, resolved, filename, data)
         if ecosystem == "cargo":
             filename = f"{name}-{resolved}.crate"
@@ -335,3 +305,45 @@ class MoreRegistries:
                 f"{name}@{resolved} does not match the {algorithm} {ecosystem} publishes"
             )
         return base.PackageArchive(ecosystem, name, resolved, filename, data)
+
+    @staticmethod
+    def _hex_pub_maven_archive(
+        ecosystem: str, name: str, resolved: str, facts: PackageFacts
+    ) -> tuple[str, str, list[str], bytes]:
+        """Where Hex, pub and Maven keep the archive of a release, and its bytes, checked against the digest the registry gives."""
+        import hashlib
+
+        if ecosystem == "hex":
+            filename = f"{name}-{resolved}.tar"
+            url = f"https://repo.hex.pm/tarballs/{urllib.parse.quote(filename, safe='')}"
+        elif ecosystem == "pub":
+            filename = f"{name}-{resolved}.tar.gz"
+            url = f"{HOSTS['pub']}/api/archives/{urllib.parse.quote(filename, safe='')}"
+        else:
+            group, _, artifact = name.partition(":")
+            if not group or not artifact or "/" in name or ".." in name:
+                raise RegistryError(f"{name} is not a Maven group:artifact")
+            filename = f"{artifact}-{resolved}.jar"
+            url = f"{HOSTS['maven']}/maven2/{group.replace('.', '/')}/{artifact}/{urllib.parse.quote(resolved, safe='')}/{urllib.parse.quote(filename, safe='')}"
+        # Hex and pub publish a SHA-256 of the archive; Maven Central the strongest of SHA-512,
+        # SHA-256 and SHA-1 it carries for the jar.
+        for algorithm, width in (("sha512", 128), ("sha256", 64), ("sha1", 40)):
+            expected = [
+                d.partition(":")[2].lower()
+                for d in facts.digests
+                if d.startswith(f"{algorithm}:") and len(d.partition(":")[2]) == width
+            ]
+            if expected:
+                break
+        else:
+            raise RegistryError(
+                f"{ecosystem} publishes no digest for {name}@{resolved}; nothing to verify against"
+            )
+        data = base.RegistryClient._fetch_bytes(
+            url, "maven" if ecosystem == "gradle" else ecosystem
+        )
+        if hashlib.new(algorithm, data).hexdigest() not in expected:
+            raise RegistryError(
+                f"{name}@{resolved} does not match the {algorithm} {ecosystem} publishes"
+            )
+        return filename, url, expected, data

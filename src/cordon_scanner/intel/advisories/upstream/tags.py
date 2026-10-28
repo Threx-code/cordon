@@ -701,35 +701,12 @@ class ContentProof:
             ),
             commit,
         )
-        release: bytes | None = None
-        # A recipe's URL may have moved (zlib.net keeps only its newest release there); the same
-        # file published as the GitHub release's asset is tried too. Only bytes that hash to the
-        # recipe's digest are ever used, so another address cannot change what is compared.
-        candidates = list(archive.urls)
-        if tag and repository.startswith("https://github.com/"):
-            candidates += [
-                f"{repository}/releases/download/{tag}/{url.rsplit('/', 1)[-1]}"
-                for url in archive.urls
-            ]
-        # GNU's own mirror redirector for a file on ftp.gnu.org, which is often too loaded to answer.
-        candidates += [
-            re.sub(r"^https?://ftp\.gnu\.org/(?:pub/)?gnu/", "https://ftpmirror.gnu.org/gnu/", url)
-            for url in archive.urls
-            if re.match(r"^https?://ftp\.gnu\.org/(?:pub/)?gnu/", url)
-        ]
-        for url in dict.fromkeys(candidates):
-            try:
-                body = ContentProof._download(url)
-            except (OSError, ValueError, http.client.HTTPException):
-                continue
-            if ContentProof._digest_matches(body, archive.digest):
-                release = body
-                break
+        release = ContentProof._release_archive(archive, tag, repository)
         if release is None:
             return "unprovable", "no release archive matching the recipe's digest could be read"
         try:
             hashed = ContentProof.blobs(release)
-            release = body = b""  # the archive is not needed past its files' ids
+            release = b""  # the archive is not needed past its files' ids
             ours = {path: found[0] for path, found in hashed.items()}
         except (OSError, ValueError, tarfile.TarError, EOFError, http.client.HTTPException) as exc:
             return "unprovable", f"the release archive could not be read ({type(exc).__name__})"
@@ -800,6 +777,35 @@ class ContentProof:
                 else ""
             ),
         )
+
+    @staticmethod
+    def _release_archive(archive: Archive, tag: str, repository: str) -> bytes | None:
+        """The release archive the proof compares against: the first of its candidate URLs that answers."""
+        release: bytes | None = None
+        # A recipe's URL may have moved (zlib.net keeps only its newest release there); the same
+        # file published as the GitHub release's asset is tried too. Only bytes that hash to the
+        # recipe's digest are ever used, so another address cannot change what is compared.
+        candidates = list(archive.urls)
+        if tag and repository.startswith("https://github.com/"):
+            candidates += [
+                f"{repository}/releases/download/{tag}/{url.rsplit('/', 1)[-1]}"
+                for url in archive.urls
+            ]
+        # GNU's own mirror redirector for a file on ftp.gnu.org, which is often too loaded to answer.
+        candidates += [
+            re.sub(r"^https?://ftp\.gnu\.org/(?:pub/)?gnu/", "https://ftpmirror.gnu.org/gnu/", url)
+            for url in archive.urls
+            if re.match(r"^https?://ftp\.gnu\.org/(?:pub/)?gnu/", url)
+        ]
+        for url in dict.fromkeys(candidates):
+            try:
+                body = ContentProof._download(url)
+            except (OSError, ValueError, http.client.HTTPException):
+                continue
+            if ContentProof._digest_matches(body, archive.digest):
+                release = body
+                break
+        return release
 
     @staticmethod
     def _enough(shared: int, tagged: int) -> bool:
