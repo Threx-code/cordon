@@ -201,6 +201,7 @@
   "foundation/dependencies": "foundation/dependencies",
   "foundation/distribution": "foundation/distribution",
   "engine/engine": "engine/engine",
+  "engine/pipeline/facts": "engine/pipeline/facts",
   "engine/pipeline/images": "engine/pipeline/images",
   "engine/pipeline/publisher": "engine/pipeline/publisher",
   "engine/pipeline/graph": "engine/pipeline/graph",
@@ -739,7 +740,7 @@
    "ecosystems/packages/npm": 1524,
    "ecosystems/packages/opam": 1004,
    "ecosystems/packages/pypi": 1319,
-   "engine/engine": 3370,
+   "engine/engine": 3282,
    "foundation/config": 2356,
    "foundation/models": 1702,
    "images/oci": 1074,
@@ -869,7 +870,7 @@
    "detect/supply/advisory:AdvisoryDetector": 1065,
    "detect/supply/manifest:ManifestDetector": 1843,
    "ecosystems/packages/pypi:PypiEcosystem": 1138,
-   "engine/engine:Engine": 3256,
+   "engine/engine:Engine": 3167,
    "intel/registries/more_registries:MoreRegistries": 2009
   },
   "long_functions": {

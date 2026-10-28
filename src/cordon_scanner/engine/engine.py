@@ -62,6 +62,7 @@ from cordon_scanner.engine.pipeline.constants import (
     HONOURED_PINS,
     REPOSITORY_SCOPE,
 )
+from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.engine.pipeline.hooks import Hooks
@@ -327,7 +328,7 @@ class Engine:
         # A skill's scripts run when the agent uses the skill, on the user's machine and unasked:
         # the trust boundary an install hook has (review 98: a skill script reading files and
         # posting them out was graded as a library's, at MEDIUM).
-        skill_scripts = Engine._skill_scripts(units)
+        skill_scripts = TreeFacts.skill_scripts(units)
         agent_run = skill_scripts | ReleaseChecks.mcp_server_sources(units)
         agent_tools = self._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
@@ -351,7 +352,7 @@ class Engine:
         # in the closure because something imports it, which runs its top level
         # and defines its functions -- it does not call them.
         # Every function of agent-run code is an entry point: the agent calls them by name.
-        deferred = Engine._entry_points_reached(
+        deferred = TreeFacts.entry_points_reached(
             Hooks.hook_deferred_lines(units, hook_paths, entries), agent_run
         )
         ctx = replace(
@@ -359,7 +360,7 @@ class Engine:
             dependencies=Graph.packages(dependencies),
             install_hook_paths=frozenset(hook_paths),
             tree_paths=frozenset(unit.path for unit in units),
-            shipped_native_paths=Engine._shipped_native(units),
+            shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
@@ -775,7 +776,7 @@ class Engine:
         hook_paths |= Hooks.nuget_hooks(units)
         hook_paths |= Hooks.gem_extension_hooks(units)
         hook_paths |= ComposerPluginHooks.paths(units)
-        skill_scripts = Engine._skill_scripts(units)
+        skill_scripts = TreeFacts.skill_scripts(units)
         agent_run = skill_scripts | ReleaseChecks.mcp_server_sources(units)
         agent_tools = self._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
@@ -795,12 +796,12 @@ class Engine:
             ctx,
             install_hook_paths=frozenset(hook_paths),
             tree_paths=frozenset(unit.path for unit in units),
-            shipped_native_paths=Engine._shipped_native(units),
+            shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
             consumer_install_paths=frozenset(consumer_hooks),
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
-            install_deferred_lines=Engine._entry_points_reached(
+            install_deferred_lines=TreeFacts.entry_points_reached(
                 Hooks.hook_deferred_lines(units, hook_paths, entries), agent_run
             ),
             # Known before any file is examined, so a detector can tell an image's files from a
@@ -1153,7 +1154,7 @@ class Engine:
                     )
                 )
 
-        is_git, revision, remote, at_repository_root = self._provenance(root)
+        is_git, revision, remote, at_repository_root = TreeFacts.provenance(root)
         return Repository(
             root=str(root),
             is_git=is_git,
@@ -1167,46 +1168,6 @@ class Engine:
             revision=revision,
             remote=remote,
         )
-
-    @staticmethod
-    def _provenance(root: Path) -> tuple[bool, str | None, str | None, bool]:
-        """The commit and remote this scan describes.
-
-        `Repository` declared both fields, `to_dict` serialised both, and
-        nothing ever set either -- so every report and every SARIF upload
-        recorded `null` for the two values that say *which* code was examined.
-        A result nobody can tie to a commit is a result nobody can act on later:
-        it says a repository was clean without saying which version of it.
-
-        `GitRepository.discover` already computed both, including stripping any
-        credential from the remote, and its answer was simply never asked for.
-
-        `is_git` had the identical defect and is returned here for the same
-        reason. It gated whether any repository-scoped detector runs at all, so
-        leaving it false meant the history checks were shipped and never
-        executed -- a detector that cannot run is indistinguishable from one
-        that found nothing.
-
-        Failure is silent on purpose. A directory that is not a repository is
-        the ordinary case, not a degraded scan, and it is already visible in the
-        report as an absent revision.
-        """
-        from cordon_scanner.sources.git import GitRepository
-
-        try:
-            info = GitRepository.discover(root)
-        except (SourceError, OSError):  # pragma: no cover - defensive
-            return (False, None, None, False)
-        if info is None:
-            return (False, None, None, False)
-        # Whether the target is the repository root, which is a different question
-        # from whether a repository is above it. Resolved on both sides, so a
-        # symlinked or relative target does not read as a subdirectory of itself.
-        try:
-            at_root = Path(info.root).resolve() == Path(root).resolve()
-        except OSError:  # pragma: no cover - defensive
-            at_root = False
-        return (True, info.revision, info.remote, at_root)
 
     def _manifest_hooks(
         self,
@@ -1954,24 +1915,6 @@ class Engine:
 
     # -- Dependency graph ------------------------------------------------
 
-    @staticmethod
-    def _shipped_native(units: Iterable[FileUnit]) -> frozenset[str]:
-        """Paths whose bytes begin with ELF, PE or Mach-O magic: a binary the package ships (census A)."""
-        from cordon_scanner.detect.binary.binary import NATIVE_FORMATS, BinaryDetector
-
-        ids = ((u.path, BinaryDetector.identify(u.content.raw)) for u in units if u.content)
-        return frozenset(p for p, f in ids if f is not None and f.name in NATIVE_FORMATS)
-
-    @staticmethod
-    def _entry_points_reached(
-        deferred: frozenset[tuple[str, int, int]], agent_run: set[str]
-    ) -> frozenset[tuple[str, int, int]]:
-        """Deferred bodies, less those in code an agent runs: a skill script's functions and an MCP
-        server's handlers are called by the agent by name, so none of them is unreached. Counted as
-        deferred, a skill script appending to `/etc/passwd` and `/etc/crontab` from its functions
-        had no install-time finding at all (review 98)."""
-        return frozenset(t for t in deferred if t[0] not in agent_run)
-
     def _agent_tool_paths(
         self, units: Sequence[FileUnit], agent_run: set[str], hooks: set[str]
     ) -> frozenset[str]:
@@ -1992,40 +1935,9 @@ class Engine:
             tools -= real - agent_run
         return frozenset(tools)
 
-    @staticmethod
-    def _skill_scripts(units: Sequence[FileUnit]) -> set[str]:
-        """Scripts an agent skill ships (`CapabilityDetector._skill_script`)."""
-        from types import SimpleNamespace
-
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
-
-        tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units))
-        return {
-            u.path
-            for u in units
-            if CapabilityDetector._skill_script(u.path, tree)  # type: ignore[arg-type]
-        }
-
     #: How many files of one kind the capability profile labels: the files that run at install or
     #: on import are a handful in any real package; past this the rest are not read again.
     _PROFILE_FILES: ClassVar[int] = 50
-
-    @staticmethod
-    def _labelled_once(
-        detector: Any, unit: FileUnit, ctx: ScanContext, cache: dict[str, Any] | None
-    ) -> Any:
-        """`detector.labelled(unit, ctx)`, computed once per file for everything that asks."""
-        if cache is None:
-            return detector.labelled(unit, ctx)
-        if unit.path not in cache:
-            try:
-                cache[unit.path] = detector.labelled(unit, ctx)
-            except Exception as error:  # re-raised to each caller below  # noqa: BLE001
-                cache[unit.path] = error
-        held = cache[unit.path]
-        if isinstance(held, Exception):
-            raise held
-        return held
 
     def _intent_observation(
         self, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
@@ -2042,7 +1954,7 @@ class Engine:
         files = [u for u in units if isinstance(u, FileUnit)]
 
         def label(unit: FileUnit) -> list[tuple[str, int]]:
-            labelled = Engine._labelled_once(detector, unit, ctx, labels)
+            labelled = TreeFacts.labelled_once(detector, unit, ctx, labels)
             out = [(hit.capability.value, hit.byte_start) for hit in (labelled or ((),))[0]]
             lines = DownloadFlow.runs_download(unit.content.text, unit.language)
             if lines:
@@ -2090,7 +2002,7 @@ class Engine:
                     break
                 read += 1
                 try:
-                    labelled = Engine._labelled_once(detector, unit, ctx, labels)
+                    labelled = TreeFacts.labelled_once(detector, unit, ctx, labels)
                 except Exception:  # noqa: BLE001, S112
                     continue
                 if labelled is not None:
