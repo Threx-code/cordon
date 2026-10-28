@@ -146,38 +146,6 @@ class History:
                     return "rubygems", named.group(1), said.group(1)
         return None
 
-    _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?m)^Requires-Dist:\s*([A-Za-z0-9][A-Za-z0-9._-]*)([^\n]*)$"
-    )
-
-    @staticmethod
-    def declared_dependencies(units: Sequence[FileUnit], distribution: str) -> frozenset[str]:
-        """A release's runtime dependencies: npm's (optional ones too), PyPI's `Requires-Dist`."""
-        if distribution == "npm":
-            manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
-            try:
-                document = json.loads(manifest.content.text) if manifest is not None else {}
-            except ValueError:
-                return frozenset()
-            if not isinstance(document, dict):
-                return frozenset()
-            names: set[str] = set()
-            for section in ("dependencies", "optionalDependencies"):
-                value = document.get(section)
-                if isinstance(value, dict):
-                    names.update(str(k) for k in value)
-            return frozenset(names)
-        if distribution == "pypi":
-            for unit in units:
-                member = unit.path.rpartition("!")[2]
-                if member.endswith(("/PKG-INFO", ".dist-info/METADATA")) and member.count("/") == 1:
-                    return frozenset(
-                        re.sub(r"[-_.]+", "-", found.group(1)).lower()
-                        for found in History._REQUIRES_DIST.finditer(unit.content.text[:200_000])
-                        if "extra ==" not in found.group(2)
-                    )
-        return frozenset()
-
     @staticmethod
     def young_dependency_introduced(
         units: list[FileUnit],

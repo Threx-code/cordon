@@ -281,12 +281,12 @@ class TestANewYoungDependency:
 
     def test_declared_dependencies_are_read_per_format(self) -> None:
         npm = self.units({"a": "1"})
-        assert History.declared_dependencies(npm, "npm") == {"a"}
+        assert ReleaseHistory.declared_dependencies(npm, "npm") == {"a"}
         metadata = b"Name: x\nVersion: 1\nRequires-Dist: Foo_Bar>=1\nRequires-Dist: pytest; extra == 'test'\n"
         pypi = [
             FileUnit(FileContent(path="x-1.tar.gz!x-1/PKG-INFO", raw=metadata, size=len(metadata)))
         ]
-        assert History.declared_dependencies(pypi, "pypi") == {"foo-bar"}
+        assert ReleaseHistory.declared_dependencies(pypi, "pypi") == {"foo-bar"}
 
 
 class TestObfuscatedSinceAnEstablishedRelease:

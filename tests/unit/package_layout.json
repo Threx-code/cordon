@@ -788,7 +788,6 @@
    "detect/supply/release_diff -> engine/pipeline/releases",
    "detect/supply/sbom -> decide/scoring",
    "foundation/dependencies -> ecosystems/registry",
-   "intel/registries/release_history -> engine/pipeline/history",
    "sources/base -> engine/walker",
    "sources/git -> engine/walker"
   ],

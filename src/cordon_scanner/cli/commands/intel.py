@@ -142,7 +142,7 @@ class IntelCommand:
                 baseline = ReleaseHistory.acquire(
                     *identity,
                     current_dependencies=tuple(
-                        sorted(History.declared_dependencies(units, distribution))
+                        sorted(ReleaseHistory.declared_dependencies(units, distribution))
                     ),
                 )
             except RegistryError as exc:
