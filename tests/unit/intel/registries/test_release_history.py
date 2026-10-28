@@ -211,14 +211,12 @@ class TestAcquireIsOnlineOnly:
     def test_refused_offline(self, tmp_path, monkeypatch) -> None:
         import argparse
 
-        from cordon_scanner.cli.main import CommandLine
+        from cordon_scanner.cli.commands.intel import IntelCommand
         from cordon_scanner.foundation.errors import ConfigError
 
         monkeypatch.setenv("CORDON_OFFLINE", "1")
         with pytest.raises(ConfigError):
-            CommandLine._intel_acquire(
-                argparse.Namespace(targets=[str(tmp_path / "x.tgz")], json=False)
-            )
+            IntelCommand.acquire(argparse.Namespace(targets=[str(tmp_path / "x.tgz")], json=False))
 
 
 class TestANewYoungDependency:
