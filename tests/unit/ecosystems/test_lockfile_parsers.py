@@ -17,13 +17,13 @@ import pytest
 from cordon_scanner.ecosystems.others import (
     CocoaPodsEcosystem,
     ComposerEcosystem,
-    GoEcosystem,
     GradleEcosystem,
     NuGetEcosystem,
     PubEcosystem,
     RubyGemsEcosystem,
 )
 from cordon_scanner.ecosystems.packages.cargo import CargoEcosystem
+from cordon_scanner.ecosystems.packages.go import GoEcosystem
 from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
 from cordon_scanner.foundation.content import FileContent

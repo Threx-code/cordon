@@ -196,6 +196,7 @@
   "ecosystems/infra/infra": "ecosystems/infra/infra",
   "ecosystems/infra/terraform": "ecosystems/infra/terraform",
   "ecosystems/others": "ecosystems/others",
+  "ecosystems/packages/go": "ecosystems/packages/go",
   "ecosystems/packages/jvm/maven": "ecosystems/packages/jvm/maven",
   "ecosystems/packages/cargo": "ecosystems/packages/cargo",
   "ecosystems/packages/cocoapods": "ecosystems/packages/cocoapods",

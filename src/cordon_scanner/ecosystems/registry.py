@@ -22,7 +22,6 @@ from cordon_scanner.ecosystems.others import (
     CondaEcosystem,
     CranEcosystem,
     GitHubActionsEcosystem,
-    GoEcosystem,
     GradleEcosystem,
     HexEcosystem,
     NuGetEcosystem,
@@ -31,6 +30,7 @@ from cordon_scanner.ecosystems.others import (
     SwiftEcosystem,
 )
 from cordon_scanner.ecosystems.packages.cargo import CargoEcosystem
+from cordon_scanner.ecosystems.packages.go import GoEcosystem
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
