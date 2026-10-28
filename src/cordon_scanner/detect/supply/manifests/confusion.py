@@ -140,14 +140,14 @@ class ManifestConfusion:
 
     @classmethod
     def _finding(cls, target: Path, name: str, version: str, found: list[Disagreement]) -> Finding:
-        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+        from cordon_scanner.foundation.results import OperationalFinding
 
         runs = any(d.field.startswith("scripts.") for d in found)
         detail = "; ".join(
             f"{d.field}: registry says {d.registry or 'nothing'}, the tarball says {d.packaged or 'nothing'}"
             for d in found[:6]
         )
-        return ReleaseChecks.package_check(
+        return OperationalFinding.package_check(
             path=f"{target.name}!package/package.json",
             rule_id=RULE_ID,
             severity=Severity.CRITICAL if runs else Severity.HIGH,

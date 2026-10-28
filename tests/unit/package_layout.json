@@ -858,9 +858,7 @@
   "outward_imports": [
    "detect/agents/language_model_judge -> judge",
    "detect/agents/mcp_servers/source -> engine/engine",
-   "detect/code/capability/load_path -> engine/pipeline/releases",
-   "detect/supply/manifests/confusion -> engine/pipeline/releases",
-   "detect/supply/release_diff -> engine/pipeline/releases"
+   "detect/code/capability/load_path -> engine/pipeline/releases"
   ],
   "file_relative_paths": [
    "src/cordon_scanner/rules/loader.py"

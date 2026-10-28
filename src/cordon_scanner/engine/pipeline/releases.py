@@ -565,44 +565,6 @@ class ReleaseChecks:
         return out
 
     @staticmethod
-    def release_change(*, path: str, rule_id: str, message: str, severity: Severity) -> Finding:
-        """A finding about what this release added relative to the previous one."""
-        return replace(
-            OperationalFinding.build(
-                path=path,
-                rule_id=rule_id,
-                message=message,
-                remediation=(
-                    "Read what changed between the two releases before installing this one. "
-                    "If the change is not in the project's own release notes, treat the "
-                    "release as compromised."
-                ),
-                category=Category.SUSPICIOUS,
-                severity=severity,
-            ),
-            confidence=Confidence.MEDIUM,
-            always_report=False,
-        )
-
-    @staticmethod
-    def package_check(
-        *, path: str, rule_id: str, message: str, severity: Severity, remediation: str
-    ) -> Finding:
-        """A finding about the published package as its registry describes it, not about a file."""
-        return replace(
-            OperationalFinding.build(
-                path=path,
-                rule_id=rule_id,
-                message=message,
-                remediation=remediation,
-                category=Category.SUSPICIOUS,
-                severity=severity,
-            ),
-            confidence=Confidence.HIGH,
-            always_report=False,
-        )
-
-    @staticmethod
     def mcp_server_sources(units: Sequence[FileUnit]) -> set[str]:
         """An MCP server's own source: started by the agent host and run on the agent's tool calls,
         never on a run the user chose -- the boundary an install hook has. Graded as application
