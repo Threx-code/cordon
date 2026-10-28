@@ -15,7 +15,7 @@ The language it reads, and what each part means, is documented for operators in
 and the differentials over generated rules hold the engine to it.
 
 No file can make a scan unbounded: a string records at most `MAX_MATCHES` matches, a pattern
-never reads more than `rule_engine.pattern.REACH` bytes past where a run of it starts, and the search
+never reads more than `rule_engine.threads.REACH` bytes past where a run of it starts, and the search
 gives up at the deadline `match` is given.
 """
 

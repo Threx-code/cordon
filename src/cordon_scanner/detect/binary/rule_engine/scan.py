@@ -16,6 +16,7 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     ANY,
@@ -23,7 +24,6 @@ from cordon_scanner.detect.binary.rule_engine.pattern import (
     COUNT,
     DIGIT,
     GAP,
-    LINK_GAP,
     LIT,
     MASKED,
     NON_DIGIT,
@@ -31,21 +31,20 @@ from cordon_scanner.detect.binary.rule_engine.pattern import (
     NON_WORD,
     NOT,
     NOT_MASKED,
-    REACH,
     SEQ,
     SPACE,
     WORD,
-    Anchor,
-    Anchors,
     Bytes,
-    HexReader,
-    Lanes,
     PatternError,
     Program,
-    RegexReader,
     Term,
-    Threads,
 )
+from cordon_scanner.detect.binary.rule_engine.pattern_readers import (
+    LINK_GAP,
+    HexReader,
+    RegexReader,
+)
+from cordon_scanner.detect.binary.rule_engine.threads import REACH, Lanes, Threads
 
 #: An anchor as searched for: its bytes, how far into the string it starts, and where the forward
 #: and backward layouts start from it (None for text).
