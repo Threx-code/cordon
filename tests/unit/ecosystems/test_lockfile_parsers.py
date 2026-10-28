@@ -384,7 +384,7 @@ class TestOtherLockfiles:
     def test_maven_has_no_lockfile(self) -> None:
         """Stated explicitly rather than returning silence, so the absence is a
         known property rather than a suspected parser failure."""
-        from cordon_scanner.ecosystems.others import MavenEcosystem
+        from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 
         graph = MavenEcosystem().parse_lockfile(LockfileParsersHelpers.fc("pom.xml", "<project/>"))
         assert graph.parse_error and "no standard lockfile" in graph.parse_error

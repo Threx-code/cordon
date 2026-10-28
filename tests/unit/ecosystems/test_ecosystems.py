@@ -22,11 +22,11 @@ from cordon_scanner.detect.supply.dependency import DependencyDetector
 from cordon_scanner.ecosystems.others import (
     ComposerEcosystem,
     GoEcosystem,
-    MavenEcosystem,
     NuGetEcosystem,
     RubyGemsEcosystem,
 )
 from cordon_scanner.ecosystems.packages.cargo import CargoEcosystem
+from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
