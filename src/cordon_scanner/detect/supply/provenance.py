@@ -51,11 +51,12 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.intel.provenance import attest
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.provenance.openpgp import Keyring
+    from cordon_scanner.intel.registries.registry_client import PackageFacts
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
@@ -329,6 +330,17 @@ class ProvenanceDetector(BaseDetector):
             )
             return
 
+        yield from self._verdict(bundles, ctx, dependency, digest, observed)
+
+    def _verdict(
+        self,
+        bundles: tuple[str, ...],
+        ctx: ScanContext,
+        dependency: Dependency,
+        digest: tuple[str, str],
+        observed: PackageFacts,
+    ) -> Iterator[Finding]:
+        """The findings the attestation bundles support: a source repository renamed since it was attested, a verified attestation, or one that is present and does not verify."""
         source = self._source_identity(observed.repository)
         algorithm, digest_hex = digest
 

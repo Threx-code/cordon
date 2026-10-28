@@ -16,7 +16,7 @@ from cordon_scanner.foundation.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
@@ -300,6 +300,30 @@ class ConcealmentFindings:
         if match is None:
             return
 
+        documented, inert_data, ordering_text = ConcealmentFindings._bidi_context(
+            content, directional, match
+        )
+
+        if not directional:
+            # A zero-width no-break space or an interlinear annotation mark. Reported,
+            # and not as Trojan Source: it cannot reorder anything, so the claim above
+            # -- that review sees one thing and the compiler another -- is not true of
+            # it. What it does is make two strings that render identically compare
+            # unequal, which is a defect and occasionally a trick. `hashicorp/vagrant`
+            # has one inside a download URL; `Fission-AI/OpenSpec` has one inside the
+            # regex that strips it.
+            yield from ConcealmentFindings._invisible_hit(match)
+            return
+
+        yield from ConcealmentFindings._directional_hit(
+            content, documented, inert_data, match, ordering_text
+        )
+
+    @staticmethod
+    def _bidi_context(
+        content: FileContent, directional: bool, match: re.Match[bytes]
+    ) -> tuple[bool, bool, bool]:
+        """What the surrounding text says about a directional control: documented by the file itself, ordering right-to-left text, or inert data embedded in code."""
         # A file that NAMES the attack it contains is documenting it.
         #
         # Bandit's `plugins/trojansource.py` is the plugin that detects Trojan Source,
@@ -348,40 +372,44 @@ class ConcealmentFindings:
         inert_data = directional and ObfuscationText._is_inert_embedded_data(
             content.raw, match.start()
         )
+        return documented, inert_data, ordering_text
 
-        if not directional:
-            # A zero-width no-break space or an interlinear annotation mark. Reported,
-            # and not as Trojan Source: it cannot reorder anything, so the claim above
-            # -- that review sees one thing and the compiler another -- is not true of
-            # it. What it does is make two strings that render identically compare
-            # unequal, which is a defect and occasionally a trick. `hashicorp/vagrant`
-            # has one inside a download URL; `Fission-AI/OpenSpec` has one inside the
-            # regex that strips it.
-            yield Hit(
-                rule_id="SUSPECT.OBFUSCATION.BIDI.001",
-                title="Invisible characters in source",
-                message=(
-                    "This file contains invisible characters that no reviewer can see "
-                    "and no compiler ignores. They cannot reorder the source, so this "
-                    "is not the Trojan Source attack; what they can do is make two "
-                    "strings that render identically compare as different, which is "
-                    "usually an editor artefact and occasionally deliberate."
-                ),
-                remediation=(
-                    "Remove the characters, or write them as explicit escapes so they "
-                    "are visible to the next reader."
-                ),
-                # Recorded: a defect it may be, a reordering it cannot be. In the long tail it
-                # was mostly a BOM in iconv-lite's generated tables, KaTeX, CSV readers that
-                # strip one, and bundles (review 98). Text hidden in invisible characters --
-                # variation selectors, tag characters -- is `CAP.INVISIBLE_SMUGGLING.001`'s.
-                severity=Severity.LOW,
-                confidence=Confidence.HIGH,
-                start=match.start(),
-                end=match.end(),
-            )
-            return
+    @staticmethod
+    def _invisible_hit(match: re.Match[bytes]) -> Iterator[Hit]:
+        """The hit for invisible characters with no directional control among them: text a reader cannot see."""
+        yield Hit(
+            rule_id="SUSPECT.OBFUSCATION.BIDI.001",
+            title="Invisible characters in source",
+            message=(
+                "This file contains invisible characters that no reviewer can see "
+                "and no compiler ignores. They cannot reorder the source, so this "
+                "is not the Trojan Source attack; what they can do is make two "
+                "strings that render identically compare as different, which is "
+                "usually an editor artefact and occasionally deliberate."
+            ),
+            remediation=(
+                "Remove the characters, or write them as explicit escapes so they "
+                "are visible to the next reader."
+            ),
+            # Recorded: a defect it may be, a reordering it cannot be. In the long tail it
+            # was mostly a BOM in iconv-lite's generated tables, KaTeX, CSV readers that
+            # strip one, and bundles (review 98). Text hidden in invisible characters --
+            # variation selectors, tag characters -- is `CAP.INVISIBLE_SMUGGLING.001`'s.
+            severity=Severity.LOW,
+            confidence=Confidence.HIGH,
+            start=match.start(),
+            end=match.end(),
+        )
 
+    @staticmethod
+    def _directional_hit(
+        content: FileContent,
+        documented: bool,
+        inert_data: bool,
+        match: re.Match[bytes],
+        ordering_text: bool,
+    ) -> Iterator[Hit]:
+        """The hit for a bidirectional control in code: what it reorders, and how strongly the context says it was put there to deceive."""
         yield Hit(
             rule_id="SUSPECT.OBFUSCATION.BIDI.001",
             title="Bidirectional or invisible characters in source",
