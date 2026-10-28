@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from cordon_scanner.foundation.models import Finding
-    from cordon_scanner.intel.registry import AdvisoryDatabase
+    from cordon_scanner.intel.base import Advisories
 
 from cordon_scanner.foundation.dependencies import (
     INSTALLED_MARKERS,
@@ -37,7 +37,7 @@ from cordon_scanner.foundation.dependencies import (
 class InventoryContext:
     """What the statuses are judged against."""
 
-    advisory_database: AdvisoryDatabase | None
+    advisory_database: Advisories | None
     """The database the advisory detector used, or None when that detector did not run."""
     advisory_failed: bool = False
     offline: bool = True
@@ -202,11 +202,11 @@ class DependencyRecords:
             return "policy_violation"
         if not dependency.license:
             return "unknown"
-        from cordon_scanner.intel.registry import LicenseCategory, LicenseClassifier
+        from cordon_scanner.intel.registry import LICENSE_UNKNOWN, LicenseClassifier
 
         declared = [p for p in re.split(r"\s*;\s*", dependency.license) if p]
         categories = {LicenseClassifier.classify(p) for p in declared}
-        if LicenseCategory.UNKNOWN in categories:
+        if LICENSE_UNKNOWN in categories:
             return "unknown"
         if len(categories) > 1:
             return "conflicting"

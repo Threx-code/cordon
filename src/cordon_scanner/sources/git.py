@@ -332,6 +332,10 @@ class GitRepository:
 
     # -- Discovery -------------------------------------------------------
 
+    def tree(self, rev: str) -> GitTreeSource:
+        """The files at `rev`, read from git's objects, never from the working tree."""
+        return GitTreeSource(self, rev)
+
     @classmethod
     def discover(cls, path: str | Path) -> GitInfo | None:
         """Locate the repository containing a path, if there is one."""

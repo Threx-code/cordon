@@ -15,12 +15,17 @@ from typing import TYPE_CHECKING
 ROLES: dict[str, tuple[str, str]] = {
     "ArchiveReader": ("cordon_scanner.sources.archive", "ArchiveReader"),
     "GitRepository": ("cordon_scanner.sources.git", "GitRepository"),
-    "GitTreeSource": ("cordon_scanner.sources.git", "GitTreeSource"),
 }
 
 if TYPE_CHECKING:
-    from cordon_scanner.sources.archive import ArchiveReader
-    from cordon_scanner.sources.git import GitRepository, GitTreeSource
+    from cordon_scanner.sources import archive as _sources_archive
+    from cordon_scanner.sources import git as _sources_git
+    from cordon_scanner.sources.base import ArchiveReading, GitRepositories
+
+    # Each implementation, as the engine sees it: by its protocol (the type checker proves the
+    # implementation conforms) or, for a plain value, by the value's type.
+    ArchiveReader: ArchiveReading = _sources_archive.ArchiveReader
+    GitRepository: GitRepositories = _sources_git.GitRepository
 
 
 def __getattr__(name: str) -> object:
@@ -29,7 +34,10 @@ def __getattr__(name: str) -> object:
         module, attribute = ROLES[name]
     except KeyError:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
-    return getattr(importlib.import_module(module), attribute)
+    found: object = importlib.import_module(module)
+    for part in attribute.split("."):  # a class's member: `Class.MEMBER`
+        found = getattr(found, part)
+    return found
 
 
-__all__ = ["ROLES", "ArchiveReader", "GitRepository", "GitTreeSource"]
+__all__ = ["ROLES", "ArchiveReader", "GitRepository"]

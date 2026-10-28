@@ -17,6 +17,8 @@ from cordon_scanner.foundation.errors import SourceError
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from cordon_scanner.detect.base import CapabilityLabelling, CapabilityMark
+
 
 class TreeFacts:
     """Facts about the scanned tree, gathered once for every detector."""
@@ -95,8 +97,11 @@ class TreeFacts:
 
     @staticmethod
     def labelled_once(
-        detector: Any, unit: FileUnit, ctx: ScanContext, cache: dict[str, Any] | None
-    ) -> Any:
+        detector: CapabilityLabelling,
+        unit: FileUnit,
+        ctx: ScanContext,
+        cache: dict[str, Any] | None,
+    ) -> tuple[Sequence[CapabilityMark], Sequence[object]] | None:
         """`detector.labelled(unit, ctx)`, computed once per file for everything that asks."""
         if cache is None:
             return detector.labelled(unit, ctx)
@@ -105,7 +110,9 @@ class TreeFacts:
                 cache[unit.path] = detector.labelled(unit, ctx)
             except Exception as error:  # re-raised to each caller below  # noqa: BLE001
                 cache[unit.path] = error
-        held = cache[unit.path]
+        held: tuple[Sequence[CapabilityMark], Sequence[object]] | Exception | None = cache[
+            unit.path
+        ]
         if isinstance(held, Exception):
             raise held
         return held

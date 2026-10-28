@@ -440,6 +440,55 @@ class TestStructure:
         )
         assert not sorted(frozen - now), "these are gone: remove them from frozen"
 
+    #: What a registry may type a role by, besides its layer's own protocols: plain values.
+    VALUE_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {"str", "int", "bool", "frozenset", "tuple", "type", "Exception", "enum", "Enum"}
+    )
+
+    def test_the_engine_sees_adapters_only_as_protocols(self) -> None:
+        """Every role a layer's registry hands the engine is typed by a protocol from that layer's
+        `base` (or is a plain value), so the engine never holds a concrete adapter type and the type
+        checker proves each implementation conforms to the protocol it is handed out as."""
+        problems = []
+        for layer in sorted(Layout.ADAPTERS):
+            path = REPO / "src" / "cordon_scanner" / layer / "registry.py"
+            if not path.exists() or "ROLES" not in path.read_text(encoding="utf-8"):
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            roles = next(
+                {k.value for k in n.value.keys if isinstance(k, ast.Constant)}
+                for n in tree.body
+                if isinstance(n, ast.AnnAssign)
+                and isinstance(n.target, ast.Name)
+                and n.target.id == "ROLES"
+                and isinstance(n.value, ast.Dict)
+            )
+            guarded = [
+                s
+                for n in tree.body
+                if isinstance(n, ast.If) and ast.unparse(n.test) == "TYPE_CHECKING"
+                for s in n.body
+            ]
+            ports = {
+                a.asname or a.name
+                for s in guarded
+                if isinstance(s, ast.ImportFrom) and s.module == f"cordon_scanner.{layer}.base"
+                for a in s.names
+            }
+            typed = {
+                s.target.id: s.annotation
+                for s in guarded
+                if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)
+            }
+            for role in sorted(roles):
+                if role not in typed:
+                    problems.append(f"{layer}.registry.{role}: not typed for the engine")
+                    continue
+                names = {x.id for x in ast.walk(typed[role]) if isinstance(x, ast.Name)}
+                if names - ports - self.VALUE_TYPES:
+                    problems.append(f"{layer}.registry.{role}: typed by {sorted(names - ports)}")
+        assert not problems, f"type each role by a protocol in its layer's base: {problems}"
+
     def test_no_loose_files(self) -> None:
         for folder, allowed in Structure.TOP_FILES.items():
             here = {

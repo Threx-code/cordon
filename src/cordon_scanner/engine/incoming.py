@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.foundation.models import Finding
     from cordon_scanner.foundation.results import ScanResult
-    from cordon_scanner.sources.registry import GitRepository
+    from cordon_scanner.sources.base import GitCheckout
 
 INCOMING_ENV: Final = "CORDON_INCOMING"
 """Set while `clone` or `pull` checks out or merges code it has already scanned, so the hooks
@@ -111,7 +111,7 @@ class Incoming:
     @classmethod
     def check(
         cls,
-        repository: GitRepository,
+        repository: GitCheckout,
         rev: str,
         config: Config,
         *,
@@ -136,7 +136,7 @@ class Incoming:
         )
 
     @staticmethod
-    def _scan(repository: GitRepository, rev: str, config: Config) -> ScanResult:
+    def _scan(repository: GitCheckout, rev: str, config: Config) -> ScanResult:
         """One commit's tree, scanned against an empty scratch root.
 
         The root is empty so the scan's inventory walk cannot pick up the working tree, which
@@ -144,10 +144,9 @@ class Incoming:
         from the object store.
         """
         from cordon_scanner import Scanner
-        from cordon_scanner.sources.registry import GitTreeSource
 
         with tempfile.TemporaryDirectory(prefix="cordon-incoming-") as scratch:
-            source = GitTreeSource(repository, rev)
+            source = repository.tree(rev)
             return Scanner(config, source=source).scan(Path(scratch))
 
     # -- Git -----------------------------------------------------------------
@@ -392,7 +391,7 @@ class Incoming:
         return check
 
     @staticmethod
-    def _empty_working_tree(root: Path, repository: GitRepository) -> None:
+    def _empty_working_tree(root: Path, repository: GitCheckout) -> None:
         """Remove a blocked clone's tracked files from disk, never following a link out of it.
 
         The objects stay, so the code can still be read with `git show`; it is simply no longer

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 #: when it is first asked for (PEP 562), as the engine's own imports were.
 ROLES: dict[str, tuple[str, str]] = {
     "BinaryDetector": ("cordon_scanner.detect.binary.binary", "BinaryDetector"),
-    "CapabilityDetector": ("cordon_scanner.detect.code.capability.detector", "CapabilityDetector"),
     "ComposerPluginHooks": ("cordon_scanner.detect.supply.composer_plugins", "ComposerPluginHooks"),
     "DeclaredSource": ("cordon_scanner.detect.supply.manifest", "DeclaredSource"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
@@ -30,20 +29,43 @@ ROLES: dict[str, tuple[str, str]] = {
 }
 
 if TYPE_CHECKING:
-    from cordon_scanner.detect.agents.agent_judge import JudgeGate
-    from cordon_scanner.detect.agents.agents import (
-        _SERVER_SOURCE_SUFFIXES as SERVER_SOURCE_SUFFIXES,
+    from cordon_scanner.detect.agents import agent_judge as _detect_agents_agent_judge
+    from cordon_scanner.detect.base import (
+        BinaryIdentification,
+        ComposerPluginPaths,
+        DeclaredSourceKinds,
+        DownloadRunning,
+        ImportReachabilityNotes,
+        JudgeScheduling,
+        ReachedFlowFacts,
+        SkillScripts,
+        SubmoduleDependencies,
     )
-    from cordon_scanner.detect.binary.binary import NATIVE_FORMATS, BinaryDetector
-    from cordon_scanner.detect.code.capability.detector import CapabilityDetector
-    from cordon_scanner.detect.code.capability.load_path import LoadPath
-    from cordon_scanner.detect.code.download_flow import DownloadFlow
-    from cordon_scanner.detect.code.reached_flows import ReachedFlows
-    from cordon_scanner.detect.source.submodules import Submodules
-    from cordon_scanner.detect.supply.composer_plugins import ComposerPluginHooks
-    from cordon_scanner.detect.supply.manifest import DeclaredSource
-    from cordon_scanner.detect.supply.reachability import ImportReachability
-    from cordon_scanner.detect.supply.sbom import SBOM_NAMES, SBOM_SUFFIXES
+    from cordon_scanner.detect.binary import binary as _detect_binary_binary
+    from cordon_scanner.detect.code import download_flow as _detect_code_download_flow
+    from cordon_scanner.detect.code import reached_flows as _detect_code_reached_flows
+    from cordon_scanner.detect.code.capability import load_path as _detect_code_capability_load_path
+    from cordon_scanner.detect.source import submodules as _detect_source_submodules
+    from cordon_scanner.detect.supply import composer_plugins as _detect_supply_composer_plugins
+    from cordon_scanner.detect.supply import manifest as _detect_supply_manifest
+    from cordon_scanner.detect.supply import reachability as _detect_supply_reachability
+    from cordon_scanner.detect.supply import sbom as _detect_supply_sbom
+
+    # Each implementation, as the engine sees it: by its protocol (the type checker proves the
+    # implementation conforms) or, for a plain value, by the value's type.
+    BinaryDetector: BinaryIdentification = _detect_binary_binary.BinaryDetector
+    ComposerPluginHooks: ComposerPluginPaths = _detect_supply_composer_plugins.ComposerPluginHooks
+    DeclaredSource: DeclaredSourceKinds = _detect_supply_manifest.DeclaredSource
+    DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
+    ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
+    JudgeGate: JudgeScheduling = _detect_agents_agent_judge.JudgeGate
+    LoadPath: SkillScripts = _detect_code_capability_load_path.LoadPath
+    NATIVE_FORMATS: frozenset[str] = _detect_binary_binary.NATIVE_FORMATS
+    ReachedFlows: ReachedFlowFacts = _detect_code_reached_flows.ReachedFlows
+    SBOM_NAMES: tuple[str, ...] = _detect_supply_sbom.SBOM_NAMES
+    SBOM_SUFFIXES: tuple[str, ...] = _detect_supply_sbom.SBOM_SUFFIXES
+    SERVER_SOURCE_SUFFIXES: tuple[str, ...]  # (a value: its type is enough; the module's own Final)
+    Submodules: SubmoduleDependencies = _detect_source_submodules.Submodules
 
 
 def __getattr__(name: str) -> object:
@@ -52,7 +74,10 @@ def __getattr__(name: str) -> object:
         module, attribute = ROLES[name]
     except KeyError:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
-    return getattr(importlib.import_module(module), attribute)
+    found: object = importlib.import_module(module)
+    for part in attribute.split("."):  # a class's member: `Class.MEMBER`
+        found = getattr(found, part)
+    return found
 
 
 __all__ = [
@@ -62,7 +87,6 @@ __all__ = [
     "SBOM_SUFFIXES",
     "SERVER_SOURCE_SUFFIXES",
     "BinaryDetector",
-    "CapabilityDetector",
     "ComposerPluginHooks",
     "DeclaredSource",
     "DownloadFlow",

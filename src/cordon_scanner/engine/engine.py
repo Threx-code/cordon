@@ -698,9 +698,10 @@ class Engine:
         """When each effect of the package runs, and what hides it (`core/intent.py`); None for a
         package the intent layer does not read."""
         from cordon_scanner.decide.intent import IntentObserver
-        from cordon_scanner.detect.registry import CapabilityDetector, DownloadFlow
+        from cordon_scanner.detect.base import CapabilityLabelling
+        from cordon_scanner.detect.registry import DownloadFlow
 
-        detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
+        detector = next((d for d in self.detectors if isinstance(d, CapabilityLabelling)), None)
         if detector is None or not IntentObserver.applies(ctx):
             return None
         files = [u for u in units if isinstance(u, FileUnit)]
@@ -731,9 +732,10 @@ class Engine:
         repository and runs a script from it raised nothing). The verdict weighs the profile with
         everything else; on its own it blocks nothing.
         """
-        from cordon_scanner.detect.registry import CapabilityDetector, DownloadFlow, ReachedFlows
+        from cordon_scanner.detect.base import CapabilityLabelling
+        from cordon_scanner.detect.registry import DownloadFlow, ReachedFlows
 
-        detector = next((d for d in self.detectors if isinstance(d, CapabilityDetector)), None)
+        detector = next((d for d in self.detectors if isinstance(d, CapabilityLabelling)), None)
         if detector is None:
             return {}
         out: dict[str, float] = {}

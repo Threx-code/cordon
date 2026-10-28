@@ -40,6 +40,16 @@ from cordon_scanner.foundation.paths import ContainerPaths
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from cordon_scanner.ecosystems.base import ImageReferences, InstallTimeSpans, LockScoping
+    from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
+    from cordon_scanner.ecosystems.packages import homebrew as _ecosystems_packages_homebrew
+    from cordon_scanner.ecosystems.packages import npm as _ecosystems_packages_npm
+
+    # Each implementation, as the engine sees it: by its protocol (the type checker proves the
+    # implementation conforms) or, for a plain value, by the value's type.
+    ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
+    LockScopes: LockScoping = _ecosystems_packages_npm.LockScopes
+    NotRunAtInstall: InstallTimeSpans = _ecosystems_packages_homebrew.NotRunAtInstall
 
 _MAX_ANSWERS = 1 << 20
 """Past this many distinct paths the memo starts over, so its memory stays bounded."""
@@ -312,7 +322,10 @@ def __getattr__(name: str) -> object:
         module, attribute = ROLES[name]
     except KeyError:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
-    return getattr(importlib.import_module(module), attribute)
+    found: object = importlib.import_module(module)
+    for part in attribute.split("."):  # a class's member: `Class.MEMBER`
+        found = getattr(found, part)
+    return found
 
 
 __all__ = [

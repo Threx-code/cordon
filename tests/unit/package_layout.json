@@ -357,6 +357,7 @@
   "intel/registries/known/pypi": "intel/registries/known/pypi",
   "intel/registries/known/rubygems": "intel/registries/known/rubygems",
   "intel/registries/removed": "intel/registries/removed",
+  "intel/base": "intel/base",
   "intel/registry": "intel/registry",
   "intel/registries/registry_client": "intel/registries/registry_client",
   "intel/registries/registry_image": "intel/registries/registry_image",
