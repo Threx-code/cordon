@@ -78,7 +78,7 @@ DISQUALIFYING_CAPABILITIES: Final = frozenset(
 )
 
 #: A download piped into its interpreter, or written and started in one command line: nothing can
-#: be verified between the two. Kept in step with `CapabilityDetector.DOWNLOAD_RUN_CONSTRUCTS`.
+#: be verified between the two. Kept in step with `LoadPath.DOWNLOAD_RUN_CONSTRUCTS`.
 UNVERIFIABLE_RUNS: Final = frozenset(
     {
         "CAP.JS.COMMAND_FETCH_RUN.001",

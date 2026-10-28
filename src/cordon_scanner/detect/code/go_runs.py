@@ -11,6 +11,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.foundation.models import Capability
 
 if TYPE_CHECKING:
@@ -38,9 +39,8 @@ class GoRuns:
         text = content.text
         if "exec.Command" not in text or ("Dial" not in text and "Accept" not in text):
             return []
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
-        for found in CapabilityDetector._GO_FUNC.finditer(text):
+        for found in LoadPath.GO_FUNC.finditer(text):
             depth, index = 1, found.end()
             limit = min(len(text), index + 200_000)
             while index < limit and depth:
@@ -119,12 +119,11 @@ class GoRuns:
                     line=text.count("\n", 0, write.start()) + 1,
                 )
             )
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 
         on_load = [
             hit
             for hit in candidates
-            if CapabilityDetector._in_go_load_path(content, [hit], (Capability.PERSIST,))
+            if LoadPath.in_go_load_path(content, [hit], (Capability.PERSIST,))
         ]
         return on_load[:1]
 
