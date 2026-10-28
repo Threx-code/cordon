@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.supply.manifests.detector import CONFUSION_RULE, ManifestDetector
+from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
+from cordon_scanner.detect.supply.manifests.rule_ids import CONFUSION_RULE
 from cordon_scanner.foundation.config.settings import Config
 
 
