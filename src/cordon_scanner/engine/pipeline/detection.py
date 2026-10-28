@@ -82,7 +82,7 @@ class Detection:
         skipped_judge = False
 
         skipped_judge = self.each_detector(
-            detectors, budget, started, skipped, produced, unit, ctx, acc
+            detectors, budget, started, skipped, produced, unit, ctx, acc, skipped_judge
         )
 
         # The rest of an oversized file, a window at a time (`core/windows.py`). The workers make
@@ -133,6 +133,7 @@ class Detection:
         unit: FileUnit,
         ctx: ScanContext,
         acc: Accumulator,
+        skipped_judge: bool,
     ) -> bool:
         """Every detector over the unit, each under the file's time budget, the judge last."""
         for detector in JudgeGate.last(detectors):

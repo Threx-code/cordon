@@ -313,7 +313,7 @@ class ConfigParser:
         severity: Severity | None = Severity.HIGH
         categories: set[Category] = {Category.MALICIOUS}
 
-        severity, categories = ConfigParser._fail_on(fail_on, source)
+        severity, categories = ConfigParser._fail_on(fail_on, source, severity, categories)
 
         min_conf = Confidence.MEDIUM
         if "min_confidence_to_fail" in raw:
@@ -364,7 +364,7 @@ class ConfigParser:
             )
 
         accepted: frozenset[str] | None = None
-        accepted = ConfigParser._accept_no_feed(raw, source)
+        accepted = ConfigParser._accept_no_feed(raw, source, accepted)
         return Policy(
             fail_on_severity=severity,
             fail_on_categories=frozenset(categories),
@@ -390,7 +390,9 @@ class ConfigParser:
         )
 
     @staticmethod
-    def _fail_on(fail_on: Any | None, source: str) -> tuple[Severity | None, set[Category]]:
+    def _fail_on(
+        fail_on: Any | None, source: str, severity: Severity | None, categories: set[Category]
+    ) -> tuple[Severity | None, set[Category]]:
         """What fails the gate: a severity and the categories that fail whatever their severity."""
         if fail_on is not None:
             if not isinstance(fail_on, list):
@@ -435,7 +437,9 @@ class ConfigParser:
         return severity, categories
 
     @staticmethod
-    def _accept_no_feed(raw: dict[Any, Any], source: str) -> frozenset[str] | None:
+    def _accept_no_feed(
+        raw: dict[Any, Any], source: str, accepted: frozenset[str] | None
+    ) -> frozenset[str] | None:
         """The ecosystems a policy accepts without an advisory feed, each one Cordon reads."""
         if "accept_no_feed" in raw:
             from cordon_scanner.foundation.dependencies import ECOSYSTEM_IDS
