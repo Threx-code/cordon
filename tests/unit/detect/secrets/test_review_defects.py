@@ -20,7 +20,8 @@ from cordon_scanner.detect.binary.binary import BinaryDetector
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.text_position import TextPosition
-from cordon_scanner.detect.secrets.secrets import ASSIGNMENT, NOT_A_SECRET, SecretNames
+from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
+from cordon_scanner.detect.secrets.patterns import ASSIGNMENT
 from cordon_scanner.foundation.models import Category, Severity
 from support import Support
 
@@ -259,7 +260,7 @@ class TestAClassStatementAssignsNothing:
         fix like this one. Left alone, everyone who upgrades keeps being served
         the false positives out of the cache, and the release does nothing for
         the people who already ran a scan."""
-        from cordon_scanner.detect.secrets.secrets import SecretDetector
+        from cordon_scanner.detect.secrets.detector import SecretDetector
 
         # Compared as numbers, not as text. This read `> "0.2.0"` until the detector
         # reached `0.10.0`, at which point the assertion started failing: `"0.10.0"` is
@@ -794,7 +795,7 @@ class TestOneCredentialIsOneFinding:
     """
 
     def test_one_finding_per_key(self, tmp_path) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretDetector
+        from cordon_scanner.detect.secrets.detector import SecretDetector
 
         header = Support.assemble("-----BEGIN RSA ", "PRIVATE KEY-----")
         body = Support.assemble("MIICXQIBAAKBgQC9Twh0V5q", "R1Q8NYCNM4lj9AXeZL0gYowoK1ht2ZLCDU9vN5")
@@ -969,12 +970,12 @@ class TestAWindowsEnvironmentReferenceIsNotAValue:
         "value", [rb"%HOMEPATH%\\", rb"%USERPROFILE%/.config", rb"%APPDATA%\\cordon"]
     )
     def test_it_is_a_placeholder(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert PLACEHOLDER.search(value)
 
     def test_a_real_value_is_not(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert not PLACEHOLDER.search(Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode())
 
@@ -1957,7 +1958,7 @@ class TestAGoCompositeLiteralIsNotACredential:
     def test_a_value_that_says_it_is_not_a_credential(self) -> None:
         """Vault's rollback test sets `bindpass="intentionally-wrong-password"`, which
         is a sentence announcing itself."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert PLACEHOLDER.search(b"intentionally-wrong-password")
         assert not PLACEHOLDER.search(Support.assemble(*self.VALUE).encode())
@@ -1998,7 +1999,7 @@ class TestOneVariableAssignedToAnother:
 
     @staticmethod
     def dismissed(value: bytes) -> bool:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         return bool(NOT_A_SECRET.match(value)) or bool(PLACEHOLDER.search(value))
 
@@ -2939,7 +2940,7 @@ class TestADeclarationAssignsNothing:
         ],
     )
     def test_interpolation_and_substitution_are_templates(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert PLACEHOLDER.search(value) is not None
 
@@ -3443,7 +3444,7 @@ class TestAReferenceIsNotAValue:
         assert NOT_A_SECRET.match(value) is None
 
     def test_an_installer_property_is_a_placeholder(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert PLACEHOLDER.search(b"[MONGO_SERVICE_ACCOUNT_PASSWORD]") is not None
         assert PLACEHOLDER.search(b"xKc9vB2mQ7wRtY4u") is None
@@ -3570,7 +3571,7 @@ class TestTheSecondPassOverTheCorpus:
         characters: as a multiset it is maximally diverse, which is what Shannon
         entropy measures. Grafana assigns exactly that to `TOKEN_ALPHABET`, which is
         what its branch-name generator draws from."""
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         assert SecretValues.looks_sequential(value) is sequential
 
@@ -3905,7 +3906,7 @@ class TestTheValueIsAnExpressionInEveryLanguage:
     def test_key_material_still_reported(self, value: bytes) -> None:
         """Including one real one: `dbw2OtmVEeuUvIptb1Coyg` is the PikPak OAuth client
         secret `AlistGo/alist` commits, and it stays a finding."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, SecretValues
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER, SecretValues
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
@@ -3930,7 +3931,7 @@ class TestTheValueIsAnExpressionInEveryLanguage:
         ],
     )
     def test_the_sequence_has_to_be_the_value(self, value: bytes, sequential: bool) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         assert SecretValues.looks_sequential(value) is sequential
 
@@ -4064,7 +4065,7 @@ class TestAFieldCalledProfileIsNotAShellProfile:
         ],
     )
     def test_these_are_not_credentials(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None
 
@@ -4718,7 +4719,7 @@ class TestThreeMoreValueShapes:
         assert NOT_A_SECRET.match(value) is not None
 
     def test_filler_text(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert PLACEHOLDER.search(b"LoremIpsum86") is not None
 
@@ -4735,7 +4736,7 @@ class TestThreeMoreValueShapes:
         ],
     )
     def test_these_are_still_credentials(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
@@ -5526,7 +5527,7 @@ class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
         value, because that refusal is what stops `"glpat-" + "AAAA..."` reading as a
         two-segment identifier. The exemption is a statement about one prefix at the
         finding site, not a hole in the shape patterns."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         value = b"phc_Bd6Xr2Nk9Tq4Wz7Mv1Ly5Hc8Jp3Fs0Ge6Au2Rn4Vi7X"
         assert NOT_A_SECRET.match(value) is None
@@ -5600,7 +5601,7 @@ class TestThreeWaysToTypeAValueYouDidNotHave:
         """The guard every widening in this file has to pass. The placeholder vocabulary
         above is a closed list of English words run together; the underscore change only
         moved a bound on padding."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
@@ -6080,7 +6081,7 @@ class TestTheAlphabetAndTheDigitsAreTwoRuns:
     CI_KEY = b"ci-deploy-check-key-0123456789abcdefghijklmnopqrstuvwxyz-throwaway"
 
     def test_two_runs_add_up(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         assert SecretValues.looks_sequential(self.CI_KEY)
 
@@ -6101,7 +6102,7 @@ class TestTheAlphabetAndTheDigitsAreTwoRuns:
         credential has no run of six consecutive codepoints at all, so its total is zero
         however many runs are added up. Across every value this suite keeps as a guard
         the longest run is two."""
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         assert not SecretValues.looks_sequential(value)
 
@@ -6110,7 +6111,7 @@ class TestTheAlphabetAndTheDigitsAreTwoRuns:
         `TEST_API_KEY` in CI is very often a real key for a test account; demo data is
         data nobody authenticates to, and `**/demo/**` has been a test-material path
         since the beginning."""
-        from cordon_scanner.detect.secrets.secrets import SecretNames
+        from cordon_scanner.detect.secrets.names import SecretNames
 
         assert SecretNames.names_placeholder("DEMO_PASSWORD")
         assert not SecretNames.names_placeholder("TEST_API_KEY")
@@ -6279,7 +6280,7 @@ class TestATranslationIsNotACredentialInAnyScript:
         """The guard. The rule rests on a fact about the formats rather than on a
         judgement: none of these alphabets contains a byte above 0x7f, so no value in
         any of them can reach the new alternative."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
@@ -6452,7 +6453,7 @@ class TestSeventyRepositoriesOneEach:
         ],
     )
     def test_these_are_not_credentials(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, SecretValues
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER, SecretValues
 
         assert (
             NOT_A_SECRET.match(value) is not None
@@ -6484,7 +6485,7 @@ class TestSeventyRepositoriesOneEach:
         ],
     )
     def test_and_these_still_are(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, SecretValues
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER, SecretValues
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
@@ -6516,7 +6517,7 @@ class TestSeventyRepositoriesOneEach:
         identifier branch of `NOT_A_SECRET` independently dismisses
         `api_key_<token>` -- a pre-existing behaviour this change did not touch, and one
         that would have made a scan-level control pass for the wrong reason."""
-        from cordon_scanner.detect.secrets.secrets import SecretNames
+        from cordon_scanner.detect.secrets.names import SecretNames
 
         assert SecretNames.value_is_the_name("API_KEY", "api_key")
         assert SecretNames.value_is_the_name("API_KEY", "apiKey")
@@ -6712,7 +6713,7 @@ class TestSixShapesFromTheSecondReading:
         ],
     )
     def test_these_are_not_credentials(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None
 
@@ -6720,7 +6721,7 @@ class TestSixShapesFromTheSecondReading:
         """The control for the `key=value;key=value` shape, and the reason it admits only
         lowercase values: an Azure connection string is written the same way and its
         `AccountKey` is the whole point of the rule."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         value = (
             b"DefaultEndpointsProtocol=https;AccountName=x;AccountKey="
@@ -6746,7 +6747,7 @@ class TestSixShapesFromTheSecondReading:
         """Eight of the ten real credentials left in the sample, asserted against every
         widening in this file. These are committed to public repositories by people who
         meant to, and they are what the rule is for."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, SecretValues
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER, SecretValues
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
@@ -7008,7 +7009,8 @@ class TestEightShapesFromTheThirdPass:
         ],
     )
     def test_these_are_not_credentials(self, name: str, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, SecretNames
+        from cordon_scanner.detect.secrets.names import SecretNames
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER
 
         assert (
             NOT_A_SECRET.match(value) is not None
@@ -7040,7 +7042,7 @@ class TestEightShapesFromTheThirdPass:
         ],
     )
     def test_and_these_still_are(self, value: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, SecretValues
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER, SecretValues
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
@@ -7349,7 +7351,7 @@ class TestHowOftenAWideningDismissesARealSecret:
         budget drifts. Neither moved either number -- a random base62 run has letter
         runs of one and two characters all through it, which is exactly what the word
         test refuses."""
-        from cordon_scanner.detect.secrets.secrets import PLACEHOLDER, SecretValues
+        from cordon_scanner.detect.secrets.values import PLACEHOLDER, SecretValues
 
         return (
             NOT_A_SECRET.match(value) is not None
@@ -7459,7 +7461,7 @@ class TestAKeyNamedPlaceholderSaysWhatItsValueIs:
     def test_the_window_is_the_key_and_not_the_paragraph(self) -> None:
         """Scoped to the 120 bytes before the match, so a `placeholder` attribute on one
         element does not excuse a token on the next."""
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         raw = b'placeholder="x"\n' + b"<!-- " + b"y" * 200 + b" -->\nconst k = '"
         assert not SecretValues.is_illustrated_by_its_key(raw, len(raw))
@@ -7826,7 +7828,7 @@ class TestABodyThatDecodesToASentence:
 
     @staticmethod
     def _decodes(body: str) -> bool:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         return SecretValues.decodes_to_prose(body.encode())
 
@@ -8061,7 +8063,7 @@ class TestAValueThatReadsAsWords:
 
     @staticmethod
     def _words(value: str) -> bool:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         return SecretValues.reads_as_words(value.encode())
 
@@ -8133,7 +8135,7 @@ class TestTheValueIsTheNamePlusAlmostNothing:
 
     @staticmethod
     def _restates(name: str, value: str) -> bool:
-        from cordon_scanner.detect.secrets.secrets import SecretNames
+        from cordon_scanner.detect.secrets.names import SecretNames
 
         return SecretNames.value_restates_the_name(name, value)
 
@@ -8561,7 +8563,7 @@ class TestVagrantsOtherInsecureKey:
         )
 
     def test_vagrants_key_is_recognised(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         assert SecretValues.holds_published_key(
             self._key(self.GENERIC_HEAD + self.PUBLIC_POINT), 40
@@ -8570,7 +8572,7 @@ class TestVagrantsOtherInsecureKey:
     def test_any_other_ed25519_key_is_not(self) -> None:
         """The control the first draft of this entry failed. Every unencrypted ed25519
         key shares the head; only Vagrant's shares the point."""
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         other = self.GENERIC_HEAD + "QyNTUxOQAAACD9QzQ2LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Q"
         assert not SecretValues.holds_published_key(self._key(other), 40)
@@ -9288,7 +9290,7 @@ class TestTheSameQuestionThroughABase64Layer:
 
     @staticmethod
     def _decoded(value: bytes) -> bool:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         return SecretValues.decoded_is_not_a_secret(value)
 
@@ -9806,7 +9808,7 @@ class TestTheNameInFrontOfTheArmour:
 
     @staticmethod
     def _illustrative(head: bytes) -> bool:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         return SecretValues.key_name_is_illustrative(
             head + b"-----BEGIN PRIVATE KEY-----", len(head)
@@ -11036,7 +11038,7 @@ class TestAHostEndsWhereTheStringEndsIt:
 
     @staticmethod
     def _host(line: bytes) -> str | None:
-        from cordon_scanner.detect.secrets.secrets import CONNECTION_STRING
+        from cordon_scanner.detect.secrets.patterns import CONNECTION_STRING
 
         match = CONNECTION_STRING.search(line)
         return None if match is None else match.group(2).decode()
@@ -11069,14 +11071,14 @@ class TestAHostEndsWhereTheStringEndsIt:
         ],
     )
     def test_a_quoted_reserved_host_is_now_recognised(self, line: bytes) -> None:
-        from cordon_scanner.detect.secrets.secrets import LOCAL_OR_RESERVED_HOST
+        from cordon_scanner.detect.secrets.patterns import LOCAL_OR_RESERVED_HOST
 
         host = self._host(line)
         assert host is not None
         assert LOCAL_OR_RESERVED_HOST.match(host.encode())
 
     def test_a_real_host_is_still_a_real_host(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import LOCAL_OR_RESERVED_HOST
+        from cordon_scanner.detect.secrets.patterns import LOCAL_OR_RESERVED_HOST
 
         host = self._host(b'u = "postgres://admin:S3cr3tPa55@db.prod.example-corp.io:5432/x"')
         assert host is not None
@@ -11114,7 +11116,7 @@ class TestAKeyOnTheLineAboveItsValue:
 
     @staticmethod
     def _illustrative(source: str) -> bool:
-        from cordon_scanner.detect.secrets.secrets import SecretValues
+        from cordon_scanner.detect.secrets.values import SecretValues
 
         raw = source.encode()
         return SecretValues.key_name_is_illustrative(raw, raw.index(b"mongodb+srv"))
@@ -11166,7 +11168,7 @@ class TestAPrefixIsHalfOfAFormat:
 
     @staticmethod
     def _matches(value: bytes) -> bool:
-        from cordon_scanner.detect.secrets.secrets import PROVIDER_PATTERNS
+        from cordon_scanner.detect.secrets.patterns import PROVIDER_PATTERNS
 
         spec = next(s for s in PROVIDER_PATTERNS if s.rule_id == "SECRET.GITHUB.TOKEN.001")
         return spec.pattern.search(value) is not None
@@ -13295,7 +13297,7 @@ class TestOAuthClientIdentifiers:
         assert ("SECRET.GENERIC.ASSIGNMENT.001", "HIGH") in self._found(tmp_path, text)
 
     def test_a_secret_id_is_still_a_secret(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretNames
+        from cordon_scanner.detect.secrets.names import SecretNames
 
         assert SecretNames.names_identifier("approle_secret_id") is False
         assert SecretNames.names_identifier("COPILOT_OAUTH_CLIENT_ID") is True
@@ -13384,12 +13386,12 @@ class TestABodyTheLoadPathCallsIsTopLevel:
 
 class TestAPrefixIsNotAKey:
     def test_the_prefix_alone_is_not_a_credential(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretDetector
+        from cordon_scanner.detect.secrets.detector import SecretDetector
 
         assert SecretDetector._assembled_spec(b"sk-", assembled=False, name="KEY_PREFIX") is None
 
     def test_the_prefix_with_a_body_is(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import CREDENTIAL_PREFIXES, SecretDetector
+        from cordon_scanner.detect.secrets.detector import CREDENTIAL_PREFIXES, SecretDetector
 
         prefix = sorted(CREDENTIAL_PREFIXES)[0]
         assert (
@@ -14101,7 +14103,7 @@ class TestViteBundlesAreBuildOutput:
 
 class TestTheNameOfASecretsNamespace:
     def test_a_namespace_label_is_not_a_secret(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretNames
+        from cordon_scanner.detect.secrets.names import SecretNames
 
         assert SecretNames.names_identifier("_SECRET_NAMESPACE")
         assert SecretNames.names_identifier("SECRET_PREFIX")

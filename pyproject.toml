@@ -188,7 +188,7 @@ package-policy = "cordon_scanner.detect.supply.package_policy:PackagePolicyDetec
 provenance = "cordon_scanner.detect.supply.provenance:ProvenanceDetector"
 registry = "cordon_scanner.detect.supply.registries.detector:RegistryDetector"
 sbom = "cordon_scanner.detect.supply.sbom:SbomDetector"
-secrets = "cordon_scanner.detect.secrets.secrets:SecretDetector"
+secrets = "cordon_scanner.detect.secrets.detector:SecretDetector"
 slopsquat = "cordon_scanner.detect.supply.slopsquat:SlopsquatDetector"
 vcs = "cordon_scanner.detect.source.vcs:VcsDetector"
 

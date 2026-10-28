@@ -220,12 +220,12 @@ class TestH10UnquotedSecrets:
 
     def test_an_entry_point_declaration_is_not_a_credential(self, tmp_path) -> None:
         """This project's own pyproject.toml declares
-        `secrets = "cordon_scanner.detect.secrets.secrets:SecretDetector"` -- a name containing
+        `secrets = "cordon_scanner.detect.secrets.detector:SecretDetector"` -- a name containing
         `secret`, a 36-character quoted value, high entropy, three character
         classes, and not a credential."""
         (tmp_path / "pyproject.toml").write_text(
             '[project.entry-points."cordon_scanner.detectors"]\n'
-            'secrets = "cordon_scanner.detect.secrets.secrets:SecretDetector"\n',
+            'secrets = "cordon_scanner.detect.secrets.detector:SecretDetector"\n',
             encoding="utf-8",
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDetectionHelpers.rule_ids(tmp_path)

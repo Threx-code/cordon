@@ -23,7 +23,8 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.binary.binary import _COMMAND
 from cordon_scanner.detect.code.obfuscation.detector import BIDI_AND_INVISIBLE
-from cordon_scanner.detect.secrets.secrets import NOT_A_SECRET, PLACEHOLDER
+from cordon_scanner.detect.secrets.names import NOT_A_SECRET
+from cordon_scanner.detect.secrets.values import PLACEHOLDER
 from cordon_scanner.foundation.models import Category, Severity
 from support import Support
 

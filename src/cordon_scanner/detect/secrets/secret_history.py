@@ -111,7 +111,7 @@ class HistorySecretScan:
     def run(self) -> list[Finding]:
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
         from cordon_scanner.detect.base import FileUnit, ScanContext
-        from cordon_scanner.detect.secrets.secrets import SecretDetector
+        from cordon_scanner.detect.secrets.detector import SecretDetector
         from cordon_scanner.sources.git import GitRepository
         from cordon_scanner.sources.history import GitHistory
 
@@ -122,7 +122,7 @@ class HistorySecretScan:
         detector = SecretDetector()
         ctx = ScanContext(config=self.config, rules=self.rules)
         earliest: dict[tuple[str, str], tuple[Finding, str]] = {}
-        from cordon_scanner.detect.secrets.secrets import PROVIDER_PATTERNS
+        from cordon_scanner.detect.secrets.patterns import PROVIDER_PATTERNS
 
         # From a binary's strings, only a credential with a provider's own shape (`ghp_`, `AKIA`,
         # `xoxb-`): a printable run in a compiled file or a database page can look like anything
@@ -223,7 +223,7 @@ class HistorySecretScan:
 
     @staticmethod
     def _incomplete(coverage) -> Finding:  # type: ignore[no-untyped-def]
-        from cordon_scanner.detect.secrets.secrets import SecretDetector
+        from cordon_scanner.detect.secrets.detector import SecretDetector
 
         parts = []
         if coverage.skipped_over_ceiling:
@@ -457,7 +457,7 @@ class SecretLiveness:
             else:
                 unchecked.append(f"{finding.rule_id} (the issuer did not give a clear answer)")
         if unchecked:
-            from cordon_scanner.detect.secrets.secrets import SecretDetector
+            from cordon_scanner.detect.secrets.detector import SecretDetector
 
             added.append(
                 SecretDetector().operational(

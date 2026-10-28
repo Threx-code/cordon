@@ -176,7 +176,7 @@ class TestDetectorSignature:
         assert before != after, "a changed detector must not serve cached findings"
 
     def test_a_real_detector_contributes_a_code_hash(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SecretDetector
+        from cordon_scanner.detect.secrets.detector import SecretDetector
 
         identity = ScanCache._detector_identity(SecretDetector())
         name, version, code = identity.split("@")

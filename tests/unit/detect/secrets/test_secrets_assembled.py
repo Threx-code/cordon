@@ -19,7 +19,8 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
-from cordon_scanner.detect.secrets.secrets import SecretDetector, SecretValues
+from cordon_scanner.detect.secrets.detector import SecretDetector
+from cordon_scanner.detect.secrets.values import SecretValues
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -222,7 +223,8 @@ class TestPrefixes:
         are added, and if a future release covers every prefix it skips with a reason
         rather than passing on nothing.
         """
-        from cordon_scanner.detect.secrets.secrets import CREDENTIAL_PREFIXES, PROVIDER_PATTERNS
+        from cordon_scanner.detect.secrets.detector import CREDENTIAL_PREFIXES
+        from cordon_scanner.detect.secrets.patterns import PROVIDER_PATTERNS
 
         unclaimed = next(
             (
