@@ -128,8 +128,8 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
-from cordon_scanner.sources.archive import ArchiveReader, Rejection
-from cordon_scanner.sources.base import FileSource, WorkingTreeSource
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.base import FileSource, Rejection, WorkingTreeSource
 from cordon_scanner.version import SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:

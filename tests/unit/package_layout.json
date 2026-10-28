@@ -741,7 +741,7 @@
    "intel/registries/real": 3511,
    "mcp/tools": 1802,
    "rules/loader": 1650,
-   "sources/archive": 1095
+   "sources/archive": 1062
   },
   "outward_imports": [
    "detect/agents/agent_judge -> judge",

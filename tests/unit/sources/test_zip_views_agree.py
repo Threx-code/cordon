@@ -6,7 +6,8 @@ import io
 import struct
 import zipfile
 
-from cordon_scanner.sources.archive import ArchiveReader, Rejection
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.base import Rejection
 
 
 class TestAMemberOnlyAStreamingExtractorSeesIsFound:

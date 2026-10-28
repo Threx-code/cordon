@@ -23,9 +23,11 @@ how every other file in the repository is scored.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.limits import Limits
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -149,4 +151,31 @@ class WorkingTreeSource:
         return "working tree"
 
 
-__all__ = ["FileSource", "WorkingTreeSource"]
+class Rejection:
+    """Why a member or an archive was refused. Each becomes a finding."""
+
+    RATIO = "compression_ratio"
+    ENTRIES = "entry_count"
+    SIZE = "uncompressed_size"
+    DEPTH = "nesting_depth"
+    TRAVERSAL = "path_traversal"
+    ABSOLUTE = "absolute_path"
+    LINK = "link_member"
+    SPECIAL = "special_file"
+    UNREADABLE = "unreadable"
+    NAME = "unsafe_name"
+    POLYGLOT = "polyglot_archive"
+    HIDDEN = "hidden_zip_member"
+    PADDED = "padded_expansion"
+    """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
+    padding was not read, and padding is how a payload is put out of a scanner's reach."""
+
+
+@dataclass(frozen=True, slots=True)
+class RejectedMember:
+    name: str
+    reason: str
+    detail: str = ""
+
+
+__all__ = ["FileSource", "RejectedMember", "Rejection", "WorkingTreeSource"]

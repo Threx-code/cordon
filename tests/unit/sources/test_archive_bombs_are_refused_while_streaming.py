@@ -10,7 +10,8 @@ import time
 import pytest
 
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
-from cordon_scanner.sources.archive import ArchiveReader, Rejection
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.base import Rejection
 
 
 class TestBombsAreRefusedWhileStreaming:

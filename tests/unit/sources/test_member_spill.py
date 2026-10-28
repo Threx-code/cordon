@@ -12,7 +12,8 @@ from pathlib import Path
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.files.spill import SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
-from cordon_scanner.sources.archive import ArchiveReader, Rejection
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.base import Rejection
 
 LIMITS = DEFAULT_LIMITS.merged(max_member_bytes=4096, max_file_bytes=1024)
 ELF = b"\x7fELF\x02\x01\x01" + b"\x00" * 9
