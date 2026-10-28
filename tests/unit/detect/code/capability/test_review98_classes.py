@@ -8,7 +8,7 @@ import tarfile
 import zipfile
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.capability.detector import CapabilityDetector
+from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.models import Severity
 
@@ -83,7 +83,7 @@ class TestWalletSecretThroughHelper:
             "  }\n}\nclass Keypair {\n  constructor(secretKey) {\n    this._secretKey = secretKey;\n"
             "    Loader.addToQueue(this._secretKey);\n  }\n}\n"
         )
-        assert CapabilityDetector._js_wallet_secret_through_helper(text)
+        assert JavaScriptCapabilities.js_wallet_secret_through_helper(text)
 
     def test_a_signer_that_sends_a_signature(self) -> None:
         text = (
@@ -91,7 +91,7 @@ class TestWalletSecretThroughHelper:
             '  return fetch("https://rpc.example.invalid", { method: "POST", body: signed });\n}\n'
             "class Keypair {\n  constructor(secretKey) {\n    submit(build(secretKey));\n  }\n}\n"
         )
-        assert not CapabilityDetector._js_wallet_secret_through_helper(text)
+        assert not JavaScriptCapabilities.js_wallet_secret_through_helper(text)
 
 
 class TestCaseVariantHook:

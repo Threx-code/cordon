@@ -13,7 +13,7 @@ import tarfile
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.capability.detector import CapabilityDetector
+from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.content import FileContent
 
@@ -53,7 +53,7 @@ class TestAStringRunAsCode:
     def hit(text: str) -> bool:
         raw = text.encode()
         content = FileContent(path="x.js", raw=raw, size=len(raw))
-        return bool(CapabilityDetector._js_string_code_run(content, "javascript"))
+        return bool(JavaScriptCapabilities.js_string_code_run(content, "javascript"))
 
     def test_function_over_a_long_literal_after_its_parameter_names(self):
         assert self.hit(f'Function("w", "r", "{PROGRAM}")({{}});\n')

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cordon_scanner.detect.code.capability.detector import CapabilityDetector
+from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.wasm_glue import WasmBindgenGlue
 from cordon_scanner.foundation.content import FileContent
 
@@ -58,7 +58,7 @@ class Flows:
     @staticmethod
     def remote_code(text: str) -> list[str]:
         content = FileContent(path="pkg/pkg.js", raw=text.encode(), size=len(text))
-        hits = CapabilityDetector._js_flows(content, "javascript")
+        hits = JavaScriptCapabilities.js_flows(content, "javascript")
         return [h.rule_id for h in hits if h.rule_id.startswith("CAP.JS.FLOW.REMOTE_CODE")]
 
 

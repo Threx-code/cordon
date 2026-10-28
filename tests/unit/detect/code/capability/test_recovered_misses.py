@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.agent_intent import InstructionIntent
+from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.models import Severity
 
@@ -158,7 +159,6 @@ class TestComputedRequire:
         assert "MALWARE.DYNAMIC_DISPATCH.001" in found
 
     def test_a_named_module_is_not_decoded(self) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         for text in (
@@ -166,15 +166,14 @@ class TestComputedRequire:
             "const m = require(path.join(__dirname, 'lib'));\n",
         ):
             content = FileContent.from_bytes("lib/a.js", text.encode())
-            assert CapabilityDetector._js_computed_require(content, "javascript") == []
+            assert JavaScriptCapabilities.js_computed_require(content, "javascript") == []
 
     def test_a_path_helper_is_not_a_decoder(self, tmp_path) -> None:
-        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
         from cordon_scanner.foundation.content import FileContent
 
         text = self.source("joinPath").replace("require(joinPath", "require(joinPath")
         content = FileContent.from_bytes("lib/a.js", text.encode())
-        assert CapabilityDetector._js_computed_require(content, "javascript") == []
+        assert JavaScriptCapabilities.js_computed_require(content, "javascript") == []
 
 
 class TestSkillReadmePrerequisite:
