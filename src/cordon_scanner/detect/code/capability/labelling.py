@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.analysis.python.pyast import PythonSource
 from cordon_scanner.analysis.shared import embedded
 from cordon_scanner.analysis.shared.documentation import DocumentationSpans
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import (
     FileUnit,
     RuleSelector,
@@ -25,10 +26,7 @@ from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.text_position import TextPosition
-from cordon_scanner.detect.secrets.secrets import (
-    SourcePaths,
-    SourceSpans,
-)
+from cordon_scanner.detect.secrets.secrets import SourceSpans
 from cordon_scanner.foundation.models import (
     Capability,
     MatchKind,

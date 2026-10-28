@@ -26,10 +26,10 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
+from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets.secrets import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (

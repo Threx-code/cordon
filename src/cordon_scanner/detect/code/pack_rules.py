@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import (
     BaseDetector,
     DetectorRequirements,
@@ -23,7 +24,6 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     Unit,
 )
-from cordon_scanner.detect.secrets.secrets import SourcePaths
 from cordon_scanner.foundation.models import (
     Category,
     Explanation,

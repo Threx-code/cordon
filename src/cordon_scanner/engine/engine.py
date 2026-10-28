@@ -223,7 +223,7 @@ class Engine:
         written out as a bytes literal -- past the size limit and the per-file budget, so the
         payload and the call that runs it were never read. Install scripts are kilobytes.
         """
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         out: list[Finding] = []
         seen: set[str] = set()
@@ -798,7 +798,7 @@ class Engine:
         """
         # A container image is archives of archives by construction -- layers inside the image
         # tar -- so its depth limit is reached in ordinary use and stays a coverage note.
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         # A zip-slip test fixture is an escaping archive on purpose: Django, Jenkins, Go's
         # archive/tar and every extractor with a security test ship one. Reported, below the gate.
@@ -2122,7 +2122,7 @@ class Engine:
         its `new Function` beside a `fetch` a critical dropper. The entry alone, not what it
         imports: a bundled library is loaded, and what it does is read with its own context.
         """
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         def keep(path: str) -> bool:
             return not SourcePaths.is_editor_extension(path)
@@ -2138,7 +2138,7 @@ class Engine:
     def _extension_entries(units: Sequence[FileUnit]) -> set[str]:
         """The files an editor starts in each extension present: its manifest's `main` and
         `browser`, with `.js` added when the manifest leaves it off, as Node resolves them."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         paths = {unit.path for unit in units}
         found: set[str] = set()
@@ -3722,7 +3722,7 @@ class Engine:
         """A tree an agent host or an editor starts: a skill (`SKILL.md`), an MCP server (its code
         runs on the agent's tool calls, `agent_run_paths`, or its manifest declares an MCP SDK),
         or an editor extension."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         if ctx.agent_run_paths:
             return True
@@ -3842,7 +3842,7 @@ class Engine:
         call in a download that is then run (review 98). The dropper finding is raised to HIGH;
         a dropper in a test, a document or generated output keeps its ceiling.
         """
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         squat = any(
             f.rule_id == "SUSPECT.PACKAGE.NAME_RISK.001"
@@ -3901,7 +3901,7 @@ class Engine:
         blocked by a dropper alone, against 0 of 44 malware samples). A conda link script runs at
         install and keeps its grade.
         """
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         compiled_is_inert = distribution in ("pypi", "npm")
         make_is_inert = distribution not in MAKE_AT_INSTALL
@@ -6361,7 +6361,7 @@ class Engine:
             for unit in units
             if ContainerPaths.basename(unit.path) == "__init__.py"
         }
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)

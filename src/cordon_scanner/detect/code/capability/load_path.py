@@ -14,13 +14,11 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
-from cordon_scanner.detect.secrets.secrets import (
-    SourcePaths,
-)
 from cordon_scanner.foundation.models import (
     Capability,
 )

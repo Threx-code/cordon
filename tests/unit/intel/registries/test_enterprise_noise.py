@@ -448,7 +448,7 @@ class TestCredentialsWhereTestsKeepThem:
         """`contested/` and `latest/` contain the word and are not test
         directories. A substring check would have quietly halved the severity
         of every finding in them."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path) is is_fixture
 

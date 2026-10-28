@@ -855,7 +855,7 @@ class TestWhereProjectsActuallyKeepTestMaterial:
         ],
     )
     def test_it_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -871,7 +871,7 @@ class TestWhereProjectsActuallyKeepTestMaterial:
         ],
     )
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -900,13 +900,13 @@ class TestACredentialInDocumentationIsUsuallyAFormat:
         ],
     )
     def test_it_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
     @pytest.mark.parametrize("path", ["src/settings.py", "app/config.ts", "main.go"])
     def test_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_documentation(path)
 
@@ -1331,7 +1331,7 @@ class TestWhereTheRestOfTheWorldKeepsItsFixtures:
         ],
     )
     def test_it_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -1339,7 +1339,7 @@ class TestWhereTheRestOfTheWorldKeepsItsFixtures:
         "path", ["vault/login_mfa.go", "src/auth/session.ts", "lib/credentials.rb"]
     )
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -1379,7 +1379,7 @@ class TestPublishingIsNotExfiltration:
         ],
     )
     def test_build_tooling_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_build_tooling(path)
 
@@ -1394,7 +1394,7 @@ class TestPublishingIsNotExfiltration:
         ],
     )
     def test_generated_output_is_recognised(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_generated_artefact(path)
 
@@ -1410,7 +1410,7 @@ class TestPublishingIsNotExfiltration:
         ],
     )
     def test_vendored_source_and_application_code_are_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_build_tooling(path)
         assert not SourcePaths.is_generated_artefact(path)
@@ -1781,7 +1781,7 @@ class TestANameEndingInLocationHoldsALocation:
 
     @pytest.mark.parametrize("path", ["TESTING.asciidoc", "docs/guide.asciidoc", "NOTES.org"])
     def test_asciidoc_is_documentation(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
@@ -1795,13 +1795,13 @@ class TestANameEndingInLocationHoldsALocation:
         ],
     )
     def test_a_publishing_script_is_build_tooling(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_build_tooling(path)
 
     @pytest.mark.parametrize("path", ["src/publisher.py", "lib/release_notes.rb"])
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_build_tooling(path)
 
@@ -1973,7 +1973,7 @@ class TestAGoCompositeLiteralIsNotACredential:
     def test_a_plural_helper_file_is_test_material(self, path: str) -> None:
         """`**/*_test_helper.*` was listed and the plural was not, which is the
         spelling Vault uses."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -2118,13 +2118,13 @@ class TestPersistenceIsWhatAnInstallerDoes:
         ],
     )
     def test_an_installer_directory_is_build_tooling(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_build_tooling(path)
 
     @pytest.mark.parametrize("path", ["src/installers.py", "app/provision_account.rb"])
     def test_application_code_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_build_tooling(path)
 
@@ -3452,7 +3452,7 @@ class TestAReferenceIsNotAValue:
         """Twenty-eight keys under `x509/static/` -- a CA, an intermediate, a rollover
         pair, OCSP responders, PKCS#1 and PKCS#8 variants -- are a hierarchy built for
         an authentication test suite. gRPC's vendored `test_creds/` is thirteen more."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("x509/static/intermediate_ca_key.pem")
         assert SourcePaths.is_test_material(
@@ -3545,12 +3545,12 @@ class TestTheSecondPassOverTheCorpus:
         ],
     )
     def test_a_generated_test_hierarchy_is_test_material(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
     def test_a_deployed_key_is_not(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material("deploy/production/server.key")
         assert not SourcePaths.is_test_material("config/tls/server.key")
@@ -3777,7 +3777,7 @@ class TestAWorkspaceMemberHasNothingToHash:
         """ASP.NET Core keeps eight keys under `src/Shared/TestCertificates/`, which
         the glob list missed because it had three spellings of `test-certs` and not the
         word written out."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("src/Shared/TestCertificates/https-ecdsa.key")
         assert not SourcePaths.is_test_material("deploy/certs/server.key")
@@ -3807,7 +3807,7 @@ class TestAGradleSourceSetIsStillATestTree:
         ],
     )
     def test_these_are_test_material(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -3820,7 +3820,7 @@ class TestAGradleSourceSetIsStillATestTree:
         ],
     )
     def test_these_are_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -4169,7 +4169,7 @@ class TestTheLanguagesOwnPlaceForTests:
         assert {e.name for e in graph.entries if not e.local and not e.integrity} == {"Unhashed"}
 
     def test_keycloaks_test_pki_is_test_material(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(
             "testsuite/integration-arquillian/servers/auth-server/common/keystore/client-ca.key"
@@ -4662,7 +4662,7 @@ class TestATranslationIsNotACredential:
         ],
     )
     def test_a_catalogue_is_documentation(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
@@ -4675,7 +4675,7 @@ class TestATranslationIsNotACredential:
         ],
     )
     def test_configuration_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_documentation(path)
 
@@ -4767,7 +4767,7 @@ class TestVendoredCodeIsSomebodyElsesSource:
         ],
     )
     def test_these_are_vendored(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_vendored(path)
 
@@ -4780,7 +4780,7 @@ class TestVendoredCodeIsSomebodyElsesSource:
         ],
     )
     def test_these_are_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_vendored(path)
 
@@ -5873,7 +5873,7 @@ class TestAProjectNamesItsOwnTestTree:
         ],
     )
     def test_which_directories_hold_test_material(self, path: str, expected: bool) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path) is expected
 
@@ -7223,7 +7223,7 @@ class TestAPemBlockTooSmallToBeAKey:
         `__mockdata__/src/__screenshots__/`, which no `__mocks__` or `__snapshots__` glob
         can see. Every project invents its own dunder directory and none of them is
         product source."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(
             "code/core/__mockdata__/src/__screenshots__/Primary.png"
@@ -7523,7 +7523,7 @@ class TestTestHelpersLiveBesideTheLibrary:
         "name", ["testing_utils.py", "conftest.py", "test-helpers.ts", "utils.tests.js"]
     )
     def test_the_filename_is_the_statement(self, name: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.names_test_file(f"src/transformers/{name}")
 
@@ -7531,7 +7531,7 @@ class TestTestHelpersLiveBesideTheLibrary:
     def test_a_word_that_merely_contains_test_is_not(self, name: str) -> None:
         """The control that cost the most to get right: `latest.py` and `manifest.py` are
         ordinary modules, and a substring test would have excused both."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.names_test_file(f"src/cordon_scanner/{name}")
 
@@ -8293,7 +8293,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         ],
     )
     def test_each_is_material_written_for_a_test(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -8303,7 +8303,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         `TestHowMuchOfARepositoryThePathPredicatesExcuse` found the same word claiming 39
         Django data migrations in a real repository. `seed` now means something only on a
         key or configuration file, which is what it was added for."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material("db/seed_data.rb")
         assert not SourcePaths.is_test_material("db/seeds.rb")
@@ -8311,7 +8311,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
 
     @pytest.mark.parametrize("path", ["rclone.1", "man/man8/mount.8"])
     def test_a_man_page_is_documentation(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_documentation(path)
 
@@ -8328,7 +8328,7 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         ],
     )
     def test_the_ordinary_spelling_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
         assert not SourcePaths.is_documentation(path)
@@ -8523,7 +8523,7 @@ class TestTheNamesADirectoryGivesItsDemoKeys:
         ],
     )
     def test_the_compound_name_is_read(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -8532,7 +8532,7 @@ class TestTheNamesADirectoryGivesItsDemoKeys:
     )
     def test_a_key_in_an_ordinary_place_still_reports(self, path: str) -> None:
         """The control: three real committed keys from the same corpus sample."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -9167,7 +9167,7 @@ class TestTheClassThatTurnedUpNothing:
         ],
     )
     def test_a_filename_saying_demo_is_read(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -9182,7 +9182,7 @@ class TestTheClassThatTurnedUpNothing:
         ],
     )
     def test_everything_else_is_still_source(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -9556,7 +9556,7 @@ class TestTheMarkersAProjectPutsOnAKeyItGenerates:
         ],
     )
     def test_a_marked_key_is_graded(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -9576,7 +9576,7 @@ class TestTheMarkersAProjectPutsOnAKeyItGenerates:
         ],
     )
     def test_an_unmarked_key_still_reports_in_full(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
@@ -10275,7 +10275,7 @@ class TestHowMuchOfARepositoryThePathPredicatesExcuse:
 
     @pytest.mark.parametrize("path", MATERIAL)
     def test_what_the_predicates_are_for(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material(path)
 
@@ -10283,14 +10283,14 @@ class TestHowMuchOfARepositoryThePathPredicatesExcuse:
     def test_and_what_they_must_not_reach(self, path: str) -> None:
         """Every one of these is production code that a marker word claimed. A Django data
         migration runs against the production database; a service is a service."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_test_material(path)
 
     def test_a_marker_means_something_only_on_a_key_or_a_config(self) -> None:
         """The rule that replaced the twelve words, stated directly: the same word, the
         same position, and the extension is what decides."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("conf/local.key")
         assert SourcePaths.is_test_material("conf/local.yaml")
@@ -10304,7 +10304,7 @@ class TestHowMuchOfARepositoryThePathPredicatesExcuse:
 
         The number is deliberately close to what was measured, so that a later widening
         has to change this line and see the cost before paying it."""
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         apps = ("matters", "users", "intake", "advisory", "knowledge", "approvals")
         tree: list[str] = []
@@ -11447,7 +11447,7 @@ class TestTestCasesIsATestDirectory:
         ],
     )
     def test_a_two_word_test_directory_is_one(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.names_test_directory(path)
 
@@ -11462,7 +11462,7 @@ class TestTestCasesIsATestDirectory:
         ],
     )
     def test_a_word_that_merely_contains_test_is_not(self, path: str) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.names_test_directory(path)
 
@@ -13899,13 +13899,13 @@ class TestATokenSentToItsOwnService:
 
 class TestContentHashedBundlesAreBuildOutput:
     def test_a_webpack_chunk_is_generated(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_generated_artefact("jupyterlab/static/2874.ea9bd8ad31b1acb0.js")
         assert SourcePaths.is_generated_artefact("app/static/main-3f2a9c0d6c1b.css")
 
     def test_a_source_file_is_not(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert not SourcePaths.is_generated_artefact("src/handlers.js")
         assert not SourcePaths.is_generated_artefact("src/v2.handlers.js")
@@ -14045,7 +14045,7 @@ class TestResolvingYourOwnNameUnderDotLocal:
 
 class TestARunTestsScriptIsTestInfrastructure:
     def test_runtests_is_test_material(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_test_material("cython-3.3.0/runtests.py")
         assert not SourcePaths.is_test_material("cython-3.3.0/runner.py")
@@ -14083,12 +14083,12 @@ class TestAConstructorRunsWhenItsClassIsBuilt:
 
 class TestViteBundlesAreBuildOutput:
     def test_a_vite_chunk_is_generated(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         assert SourcePaths.is_generated_artefact("streamlit/static/static/js/katex.B0YdJus7.js")
 
     def test_ordinary_names_are_not(self) -> None:
-        from cordon_scanner.detect.secrets.secrets import SourcePaths
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         for path in (
             "src/react.development.js",

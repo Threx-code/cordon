@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import ClassVar
 
 from cordon_scanner import Scanner
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
-from cordon_scanner.detect.secrets.secrets import SourcePaths
 
 MANIFEST = {
     "name": "theme",

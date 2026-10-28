@@ -38,6 +38,7 @@ from cordon_scanner.analysis.python.inert_literals import InertLiterals
 from cordon_scanner.analysis.python.pyast import CREDENTIAL_VARIABLE
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared import embedded
+from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.decide.scoring import RiskScorer, ScoringContext
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -60,11 +61,7 @@ from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.detect.code.publish_reach import PublishReach
 from cordon_scanner.detect.code.store_flow import StoreFlow
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
-from cordon_scanner.detect.secrets.secrets import (
-    FIXTURE_CEILING,
-    RULE_MATERIAL_CEILING,
-    SourcePaths,
-)
+from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation.models import (
     Capability,
     Category,

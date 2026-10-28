@@ -22,9 +22,9 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets.secrets import SourcePaths
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.dependencies import OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.foundation.models import (

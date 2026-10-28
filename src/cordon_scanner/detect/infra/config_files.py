@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.shared.destinations import Destinations
+from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -42,11 +43,7 @@ from cordon_scanner.detect.infra.ci_exfil import (
     DropPoint,
     SecretInventory,
 )
-from cordon_scanner.detect.secrets.secrets import (
-    FIXTURE_CEILING,
-    RULE_MATERIAL_CEILING,
-    SourcePaths,
-)
+from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (

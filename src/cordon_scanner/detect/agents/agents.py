@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.agents import agent_config
 from cordon_scanner.detect.agents.agent_semantics import AgentSemantics
@@ -42,7 +43,6 @@ from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION, Defe
 from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL, McpDescriptionModel
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets.secrets import SourcePaths
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.formats import jsonc
