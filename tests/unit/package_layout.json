@@ -909,7 +909,6 @@
    "detect/code/capability/composites:CompositeEvaluator._term": 124,
    "detect/code/capability/detector:CapabilityDetector._composite_findings": 112,
    "detect/code/capability/legitimate_use:LegitimateUse.credential_for_its_own_service": 118,
-   "detect/code/capability/load_path:LoadPath._python_deferred_spans": 155,
    "detect/code/obfuscation/encoding:EncodingFindings.escapes": 113,
    "detect/code/obfuscation/findings:ObfuscationFinding.finding": 146,
    "detect/code/obfuscation/packing:PackingFindings.long_lines": 102,

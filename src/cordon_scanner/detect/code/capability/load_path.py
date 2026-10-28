@@ -294,73 +294,7 @@ class LoadPath:
         if not functions or len(functions) > 5_000:
             return []
 
-        # A decorator defined here that calls what it decorates in its own body -- not in a
-        # wrapper it returns -- runs the function at definition: `def now(f): f(); return f`.
-        # One that registers or wraps it (`gh_patch`, `functools.wraps`) runs nothing.
-        def calls_its_argument(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-            params = [a.arg for a in node.args.args[:1]]
-            if not params:
-                return False
-            pending: list[ast.AST] = list(node.body)
-            while pending:
-                current = pending.pop()
-                if isinstance(current, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
-                    continue
-                if (
-                    isinstance(current, ast.Call)
-                    and isinstance(current.func, ast.Name)
-                    and current.func.id == params[0]
-                ):
-                    return True
-                pending.extend(ast.iter_child_nodes(current))
-            return False
-
-        local = {node.name for node in functions if calls_its_argument(node)}
-
-        def names_in(nodes: Sequence[ast.AST]) -> set[str]:
-            found: set[str] = set()
-            for root in nodes:
-                for node in PythonSyntax.nodes(root):
-                    if isinstance(node, ast.Name):
-                        found.add(node.id)
-                    elif isinstance(node, ast.Attribute):
-                        found.add(node.attr)
-            return found
-
-        def decorator_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-            return names_in(list(node.decorator_list))
-
-        def run_names(nodes: Sequence[ast.AST]) -> set[str]:
-            """Names these nodes call, or hand to something that runs them unprompted.
-
-            Handing a function to a registry -- `add_constructor(tag, f)`, `app.route(f)` --
-            is not running it: a YAML loader's unsafe-tag handler runs when somebody loads a
-            document that names the tag.
-            """
-            found: set[str] = set()
-            for root in nodes:
-                for node in PythonSyntax.of(root, ast.Call):
-                    func = node.func
-                    callee = (
-                        func.id
-                        if isinstance(func, ast.Name)
-                        else func.attr
-                        if isinstance(func, ast.Attribute)
-                        else ""
-                    )
-                    found.add(callee)
-                    owner = (
-                        func.value.id
-                        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
-                        else ""
-                    )
-                    if callee in LoadPath.RUNNERS or f"{owner}.{callee}" in LoadPath.RUNNERS:
-                        for argument in [*node.args, *(k.value for k in node.keywords)]:
-                            if isinstance(argument, ast.Name):
-                                found.add(argument.id)
-                            elif isinstance(argument, ast.Attribute):
-                                found.add(argument.attr)
-            return found
+        local = {node.name for node in functions if LoadPath._calls_its_argument(node)}
 
         nested = {
             id(inner)
@@ -391,7 +325,7 @@ class LoadPath:
         bases_used: set[str] = set()
         for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.ClassDef):
-                bases_used |= names_in(list(node.bases))
+                bases_used |= LoadPath._names_in(list(node.bases))
                 for child in node.body:
                     if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
                         owner_of[id(child)] = node.name
@@ -409,10 +343,13 @@ class LoadPath:
 
         reached: set[int] = set()
         for node in functions:
-            if (dunder(node) and not on_instance(node)) or decorator_names(node) & local:
+            if (dunder(node) and not on_instance(node)) or LoadPath._decorator_names(node) & local:
                 reached.add(id(node))
-        referenced = run_names(on_load) | {
-            name for node in functions if id(node) in reached for name in run_names(node.body)
+        referenced = LoadPath._run_names(on_load) | {
+            name
+            for node in functions
+            if id(node) in reached
+            for name in LoadPath._run_names(node.body)
         }
         changed = True
         while changed:
@@ -423,8 +360,18 @@ class LoadPath:
                 trigger = owner_of[id(node)] if on_instance(node) else node.name
                 if trigger in referenced:
                     reached.add(id(node))
-                    referenced |= run_names(node.body)
+                    referenced |= LoadPath._run_names(node.body)
                     changed = True
+        return LoadPath._unreached_spans(content, functions, nested, reached)
+
+    @staticmethod
+    def _unreached_spans(
+        content: FileContent,
+        functions: list[ast.FunctionDef | ast.AsyncFunctionDef],
+        nested: set[int],
+        reached: set[int],
+    ) -> list[tuple[int, int]]:
+        """The byte spans of the function bodies nothing on the load path reaches."""
         starts = [0]
         for line in content.raw.split(b"\n"):
             starts.append(starts[-1] + len(line) + 1)
@@ -436,6 +383,76 @@ class LoadPath:
             if last < len(starts):
                 spans.append((starts[first - 1], starts[last]))
         return spans
+
+    # A decorator defined here that calls what it decorates in its own body -- not in a
+    # wrapper it returns -- runs the function at definition: `def now(f): f(); return f`.
+    # One that registers or wraps it (`gh_patch`, `functools.wraps`) runs nothing.
+    @staticmethod
+    def _calls_its_argument(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        params = [a.arg for a in node.args.args[:1]]
+        if not params:
+            return False
+        pending: list[ast.AST] = list(node.body)
+        while pending:
+            current = pending.pop()
+            if isinstance(current, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+                continue
+            if (
+                isinstance(current, ast.Call)
+                and isinstance(current.func, ast.Name)
+                and current.func.id == params[0]
+            ):
+                return True
+            pending.extend(ast.iter_child_nodes(current))
+        return False
+
+    @staticmethod
+    def _names_in(nodes: Sequence[ast.AST]) -> set[str]:
+        found: set[str] = set()
+        for root in nodes:
+            for node in PythonSyntax.nodes(root):
+                if isinstance(node, ast.Name):
+                    found.add(node.id)
+                elif isinstance(node, ast.Attribute):
+                    found.add(node.attr)
+        return found
+
+    @staticmethod
+    def _decorator_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+        return LoadPath._names_in(list(node.decorator_list))
+
+    @staticmethod
+    def _run_names(nodes: Sequence[ast.AST]) -> set[str]:
+        """Names these nodes call, or hand to something that runs them unprompted.
+
+        Handing a function to a registry -- `add_constructor(tag, f)`, `app.route(f)` --
+        is not running it: a YAML loader's unsafe-tag handler runs when somebody loads a
+        document that names the tag.
+        """
+        found: set[str] = set()
+        for root in nodes:
+            for node in PythonSyntax.of(root, ast.Call):
+                func = node.func
+                callee = (
+                    func.id
+                    if isinstance(func, ast.Name)
+                    else func.attr
+                    if isinstance(func, ast.Attribute)
+                    else ""
+                )
+                found.add(callee)
+                owner = (
+                    func.value.id
+                    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                    else ""
+                )
+                if callee in LoadPath.RUNNERS or f"{owner}.{callee}" in LoadPath.RUNNERS:
+                    for argument in [*node.args, *(k.value for k in node.keywords)]:
+                        if isinstance(argument, ast.Name):
+                            found.add(argument.id)
+                        elif isinstance(argument, ast.Attribute):
+                            found.add(argument.attr)
+        return found
 
     @staticmethod
     def _js_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
