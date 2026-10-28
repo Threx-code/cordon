@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train and calibrate the MCP tool-description model (`detect/mcp_model.py`).
+"""Train and calibrate the MCP tool-description model (`detect/agents/mcp_servers/description_model.py`).
 
 ```
   devset.jsonl   label, source, group (server or package), half (work|holdout), text
@@ -40,9 +40,13 @@ class McpModelTrainer:
         import numpy as np
         from scipy.sparse import csr_matrix, vstack
 
-        from cordon_scanner.detect.agents import mcp_model
+        from cordon_scanner.detect.agents.mcp_servers import description_model
 
-        model = mcp_model.SKILL_MODEL if McpModelTrainer.KIND == "skill" else mcp_model.MCP_MODEL
+        model = (
+            description_model.SKILL_MODEL
+            if McpModelTrainer.KIND == "skill"
+            else description_model.MCP_MODEL
+        )
         # In chunks, as float32 arrays: half a million rows of n-gram features held as Python
         # lists took more than 10 GB.
         chunks = []
@@ -60,10 +64,12 @@ class McpModelTrainer:
                         np.asarray(indices, dtype=np.int32),
                         np.asarray(pointers, dtype=np.int64),
                     ),
-                    shape=(len(pointers) - 1, mcp_model.FEATURES),
+                    shape=(len(pointers) - 1, description_model.FEATURES),
                 )
             )
-        return vstack(chunks, format="csr") if chunks else csr_matrix((0, mcp_model.FEATURES))
+        return (
+            vstack(chunks, format="csr") if chunks else csr_matrix((0, description_model.FEATURES))
+        )
 
     @staticmethod
     def per_group(rows: list[dict], scores) -> list[float]:
@@ -158,7 +164,7 @@ class McpModelTrainer:
             "thresholds": thresholds,
             "calibration": report,
             "trained_on": sorted({f"{r['source']}" for r in work}),
-            "features": "word 1-3 grams + channel, crc32 mod 2^18, L2 (detect/mcp_model.py)",
+            "features": "word 1-3 grams + channel, crc32 mod 2^18, L2 (detect/description_model.py)",
         }
         args.out.mkdir(parents=True, exist_ok=True)
         name = "skill-instructions.json.gz" if args.kind == "skill" else "mcp-descriptions.json.gz"

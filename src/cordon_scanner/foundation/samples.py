@@ -348,7 +348,7 @@ appends shell completion to `.bashrc`.
 `yum install httpd` and `systemctl enable httpd`.
 
 Used for ONE thing: a ceiling on the persistence composite, applied in
-`CapabilityDetector._composite_finding`. Deliberately not on the dropper
+`CompositeGrading`. Deliberately not on the dropper
 composite -- piping an unpinned remote script into a shell is a choice a
 provisioning script still has to answer for, and `curl | bash` is how the one
 real supply-chain attack in this corpus works."""

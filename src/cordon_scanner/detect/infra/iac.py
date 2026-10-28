@@ -611,7 +611,8 @@ class IacDetector(BaseDetector):
     requires = DetectorRequirements(content=True, dependencies=False)
 
     def __init__(self, policies: tuple[IacPolicy, ...] | None = None) -> None:
-        from cordon_scanner.detect.infra.iac_policies import CURATED, GeneratedPolicies
+        from cordon_scanner.detect.infra.generated_policies import GeneratedPolicies
+        from cordon_scanner.detect.infra.iac_policies import CURATED
 
         self.policies = CURATED if policies is None else policies
         by_kind: dict[str, list[IacPolicy]] = {}
@@ -646,7 +647,8 @@ class IacDetector(BaseDetector):
         the scan path: it builds the whole set, which is the thing `_generated`
         exists to avoid doing for a scan.
         """
-        from cordon_scanner.detect.infra.iac_policies import CuratedPolicies, GeneratedPolicies
+        from cordon_scanner.detect.infra.generated_policies import GeneratedPolicies
+        from cordon_scanner.detect.infra.iac_policies import CuratedPolicies
 
         return tuple(
             DeclaredRule(
@@ -680,7 +682,7 @@ class IacDetector(BaseDetector):
         """The generated policies for one resource kind, built once."""
         built = self._built.get(kind)
         if built is None:
-            from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
+            from cordon_scanner.detect.infra.generated_policies import GeneratedPolicies
 
             rows = self._rows.get(kind, ())
             built = tuple(GeneratedPolicies.policy_from_row(row) for row in rows)
@@ -717,7 +719,7 @@ class IacDetector(BaseDetector):
             return notes
         self._noted = True
 
-        from cordon_scanner.detect.infra.iac_policies import GeneratedPolicies
+        from cordon_scanner.detect.infra.generated_policies import GeneratedPolicies
 
         refused = GeneratedPolicies.refused_files()
         if refused:

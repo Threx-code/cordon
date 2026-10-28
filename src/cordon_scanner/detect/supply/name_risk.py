@@ -518,7 +518,7 @@ class NameSignals:
     @staticmethod
     def prints_only(identity: PackageIdentity) -> bool:
         """Every install hook only prints or exits: the PoC that proves it ran and does nothing."""
-        from cordon_scanner.detect.supply.manifest import ManifestScripts
+        from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 
         if not identity.hooks:
             return False

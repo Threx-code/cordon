@@ -27,7 +27,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from cordon_scanner.detect.agents.mcp_model import BUCKETS, SKILL_MODEL
+from cordon_scanner.detect.agents.mcp_servers.description_model import BUCKETS, SKILL_MODEL
 
 
 class SkillCrossVal:
@@ -96,7 +96,7 @@ class SkillCrossVal:
                 "thresholds": {"skill": [block, warn]},
                 "calibration": {"fold": name},
                 "trained_on": sorted({r["source"] for r in train}),
-                "features": "word 1-3 grams + channel, crc32 mod 2^18, L2 (detect/mcp_model.py)",
+                "features": "word 1-3 grams + channel, crc32 mod 2^18, L2 (detect/agents/mcp_servers/description_model.py)",
             }
             with gzip.open(args.out / f"skill-{name}.json.gz", "wt", encoding="utf-8") as handle:
                 json.dump(model, handle, separators=(",", ":"), sort_keys=True)

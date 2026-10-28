@@ -35,8 +35,10 @@ class FeatureSetBuilder:
         if not p:
             return "none"
         base = p.rsplit("/", 1)[-1]
-        if base == "skill.md" or base in {"agents.md", "claude.md", "gemini.md"} or p.endswith(
-            ".mdc"
+        if (
+            base == "skill.md"
+            or base in {"agents.md", "claude.md", "gemini.md"}
+            or p.endswith(".mdc")
         ):
             return "agent_text"
         if p.endswith(_PACKAGING):
@@ -48,7 +50,9 @@ class FeatureSetBuilder:
     @staticmethod
     def _finding_feature(finding: list[Any]) -> dict[str, Any]:
         # A scan finding is the 7-tuple [rule, severity, confidence, category, path, line, detector].
-        rule, severity, confidence, category, path, line, detector = (list(finding) + [None] * 7)[:7]
+        rule, severity, confidence, category, path, line, detector = (list(finding) + [None] * 7)[
+            :7
+        ]
         return {
             "name": f"finding:{rule}",
             "value": True,

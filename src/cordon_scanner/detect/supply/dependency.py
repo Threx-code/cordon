@@ -29,8 +29,8 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.decide.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.supply.dependency_rules import ABANDONED_RULE, DECLARED_RULES, DETECTOR
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -47,13 +47,12 @@ from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.registries.popular import PackageIntel
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.ecosystems.base import Ecosystem
 
 MAX_EDIT_DISTANCE = 2
-ABANDONED_RULE = "POLICY.DEPENDENCY.ABANDONED.001"
 # Combosquatting -- a name that wraps a popular one, like `python-requests-oauth`
 # -- was implemented here and has been removed. It cannot be made precise
 # offline. `fast-glob`, `is-glob`, `neo-async`, `typescript-eslint` and
@@ -154,106 +153,7 @@ class DependencyDetector(BaseDetector):
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
-        return (
-            DeclaredRule(
-                id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",
-                title="Dependency name is one edit from a popular package",
-                # The declared ceiling. A look-alike spelling reaches HIGH; a
-                # plain ASCII near-miss is reported at MEDIUM, because offline
-                # name distance cannot support more than that.
-                severity=Severity.HIGH,
-                confidence=Confidence.MEDIUM,
-                category=Category.SUSPICIOUS,
-                detector=DependencyDetector.id,
-                message=(
-                    "This dependency's name differs by a single character from a widely used "
-                    "package. That is what a typo produces and what a typosquat is built to "
-                    "collect, and the two are indistinguishable from the name alone."
-                ),
-                references=(references.DEPENDENCY_CONFUSION,),
-                remediation="Confirm the name against the registry before installing.",
-            ),
-            DeclaredRule(
-                id="SUSPECT.DEPENDENCY.SOURCE.001",
-                title="Dependency resolved from outside the registry",
-                severity=Severity.MEDIUM,
-                confidence=Confidence.MEDIUM,
-                category=Category.SUSPICIOUS,
-                detector=DependencyDetector.id,
-                message=(
-                    "The dependency resolves from a host that is not its ecosystem's "
-                    "registry and is not a configured mirror, so advisory matching and "
-                    "release-age policy do not reach it. Where a package came from "
-                    "decides what installed, whatever the name and version say."
-                ),
-                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
-                remediation="Pin the dependency to the registry, or vendor it deliberately.",
-            ),
-            DeclaredRule(
-                id=ABANDONED_RULE,
-                title="Dependency is abandoned by its maintainer",
-                severity=Severity.MEDIUM,
-                confidence=Confidence.CONFIRMED,
-                category=Category.POLICY,
-                detector=DependencyDetector.id,
-                message=(
-                    "The lockfile records the package as abandoned (Composer writes what Packagist "
-                    "says). Nothing will be fixed in it, security fixes included."
-                ),
-                references=(references.INSECURE_DEFAULT,),
-                remediation="Move to the replacement the maintainer names, or a maintained alternative.",
-            ),
-            DeclaredRule(
-                id="POLICY.DEPENDENCY.INTEGRITY.001",
-                title="Dependency has no integrity hash",
-                severity=Severity.MEDIUM,
-                confidence=Confidence.HIGH,
-                category=Category.POLICY,
-                detector=DependencyDetector.id,
-                message=(
-                    "This dependency is recorded without a hash, so nothing checks that what "
-                    "arrives is what was resolved. A version number says what was asked for and "
-                    "nothing about what was served."
-                ),
-                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
-                remediation="Regenerate the lockfile with integrity hashes enabled.",
-            ),
-            DeclaredRule(
-                id="SUSPECT.DEPENDENCY.CONFUSION.001",
-                title="Internal package name resolved from a public registry",
-                severity=Severity.HIGH,
-                confidence=Confidence.HIGH,
-                category=Category.SUSPICIOUS,
-                detector=DependencyDetector.id,
-                message=(
-                    "A name this project treats as internal resolves from a public registry. "
-                    "Whoever registered it there decides what installs, which is the whole of "
-                    "the dependency-confusion attack -- no compromise of the private registry "
-                    "is needed."
-                ),
-                references=(references.DEPENDENCY_CONFUSION,),
-                remediation=(
-                    "Pin the package to the internal registry, or publish a "
-                    "placeholder on the public one to hold the name."
-                ),
-            ),
-            DeclaredRule(
-                id="POLICY.DEPENDENCY.SOURCE.001",
-                title="Dependency declared from a non-registry source",
-                severity=Severity.LOW,
-                confidence=Confidence.HIGH,
-                category=Category.POLICY,
-                detector=DependencyDetector.id,
-                message=(
-                    "The dependency is declared as a URL, a git reference or a local path "
-                    "rather than a registry package. Lockfile integrity hashes, advisory "
-                    "matching and any release-age delay all apply to registry packages and none "
-                    "of them applies here."
-                ),
-                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
-                remediation="Prefer registry releases, which are immutable and auditable.",
-            ),
-        )
+        return DECLARED_RULES
 
     @staticmethod
     def _damerau_levenshtein(a: str, b: str, limit: int) -> int:
@@ -363,6 +263,11 @@ class DependencyDetector(BaseDetector):
                 if j == i + 1 and name[i] == target[j] and name[j] == target[i]:
                     return "transposition"
 
+        return DependencyDetector._one_letter_slip(name, target)
+
+    @staticmethod
+    def _one_letter_slip(name: str, target: str) -> str | None:
+        """A name one letter longer or shorter than the target: a letter dropped, doubled or inserted, or none of those."""
         if abs(len(name) - len(target)) == 1:
             longer, shorter = (name, target) if len(name) > len(target) else (target, name)
             # EVERY position whose removal produces the shorter name, not the
@@ -425,7 +330,7 @@ class DependencyDetector(BaseDetector):
             return url[:60]
         return url.split("://", 1)[1].split("/", 1)[0]
 
-    id = "dependency"
+    id = DETECTOR
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=False, dependencies=True)
@@ -521,6 +426,19 @@ class DependencyDetector(BaseDetector):
             target is not None
             and self._slip_kind(normalized, target) in {"transposition", "doubled", "homoglyph"}
         )
+        yield from self._typosquat_findings(confusable, ctx, deliberate, dep, target)
+
+        yield from self._lock_findings(ctx, dep, ecosystem, mirrors, unit)
+
+    def _typosquat_findings(
+        self,
+        confusable: bool,
+        ctx: ScanContext,
+        deliberate: bool,
+        dep: Dependency,
+        target: str | None,
+    ) -> Iterator[Finding]:
+        """The finding for a dependency whose name is a slip of a popular package's -- direct or deliberately confusable -- with the kind of slip it looks like."""
         # A transitive dependency is not a typing slip. Nobody typed it: it was
         # chosen by a package this project already decided to trust, and it
         # arrives through a lockfile the resolver wrote. `colord` was reported at
@@ -588,34 +506,17 @@ class DependencyDetector(BaseDetector):
                 detail=f"{dep.name} ~ {target}",
             )
 
-        if (
-            dep.resolved_from
-            and dep.version
-            # A declaration with no resolved version is the manifest's to report, by its own
-            # source rule, with the declaration in hand (`POLICY.DEPENDENCY.SOURCE.001`).
-            and not dep.local
-            and not ecosystem.is_registry_host(dep.resolved_from)
-            and DependencyDetector._host(dep.resolved_from) not in mirrors
-        ):
-            yield self._finding(
-                rule_id="SUSPECT.DEPENDENCY.SOURCE.001",
-                category=Category.SUSPICIOUS,
-                severity=Severity.MEDIUM,
-                confidence=Confidence.CONFIRMED,
-                title="Dependency resolved from outside the registry",
-                message=(
-                    f"{dep.name}@{dep.version} resolves from {DependencyDetector._host(dep.resolved_from)} "
-                    f"rather than the {dep.ecosystem} registry, so advisory matching "
-                    f"and release-age policy do not apply to it."
-                ),
-                remediation=(
-                    "Confirm the host is one the organisation controls, or mirror the "
-                    "package into an internal registry."
-                ),
-                dep=dep,
-                ctx=ctx,
-                detail=dep.resolved_from,
-            )
+    def _lock_findings(
+        self,
+        ctx: ScanContext,
+        dep: Dependency,
+        ecosystem: Ecosystem,
+        mirrors: frozenset[str],
+        unit: GraphUnit,
+    ) -> Iterator[Finding]:
+        """Where the dependency resolved from, and whether it is hashed: a host outside its registry, and a
+        registry dependency its lockfile records without the integrity hash it records for others."""
+        yield from self._outside_registry_finding(ctx, dep, ecosystem, mirrors)
 
         # Same reasoning as the lockfile detector, and the same correction: a
         # dependency resolved from outside the registry has no registry hash to carry
@@ -671,6 +572,39 @@ class DependencyDetector(BaseDetector):
                 dep=dep,
                 ctx=ctx,
                 detail=f"{dep.name}@{dep.version}",
+            )
+
+    def _outside_registry_finding(
+        self, ctx: ScanContext, dep: Dependency, ecosystem: Ecosystem, mirrors: frozenset[str]
+    ) -> Iterator[Finding]:
+        """The finding for a dependency a lockfile resolved from a host that is neither its ecosystem's registry nor a configured mirror."""
+        if (
+            dep.resolved_from
+            and dep.version
+            # A declaration with no resolved version is the manifest's to report, by its own
+            # source rule, with the declaration in hand (`POLICY.DEPENDENCY.SOURCE.001`).
+            and not dep.local
+            and not ecosystem.is_registry_host(dep.resolved_from)
+            and DependencyDetector._host(dep.resolved_from) not in mirrors
+        ):
+            yield self._finding(
+                rule_id="SUSPECT.DEPENDENCY.SOURCE.001",
+                category=Category.SUSPICIOUS,
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                title="Dependency resolved from outside the registry",
+                message=(
+                    f"{dep.name}@{dep.version} resolves from {DependencyDetector._host(dep.resolved_from)} "
+                    f"rather than the {dep.ecosystem} registry, so advisory matching "
+                    f"and release-age policy do not apply to it."
+                ),
+                remediation=(
+                    "Confirm the host is one the organisation controls, or mirror the "
+                    "package into an internal registry."
+                ),
+                dep=dep,
+                ctx=ctx,
+                detail=dep.resolved_from,
             )
 
     # -- Dependency confusion --------------------------------------------

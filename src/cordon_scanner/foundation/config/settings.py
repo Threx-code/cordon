@@ -188,7 +188,7 @@ class Config:
     """A language model to judge agent-facing text (`--judge`): `ollama:<model>`,
     `openai:<model>`, `anthropic[:<model>]` or `cordon-cloud`. Set only by the operator, for the
     reason `clamav` is: the scan target must not choose where its own text is sent. See
-    `detect/agent_judge`."""
+    `detect/agents/language_model_judge`."""
     judge_blocks: bool = False
     """Whether a malicious verdict from the judge is HIGH, inside the default gate (`--judge-blocks`).
     Off, it warns: a model's reading is weaker evidence than a rule's match."""

@@ -51,20 +51,27 @@ class Sources:
     @classmethod
     def all(cls, root: Path) -> Iterator[tuple[int, str, str, str]]:
         data = root / "microsoft__llmail-inject-challenge" / "data"
-        for phase in ("labelled_unique_submissions_phase1.json", "labelled_unique_submissions_phase2.json"):
+        for phase in (
+            "labelled_unique_submissions_phase1.json",
+            "labelled_unique_submissions_phase2.json",
+        ):
             if (data / phase).is_file():
                 # Keyed by the submitted email; the value is its label.
                 for text, meta in json.loads((data / phase).read_text(encoding="utf-8")).items():
                     if isinstance(meta, dict) and str(meta.get("attack_attempt")) == "True":
                         yield 1, "llmail-inject", "", text
         if (data / "emails_for_fp_tests.json").is_file():
-            for index, text in enumerate(json.loads((data / "emails_for_fp_tests.json").read_text(encoding="utf-8"))):
+            for index, text in enumerate(
+                json.loads((data / "emails_for_fp_tests.json").read_text(encoding="utf-8"))
+            ):
                 yield 0, "llmail-benign", f"llmail-fp:{index}", text
         for row in cls.parquet(root, "geekyrakshit__prompt-injection-dataset"):
             yield int(str(row["label"]) == "1"), "prompt-injection-534k", "", row["prompt"]
-        for name, source in (("xTRam1__safe-guard-prompt-injection", "safe-guard"),
-                             ("deepset__prompt-injections", "deepset"),
-                             ("JasperLS__prompt-injections", "jasperls")):
+        for name, source in (
+            ("xTRam1__safe-guard-prompt-injection", "safe-guard"),
+            ("deepset__prompt-injections", "deepset"),
+            ("JasperLS__prompt-injections", "jasperls"),
+        ):
             for row in cls.parquet(root, name):
                 yield int(str(row["label"]) == "1"), source, "", row["text"]
         for row in cls.parquet(root, "Lakera__gandalf_ignore_instructions"):
@@ -74,12 +81,22 @@ class Sources:
         for file in (root / "jackhhao__jailbreak-classification" / "default").glob("*full*.csv"):
             with file.open(encoding="utf-8", errors="replace") as handle:
                 for row in csv.DictReader(handle):
-                    yield int(row.get("type") == "jailbreak"), "jailbreak-classification", "", row["prompt"]
+                    yield (
+                        int(row.get("type") == "jailbreak"),
+                        "jailbreak-classification",
+                        "",
+                        row["prompt"],
+                    )
         spml = root / "reshabhs__SPML_Chatbot_Prompt_Injection" / "spml_prompt_injection.csv"
         if spml.is_file():
             with spml.open(encoding="utf-8", errors="replace") as handle:
                 for row in csv.DictReader(handle):
-                    yield int(str(row.get("Prompt injection")) == "1"), "spml", "", row["User Prompt"]
+                    yield (
+                        int(str(row.get("Prompt injection")) == "1"),
+                        "spml",
+                        "",
+                        row["User Prompt"],
+                    )
         # HackAPrompt's submissions (the competition's cleaned release): every row is an attempt to
         # override a model's instructions. Its label is whether that attempt beat one model, so the
         # same text appears under both; by intent each is an attack.
@@ -103,7 +120,12 @@ class Sources:
             with file.open(encoding="utf-8") as handle:
                 for line in handle:
                     row = json.loads(line)
-                    yield 0, "dolly", "", (row["instruction"] + "\n" + (row.get("context") or "")).strip()
+                    yield (
+                        0,
+                        "dolly",
+                        "",
+                        (row["instruction"] + "\n" + (row.get("context") or "")).strip(),
+                    )
 
 
 class Corpus:
@@ -126,10 +148,19 @@ class Corpus:
                 seen.add(key)
                 kept[(source, label)] += 1
                 half = "holdout" if int(key[:8], 16) % 2 else "work"
-                handle.write(json.dumps({
-                    "label": label, "source": source, "group": group or f"{source}:{key[:12]}",
-                    "half": half, "channel": "prompt", "text": text[:MAX_CHARS],
-                }) + "\n")
+                handle.write(
+                    json.dumps(
+                        {
+                            "label": label,
+                            "source": source,
+                            "group": group or f"{source}:{key[:12]}",
+                            "half": half,
+                            "channel": "prompt",
+                            "text": text[:MAX_CHARS],
+                        }
+                    )
+                    + "\n"
+                )
         return kept
 
 

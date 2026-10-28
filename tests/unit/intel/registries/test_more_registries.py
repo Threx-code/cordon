@@ -18,12 +18,12 @@ from typing import Any, ClassVar
 import pytest
 
 from cordon_scanner.detect.base import GraphUnit, ScanContext
-from cordon_scanner.detect.supply.registry import (
+from cordon_scanner.detect.supply.registries.detector import (
     CONFUSABLE_ECOSYSTEMS,
     REGISTRY_ECOSYSTEMS,
     RegistryDetector,
-    RegistryEvidence,
 )
+from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent

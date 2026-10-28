@@ -97,7 +97,7 @@ class SbomDocument:
         version pin. The data is already parsed from the lockfile; this is what puts
         it in the document.
         """
-        from cordon_scanner.detect.supply.registry import RegistryEvidence
+        from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 
         parsed = RegistryEvidence._canonical_digest(dependency.integrity)
         if parsed is None:

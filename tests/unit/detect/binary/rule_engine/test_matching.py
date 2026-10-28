@@ -11,7 +11,8 @@ from typing import Any
 import pytest
 
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
-from cordon_scanner.detect.binary.rule_engine.pattern import Memo, PatternError, RegexReader
+from cordon_scanner.detect.binary.rule_engine.pattern import Memo, PatternError
+from cordon_scanner.detect.binary.rule_engine.pattern_readers import RegexReader
 
 DOTS = b"."
 

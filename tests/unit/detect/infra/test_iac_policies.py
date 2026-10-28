@@ -15,8 +15,9 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
+from cordon_scanner.detect.infra.generated_policies import GeneratedPolicies
 from cordon_scanner.detect.infra.iac import Block, IacBlocks, IacPolicy
-from cordon_scanner.detect.infra.iac_policies import CURATED, GeneratedPolicies
+from cordon_scanner.detect.infra.iac_policies import CURATED
 from cordon_scanner.foundation.config.settings import Config
 
 POLICIES = GeneratedPolicies.all_policies()

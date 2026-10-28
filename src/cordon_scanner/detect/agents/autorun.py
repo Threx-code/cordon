@@ -1,10 +1,10 @@
 """Autorun config files: the paths whose commands an editor or agent runs without anyone typing
 them, and the finding for a command that is attack-shaped.
 
-Extracted from `agents.py` so the rule's own handling can grow without that file. `agents.py` keeps a
-one-line `_autorun` that delegates to `Autorun.autorun_findings`; the call site and the finding are
-unchanged. `McpConfigs` and `RULES` are imported lazily inside the method to avoid an import cycle
-(`agents` imports this module at load time).
+Extracted from the agent chain detector (`chain.py`) so the rule's own handling can grow without that
+file. `chain.py` keeps a one-line `_autorun` that delegates to `Autorun.autorun_findings`; the call
+site and the finding are unchanged. `McpConfigs` and `RULES` are imported lazily inside the method, as
+they were when one module held them and imported this one at load time.
 """
 
 from __future__ import annotations
@@ -12,14 +12,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.detect.agents import agent_config
+from cordon_scanner.detect.agents import configuration
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.detect.agents.agents import AgentChainDetector
     from cordon_scanner.detect.base import FileUnit, ScanContext
     from cordon_scanner.foundation.models import Finding
 
@@ -81,11 +80,11 @@ class Autorun:
         }
 
     @staticmethod
-    def autorun_findings(
-        detector: AgentChainDetector, unit: FileUnit, ctx: ScanContext
-    ) -> Iterator[Finding]:
+    def autorun_findings(unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """Commands an editor or agent runs when the folder is opened or the environment built."""
-        from cordon_scanner.detect.agents.agents import RULES, McpConfigs
+        from cordon_scanner.detect.agents.findings import AgentFinding
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+        from cordon_scanner.detect.agents.rule_catalogue import RULES
 
         document = McpConfigs._json(unit.content)
         if not isinstance(document, dict):
@@ -120,7 +119,7 @@ class Autorun:
                     for c in McpConfigs._command_strings(terminal.get("command"))
                 )
         for where, command in commands:
-            verdict = agent_config.CommandClassifier.classify(command)
+            verdict = configuration.CommandClassifier.classify(command)
             if verdict is None:
                 continue
             rule_id = "MALWARE.AGENT.AUTORUN.001"
@@ -131,7 +130,7 @@ class Autorun:
             # whoever opens it either way. A repo, skill or agent unit is unchanged.
             if ctx.package_distribution and verdict.kind == "fetch-exec":
                 rule_id = "SUSPECT.CI.DEVCONTAINER_FETCH.001"
-            yield detector._at_text(
+            yield AgentFinding.at_text(
                 rule_id,
                 unit,
                 ctx,

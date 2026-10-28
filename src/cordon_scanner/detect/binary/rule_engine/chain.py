@@ -20,7 +20,7 @@ anchors' offsets and gives, for each start, what running the anchors would. An a
 the chain's first term starts a match there and reads on greedily; when that term is a `+`, its
 backward run may also read more of the term's bytes before `q`, so every start back to the start
 of the term's run (within `REACH`) is a match too, and a start reached from several anchors keeps
-the last one's, as the search records it. A run reads at most `rule_engine.pattern.REACH` bytes, so a
+the last one's, as the search records it. A run reads at most `rule_engine.threads.REACH` bytes, so a
 match that long is left to the runs: `matches` gives no answer then, and none for an anchor
 outside the first term.
 """
@@ -46,15 +46,14 @@ from cordon_scanner.detect.binary.rule_engine.pattern import (
     NOT,
     NOT_MASKED,
     PLUS,
-    REACH,
     SEQ,
     SPACE,
     STAR,
     WORD,
     Program,
     Term,
-    Threads,
 )
+from cordon_scanner.detect.binary.rule_engine.threads import REACH, Threads
 
 #: Positions, as sorted disjoint closed intervals.
 Spans = list[tuple[int, int]]

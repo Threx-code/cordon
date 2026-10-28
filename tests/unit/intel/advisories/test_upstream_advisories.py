@@ -16,6 +16,7 @@ from typing import ClassVar
 
 import pytest
 
+from cordon_scanner.detect.supply.advisories.findings import AdvisoryFinding
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
@@ -300,7 +301,7 @@ class TestTheDetector:
     @staticmethod
     def run(dependencies: tuple[Dependency, ...], *, offline: bool) -> list[tuple[str, str]]:
         from cordon_scanner.detect.base import GraphUnit, ScanContext
-        from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+        from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
         from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
@@ -435,7 +436,7 @@ class TestConfidence:
     )
     def test_how_it_was_matched_sets_the_confidence(self, matched_through, expected) -> None:
         from cordon_scanner.detect.base import ScanContext
-        from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+        from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
         from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.intel.advisories.advisories import Advisory
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -451,7 +452,9 @@ class TestConfidence:
             matched_through=matched_through,
         )
         ctx = ScanContext(config=Config.default(), rules=RuleSet(RuleLoader.load_builtin()))
-        finding = AdvisoryDetector()._finding(dependency, advisory, ctx)
+        finding = AdvisoryFinding.finding(
+            dependency, advisory, ctx, advice=AdvisoryDetector()._upgrade_advice
+        )
         assert finding.confidence.name == expected
 
 

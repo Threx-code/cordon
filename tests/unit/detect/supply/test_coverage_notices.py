@@ -23,7 +23,7 @@ from cordon_scanner.detect.supply.provenance import (
     UNVERIFIED_RULE,
     ProvenanceDetector,
 )
-from cordon_scanner.detect.supply.registry import MAX_QUERIES, RegistryDetector
+from cordon_scanner.detect.supply.registries.detector import MAX_QUERIES, RegistryDetector
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency

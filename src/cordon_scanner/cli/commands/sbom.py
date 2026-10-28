@@ -110,7 +110,7 @@ class SbomCommand:
                     "--vulnerabilities needs --format cyclonedx",
                     hint="SPDX 2.3 has no field for vulnerability status; use a VEX document beside it.",
                 )
-            from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+            from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
 
             detectors = (AdvisoryDetector(),)
         from cordon_scanner.foundation.config.settings import Config

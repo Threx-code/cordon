@@ -324,7 +324,10 @@ class TestHostileCoordinates:
             assert len(dependency["name"]) <= 256 and len(dependency.get("version") or "") <= 128
 
 
-from cordon_scanner.detect.supply.registry import CONFUSABLE_ECOSYSTEMS, REGISTRY_ECOSYSTEMS  # noqa: E402
+from cordon_scanner.detect.supply.registries.detector import (  # noqa: E402
+    CONFUSABLE_ECOSYSTEMS,
+    REGISTRY_ECOSYSTEMS,
+)
 
 REGISTERED = [
     p for p in PROFILES if p.id in REGISTRY_ECOSYSTEMS and p.hash_of and p.registry_digests

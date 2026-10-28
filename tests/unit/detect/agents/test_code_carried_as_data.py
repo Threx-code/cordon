@@ -115,7 +115,10 @@ class TestWhatAServerSends:
 
 class TestLongTextIsReadToTheEnd:
     def test_text_past_the_limit_is_scored_in_windows_that_cover_it(self):
-        from cordon_scanner.detect.agents.mcp_model import MAX_SKILL_TEXT, SKILL_MODEL
+        from cordon_scanner.detect.agents.mcp_servers.description_model import (
+            MAX_SKILL_TEXT,
+            SKILL_MODEL,
+        )
 
         text = "a" * (MAX_SKILL_TEXT * 2 + 17)
         windows = SKILL_MODEL.windows(text)
@@ -125,7 +128,7 @@ class TestLongTextIsReadToTheEnd:
         assert windows[-1].endswith(text[-100:])
 
     def test_a_short_text_is_one_window(self):
-        from cordon_scanner.detect.agents.mcp_model import SKILL_MODEL
+        from cordon_scanner.detect.agents.mcp_servers.description_model import SKILL_MODEL
 
         assert SKILL_MODEL.windows("short") == ["short"]
 

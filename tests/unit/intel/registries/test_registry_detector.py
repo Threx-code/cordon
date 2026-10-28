@@ -19,7 +19,7 @@ from typing import Any, ClassVar
 import pytest
 
 from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext
-from cordon_scanner.detect.supply.registry import RegistryDetector, RegistryEvidence
+from cordon_scanner.detect.supply.registries.detector import RegistryDetector, RegistryEvidence
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Category, Scope, Severity
@@ -518,7 +518,7 @@ class TestTheRegistryIsNotAskedUnboundedly(RegistryDetectorFixtures):
         passing `--online`, which is worse than a ceiling."""
         import json
 
-        from cordon_scanner.detect.supply.registry import MAX_MANIFEST_QUERIES
+        from cordon_scanner.detect.supply.registries.detector import MAX_MANIFEST_QUERIES
 
         answer(
             PackageFacts(

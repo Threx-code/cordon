@@ -735,7 +735,7 @@ class CommandLine:
         from dataclasses import replace as _replace
 
         from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.supply.manifest_confusion import ManifestConfusion
+        from cordon_scanner.detect.supply.manifests.confusion import ManifestConfusion
         from cordon_scanner.intel.malware.feed import FeedClient
 
         offline = not args.online or args.offline or FeedClient.offline_requested()
@@ -759,7 +759,7 @@ class CommandLine:
         if not getattr(args, "history", False) and not getattr(args, "verify_secrets", False):
             return result
         from cordon_scanner.decide.policy import SuppressionMatcher
-        from cordon_scanner.detect.secrets.secret_history import (
+        from cordon_scanner.detect.secrets.history import (
             HistorySecretScan,
             SecretLiveness,
             SecretValues,
@@ -978,7 +978,7 @@ class CommandLine:
             # organisation that supplies its own is stating what it considers
             # authoritative, and silently merging a shipped list into it would
             # produce findings it did not choose to act on.
-            from cordon_scanner.detect.supply.advisory import AdvisoryDetector
+            from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
             from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
             database = AdvisoryDatabase.from_file(args.advisories)
@@ -1668,7 +1668,7 @@ class CommandLine:
     def _mcp_approve(cls, root: Path) -> int:
         """List every remote MCP server's tools and record their fingerprints. A later `scan
         --online` reports any tool added or changed since (`SUSPECT.MCP.TOOLS_CHANGED.001`)."""
-        from cordon_scanner.detect.agents.agents import MCP_PATHS, McpConfigs
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
         from cordon_scanner.foundation.files.globs import PathGlob
         from cordon_scanner.intel.store.live_mcp import LiveMcp, LiveMcpError, McpApprovals
 
@@ -1680,7 +1680,7 @@ class CommandLine:
             :200_000
         ]:
             relative = path.relative_to(root).as_posix()
-            if not any(PathGlob.matches(relative, pattern) for pattern in MCP_PATHS):
+            if not any(PathGlob.matches(relative, pattern) for pattern in McpConfigs.PATHS):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
