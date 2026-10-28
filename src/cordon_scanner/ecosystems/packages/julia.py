@@ -132,6 +132,24 @@ class Project:
         return tomllib.loads(content.text)
 
     @staticmethod
+    def _spec(sources: dict[str, Any], compat: dict[str, Any], name: str) -> tuple[str, str | None]:
+        """A dependency's requirement: its [sources] location, or its [compat] bound, or any."""
+        source = sources.get(name)
+        if isinstance(source, dict):
+            if isinstance(source.get("url"), str):
+                rev = source.get("rev")
+                return f"git+{source['url']}" + (f"#{rev}" if isinstance(rev, str) else ""), None
+            if isinstance(source.get("path"), str):
+                return f"path:{source['path']}", None
+        bound = compat.get(name)
+        return (str(bound) if isinstance(bound, str) else "*"), None
+
+    @staticmethod
+    def _stdlib(sources: dict[str, Any], name: str, uuid: Any) -> bool:
+        """Whether a dependency is a Julia standard library, not one [sources] overrides."""
+        return str(uuid).lower() in STDLIBS and name not in sources
+
+    @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:
         try:
             data = Project.load(content)
@@ -160,68 +178,7 @@ class Project:
             if isinstance(targets.get("test"), list)
             else set()
         )
-        declared: list[DeclaredDependency] = []
-
-        def spec(name: str) -> tuple[str, str | None]:
-            source = sources.get(name)
-            if isinstance(source, dict):
-                if isinstance(source.get("url"), str):
-                    rev = source.get("rev")
-                    return f"git+{source['url']}" + (
-                        f"#{rev}" if isinstance(rev, str) else ""
-                    ), None
-                if isinstance(source.get("path"), str):
-                    return f"path:{source['path']}", None
-            bound = compat.get(name)
-            return (str(bound) if isinstance(bound, str) else "*"), None
-
-        def stdlib(name: str, uuid: Any) -> bool:
-            return str(uuid).lower() in STDLIBS and name not in sources
-
-        for name, uuid in deps.items():
-            declared.append(
-                DeclaredDependency(
-                    name=name,
-                    spec=spec(name)[0],
-                    scope=Scope.PLATFORM if stdlib(name, uuid) else Scope.RUNTIME,
-                    field_name="deps",
-                    platform=JuliaToml.identity(uuid),
-                    note=STDLIB_NOTE if stdlib(name, uuid) else None,
-                )
-            )
-        for name, uuid in weak.items():
-            unlocks = ", ".join(sorted(enables.get(name, []))) or "no extension"
-            declared.append(
-                DeclaredDependency(
-                    name=name,
-                    spec=spec(name)[0],
-                    scope=Scope.PLATFORM if stdlib(name, uuid) else Scope.OPTIONAL,
-                    field_name="weakdeps",
-                    platform=JuliaToml.identity(uuid),
-                    note=f"a weak dependency on a Julia standard library, which loads {unlocks}"
-                    if stdlib(name, uuid)
-                    else f"a weak dependency: installed only by a user who adds it, which loads {unlocks}",
-                )
-            )
-        for name, uuid in extras.items():
-            if name in deps or name in weak:
-                continue
-            declared.append(
-                DeclaredDependency(
-                    name=name,
-                    spec=spec(name)[0],
-                    scope=Scope.PLATFORM
-                    if stdlib(name, uuid)
-                    else Scope.TEST
-                    if name in test_only
-                    else Scope.DEV,
-                    field_name="extras",
-                    platform=JuliaToml.identity(uuid),
-                    note=STDLIB_NOTE
-                    if stdlib(name, uuid)
-                    else "a test-only dependency ([extras] and [targets]): resolved when the tests run, not into the manifest",
-                )
-            )
+        declared = Project._declared(deps, sources, compat, weak, enables, extras, test_only)
         julia = compat.get("julia")
         if isinstance(julia, str):
             declared.append(
@@ -242,6 +199,67 @@ class Project:
             sources=tuple(notes),
             repository=None,
         )
+
+    @staticmethod
+    def _declared(
+        deps: dict[str, Any],
+        sources: dict[str, Any],
+        compat: dict[str, Any],
+        weak: dict[str, Any],
+        enables: dict[str, list[str]],
+        extras: dict[str, Any],
+        test_only: set[str],
+    ) -> list[DeclaredDependency]:
+        """Each dependency in [deps], [weakdeps] and [extras], in its scope: a standard library as platform, a weak one as optional, an extra as test or dev."""
+        declared: list[DeclaredDependency] = []
+
+        for name, uuid in deps.items():
+            declared.append(
+                DeclaredDependency(
+                    name=name,
+                    spec=Project._spec(sources, compat, name)[0],
+                    scope=Scope.PLATFORM if Project._stdlib(sources, name, uuid) else Scope.RUNTIME,
+                    field_name="deps",
+                    platform=JuliaToml.identity(uuid),
+                    note=STDLIB_NOTE if Project._stdlib(sources, name, uuid) else None,
+                )
+            )
+        for name, uuid in weak.items():
+            unlocks = ", ".join(sorted(enables.get(name, []))) or "no extension"
+            declared.append(
+                DeclaredDependency(
+                    name=name,
+                    spec=Project._spec(sources, compat, name)[0],
+                    scope=Scope.PLATFORM
+                    if Project._stdlib(sources, name, uuid)
+                    else Scope.OPTIONAL,
+                    field_name="weakdeps",
+                    platform=JuliaToml.identity(uuid),
+                    note=f"a weak dependency on a Julia standard library, which loads {unlocks}"
+                    if Project._stdlib(sources, name, uuid)
+                    else f"a weak dependency: installed only by a user who adds it, which loads {unlocks}",
+                )
+            )
+        for name, uuid in extras.items():
+            if name in deps or name in weak:
+                continue
+            declared.append(
+                DeclaredDependency(
+                    name=name,
+                    spec=Project._spec(sources, compat, name)[0],
+                    scope=Scope.PLATFORM
+                    if Project._stdlib(sources, name, uuid)
+                    else Scope.TEST
+                    if name in test_only
+                    else Scope.DEV,
+                    field_name="extras",
+                    platform=JuliaToml.identity(uuid),
+                    note=STDLIB_NOTE
+                    if Project._stdlib(sources, name, uuid)
+                    else "a test-only dependency ([extras] and [targets]): resolved when the tests run, not into the manifest",
+                )
+            )
+        return declared
 
     @staticmethod
     def workspace_root(path: str, files: Mapping[str, FileContent]) -> str | None:
