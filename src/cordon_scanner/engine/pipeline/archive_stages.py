@@ -76,7 +76,7 @@ class ArchiveStages:
         # A container image is read the way a runtime assembles it -- layers squashed, whiteouts
         # applied -- rather than as nested tarballs, whose layer members are far past any per-member
         # limit and whose files would be scanned once per layer that touched them.
-        image = self.engine._image_inventory(data, acc)
+        image = self.engine.dependencies.image_inventory(data, acc)
         members: Iterable[tuple[str, bytes]]
         if image is not None:
             from cordon_scanner.images import oci
@@ -386,7 +386,7 @@ class ArchiveStages:
         # without it they had no `GraphUnit` to inspect, so scanning a package
         # archive silently skipped every check about its dependencies.
         self.progress.phase("dependencies")
-        dependencies = self.engine._build_graph(units, acc)
+        dependencies = self.engine.dependencies.build(units, acc)
         if image is not None:
             Images.report_image_contents(image, acc)
         package = PackageFormat.of(units)

@@ -90,10 +90,10 @@ class ScanStages:
     ) -> tuple[tuple[Dependency, ...], tuple[Dependency, ...]]:
         """The dependency graph: lockfiles and manifests, an SBOM named as the target, and submodules."""
         self.progress.phase("dependencies")
-        dependencies = self.engine._build_graph(units, acc)
+        dependencies = self.engine.dependencies.build(units, acc)
         # A bill of materials named as the target is its inventory; in a tree it is a claim to
         # compare with what the tree resolves (`detect/sbom.py`), never counted twice.
-        ingested = self.engine._sbom_dependencies(units, acc) if root.is_file() else ()
+        ingested = self.engine.dependencies.sbom(units, acc) if root.is_file() else ()
         # Repositories checked out as git submodules, at the commits their gitlinks pin.
         from cordon_scanner.detect.source.submodules import Submodules
 
@@ -247,7 +247,7 @@ class ScanStages:
                     if not self.engine.detection.enabled(detector, ctx):
                         continue
                     acc.add(self.engine.detection.run(detector, graph_unit, ctx, acc))
-            acc.add(self.engine._sbom_listed_findings(acc.findings, ctx))
+            acc.add(self.engine.dependencies.sbom_listed_findings(acc.findings, ctx))
 
     def after_detection(
         self,
