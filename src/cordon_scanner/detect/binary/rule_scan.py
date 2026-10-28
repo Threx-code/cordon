@@ -180,10 +180,19 @@ class Part:
             runs = self._runs[entry] = self._runs.get(entry, 0) + 1
             if runs < Part.GATE_AFTER:
                 return True
+            gate = self.gate(entry, nocase, dotall)
+        return gate is None or gate.match(data, at) is not None
+
+    def gate(self, entry: int, nocase: bool, dotall: bool) -> re.Pattern[bytes] | None:
+        """The forward gate of `entry` (`can_start`), built once: zero-width at every position a
+        one-byte-wide run from there can do anything at; None when none helps."""
+        gate: re.Pattern[bytes] | bool | None = self._gates.get(entry, False)
+        if gate is False:
             gate = self._gates[entry] = self.runners()[0].prefilter(
                 entry, nocase=nocase, dotall=dotall, depth=2, chain=8
             )
-        return gate is None or gate.match(data, at) is not None
+        assert not isinstance(gate, bool)  # noqa: S101 - False only before it is built
+        return gate
 
     def runners(self) -> tuple[Threads, Threads]:
         """The forward and backward runners of this part, made once and kept."""
@@ -405,6 +414,10 @@ class Search:
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
             if starts is None:
+                gated = self._gated(data, needle, length, owners)
+                if gated is not None:
+                    events.extend(gated)
+                    continue
                 starts = seen[needle] = Search.occurrences(data, needle)
             if starts:
                 Search._occurred(events, starts, length, owners)
@@ -426,6 +439,43 @@ class Search:
             return []
         events.sort(key=lambda e: (e[0], e[1], e[2]))
         return hunt.run(events)
+
+    #: An anchor occurring more often than this has its forward gate run over the whole data at
+    #: once (`_gated`) rather than tested at each occurrence.
+    GATED: ClassVar[int] = 256
+
+    def _gated(
+        self, data: bytes, needle: bytes, length: int, owners: list[tuple[int, int, AnchorAt]]
+    ) -> list[Event] | None:
+        """The events of a common anchor, from its parts' forward gates run once over the data in
+        C, rather than from every occurrence: an occurrence whose gate fails is one `_Hunt._check`
+        turns away unread, so leaving it out changes no match. Only where that holds -- a pattern
+        part, not `plain`, read one byte wide (no `wide`, `xor` or `base64`) -- and each gated
+        position still has the anchor's bytes where it should. None to take every occurrence."""
+        f = self.flags
+        if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f or f.get("plain"):
+            return None
+        if data.count(needle) <= Search.GATED:
+            return None
+        nocase, dotall = "nocase" in f, "dotall" in f
+        gates = []
+        for _, p, anchor in owners:
+            part = self.parts[p]
+            if part.text is not None or anchor[2] is None:
+                return None
+            gate = part.gate(anchor[2], nocase, dotall)
+            if gate is None:
+                return None
+            gates.append(gate)
+        events: list[Event] = []
+        for (order, p, anchor), gate in zip(owners, gates, strict=True):
+            lead = anchor[1]
+            for found in gate.finditer(data):
+                offset = found.start()
+                at = offset + lead
+                if data.startswith(needle, at):
+                    events.append((at + length, -length, -order, p, anchor, offset))
+        return events
 
     def _holds_required(self, data: bytes, seen: dict[Any, Any]) -> bool:
         """Whether `data` holds every literal run each part's matches must hold
@@ -525,24 +575,20 @@ class AnchorIndex:
                 self.always.add(i)
 
     def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
-        """The strings with an anchor in `data`; `seen` keeps where each anchor occurs, for
-        `Search.find` to use."""
+        """The strings with an anchor in `data`. (`seen` is the data's shared record, which
+        `Search.find` fills with where each anchor occurs.)"""
         out = set(self.always)
         for needle, users in self.exact.items():
-            starts = seen.get(needle)
-            if starts is None:
-                starts = seen[needle] = Search.occurrences(data, needle)
-            if starts:
+            # whether it occurs at all, in C; where, only for a string that is searched
+            # (`Search.find`), and not even there for an anchor its gate reads in one pass
+            if needle in data:
                 out.update(users)
         if self.folded:
             lowered = seen.get(("lowered",))
             if lowered is None:
                 lowered = seen[("lowered",)] = data.lower()
             for folded, users in self.folded.items():
-                starts = seen.get(("folded", folded))
-                if starts is None:
-                    starts = seen[("folded", folded)] = Search.occurrences(lowered, folded)
-                if starts:
+                if folded in lowered:
                     out.update(users)
         return out
 
