@@ -305,10 +305,10 @@ class DependencyPayload:
 
     @staticmethod
     def finding(archive: str, dependency: Resolved, spec: str, cause: Finding) -> Finding:
-        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.operational import OperationalFinding
 
         path = f"{archive}!package/package.json" if archive else "package.json"
-        base = Engine._operational(
+        base = OperationalFinding.build(
             path=path,
             rule_id=RULE_ID,
             message=(

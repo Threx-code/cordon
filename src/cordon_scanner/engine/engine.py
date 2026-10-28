@@ -82,7 +82,6 @@ from cordon_scanner.engine.pipeline.constants import (
     NATIVE_IN_PURE_WHEEL_RULE,
     NATIVE_LOAD,
     NATIVE_MAGIC,
-    NO_RISK,
     NPM_PLACEHOLDER_VERSION,
     PACKAGED_BUILD_FILENAMES,
     PROJECT_BUILD_FILENAMES,
@@ -98,6 +97,7 @@ from cordon_scanner.engine.pipeline.constants import (
     YOUNG_DEPENDENCY_RULE,
 )
 from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.operational import OperationalFinding
 from cordon_scanner.engine.pipeline.results import ResultFolding
 from cordon_scanner.engine.progress import NullProgress, Progress
 from cordon_scanner.engine.walker import (
@@ -116,15 +116,10 @@ from cordon_scanner.foundation.models import (
     Category,
     Confidence,
     Dependency,
-    Evidence,
-    EvidenceKind,
-    Explanation,
     Finding,
     Hook,
     LanguageStat,
-    Location,
     Project,
-    RedactionMode,
     Repository,
     ScanResult,
     ScanStats,
@@ -236,7 +231,7 @@ class Engine:
             seen.add(path)
             out.append(
                 replace(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=path,
                         rule_id=UNEXAMINED_INSTALL_RULE,
                         message=(
@@ -358,7 +353,7 @@ class Engine:
                 continue
             out.append(
                 replace(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="SUSPECT.MCP.BORROWED_NAME.001",
                         message=(
@@ -554,7 +549,7 @@ class Engine:
                 continue
             out.append(
                 replace(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001",
                         message=(
@@ -609,7 +604,7 @@ class Engine:
                 # 300 random npm packages in the corpus were these, blocked as malware.
                 out.append(
                     replace(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=path,
                             rule_id=KNOWN_MALICIOUS_RELEASE_RULE,
                             message=(
@@ -635,7 +630,7 @@ class Engine:
                 continue
             out.append(
                 replace(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=path,
                         rule_id=KNOWN_MALICIOUS_RELEASE_RULE,
                         message=(
@@ -690,7 +685,7 @@ class Engine:
                 if NATIVE_LOAD.search(line) and any(name in line for name in natives):
                     out.append(
                         replace(
-                            Engine._operational(
+                            OperationalFinding.build(
                                 path=unit.path,
                                 rule_id=NATIVE_IN_PURE_WHEEL_RULE,
                                 message=(
@@ -707,7 +702,7 @@ class Engine:
                                 severity=Severity.HIGH,
                             ),
                             location=replace(
-                                Engine._operational(
+                                OperationalFinding.build(
                                     path=unit.path,
                                     rule_id=NATIVE_IN_PURE_WHEEL_RULE,
                                     message="",
@@ -728,7 +723,7 @@ class Engine:
     @staticmethod
     def _changed_while_read(path: str) -> Finding:
         """A file whose windows could not be read from the file that was first read."""
-        return Engine._operational(
+        return OperationalFinding.build(
             path=path,
             rule_id="OPERATIONAL.FILE.UNREADABLE",
             message=(
@@ -767,7 +762,7 @@ class Engine:
             )
         else:
             message = f"Only the first {len(content.raw)} bytes of this {content.size}-byte file were examined."
-        return Engine._operational(
+        return OperationalFinding.build(
             path=path,
             rule_id="OPERATIONAL.FILE.TRUNCATED",
             message=message,
@@ -806,7 +801,7 @@ class Engine:
             # it" -- sends the user's instead (review 98: a skill whose `audit/a` links to
             # /etc/hosts). Packaging tools copy files; a link out to a secret is placed.
             return replace(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path,
                     rule_id=ARCHIVE_LINK_TO_SECRET_RULE,
                     message=(
@@ -822,7 +817,7 @@ class Engine:
             )
         if reason == Rejection.POLYGLOT and not fixture:
             return replace(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path,
                     rule_id=ARCHIVE_POLYGLOT_RULE,
                     message=(
@@ -842,7 +837,7 @@ class Engine:
             # an expansion no packaging tool produces. Twelve megabytes of filler compress to
             # twenty-five kilobytes, so this is the cheapest way to put a payload out of reach.
             return replace(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path,
                     rule_id=ARCHIVE_PADDED_RULE,
                     message=(
@@ -862,7 +857,7 @@ class Engine:
             )
         if reason == Rejection.HIDDEN and not fixture:
             return replace(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path,
                     rule_id=ARCHIVE_POLYGLOT_RULE,
                     message=(
@@ -884,7 +879,7 @@ class Engine:
         ):
             escape = reason != Rejection.DEPTH
             return replace(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path,
                     rule_id=ARCHIVE_ESCAPE_RULE if escape else ARCHIVE_NESTING_RULE,
                     message=(
@@ -907,7 +902,7 @@ class Engine:
                 ),
                 confidence=Confidence.HIGH,
             )
-        return Engine._operational(
+        return OperationalFinding.build(
             path=path,
             rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
             message=(
@@ -924,7 +919,7 @@ class Engine:
     def release_change(*, path: str, rule_id: str, message: str, severity: Severity) -> Finding:
         """A finding about what this release added relative to the previous one."""
         return replace(
-            Engine._operational(
+            OperationalFinding.build(
                 path=path,
                 rule_id=rule_id,
                 message=message,
@@ -946,7 +941,7 @@ class Engine:
     ) -> Finding:
         """A finding about the published package as its registry describes it, not about a file."""
         return replace(
-            Engine._operational(
+            OperationalFinding.build(
                 path=path,
                 rule_id=rule_id,
                 message=message,
@@ -956,46 +951,6 @@ class Engine:
             ),
             confidence=Confidence.HIGH,
             always_report=False,
-        )
-
-    @staticmethod
-    def _operational(
-        *,
-        path: str,
-        rule_id: str,
-        message: str,
-        remediation: str,
-        category: Category = Category.OPERATIONAL,
-        severity: Severity = Severity.INFO,
-    ) -> Finding:
-        """Build a finding about the scan itself.
-
-        Every degradation produces one of these. A file that was not examined is
-        indistinguishable in the output from one that was examined and found clean,
-        so coverage loss must always be stated rather than inferred.
-        """
-        return Finding(
-            rule_id=rule_id,
-            category=category,
-            severity=severity,
-            confidence=Confidence.CONFIRMED,
-            message=message,
-            location=Location(path=path),
-            evidence=Evidence(
-                kind=EvidenceKind.METADATA,
-                match_hash=Evidence.hash_bytes(f"{rule_id}:{path}".encode()),
-                redaction=RedactionMode.NONE,
-            ),
-            remediation=remediation,
-            # No reporting threshold may hide a finding that says coverage was
-            # lost. See PolicyGate.filter_for_reporting.
-            always_report=True,
-            explanation=Explanation(
-                summary="Reported so that reduced coverage is never silent.",
-                matched_rule=rule_id,
-            ),
-            risk=NO_RISK,
-            detector="engine",
         )
 
     def __init__(
@@ -1077,7 +1032,7 @@ class Engine:
         for problem in inventory.problems:
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.HOST.PARTIAL",
                     message=f"Part of the host was not read: {problem}.",
@@ -1132,7 +1087,7 @@ class Engine:
         root = named.resolve()
         if named.is_symlink():
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=str(named),
                     rule_id="OPERATIONAL.FILE.SYMLINK_TARGET",
                     message=(
@@ -1193,7 +1148,7 @@ class Engine:
         for path, problem in unreadable:
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path,
                     rule_id="OPERATIONAL.MANIFEST.UNPARSED",
                     message=f"This .gitmodules could not be read: {problem}. Its submodules are not in the inventory.",
@@ -1348,7 +1303,7 @@ class Engine:
             # Appended directly: the cap is full by definition, and the one
             # finding that explains why must not be the one it drops.
             acc.findings.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.SCAN.FINDING_LIMIT",
                     message=(
@@ -1468,7 +1423,7 @@ class Engine:
             )
             reason = f" The feed could not be used: {status.error}." if status.error else ""
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.INTEL.STALE",
                     message=(
@@ -1566,7 +1521,7 @@ class Engine:
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
                     acc.complete = False
                     acc.append(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.TIMEOUT",
                             message=(
@@ -1590,7 +1545,7 @@ class Engine:
                 ):
                     acc.complete = False
                     acc.append(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
                             message=(
@@ -1621,7 +1576,7 @@ class Engine:
         except ArchiveError as exc:
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path.name,
                     rule_id="OPERATIONAL.ARCHIVE.REJECTED",
                     message=f"The archive was refused and not scanned: {exc.message}",
@@ -1727,7 +1682,7 @@ class Engine:
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
                     acc.complete = False
                     acc.append(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.TIMEOUT",
                             message=f"The {self.config.limits.total_timeout:.0f}s budget was reached with members still unexamined.",
@@ -1759,7 +1714,7 @@ class Engine:
             if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=path.name,
                         rule_id="OPERATIONAL.SCAN.TIMEOUT",
                         message=(
@@ -2211,7 +2166,7 @@ class Engine:
                 # marking it partial is what stops it being read as a pass.
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="OPERATIONAL.SCAN.TIMEOUT",
                         message=(
@@ -2229,7 +2184,7 @@ class Engine:
             if entry.is_symlink:
                 acc.files_skipped += 1
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=entry.rel_path,
                         rule_id="OPERATIONAL.FILE.SYMLINK",
                         message="Symbolic link was recorded but not followed.",
@@ -2244,7 +2199,7 @@ class Engine:
                 acc.files_skipped += 1
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=entry.rel_path,
                         rule_id="OPERATIONAL.FILE.UNREADABLE",
                         message=f"File could not be read ({loaded.reason}); it was not scanned.",
@@ -2287,7 +2242,7 @@ class Engine:
             if 0 < self.config.limits.max_memory_bytes <= retained:
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
                         message=(
@@ -2337,7 +2292,7 @@ class Engine:
                 if 0 < self.config.limits.max_memory_bytes <= retained:
                     acc.complete = False
                     acc.append(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=entry.rel_path,
                             rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
                             message=(
@@ -2365,7 +2320,7 @@ class Engine:
             sample = ", ".join(sorted(unopened)[:5])
             more = f" and {len(unopened) - 5} more" if len(unopened) > 5 else ""
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.ARCHIVE.NOT_EXPANDED",
                     message=(
@@ -2380,7 +2335,7 @@ class Engine:
         if walker.stats.limit_hit:
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.SCAN.LIMIT",
                     message=f"Traversal stopped early: {walker.stats.limit_hit}",
@@ -2429,7 +2384,7 @@ class Engine:
                 else ""
             )
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.WALK.TOO_DEEP",
                     message=(
@@ -2453,7 +2408,7 @@ class Engine:
                 f" and {len(walker.stats.errors) - 5} more" if len(walker.stats.errors) > 5 else ""
             )
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.WALK.ERROR",
                     message=(
@@ -2471,7 +2426,7 @@ class Engine:
 
         for group, name, provider in self.shadowed:
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="POLICY.PLUGIN.SHADOWED",
                     category=Category.POLICY,
@@ -2502,7 +2457,7 @@ class Engine:
             sample = ", ".join(names[:6])
             more = f" and {len(names) - 6} more" if len(names) > 6 else ""
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="POLICY.COVERAGE.PRUNED",
                     category=Category.POLICY,
@@ -2550,7 +2505,7 @@ class Engine:
         # examine it.
         for pattern in walker.stats.unmatched_patterns:
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=pattern,
                     rule_id="POLICY.EXCLUDE.UNMATCHED",
                     category=Category.POLICY,
@@ -2650,7 +2605,7 @@ class Engine:
         if skipped:
             acc.complete = False
             produced.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=unit.path,
                     rule_id="OPERATIONAL.FILE.TIMEOUT",
                     message=(
@@ -2808,7 +2763,7 @@ class Engine:
                 # not produced from.
                 acc.complete = False
                 results.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.FILE.UNREADABLE",
                         message=(
@@ -3196,7 +3151,7 @@ class Engine:
             # line (`intel/registry_record.py`). Content-free malware is found here or not at all.
             graded.append(
                 replace(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=".",
                         rule_id=REGISTRY_REVIEW_RULE,
                         message=(
@@ -3227,7 +3182,7 @@ class Engine:
             rules = sorted(verdict.get("rules", {}), key=lambda r: -verdict["rules"][r])
             graded.append(
                 replace(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=".",
                         rule_id=Verdict.RULE,
                         message=(
@@ -3257,7 +3212,7 @@ class Engine:
             if review.get("decision") == "block":
                 graded.append(
                     replace(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=".",
                             rule_id=INTENT_RULE,
                             message=Intent.message(review, area),
@@ -3844,7 +3799,7 @@ class Engine:
             days = (released - appeared).days
             out.append(
                 replace(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=manifest,
                         rule_id=YOUNG_DEPENDENCY_RULE,
                         message=(
@@ -3974,7 +3929,7 @@ class Engine:
             if oci.ImageLayers.cut_short(data):
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="OPERATIONAL.IMAGE.UNREADABLE",
                         message="The target is a container image archive that ends early: its layers begin and the archive stops before its manifest, so nothing in it was inventoried.",
@@ -3987,7 +3942,7 @@ class Engine:
         except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.UNREADABLE",
                     message=f"The target looks like a container image and its layers could not be read ({type(exc).__name__}), so its operating-system packages were not inventoried.",
@@ -4019,7 +3974,7 @@ class Engine:
         for problem in inventory.problems:
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.PARTIAL",
                     message=f"Part of the image's operating-system inventory is missing: {problem}.",
@@ -4033,7 +3988,7 @@ class Engine:
         )
         if inventory.packages and self.config.offline and not synced:
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.NOT_MATCHED",
                     message=(
@@ -4060,7 +4015,7 @@ class Engine:
             f"{count} ({reason})" for reason, count in sorted(inventory.skipped.items())
         )
         acc.append(
-            Engine._operational(
+            OperationalFinding.build(
                 path=REPOSITORY_SCOPE,
                 rule_id="OPERATIONAL.IMAGE.CONTENTS",
                 message=(
@@ -4095,7 +4050,7 @@ class Engine:
         if oversize:
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.PARTIAL",
                     message=(
@@ -4124,7 +4079,7 @@ class Engine:
             if unreadable:
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.SBOM.INVALID",
                         message=f"This file is named or shaped as a bill of materials and was not read: {unreadable}. Nothing from it is in the inventory.",
@@ -4139,7 +4094,7 @@ class Engine:
             for problem in reading.problems[:20]:
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.SBOM.INVALID",
                         message=f"Part of this bill of materials could not be believed: {problem}. What it says there was not read into the inventory.",
@@ -4149,7 +4104,7 @@ class Engine:
                 )
             if len(reading.problems) > 20:
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.SBOM.INVALID",
                         message=f"{len(reading.problems) - 20} further problems in this bill of materials were not listed.",
@@ -4213,7 +4168,7 @@ class Engine:
                 "medium": Severity.MEDIUM,
                 "low": Severity.LOW,
             }.get(listed.severity or "", Severity.MEDIUM)
-            finding = Engine._operational(
+            finding = OperationalFinding.build(
                 path=path,
                 rule_id="VULNERABLE.SBOM.LISTED.001",
                 message=(
@@ -4238,7 +4193,7 @@ class Engine:
             )
         for path, count in sorted(ruled_out.items()):
             out.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=path,
                     rule_id="OPERATIONAL.SBOM.VEX_NOT_APPLIED",
                     message=(
@@ -4429,7 +4384,7 @@ class Engine:
             except Exception as exc:  # noqa: BLE001
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.PARSER.FAILED",
                         message=(
@@ -4478,7 +4433,7 @@ class Engine:
             if len(collected) > self.config.limits.max_dependencies:
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.GRAPH.LIMIT",
                         message=(
@@ -4601,7 +4556,7 @@ class Engine:
                 continue  # the readable lockfile is beside it and is what was read
             acc.complete = False
             acc.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=unit.path,
                     rule_id="OPERATIONAL.LOCKFILE.UNSUPPORTED",
                     message=(
@@ -5522,7 +5477,7 @@ class Engine:
             if len(collected) > self.config.limits.max_dependencies:
                 acc.complete = False
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.GRAPH.LIMIT",
                         message=(
@@ -5600,7 +5555,7 @@ class Engine:
                 acc.complete = False
                 acc.rejected_archives.add(rel_path)
                 acc.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=rel_path,
                         rule_id="OPERATIONAL.ARCHIVE.REJECTED",
                         message=(
@@ -5630,7 +5585,7 @@ class Engine:
                     members = None
                     acc.complete = False
                     acc.append(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=rel_path,
                             rule_id="OPERATIONAL.ARCHIVE.REJECTED",
                             message=f"The archive was refused and not scanned: {exc.message}",
@@ -5971,7 +5926,7 @@ class Engine:
                 if acc is not None:
                     acc.complete = False
                     acc.append(
-                        Engine._operational(
+                        OperationalFinding.build(
                             path=unit.path,
                             rule_id="OPERATIONAL.PARSER.FAILED",
                             message=(
@@ -6082,7 +6037,7 @@ class Engine:
             sample = ", ".join(sorted(lfs_pointers)[:5])
             more = f" and {len(lfs_pointers) - 5} more" if len(lfs_pointers) > 5 else ""
             findings.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.FILE.LFS_POINTER",
                     severity=Severity.INFO,
@@ -6102,7 +6057,7 @@ class Engine:
             sample = ", ".join(sorted(binary)[:5])
             more = f" and {len(binary) - 5} more" if len(binary) > 5 else ""
             findings.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.FILE.BINARY",
                     severity=Severity.INFO,
@@ -6141,7 +6096,7 @@ class Engine:
                     f"{pattern!r} ({count})" for pattern, count in sorted(removed.items())
                 ) or ", ".join(repr(p) for p in sorted(self.config.untrusted_exclusions))
                 findings.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.TARGET_EXCLUSION",
                         category=Category.POLICY,
@@ -6189,7 +6144,7 @@ class Engine:
                 )
             )
             findings.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="POLICY.COVERAGE.NOTHING_SCANNED",
                     category=Category.POLICY,
@@ -6217,7 +6172,7 @@ class Engine:
             # fires constantly on correct configuration gets excluded itself.
             if share >= BROAD_EXCLUSION_SHARE:
                 findings.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.BROAD_EXCLUSION",
                         category=Category.POLICY,
@@ -6242,7 +6197,7 @@ class Engine:
             disabled = sorted(name for name, on in self.config.detectors.items() if on is False)
             if disabled:
                 findings.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.DETECTOR_DISABLED",
                         category=Category.POLICY,
@@ -6267,7 +6222,7 @@ class Engine:
             if self.config.disabled_rules:
                 names = ", ".join(sorted(self.config.disabled_rules))
                 findings.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.RULE_DISABLED",
                         category=Category.POLICY,
@@ -6297,7 +6252,7 @@ class Engine:
                 # as a repository that outgrew a default, so it fails.
                 truncated = not complete
                 findings.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="POLICY.CONFIG.LIMIT_REDUCED",
                         category=Category.POLICY,
@@ -6333,7 +6288,7 @@ class Engine:
                 gate = setting.startswith("policy.")
                 blinding = setting in BLINDING_SETTINGS
                 findings.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id=(
                             "POLICY.CONFIG.GATE_WEAKENED"
@@ -6416,7 +6371,7 @@ class Engine:
         except Exception as exc:  # noqa: BLE001
             acc.complete = False
             return [
-                Engine._operational(
+                OperationalFinding.build(
                     path=getattr(unit, "path", "<graph>"),
                     rule_id="OPERATIONAL.DETECTOR.FAILED",
                     message=(
@@ -6456,7 +6411,7 @@ class Engine:
                 # must not abort anything.
                 acc.complete = False
                 kept.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
                         message=(

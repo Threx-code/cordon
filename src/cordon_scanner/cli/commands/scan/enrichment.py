@@ -28,6 +28,7 @@ class ScanEnrichment:
         from cordon_scanner.decide.policy import SuppressionMatcher
         from cordon_scanner.detect.agents.model import MALICIOUS_PACKAGE, UNAVAILABLE
         from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.pipeline.operational import OperationalFinding
         from cordon_scanner.intel.malware.feed import FeedClient
         from cordon_scanner.model.client import ModelClient, ModelError, ModelTargets
 
@@ -71,7 +72,7 @@ class ScanEnrichment:
             if capped:
                 complete = False
                 added.append(
-                    Engine._operational(
+                    OperationalFinding.build(
                         path=".",
                         rule_id=UNAVAILABLE,
                         message="More packages were found than one scan sends to the model (2,000); the rest were not scored.",
@@ -81,7 +82,7 @@ class ScanEnrichment:
         except ModelError as exc:
             complete = False
             added.append(
-                Engine._operational(
+                OperationalFinding.build(
                     path=".",
                     rule_id=UNAVAILABLE,
                     message=f"Cordon's model was not asked: {exc}",
