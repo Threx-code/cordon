@@ -302,6 +302,47 @@ class BinaryDetector(BaseDetector):
         )
         if mismatch is None and named is None and not content.is_lfs_pointer and not own_format:
             mismatch = self.binary_source(content.path, judged)
+        self._mismatch_finding(content, ctx, findings, judged, mismatch, named, unit)
+
+        if found is not None and found.executable and found.name != "shell script":
+            findings.extend(self._executable_findings(unit, ctx, content, found))
+            return findings
+
+        # A recognised, non-executable format is what it says it is. A PNG
+        # containing the string "https://" is a screenshot of a browser, and
+        # reporting it as a binary carrying a URL is noise -- it happened on
+        # Flask's own documentation images. The strings pass exists for things
+        # that might run, not for everything that is not text.
+        #
+        # A shell script with a shebang is source, and every content rule
+        # already reads it; reporting it here would double every script in
+        # every repository.
+        if found is not None:
+            return findings
+
+        # Not a recognised format, but not text either. This is the case that
+        # matters most, because it is what an attacker produces on purpose:
+        # `is_binary` is anchored at offset zero by design, so prepending
+        # `/* NUL */` to an ELF stops it being an executable *and* stops it
+        # being identified. The file is still not text, still contains whatever
+        # it contained, and must not become silent -- so the content checks run
+        # on what the bytes actually hold rather than on what the header claims.
+        if self._looks_binary(raw) and not self._is_font(content.path, raw):
+            findings.extend(self._content_findings(unit, ctx, content))
+
+        return findings
+
+    def _mismatch_finding(
+        self,
+        content: FileContent,
+        ctx: ScanContext,
+        findings: list[Finding],
+        judged: bytes,
+        mismatch: str | None,
+        named: Format | None,
+        unit: FileUnit,
+    ) -> None:
+        """The finding for a file whose bytes say one format and whose name says another, graded down where the pair is a known benign one."""
         if mismatch is not None:
             finding = self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch)
             if (
@@ -341,34 +382,6 @@ class BinaryDetector(BaseDetector):
                     "raised.",
                 )
             findings.append(finding)
-
-        if found is not None and found.executable and found.name != "shell script":
-            findings.extend(self._executable_findings(unit, ctx, content, found))
-            return findings
-
-        # A recognised, non-executable format is what it says it is. A PNG
-        # containing the string "https://" is a screenshot of a browser, and
-        # reporting it as a binary carrying a URL is noise -- it happened on
-        # Flask's own documentation images. The strings pass exists for things
-        # that might run, not for everything that is not text.
-        #
-        # A shell script with a shebang is source, and every content rule
-        # already reads it; reporting it here would double every script in
-        # every repository.
-        if found is not None:
-            return findings
-
-        # Not a recognised format, but not text either. This is the case that
-        # matters most, because it is what an attacker produces on purpose:
-        # `is_binary` is anchored at offset zero by design, so prepending
-        # `/* NUL */` to an ELF stops it being an executable *and* stops it
-        # being identified. The file is still not text, still contains whatever
-        # it contained, and must not become silent -- so the content checks run
-        # on what the bytes actually hold rather than on what the header claims.
-        if self._looks_binary(raw) and not self._is_font(content.path, raw):
-            findings.extend(self._content_findings(unit, ctx, content))
-
-        return findings
 
     #: What code looks like when nothing announces its format: a script's opening, a call that
     #: runs or loads something, a language's markers. Read in the first few kilobytes.

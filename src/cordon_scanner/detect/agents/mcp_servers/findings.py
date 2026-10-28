@@ -386,60 +386,74 @@ class McpServerFindings:
                 yield AgentFinding.at_text(
                     "POLICY.AGENT.MCP_BROAD_SCOPE.001", unit, ctx, text, scope
                 )
-            spec = McpConfigs.launched_package(command, args)
-            if spec is not None:
-                ecosystem, package, pinned = spec
-                imitated = agent_config.PackageLookalike.lookalike_of(package)
-                if imitated is not None:
-                    yield AgentFinding.at_text(
-                        "SUSPECT.MCP.LOOKALIKE.001",
-                        unit,
-                        ctx,
-                        text,
-                        package,
-                        message=RULES["SUSPECT.MCP.LOOKALIKE.001"].message
-                        + f" ({package} imitates {imitated})",
-                    )
-                if not pinned:
-                    yield AgentFinding.at_text(
-                        "SUSPECT.MCP.UNPINNED.001",
-                        unit,
-                        ctx,
-                        text,
-                        package,
-                        message=RULES["SUSPECT.MCP.UNPINNED.001"].message
-                        + f" ({ecosystem}: {package})",
-                    )
-            elif command.rsplit("/", 1)[-1] in ("docker", "podman") and "run" in args:
-                launched = agent_config.ServerExposure.docker_run(args)
-                image = launched.image if launched is not None else None
-                if launched is not None and launched.host_access:
-                    yield AgentFinding.at_text(
-                        "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
-                        unit,
-                        ctx,
-                        text,
-                        launched.host_access[0].split(" ", 1)[-1].split("=", 1)[0],
-                        severity=Severity.MEDIUM if launched.socket_only else None,
-                        message=RULES["SUSPECT.MCP.CONTAINER_HOST_ACCESS.001"].message
-                        + f" ({', '.join(launched.host_access)})"
-                        + (
-                            " Only the Docker socket is mounted -- what a Docker-management"
-                            " server needs -- so this is reported for review."
-                            if launched.socket_only
-                            else ""
-                        ),
-                    )
-                if image and "@sha256:" not in image:
-                    yield AgentFinding.at_text(
-                        "SUSPECT.MCP.UNPINNED.001",
-                        unit,
-                        ctx,
-                        text,
-                        image,
-                        message=RULES["SUSPECT.MCP.UNPINNED.001"].message + f" (image: {image})",
-                    )
+            yield from McpServerFindings._launched_package_findings(args, command, ctx, text, unit)
 
+        yield from McpServerFindings._environment_findings(ctx, server, text, unit)
+
+    @staticmethod
+    def _launched_package_findings(
+        args: list[str], command: str, ctx: ScanContext, text: str, unit: FileUnit
+    ) -> Iterator[Finding]:
+        """The findings about the package a server's command launches: a lookalike of a known server, an unpinned version, a container run with the host's privileges."""
+        spec = McpConfigs.launched_package(command, args)
+        if spec is not None:
+            ecosystem, package, pinned = spec
+            imitated = agent_config.PackageLookalike.lookalike_of(package)
+            if imitated is not None:
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.LOOKALIKE.001",
+                    unit,
+                    ctx,
+                    text,
+                    package,
+                    message=RULES["SUSPECT.MCP.LOOKALIKE.001"].message
+                    + f" ({package} imitates {imitated})",
+                )
+            if not pinned:
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.UNPINNED.001",
+                    unit,
+                    ctx,
+                    text,
+                    package,
+                    message=RULES["SUSPECT.MCP.UNPINNED.001"].message
+                    + f" ({ecosystem}: {package})",
+                )
+        elif command.rsplit("/", 1)[-1] in ("docker", "podman") and "run" in args:
+            launched = agent_config.ServerExposure.docker_run(args)
+            image = launched.image if launched is not None else None
+            if launched is not None and launched.host_access:
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
+                    unit,
+                    ctx,
+                    text,
+                    launched.host_access[0].split(" ", 1)[-1].split("=", 1)[0],
+                    severity=Severity.MEDIUM if launched.socket_only else None,
+                    message=RULES["SUSPECT.MCP.CONTAINER_HOST_ACCESS.001"].message
+                    + f" ({', '.join(launched.host_access)})"
+                    + (
+                        " Only the Docker socket is mounted -- what a Docker-management"
+                        " server needs -- so this is reported for review."
+                        if launched.socket_only
+                        else ""
+                    ),
+                )
+            if image and "@sha256:" not in image:
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.UNPINNED.001",
+                    unit,
+                    ctx,
+                    text,
+                    image,
+                    message=RULES["SUSPECT.MCP.UNPINNED.001"].message + f" (image: {image})",
+                )
+
+    @staticmethod
+    def _environment_findings(
+        ctx: ScanContext, server: dict[str, Any], text: str, unit: FileUnit
+    ) -> Iterator[Finding]:
+        """The findings in what a server is launched with: secrets in its environment, and headers or variables that carry them in plain text."""
         environment = server.get("env")
         if isinstance(environment, dict):
             for name, value in environment.items():

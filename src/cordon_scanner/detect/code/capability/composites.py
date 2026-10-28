@@ -182,6 +182,32 @@ class CompositeEvaluator:
         all_hits: list[CapabilityHit] | None = None,
     ) -> bool:
         all_hits = window if all_hits is None else all_hits
+        window = CompositeEvaluator._fixed_argv_window(all_hits, window)
+        # The file runs at install time; this window has to as well. If any hit
+        # in it sits in a body the hooks never call, the pair the composite
+        # describes is not something that happens during an install -- so the
+        # `context: install_hook` term is not satisfied for THIS window, even
+        # though it is for the file.
+        #
+        # `any` rather than `all`: the claim is that these capabilities occur
+        # together during an install, and one half of the pair sitting in dead
+        # code is enough for that not to be true.
+        if in_hook and deferred and any(LineRanges.cls_in(hit.line, deferred) for hit in window):
+            in_hook = False
+
+        present = {hit.capability for hit in window}
+        counts: Counter[Capability] = Counter()
+        for hit in window:
+            if not hit.resolved:
+                counts[hit.capability] += hit.variants
+        fired = frozenset(hit.rule_id for hit in window)
+        return self.evaluate(compiled, present, path, in_hook, counts, fired, in_ci, in_consumer)
+
+    @staticmethod
+    def _fixed_argv_window(
+        all_hits: list[CapabilityHit], window: list[CapabilityHit]
+    ) -> list[CapabilityHit]:
+        """The window without the spawns whose whole argv is written out: they run a fixed program, and count only where nothing else speaks for the composite."""
         # A spawn whose whole argv is written out in the source does not count.
         #
         # Every composite that names `spawn` uses it as evidence that something
@@ -251,30 +277,11 @@ class CompositeEvaluator:
             if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
         }
         fixed_lines = {hit.line for hit in all_hits if hit.fixed} - speaking_argv
-        window = [
+        return [
             hit
             for hit in window
             if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
         ]
-        # The file runs at install time; this window has to as well. If any hit
-        # in it sits in a body the hooks never call, the pair the composite
-        # describes is not something that happens during an install -- so the
-        # `context: install_hook` term is not satisfied for THIS window, even
-        # though it is for the file.
-        #
-        # `any` rather than `all`: the claim is that these capabilities occur
-        # together during an install, and one half of the pair sitting in dead
-        # code is enough for that not to be true.
-        if in_hook and deferred and any(LineRanges.cls_in(hit.line, deferred) for hit in window):
-            in_hook = False
-
-        present = {hit.capability for hit in window}
-        counts: Counter[Capability] = Counter()
-        for hit in window:
-            if not hit.resolved:
-                counts[hit.capability] += hit.variants
-        fired = frozenset(hit.rule_id for hit in window)
-        return self.evaluate(compiled, present, path, in_hook, counts, fired, in_ci, in_consumer)
 
     def evaluate(
         self,

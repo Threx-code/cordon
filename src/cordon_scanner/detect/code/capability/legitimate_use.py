@@ -180,14 +180,6 @@ class LegitimateUse:
         except (SyntaxError, ValueError, RecursionError):
             return False
 
-        def environ(node: ast.AST) -> bool:
-            return (
-                isinstance(node, ast.Attribute)
-                and node.attr == "environ"
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "os"
-            )
-
         parents: dict[int, ast.AST] = {}
         for node in PythonSyntax.nodes(tree):
             for child in ast.iter_child_nodes(node):
@@ -232,23 +224,12 @@ class LegitimateUse:
         for node in PythonSyntax.nodes(tree):
             key: str | None = None
             if (
-                environ(node)
+                LegitimateUse._environ(node)
                 and not isinstance(parents.get(id(node)), ast.Subscript | ast.Attribute)
                 and getattr(node, "lineno", 0) not in handed
             ):
                 return False  # the environment as a whole, other than handed to a child
-            if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
-                func = node.func
-                if (
-                    isinstance(func, ast.Attribute) and func.attr == "get" and environ(func.value)
-                ) or (isinstance(func, ast.Attribute) and func.attr == "getenv"):
-                    key = str(node.args[0].value)
-            elif (
-                isinstance(node, ast.Subscript)
-                and environ(node.value)
-                and isinstance(node.slice, ast.Constant)
-            ):
-                key = str(node.slice.value)
+            key = LegitimateUse._credential_key(key, node)
             if key is None or not CREDENTIAL_VARIABLE.search(key):
                 continue
             reads += 1
@@ -260,17 +241,7 @@ class LegitimateUse:
                 ),
                 None,
             )
-            carrier = parents.get(id(node))
-            while isinstance(
-                carrier,
-                ast.keyword
-                | ast.BinOp
-                | ast.JoinedStr
-                | ast.FormattedValue
-                | ast.BoolOp
-                | ast.Dict,
-            ):
-                carrier = parents.get(id(carrier))
+            carrier = LegitimateUse._carrier_call(node, parents)
             if service is None or not isinstance(carrier, ast.Call):
                 return False
             hosts = urls_in(carrier)
@@ -279,6 +250,45 @@ class LegitimateUse:
             ):
                 return False
         return reads > 0
+
+    @staticmethod
+    def _credential_key(key: str | None, node: ast.AST) -> str | None:
+        """The variable name an environment read asks for: os.environ.get, os.getenv or os.environ[...] with a literal name."""
+        if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "get"
+                and LegitimateUse._environ(func.value)
+            ) or (isinstance(func, ast.Attribute) and func.attr == "getenv"):
+                key = str(node.args[0].value)
+        elif (
+            isinstance(node, ast.Subscript)
+            and LegitimateUse._environ(node.value)
+            and isinstance(node.slice, ast.Constant)
+        ):
+            key = str(node.slice.value)
+        return key
+
+    @staticmethod
+    def _carrier_call(node: ast.AST, parents: dict[int, ast.AST]) -> ast.AST | None:
+        """The node a credential read is handed to, past the keywords, operators, f-strings and dicts that only carry it."""
+        carrier = parents.get(id(node))
+        while isinstance(
+            carrier,
+            ast.keyword | ast.BinOp | ast.JoinedStr | ast.FormattedValue | ast.BoolOp | ast.Dict,
+        ):
+            carrier = parents.get(id(carrier))
+        return carrier
+
+    @staticmethod
+    def _environ(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "environ"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+        )
 
     @staticmethod
     def official_installs_only(content: FileContent, hits: list[CapabilityHit]) -> bool:
