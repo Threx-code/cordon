@@ -342,10 +342,10 @@ class GradleBuild:
     dependencies: list[DeclaredDependency] = field(default_factory=list)
     constraints: dict[str, str] = field(default_factory=dict)
     forced: dict[str, str] = field(default_factory=dict)
+    """`resolutionStrategy.force` versions: unlike a constraint, they win over a declared one."""
     substituted: set[str] = field(default_factory=set)
     """Modules a substitution replaces: requested, never fetched, so not in the inventory. The
     module substituted in records which one it replaced."""
-    """`resolutionStrategy.force` versions: unlike a constraint, they win over a declared one."""
     sources: list[str] = field(default_factory=list)
     includes: list[str] = field(default_factory=list)
     included_builds: list[str] = field(default_factory=list)

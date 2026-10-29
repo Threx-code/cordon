@@ -121,6 +121,30 @@ GIT_ENVIRONMENT: dict[str, str] = {
     # is stated absolutely and should be true absolutely rather than by
     # coincidence of which subcommands are currently called.
 }
+"""Environment overrides applied to every invocation.
+
+Deliberately short. An earlier version also set `GIT_CONFIG_SYSTEM`,
+`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM` and `GIT_ATTR_NOSYSTEM` to suppress
+the machine's own git configuration, on the reasoning that a scan should not
+depend on the machine it runs on.
+
+Those are removed, for two reasons.
+
+The first is that they defended against nothing. The attacker in this threat
+model controls the *scanned repository*, which means `.git/config` and
+`.gitattributes` inside the tree. It does not control the user's global config
+or the system config -- anyone who can write those already runs code as the
+user. Every dangerous key is neutralised by the `-c` arguments in `HARDENING`
+instead, which git ranks above every configuration file, repository-local
+included. That is the control; this was decoration on top of it.
+
+The second is that the decoration broke something real. Git for Windows sets
+`core.autocrlf=true` in its system configuration. Suppress that and git compares
+a CRLF working tree against LF blobs and calls every text file modified, so
+`--git-diff` and `--tracked` would have reported every text file in the
+repository as changed on every Windows machine. A control that provides no
+protection and silently corrupts the result on one platform is worse than
+nothing, because its name suggests it is earning its place."""
 
 GIT_UNSET: tuple[str, ...] = (
     "GIT_INDEX_FILE",
@@ -154,30 +178,6 @@ Removed rather than set empty. An empty `GIT_DIR` is a value git acts on, not an
 absence -- setting these to `""` broke every git invocation in the suite, which
 is how I found out.
 """
-"""Environment overrides applied to every invocation.
-
-Deliberately short. An earlier version also set `GIT_CONFIG_SYSTEM`,
-`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM` and `GIT_ATTR_NOSYSTEM` to suppress
-the machine's own git configuration, on the reasoning that a scan should not
-depend on the machine it runs on.
-
-Those are removed, for two reasons.
-
-The first is that they defended against nothing. The attacker in this threat
-model controls the *scanned repository*, which means `.git/config` and
-`.gitattributes` inside the tree. It does not control the user's global config
-or the system config -- anyone who can write those already runs code as the
-user. Every dangerous key is neutralised by the `-c` arguments in `HARDENING`
-instead, which git ranks above every configuration file, repository-local
-included. That is the control; this was decoration on top of it.
-
-The second is that the decoration broke something real. Git for Windows sets
-`core.autocrlf=true` in its system configuration. Suppress that and git compares
-a CRLF working tree against LF blobs and calls every text file modified, so
-`--git-diff` and `--tracked` would have reported every text file in the
-repository as changed on every Windows machine. A control that provides no
-protection and silently corrupts the result on one platform is worse than
-nothing, because its name suggests it is earning its place."""
 
 
 @dataclass(frozen=True, slots=True)
