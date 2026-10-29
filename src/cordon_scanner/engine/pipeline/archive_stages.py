@@ -384,10 +384,12 @@ class ArchiveStages:
         # without it they had no `GraphUnit` to inspect, so scanning a package
         # archive silently skipped every check about its dependencies.
         self.progress.phase("dependencies")
-        dependencies = self.engine.dependencies.build(units, acc)
+        package = PackageFormat.of(units)
+        # A published package's inventory is its root manifest and lockfile (`DependencyScope`).
+        published = package if image is None else ""
+        dependencies = self.engine.dependencies.build(units, acc, published=published)
         if image is not None:
             Images.report_image_contents(image, acc)
-        package = PackageFormat.of(units)
         target_kind = "image" if image is not None else "package" if package else "archive"
         if package:
             # A consumer's installer resolves from the package's declared metadata, never from a

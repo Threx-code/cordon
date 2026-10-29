@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from cordon_scanner.ecosystems.base import DeclaredDependency
+    from cordon_scanner.engine.pipeline.dependency_scope import DependencyScope
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -39,9 +40,13 @@ class Graph:
     }
 
     @staticmethod
-    def unread_dependency_files(units: list[FileUnit], acc: Accumulator) -> None:
+    def unread_dependency_files(
+        units: list[FileUnit], acc: Accumulator, scope: DependencyScope | None = None
+    ) -> None:
         present = {u.path for u in units}
         for unit in units:
+            if scope is not None and not scope.reads(unit.path):
+                continue
             name = unit.path.rpartition("/")[2]
             known = Graph.UNREAD_DEPENDENCY_FILES.get(name)
             if known is None:
