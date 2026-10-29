@@ -122,12 +122,14 @@ CONTROL = re.compile(r"(?:exit(?:\s+\d{1,3})?|true|:)")
 """Shell words that do nothing but end or succeed: `echo "use pnpm" && exit 1` is a guard."""
 
 FILE_TEST = re.compile(
-    r"(?:test|\[)\s++(?:!\s*+)?-[defrsxz]\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}(?:\s+\])?"
+    r"(?:test|\[)\s++(?:!\s*+)?-[defrsxz]\s++(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}(?:\s+\])?"
 )
 r"""A test of a path inside the package, as in `test -d dist || npm run build || true`: it runs
 nothing and only decides whether the step after it does, which is judged on its own. The blanks
 around the `!` are taken once (`\s++(?:!\s*+)?`): as `\s+!?\s*` they split one run every way, which
-`fullmatch` did on every lifecycle-script word (review 98, 27-PERFORMANCE)."""
+`fullmatch` did on every lifecycle-script word, and so are the blanks after the flag: the path
+cannot start with one, and each blank `\s+` gave back ran the `(?!.*\.\.)` lookahead again
+(review 98, 27-PERFORMANCE)."""
 
 CD_INSIDE = re.compile(r"cd\s++(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}")
 r"""A change of directory inside the package: what the command after it runs still decides. The

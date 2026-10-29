@@ -21,6 +21,7 @@ registry detector it complements.
 
 from __future__ import annotations
 
+import bisect
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -71,6 +72,12 @@ SUPPORTED_ECOSYSTEMS = frozenset(
 )
 
 _GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
+"""The owner and name in a GitHub URL. Read through `ProvenanceDetector._github_owner_repo`, which gives
+what `_GITHUB_OWNER_REPO.search` would: as an expression, a long run of `:` after `github.com` with no
+`/` to end the owner was split every way between `[:/]+` and `[^/]+` (review 98, 27-PERFORMANCE)."""
+_GITHUB_HOST = re.compile(r"github\.com", re.IGNORECASE)
+_SEPARATORS = re.compile(r"[:/]*")
+_REPOSITORY_NAME = re.compile(r"[^/#?]+")
 
 
 class ProvenanceDetector(BaseDetector):
@@ -598,6 +605,33 @@ class ProvenanceDetector(BaseDetector):
         return ("github.com", current[0], current[1])
 
     @staticmethod
+    def _github_owner_repo(text: str) -> tuple[str, str] | None:
+        """`_GITHUB_OWNER_REPO.search(text)`'s two groups, or None, each part read once.
+
+        After a `github.com`, the expression takes a run of `:` and `/` (longest first), then an
+        owner up to the next `/`, then a name of `[^/#?]+`. A shorter owner never helps, since it
+        must end at a `/` and holds none, so each length of the run has one candidate: the owner
+        runs from the run's end to the next `/` (and must not be empty), and the name starts after
+        that `/` (and must not be empty). The first `github.com` with a length that works, the
+        longest length first, is the match.
+        """
+        slashes = [i for i, character in enumerate(text) if character == "/"]
+        for host in _GITHUB_HOST.finditer(text):
+            run_start = host.end()
+            run_end = _SEPARATORS.match(text, run_start).end()  # type: ignore[union-attr]
+            index = bisect.bisect_left(slashes, run_end)
+            slash = slashes[index] if index < len(slashes) else -1
+            for owner_start in range(run_end, run_start, -1):
+                if owner_start < run_end and text[owner_start] == "/":
+                    slash = owner_start
+                if slash <= owner_start:
+                    continue
+                name = _REPOSITORY_NAME.match(text, slash + 1)
+                if name is not None:
+                    return text[owner_start:slash], name.group()
+        return None
+
+    @staticmethod
     def _source_identity(repository: str | None) -> tuple[str, str, str] | None:
         """The declared source repo as `(forge, owner, name)`, GitHub case kept.
 
@@ -610,10 +644,10 @@ class ProvenanceDetector(BaseDetector):
         identity = RegistryEvidence.repository_identity(repository)
         if identity is None or identity[0] != "github.com":
             return None
-        match = _GITHUB_OWNER_REPO.search(repository or "")
-        if not match:
+        found = ProvenanceDetector._github_owner_repo(repository or "")
+        if found is None:
             return identity
-        owner, name = match.group(1), match.group(2)
+        owner, name = found
         if name.endswith(".git"):
             name = name[:-4]
         return ("github.com", owner, name)

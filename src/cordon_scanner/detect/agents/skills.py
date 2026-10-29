@@ -4,7 +4,9 @@ ship with it.
 
 from __future__ import annotations
 
+import bisect
 import re
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar, Final
 
 if TYPE_CHECKING:
@@ -39,6 +41,27 @@ _DECODE_CALL: Final = re.compile(
     rf"\b{_DECODER}\s*\(\s*(?P<arg>{_ENCODED_LITERAL}|[A-Za-z_]\w{{0,40}})"
     r"|\bBuffer\.from\s*\(\s*(?P<jsarg>[^,)]{1,200}),\s*['\"]base64['\"]"
 )
+#: `_DECODE_CALL`'s three ways to match, in its order, read by `SkillScripts.decode_calls`: as one
+#: expression, `\b(?:[\w.]+\.)?` read a dotted run again from every word start in it -- quadratic in
+#: `.2.2.2...`, in a skill's scripts (review 98, 27-PERFORMANCE).
+_DECODE_NAMED: Final = re.compile(
+    r"\b(?:[\w.]+\.)?(?:b64decode|b32decode|b85decode|a85decode|decodebytes|decompress|unhexlify|"
+    rf"fromhex|atob)\s*\(\s*(?P<arg>{_ENCODED_LITERAL}|[A-Za-z_]\w{{0,40}})"
+)
+_DECODE_LOADS: Final = re.compile(
+    rf"\b(?:marshal|pickle)\.loads\s*\(\s*(?P<arg>{_ENCODED_LITERAL}|[A-Za-z_]\w{{0,40}})"
+)
+_DECODE_BUFFER: Final = re.compile(
+    r"\bBuffer\.from\s*\(\s*(?P<arg>[^,)]{1,200}),\s*['\"]base64['\"]"
+)
+_DOTTED_RUN: Final = re.compile(r"[\w.]+")
+#: A line assigning a name an encoded literal, and a call that executes a bare name: each read once
+#: per text by `SkillScripts.decode_run` (`_encoded_names`, `_executions`).
+_ASSIGNED_ENCODED: Final = re.compile(
+    rf"(?m)^\s*(?:const\s+|let\s+|var\s+)?([A-Za-z_]\w{{0,40}})\s*=\s*{_ENCODED_LITERAL}"
+)
+_EXECUTES_NAME: Final = re.compile(r"\b(?:exec|eval|Function)\s*\(\s*([A-Za-z_]\w*)\s*[,)]")
+_BOUNDARY: Final = re.compile(r"\b")
 
 #: A shell or PowerShell running an encoded literal.
 _SHELL_DECODE_RUN: Final = re.compile(
@@ -108,6 +131,59 @@ class SkillScripts:
         return None
 
     @staticmethod
+    def decode_calls(text: str) -> Iterator[re.Match[str]]:
+        r"""`_DECODE_CALL.finditer(text)`, each dotted run read once: the same matches, at the same
+        places, with the argument as `arg` (`_DECODE_CALL`'s `arg` or `jsarg`).
+
+        At each place `_DECODE_CALL` tries `_DECODE_NAMED`, then `_DECODE_LOADS`, then
+        `_DECODE_BUFFER`. The last two start with a fixed word, so a search finds them. The first
+        can only start in a run of `[\w.]`, and if it matches at a word start in a run it matches
+        at the run's first boundary too, with a longer prefix -- which is where the search would
+        have found it first -- unless that boundary is a `.` just before the word, too short to be
+        a prefix (`[\w.]+\.`), so the word after it is tried as well. So each run is tried once,
+        from that boundary, and the leftmost of the three is the match.
+        """
+        runs = [(m.start(), m.end()) for m in _DOTTED_RUN.finditer(text)]
+        later: dict[re.Pattern[str], re.Match[str] | None] = {}
+        position, index = 0, 0
+        while position <= len(text):
+            for pattern in (_DECODE_LOADS, _DECODE_BUFFER):
+                found = later.get(pattern)
+                if pattern not in later or (found is not None and found.start() < position):
+                    later[pattern] = pattern.search(text, position)
+            limit = min(
+                (found.start() for found in later.values() if found is not None), default=len(text)
+            )
+            while index < len(runs) and runs[index][1] <= position:
+                index += 1
+            named = None
+            for run in range(index, len(runs)):
+                run_start, run_end = runs[run]
+                begin = max(position, run_start)
+                if begin > limit:
+                    break
+                boundary = _BOUNDARY.search(text, begin, run_end)
+                if boundary is not None and boundary.start() < run_end:
+                    first = boundary.start()
+                    named = _DECODE_NAMED.match(text, first)
+                    if named is None and text[first] == "." and first + 1 < run_end:
+                        # A prefix is `[\w.]+\.`, two characters at least: from a boundary on a
+                        # `.`, the word right after it is not covered, so it is tried too.
+                        named = _DECODE_NAMED.match(text, first + 1)
+                    if named is not None:
+                        break
+            candidates = [
+                (found.start(), order, found)
+                for order, found in enumerate((named, later[_DECODE_LOADS], later[_DECODE_BUFFER]))
+                if found is not None
+            ]
+            if not candidates:
+                return
+            _, _, call = min(candidates, key=lambda c: (c[0], c[1]))
+            yield call
+            position = call.end()
+
+    @staticmethod
     def decode_run(text: str) -> re.Match[str] | None:
         """An encoded payload written into the script, decoded and executed: inline
         (`exec(b64decode("..."))`), or decoded into a name that is then executed. The payload must
@@ -117,9 +193,13 @@ class SkillScripts:
         shell = _SHELL_DECODE_RUN.search(text)
         if shell is not None:
             return shell
-        for call in _DECODE_CALL.finditer(text):
-            argument = (call.group("arg") or call.group("jsarg") or "").strip()
-            if not SkillScripts._encoded(argument, text):
+        assigned_names: set[str] | None = None
+        runs_of: dict[str, list[int]] | None = None
+        for call in SkillScripts.decode_calls(text):
+            argument = (call.group("arg") or "").strip()
+            if assigned_names is None:
+                assigned_names = SkillScripts._encoded_names(text)
+            if not SkillScripts._encoded(argument, assigned_names):
                 continue
             start = text.rfind("\n", 0, call.start()) + 1
             before = text[start : call.start()]
@@ -130,27 +210,50 @@ class SkillScripts:
             )
             if assigned is None:
                 continue
-            name = re.escape(assigned.group(1))
-            run = re.search(rf"\b(?:exec|eval|Function)\s*\(\s*{name}\s*[,)]", text[call.end() :])
+            if runs_of is None:
+                runs_of = SkillScripts._executions(text)
+            run = SkillScripts._first_execution(text, assigned.group(1), call.end(), runs_of)
             if run is not None:
-                return line.search(text, call.end() + run.start())
+                return line.search(text, run)
         return None
 
     @staticmethod
-    def _encoded(argument: str, text: str) -> bool:
+    def _encoded(argument: str, assigned_names: set[str]) -> bool:
         """Whether a decoder's argument is a fixed encoded payload: a literal, or a name the file
-        assigns one."""
+        assigns one (`_encoded_names`)."""
         if re.fullmatch(_ENCODED_LITERAL, argument):
             return True
-        if re.fullmatch(r"[A-Za-z_]\w{0,40}", argument):
-            return (
-                re.search(
-                    rf"(?m)^\s*(?:const\s+|let\s+|var\s+)?{re.escape(argument)}\s*=\s*{_ENCODED_LITERAL}",
-                    text,
-                )
-                is not None
-            )
-        return False
+        return bool(re.fullmatch(r"[A-Za-z_]\w{0,40}", argument)) and argument in assigned_names
+
+    @staticmethod
+    def _encoded_names(text: str) -> set[str]:
+        r"""Every name a line of `text` assigns an encoded literal, read in one pass: the names for
+        which `^\s*(?:const\s+|let\s+|var\s+)?NAME\s*=\s*LITERAL` (multiline) would match. Asked per
+        decoder call, that search read the whole text again each time (review 98, 27-PERFORMANCE)."""
+        return {m.group(1) for m in _ASSIGNED_ENCODED.finditer(text)}
+
+    @staticmethod
+    def _executions(text: str) -> dict[str, list[int]]:
+        """Where `exec(`, `eval(` or `Function(` is called with a bare name, by that name, in order."""
+        found: dict[str, list[int]] = {}
+        for m in _EXECUTES_NAME.finditer(text):
+            found.setdefault(m.group(1), []).append(m.start())
+        return found
+
+    @staticmethod
+    def _first_execution(
+        text: str, name: str, after: int, runs_of: dict[str, list[int]]
+    ) -> int | None:
+        r"""Where `\b(?:exec|eval|Function)\s*\(\s*NAME\s*[,)]` first matches in `text[after:]`, as a
+        position in `text`. A slice starts at a word boundary, so a call that opens exactly at
+        `after` counts even behind a word character; everywhere else the boundary is the text's."""
+        if re.compile(rf"(?:exec|eval|Function)\s*\(\s*{re.escape(name)}\s*[,)]").match(
+            text, after
+        ):
+            return after
+        starts = runs_of.get(name, [])
+        index = bisect.bisect_left(starts, after)
+        return starts[index] if index < len(starts) else None
 
 
 __all__ = ["SkillOrigin", "SkillScripts"]

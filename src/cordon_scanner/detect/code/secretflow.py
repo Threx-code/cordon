@@ -175,8 +175,12 @@ class JavaScriptLeak:
     _BIND = re.compile(r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*""")
     _MODULES = r"https?|http2|net|tls"
     #: `const mod = url.protocol === "https:" ? https : http`: a name for one of those modules.
+    #: `= value` with the blanks before it read once: all of them, or -- as `\s*` gave back to when the
+    #: value did not end at a `;` or line break -- back to the last line break among them, with an
+    #: empty value. Written `=\s*([^;\n()]{0,160})`, each blank given back was read 160 more times
+    #: (review 98, 27-PERFORMANCE).
     _ALIAS = re.compile(
-        r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n()]{0,160})(?=;|\n)"""
+        r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=(?:\s*+|\s*(?=\n))([^;\n()]{0,160})(?=;|\n)"""
     )
     _CONNECTION_CALL = r"""\s*\.\s*(?:request|get|connect|createConnection)\s*\("""
     _SEND = re.compile(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\s*\.\s*(?:write|end|send)\s*\(""")
