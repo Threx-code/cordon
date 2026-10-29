@@ -490,7 +490,10 @@ PLACEHOLDER = re.compile(
     # Any brace interpolation, not just `{{` and `${`. An f-string such as
     # `f"https://x:{TOKEN}@host"` is a template, and the braces say so; the
     # value that ends up there at runtime is not in this file.
-    rb"<[^>]{3,}>|\{[^}]{0,64}\}|\$\{|"
+    # A `<...>` placeholder is looked for from the start of each stretch between `>`s, the first `<`
+    # in it: where any `<` there opens one, the first does, and `<[^>]{3,}>` tried from every `<` of
+    # a long run of them read the run again from each (review 98, 27-PERFORMANCE).
+    rb"(?:^|(?<=>))[^<>]*+<[^>]{3,}>|\{[^}]{0,64}\}|\$\{|"
     # A bare variable reference, not only a braced one. Configuration
     # templates are written `private_key = $dir/private/cakey.pem` and
     # `secret = $insta::secret`; the value at runtime is not in this file, and
