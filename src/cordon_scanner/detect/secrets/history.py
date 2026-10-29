@@ -33,6 +33,7 @@ from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Location, Severity
+from cordon_scanner.foundation.network.downloads import Download
 
 LIVE_RULE = "SECRET.LIVE.001"
 REVOKED_RULE = "SECRET.LIVENESS.REJECTED.001"
@@ -388,7 +389,7 @@ class SecretLiveness:
         opener = urllib.request.build_opener(self._NoRedirect)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-                return response.status, response.read(64 << 10)
+                return response.status, Download.read(response, 64 << 10)
         except urllib.error.HTTPError as exc:
             return exc.code, b""
 

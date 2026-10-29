@@ -35,6 +35,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.advisories import Advisory
 from cordon_scanner.intel.advisories.upstream.base import (
     VCPKG_RAW,
@@ -766,7 +767,7 @@ class UpstreamAdvisories:
             headers={"Content-Type": "application/json", "User-Agent": "cordon-scanner"},
         )
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
-            data = json.loads(response.read(64 << 20))
+            data = json.loads(Download.read(response, 64 << 20))
         return data if isinstance(data, dict) else {}
 
     @staticmethod

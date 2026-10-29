@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
+
 PROTOCOL_VERSION: Final = "2025-06-18"
 MAX_RESPONSE_BYTES: Final = 4 << 20
 MAX_PAGES: Final = 20
@@ -102,7 +104,7 @@ class LiveMcp:
         opener = urllib.request.build_opener(_NoRedirect)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-                body = response.read(MAX_RESPONSE_BYTES + 1)
+                body = Download.read(response, MAX_RESPONSE_BYTES + 1)
                 kind = response.headers.get("Content-Type", "")
                 session = response.headers.get("Mcp-Session-Id") or session
         except urllib.error.HTTPError as exc:

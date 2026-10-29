@@ -13,6 +13,7 @@ import threading
 import urllib.parse
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
     Unnamed,
@@ -86,7 +87,7 @@ class TagInference:
                 try:
                     with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
                         kind = str(response.headers.get("Content-Type") or "")
-                        body: bytes = response.read(TagInference.MAX_REFS_BYTES + 1)
+                        body: bytes = Download.read(response, TagInference.MAX_REFS_BYTES + 1)
                         final = str(response.geturl())
                     break
                 except (OSError, http.client.HTTPException):
@@ -166,7 +167,7 @@ class TagInference:
             },
         )
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
-            answer: bytes = response.read(TagInference.MAX_REFS_BYTES + 1)
+            answer: bytes = Download.read(response, TagInference.MAX_REFS_BYTES + 1)
         if len(answer) > TagInference.MAX_REFS_BYTES:
             raise ValueError("ref listing too large")
         found: dict[str, str] = {}
@@ -605,10 +606,9 @@ class ContentProof:
         chunks: list[bytes] = []
         size = 0
         with urllib.request.urlopen(request, timeout=ContentProof.SOCKET_SECONDS) as response:  # noqa: S310
-            while True:
-                chunk: bytes = response.read(1 << 20)
-                if not chunk:
-                    break
+            for chunk in Download.chunks(
+                response, budget=ContentProof.DOWNLOAD_SECONDS, size=1 << 20
+            ):
                 chunks.append(chunk)
                 size += len(chunk)
                 if size > ContentProof.MAX_ARCHIVE_BYTES:

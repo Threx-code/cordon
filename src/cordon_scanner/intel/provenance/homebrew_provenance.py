@@ -31,6 +31,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.provenance import attest
 
 FORMULA_API: Final = "https://formulae.brew.sh/api/formula/{name}.json"
@@ -68,7 +69,7 @@ class HomebrewProvenance:
         request = urllib.request.Request(url, headers=headers)  # noqa: S310 - fixed https hosts
         opener = urllib.request.build_opener(_NoRedirect)
         with opener.open(request, timeout=TIMEOUT) as response:
-            return json.loads(response.read(MAX_BYTES))
+            return json.loads(Download.read(response, MAX_BYTES))
 
     @staticmethod
     def bottles(name: str) -> tuple[str, dict[str, str]] | None:

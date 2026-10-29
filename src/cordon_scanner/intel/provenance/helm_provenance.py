@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.provenance import openpgp
 
 #: helm `pkg/registry/constants.go`: ProvLayerMediaType, and ChartLayerMediaType with the
@@ -83,7 +84,7 @@ class HelmProvenance:
         opener = urllib.request.build_opener(_HttpsRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
-                body: bytes = response.read(limit + 1)
+                body: bytes = Download.read(response, limit + 1)
         except urllib.error.HTTPError as exc:
             if exc.code in (403, 404, 410):
                 # A bucket without public listing answers 403 for a file it does not hold

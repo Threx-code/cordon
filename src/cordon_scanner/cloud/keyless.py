@@ -28,6 +28,11 @@ from typing import Any, ClassVar
 
 from cordon_scanner.cloud._p256 import P256Signer
 from cordon_scanner.cloud.ci_agent_token import CiAgentToken
+from cordon_scanner.foundation.network.downloads import Download
+
+MAX_TOKEN_REPLY_BYTES = 1 << 20
+"""The most a token or signing endpoint's reply is read to: a JSON document of a few kilobytes,
+read whole before, with no cap at all."""
 
 
 class KeylessError(RuntimeError):
@@ -76,7 +81,7 @@ class OidcToken:
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
-                value = json.loads(response.read()).get("value")
+                value = json.loads(Download.read(response, MAX_TOKEN_REPLY_BYTES)).get("value")
         except (OSError, ValueError):
             return None
         return value if isinstance(value, str) and value else None
@@ -238,7 +243,7 @@ class Keyless:
         )
         try:
             with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
-                return json.loads(response.read())
+                return json.loads(Download.read(response, MAX_TOKEN_REPLY_BYTES))
         except (OSError, ValueError) as exc:
             raise KeylessError(
                 f"{urllib.parse.urlsplit(url).netloc} could not be reached ({type(exc).__name__})"
