@@ -184,7 +184,7 @@ class McpConfigs:
                 else:
                     items = []
                     for following in lines[index + 1 :]:
-                        item = re.match(r"^\s*-\s+(.+?)\s*$", following)
+                        item = _YAML_ITEM.match(following)
                         if item is None or _YAML_KEY.match(following):
                             break
                         items.append(item.group(1).strip("'\""))
@@ -242,7 +242,14 @@ class McpConfigs:
         return jsonc.Jsonc.loads(content.text)
 
 
-_YAML_KEY: Final = re.compile(r"^\s*-?\s*(name|command|url|args)\s*:\s*(.*?)\s*$")
+# Both are matched against every line of an MCP config an attacker may write, so neither may be
+# quadratic in a line (review 98, 27-PERFORMANCE). The indentation is possessive (`\s*+`: what it gave
+# back the dash cannot take and the next `\s*` would), and a value is "up to its last non-blank" rather
+# than a lazy `(.*?)` re-tried against `\s*$` at every length -- the same groups, found once.
+_YAML_KEY: Final = re.compile(r"^\s*+-?\s*(name|command|url|args)\s*:\s*((?:.*\S)?)\s*$")
+_YAML_ITEM: Final = re.compile(r"^\s*-\s+(.*\S|[^\S\n])\s*$")
+r"""One `- item` of a block list. The `[^\S\n]` branch keeps the lazy `(.+?)` form's one odd answer:
+a dash followed by blanks only captures one blank."""
 
 
 __all__ = ["McpConfigs"]
