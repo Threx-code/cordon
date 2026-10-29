@@ -23,7 +23,7 @@ import pytest
 
 import cordon_scanner
 from cordon_scanner.foundation.errors import UnsafePatternError
-from cordon_scanner.rules.loader import PatternCompiler
+from cordon_scanner.rules.patterns import PatternCompiler
 
 
 class PatternSafetyHelpers:
