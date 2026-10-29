@@ -108,7 +108,8 @@ class Scanner:
         packs = list(RuleLoader.load_builtin())
         if self.config.extra_rule_paths:
             from cordon_scanner.foundation.errors import RulePackError
-            from cordon_scanner.rules.loader import RuleLoader, RuleTester
+            from cordon_scanner.rules.loader import RuleLoader
+            from cordon_scanner.rules.tester import RuleTester
 
             loader = RuleLoader()
             for path in self.config.extra_rule_paths:

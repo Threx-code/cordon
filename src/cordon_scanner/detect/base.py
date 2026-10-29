@@ -50,7 +50,8 @@ if TYPE_CHECKING:
     from cordon_scanner.foundation.models import Finding
     from cordon_scanner.foundation.results import Dependency, Repository
     from cordon_scanner.foundation.rule_model import Rule
-    from cordon_scanner.rules.loader import CompiledRule, RuleSet
+    from cordon_scanner.rules.loader import RuleSet
+    from cordon_scanner.rules.pack import CompiledRule
 
 
 @dataclass(frozen=True, slots=True)

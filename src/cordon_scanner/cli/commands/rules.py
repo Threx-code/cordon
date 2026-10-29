@@ -15,7 +15,9 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.catalogue import DeclaredRule
     from cordon_scanner.foundation.rule_model import Rule
-    from cordon_scanner.rules.loader import RulePack, RuleSet, RuleTestFailure
+    from cordon_scanner.rules.loader import RuleSet
+    from cordon_scanner.rules.pack import RulePack
+    from cordon_scanner.rules.tester import RuleTestFailure
 
 
 class RulesCommand:
@@ -104,7 +106,7 @@ class RulesCommand:
 
     @staticmethod
     def _test(packs: Sequence[RulePack], rule_set: RuleSet) -> int:
-        from cordon_scanner.rules.loader import RuleTester
+        from cordon_scanner.rules.tester import RuleTester
 
         failures: list[RuleTestFailure] = []
         for pack in packs:

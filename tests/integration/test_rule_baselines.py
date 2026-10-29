@@ -23,7 +23,8 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.foundation.capabilities import MatchKind
-from cordon_scanner.rules.loader import RuleLoader, RuleTester
+from cordon_scanner.rules.loader import RuleLoader
+from cordon_scanner.rules.tester import RuleTester
 from support import ROOT, requires_corpus
 
 pytestmark = requires_corpus

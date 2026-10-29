@@ -31,7 +31,7 @@ from cordon_scanner.foundation.text.comments import SourceComments
 if TYPE_CHECKING:
     from cordon_scanner.analysis.shared.embedded import Command
     from cordon_scanner.foundation.content import FileContent
-    from cordon_scanner.rules.loader import CompiledRule
+    from cordon_scanner.rules.pack import CompiledRule
 
 MAX_VARIANTS = 8
 """Distinct operations counted per rule before the count stops mattering.

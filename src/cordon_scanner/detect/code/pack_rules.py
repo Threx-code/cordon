@@ -30,7 +30,7 @@ from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
-    from cordon_scanner.rules.loader import CompiledRule
+    from cordon_scanner.rules.pack import CompiledRule
 
 
 class PackRuleDetector(BaseDetector):

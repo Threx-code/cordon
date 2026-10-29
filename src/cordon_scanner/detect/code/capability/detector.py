@@ -64,7 +64,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.content import FileContent
-    from cordon_scanner.rules.loader import CompiledRule
+    from cordon_scanner.rules.pack import CompiledRule
 
 
 class ScriptFetchedThenEvaluated:

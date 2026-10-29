@@ -18,7 +18,7 @@ from cordon_scanner.engine.cache import ScanCache
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import UnsafePatternError
-from cordon_scanner.rules.loader import PatternCompiler
+from cordon_scanner.rules.patterns import PatternCompiler
 from support import ROOT, requires_malicious_corpus
 
 PAYLOAD = "const p = atob(B);\neval(p);\n"
