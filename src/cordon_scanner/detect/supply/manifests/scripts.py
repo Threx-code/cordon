@@ -129,8 +129,10 @@ nothing and only decides whether the step after it does, which is judged on its 
 around the `!` are taken once (`\s++(?:!\s*+)?`): as `\s+!?\s*` they split one run every way, which
 `fullmatch` did on every lifecycle-script word (review 98, 27-PERFORMANCE)."""
 
-CD_INSIDE = re.compile(r"cd\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}")
-"""A change of directory inside the package: what the command after it runs still decides."""
+CD_INSIDE = re.compile(r"cd\s++(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}")
+r"""A change of directory inside the package: what the command after it runs still decides. The
+blanks are taken once (`\s++`; the directory cannot start with one): as `\s+` each blank given back
+ran the `(?!.*\.\.)` lookahead to the end of the word again (review 98, 27-PERFORMANCE)."""
 
 RUN_SCRIPT = re.compile(
     r"(?:npm\s+run(?:-script)?|pnpm\s+run|yarn\s+run|yarn|pnpm)\s+(?P<name>[\w:.-]{1,80})(?:\s+--.*)?"
