@@ -78,7 +78,7 @@ class ComposerManifest:
             if table is not None and not isinstance(table, dict):
                 return BaseEcosystem._err(content, ecosystem, f"`{section}` is not an object")
             for name, spec in sorted((table or {}).items()):
-                text = str(spec).strip()
+                text = ComposerManifest.constraint(spec)
                 if ComposerPlatform.includes(str(name)):
                     declared.append(
                         DeclaredDependency(
@@ -136,6 +136,16 @@ class ComposerManifest:
             hooks=hooks,
             sources=tuple(sources),
         )
+
+    @staticmethod
+    def constraint(spec: object) -> str:
+        """A requirement's constraint as text. Composer takes only a string; anything else is shown
+        as Python writes it, unless it nests too deeply to write, when only its kind is shown -- the
+        dependency's name is still declared, and checked."""
+        try:
+            return str(spec).strip()
+        except RecursionError:
+            return f"<{type(spec).__name__}>"
 
     @staticmethod
     def branch_note(spec: str) -> str | None:
