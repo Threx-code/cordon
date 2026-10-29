@@ -386,6 +386,9 @@ class Engine:
             if self.config.limits.total_timeout > 0
             else float("inf")
         )
+        # The context carries it too, as the directory path's does: the worker pool and the
+        # detectors read the budget from there, and an archive's had none.
+        ctx = replace(ctx, deadline=deadline if self.config.limits.total_timeout > 0 else None)
         retained = 0
 
         image, members = self.archive_stages.source(data, acc, path, rejected, deadline)
