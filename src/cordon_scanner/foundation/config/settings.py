@@ -832,8 +832,6 @@ class Config:
             "disabled_rules": sorted(self.disabled_rules),
             "internal_namespaces": sorted(self.internal_namespaces),
             "allowed_action_owners": sorted(self.allowed_action_owners),
-            "notify_channels": list(self.notify_channels),
-            "notify_on": list(self.notify_on),
             "profile": self.profile,
             "offline": self.offline,
             "reachability": self.reachability,
