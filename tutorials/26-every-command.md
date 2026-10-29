@@ -88,6 +88,8 @@ Scan a directory, file or archive.
 │                           wins, so `none` only takes effect for rules that │
 │                           permit it -- no shipped rule does.               │
 │ --timeout SECONDS         total wall-clock budget                          │
+│ --per-file-timeout SECONDS                                                 │
+│                           budget for one file (default 5; 0 means none)    │
 │ --no-cache                ignore and do not write the incremental cache    │
 │ --cache-dir PATH          where to keep the incremental cache              │
 │ --jobs, -j N              worker processes (0 or unset means automatic)    │
@@ -763,6 +765,9 @@ Serve Cordon to AI agents over the Model Context Protocol (stdio).
 │                           by default a name an agent passes in may lead    │
 │                           only to the public network                       │
 │ --timeout SECONDS         deadline for one scan (default 600)              │
+│ --per-file-timeout SECONDS                                                 │
+│                           budget for one file within a scan (default: the  │
+│                           scanner's own; 0 means none)                     │
 │ --max-concurrent N        scans run at once (default 4)                    │
 │ --rate N                  tool calls allowed per minute (default 120)      │
 │ --max-findings N          findings returned per call unless the call asks  │

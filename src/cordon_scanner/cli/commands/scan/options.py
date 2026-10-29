@@ -211,6 +211,12 @@ class ScanOptions:
             "--timeout", type=float, metavar="SECONDS", help="total wall-clock budget"
         )
         execution.add_argument(
+            "--per-file-timeout",
+            type=float,
+            metavar="SECONDS",
+            help="budget for one file (default 5; 0 means none)",
+        )
+        execution.add_argument(
             "--no-cache", action="store_true", help="ignore and do not write the incremental cache"
         )
         execution.add_argument(

@@ -470,6 +470,13 @@ class Server:
             help="deadline for one scan (default 600)",
         )
         parser.add_argument(
+            "--per-file-timeout",
+            type=float,
+            default=None,
+            metavar="SECONDS",
+            help="budget for one file within a scan (default: the scanner's own; 0 means none)",
+        )
+        parser.add_argument(
             "--max-concurrent",
             type=int,
             default=4,
@@ -498,6 +505,28 @@ class Server:
         )
         return parser
 
+    @staticmethod
+    def refused(args: argparse.Namespace) -> str | None:
+        """Why the server's arguments are refused before it starts, or None."""
+        if (
+            not 1 <= args.max_concurrent <= 64
+            or not 1 <= args.rate <= 100_000
+            or not 1 <= args.max_findings <= 500
+            or args.timeout <= 0
+        ):
+            return "--max-concurrent 1-64, --rate 1-100000, --max-findings 1-500, --timeout > 0"
+        if args.per_file_timeout is not None:
+            # Checked by the limit itself, so the range is the one every scan enforces: refused
+            # here, not on every tool call as each scan exits with a configuration error.
+            from cordon_scanner.foundation.errors import LimitError
+            from cordon_scanner.foundation.limits import Limits
+
+            try:
+                Limits().merged(per_file_timeout=args.per_file_timeout)
+            except LimitError as exc:
+                return f"--per-file-timeout: {exc}"
+        return None
+
     @classmethod
     def main(cls, argv: list[str] | None = None) -> int:
         from cordon_scanner.version import __version__
@@ -508,16 +537,9 @@ class Server:
 
             print(Clients.snippet(args.client, allow_online=args.allow_online))
             return 0
-        if (
-            not 1 <= args.max_concurrent <= 64
-            or not 1 <= args.rate <= 100_000
-            or not 1 <= args.max_findings <= 500
-            or args.timeout <= 0
-        ):
-            print(
-                "cordon-scanner mcp: --max-concurrent 1-64, --rate 1-100000, --max-findings 1-500, --timeout > 0",
-                file=sys.stderr,
-            )
+        refused = cls.refused(args)
+        if refused:
+            print(f"cordon-scanner mcp: {refused}", file=sys.stderr)
             return 3
         try:
             workspace = Workspace.of(args.root)
@@ -553,6 +575,7 @@ class Server:
             allow_machine=args.allow_machine,
             allow_private_network=args.allow_private_network,
             timeout=args.timeout,
+            per_file_timeout=args.per_file_timeout,
             max_findings=args.max_findings,
             version=__version__,
             # The scans running at once share the machine: each gets its share of the cores, so

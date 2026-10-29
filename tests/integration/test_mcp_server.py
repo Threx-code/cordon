@@ -91,7 +91,9 @@ class Served:
 
     @pytest.fixture
     def session(self, project: Path) -> Iterator[Session]:
-        s = Session(project)
+        # No per-file budget: these tests assert verdicts, and a loaded machine running a call past
+        # the 5 s default turned one into "incomplete". The total --timeout still bounds each call.
+        s = Session(project, "--per-file-timeout", "0")
         yield s
         s.close()
 
@@ -254,7 +256,10 @@ class TestAgentTools(Served):
         found = session.call("check_skill", name="notes", files={"SKILL.md": skill})[
             "structuredContent"
         ]
-        assert found["verdict"] in {"block", "warn"} and found["findings"]
+        assert found["verdict"] in {"block", "warn"} and found["findings"], (
+            f"verdict {found['verdict']!r}, complete {found.get('complete')!r}, "
+            f"notes {found.get('notes')!r}"
+        )
 
     def test_content_paths_cannot_escape(self, session: Session) -> None:
         for name in ("../x", "/etc/passwd", "a/../../b"):

@@ -223,6 +223,10 @@ class ScanCommand:
 
         if args.timeout is not None:
             config = config.with_overrides(limits=config.limits.merged(total_timeout=args.timeout))
+        if args.per_file_timeout is not None:
+            config = config.with_overrides(
+                limits=config.limits.merged(per_file_timeout=args.per_file_timeout)
+            )
         if args.no_cache:
             config = config.with_overrides(use_cache=False)
         if args.cache_dir:
