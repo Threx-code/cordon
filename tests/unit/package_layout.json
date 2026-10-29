@@ -647,7 +647,7 @@
   "test_distrodb.py": "images",
   "test_dockerfile_bases.py": "repository/release",
   "test_documentation.py": "repository/documentation",
-  "test_no_third_party.py": "repository",
+  "test_no_third_party.py": "repository", "test_regex_scaling.py": "repository",
   "test_documentation_counts.py": "repository/documentation",
   "test_dotnet_meta.py": "analysis/dotnet",
   "test_download_flow.py": "detect/code",

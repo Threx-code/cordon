@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -250,6 +251,73 @@ class TestH4ArchiveLimitsBindBeforeAllocation:
             f"the budget did not bind while reading: {[f.message for f in result.findings]}"
         )
         assert result.stats.files_scanned < entries, "every member was read despite the budget"
+        assert not result.complete, "a truncated scan reported complete"
+
+
+class TestH4bTheBudgetBindsWhileMatchingInParallel:
+    """Once a scan's files go to the worker pool, the budget was checked only between slices of
+    4,000 members, and the pool ran every batch it was given: 2,000 members with a 2 s budget
+    scanned for 26 s, every member examined, and nothing said the budget was passed. The pool now
+    stops handing out batches at the deadline, and what it never started is reported unexamined.
+
+    Asserted by what the scan reports, not by seconds: a budget that does not bind while matching
+    examines every file and names no time limit, however fast the machine. Which stage reports it
+    is left open, because that is decided by the clock: on a loaded machine the budget can run out
+    in the walk or the expansion before the pool starts. The pool's own stop is tested without a
+    clock, in tests/unit/engine/test_parallel.py's TestThePoolStopsAtTheDeadline."""
+
+    FUNCTION = (
+        "function f{i}(a, b) {{ const x = require('fs').readFileSync(a, 'utf8');"
+        " return x.split('\\n').map(l => l.trim()).join(b); }}\n"
+    )
+    COUNT = 2_000
+
+    @staticmethod
+    def body(index: int) -> bytes:
+        cls = TestH4bTheBudgetBindsWhileMatchingInParallel
+        return "".join(cls.FUNCTION.format(i=f"{index}_{k}") for k in range(30)).encode()
+
+    @staticmethod
+    def config() -> Config:
+        # Four workers, so the pool runs: the serial loop already checked the budget per file.
+        return Config.default().with_overrides(
+            use_cache=False,
+            limits=Config.default().limits.merged(total_timeout=2.0, max_workers=4),
+        )
+
+    @staticmethod
+    def timed_out(result: Any) -> list[str]:
+        """Every time-limit finding naming the scan's 2 s budget, whichever stage it came from."""
+        return [
+            f.message
+            for f in result.findings
+            if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" and "2s budget" in f.message
+        ]
+
+    def test_in_an_archive(self, tmp_path: Path) -> None:
+        import io
+        import tarfile
+
+        archive = tmp_path / "many.tar.gz"
+        with tarfile.open(archive, "w:gz") as out:
+            for index in range(self.COUNT):
+                data = self.body(index)
+                info = tarfile.TarInfo(f"pkg/lib/m{index}.js")
+                info.size = len(data)
+                out.addfile(info, io.BytesIO(data))
+        result = Scanner(self.config()).scan(archive)
+
+        assert self.timed_out(result), [f.message for f in result.findings]
+        assert not result.complete, "a truncated scan reported complete"
+
+    def test_in_a_directory(self, tmp_path: Path) -> None:
+        tree = tmp_path / "pkg" / "lib"
+        tree.mkdir(parents=True)
+        for index in range(self.COUNT):
+            (tree / f"m{index}.js").write_bytes(self.body(index))
+        result = Scanner(self.config()).scan(tmp_path / "pkg")
+
+        assert self.timed_out(result), [f.message for f in result.findings]
         assert not result.complete, "a truncated scan reported complete"
 
 

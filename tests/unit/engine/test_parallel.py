@@ -473,3 +473,60 @@ class TestAvailableCpus:
 
     def test_unreadable_cgroup_files_fall_back(self, tmp_path) -> None:
         assert ParallelScanner.available_cpus(self.cgroup(tmp_path, "garbage")) >= 1
+
+
+class TestThePoolStopsAtTheDeadline(ParallelFixtures):
+    """What the pool does at the scan's deadline, tested without a clock: each deadline here is
+    already past, so the outcome cannot depend on how loaded the machine is."""
+
+    @staticmethod
+    def items(*indices: int) -> list[tuple[int, str, int, str, None]]:
+        return [(index, f"m{index}.js", 10, "", None) for index in indices]
+
+    def test_a_worker_past_the_deadline_reads_nothing(self, monkeypatch) -> None:
+        from types import SimpleNamespace
+
+        # A worker state nothing is read from: past the deadline no file is loaded or inspected.
+        monkeypatch.setattr(
+            ParallelScanner, "_worker", SimpleNamespace(engine=None, context=None, detectors=())
+        )
+        out = ParallelScanner._inspect_batch(self.items(3, 4), "/nonexistent", deadline=0.0)
+        assert out == [(3, [], None), (4, [], None)]
+
+    def test_batches_not_started_are_cancelled_and_listed(self) -> None:
+        from concurrent.futures import Future
+
+        finished: Future = Future()
+        finished.set_result([(0, [], True), (1, [], None)])  # 1 was reached after the deadline
+        never_started: Future = Future()
+        collected: list = []
+        unstarted: list[int] = []
+        ParallelScanner._collect_until(
+            {finished: self.items(0, 1), never_started: self.items(2, 3)},
+            collected,
+            None,
+            0.0,
+            unstarted,
+        )
+        assert [index for index, _findings, _trusted in collected] == [0]
+        assert sorted(unstarted) == [1, 2, 3]
+        assert never_started.cancelled()
+
+    def test_the_scan_reports_what_the_pool_left_unexamined(self, repository, monkeypatch) -> None:
+        def run(**kwargs):
+            kwargs["unstarted"].extend(item[0] for item in kwargs["files"])
+            return []
+
+        monkeypatch.setattr(ParallelScanner, "run", staticmethod(run))
+        config = Config.default().with_overrides(
+            use_cache=False,
+            limits=Config.default().limits.merged(total_timeout=900.0, max_workers=4),
+        )
+        result = Scanner(config).scan(repository)
+        messages = [
+            f.message
+            for f in result.findings
+            if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" and "still unexamined" in f.message
+        ]
+        assert messages, [f.message for f in result.findings]
+        assert not result.complete, "a scan with unexamined files reported complete"
