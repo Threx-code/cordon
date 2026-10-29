@@ -197,29 +197,7 @@ class CompositeEvaluator:
         # and taken away as it leaves, instead of counted again for every centre: the window of a
         # 200-line proximity holds thousands of hits in a file of short lines, and counting each
         # one per centre made a setup.py of 2,048 lines cost 18 s (review 98, 27-PERFORMANCE, 7).
-        kept = [not (h.capability is Capability.SPAWN and h.line in fixed) for h in by_byte]
-        in_dead = [bool(deferred) and LineRanges.cls_in(h.line, deferred) for h in by_byte]
-        capabilities: Counter[Capability] = Counter()
-        unresolved: Counter[Capability] = Counter()  # their variants, summed
-        unresolved_hits: Counter[Capability] = (
-            Counter()
-        )  # how many: a key with no variants is a key
-        rules: Counter[str] = Counter()
-        dead = 0
-
-        def enter(index: int, sign: int) -> None:
-            nonlocal dead
-            hit = by_byte[index]
-            if not kept[index]:
-                return
-            capabilities[hit.capability] += sign
-            if not hit.resolved:
-                unresolved[hit.capability] += sign * hit.variants
-                unresolved_hits[hit.capability] += sign
-            rules[hit.rule_id] += sign
-            dead += sign * in_dead[index]
-
-        first = end = 0
+        window = _SlidingCounts(by_byte, fixed, deferred)
         last: tuple[int, int] | None = None
         for centre in by_byte:
             lo = bisect.bisect_left(starts, centre.byte_start - byte_limit)
@@ -229,23 +207,8 @@ class CompositeEvaluator:
             last = (lo, hi)
             start = max(lo, bisect.bisect_left(lines, centre.line - proximity))
             stop = min(hi, bisect.bisect_right(lines, centre.line + proximity))
-            while end < stop:
-                enter(end, 1)
-                end += 1
-            while first < start:
-                enter(first, -1)
-                first += 1
-            present = {capability for capability, n in capabilities.items() if n}
-            # The keys `_evaluate_over`'s counts would have: one per capability with an unresolved
-            # hit in the window, even at no variants (an empty Counter reads as false in `evaluate`).
-            counts = Counter(
-                {
-                    capability: unresolved[capability]
-                    for capability, n in unresolved_hits.items()
-                    if n
-                }
-            )
-            fired = frozenset(rule for rule, n in rules.items() if n)
+            window.slide(start, stop)
+            present, counts, fired, dead = window.view()
             hook = in_hook and not (deferred and dead)
             if self.evaluate(compiled, present, path, hook, counts, fired, in_ci, in_consumer):
                 return by_byte[start:stop]
@@ -626,6 +589,59 @@ class CompositeEvaluator:
         for term in (*compiled.match.all_of, *compiled.match.any_of):
             walk(term)
         return tuple(dict.fromkeys(found))
+
+
+class _SlidingCounts:
+    """What `_evaluate_over` counts over a window, kept as the window slides along hits in offset order.
+
+    The capabilities, the unresolved variants and how many unresolved hits carry them, the rules
+    fired, and the hits in code the hooks never call: a hit is added as it enters and taken away
+    as it leaves. The window's two ends only move forward (`CompositeEvaluator._dense_window`).
+    """
+
+    def __init__(
+        self, hits: list[CapabilityHit], fixed: frozenset[int], deferred: frozenset[tuple[int, int]]
+    ) -> None:
+        self.hits = hits
+        # A spawn of a program written out in full is not counted, as in `_fixed_argv_window`.
+        self.kept = [not (h.capability is Capability.SPAWN and h.line in fixed) for h in hits]
+        self.in_dead = [bool(deferred) and LineRanges.cls_in(h.line, deferred) for h in hits]
+        self.capabilities: Counter[Capability] = Counter()
+        self.unresolved: Counter[Capability] = Counter()  # their variants, summed
+        self.unresolved_hits: Counter[Capability] = (
+            Counter()
+        )  # how many: no variants is still a key
+        self.rules: Counter[str] = Counter()
+        self.dead = 0
+        self.first = self.end = 0
+
+    def _count(self, index: int, sign: int) -> None:
+        if not self.kept[index]:
+            return
+        hit = self.hits[index]
+        self.capabilities[hit.capability] += sign
+        if not hit.resolved:
+            self.unresolved[hit.capability] += sign * hit.variants
+            self.unresolved_hits[hit.capability] += sign
+        self.rules[hit.rule_id] += sign
+        self.dead += sign * self.in_dead[index]
+
+    def slide(self, start: int, stop: int) -> None:
+        """Make the window `hits[start:stop]`; neither end may move back."""
+        while self.end < stop:
+            self._count(self.end, 1)
+            self.end += 1
+        while self.first < start:
+            self._count(self.first, -1)
+            self.first += 1
+
+    def view(self) -> tuple[set[Capability], Counter[Capability], frozenset[str], int]:
+        """The window's capabilities, unresolved counts, rules fired and dead-code hits."""
+        present = {capability for capability, n in self.capabilities.items() if n}
+        # The keys `_evaluate_over`'s counts would have: one per capability with an unresolved
+        # hit in the window, even at no variants (an empty Counter reads as false in `evaluate`).
+        counts = Counter({c: self.unresolved[c] for c, n in self.unresolved_hits.items() if n})
+        return present, counts, frozenset(rule for rule, n in self.rules.items() if n), self.dead
 
 
 __all__ = ["CompositeEvaluator"]
