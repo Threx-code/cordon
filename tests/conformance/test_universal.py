@@ -266,30 +266,52 @@ class TestDeterminism:
 
 
 class TestScale:
-    """UNI-26: a large lockfile is read whole, once per package, within a bounded time."""
+    """UNI-26: a large lockfile is read whole, once per package, in time that grows with it.
 
-    @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))
-    def test_two_thousand_packages(self, profile, tmp_path) -> None:
+    The bound is on growth, not seconds: four times the packages may cost at most eight times as
+    long. A linear read costs under four times (each scan's start-up is paid once), a quadratic
+    one about sixteen. The small scan runs before and after the large one and the two are
+    averaged, so a load swing between scans moves the ratio less; a fixed ceiling failed at six
+    to seven times the idle time under a loaded suite."""
+
+    @staticmethod
+    def packages(profile: EcosystemProfile, count: int) -> list[Pkg]:
         first = profile.names[0]
         stem, _, tail = first.rpartition("/")
-        pkgs = [
+        return [
             Pkg(
                 f"{stem}/{tail}{n}" if stem else f"{first}{n}",
                 profile.versions[1],
                 profile.hash_of(n) if profile.hash_of else None,
             )
-            for n in range(2000)
+            for n in range(count)
         ]
+
+    @staticmethod
+    def timed(
+        profile: EcosystemProfile, pkgs: list[Pkg], where: Path
+    ) -> tuple[dict[str, Any], float]:
         started = time.monotonic()
-        report = Universal.scan(Universal.project(tmp_path, profile, pkgs), profile.id)
-        elapsed = time.monotonic() - started
+        report = Universal.scan(Universal.project(where, profile, pkgs), profile.id)
+        return report, time.monotonic() - started
+
+    @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))
+    def test_two_thousand_packages(self, profile, tmp_path) -> None:
+        pkgs, few = TestScale.packages(profile, 2000), TestScale.packages(profile, 500)
+        _, before = TestScale.timed(profile, few, tmp_path / "500-before")
+        report, large = TestScale.timed(profile, pkgs, tmp_path / "2000")
+        _, after = TestScale.timed(profile, few, tmp_path / "500-after")
+        small = (before + after) / 2
         # The packages written; not what the format records about its own tooling (Bundler's
         # `BUNDLED WITH`), the runtime, or Go's standard library.
         written = {p.name.lower() for p in pkgs}
         packages = [d for d in report["dependencies"] if d["name"].lower() in written]
         assert len(packages) == 2000, len(packages)
         assert len({d["purl"] for d in packages}) == 2000, "duplicated"
-        assert elapsed < 120, f"{elapsed:.0f}s"
+        assert large < small * 8, (
+            f"2,000 packages {large:.1f}s against 500 in {before:.1f}s and {after:.1f}s:"
+            f" {large / small:.1f} times"
+        )
 
 
 class TestScannerSafety:
