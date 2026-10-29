@@ -126,7 +126,12 @@ class TestRecovery:
         reference timed in the same loop, so a loaded machine slows both sides alike: a linear
         parser's growth over the reference is about 1, a quadratic one's about 4. In CPU time (the
         parse runs in this process, serially), after a warm-up parse, and at a size whose parse
-        takes at least half a second: a short timing let one interruption swing the ratio."""
+        takes at least half a second: a short timing let one interruption swing the ratio.
+
+        What it can and cannot see, measured: a quadratic planted in the lexer, diluted through
+        the parser's own linear work, read 2.68 against this 2.5 bound, so a weaker one there
+        would pass. That is why the lexer has its own growth test (test_lexer.py). A quadratic in
+        the parser's own loops reads near 4."""
         unit = "const a = require('m'); a.f(b, `t${c}`, /r/g, x => ({ y: [1, 2] }));\n"
 
         def reference(text: str) -> int:
