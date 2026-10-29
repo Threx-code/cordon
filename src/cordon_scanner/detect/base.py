@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import functools
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from dataclasses import dataclass, field, fields
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.dependencies import CheckLog
 from cordon_scanner.foundation.models import (
@@ -236,6 +236,25 @@ class ScanContext:
     """The operating-system inventory (`images.oci.ImageInventory`) when the target is a
     container image tarball, else None. Carried whole because matching needs what a purl cannot
     hold faithfully: Debian's source-package version and the distribution's advisory namespace."""
+
+    #: The fields that belong to the process holding the context rather than to the scan target,
+    #: each with where its effect is accounted for. Everything else is a fact about the target:
+    #: `facts()` carries all of it to a worker, and the scan cache keys on all of it. Named
+    #: here, once, because both used to list the facts instead -- a worker received seven of
+    #: them and the cache key one, and every field added since was silently missing from both.
+    LOCAL: ClassVar[dict[str, str]] = {
+        "config": "each process builds it from the configuration; keyed by config_hash",
+        "rules": "each engine loads them from the configuration; keyed by rulepack_hash",
+        "scorer": "stateless; its code is keyed with the package's",
+        "checks": "an output: detectors record into it and none reads it",
+        "nested_scan": "a callable bound to this process's engine",
+        "deadline": "this process's clock; a run that hits it is never cached",
+    }
+
+    def facts(self) -> dict[str, Any]:
+        """Every field but `LOCAL`: what a worker needs to judge a file exactly as this process
+        does, and what a file's cached findings depend on besides its own bytes."""
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.name not in self.LOCAL}
 
     def out_of_time(self) -> bool:
         """Whether the scan's time budget has been spent."""
