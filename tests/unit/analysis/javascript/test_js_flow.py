@@ -717,9 +717,10 @@ class TestBounds:
 
     def test_templates_nested_past_the_limit_finish(self) -> None:
         deep = "x = " + "`a${" * 5_000 + "1" + "}`" * 5_000 + ";\n"
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         assert JsFlow.flows(deep) == []
-        assert time.monotonic() - started < 5
+        assert time.process_time() - started < 5
 
 
 class TestArchiveThenSend:

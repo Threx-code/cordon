@@ -359,9 +359,10 @@ class TestHostileFileContent:
             current.mkdir()
         (current / "app.js").write_text("console.log(1)", encoding="utf-8")
 
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         result = Scanner(Config.default()).scan(tmp_path)
-        assert time.monotonic() - started < 30
+        assert time.process_time() - started < 30
 
         # Depth was bounded, so the deepest file is out of reach. That must be
         # visible in the result rather than resembling an empty directory.
@@ -437,9 +438,10 @@ class TestRegexSafety:
                 if compiled.match.regex is None:
                     continue
                 for payload in adversarial:
-                    started = time.monotonic()
+                    # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+                    started = time.process_time()
                     compiled.match.regex.search(payload)
-                    elapsed = time.monotonic() - started
+                    elapsed = time.process_time() - started
                     assert elapsed < 1.0, f"{compiled.id} took {elapsed:.2f}s on adversarial input"
 
 

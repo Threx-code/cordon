@@ -237,6 +237,7 @@ class TestAdversarialInput:
     def test_very_long_input_terminates(self) -> None:
         import time
 
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         Redactor.mask("a" * 200_000)
-        assert time.monotonic() - started < 2.0
+        assert time.process_time() - started < 2.0
