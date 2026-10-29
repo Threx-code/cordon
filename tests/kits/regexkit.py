@@ -443,7 +443,7 @@ class Growth:
     """Time a call at n and 4n against a linear reference timed in the same loop.
 
     A linear call grows as the reference does (1), a quadratic one four times as fast (4); above 2.5
-    with the 4n run over 0.1 s is superlinear. (At n and 2n the two are 1 and 2, too close on a loaded
+    with the 4n run over 0.1 s of CPU is superlinear. (At n and 2n the two are 1 and 2, too close on a loaded
     machine: a known quadratic measured 1.5-2.2.) The reference is `[a-z]b` searched over "a" * n,
     which checks two characters at each position with no literal fast path; `a+b` is not linear (with
     no `b` it retries `a+` from every start) and as a reference it hid every quadratic pattern.
@@ -456,11 +456,15 @@ class Growth:
 
     @staticmethod
     def best(call: Callable[[], object], times: int = 5) -> float:
+        """The least CPU time of `times` calls. CPU time, not wall time: each check runs in its own
+        forked child, so other work on a busy machine does not stretch it -- a wall-clock bound
+        failed a prepush with a linear pattern at 0.80 s on 64,000 characters that takes 0.14 s of
+        CPU (the lesson TestScale and the parser test learned too)."""
         least = float("inf")
         for _ in range(times):
-            start = time.perf_counter()
+            start = time.process_time()
             call()
-            least = min(least, time.perf_counter() - start)
+            least = min(least, time.process_time() - start)
         return least
 
     @staticmethod
