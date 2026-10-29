@@ -15,12 +15,12 @@ SBOM is compared with what the scan resolved instead (`detect/sbom.py`), so noth
 
 from __future__ import annotations
 
-import json
 import re
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
 
@@ -227,8 +227,8 @@ class SbomDocument:
         if not looks and not SbomDocument.named(path):
             return None, None
         try:
-            data = json.loads(text)
-        except ValueError as exc:
+            data = ScannedJson.loads(text)
+        except (ValueError, RecursionError) as exc:
             return None, f"it is not valid JSON ({str(exc).split(':', 1)[0]})"
         if SbomDocument.kind(data) is None:
             return (

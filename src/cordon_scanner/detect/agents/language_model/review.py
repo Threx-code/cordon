@@ -28,6 +28,8 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ModelProvider
 
@@ -146,7 +148,7 @@ class VerdictParser:
         if found is None:
             return None
         try:
-            data = json.loads(found)
+            data = ScannedJson.loads(found)
         except ValueError:
             return None
         if not isinstance(data, dict):
@@ -210,7 +212,7 @@ class VerdictCache:
         if self.directory is None:
             return None
         try:
-            data = json.loads((self.directory / f"{key}.json").read_text(encoding="utf-8"))
+            data = ScannedJson.loads((self.directory / f"{key}.json").read_text(encoding="utf-8"))
             return Verdict(**data)
         except (OSError, ValueError, TypeError):
             return None

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import functools
 import io
-import json
 import posixpath
 import re
 import struct
@@ -30,6 +29,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import IO, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.images.langpkgs import LanguagePackage
 
@@ -329,7 +329,7 @@ class BinaryMetadata:
         if not section:
             return []
         try:
-            document = json.loads(zlib.decompressobj().decompress(section, 64 << 20))
+            document = ScannedJson.loads(zlib.decompressobj().decompress(section, 64 << 20))
         except (zlib.error, ValueError):
             return []
         return [
@@ -347,7 +347,7 @@ class BinaryMetadata:
     @staticmethod
     def dotnet(path: str, data: bytes) -> list[LanguagePackage]:
         try:
-            document = json.loads(data)
+            document = ScannedJson.loads(data)
         except ValueError:
             return []
         libraries = document.get("libraries") if isinstance(document, dict) else None
@@ -558,7 +558,7 @@ class KnownGroups:
         """Syft's artifact-to-group map (`scripts/build/syft_java_groups.py`; NOTICE has the source)."""
         path = PackagePaths.data("images") / "java-groups.json"
         try:
-            groups = json.loads(path.read_text(encoding="utf-8")).get("groups", {})
+            groups = ScannedJson.loads(path.read_text(encoding="utf-8")).get("groups", {})
         except (OSError, ValueError):
             return {}
         return {str(k): str(v) for k, v in groups.items()} if isinstance(groups, dict) else {}

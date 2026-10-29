@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -352,7 +353,7 @@ class IacBlocks:
         still points at the line the resource is declared on.
         """
         try:
-            document = json.loads(text)
+            document = ScannedJson.loads(text)
         except ValueError:
             return
         if not isinstance(document, dict):
@@ -443,7 +444,7 @@ class IacBlocks:
         access on is the same finding wherever the template puts it.
         """
         try:
-            document = json.loads(text)
+            document = ScannedJson.loads(text)
         except ValueError:
             return
         if not isinstance(document, dict) or "resources" not in document:

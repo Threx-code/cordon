@@ -23,7 +23,6 @@ A digest pins an image; a tag names one the registry can re-point.
 
 from __future__ import annotations
 
-import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
@@ -33,6 +32,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -643,7 +643,7 @@ class Dockerfile:
         """What an `ADD` fetches: an archive or file by URL (pinned by `--checksum`), or a git
         repository (`https://.../x.git#ref`, `git@host:x.git#ref`), pinned by a commit."""
         try:
-            items = json.loads(rest) if rest.startswith("[") else rest.split()
+            items = ScannedJson.loads(rest) if rest.startswith("[") else rest.split()
         except ValueError:
             return []
         out: list[DeclaredDependency] = []

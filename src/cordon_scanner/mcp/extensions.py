@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+
 MAX_VSIX: Final = 200 << 20
 OPEN_VSX: Final = "https://open-vsx.org/api"
 GALLERY: Final = "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery"
@@ -95,7 +97,7 @@ class ExtensionFetcher:
         publisher, name = cls.check(identifier, version)
         meta_url = f"{OPEN_VSX}/{urllib.parse.quote(publisher)}/{urllib.parse.quote(name)}/{urllib.parse.quote(version or 'latest')}"
         try:
-            meta = json.loads(cls._get(meta_url, limit=8 << 20))
+            meta = ScannedJson.loads(cls._get(meta_url, limit=8 << 20))
         except ValueError as exc:
             raise ExtensionError("Open VSX answered with something that is not JSON") from exc
         files = meta.get("files") or {}
@@ -139,7 +141,7 @@ class ExtensionFetcher:
             }
         ).encode()
         try:
-            reply = json.loads(
+            reply = ScannedJson.loads(
                 cls._get(
                     GALLERY,
                     data=query,

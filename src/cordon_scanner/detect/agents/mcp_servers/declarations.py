@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 import tomllib
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.detect.agents.paths import MCP_PATHS
 from cordon_scanner.foundation.formats import jsonc
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent
@@ -198,7 +198,7 @@ class McpConfigs:
     @staticmethod
     def _json_text(text: str) -> Any:
         try:
-            return json.loads(text)
+            return ScannedJson.loads(text)
         except ValueError:
             pass
         stripped = re.sub(
@@ -206,7 +206,7 @@ class McpConfigs:
         )
         stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
         try:
-            return json.loads(stripped)
+            return ScannedJson.loads(stripped)
         except ValueError:
             return None
 

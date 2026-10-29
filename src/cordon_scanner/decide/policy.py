@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -442,7 +443,6 @@ class Baseline:
         but one that degraded to "suppress everything" would be silent, and the
         parser should not be the thing deciding which.
         """
-        import json
 
         file = Path(path)
         if not file.is_file():
@@ -451,8 +451,8 @@ class Baseline:
                 hint=f"Create one with `{PROGRAM} baseline create`.",
             )
         try:
-            data = json.loads(file.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
+            data = ScannedJson.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError, RecursionError) as exc:
             raise ConfigError(f"{file}: baseline is not readable JSON: {exc}") from exc
 
         if not isinstance(data, dict) or not isinstance(data.get("fingerprints"), list):

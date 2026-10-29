@@ -17,13 +17,13 @@ reference set. The release itself, by name and version, is not its own sibling.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, Unit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -86,7 +86,7 @@ class CampaignSiblingDetector(BaseDetector):
         if content.truncated or len(content.raw) > MAX_MANIFEST:
             return ()
         try:
-            manifest = json.loads(content.text)
+            manifest = ScannedJson.loads(content.text)
         except ValueError:
             return ()
         if not isinstance(manifest, dict):

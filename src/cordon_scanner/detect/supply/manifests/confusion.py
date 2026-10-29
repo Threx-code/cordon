@@ -19,13 +19,13 @@ ships `binding.gyp`. Without that every native addon would be reported.
 
 from __future__ import annotations
 
-import json
 import tarfile
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Finding, Severity
 
 RULE_ID = "SUSPECT.PACKAGE.MANIFEST_CONFUSION.001"
@@ -59,7 +59,7 @@ class ManifestConfusion:
                     if entry.size > MAX_MANIFEST_BYTES:
                         return None
                     handle = archive.extractfile(entry)
-                    document = json.loads(handle.read()) if handle else None
+                    document = ScannedJson.loads(handle.read()) if handle else None
                     return document if isinstance(document, dict) else None
         except (tarfile.TarError, OSError, ValueError):
             return None

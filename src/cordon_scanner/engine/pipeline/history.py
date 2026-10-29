@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -20,6 +19,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.constants import YOUNG_DEPENDENCY_RULE
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -81,8 +81,10 @@ class History:
         if distribution == "openvsx":
             manifest = next((u for u in units if u.path.endswith("!extension/package.json")), None)
             try:
-                document = json.loads(manifest.content.text) if manifest is not None else None
-            except ValueError:
+                document = (
+                    ScannedJson.loads(manifest.content.text) if manifest is not None else None
+                )
+            except (ValueError, RecursionError):
                 return None
             if not isinstance(document, dict):
                 return None

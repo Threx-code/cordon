@@ -6,9 +6,10 @@ now delegates here.
 
 from __future__ import annotations
 
-import json
 import re
 from typing import TYPE_CHECKING, Final
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit
@@ -140,8 +141,8 @@ class PackageFormat:
                 if not archive.endswith((".tgz", ".tar.gz")):
                     return False
                 try:
-                    manifest = json.loads(unit.content.text)
-                except ValueError:
+                    manifest = ScannedJson.loads(unit.content.text)
+                except (ValueError, RecursionError):
                     return False
                 return (
                     isinstance(manifest, dict)

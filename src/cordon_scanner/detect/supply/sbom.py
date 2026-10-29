@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -227,7 +228,7 @@ class SbomDetector(BaseDetector):
         one would report drift wherever a document used the other.
         """
         try:
-            document = json.loads(text)
+            document = ScannedJson.loads(text)
         except (json.JSONDecodeError, ValueError, RecursionError) as exc:
             raise ValueError(str(exc)) from exc
 
