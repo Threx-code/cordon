@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.provenance import openpgp
 
 GALAXY: Final = "https://galaxy.ansible.com"
@@ -73,7 +74,7 @@ class AnsibleSignatures:
             raise ValueError("not https")
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
         with urllib.request.build_opener(_HttpsRedirects).open(request, timeout=TIMEOUT) as r:
-            body: bytes = r.read(limit + 1)
+            body: bytes = Download.read(r, limit + 1)
         if len(body) > limit:
             raise ValueError("response too large")
         return body

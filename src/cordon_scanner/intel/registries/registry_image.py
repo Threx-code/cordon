@@ -34,6 +34,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import IO, Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
+
 MEDIA_INDEX: Final = (
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -152,7 +154,7 @@ class RegistryImage:
         try:
             request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
-                body = json.loads(response.read(1 << 20))
+                body = json.loads(Download.read(response, 1 << 20))
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
             return False
         token = body.get("token") or body.get("access_token")
@@ -163,7 +165,7 @@ class RegistryImage:
 
     def manifest(self, reference: str) -> tuple[bytes, str]:
         with self._open(self._url("manifests", reference), ACCEPT) as response:
-            body = response.read(MAX_MANIFEST + 1)
+            body = Download.read(response, MAX_MANIFEST + 1)
             media = str(response.headers.get("Content-Type", "")).split(";")[0].strip()
         if len(body) > MAX_MANIFEST:
             raise RegistryImageError("a manifest larger than any real one was served")
@@ -186,7 +188,7 @@ class RegistryImage:
         hasher = hashlib.sha256()
         buffer = io.BytesIO()
         with self._open(self._url("blobs", digest)) as response:
-            while chunk := response.read(CHUNK):
+            for chunk in Download.chunks(response, size=CHUNK):
                 pull.downloaded += len(chunk)
                 if pull.downloaded > MAX_BYTES:
                     raise RegistryImageError(

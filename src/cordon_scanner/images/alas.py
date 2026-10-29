@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.images.packages import OsPackage
 
 HOST: Final = "cdn.amazonlinux.com"
@@ -170,7 +171,7 @@ class AmazonLinuxAdvisories:
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - checked above
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-                body = response.read(MAX_BYTES + 1)
+                body = Download.read(response, MAX_BYTES + 1)
         except (OSError, http.client.HTTPException) as exc:
             raise AlasError(f"{HOST} could not be reached ({type(exc).__name__})") from exc
         if len(body) > MAX_BYTES:

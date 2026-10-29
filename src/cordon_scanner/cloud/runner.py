@@ -35,6 +35,7 @@ from typing import Any, Final
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
 from cordon_scanner.foundation.files.trees import Trees
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.version import PROGRAM
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
@@ -342,7 +343,7 @@ class CloudRunner:
             ) as response,
             destination.open("wb") as handle,
         ):
-            for chunk in iter(lambda: response.read(1 << 20), b""):
+            for chunk in Download.chunks(response, size=1 << 20):
                 total += len(chunk)
                 if total > MAX_ARTIFACT_BYTES:
                     raise JobRefused("the artefact is larger than the runner accepts")

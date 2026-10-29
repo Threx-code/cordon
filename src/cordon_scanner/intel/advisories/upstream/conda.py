@@ -7,8 +7,10 @@ import io
 import json
 import re
 import tarfile
+import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.foundation.network.downloads import BUDGET_SECONDS, Download
 from cordon_scanner.intel.advisories.upstream.base import (
     RepositoryArchive,
     Unnamed,
@@ -60,7 +62,7 @@ class CondaPackage:
             if response.status != 206:
                 raise ValueError("the server does not answer a byte range")
             total = int(str(response.headers.get("Content-Range", "/0")).rpartition("/")[2] or 0)
-            body: bytes = response.read(limit + 1)
+            body: bytes = Download.read(response, limit + 1)
         if len(body) > limit:
             raise ValueError("range too large")
         return body, total
@@ -134,6 +136,8 @@ class CondaPackage:
 
             request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
             with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
+                # The whole stream within the budget, not each read (`foundation/network/downloads.py`).
+                deadline = time.monotonic() + BUDGET_SECONDS
 
                 class Bounded(io.RawIOBase):
                     read_so_far = 0
@@ -142,7 +146,11 @@ class CondaPackage:
                         return True
 
                     def readinto(self, buffer: Any) -> int:
-                        chunk = response.read(min(len(buffer), 1 << 16))
+                        chunk = Download.read(
+                            response,
+                            min(len(buffer), 1 << 16),
+                            budget=max(0.0, deadline - time.monotonic()),
+                        )
                         Bounded.read_so_far += len(chunk)
                         if Bounded.read_so_far > CondaPackage.MAX_STREAM_BYTES:
                             raise ValueError("package too large to read its recipe")

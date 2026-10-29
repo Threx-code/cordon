@@ -23,6 +23,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
+
 API: Final = "https://api.github.com"
 TIMEOUT: Final = 15.0
 MAX_BYTES: Final = 1 << 20
@@ -50,7 +52,7 @@ class GitHubRepository:
         request = urllib.request.Request(f"{API}/repos/{quoted}", headers=headers)  # noqa: S310 - fixed https host
         try:
             with urllib.request.build_opener(_ApiRedirects).open(request, timeout=TIMEOUT) as r:
-                document = json.loads(r.read(MAX_BYTES))
+                document = json.loads(Download.read(r, MAX_BYTES))
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
             return None
         full_name = document.get("full_name") if isinstance(document, dict) else None

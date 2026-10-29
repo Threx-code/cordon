@@ -24,6 +24,8 @@ import urllib.request
 import zlib
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
+
 MAX_PACK_BYTES: Final = 512 << 20
 MAX_DEPTH: Final = 64
 SOCKET_SECONDS: Final = 120.0
@@ -57,10 +59,7 @@ class GitFetch:
         size = 0
         try:
             with urllib.request.urlopen(request, timeout=SOCKET_SECONDS) as response:  # noqa: S310
-                while True:
-                    chunk: bytes = response.read(1 << 20)
-                    if not chunk:
-                        break
+                for chunk in Download.chunks(response, budget=DEADLINE_SECONDS, size=1 << 20):
                     chunks.append(chunk)
                     size += len(chunk)
                     if size > MAX_PACK_BYTES:

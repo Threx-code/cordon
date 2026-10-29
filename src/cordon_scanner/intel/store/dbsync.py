@@ -33,6 +33,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.provenance import _ed25519
 
@@ -223,7 +224,7 @@ class AdvisoryBundle:
         )
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-                body = response.read(MAX_BUNDLE_BYTES + 1)
+                body = Download.read(response, MAX_BUNDLE_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
             raise BundleError(f"could not fetch {url}: {type(exc).__name__}") from exc
         if len(body) > MAX_BUNDLE_BYTES:

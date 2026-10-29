@@ -38,6 +38,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from cordon_scanner.foundation.network.downloads import Download
+
 TIMEOUT_SECONDS = 5.0
 """Per-request ceiling. A scan waiting on a slow registry is a scan somebody
 kills, and a killed scan reports nothing at all."""
@@ -209,7 +211,7 @@ class RegistryClient:
         for attempt in range(RETRY_ATTEMPTS):
             try:
                 with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-                    body = response.read(MAX_RESPONSE_BYTES + 1)
+                    body = Download.read(response, MAX_RESPONSE_BYTES + 1)
                     compressed = str(response.headers.get("Content-Encoding", "")).lower() == "gzip"
                 break
             except urllib.error.HTTPError as exc:
@@ -739,7 +741,7 @@ class RegistryClient:
         opener = urllib.request.build_opener(_NoRedirect)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
-                body = response.read(MAX_ARCHIVE_BYTES + 1)
+                body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
