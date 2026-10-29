@@ -629,6 +629,7 @@
   "test_content_proof.py": "intel/provenance",
   "test_content_walker.py": "engine",
   "test_courtesy_gate.py": "detect/code/capability",
+  "test_dense_window.py": "detect/code/capability",
   "test_coverage_matrix.py": "cli",
   "test_dependency_payload.py": "cli",
   "test_coverage_notices.py": "detect/supply",

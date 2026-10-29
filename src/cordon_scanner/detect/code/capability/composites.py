@@ -9,6 +9,7 @@ term can ask, so each file gets its own evaluator holding it."""
 
 from __future__ import annotations
 
+import itertools
 from collections import Counter
 from contextlib import suppress
 from typing import TYPE_CHECKING, ClassVar
@@ -114,15 +115,20 @@ class CompositeEvaluator:
             # socket from another 25 lines below, past a 30-line window (review 98). Proximity
             # separates the halves of a library; it does not separate the halves of a hook.
             proximity = 0
+        # Which lines' spawns run a program written out in full is a fact about the file (see
+        # `_fixed_argv_window`), the same for every window: found once here, not once per window --
+        # per window it made the search quadratic in the hits, 61 of 73 s on one 1,024-line setup.py
+        # (review 98, 27-PERFORMANCE, 7).
+        fixed = CompositeEvaluator.fixed_lines(hits)
         if proximity <= 0:
             if self._evaluate_over(
-                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, fixed_lines=fixed
             ):
                 return hits
             return None
         if len(hits) > self.MAX_PROXIMITY_HITS:
             return self._dense_window(
-                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, proximity
+                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, proximity, fixed
             )
 
         # Sorted by line ALONE, and stably. Adding `byte_start` to the key looks
@@ -143,7 +149,7 @@ class CompositeEvaluator:
                 if h.line <= limit and abs(h.byte_start - first.byte_start) <= byte_limit
             ]
             if self._evaluate_over(
-                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+                compiled, window, path, in_hook, in_ci, in_consumer, deferred, fixed_lines=fixed
             ):
                 return window
         return None
@@ -161,6 +167,7 @@ class CompositeEvaluator:
         in_consumer: bool,
         deferred: frozenset[tuple[int, int]],
         proximity: int,
+        fixed: frozenset[int],
     ) -> list[CapabilityHit] | None:
         """Proximity over a file with more hits than the pairwise search affords.
 
@@ -177,6 +184,53 @@ class CompositeEvaluator:
         byte_limit = proximity * self.BYTES_PER_LINE
         by_byte = sorted(hits, key=lambda h: h.byte_start)
         starts = [h.byte_start for h in by_byte]
+        lines = [h.line for h in by_byte]
+        if any(earlier > later for earlier, later in itertools.pairwise(lines)):
+            return self._dense_window_each(
+                compiled, by_byte, path, in_hook, in_ci, in_consumer, deferred, proximity, fixed
+            )
+        # A hit's line follows from its offset, so in offset order the lines never fall, and the
+        # hits within `proximity` lines of a centre are one run of this list as well: each window
+        # is the slice between two ends that only move forward. What `_evaluate_over` counts over
+        # a window -- the capabilities, the unresolved counts, the rules fired, whether a hit sits
+        # in code the hooks never call -- is kept as the window slides, a hit added as it enters
+        # and taken away as it leaves, instead of counted again for every centre: the window of a
+        # 200-line proximity holds thousands of hits in a file of short lines, and counting each
+        # one per centre made a setup.py of 2,048 lines cost 18 s (review 98, 27-PERFORMANCE, 7).
+        window = _SlidingCounts(by_byte, fixed, deferred)
+        last: tuple[int, int] | None = None
+        for centre in by_byte:
+            lo = bisect.bisect_left(starts, centre.byte_start - byte_limit)
+            hi = bisect.bisect_right(starts, centre.byte_start + byte_limit)
+            if (lo, hi) == last:
+                continue
+            last = (lo, hi)
+            start = max(lo, bisect.bisect_left(lines, centre.line - proximity))
+            stop = min(hi, bisect.bisect_right(lines, centre.line + proximity))
+            window.slide(start, stop)
+            present, counts, fired, dead = window.view()
+            hook = in_hook and not (deferred and dead)
+            if self.evaluate(compiled, present, path, hook, counts, fired, in_ci, in_consumer):
+                return by_byte[start:stop]
+        return None
+
+    def _dense_window_each(
+        self,
+        compiled: CompiledRule,
+        by_byte: list[CapabilityHit],
+        path: str,
+        in_hook: bool,
+        in_ci: bool,
+        in_consumer: bool,
+        deferred: frozenset[tuple[int, int]],
+        proximity: int,
+        fixed: frozenset[int],
+    ) -> list[CapabilityHit] | None:
+        """`_dense_window` one window at a time, for hits whose lines do not follow their offsets."""
+        import bisect
+
+        byte_limit = proximity * self.BYTES_PER_LINE
+        starts = [h.byte_start for h in by_byte]
         last: tuple[int, int] | None = None
         for centre in by_byte:
             lo = bisect.bisect_left(starts, centre.byte_start - byte_limit)
@@ -186,7 +240,7 @@ class CompositeEvaluator:
             last = (lo, hi)
             window = [h for h in by_byte[lo:hi] if abs(h.line - centre.line) <= proximity]
             if self._evaluate_over(
-                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+                compiled, window, path, in_hook, in_ci, in_consumer, deferred, fixed_lines=fixed
             ):
                 return window
         return None
@@ -201,10 +255,9 @@ class CompositeEvaluator:
         in_consumer: bool = False,
         deferred: frozenset[tuple[int, int]] = frozenset(),
         *,
-        all_hits: list[CapabilityHit] | None = None,
+        fixed_lines: frozenset[int],
     ) -> bool:
-        all_hits = window if all_hits is None else all_hits
-        window = CompositeEvaluator._fixed_argv_window(all_hits, window)
+        window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
         # The file runs at install time; this window has to as well. If any hit
         # in it sits in a body the hooks never call, the pair the composite
         # describes is not something that happens during an install -- so the
@@ -227,7 +280,7 @@ class CompositeEvaluator:
 
     @staticmethod
     def _fixed_argv_window(
-        all_hits: list[CapabilityHit], window: list[CapabilityHit]
+        window: list[CapabilityHit], fixed_lines: frozenset[int]
     ) -> list[CapabilityHit]:
         """The window without the spawns whose whole argv is written out: they run a fixed program, and count only where nothing else speaks for the composite."""
         # A spawn whose whole argv is written out in the source does not count.
@@ -293,17 +346,22 @@ class CompositeEvaluator:
         # the marker reproduced it exactly, and adding the `ast` match kind
         # did. Taking the fact from the file removes the ordering dependency
         # instead of restating the rule that protects it.
-        speaking_argv = {
-            hit.line
-            for hit in all_hits
-            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
-        }
-        fixed_lines = {hit.line for hit in all_hits if hit.fixed} - speaking_argv
         return [
             hit
             for hit in window
             if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
         ]
+
+    @staticmethod
+    def fixed_lines(all_hits: list[CapabilityHit]) -> frozenset[int]:
+        """The lines whose spawn runs a program written out in full, from every hit in the FILE:
+        a fact about the line, which no window can change (see `_fixed_argv_window`)."""
+        speaking_argv = {
+            hit.line
+            for hit in all_hits
+            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
+        }
+        return frozenset({hit.line for hit in all_hits if hit.fixed} - speaking_argv)
 
     def evaluate(
         self,
@@ -531,6 +589,59 @@ class CompositeEvaluator:
         for term in (*compiled.match.all_of, *compiled.match.any_of):
             walk(term)
         return tuple(dict.fromkeys(found))
+
+
+class _SlidingCounts:
+    """What `_evaluate_over` counts over a window, kept as the window slides along hits in offset order.
+
+    The capabilities, the unresolved variants and how many unresolved hits carry them, the rules
+    fired, and the hits in code the hooks never call: a hit is added as it enters and taken away
+    as it leaves. The window's two ends only move forward (`CompositeEvaluator._dense_window`).
+    """
+
+    def __init__(
+        self, hits: list[CapabilityHit], fixed: frozenset[int], deferred: frozenset[tuple[int, int]]
+    ) -> None:
+        self.hits = hits
+        # A spawn of a program written out in full is not counted, as in `_fixed_argv_window`.
+        self.kept = [not (h.capability is Capability.SPAWN and h.line in fixed) for h in hits]
+        self.in_dead = [bool(deferred) and LineRanges.cls_in(h.line, deferred) for h in hits]
+        self.capabilities: Counter[Capability] = Counter()
+        self.unresolved: Counter[Capability] = Counter()  # their variants, summed
+        self.unresolved_hits: Counter[Capability] = (
+            Counter()
+        )  # how many: no variants is still a key
+        self.rules: Counter[str] = Counter()
+        self.dead = 0
+        self.first = self.end = 0
+
+    def _count(self, index: int, sign: int) -> None:
+        if not self.kept[index]:
+            return
+        hit = self.hits[index]
+        self.capabilities[hit.capability] += sign
+        if not hit.resolved:
+            self.unresolved[hit.capability] += sign * hit.variants
+            self.unresolved_hits[hit.capability] += sign
+        self.rules[hit.rule_id] += sign
+        self.dead += sign * self.in_dead[index]
+
+    def slide(self, start: int, stop: int) -> None:
+        """Make the window `hits[start:stop]`; neither end may move back."""
+        while self.end < stop:
+            self._count(self.end, 1)
+            self.end += 1
+        while self.first < start:
+            self._count(self.first, -1)
+            self.first += 1
+
+    def view(self) -> tuple[set[Capability], Counter[Capability], frozenset[str], int]:
+        """The window's capabilities, unresolved counts, rules fired and dead-code hits."""
+        present = {capability for capability, n in self.capabilities.items() if n}
+        # The keys `_evaluate_over`'s counts would have: one per capability with an unresolved
+        # hit in the window, even at no variants (an empty Counter reads as false in `evaluate`).
+        counts = Counter({c: self.unresolved[c] for c, n in self.unresolved_hits.items() if n})
+        return present, counts, frozenset(rule for rule, n in self.rules.items() if n), self.dead
 
 
 __all__ = ["CompositeEvaluator"]
