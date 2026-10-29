@@ -505,8 +505,11 @@ class ConfigDetector(BaseDetector):
         end = min((s for s in starts if s > offset), default=len(uncommented))
         return uncommented[begin:end]
 
+    # The indentation is possessive (`*+`): what it gives back the optional dash cannot take and the
+    # next `[ \t]*` takes instead, so no match changes, but without it a long run of blanks is retried
+    # at every split -- quadratic in the line, on files the attacker writes (review 98, 27-PERFORMANCE).
     _SHELL_KEY = re.compile(
-        rb"""(?m)^([ \t]*)-?[ \t]*(?:run|script|cmd|commands|command|entrypoint|args)[ \t]*:[ \t]*(.*)$""",
+        rb"""(?m)^([ \t]*+)-?[ \t]*(?:run|script|cmd|commands|command|entrypoint|args)[ \t]*:[ \t]*(.*)$""",
     )
     """A YAML key whose value is handed to an interpreter.
 
