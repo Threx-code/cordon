@@ -30,6 +30,7 @@ class Deep:
     #: depth of JSONTestSuite's `n_structure_100000_opening_arrays.json`, found in real packages.
     CRASHED = 20_000
     DEEPEST = 100_000
+    CONFIG = "version: 1\nscan:\n  limits:\n    per_file_timeout: 0\n    total_timeout: 0\n"
 
     @staticmethod
     def cases(d: int = DEPTH) -> dict[str, tuple[str, str]]:
@@ -90,8 +91,13 @@ class Deep:
         if relative != "package.json":
             (root / "package.json").write_text('{"name":"p","version":"1.0.0"}', encoding="utf-8")
         report = tmp_path / "report.json"
+        # Wall-clock budgets off: this asks whether a document is read, not how fast, and a 5 s
+        # per-file budget is a load test on a busy machine (the time is the growth test's).
+        config = tmp_path / "config.yaml"
+        config.write_text(Deep.CONFIG, encoding="utf-8")
         args = ["scan", str(root), "--offline", "--no-cache", "--no-color", "--quiet"]
         args += ["--format", "json", "--output", str(report), "--fail-on-incomplete"]
+        args += ["--config", str(config)]
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             code = CommandLine.run(args)
         assert report.is_file(), f"{relative}: no report (exit {code})"
