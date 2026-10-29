@@ -32,18 +32,25 @@ import json
 import os
 import secrets
 import sys
+import sysconfig
 import tempfile
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
 from cordon_scanner.foundation.models import Finding
 from cordon_scanner.foundation.paths import StatePaths
 from cordon_scanner.version import SCHEMA_VERSION
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
+
+    from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.foundation.config.settings import Config
 
 CACHE_VERSION = 4
 """Bumped when the on-disk format changes.
@@ -59,6 +66,14 @@ produced a report where some findings collapsed and some did not, according to w
 files happened to be cached. A detector version cannot express that: the change is in
 the engine, after the detectors have spoken.
 """
+
+NOT_A_RESULT = INCOMPLETE_WHEN_REPORTED | {
+    "OPERATIONAL.DETECTOR.FAILED",
+    "OPERATIONAL.FILE.TIMEOUT",
+    "OPERATIONAL.FILE.UNREADABLE",
+}
+"""Findings that say a file's checks did not all run, so its result is not one to keep. A worker
+returns a detector's failure as a finding, cached before anything marks the scan incomplete."""
 
 KEY_NAME = ".cordon-cache-key"
 """Per-machine HMAC key, created 0600 on first use.
@@ -84,6 +99,120 @@ A file not scanned in a month is one whose content has almost certainly changed,
 so the entry would miss anyway. Without eviction the cache grew without bound,
 which on a shared CI volume is a slow disk-space failure nobody attributes to
 the scanner."""
+
+
+class Watch:
+    """What inspecting one file reached past its own bytes, seen by an audit hook.
+
+    A file's cached findings are only right while everything they came from is in the key. Some
+    detectors read more than the file: an agent instruction file's chained file, an MCP server's
+    installed copy, the repository's history through `git`, a registry over the network. None of
+    that is in a key, and none of it can be -- so a file whose inspection reached any of it is
+    not cached. Seen by `sys.addaudithook` rather than declared by each reader, so a reader added
+    later is covered without anyone remembering to say so.
+
+    Reached: a socket, a request or a resolver call; a process started; a file opened or a
+    directory listed anywhere but the file itself, this package's own files (keyed by the package
+    hash), the synced intelligence (keyed by its state) and the standard library. A file in the
+    scanned tree is always reached, even where the tree lies inside one of those places.
+    Unaudited (a `stat`) is not seen: what the tree holds is keyed by `tree_paths`.
+    """
+
+    NETWORK = frozenset(
+        {
+            "socket.connect",
+            "socket.getaddrinfo",
+            "socket.gethostbyname",
+            "socket.gethostbyaddr",
+            "socket.sendto",
+            "urllib.Request",
+            "http.client.connect",
+            "ftplib.connect",
+            "smtplib.connect",
+        }
+    )
+    PROCESS = frozenset(
+        {
+            "subprocess.Popen",
+            "os.system",
+            "os.exec",
+            "os.posix_spawn",
+            "os.spawn",
+            "os.fork",
+            "os.forkpty",
+            "os.startfile",
+            "pty.spawn",
+        }
+    )
+    LISTING = frozenset({"os.listdir", "os.scandir", "glob.glob"})
+
+    current = threading.local()
+    _installed = False
+    _lock = threading.Lock()
+    _allowed: tuple[str, ...] = ()
+
+    def __init__(self, root: str | None, own: str) -> None:
+        self.root = Watch.absolute(root) + os.sep if root else ""
+        self.own = Watch.absolute(Path(root) / own) if root else ""
+        self.reached = ""
+
+    @staticmethod
+    def absolute(path: Any) -> str:
+        """`path` absolute and with `..` folded, lexically: `/package/../home` is not the package."""
+        return os.path.normpath(Path(os.fsdecode(path)).absolute())
+
+    @classmethod
+    def install(cls) -> None:
+        """Add the hook, once per process. An audit hook cannot be removed, so it does nothing
+        while no file is being inspected on its thread."""
+        with cls._lock:
+            if cls._installed:
+                return
+            from cordon_scanner.foundation.paths import PackagePaths
+
+            places = {str(PackagePaths.root()), str(StatePaths.synced_intel_dir())}
+            for name in ("stdlib", "platstdlib"):
+                with contextlib.suppress(KeyError):
+                    places.add(sysconfig.get_paths()[name])
+            cls._allowed = tuple(Watch.absolute(place) + os.sep for place in sorted(places))
+            # The per-machine evidence key, loaded once per process on first use -- which was
+            # inside the first file inspected, keeping that file out of the cache for a read
+            # that is not about it. Loaded here instead, before anything is watched.
+            from cordon_scanner.foundation.evidence_key import EvidenceKey
+
+            EvidenceKey.key()
+            sys.addaudithook(cls._audit)
+            cls._installed = True
+
+    @staticmethod
+    def _audit(event: str, args: tuple[Any, ...]) -> None:
+        watch: Watch | None = getattr(Watch.current, "watch", None)
+        if watch is None or watch.reached:
+            return
+        if event in Watch.NETWORK or event in Watch.PROCESS:
+            watch.reached = event
+        elif event == "open" or event in Watch.LISTING:
+            target = args[0] if args else None
+            if target is None or isinstance(target, int):
+                return
+            watch.place(event, target, args[1] if event == "open" and len(args) > 1 else None)
+
+    def place(self, event: str, target: Any, mode: Any) -> None:
+        """Whether opening or listing `target` is a read past the file."""
+        try:
+            path = Watch.absolute(target)
+        except (TypeError, ValueError):
+            self.reached = event
+            return
+        if path == self.own and (mode is None or not any(c in str(mode) for c in "wax+")):
+            return
+        if self.root and (path + os.sep).startswith(self.root):
+            self.reached = f"{event} in the tree"
+            return
+        writing = isinstance(mode, str) and any(c in mode for c in "wax+")
+        if not writing and any((path + os.sep).startswith(place) for place in Watch._allowed):
+            return
+        self.reached = f"{event} outside the package"
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +321,8 @@ class ScanCache:
     @staticmethod
     @functools.cache
     def _package_hash() -> str:
-        """A hash of every module of this package's source, line endings normalised; the release
+        """A hash of every file of the installed package -- its code and the data it ships
+        (catalogues, the verdict model, the rule packs) -- line endings normalised; the release
         version where there is no source (a frozen build), named so as not to collide."""
         from cordon_scanner.foundation.paths import PackagePaths
         from cordon_scanner.version import __version__
@@ -200,8 +330,8 @@ class ScanCache:
         root = PackagePaths.root()
         digest = hashlib.sha256()
         found = False
-        for path in sorted(root.rglob("*.py")):
-            if "__pycache__" in path.parts:
+        for path in sorted(root.rglob("*")):
+            if "__pycache__" in path.parts or path.suffix == ".pyc" or not path.is_file():
                 continue
             with contextlib.suppress(OSError):
                 text = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
@@ -209,6 +339,138 @@ class ScanCache:
                 digest.update(text + b"\0")
                 found = True
         return digest.hexdigest()[:16] if found else f"nosource-{__version__}"
+
+    @staticmethod
+    def scan_signature(detectors: Sequence[Any], ctx: ScanContext, config: Config) -> str:
+        """Everything a file's cached findings depend on besides its own bytes, its path, its
+        language, the rule pack and the configuration (the other parts of the key).
+
+        The detector signature alone was this part of the key, and a file's findings depend on
+        more than the code that produced them. On the scan context: whether the file is a
+        published package's entry point, in its library closure, a skill's script, a consumer's
+        install path -- unchanged bytes whose role changed were served the findings of the old
+        role. On the synced intelligence: a feed refresh that condemned a release left every
+        warm cache clearing its files. On the Python that parsed it, and on the contents of an
+        operator's `--rule-file`, of which the configuration holds only whether one is set.
+
+        Reads past the file itself are not here because they cannot be: a detector that reads
+        another file of the tree, a socket or a subprocess makes its result depend on something
+        no key names, and `watch` keeps such a result out of the cache instead.
+        """
+        digest = hashlib.sha256()
+        for part in (
+            ScanCache.detector_signature(detectors),
+            ScanCache.context_digest(ctx),
+            ScanCache._intel_state(),
+            ScanCache._rule_file_digest(config),
+            sys.version,
+        ):
+            digest.update(part.encode("utf-8") + b"\0")
+        return digest.hexdigest()[:16]
+
+    @staticmethod
+    def context_digest(ctx: ScanContext) -> str:
+        """A stable hash of the context's facts (`ScanContext.facts`). The repository's root is
+        left out: it is where this run unpacked or found the tree, a temporary directory for an
+        archive, and what is under it is the files' own business."""
+        facts = ctx.facts()
+        repository = facts.get("repository")
+        if repository is not None and is_dataclass(repository):
+            facts["repository"] = replace(cast("Any", repository), root="")
+        digest = hashlib.sha256()
+        ScanCache._feed(digest, facts)
+        return digest.hexdigest()[:16]
+
+    @staticmethod
+    def _feed(digest: Any, value: Any) -> None:
+        """Feed `value` into `digest` canonically: sets sorted, dataclasses by field.
+
+        Iterative, not recursive: a context carries parsed manifests, and their nesting is the
+        scanned package's to choose. A value of a type this does not know is fed by its type and
+        `repr`, which can only make two equal contexts hash apart -- a cache miss, never a
+        wrong hit."""
+        stack: list[Any] = [value]
+        while stack:
+            item = stack.pop()
+            if item is None or isinstance(item, (bool, int, float, str, bytes)):
+                digest.update(f"{type(item).__name__}:{item!r};".encode())
+            elif isinstance(item, Enum):
+                digest.update(f"enum:{type(item).__name__}.{item.name};".encode())
+            elif isinstance(item, Path):
+                digest.update(f"path:{item.as_posix()};".encode())
+            elif isinstance(item, (frozenset, set)):
+                members = sorted(ScanCache._canonical(member) for member in item)
+                digest.update(f"set:{len(members)}:".encode())
+                for member in members:
+                    digest.update(member.encode("utf-8") + b"\0")
+            elif isinstance(item, (list, tuple)):
+                digest.update(f"seq:{len(item)}:".encode())
+                stack.extend(reversed(item))
+            elif isinstance(item, dict):
+                ordered = sorted(item.items(), key=lambda pair: ScanCache._canonical(pair[0]))
+                digest.update(f"map:{len(ordered)}:".encode())
+                for key, member in reversed(ordered):
+                    stack.append(member)
+                    stack.append(key)
+            elif is_dataclass(item) and not isinstance(item, type):
+                names = [f.name for f in fields(item)]
+                digest.update(f"obj:{type(item).__qualname__}:{len(names)}:".encode())
+                for name in reversed(names):
+                    stack.append(getattr(item, name))
+                    stack.append(name)
+            else:
+                digest.update(f"other:{type(item).__qualname__}:{item!r};".encode())
+
+    @staticmethod
+    def _canonical(value: Any) -> str:
+        """One set member or mapping key as a string to sort and hash by."""
+        if isinstance(value, (str, int, float, bool, bytes)) or value is None:
+            return f"{type(value).__name__}:{value!r}"
+        digest = hashlib.sha256()
+        ScanCache._feed(digest, value)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _intel_state() -> str:
+        """The synced intelligence as it stands on disk -- the advisory database, the feed's
+        overlays and rules, the OS databases (`StatePaths.synced_intel_dir`) -- by each file's
+        path, size and modification time. Every writer there replaces files whole, so a refresh
+        moves this."""
+        root = StatePaths.synced_intel_dir()
+        digest = hashlib.sha256()
+        with contextlib.suppress(OSError):
+            for directory, dirnames, filenames in os.walk(root):
+                dirnames.sort()
+                for name in sorted(filenames):
+                    path = Path(directory) / name
+                    with contextlib.suppress(OSError):
+                        stat = path.stat()
+                        relative = path.relative_to(root).as_posix()
+                        digest.update(f"{relative}:{stat.st_size}:{stat.st_mtime_ns};".encode())
+        return digest.hexdigest()[:16]
+
+    @staticmethod
+    def _rule_file_digest(config: Config) -> str:
+        """The contents of the operator's rule file, when one is set."""
+        if not config.rule_file:
+            return ""
+        try:
+            return hashlib.sha256(Path(config.rule_file).read_bytes()).hexdigest()[:16]
+        except OSError:
+            return "unreadable"
+
+    @staticmethod
+    @contextlib.contextmanager
+    def watch(root: str | None, own: str) -> Iterator[Watch]:
+        """Note anything inspecting one file reaches past its own bytes (`Watch`)."""
+        Watch.install()
+        watch = Watch(root, own)
+        previous = getattr(Watch.current, "watch", None)
+        Watch.current.watch = watch
+        try:
+            yield watch
+        finally:
+            Watch.current.watch = previous
 
     @staticmethod
     def _detector_identity(detector: Any) -> str:
@@ -547,6 +809,11 @@ class ScanCache:
         jobs sharing a cache volume.
         """
         if not self.enabled or not self._ensure_writable():
+            return
+        # A result that says it is incomplete -- a detector failed, the file could not be read --
+        # is not a fact about the file. Cached, a failure from one bad moment (memory, load) was
+        # served for that content until the code changed.
+        if any(f.rule_id in NOT_A_RESULT or f.degrades_coverage for f in findings):
             return
 
         body = [f.to_dict() for f in findings]

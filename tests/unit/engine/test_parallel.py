@@ -473,3 +473,93 @@ class TestAvailableCpus:
 
     def test_unreadable_cgroup_files_fall_back(self, tmp_path) -> None:
         assert ParallelScanner.available_cpus(self.cgroup(tmp_path, "garbage")) >= 1
+
+
+class TestTheWorkerHasTheWholeContext:
+    """A worker judges a file with everything the parent's context knows (`ScanContext.facts`).
+
+    It was sent a list of facts instead, each added when its absence was noticed, and the five
+    set after the list was last extended never arrived. The cost was not a lower score: a
+    `setup.py` that spawns the binary its package ships was MALWARE.INSTALL.CONSUMER_CODE.001 at
+    critical with one worker and nothing with eight, so a scan with the default worker count of
+    any source distribution over four megabytes passed it.
+    """
+
+    SETUP = (
+        "import os, subprocess\n"
+        "from setuptools import setup\n"
+        "from setuptools.command.install import install\n\n\n"
+        "class Post(install):\n"
+        "    def run(self):\n"
+        "        install.run(self)\n"
+        "        subprocess.Popen([os.path.join(os.path.dirname(__file__), 'dist', 'pip_security')])\n\n\n"
+        "setup(name='probe', version='1.0', cmdclass={'install': Post})\n"
+    )
+
+    @staticmethod
+    def sdist(path, setup: str) -> None:
+        """An sdist whose `setup.py` spawns a shipped native binary, padded with plain data past
+        the size at which members are scanned across a pool."""
+        import io
+        import tarfile
+
+        def add(archive, name: str, data: bytes, mode: int = 0o644) -> None:
+            member = tarfile.TarInfo(f"probe-1.0/{name}")
+            member.size, member.mode = len(data), mode
+            archive.addfile(member, io.BytesIO(data))
+
+        with tarfile.open(path, "w:gz") as archive:
+            add(archive, "PKG-INFO", b"Metadata-Version: 2.1\nName: probe\nVersion: 1.0\n")
+            add(archive, "setup.py", setup.encode())
+            add(archive, "dist/pip_security", b"\x7fELF\x02\x01\x01" + bytes(64), 0o755)
+            for i in range(4):
+                rows = "".join(f"{j},{j * 3}\n" for j in range(120_000))
+                add(archive, f"data/table{i}.csv", f"id,value\n{rows}".encode())
+
+    def test_a_shipped_binary_spawned_at_install_blocks_at_any_worker_count(self, tmp_path) -> None:
+        target = tmp_path / "probe-1.0.tar.gz"
+        self.sdist(target, self.SETUP)
+        found = {}
+        for workers in (1, 8):
+            config = Config.default().with_overrides(
+                use_cache=False, limits=Config.default().limits.merged(max_workers=workers)
+            )
+            found[workers] = sorted(
+                f.rule_id
+                for f in Scanner(config).scan(target).findings
+                if f.location.path.endswith("setup.py")
+            )
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" in found[1]
+        assert found[8] == found[1]
+
+    def test_the_pool_is_sent_every_fact_of_the_context(self, monkeypatch, tmp_path) -> None:
+        """Every field but the process-local ones, so a field added later reaches the workers
+        without anyone remembering to send it."""
+        from dataclasses import fields
+
+        from cordon_scanner.detect.base import ScanContext
+
+        target = tmp_path / "probe-1.0.tar.gz"
+        self.sdist(target, self.SETUP)
+        sent: list[set[str]] = []
+        run = ParallelScanner.run
+
+        def recording(**kwargs):
+            sent.append(set(kwargs["facts"]))
+            return run(**kwargs)
+
+        monkeypatch.setattr(ParallelScanner, "run", staticmethod(recording))
+        config = Config.default().with_overrides(
+            use_cache=False, limits=Config.default().limits.merged(max_workers=8)
+        )
+        Scanner(config).scan(target)
+        assert sent, "the probe must cross the parallel threshold"
+        assert sent[0] == {f.name for f in fields(ScanContext)} - set(ScanContext.LOCAL)
+
+    def test_every_local_field_is_a_field_and_says_why(self) -> None:
+        from dataclasses import fields
+
+        from cordon_scanner.detect.base import ScanContext
+
+        assert set(ScanContext.LOCAL) <= {f.name for f in fields(ScanContext)}
+        assert all(reason.strip() for reason in ScanContext.LOCAL.values())
