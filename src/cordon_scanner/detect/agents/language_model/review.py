@@ -128,17 +128,25 @@ class VerdictParser:
     _OBJECT: ClassVar[re.Pattern[str]] = re.compile(r"\{[\s\S]*\}")
 
     @staticmethod
+    def json_object(text: str) -> str | None:
+        """`_OBJECT.search(text).group(0)`, or None: from the first `{` to the last `}`, when a `}`
+        follows the first `{`. As an expression it was tried again from every `{` of a text with no
+        `}` after them -- quadratic in `{{{...`, in the judge's answer (review 98, 27-PERFORMANCE)."""
+        opening, closing = text.find("{"), text.rfind("}")
+        return text[opening : closing + 1] if 0 <= opening < closing else None
+
+    @staticmethod
     def squash(text: str) -> str:
         return re.sub(r"\s+", " ", text).strip().lower()
 
     @classmethod
     def parse(cls, answer: str, judged: str) -> Verdict | None:
         """None when the answer is not the JSON asked for."""
-        found = cls._OBJECT.search(answer or "")
+        found = cls.json_object(answer or "")
         if found is None:
             return None
         try:
-            data = json.loads(found.group(0))
+            data = json.loads(found)
         except ValueError:
             return None
         if not isinstance(data, dict):

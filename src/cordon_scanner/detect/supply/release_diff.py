@@ -49,7 +49,11 @@ process, executing or decoding code, reading credentials, deleting data wholesal
 DECISIVE = frozenset({Capability.FETCH_EXEC, Capability.EXECUTE, Capability.CREDENTIAL})
 """A release that gains one of these in code that runs on its own is blocked, not noted."""
 
-_VERSIONED_ROOT = re.compile(r"^[^/]*?[-_]v?\d+(?:\.\d+){0,3}[^/]*/")
+#: A member path's first directory when it names a version (`pkg-1.2.3/`). The match always ends at the
+#: first `/`; whether there is one depends only on a `-` or `_`, maybe a `v`, and a digit somewhere
+#: before it, which the lookahead asks once. Written `[^/]*?[-_]v?\d+(?:\.\d+){0,3}[^/]*/`, each `-` or
+#: `_` tried read on to the end of the path again (review 98, 27-PERFORMANCE).
+_VERSIONED_ROOT = re.compile(r"^(?=[^/]*?[-_]v?\d)[^/]*/")
 
 
 class ReleaseDiff:

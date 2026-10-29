@@ -140,8 +140,12 @@ SECRECY: Final = re.compile(
 #: agent's shell lent to whoever wrote it (MCP-SafetyBench "Command Injection").
 ORDERS_A_COMMAND: Final = re.compile(
     r"(?i)\b(?:must|please|should|need\s+to|required\s+to)\s+(?:also\s+|first\s+)?(?:execute|run)\s+"
-    r"(?:the\s+following\s+|this\s+)?(?:[\w-]+\s+){0,3}(?:command|script|cleanup|check)\b[^.]{0,40}?"
-    r":?\s*(?:`|')?(?:curl|wget|rm|sudo|echo|export|chmod|bash|sh|python3?|powershell|nc|cat|env|"
+    r"(?:the\s+following\s+|this\s+)?(?:[\w-]+\s+){0,3}(?:command|script|cleanup|check)\b"
+    # Up to 40 characters, then blanks: split at the colon if there is one, and otherwise with the 40
+    # ending on a non-blank, so a run of blanks is read once and not from each of the 40 places a lazy
+    # `[^.]{0,40}?:?\s*` could stop in it (review 98, 27-PERFORMANCE).
+    r"(?:[^.]{0,40}?:\s*|(?:[^.]{0,39}?[^.\s])?\s*)"
+    r"(?:`|')?(?:curl|wget|rm|sudo|echo|export|chmod|bash|sh|python3?|powershell|nc|cat|env|"
     r"printenv|whoami|id)\b"
 )
 
