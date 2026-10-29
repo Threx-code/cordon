@@ -59,3 +59,49 @@ class TestTieredText:
         tiered = ReportOptions(color=False, blocking=frozenset())
         for opts in (replace(tiered, verbose=True), ReportOptions(color=False)):
             assert "SUSPECT.ANTI_ANALYSIS.001" in TieredKit.text(result, opts)
+
+
+class TestTheIncompletePointer:
+    """An incomplete scan points the reader at its coverage notes only where they are: above, when
+    they printed; behind `-v`, when the tiered view left them out; nowhere, when there are none.
+    It said "see the coverage notes above" whatever was above."""
+
+    @staticmethod
+    def incomplete(tmp_path: Path, *severities):
+        from cordon_scanner.foundation.models import Severity
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        result = TieredKit.result(tmp_path)
+        notes = [
+            OperationalFinding.build(
+                path="big.js",
+                rule_id=f"OPERATIONAL.TEST.{i}",
+                message="not read in full",
+                remediation="-",
+                severity=getattr(Severity, s),
+            )
+            for i, s in enumerate(severities)
+        ]
+        kept = [f for f in result.findings if f.category.value != "operational"]
+        return replace(result, findings=tuple(kept + notes), complete=False)
+
+    def test_notes_that_printed_are_pointed_to_above(self, tmp_path: Path) -> None:
+        result = self.incomplete(tmp_path, "MEDIUM")
+        text = TieredKit.text(result, ReportOptions(color=False, blocking=frozenset()))
+        assert "not read in full" in text
+        assert "see the coverage notes above" in text
+
+    def test_notes_the_tiered_view_left_out_are_pointed_to_behind_verbose(
+        self, tmp_path: Path
+    ) -> None:
+        result = self.incomplete(tmp_path, "INFO", "INFO")
+        text = TieredKit.text(result, ReportOptions(color=False, blocking=frozenset()))
+        assert "not read in full" not in text
+        assert "notes above" not in text
+        assert "2 coverage note(s) with -v" in text
+
+    def test_no_notes_no_pointer(self, tmp_path: Path) -> None:
+        result = self.incomplete(tmp_path)
+        text = TieredKit.text(result, ReportOptions(color=False, blocking=frozenset()))
+        assert "scan INCOMPLETE" in text
+        assert "coverage notes" not in text

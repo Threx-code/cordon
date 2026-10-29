@@ -146,6 +146,7 @@ class TextReporter(BaseReporter):
         # Operational findings are grouped at the end rather than interleaved.
         # They describe the scan rather than the code, and mixing the two makes
         # a reader work to tell "your code is fine" from "I could not look".
+        noted = len(operational)
         if opts.blocking is not None and not opts.verbose:
             # Tiered: a note about the scan that changes nothing (the advisory database's scope,
             # a cache hit) is informational like any other; one that does (stale intel, files
@@ -154,7 +155,13 @@ class TextReporter(BaseReporter):
         if operational:
             yield from self._operational_block(operational, color)
 
-        yield from self._summary(result, color, hidden, compact=not opts.verbose)
+        yield from self._summary(
+            result,
+            color,
+            hidden,
+            compact=not opts.verbose,
+            notes=(len(operational), noted - len(operational)),
+        )
 
     # -- Findings --------------------------------------------------------
 
@@ -386,9 +393,41 @@ class TextReporter(BaseReporter):
 
     # -- Summary ---------------------------------------------------------
 
-    def _summary(
-        self, result: ScanResult, color: bool, hidden: int, *, compact: bool = False
+    def _completeness(
+        self, result: ScanResult, color: bool, notes: tuple[int, int]
     ) -> Iterator[bytes]:
+        """Whether the scan looked at everything, and where its coverage notes are if it did not."""
+        # Completeness is stated on every scan, not only when it fails. A reader
+        # should never have to infer whether the tool actually looked.
+        if result.complete:
+            yield self._line(f"{DIM}scan complete{RESET}", color)
+        else:
+            # Pointed at only where the notes are: it said "above" whatever was above, and the
+            # tiered view leaves informational notes out, a per-file timeout's among them.
+            shown, left_out = notes
+            where = (
+                "see the coverage notes above"
+                if shown
+                else f"see the {left_out} coverage note(s) with -v"
+                if left_out
+                else ""
+            )
+            yield self._line(
+                f"{SEVERITY_COLOR[Severity.MEDIUM]}scan INCOMPLETE{RESET} "
+                f"{DIM}- results are partial{'; ' + where if where else ''}{RESET}",
+                color,
+            )
+
+    def _summary(
+        self,
+        result: ScanResult,
+        color: bool,
+        hidden: int,
+        *,
+        compact: bool = False,
+        notes: tuple[int, int] = (0, 0),
+    ) -> Iterator[bytes]:
+        """`notes`: the coverage notes printed above, and those the tiered view left out."""
         counts = result.by_severity()
         yield self._line(f"{DIM}{'-' * WIDTH}{RESET}", color)
 
@@ -440,16 +479,7 @@ class TextReporter(BaseReporter):
                 f"{DIM}intel: {intel.get('source')}{serial}, {when}{stale}{RESET}", color
             )
 
-        # Completeness is stated on every scan, not only when it fails. A reader
-        # should never have to infer whether the tool actually looked.
-        if result.complete:
-            yield self._line(f"{DIM}scan complete{RESET}", color)
-        else:
-            yield self._line(
-                f"{SEVERITY_COLOR[Severity.MEDIUM]}scan INCOMPLETE{RESET} "
-                f"{DIM}- results are partial; see the coverage notes above{RESET}",
-                color,
-            )
+        yield from self._completeness(result, color, notes)
 
         if hidden:
             yield self._line(f"{DIM}{hidden} further finding(s) not shown{RESET}", color)
