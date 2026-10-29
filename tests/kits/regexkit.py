@@ -619,7 +619,6 @@ class Listed:
     #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
     OPEN: ClassVar[dict[str, str]] = {
         "detect.code.features:CodeFeatures._URL": "modelling team (measurement-only, every-literal proof)",
-        "analysis.formats.documents:_PDF_STREAM": "outer-layer team",
         "analysis.go.go_eval:_ASSIGN": "outer-layer team",
         "analysis.go.go_eval:_HELPER": "outer-layer team",
         "analysis.javascript.evaluation.values:BUILTIN_DECODER_LOOP": "outer-layer team",
