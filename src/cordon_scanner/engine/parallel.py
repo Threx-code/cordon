@@ -435,29 +435,39 @@ class ParallelScanner:
                 out.append((index, [], False, False))
                 continue
 
-            from cordon_scanner.engine.cache import ScanCache
-
-            with ScanCache.watch(root, relative) as watch:
-                produced, failures, windowed, intact = ParallelScanner._inspect_unit(
-                    loaded, relative, ctx, detectors
-                )
-            if not intact:
-                out.append((index, [], False, False))
-                continue
-            produced.extend(windowed)
-            findings: list[dict[str, Any]] = [
-                # The same per-file hash the serial path records, and recorded
-                # here too because `test_parallel_matches_serial_exactly` is
-                # what this codebase has instead of hoping the two agree.
-                f.with_file_hash(loaded.sha256).to_dict()
-                if f.location.path == relative
-                else f.to_dict()
-                for f in produced
-            ]
-            findings.extend(failures)
-            out.append((index, findings, True, not watch.reached))
+            findings, intact, cacheable = ParallelScanner._inspected(
+                loaded, relative, root, ctx, detectors
+            )
+            out.append((index, findings, True, cacheable) if intact else (index, [], False, False))
 
         return out
+
+    @staticmethod
+    def _inspected(
+        loaded: FileContent, relative: str, root: str, ctx: Any, detectors: tuple[Any, ...]
+    ) -> tuple[list[dict[str, Any]], bool, bool]:
+        """One file's findings as they cross back to the parent, whether the file stayed the same
+        while it was read, and whether its inspection stayed within it (`ScanCache.watch`)."""
+        from cordon_scanner.engine.cache import ScanCache
+
+        with ScanCache.watch(root, relative) as watch:
+            produced, failures, windowed, intact = ParallelScanner._inspect_unit(
+                loaded, relative, ctx, detectors
+            )
+        if not intact:
+            return [], False, False
+        produced.extend(windowed)
+        findings: list[dict[str, Any]] = [
+            # The same per-file hash the serial path records, and recorded
+            # here too because `test_parallel_matches_serial_exactly` is
+            # what this codebase has instead of hoping the two agree.
+            f.with_file_hash(loaded.sha256).to_dict()
+            if f.location.path == relative
+            else f.to_dict()
+            for f in produced
+        ]
+        findings.extend(failures)
+        return findings, True, not watch.reached
 
     @staticmethod
     def _inspect_unit(

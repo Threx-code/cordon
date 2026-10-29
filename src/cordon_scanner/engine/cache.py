@@ -189,6 +189,15 @@ class Watch:
         watch: Watch | None = getattr(Watch.current, "watch", None)
         if watch is None or watch.reached:
             return
+        # A hook that raises breaks the call it audits -- the open a detector made, inside a
+        # scan. Nothing here may: what cannot be judged is counted as reached.
+        try:
+            Watch._judge(watch, event, args)
+        except Exception:  # noqa: BLE001
+            watch.reached = event
+
+    @staticmethod
+    def _judge(watch: Watch, event: str, args: tuple[Any, ...]) -> None:
         if event in Watch.NETWORK or event in Watch.PROCESS:
             watch.reached = event
         elif event == "open" or event in Watch.LISTING:
@@ -199,11 +208,7 @@ class Watch:
 
     def place(self, event: str, target: Any, mode: Any) -> None:
         """Whether opening or listing `target` is a read past the file."""
-        try:
-            path = Watch.absolute(target)
-        except (TypeError, ValueError):
-            self.reached = event
-            return
+        path = Watch.absolute(target)
         if path == self.own and (mode is None or not any(c in str(mode) for c in "wax+")):
             return
         if self.root and (path + os.sep).startswith(self.root):
@@ -321,24 +326,56 @@ class ScanCache:
     @staticmethod
     @functools.cache
     def _package_hash() -> str:
-        """A hash of every file of the installed package -- its code and the data it ships
-        (catalogues, the verdict model, the rule packs) -- line endings normalised; the release
-        version where there is no source (a frozen build), named so as not to collide."""
+        """The identity of every file of the running package -- its code and the data it ships
+        (catalogues, the verdict model, the rule packs) -- once per process.
+
+        An installed wheel's: its `RECORD`, which holds every installed file's SHA-256, so the same
+        release gives the same identity on every machine and a CI cache restored onto a fresh
+        runner still hits. Used only when that `RECORD` lists this package's own modules and its
+        files are the ones running: a source tree on `PYTHONPATH` in front of an installed copy
+        must not borrow the copy's identity, and an editable install's `RECORD` lists only its
+        loader. Anywhere else -- a source tree, an editable install, a snapshot -- each file's path,
+        size and modification time: an edit moves it. Reading every byte instead cost 0.37 s of
+        CPU per process (757 files, 35 MB), paid by every scan a measurement run starts."""
         from cordon_scanner.foundation.paths import PackagePaths
         from cordon_scanner.version import __version__
 
         root = PackagePaths.root()
-        digest = hashlib.sha256()
-        found = False
-        for path in sorted(root.rglob("*")):
-            if "__pycache__" in path.parts or path.suffix == ".pyc" or not path.is_file():
-                continue
-            with contextlib.suppress(OSError):
-                text = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-                digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
-                digest.update(text + b"\0")
-                found = True
-        return digest.hexdigest()[:16] if found else f"nosource-{__version__}"
+        record = ScanCache._wheel_record(root)
+        if record is not None:
+            return "wheel-" + hashlib.sha256(record).hexdigest()[:16]
+        entries: list[str] = []
+        pending = [(str(root), "")]
+        while pending:
+            directory, prefix = pending.pop()
+            with contextlib.suppress(OSError), os.scandir(directory) as listing:
+                for entry in listing:
+                    if entry.is_dir(follow_symlinks=False):
+                        if entry.name != "__pycache__":
+                            pending.append((entry.path, f"{prefix}{entry.name}/"))
+                    elif entry.is_file() and not entry.name.endswith(".pyc"):
+                        stat = entry.stat()
+                        entries.append(f"{prefix}{entry.name}:{stat.st_size}:{stat.st_mtime_ns};")
+        if not entries:
+            return f"nosource-{__version__}"
+        return "tree-" + hashlib.sha256("".join(sorted(entries)).encode()).hexdigest()[:16]
+
+    @staticmethod
+    def _wheel_record(root: Path) -> bytes | None:
+        """The installed wheel's `RECORD`, when it describes the package running from `root`."""
+        from importlib import metadata
+
+        try:
+            distribution = metadata.distribution("cordon-scanner")
+            record = distribution.read_text("RECORD")
+            located = Path(str(distribution.locate_file("cordon_scanner/__init__.py")))
+        except (metadata.PackageNotFoundError, OSError, ValueError):
+            return None
+        if not record or "cordon_scanner/engine/cache.py," not in record:
+            return None
+        if Watch.absolute(located) != Watch.absolute(root / "__init__.py"):
+            return None
+        return record.encode("utf-8")
 
     @staticmethod
     def scan_signature(detectors: Sequence[Any], ctx: ScanContext, config: Config) -> str:

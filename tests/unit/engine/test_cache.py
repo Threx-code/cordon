@@ -200,14 +200,37 @@ class TestDetectorSignature:
             ScanCache._package_hash.cache_clear()
             return ScanCache.detector_signature([D()])
 
+        monkeypatch.setattr(ScanCache, "_wheel_record", staticmethod(lambda root: None))
         try:
             before = signature("SINKS = ('eval',)\n")
             after = signature("SINKS = ('eval', 'exec')\n")
-            crlf = signature("SINKS = ('eval', 'exec')\r\n")
         finally:
             ScanCache._package_hash.cache_clear()
         assert before != after, "changed analysis must not serve cached findings"
-        assert after == crlf, "line endings alone must not change it"
+
+    def test_an_installed_wheel_is_known_by_its_record_on_every_machine(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """The same release installed on two machines has different modification times; its
+        RECORD, which holds every file's SHA-256, is the same, so a restored CI cache still hits."""
+        from cordon_scanner.foundation.paths import PackagePaths
+
+        (tmp_path / "engine").mkdir()
+        (tmp_path / "engine" / "cache.py").write_text("x = 1\n", encoding="utf-8")
+        monkeypatch.setattr(PackagePaths, "root", staticmethod(lambda: tmp_path))
+        record = b"cordon_scanner/engine/cache.py,sha256=abc,6\n"
+        monkeypatch.setattr(ScanCache, "_wheel_record", staticmethod(lambda root: record))
+        try:
+            ScanCache._package_hash.cache_clear()
+            first = ScanCache._package_hash()
+            import os
+
+            os.utime(tmp_path / "engine" / "cache.py", ns=(5, 5))
+            ScanCache._package_hash.cache_clear()
+            assert ScanCache._package_hash() == first
+        finally:
+            ScanCache._package_hash.cache_clear()
+        assert first.startswith("wheel-")
 
     def test_a_real_detector_contributes_a_code_hash(self) -> None:
         from cordon_scanner.detect.secrets.detector import SecretDetector
@@ -514,12 +537,12 @@ class TestWatch:
     def test_its_own_file_and_the_standard_library_are_not_reached(self, tmp_path) -> None:
         import json as stdlib_json
 
-        assert not self.reached(tmp_path, lambda: (tmp_path / "own.md").read_text())
+        assert not self.reached(tmp_path, lambda: (tmp_path / "own.md").read_text(encoding="utf-8"))
         assert not self.reached(tmp_path, lambda: Path(stdlib_json.__file__).open("rb").close())
 
     def test_another_file_of_the_tree_is_reached(self, tmp_path) -> None:
         assert (
-            self.reached(tmp_path, lambda: (tmp_path / "other.md").read_text())
+            self.reached(tmp_path, lambda: (tmp_path / "other.md").read_text(encoding="utf-8"))
             == "open in the tree"
         )
         assert self.reached(tmp_path, lambda: list(tmp_path.iterdir()))
@@ -529,8 +552,10 @@ class TestWatch:
     ) -> None:
         sub = tmp_path / "sub"
         sub.mkdir()
-        assert not self.reached(tmp_path, lambda: (sub / ".." / "own.md").read_text())
-        assert self.reached(tmp_path, lambda: (sub / ".." / "other.md").read_text())
+        assert not self.reached(
+            tmp_path, lambda: (sub / ".." / "own.md").read_text(encoding="utf-8")
+        )
+        assert self.reached(tmp_path, lambda: (sub / ".." / "other.md").read_text(encoding="utf-8"))
 
     def test_a_socket_a_process_and_a_file_elsewhere_are_reached(self, tmp_path) -> None:
         import socket
@@ -551,7 +576,7 @@ class TestWatch:
         with tempfile.NamedTemporaryFile("w", delete=False) as handle:
             handle.write("z")
         assert (
-            self.reached(tmp_path, lambda: Path(handle.name).open().close())
+            self.reached(tmp_path, lambda: Path(handle.name).open(encoding="utf-8").close())
             == "open outside the package"
         )
 
@@ -562,3 +587,20 @@ class TestWatch:
             pass
         (tmp_path / "other.md").write_text("y", encoding="utf-8")
         assert getattr(Watch.current, "watch", None) is None
+
+
+class TestTheWatchNeverBreaksWhatItWatches:
+    def test_a_path_it_cannot_resolve_is_counted_as_reached_not_raised(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """`Path.absolute` reads the working directory, which a test or a hook may have deleted. An
+        audit hook that raised there would fail the detector's own open with the hook's error."""
+        from cordon_scanner.engine.cache import Watch
+
+        gone = tmp_path / "gone"
+        gone.mkdir()
+        monkeypatch.chdir(gone)
+        gone.rmdir()
+        with ScanCache.watch(str(tmp_path), "own.md") as watch:
+            Watch._audit("open", ("relative.md", "r", 0))
+        assert watch.reached == "open"
