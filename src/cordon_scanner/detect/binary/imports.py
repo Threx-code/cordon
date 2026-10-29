@@ -273,8 +273,10 @@ class ImportCapabilities:
         resolves = "dynload" in found and len(imported) <= 12
         return ImportProfile(found, resolves)
 
+    # `[\d.]*(?:[^\W\d]\w*)?` is `[\d.]*\w*` with the split fixed: digits the second run would start
+    # with belong to the first, so it starts with a letter or `_` (review 98, 27-PERFORMANCE).
     BINDING_LIBRARIES: ClassVar[re.Pattern[str]] = re.compile(
-        r"^(?:python\d{1,3}(?:_d)?\.dll|libpython\d[\d.]*\w*\.so[\d.]*|node\.exe|libnode\.so[\d.]*)$",
+        r"^(?:python\d{1,3}(?:_d)?\.dll|libpython\d[\d.]*(?:[^\W\d]\w*)?\.so[\d.]*|node\.exe|libnode\.so[\d.]*)$",
         re.IGNORECASE,
     )
     BINDING_SYMBOLS: ClassVar[re.Pattern[str]] = re.compile(
