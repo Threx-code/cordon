@@ -84,9 +84,11 @@ class TestSegmented(Small):
 
     def test_a_template_heavy_text_is_read_in_one_pass(self) -> None:
         text = "x = `a${`b${`c${d}`}`}`;\n" * 200_000  # 5 MB of nested templates
-        started = __import__("time").monotonic()
+        # CPU time: the work runs in this process, and a loaded machine stretched wall time past
+        # the bound while the read itself stayed one pass.
+        started = __import__("time").process_time()
         Segments._statement_ends(text, len(text) - Segments.TAIL)
-        assert __import__("time").monotonic() - started < 10
+        assert __import__("time").process_time() - started < 10
 
     @pytest.mark.usefixtures("small")
     def test_a_literal_longer_than_a_segment_is_read_past(self) -> None:

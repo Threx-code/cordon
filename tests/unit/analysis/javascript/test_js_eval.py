@@ -64,9 +64,10 @@ class TestBounds:
         # later re-read the string from every quote inside it (review 98: two minutes for one file).
         body = '\\"k\\":\\"v\\",' * 12_000
         text = f'window.searchData = JSON.parse("{body}");\n'
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         tokens = JsEval.tokens(text)
-        assert time.monotonic() - started < 5
+        assert time.process_time() - started < 5
         assert [t.kind for t in tokens].count("longstr") == 1
 
     def test_an_unterminated_quote_ends_at_its_line(self) -> None:

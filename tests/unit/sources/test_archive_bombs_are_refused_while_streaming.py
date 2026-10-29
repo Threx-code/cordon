@@ -40,9 +40,10 @@ class TestBombsAreRefusedWhileStreaming:
         for _ in range(info.size // len(chunk)):
             parts.append(compressor.compress(chunk))
         parts.append(compressor.flush())
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         result = ArchiveReader.extract(b"".join(parts), path="skip.tar.bz2")
-        assert time.monotonic() - started < 2.0
+        assert time.process_time() - started < 2.0
         assert not result.members
         assert any(r.reason == Rejection.PADDED for r in result.rejected)
 
