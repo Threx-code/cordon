@@ -251,7 +251,10 @@ class TestH4bTheBudgetBindsWhileMatchingInParallel:
     stops handing out batches at the deadline, and what it never started is reported unexamined.
 
     Asserted by what the scan reports, not by seconds: a budget that does not bind while matching
-    examines every file and names no time limit, however fast the machine."""
+    examines every file and names no time limit, however fast the machine. Which stage reports it
+    is left open, because that is decided by the clock: on a loaded machine the budget can run out
+    in the walk or the expansion before the pool starts. The pool's own stop is tested without a
+    clock, in tests/unit/engine/test_parallel.py's TestThePoolStopsAtTheDeadline."""
 
     FUNCTION = (
         "function f{i}(a, b) {{ const x = require('fs').readFileSync(a, 'utf8');"
@@ -273,11 +276,12 @@ class TestH4bTheBudgetBindsWhileMatchingInParallel:
         )
 
     @staticmethod
-    def unexamined(result: Any) -> list[str]:
+    def timed_out(result: Any) -> list[str]:
+        """Every time-limit finding naming the scan's 2 s budget, whichever stage it came from."""
         return [
             f.message
             for f in result.findings
-            if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" and "still unexamined" in f.message
+            if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" and "2s budget" in f.message
         ]
 
     def test_in_an_archive(self, tmp_path: Path) -> None:
@@ -293,7 +297,7 @@ class TestH4bTheBudgetBindsWhileMatchingInParallel:
                 out.addfile(info, io.BytesIO(data))
         result = Scanner(self.config()).scan(archive)
 
-        assert self.unexamined(result), [f.message for f in result.findings]
+        assert self.timed_out(result), [f.message for f in result.findings]
         assert not result.complete, "a truncated scan reported complete"
 
     def test_in_a_directory(self, tmp_path: Path) -> None:
@@ -303,7 +307,7 @@ class TestH4bTheBudgetBindsWhileMatchingInParallel:
             (tree / f"m{index}.js").write_bytes(self.body(index))
         result = Scanner(self.config()).scan(tmp_path / "pkg")
 
-        assert self.unexamined(result), [f.message for f in result.findings]
+        assert self.timed_out(result), [f.message for f in result.findings]
         assert not result.complete, "a truncated scan reported complete"
 
 
