@@ -533,6 +533,9 @@
   "report/text": "report/text",
   "report/vex": "report/vex",
   "rules/loader": "rules/loader",
+  "rules/tester": "rules/tester",
+  "rules/pack": "rules/pack",
+  "rules/patterns": "rules/patterns",
   "sources/archive": "sources/archive",
   "sources/budget": "sources/budget",
   "sources/base": "sources/base",
@@ -892,26 +895,5 @@
   "test_zstd.py": "intel/store",
   "test_build_backend.py": "repository/release"
  },
- "shims": {},
- "frozen": {
-  "_doc": "Measured 2026-10-20 when the layout checks were switched on; the size and adapter lists 2026-10-28 (reviews 21-MAINTAINABILITY.md: modules and classes at most 1,000 lines, functions 90, directories 20 modules, the engine reaching adapters only through the registry). Each list may only shrink: a module, class or function may shorten, a directory may lose modules, an outward or adapter import may go, a file may stop locating itself by __file__, a docstring may rejoin what it documents -- none may be added or grow. When every list is empty the limits hold with no exceptions. tests/unit/repository/test_package_layout.py enforces it.",
-  "long_modules": {
-   "rules/loader": 1642
-  },
-  "outward_imports": [],
-  "file_relative_paths": [
-   "src/cordon_scanner/rules/loader.py"
-  ],
-  "orphaned_docstrings": [],
-  "long_classes": {},
-  "long_functions": {
-   "rules/loader:PatternCompiler._reject_unsafe": 121,
-   "rules/loader:PatternCompiler._reject_unsafe.walk": 102,
-   "rules/loader:PatternCompiler.required_literals": 181,
-   "rules/loader:RuleLoader._compile_match": 129,
-   "rules/loader:RuleLoader._parse_rule": 138
-  },
-  "large_directories": {},
-  "engine_adapter_imports": []
- }
+ "shims": {}
 }

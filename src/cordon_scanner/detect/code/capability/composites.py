@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from cordon_scanner.foundation.content import FileContent
-    from cordon_scanner.rules.loader import CompiledRule
+    from cordon_scanner.rules.pack import CompiledRule
 
 
 class CompositeEvaluator:

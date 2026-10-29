@@ -18,12 +18,8 @@ from hypothesis import strategies as st
 
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
-from cordon_scanner.rules.loader import (
-    PatternCompiler,
-    RuleLoader,
-    RuleSet,
-    RuleTester,
-)
+from cordon_scanner.rules.loader import PatternCompiler, RuleLoader, RuleSet
+from cordon_scanner.rules.tester import RuleTester
 
 MINIMAL_PACK = """
 pack:
