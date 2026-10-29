@@ -182,7 +182,33 @@ class ScanCache:
         usually a missed payload.
         """
         parts = sorted(ScanCache._detector_identity(d) for d in detectors)
+        # The package's own code as well: a detector's module is a small part of what decides its
+        # findings, and the analysis it calls (the JavaScript and Python flow, the rule engine, the
+        # decoders) lives elsewhere. Keyed on its own module alone, a release that fixed detection
+        # there kept serving every warm cache the old findings, and the cache is on by default.
+        parts.append(f"package@{ScanCache._package_hash()}")
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    @functools.cache
+    def _package_hash() -> str:
+        """A hash of every module of this package's source, line endings normalised; the release
+        version where there is no source (a frozen build), named so as not to collide."""
+        from cordon_scanner.foundation.paths import PackagePaths
+        from cordon_scanner.version import __version__
+
+        root = PackagePaths.root()
+        digest = hashlib.sha256()
+        found = False
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            with contextlib.suppress(OSError):
+                text = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
+                digest.update(text + b"\0")
+                found = True
+        return digest.hexdigest()[:16] if found else f"nosource-{__version__}"
 
     @staticmethod
     def _detector_identity(detector: Any) -> str:

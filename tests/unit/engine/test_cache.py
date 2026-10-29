@@ -175,6 +175,38 @@ class TestDetectorSignature:
 
         assert before != after, "a changed detector must not serve cached findings"
 
+    def test_changing_analysis_code_a_detector_calls_invalidates(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A detector's own module is not all that decides its findings: the analysis it calls lives
+        elsewhere. Keyed on its module alone, a release that fixed detection in that analysis kept
+        serving every warm cache (on by default) the findings of the code it replaced."""
+        from cordon_scanner.foundation.paths import PackagePaths
+
+        (tmp_path / "detect").mkdir()
+        (tmp_path / "analysis").mkdir()
+        (tmp_path / "detect" / "d.py").write_text("ID = 'd'\n", encoding="utf-8")
+        flow = tmp_path / "analysis" / "flow.py"
+        monkeypatch.setattr(PackagePaths, "root", staticmethod(lambda: tmp_path))
+
+        class D:
+            id = "d"
+            version = "1.0"
+
+        def signature(source: str) -> str:
+            flow.write_text(source, encoding="utf-8")
+            ScanCache._package_hash.cache_clear()
+            return ScanCache.detector_signature([D()])
+
+        try:
+            before = signature("SINKS = ('eval',)\n")
+            after = signature("SINKS = ('eval', 'exec')\n")
+            crlf = signature("SINKS = ('eval', 'exec')\r\n")
+        finally:
+            ScanCache._package_hash.cache_clear()
+        assert before != after, "changed analysis must not serve cached findings"
+        assert after == crlf, "line endings alone must not change it"
+
     def test_a_real_detector_contributes_a_code_hash(self) -> None:
         from cordon_scanner.detect.secrets.detector import SecretDetector
 
