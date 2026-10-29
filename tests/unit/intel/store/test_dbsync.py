@@ -206,6 +206,19 @@ class TestBuildBundle(DbsyncFixtures):
             tmp_path
         )
 
+    def test_it_is_reproducible_across_a_second_boundary(self, tmp_path, monkeypatch) -> None:
+        """Every member's mtime was fixed and the gzip header's was not: `tarfile`'s `w:gz` stamps the
+        header with the current time, so two builds a second apart differed. It passed in one second
+        and failed under load, when the two builds straddled one."""
+        import time
+
+        for name, payload in DbsyncHelpers._signed_advisory_bundle().items():
+            (tmp_path / name).write_bytes(payload)
+        first = dbsync.AdvisoryBundle.build_bundle(tmp_path)
+        later = time.time() + 3_600
+        monkeypatch.setattr(time, "time", lambda: later)
+        assert dbsync.AdvisoryBundle.build_bundle(tmp_path) == first
+
     def test_an_empty_dir_is_an_error_not_an_empty_bundle(self, tmp_path) -> None:
         with pytest.raises(dbsync.BundleError, match="no advisory data"):
             dbsync.AdvisoryBundle.build_bundle(tmp_path)

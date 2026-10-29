@@ -23,6 +23,7 @@ destination.
 
 from __future__ import annotations
 
+import gzip
 import http.client
 import io
 import json
@@ -198,7 +199,7 @@ class AdvisoryBundle:
         if not files:
             raise BundleError(f"no advisory data to bundle in {data_dir}")
         buffer = io.BytesIO()
-        with tarfile.open(fileobj=buffer, mode="w:gz", format=tarfile.PAX_FORMAT) as tar:
+        with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
             for path in files:
                 info = tarfile.TarInfo(name=path.name)
                 payload = path.read_bytes()
@@ -206,7 +207,9 @@ class AdvisoryBundle:
                 info.mtime = 0
                 info.mode = 0o644
                 tar.addfile(info, io.BytesIO(payload))
-        return buffer.getvalue()
+        # Compressed here, not by tarfile's `w:gz`, which stamps the gzip header with the current
+        # time: every member's mtime was fixed and two builds a second apart still differed.
+        return gzip.compress(buffer.getvalue(), compresslevel=9, mtime=0)
 
     @staticmethod
     def _fetch(url: str) -> bytes:
