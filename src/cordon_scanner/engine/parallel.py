@@ -267,14 +267,8 @@ class ParallelScanner:
         root: str,
         detector_ids: tuple[str, ...],
         inventory: Any = None,
-        install_hook_paths: frozenset[str] = frozenset(),
-        ci_hook_paths: frozenset[str] = frozenset(),
-        install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset(),
         operator: dict[str, Any] | None = None,
-        image: Any = None,
-        install_entry_paths: frozenset[str] = frozenset(),
-        consumer_install_paths: frozenset[str] = frozenset(),
-        package_facts: dict[str, Any] | None = None,
+        facts: dict[str, Any] | None = None,
     ) -> None:
         """Build one worker's engine.
 
@@ -306,6 +300,15 @@ class ParallelScanner:
         finding simply was not there. Parallelism engages above four hundred
         files and the worker count defaults to the core count, so the default
         configuration on any real repository was the one missing it.
+
+        The hook paths were fixed, then the unreached bodies, the image, the entry files and the
+        package facts, each when its absence was found -- and the five set after them
+        (`agent_run_paths`, `shipped_native_paths`, `library_entry_paths`,
+        `library_closure_paths`, `declared_dependencies`) never reached a worker, so above the
+        parallel threshold a skill's script, a library's entry closure and a shipped binary were
+        judged as ordinary files. `facts` is now every field of the parent's context but the
+        process-local ones (`ScanContext.LOCAL`), so a field added later reaches the workers
+        without anyone remembering to send it.
         """
         from cordon_scanner.foundation.collector import Collector
 
@@ -337,16 +340,7 @@ class ParallelScanner:
         detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
 
         context = engine._context(inventory)
-        context = ParallelScanner.worker_context(
-            context,
-            install_hook_paths,
-            ci_hook_paths,
-            install_deferred_lines,
-            image,
-            install_entry_paths,
-            consumer_install_paths,
-            package_facts,
-        )
+        context = ParallelScanner.worker_context(context, facts)
         ParallelScanner._worker = _WorkerState(
             engine=engine,
             context=context,
@@ -354,45 +348,16 @@ class ParallelScanner:
         )
 
     @staticmethod
-    def worker_context(
-        context: ScanContext,
-        install_hook_paths: frozenset[str],
-        ci_hook_paths: frozenset[str],
-        install_deferred_lines: frozenset[tuple[str, int, int]],
-        image: Any,
-        install_entry_paths: frozenset[str],
-        consumer_install_paths: frozenset[str],
-        package_facts: dict[str, Any] | None,
-    ) -> ScanContext:
-        """The worker's scan context, rebuilt from what the parent sent."""
+    def worker_context(context: ScanContext, facts: dict[str, Any] | None) -> ScanContext:
+        """The worker's scan context: its own process-local fields, and the parent's facts.
+
+        Assignment over the context the worker derived from the inventory, not a union: the
+        parent derived its own context from the same inventory first and then added to it, so its
+        facts are what the worker would compute and more, and a worker that held anything the
+        parent does not would judge a file differently from a serial scan."""
         from dataclasses import replace as _replace
 
-        # Union rather than assignment. The inventory contributes paths the parent
-        # does not recompute -- git hooks, and the manifests themselves -- so
-        # overwriting would trade one set of missing paths for another.
-        return _replace(
-            context,
-            install_hook_paths=context.install_hook_paths | install_hook_paths,
-            ci_hook_paths=context.ci_hook_paths | ci_hook_paths,
-            # Assignment, not union: the parent computes this over the whole
-            # closure and a worker has no closure of its own to contribute. It
-            # travels with the paths for the reason the rest of this docstring
-            # gives -- a worker that has the paths but not this one would apply
-            # install-time context to bodies the parent knows are never reached,
-            # and eight workers would disagree with one again.
-            install_deferred_lines=install_deferred_lines,
-            # The image the members came from, when they did: what the parent's context says.
-            image=image,
-            # Which hook files are entry points, and which run when a consumer installs: the
-            # composites read both, and a worker cannot derive either from the inventory.
-            install_entry_paths=context.install_entry_paths | install_entry_paths,
-            consumer_install_paths=context.consumer_install_paths | consumer_install_paths,
-            # What the parent knows of the package as a whole -- whether it is a published
-            # distribution and which, its file list, its entry points, its repository -- which a
-            # worker reading single files cannot derive. Without them a large archive's files were
-            # judged as a repository's (review 98, FP-2), so a verdict depended on the core count.
-            **(package_facts or {}),
-        )
+        return _replace(context, **(facts or {}))
 
     @staticmethod
     def _to_path(root: str) -> Path:
@@ -403,7 +368,7 @@ class ParallelScanner:
     @staticmethod
     def _inspect_batch(
         batch: list[WorkItem], root: str, deadline: float | None = None
-    ) -> list[tuple[int, list[dict[str, Any]], bool | None]]:
+    ) -> list[tuple[int, list[dict[str, Any]], bool | None, bool]]:
         """Scan one batch inside a worker.
 
         Findings cross the process boundary as dictionaries rather than as domain
@@ -431,11 +396,11 @@ class ParallelScanner:
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
         detectors = ParallelScanner._worker.detectors
-        out: list[tuple[int, list[dict[str, Any]], bool | None]] = []
+        out: list[tuple[int, list[dict[str, Any]], bool | None, bool]] = []
 
         for index, relative, _size, expected, carried in batch:
             if deadline is not None and time.monotonic() >= deadline:
-                out.append((index, [], None))  # not examined: the budget ran out first
+                out.append((index, [], None, False))  # not examined: the budget ran out first
                 continue
             if isinstance(carried, str):
                 loaded = FileContent.load(Path(carried), relative, engine.config.limits)
@@ -450,7 +415,7 @@ class ParallelScanner:
                 # whether it did depended on the machine's core count. The
                 # `False` says the result is not trustworthy; the parent reports
                 # it exactly as the serial path would.
-                out.append((index, [], False))
+                out.append((index, [], False, False))
                 continue
 
             if loaded.sha256 != expected:
@@ -467,14 +432,17 @@ class ParallelScanner:
                 # exact content on that machine is a silent hit. The engine's
                 # docstring claims a cache hit is provably identical to a cold
                 # run; this is where that stopped being true.
-                out.append((index, [], False))
+                out.append((index, [], False, False))
                 continue
 
-            produced, failures, windowed, intact = ParallelScanner._inspect_unit(
-                loaded, relative, ctx, detectors
-            )
+            from cordon_scanner.engine.cache import ScanCache
+
+            with ScanCache.watch(root, relative) as watch:
+                produced, failures, windowed, intact = ParallelScanner._inspect_unit(
+                    loaded, relative, ctx, detectors
+                )
             if not intact:
-                out.append((index, [], False))
+                out.append((index, [], False, False))
                 continue
             produced.extend(windowed)
             findings: list[dict[str, Any]] = [
@@ -487,7 +455,7 @@ class ParallelScanner:
                 for f in produced
             ]
             findings.extend(failures)
-            out.append((index, findings, True))
+            out.append((index, findings, True, not watch.reached))
 
         return out
 
@@ -588,17 +556,11 @@ class ParallelScanner:
         workers: int,
         detector_ids: Sequence[str],
         inventory: Any = None,
-        install_hook_paths: frozenset[str] = frozenset(),
-        ci_hook_paths: frozenset[str] = frozenset(),
-        install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset(),
+        facts: dict[str, Any] | None = None,
         on_batch: Callable[[Sequence[int]], None] | None = None,
-        image: Any = None,
-        install_entry_paths: frozenset[str] = frozenset(),
-        consumer_install_paths: frozenset[str] = frozenset(),
-        package_facts: dict[str, Any] | None = None,
         deadline: float | None = None,
         unstarted: list[int] | None = None,
-    ) -> list[tuple[int, list[Finding], bool]] | None:
+    ) -> list[tuple[int, list[Finding], bool, bool]] | None:
         """Inspect files across a pool, returning results in input order.
 
         Returns None when the pool could not run, and a list otherwise -- an
@@ -619,10 +581,9 @@ class ParallelScanner:
         reintroduce the divergence this parameter exists to fix, and defaulting
         it to "none" would silently scan nothing -- so a caller has to say.
 
-        The hook-path sets do default to empty, because empty is what a worker
-        derives from the inventory on its own and so cannot be worse than not
-        passing them. They are still the difference between finding an
-        install-time payload and not; see `_initialise`.
+        `facts` is the parent's context (`ScanContext.facts`); see `_initialise`. Each result is
+        `(index, findings, trusted, cacheable)`: `cacheable` is False when inspecting the file
+        reached past its own bytes (`ScanCache.watch`).
 
         `deadline` (a `time.monotonic()` reading) is the scan's budget. Once it passes, no batch
         that has not started is started: those are cancelled and their files' indices go into
@@ -635,7 +596,7 @@ class ParallelScanner:
             return []
 
         payload = config.to_dict()
-        collected: list[tuple[int, list[Finding], bool]] = []
+        collected: list[tuple[int, list[Finding], bool, bool]] = []
 
         try:
             with ProcessPoolExecutor(
@@ -647,14 +608,8 @@ class ParallelScanner:
                     root,
                     tuple(detector_ids),
                     inventory,
-                    frozenset(install_hook_paths),
-                    frozenset(ci_hook_paths),
-                    frozenset(install_deferred_lines),
                     {key: getattr(config, key) for key in CARRIED_SETTINGS},
-                    image,
-                    frozenset(install_entry_paths),
-                    frozenset(consumer_install_paths),
-                    dict(package_facts or {}),
+                    dict(facts or {}),
                 ),
             ) as pool:
                 ParallelScanner._dispatch(
@@ -670,8 +625,8 @@ class ParallelScanner:
 
     @staticmethod
     def _collect(
-        futures: list[Future[list[tuple[int, list[dict[str, Any]], bool | None]]]],
-        collected: list[tuple[int, list[Finding], bool]],
+        futures: list[Future[list[tuple[int, list[dict[str, Any]], bool | None, bool]]]],
+        collected: list[tuple[int, list[Finding], bool, bool]],
         on_batch: Callable[[Sequence[int]], None] | None,
         unstarted: list[int] | None = None,
     ) -> None:
@@ -691,13 +646,13 @@ class ParallelScanner:
         # serial one produce identical output.
         for future in as_completed(futures):
             completed: list[int] = []
-            for index, findings, trusted in future.result():
+            for index, findings, trusted, cacheable in future.result():
                 if trusted is None:  # the worker reached it after the deadline
                     if unstarted is not None:
                         unstarted.append(index)
                     continue
                 collected.append(
-                    (index, [ScanCache.finding_from_dict(f) for f in findings], trusted)
+                    (index, [ScanCache.finding_from_dict(f) for f in findings], trusted, cacheable)
                 )
                 completed.append(index)
             if on_batch is not None:
@@ -708,7 +663,7 @@ class ParallelScanner:
         pool: ProcessPoolExecutor,
         batches: list[list[WorkItem]],
         root: str,
-        collected: list[tuple[int, list[Finding], bool]],
+        collected: list[tuple[int, list[Finding], bool, bool]],
         on_batch: Callable[[Sequence[int]], None] | None,
         deadline: float | None,
         unstarted: list[int] | None,
@@ -735,8 +690,10 @@ class ParallelScanner:
 
     @staticmethod
     def _collect_until(
-        batches: dict[Future[list[tuple[int, list[dict[str, Any]], bool | None]]], list[WorkItem]],
-        collected: list[tuple[int, list[Finding], bool]],
+        batches: dict[
+            Future[list[tuple[int, list[dict[str, Any]], bool | None, bool]]], list[WorkItem]
+        ],
+        collected: list[tuple[int, list[Finding], bool, bool]],
         on_batch: Callable[[Sequence[int]], None] | None,
         deadline: float,
         unstarted: list[int],

@@ -13,7 +13,9 @@ findings depend on where it sits, not only on what it contains.
 
 from __future__ import annotations
 
+import contextlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -174,6 +176,38 @@ class TestDetectorSignature:
             del sys.modules["cordon_fake_detector"]
 
         assert before != after, "a changed detector must not serve cached findings"
+
+    def test_changing_analysis_code_a_detector_calls_invalidates(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A detector's own module is not all that decides its findings: the analysis it calls lives
+        elsewhere. Keyed on its module alone, a release that fixed detection in that analysis kept
+        serving every warm cache (on by default) the findings of the code it replaced."""
+        from cordon_scanner.foundation.paths import PackagePaths
+
+        (tmp_path / "detect").mkdir()
+        (tmp_path / "analysis").mkdir()
+        (tmp_path / "detect" / "d.py").write_text("ID = 'd'\n", encoding="utf-8")
+        flow = tmp_path / "analysis" / "flow.py"
+        monkeypatch.setattr(PackagePaths, "root", staticmethod(lambda: tmp_path))
+
+        class D:
+            id = "d"
+            version = "1.0"
+
+        def signature(source: str) -> str:
+            flow.write_text(source, encoding="utf-8")
+            ScanCache._package_hash.cache_clear()
+            return ScanCache.detector_signature([D()])
+
+        try:
+            before = signature("SINKS = ('eval',)\n")
+            after = signature("SINKS = ('eval', 'exec')\n")
+            crlf = signature("SINKS = ('eval', 'exec')\r\n")
+        finally:
+            ScanCache._package_hash.cache_clear()
+        assert before != after, "changed analysis must not serve cached findings"
+        assert after == crlf, "line endings alone must not change it"
 
     def test_a_real_detector_contributes_a_code_hash(self) -> None:
         from cordon_scanner.detect.secrets.detector import SecretDetector
@@ -358,3 +392,173 @@ class TestCacheCorrectnessEndToEnd:
         scanner.scan(project)
         second = scanner.scan(project)
         assert second.stats.cache_hits > 0
+
+
+class TestEverythingAFileDependsOnIsInTheKey:
+    """The key held the file's bytes, path and language, the rule pack, the configuration and the
+    detectors' code; a file's findings depend on more than that, and each gap served a stale
+    result to a warm cache, which is on by default."""
+
+    SETUP = (
+        "import os, subprocess\n"
+        "from setuptools import setup\n"
+        "from setuptools.command.install import install\n\n\n"
+        "class Post(install):\n"
+        "    def run(self):\n"
+        "        install.run(self)\n"
+        "        subprocess.Popen([os.path.join(os.path.dirname(__file__), 'dist', 'pip_security')])\n\n\n"
+        "setup(name='probe', version='1.0', cmdclass={'install': Post})\n"
+    )
+
+    @staticmethod
+    def setup_rules(tree, cache_dir) -> list[str]:
+        config = Config.default().with_overrides(cache_dir=str(cache_dir), use_cache=True)
+        return sorted(
+            f.rule_id
+            for f in Scanner(config).scan(tree).findings
+            if f.location.path.endswith("setup.py")
+        )
+
+    def test_a_file_whose_role_changed_is_not_served_its_old_findings(self, tmp_path) -> None:
+        """`setup.py` unchanged; what it spawns becomes a native binary the package ships. A cold
+        scan blocks it; the warm one served what the file was found to be when the spawned file
+        was a script."""
+        tree, cache_dir = tmp_path / "tree", tmp_path / "cache"
+        (tree / "dist").mkdir(parents=True)
+        (tree / "setup.py").write_text(self.SETUP, encoding="utf-8")
+        (tree / "dist" / "pip_security").write_text("print('hello')\n", encoding="utf-8")
+        before = self.setup_rules(tree, cache_dir)
+        (tree / "dist" / "pip_security").write_bytes(b"\x7fELF\x02\x01\x01" + bytes(64))
+        warm = self.setup_rules(tree, cache_dir)
+        cold = self.setup_rules(tree, tmp_path / "cold")
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" not in before
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" in cold
+        assert warm == cold
+
+    @staticmethod
+    def context(**facts):
+        from cordon_scanner.detect.base import ScanContext
+
+        return ScanContext(config=Config.default(), rules=Scanner(Config.default()).rules, **facts)
+
+    def test_the_context_is_in_the_signature_and_where_the_tree_was_unpacked_is_not(self) -> None:
+        from cordon_scanner.foundation.results import Repository
+
+        config = Config.default()
+
+        def signature(**facts) -> str:
+            return ScanCache.scan_signature([], self.context(**facts), config)
+
+        plain = signature(repository=Repository(root="/tmp/unpacked-1"))
+        assert signature(repository=Repository(root="/tmp/unpacked-2")) == plain
+        assert (
+            signature(
+                repository=Repository(root="/tmp/unpacked-1"),
+                import_entry_paths=frozenset({"index.js"}),
+            )
+            != plain
+        )
+        assert signature(repository=Repository(root="/tmp/unpacked-1"), distribution="npm") != plain
+
+    def test_a_refresh_of_the_synced_intelligence_changes_the_signature(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A feed refresh that condemns a release must reach a warm cache: the condemned-feed
+        detectors read the synced files, which no other part of the key names."""
+        import os
+
+        from cordon_scanner.foundation.paths import StatePaths
+
+        monkeypatch.setattr(StatePaths, "synced_intel_dir", staticmethod(lambda: tmp_path))
+        (tmp_path / "feed").mkdir()
+        overlay = tmp_path / "feed" / "npm.json"
+        overlay.write_text("{}", encoding="utf-8")
+        os.utime(overlay, ns=(1, 1))
+        ctx, config = self.context(), Config.default()
+        before = ScanCache.scan_signature([], ctx, config)
+        overlay.write_text('{"condemned": ["x"]}', encoding="utf-8")
+        os.utime(overlay, ns=(2, 2))
+        assert ScanCache.scan_signature([], ctx, config) != before
+
+    def test_the_rule_files_contents_are_in_the_signature(self, tmp_path) -> None:
+        """The configuration says only whether a rule file is set."""
+        rules = tmp_path / "local.yar"
+        rules.write_text("rule a { condition: true }\n", encoding="utf-8")
+        config = Config.default().with_overrides(rule_file=str(rules))
+        ctx = self.context()
+        before = ScanCache.scan_signature([], ctx, config)
+        rules.write_text("rule b { condition: false }\n", encoding="utf-8")
+        assert ScanCache.scan_signature([], ctx, config) != before
+
+    def test_a_result_that_says_it_is_incomplete_is_not_cached(self, tmp_path) -> None:
+        """A detector failure from one bad moment (memory, load) was served for that content
+        until the code changed."""
+        cache = ScanCache(tmp_path)
+        cache.put(CacheKey(**BASE_KEY), [CacheHelpers.make_finding("OPERATIONAL.DETECTOR.FAILED")])
+        assert cache.get(CacheKey(**BASE_KEY)) is None
+
+
+class TestWatch:
+    """A file's inspection that reaches past its own bytes is not cached (`Watch`)."""
+
+    @staticmethod
+    def reached(tmp_path, action) -> str:
+        from cordon_scanner.engine.cache import ScanCache
+
+        (tmp_path / "own.md").write_text("x", encoding="utf-8")
+        (tmp_path / "other.md").write_text("y", encoding="utf-8")
+        with ScanCache.watch(str(tmp_path), "own.md") as watch:
+            action()
+        return watch.reached
+
+    def test_its_own_file_and_the_standard_library_are_not_reached(self, tmp_path) -> None:
+        import json as stdlib_json
+
+        assert not self.reached(tmp_path, lambda: (tmp_path / "own.md").read_text())
+        assert not self.reached(tmp_path, lambda: Path(stdlib_json.__file__).open("rb").close())
+
+    def test_another_file_of_the_tree_is_reached(self, tmp_path) -> None:
+        assert (
+            self.reached(tmp_path, lambda: (tmp_path / "other.md").read_text())
+            == "open in the tree"
+        )
+        assert self.reached(tmp_path, lambda: list(tmp_path.iterdir()))
+
+    def test_its_own_file_through_dot_dot_is_still_its_own_and_a_way_out_is_not(
+        self, tmp_path
+    ) -> None:
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        assert not self.reached(tmp_path, lambda: (sub / ".." / "own.md").read_text())
+        assert self.reached(tmp_path, lambda: (sub / ".." / "other.md").read_text())
+
+    def test_a_socket_a_process_and_a_file_elsewhere_are_reached(self, tmp_path) -> None:
+        import socket
+        import subprocess
+        import sys
+        import tempfile
+
+        def connect() -> None:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.01)
+                with contextlib.suppress(OSError):
+                    s.connect(("127.0.0.1", 9))
+
+        assert self.reached(tmp_path, connect) == "socket.connect"
+        assert self.reached(
+            tmp_path, lambda: subprocess.run([sys.executable, "-c", "0"], check=False)
+        )
+        with tempfile.NamedTemporaryFile("w", delete=False) as handle:
+            handle.write("z")
+        assert (
+            self.reached(tmp_path, lambda: Path(handle.name).open().close())
+            == "open outside the package"
+        )
+
+    def test_nothing_is_reached_when_no_file_is_being_inspected(self, tmp_path) -> None:
+        from cordon_scanner.engine.cache import Watch
+
+        with ScanCache.watch(str(tmp_path), "own.md"):
+            pass
+        (tmp_path / "other.md").write_text("y", encoding="utf-8")
+        assert getattr(Watch.current, "watch", None) is None
