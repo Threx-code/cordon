@@ -518,8 +518,11 @@ class ManifestScripts:
         r"/(?:repository/archive|-/archive|archive|tarball|zipball)(?:/|\.tar\.gz|\.zip|\?)"
     )
     #: A file named for a release, `xlsx-0.20.3.tgz`: what a vendor's CDN serves, fixed per URL.
+    #: "A version somewhere in the name" is the lookahead `(?=[^/?#]*\d\.\d)`, read once per path
+    #: segment: written `[^/?#]*\d+\.\d+[^/?#]*` it split each segment every way around its digits
+    #: (review 98, 27-PERFORMANCE). The extension holds no digit, so the version still comes before it.
     _VERSIONED_TARBALL: ClassVar[re.Pattern[str]] = re.compile(
-        r"/[^/?#]*\d+\.\d+[^/?#]*\.(?:tgz|tar\.gz)(?:[?#].*)?$"
+        r"/(?=[^/?#]*\d\.\d)[^/?#]*\.(?:tgz|tar\.gz)(?:[?#].*)?$"
     )
 
     @staticmethod
