@@ -336,6 +336,40 @@ class TestScanningAnImage:
         assert {q["package"]["name"] for q in batch["queries"]} == {"openssl", "zlib"}
         assert all(q["package"]["ecosystem"] == "Debian:12" for q in batch["queries"])
 
+    def test_an_advisory_named_twice_for_one_package_is_one_finding(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """`pkg:docker/nginx@1.27` listed `libc-bin ... is named by DEBIAN-CVE-2018-20796` twice:
+        an advisory an answer names twice for one query was a finding per mention."""
+
+        class Twice(FakeOsv):
+            def post(self, url, body):
+                answer = super().post(url, body)
+                for query, result in zip(body["queries"], answer["results"], strict=True):
+                    if query["package"]["name"] == "openssl":
+                        result["vulns"] = result["vulns"] + [{"id": "DEBIAN-CVE-2023-0001"}]
+                return answer
+
+        fake = Twice()
+        real_match = osv.OsvClient.match
+        monkeypatch.setattr(
+            osv.OsvClient,
+            "match",
+            lambda queries: real_match(queries, post=fake.post, get=fake.get),
+        )
+        target = tmp_path / "image.tar"
+        target.write_bytes(ImagesHelpers._debian_image())
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=False)).scan(
+            target
+        )
+        named = [
+            (f.location.package, f.message.split(". ")[0])
+            for f in result.findings
+            if f.rule_id.startswith("VULNERABLE.IMAGE.")
+        ]
+        assert len(named) == len(set(named)), named
+        assert any("DEBIAN-CVE-2023-0001" in m for _, m in named)
+
     def test_an_unreachable_osv_is_incomplete_not_clean(self, tmp_path, monkeypatch) -> None:
         def down(queries):
             raise osv.OsvError("OSV could not be asked (URLError)")
