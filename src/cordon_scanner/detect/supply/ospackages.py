@@ -159,12 +159,28 @@ class OsPackageDetector(BaseDetector):
                 return [self._unmatched(str(exc), ctx)]
         catalogue = exploited.ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
+        named: set[tuple[str, str]] = set()
         for query, vulnerabilities in matches.by_query.items():
             for package in by_query.get(query, ()):
                 for vulnerability in vulnerabilities:
-                    findings.append(self._finding(package, vulnerability, catalogue, ctx))
+                    if self._first(named, package, vulnerability, ctx):
+                        findings.append(self._finding(package, vulnerability, catalogue, ctx))
         findings.extend(self._unmatched(problem, ctx) for problem in matches.problems)
         return findings
+
+    @staticmethod
+    def _first(
+        named: set[tuple[str, str]], package: OsPackage, vulnerability: Vulnerability, ctx: Any
+    ) -> bool:
+        """Whether this package, as its package URL names it, has not been reported for this
+        advisory yet. An answer that names an advisory twice for one query, or an image whose
+        package database lists one package twice, was a finding per mention:
+        `pkg:docker/nginx@1.27` reported `libc-bin ... is named by DEBIAN-CVE-2018-20796` twice."""
+        key = (package.purl(ctx.image.release), vulnerability.id)
+        if key in named:
+            return False
+        named.add(key)
+        return True
 
     def _amazon(self, inventory: Any, ctx: ScanContext) -> list[Finding]:
         from cordon_scanner.images import alas, osv
@@ -176,6 +192,7 @@ class OsPackageDetector(BaseDetector):
             return [self._unmatched(str(exc), ctx)]
         catalogue = exploited.ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
+        named: set[tuple[str, str]] = set()
         for match in alas.AmazonLinuxAdvisories.affected(inventory.packages, advisories):
             advisory = match.advisory
             page = (
@@ -198,7 +215,8 @@ class OsPackageDetector(BaseDetector):
                 ),
                 rating=advisory.severity,
             )
-            findings.append(self._finding(match.package, vulnerability, catalogue, ctx))
+            if self._first(named, match.package, vulnerability, ctx):
+                findings.append(self._finding(match.package, vulnerability, catalogue, ctx))
         return findings
 
     def _finding(

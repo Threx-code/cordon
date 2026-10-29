@@ -773,6 +773,7 @@
   "test_package_intel.py": "intel/registries",
   "test_package_layout.py": "repository",
   "test_package_paths.py": "foundation",
+  "test_previous.py": "sources",
   "test_parallel.py": "engine",
   "test_pattern_literals.py": "analysis/python",
   "test_pattern_safety.py": "rules",
@@ -901,12 +902,7 @@
   "file_relative_paths": [
    "src/cordon_scanner/rules/loader.py"
   ],
-  "orphaned_docstrings": [
-   "cloud/runner.py: Take fix jobs too (`--make-fixes`): move one dependency to a",
-   "ecosystems/packages/jvm/gradle_scripts.py: `resolutionStrategy.force` versions: unlike a constraint, th",
-   "mcp/tools/base.py: Worker processes per scan; 0 lets the scanner choose.",
-   "sources/git.py: Environment overrides applied to every invocation. Deliberat"
-  ],
+  "orphaned_docstrings": [],
   "long_classes": {},
   "long_functions": {
    "rules/loader:PatternCompiler._reject_unsafe": 121,

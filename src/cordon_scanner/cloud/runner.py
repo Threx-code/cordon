@@ -76,11 +76,11 @@ class RunnerConfig:
     whose code host cannot mint a per-clone token (GitLab, Bitbucket). Held on the customer's
     machine only; Cordon never sees it."""
     make_fixes: bool = False
+    """Take fix jobs too (`--make-fixes`): move one dependency to a safe version in its lockfile and
+    push a branch. Off unless the operator turns it on, because it writes to repositories."""
     allow_online: bool = False
     """Let a job ask for registry lookups (`--allow-online`). Off unless the operator turns it on:
     the control plane does not decide that a customer's machine makes outbound requests."""
-    """Take fix jobs too (`--make-fixes`): move one dependency to a safe version in its lockfile and
-    push a branch. Off unless the operator turns it on, because it writes to repositories."""
 
 
 #: The user name a bare token is sent with, by host. Anything else takes `user:token`.

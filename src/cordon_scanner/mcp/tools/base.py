@@ -39,9 +39,9 @@ class Settings:
     max_findings: int = 50
     version: str = ""
     jobs: int = 0
+    """Worker processes per scan; 0 lets the scanner choose."""
     model: str | None = None
     """`--model`: cordon-cloud or a model server's address, passed to every scan."""
-    """Worker processes per scan; 0 lets the scanner choose."""
 
 
 @dataclass(slots=True)
