@@ -404,10 +404,12 @@ class Engine:
 
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
+        self.archive_stages.not_installed(acc, ctx)
         result = ScanResult(
             findings=tuple(acc.findings),
             verdict=verdict,
-            dependencies=dependencies,
+            # What installing it installs, then what only files outside that set record.
+            dependencies=(*dependencies, *acc.not_installed),
             repository=Repository(root=str(path), file_count=acc.files_scanned),
             target_kind=target_kind,
             image=image.identity.to_dict() if image is not None else None,

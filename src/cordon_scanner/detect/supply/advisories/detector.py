@@ -26,6 +26,8 @@ from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.advisories.findings import (
+    BUNDLED_MALWARE_RULE,
+    BUNDLED_RULE,
     MALICIOUS_RULE,
     PROVISIONAL_RULE,
     AdvisoryFinding,
@@ -258,6 +260,41 @@ class AdvisoryDetector(BaseDetector):
                 )
             if dependency.version is None and dependency.declared_spec:
                 findings.extend(self._admitted_malware(dependency, ctx))
+
+    def not_installed(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
+        """Advisories about the records installing the target does not install (`installed=False`):
+        the bundled database only, never the network, each under its own rule -- a vulnerability
+        at info, a known-malicious release at high -- naming the file that records it."""
+        self._advice = {}
+        findings: list[Finding] = []
+        for dependency in dependencies:
+            if dependency.local or dependency.installed:
+                continue
+            reported: set[str] = set()
+            for advisory in self._own_records(dependency):
+                if advisory.identifier and advisory.identifier in reported:
+                    continue
+                reported.add(advisory.identifier)
+                finding = AdvisoryFinding.finding(
+                    dependency, advisory, ctx, advice=self._upgrade_advice
+                )
+                malicious = finding.rule_id == MALICIOUS_RULE
+                rule = BUNDLED_MALWARE_RULE if malicious else BUNDLED_RULE
+                severity = Severity.HIGH if malicious else Severity.INFO
+                findings.append(
+                    replace(
+                        finding,
+                        rule_id=rule,
+                        severity=severity,
+                        message=(
+                            f"Not installed with this package: only {dependency.declared_in} "
+                            f"records it. {finding.message}"
+                        ),
+                        explanation=replace(finding.explanation, matched_rule=rule),
+                        risk=ctx.scorer.score(severity, finding.confidence),
+                    )
+                )
+        return findings
 
     def _own_records(self, dependency: Dependency) -> tuple[Advisory, ...]:
         """The records about this dependency by its own name: by version, and for an image pinned by

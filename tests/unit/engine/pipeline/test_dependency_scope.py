@@ -53,7 +53,20 @@ class TestDependencyScope:
     def test_a_published_package_reads_its_root_manifest_and_lockfile(self) -> None:
         scope = DependencyScope.of(Paths.units(Paths.PACKAGE), published="npm", archive=True)
         assert scope.root == "x-1.0.0.tgz!package"
-        assert [p for p in Paths.PACKAGE if scope.reads(p)] == Paths.PACKAGE[:2]
+        # And its own node_modules: npm installs a tarball's bundled dependencies with it.
+        assert [p for p in Paths.PACKAGE if scope.reads(p)] == [
+            *Paths.PACKAGE[:2],
+            Paths.PACKAGE[3],
+        ]
+
+    def test_only_the_ecosystems_own_bundled_paths_are_installed(self) -> None:
+        scope = DependencyScope.of(Paths.units(Paths.PACKAGE), published="npm", archive=True)
+        assert scope.reads(Paths.NPM + "node_modules/@scope/dep/package.json")
+        assert scope.reads(Paths.NPM + "node_modules/dep/node_modules/inner/package.json")
+        # A manifest under a bundled dependency's tests is not one npm installs.
+        assert not scope.reads(Paths.NPM + "node_modules/dep/test/fixture/package.json")
+        # And a pruned directory elsewhere still is not read.
+        assert not scope.reads(Paths.NPM + "ui/node_modules/dep/package.json")
 
     def test_a_published_package_reads_the_members_its_root_lockfile_declares(self) -> None:
         scope = DependencyScope.of(Paths.units(Paths.PACKAGE), published="npm", archive=True)

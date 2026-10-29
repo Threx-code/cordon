@@ -76,6 +76,15 @@ Suspicious, not malicious -- nothing has confirmed it -- and HIGH, so the defaul
 
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
 
+BUNDLED_RULE = "VULNERABLE.DEPENDENCY.BUNDLED.001"
+"""An advisory about a dependency installing the target does not install (`Dependency.installed`):
+one only a nested or vendored file in a published package records. Info: it never gates and never
+feeds the verdict, but a bundled UI's vulnerable library may well be served, so it is shown."""
+
+BUNDLED_MALWARE_RULE = "MALWARE.DEPENDENCY.BUNDLED.001"
+"""A known-malicious release recorded by a file outside the install set. Its code may still ship in
+the archive, so it is reported at high, not info."""
+
 EXPLOITED_RULE = "VULNERABLE.DEPENDENCY.EXPLOITED.001"
 """A known vulnerability whose CVE is on CISA's KEV catalogue or ENISA's EUVD exploited list.
 Its own rule so a policy can fail on "exploited" alone, and a CRA report can count it."""

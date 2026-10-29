@@ -128,6 +128,7 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `MALWARE.DEPENDENCY.BUNDLED.001` | high | `advisory` | malicious_code |
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.DEPENDENCY.PAYLOAD.001` | critical | `manifest` | malicious_code |
 | `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | `manifest` | malicious_code |
@@ -169,6 +170,7 @@ rather than a document.
 | `SUSPECT.LOCKFILE.SOURCE.001` | medium | `lockfile` | integrity |
 | `SUSPECT.RECIPE.PROVISIONAL.001` | high | `recipe-digest` | policy |
 | `SUSPECT.TYPOSQUAT.PACKAGE_NAME.001` | high | `manifest` | typosquat |
+| `VULNERABLE.DEPENDENCY.BUNDLED.001` | info | `advisory` | vulnerability |
 | `VULNERABLE.DEPENDENCY.EXPLOITED.001` | critical | `advisory` | vulnerability |
 | `VULNERABLE.DEPENDENCY.KNOWN.001` | high | `advisory` | vulnerability |
 | `VULNERABLE.IMAGE.EXPLOITED.001` | critical | `os-packages` | vulnerability |

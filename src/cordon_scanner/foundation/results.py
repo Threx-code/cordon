@@ -273,6 +273,13 @@ class Dependency:
     """It arrives inside another package's archive and is verified by that archive's hash. See
     `LockEntry.bundled`."""
 
+    installed: bool = True
+    """Whether installing the scan target installs it: a dependency its root manifest, lockfile or a
+    declared workspace member names. False for one only a nested or vendored file in a published
+    package records (a lockfile of its maintainers' environment, a manifest under its tests or its
+    bundled `node_modules`, `DependencyScope`): kept and reported, but no install-set check reads it,
+    and an advisory about it is VULNERABLE.DEPENDENCY.BUNDLED, at info."""
+
     signatures: tuple[str, ...] = ()
     """Detached signatures recorded with the installed package, over `signed`. See
     `LockEntry.signatures`. Not in any report: the provenance detector verifies them."""
@@ -376,6 +383,7 @@ class Dependency:
             "direct": self.direct,
             "dependency_path": list(self.dependency_path or (self.name,)),
             "dependency_type": str(self.scope),
+            "installed": self.installed,
             "platform_constraints": list(self.platform),
             "manifest_location": (
                 {"path": self.manifest_path, "line": self.manifest_line}

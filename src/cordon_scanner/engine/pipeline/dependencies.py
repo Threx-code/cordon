@@ -294,10 +294,27 @@ class Dependencies:
         purpose is avoiding that, and it would make results non-reproducible
         because a resolver consults a live registry. What it reads is `DependencyScope`'s:
         `published` is `PackageFormat.of` for an archive that is a published package.
+
+        Returns what installing the target installs. What only a file outside the scope records
+        is kept beside it, in `acc.not_installed` with `installed=False`: read from the same files
+        as before, into a graph of its own that leaves the scan's completeness and findings alone.
         """
         scope = DependencyScope.of(
             units, published=published, archive=self.engine._scanning_archive
         )
+        installed = self._graph(units, acc, scope)
+        if scope.narrows(units):
+            everything = self._graph(units, Accumulator(), DependencyScope.everything())
+            held = {(d.purl, d.project) for d in installed}
+            acc.not_installed.extend(
+                replace(d, installed=False) for d in everything if (d.purl, d.project) not in held
+            )
+        return installed
+
+    def _graph(
+        self, units: list[FileUnit], acc: Accumulator, scope: DependencyScope
+    ) -> tuple[Dependency, ...]:
+        """The graph of what `scope` reads, from lockfiles first, then manifests no lockfile resolved."""
         Graph.unread_dependency_files(units, acc, scope)
         collected: list[Dependency] = []
         companions: list[tuple[str | None, str, Any, LockGraph]] = []

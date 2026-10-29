@@ -675,6 +675,7 @@
   "test_feed_provisional.py": "intel/malware",
   "test_finding_locations.py": "engine/pipeline",
   "test_dependency_scope.py": "engine/pipeline",
+  "test_not_installed.py": "engine/pipeline",
   "test_fixer.py": "cloud",
   "test_formats.py": "detect/binary",
   "test_function_reachability.py": "intel/advisories",

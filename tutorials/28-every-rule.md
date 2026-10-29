@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,475 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,477 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -495,10 +495,11 @@ rule's own samples.
 
 ## Dependencies
 
-27 rules.
+29 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.DEPENDENCY.BUNDLED.001` | high | A dependency the package bundles but does not install is a known-malicious release |
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | Dependency is a known-malicious release |
 | `MALWARE.DEPENDENCY.PAYLOAD.001` | critical | A declared dependency is malicious by its own content |
 | `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | A published package installs a dependency from a drop-point host |
@@ -524,6 +525,7 @@ rule's own samples.
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | A dependency does not exist on its public registry |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | A dependency is new, sourceless and unknown: the shape of a slopsquatted package |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | Dependency pins a version its publisher withdrew |
+| `VULNERABLE.DEPENDENCY.BUNDLED.001` | info | A dependency the package bundles but does not install has a known vulnerability |
 | `VULNERABLE.DEPENDENCY.EXPLOITED.001` | critical | Dependency has a vulnerability that is exploited in the wild |
 | `VULNERABLE.DEPENDENCY.KNOWN.001` | high | Dependency has a known vulnerability |
 

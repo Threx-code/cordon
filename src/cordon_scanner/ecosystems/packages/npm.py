@@ -48,6 +48,14 @@ class NpmEcosystem(BaseEcosystem):
     id = "npm"
     purl_type = "npm"
     manifest_globs: tuple[str, ...] = ("**/package.json", "**/deno.json", "**/deno.jsonc")
+    #: bundledDependencies: npm installs a tarball's own `node_modules` with it as shipped, and
+    #: `require()` loads them -- where a payload can hide in a dependency. Theirs too, recursively.
+    installed_with_package: tuple[str, ...] = (
+        "node_modules/*/package.json",
+        "node_modules/@*/*/package.json",
+        "node_modules/**/node_modules/*/package.json",
+        "node_modules/**/node_modules/@*/*/package.json",
+    )
     lockfile_globs: tuple[str, ...] = (
         "**/package-lock.json",
         "**/npm-shrinkwrap.json",

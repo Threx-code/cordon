@@ -418,14 +418,19 @@ class ArchiveStages:
             )
             acc.findings[:] = PackageFormat.union(acc.findings, repository)
             honoured = HONOURED_PINS.get(package)
-            dependencies = tuple(
-                replace(d, scope=Scope.DEV)
-                if not both
-                and d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
-                and not (honoured and honoured.search(d.declared_in or ""))
-                else d
-                for d in dependencies
-            )
+
+            def demoted(d: Dependency) -> Dependency:
+                if (
+                    not both
+                    and d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
+                    and not (honoured and honoured.search(d.declared_in or ""))
+                ):
+                    return replace(d, scope=Scope.DEV)
+                return d
+
+            dependencies = tuple(demoted(d) for d in dependencies)
+            # The records outside the install set as well, so each keeps the scope it always had.
+            acc.not_installed[:] = [demoted(d) for d in acc.not_installed]
         elif image is None:
             # A source tree read from an archive: graded as a repository (`_person_run_ceiling`).
             acc.findings[:] = Ceilings.person_run_ceiling(acc.findings, units, ctx)
@@ -435,6 +440,21 @@ class ArchiveStages:
                     acc.findings, units, "openvsx", hook_paths=ctx.install_hook_paths
                 )
         return dependencies, target_kind, ctx
+
+    def not_installed(self, acc: Accumulator, ctx: ScanContext) -> None:
+        """Advisories about what only a file outside the install set records (`acc.not_installed`),
+        added once the verdict is reached: at their own rules and severities, they never feed the
+        verdict, are never graded by it or by the package's ceilings, and never gate."""
+        advisory = next((d for d in self.detectors if d.id == "advisory"), None)
+        if (
+            acc.not_installed
+            and advisory is not None
+            and self.engine.detection.enabled(advisory, ctx)
+        ):
+            # Through the registry's detector, as the engine reaches every adapter.
+            report = getattr(advisory, "not_installed", None)
+            if callable(report):
+                acc.add(report(acc.not_installed, ctx))
 
     def verdict(
         self,

@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.files.walk import DEFAULT_PRUNE_DIRS, INSTALLED_CODE_PRUNE_DIRS
 
 if TYPE_CHECKING:
@@ -86,6 +87,8 @@ class DependencyScope:
         """Whether the inventory reads this file for the dependencies it declares or resolves."""
         if not self.archive:
             return True
+        if self.published and self._installed_with_package(path):
+            return True
         if DependencyScope._pruned(path):
             return False
         if not self.published:
@@ -94,6 +97,27 @@ class DependencyScope:
             return False
         where = DependencyScope.directory(path)
         return where == self.root or where in self.members
+
+    def _installed_with_package(self, path: str) -> bool:
+        """A nested file the package's own ecosystem installs with it (`installed_with_package`)."""
+        prefix = f"{self.root}/" if self.root else ""
+        if not path.startswith(prefix):
+            return False
+        ecosystem = EcosystemRegistry.get(DependencyScope._dependency_file(path) or "")
+        patterns = getattr(ecosystem, "installed_with_package", ())
+        relative = path[len(prefix) :]
+        return any(PathGlob.matches(relative, pattern) for pattern in patterns)
+
+    @staticmethod
+    def everything() -> DependencyScope:
+        """Every dependency file, as the inventory read them before it had a scope."""
+        return DependencyScope(archive=False, published="", root=None)
+
+    def narrows(self, units: Iterable[FileUnit]) -> bool:
+        """Whether this scope leaves any of the target's dependency files unread."""
+        return self.archive and any(
+            DependencyScope._dependency_file(u.path) and not self.reads(u.path) for u in units
+        )
 
     def ordered(self, units: list[FileUnit]) -> list[FileUnit]:
         """A published package's root files first, so its lockfiles declare the members before any

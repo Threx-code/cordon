@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.advisories.findings import (
+    BUNDLED_MALWARE_RULE,
+    BUNDLED_RULE,
     EXPLOITED_RULE,
     MALICIOUS_RULE,
     PLACEHOLDER_RULE,
@@ -130,6 +132,37 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
             "actively exploited vulnerability in a product you ship is reportable within "
             "24 hours of becoming aware of it."
         ),
+    ),
+    DeclaredRule(
+        id=BUNDLED_RULE,
+        title="A dependency the package bundles but does not install has a known vulnerability",
+        severity=Severity.INFO,
+        confidence=Confidence.CONFIRMED,
+        category=Category.VULNERABLE,
+        detector=AdvisoryFinding.DETECTOR,
+        message=(
+            "An advisory names a version that only a nested or vendored file in this package "
+            "records -- a lockfile of its maintainers' environment, a manifest in its tests or in "
+            "a bundled node_modules. Installing the package does not install it, but the files "
+            "may ship and be served."
+        ),
+        references=(references.OSV,),
+        remediation="If the bundled files are served or run, update them; otherwise none.",
+    ),
+    DeclaredRule(
+        id=BUNDLED_MALWARE_RULE,
+        title="A dependency the package bundles but does not install is a known-malicious release",
+        severity=Severity.HIGH,
+        confidence=Confidence.CONFIRMED,
+        category=Category.MALICIOUS,
+        detector=AdvisoryFinding.DETECTOR,
+        message=(
+            "An advisory names, as malicious, a version that only a nested or vendored file in "
+            "this package records. Installing the package does not resolve it, but its code may "
+            "be in the archive."
+        ),
+        references=(references.OSV,),
+        remediation="Remove the bundled copy and check whether anything in the package loads it.",
     ),
 )
 
