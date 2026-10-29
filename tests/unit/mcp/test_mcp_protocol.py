@@ -652,6 +652,9 @@ class TestPerFileBudgetPassThrough:
     def test_no_budget_leaves_the_scanners_own(self, tmp_path: Path) -> None:
         assert "--per-file-timeout" not in self.scanned_with(tmp_path)
 
-    def test_a_negative_budget_is_refused(self, tmp_path: Path, capsys) -> None:
-        assert Server.main(["--root", str(tmp_path), "--per-file-timeout", "-1"]) == 3
-        assert "--per-file-timeout >= 0" in capsys.readouterr().err
+    @pytest.mark.parametrize("value", ["-1", "86401"])
+    def test_a_budget_out_of_range_is_refused(self, tmp_path: Path, capsys, value: str) -> None:
+        """Before the server starts, with the range every scan enforces."""
+        assert Server.main(["--root", str(tmp_path), "--per-file-timeout", value]) == 3
+        err = capsys.readouterr().err
+        assert "--per-file-timeout" in err and "out of range (0 to 86400)" in err, err

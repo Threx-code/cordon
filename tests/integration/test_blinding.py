@@ -670,6 +670,34 @@ class TestLimitsAsAnExclusion:
             config, _ = ScanCommand._configure(args, root, ScanCommand._overrides(args))
             assert config.limits.per_file_timeout == expected
 
+    @pytest.mark.parametrize(
+        ("flag", "value"),
+        [
+            ("--per-file-timeout", "-1"),
+            ("--per-file-timeout", "86401"),
+            ("--timeout", "-1"),
+            ("--timeout", "604801"),
+            ("--jobs", "-1"),
+            ("--jobs", "1025"),
+        ],
+    )
+    def test_a_limit_out_of_range_is_a_usage_error(self, tmp_path, flag, value) -> None:
+        """Every limit-backed option, below and above its range: an operator's typo exits as a
+        configuration error naming the value and the range, not as cordon's own crash (exit 2,
+        "This is a bug in cordon"), which is how `Limits.merged`'s bare ValueError reached it."""
+        import subprocess
+
+        root = tmp_path / "r"
+        root.mkdir()
+        run = subprocess.run(
+            [sys.executable, "-m", "cordon_scanner", "scan", str(root), flag, value],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert run.returncode == 3, run.stderr
+        assert "out of range" in run.stderr and "internal error" not in run.stderr, run.stderr
+
 
 class TestThresholdsCannotWeakenTheGate:
     """Fourth adversarial pass, and the most serious finding of the review.
