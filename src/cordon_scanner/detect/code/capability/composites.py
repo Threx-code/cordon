@@ -9,6 +9,7 @@ term can ask, so each file gets its own evaluator holding it."""
 
 from __future__ import annotations
 
+import itertools
 from collections import Counter
 from contextlib import suppress
 from typing import TYPE_CHECKING, ClassVar
@@ -182,6 +183,90 @@ class CompositeEvaluator:
 
         byte_limit = proximity * self.BYTES_PER_LINE
         by_byte = sorted(hits, key=lambda h: h.byte_start)
+        starts = [h.byte_start for h in by_byte]
+        lines = [h.line for h in by_byte]
+        if any(earlier > later for earlier, later in itertools.pairwise(lines)):
+            return self._dense_window_each(
+                compiled, by_byte, path, in_hook, in_ci, in_consumer, deferred, proximity, fixed
+            )
+        # A hit's line follows from its offset, so in offset order the lines never fall, and the
+        # hits within `proximity` lines of a centre are one run of this list as well: each window
+        # is the slice between two ends that only move forward. What `_evaluate_over` counts over
+        # a window -- the capabilities, the unresolved counts, the rules fired, whether a hit sits
+        # in code the hooks never call -- is kept as the window slides, a hit added as it enters
+        # and taken away as it leaves, instead of counted again for every centre: the window of a
+        # 200-line proximity holds thousands of hits in a file of short lines, and counting each
+        # one per centre made a setup.py of 2,048 lines cost 18 s (review 98, 27-PERFORMANCE, 7).
+        kept = [not (h.capability is Capability.SPAWN and h.line in fixed) for h in by_byte]
+        in_dead = [bool(deferred) and LineRanges.cls_in(h.line, deferred) for h in by_byte]
+        capabilities: Counter[Capability] = Counter()
+        unresolved: Counter[Capability] = Counter()  # their variants, summed
+        unresolved_hits: Counter[Capability] = (
+            Counter()
+        )  # how many: a key with no variants is a key
+        rules: Counter[str] = Counter()
+        dead = 0
+
+        def enter(index: int, sign: int) -> None:
+            nonlocal dead
+            hit = by_byte[index]
+            if not kept[index]:
+                return
+            capabilities[hit.capability] += sign
+            if not hit.resolved:
+                unresolved[hit.capability] += sign * hit.variants
+                unresolved_hits[hit.capability] += sign
+            rules[hit.rule_id] += sign
+            dead += sign * in_dead[index]
+
+        first = end = 0
+        last: tuple[int, int] | None = None
+        for centre in by_byte:
+            lo = bisect.bisect_left(starts, centre.byte_start - byte_limit)
+            hi = bisect.bisect_right(starts, centre.byte_start + byte_limit)
+            if (lo, hi) == last:
+                continue
+            last = (lo, hi)
+            start = max(lo, bisect.bisect_left(lines, centre.line - proximity))
+            stop = min(hi, bisect.bisect_right(lines, centre.line + proximity))
+            while end < stop:
+                enter(end, 1)
+                end += 1
+            while first < start:
+                enter(first, -1)
+                first += 1
+            present = {capability for capability, n in capabilities.items() if n}
+            # The keys `_evaluate_over`'s counts would have: one per capability with an unresolved
+            # hit in the window, even at no variants (an empty Counter reads as false in `evaluate`).
+            counts = Counter(
+                {
+                    capability: unresolved[capability]
+                    for capability, n in unresolved_hits.items()
+                    if n
+                }
+            )
+            fired = frozenset(rule for rule, n in rules.items() if n)
+            hook = in_hook and not (deferred and dead)
+            if self.evaluate(compiled, present, path, hook, counts, fired, in_ci, in_consumer):
+                return by_byte[start:stop]
+        return None
+
+    def _dense_window_each(
+        self,
+        compiled: CompiledRule,
+        by_byte: list[CapabilityHit],
+        path: str,
+        in_hook: bool,
+        in_ci: bool,
+        in_consumer: bool,
+        deferred: frozenset[tuple[int, int]],
+        proximity: int,
+        fixed: frozenset[int],
+    ) -> list[CapabilityHit] | None:
+        """`_dense_window` one window at a time, for hits whose lines do not follow their offsets."""
+        import bisect
+
+        byte_limit = proximity * self.BYTES_PER_LINE
         starts = [h.byte_start for h in by_byte]
         last: tuple[int, int] | None = None
         for centre in by_byte:
