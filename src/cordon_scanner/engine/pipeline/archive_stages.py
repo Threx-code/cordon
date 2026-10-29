@@ -296,17 +296,19 @@ class ArchiveStages:
                         )
                     )
                     break
-                acc.add(
-                    self.engine.detection.parallel(
-                        units[start : start + ARCHIVE_SLICE],
-                        path.parent,
-                        ctx,
-                        acc,
-                        content_detectors,
-                        signature,
-                        carry_content=True,
-                    )
+                found = self.engine.detection.parallel(
+                    units[start : start + ARCHIVE_SLICE],
+                    path.parent,
+                    ctx,
+                    acc,
+                    content_detectors,
+                    signature,
+                    carry_content=True,
+                    where=path.name,
                 )
+                acc.add(found)
+                if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
+                    break  # the pool stopped at the budget and said so; no slice after it
             units_left: list[FileUnit] = []
         else:
             units_left = units
