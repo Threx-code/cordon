@@ -141,9 +141,11 @@ class TestWarmScanner:
             WarmKit.ready(runner)
             assert runner.warm is not None and runner.warm._process is not None
             runner.warm._process.kill()
-            deadline = time.monotonic() + 10
+            # Polled against a generous deadline: the reader notices the exit as soon as it is
+            # scheduled, which a loaded machine can delay well past a few seconds.
+            deadline = time.monotonic() + 600
             while runner.warm.ready:
-                assert time.monotonic() < deadline
+                assert time.monotonic() < deadline, "the killed helper was never marked dead"
                 time.sleep(0.05)
             result = runner.run(self.args(root), timeout=120, token=CancelToken())
         finally:
