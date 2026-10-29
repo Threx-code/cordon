@@ -32,6 +32,7 @@ from cordon_scanner.foundation.errors import RulePackError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Confidence, RedactionMode, Severity
 from cordon_scanner.foundation.once import OneOff
+from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.rules.pack import CompiledMatch, CompiledRule, RulePack
@@ -322,6 +323,49 @@ class RuleLoader:
 
         tests = self._parse_tests(raw.get("tests"), where=where)
 
+        baseline_hits = self._check_samples_and_baseline(raw, tests, confidence, where=where)
+
+        paths = raw.get("paths") or {}
+        if not isinstance(paths, dict):
+            raise RulePackError(f"{where}: `paths` must be a mapping with include/exclude")
+        RuleLoader._validate_globs(paths, where=where)
+
+        evidence_policy, capability = RuleLoader._policy_and_capability(raw, where=where)
+
+        compiled_match = self._compile_match(raw["match"], rule_id, where)
+
+        rule = Rule(
+            id=rule_id,
+            category=category,
+            severity=severity,
+            confidence=confidence,
+            title=str(raw["title"]),
+            message=RuleLoader._clean(str(raw["message"])),
+            remediation=RuleLoader._clean(str(raw.get("remediation", ""))),
+            match_kind=compiled_match.kind,
+            version=str(raw.get("version", "1.0.0")),
+            rulepack=pack_id,
+            languages=RuleLoader._str_tuple(raw.get("languages")),
+            ecosystems=RuleLoader._str_tuple(raw.get("ecosystems")),
+            paths_include=RuleLoader._str_tuple(paths.get("include")),
+            paths_exclude=RuleLoader._str_tuple(paths.get("exclude")),
+            evidence_policy=evidence_policy,
+            capability=capability,
+            provenance=provenance,
+            tests=tests,
+            references=RuleLoader._str_tuple(raw.get("references")),
+            enabled=bool(raw.get("enabled", True)),
+            baseline_hits=baseline_hits,
+            raw=dict(raw),
+        )
+
+        return CompiledRule(rule=rule, match=compiled_match)
+
+    def _check_samples_and_baseline(
+        self, raw: Mapping[str, Any], tests: RuleTests, confidence: Confidence, *, where: str
+    ) -> int:
+        """Refuse a text-matching rule without positive and negative samples, and a rule that
+        surfaces findings at high confidence with benign-corpus hits; the recorded hits."""
         # Inline samples are only meaningful for kinds that match text directly.
         # A composite rule's input is other findings, and a graph rule's input is
         # a dependency tree; neither can be expressed as a string, so demanding
@@ -375,12 +419,13 @@ class RuleLoader:
                     "declare confidence: medium and let correlation raise it."
                 ),
             )
+        return baseline_hits
 
-        paths = raw.get("paths") or {}
-        if not isinstance(paths, dict):
-            raise RulePackError(f"{where}: `paths` must be a mapping with include/exclude")
-        RuleLoader._validate_globs(paths, where=where)
-
+    @staticmethod
+    def _policy_and_capability(
+        raw: Mapping[str, Any], *, where: str
+    ) -> tuple[RedactionMode, Capability | None]:
+        """The rule's evidence policy and the capability it labels, or None."""
         evidence_raw = str(raw.get("evidence_policy", "masked"))
         try:
             evidence_policy = RedactionMode(evidence_raw)
@@ -399,35 +444,7 @@ class RuleLoader:
                     f"{where}: unknown capability {raw['capability']!r}; expected one of: "
                     f"{', '.join(c.value for c in Capability)}"
                 ) from None
-
-        compiled_match = self._compile_match(raw["match"], rule_id, where)
-
-        rule = Rule(
-            id=rule_id,
-            category=category,
-            severity=severity,
-            confidence=confidence,
-            title=str(raw["title"]),
-            message=RuleLoader._clean(str(raw["message"])),
-            remediation=RuleLoader._clean(str(raw.get("remediation", ""))),
-            match_kind=compiled_match.kind,
-            version=str(raw.get("version", "1.0.0")),
-            rulepack=pack_id,
-            languages=RuleLoader._str_tuple(raw.get("languages")),
-            ecosystems=RuleLoader._str_tuple(raw.get("ecosystems")),
-            paths_include=RuleLoader._str_tuple(paths.get("include")),
-            paths_exclude=RuleLoader._str_tuple(paths.get("exclude")),
-            evidence_policy=evidence_policy,
-            capability=capability,
-            provenance=provenance,
-            tests=tests,
-            references=RuleLoader._str_tuple(raw.get("references")),
-            enabled=bool(raw.get("enabled", True)),
-            baseline_hits=baseline_hits,
-            raw=dict(raw),
-        )
-
-        return CompiledRule(rule=rule, match=compiled_match)
+        return evidence_policy, capability
 
     def _compile_match(self, raw: Any, rule_id: str, where: str) -> CompiledMatch:
         if not isinstance(raw, dict):
@@ -446,58 +463,7 @@ class RuleLoader:
             ) from None
 
         if kind is MatchKind.REGEX:
-            patterns = RuleLoader._str_tuple(raw.get("patterns")) or (
-                (str(raw["pattern"]),) if raw.get("pattern") else ()
-            )
-            if not patterns:
-                raise RulePackError(f"{where}: regex match requires `pattern` or `patterns`")
-            # Multiple patterns become one alternation, compiled once. Matching
-            # cost is then independent of how many alternatives a rule declares.
-            combined = "|".join(f"(?:{p})" for p in patterns)
-            regex = PatternCompiler.validate_pattern(combined, rule_id=rule_id)
-            # Extract from the individual patterns rather than the combined one:
-            # wrapping each in (?:...) puts every literal inside a group, where
-            # the conservative walker will not read it.
-            prefilter: tuple[bytes, ...] = ()
-            per_pattern = [PatternCompiler._extract_prefilter(p.encode("utf-8")) for p in patterns]
-            if all(per_pattern):
-                prefilter = tuple(sorted({lit for group in per_pattern for lit in group}))
-            # Where the scanner above found none, the parsed derivation may: every pattern must
-            # yield a requirement, or the rule keeps no prefilter at all.
-            folded: tuple[bytes, ...] = ()
-            required = [PatternCompiler.required_literals(p) for p in patterns]
-            if not prefilter and all(required):
-                folded = tuple(sorted({lit for group in required for lit in group}))
-            # And per pattern, for `regex_for`: its required literals, lower-cased, else two-byte
-            # ones, else none (always run). Tested against the lower-cased file, which the per-
-            # pattern gates share; the exact-case prefilter above is the same derivation.
-            branches: list[tuple[LiteralGate | None, LiteralGate | None]] = []
-            for pattern, needed in zip(patterns, required, strict=True):
-                coarse = needed or PatternCompiler.required_literals(pattern, shortest=2)
-                # And a second, sharper gate where the adjacent-set derivation finds longer
-                # literals: `rm\\s+-rf` also needs whitespace then `-rf`, not only `rm`, which half
-                # of all English prose contains. Tested only once the coarse gate passes, so a
-                # file without `rm` pays for one substring search, not twelve.
-                sharper = PatternCompiler.required_literals(pattern, shortest=3, adjacent=True)
-                if not (sharper and (not coarse or min(map(len, sharper)) > min(map(len, coarse)))):
-                    sharper = ()
-                branches.append(
-                    (
-                        LiteralGate(coarse) if coarse else None,
-                        LiteralGate(sharper) if sharper else None,
-                    )
-                )
-            return CompiledMatch(
-                kind=kind,
-                regex=regex,
-                prefilter=prefilter,
-                prefilter_folded=folded,
-                branches=tuple(branches),
-                sources=tuple(patterns),
-                rule_id=rule_id,
-                folds=any(gate is not None for pair in branches for gate in pair),
-                raw=dict(raw),
-            )
+            return RuleLoader._compile_regex(raw, kind, rule_id, where)
 
         if kind is MatchKind.LITERAL:
             literals = RuleLoader._str_tuple(raw.get("literals")) or (
@@ -558,6 +524,65 @@ class RuleLoader:
             )
 
         return CompiledMatch(kind=kind, raw=dict(raw))
+
+    @staticmethod
+    def _compile_regex(
+        raw: dict[str, Any], kind: MatchKind, rule_id: str, where: str
+    ) -> CompiledMatch:
+        """A regex match: its patterns as one validated alternation, the exact-case prefilter, the
+        folded one, and the literal gates `regex_for` tests per pattern."""
+        patterns = RuleLoader._str_tuple(raw.get("patterns")) or (
+            (str(raw["pattern"]),) if raw.get("pattern") else ()
+        )
+        if not patterns:
+            raise RulePackError(f"{where}: regex match requires `pattern` or `patterns`")
+        # Multiple patterns become one alternation, compiled once. Matching
+        # cost is then independent of how many alternatives a rule declares.
+        combined = "|".join(f"(?:{p})" for p in patterns)
+        regex = PatternCompiler.validate_pattern(combined, rule_id=rule_id)
+        # Extract from the individual patterns rather than the combined one:
+        # wrapping each in (?:...) puts every literal inside a group, where
+        # the conservative walker will not read it.
+        prefilter: tuple[bytes, ...] = ()
+        per_pattern = [PatternCompiler._extract_prefilter(p.encode("utf-8")) for p in patterns]
+        if all(per_pattern):
+            prefilter = tuple(sorted({lit for group in per_pattern for lit in group}))
+        # Where the scanner above found none, the parsed derivation may: every pattern must
+        # yield a requirement, or the rule keeps no prefilter at all.
+        folded: tuple[bytes, ...] = ()
+        required = [PatternCompiler.required_literals(p) for p in patterns]
+        if not prefilter and all(required):
+            folded = tuple(sorted({lit for group in required for lit in group}))
+        # And per pattern, for `regex_for`: its required literals, lower-cased, else two-byte
+        # ones, else none (always run). Tested against the lower-cased file, which the per-
+        # pattern gates share; the exact-case prefilter above is the same derivation.
+        branches: list[tuple[LiteralGate | None, LiteralGate | None]] = []
+        for pattern, needed in zip(patterns, required, strict=True):
+            coarse = needed or PatternCompiler.required_literals(pattern, shortest=2)
+            # And a second, sharper gate where the adjacent-set derivation finds longer
+            # literals: `rm\\s+-rf` also needs whitespace then `-rf`, not only `rm`, which half
+            # of all English prose contains. Tested only once the coarse gate passes, so a
+            # file without `rm` pays for one substring search, not twelve.
+            sharper = PatternCompiler.required_literals(pattern, shortest=3, adjacent=True)
+            if not (sharper and (not coarse or min(map(len, sharper)) > min(map(len, coarse)))):
+                sharper = ()
+            branches.append(
+                (
+                    LiteralGate(coarse) if coarse else None,
+                    LiteralGate(sharper) if sharper else None,
+                )
+            )
+        return CompiledMatch(
+            kind=kind,
+            regex=regex,
+            prefilter=prefilter,
+            prefilter_folded=folded,
+            branches=tuple(branches),
+            sources=tuple(patterns),
+            rule_id=rule_id,
+            folds=any(gate is not None for pair in branches for gate in pair),
+            raw=dict(raw),
+        )
 
     @staticmethod
     def _compile_ast(raw: Mapping[str, Any], *, where: str) -> CompiledMatch:
@@ -704,7 +729,7 @@ class RuleLoader:
     @staticmethod
     def builtin_pack_dir() -> Path:
         """Where the packs that ship with the tool live."""
-        return Path(__file__).parent / "builtin"
+        return PackagePaths.root() / "rules" / "builtin"
 
     MIN_BUILTIN_RULES = 20
     """Floor on the bundled rule count.
