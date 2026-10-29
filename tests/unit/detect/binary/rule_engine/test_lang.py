@@ -298,15 +298,17 @@ class TestLoopsOverLazyArrays:
 class TestHostileInput:
     def test_a_whitespace_flood_does_not_make_a_regex_slow(self) -> None:
         rules = Rules.compile(r"rule r { strings: $a = /\s*\(/ condition: $a }")
-        started = time.perf_counter()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         assert not rules.match(b" " * 2_000_000, timeout=60)
-        assert time.perf_counter() - started < 60
+        assert time.process_time() - started < 60
 
     def test_an_expression_re_would_backtrack_on_runs_on_the_linear_engine(self) -> None:
         rules = Rules.compile(r"rule r { strings: $a = /(\s*,\s*\d{1,3}){19,}x/ condition: $a }")
-        started = time.perf_counter()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         assert not rules.match(b"1" + b" , 1" * 5000 + b"y", timeout=60)
-        assert time.perf_counter() - started < 60
+        assert time.process_time() - started < 60
 
     def test_the_deadline_stops_matching(self) -> None:
         rules = Rules.compile("rule r { strings: $a = { 61 [-] 62 } condition: $a }")
