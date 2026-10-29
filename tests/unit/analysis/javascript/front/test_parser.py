@@ -122,17 +122,28 @@ class TestRecovery:
                 assert isinstance(Parser(text, typescript=typescript).program(), Node)
 
     def test_time_is_linear_in_the_input(self) -> None:
+        """Four times the input costs about four times as long. Measured against a linear
+        reference timed in the same loop, so a loaded machine slows both sides alike: a linear
+        parser's growth over the reference is about 1, a quadratic one's about 4."""
         unit = "const a = require('m'); a.f(b, `t${c}`, /r/g, x => ({ y: [1, 2] }));\n"
 
-        def cost(n: int) -> float:
-            """The best of five runs: on a loaded machine one run measures the machine."""
+        def reference(text: str) -> int:
+            """One pass over every character, in Python, as the parser's own loops are."""
+            return sum(1 for c in text if c == ";")
+
+        def cost(n: int) -> tuple[float, float]:
+            """The best of five runs of each: on a loaded machine one run measures the machine."""
             text = unit * n
-            best = float("inf")
+            parse = ref = float("inf")
             for _ in range(5):
                 start = time.perf_counter()
                 Parser(text).program()
-                best = min(best, time.perf_counter() - start)
-            return best
+                parse = min(parse, time.perf_counter() - start)
+                start = time.perf_counter()
+                reference(text)
+                ref = min(ref, time.perf_counter() - start)
+            return parse, ref
 
-        small, large = cost(500), cost(4_000)
-        assert large < small * 8 * 3
+        (parse_n, ref_n), (parse_4n, ref_4n) = cost(1_000), cost(4_000)
+        growth = (parse_4n / parse_n) / (ref_4n / ref_n)
+        assert growth < 2.5, f"parsing grew {growth:.2f} times faster than the input"

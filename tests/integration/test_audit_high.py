@@ -218,18 +218,28 @@ class TestH4ArchiveLimitsBindBeforeAllocation:
         assert len(result.members) <= DEFAULT_LIMITS.max_archive_entries
 
     def test_a_budget_bounds_the_whole_scan(self, tmp_path: Path) -> None:
-        """Most of the cost is matching, not expanding: a 50,000-member archive
-        expands in about a second and then takes eight to match. A deadline that
-        covered only expansion bounded the wrong half."""
-        bomb = self.bomb(tmp_path)
+        """The scan's time budget binds while the archive is read. Two hundred thousand members
+        take longer than the budget to read, so the reader stops and the archive is refused, with
+        the budget named as the reason and the scan incomplete.
+
+        Asserted by what the scan reports, not by seconds, which a loaded machine stretches: a
+        budget that did not bind would read every member, examine them, and name no time limit."""
+        entries = 200_000
+        bomb = self.bomb(tmp_path, entries)
         config = Config.default().with_overrides(
             use_cache=False, limits=Config.default().limits.merged(total_timeout=2.0)
         )
-        started = time.monotonic()
         result = Scanner(config).scan(bomb)
-        elapsed = time.monotonic() - started
 
-        assert elapsed < 20, f"the budget did not bind ({elapsed:.1f}s)"
+        refused = [
+            f
+            for f in result.findings
+            if f.rule_id == "OPERATIONAL.ARCHIVE.REJECTED" and "time budget" in f.message
+        ]
+        assert refused, (
+            f"the budget did not bind while reading: {[f.message for f in result.findings]}"
+        )
+        assert result.stats.files_scanned < entries, "every member was read despite the budget"
         assert not result.complete, "a truncated scan reported complete"
 
 

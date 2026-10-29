@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.foundation.models import Category, Scope
 from cordon_scanner.foundation.results import Dependency
@@ -60,7 +60,10 @@ class DependencyRecords:
             if package:
                 by_package.setdefault(package, []).append(finding)
         paths = DependencyRecords._paths(deps)
-        lines = _LineIndex(context.texts)
+        lines = _LineIndex(
+            context.texts,
+            [(d.manifest_path, d.name) for d in deps] + [(d.declared_in, d.name) for d in deps],
+        )
         out = []
         for dependency in deps:
             own = by_package.get(dependency.purl, [])
@@ -240,11 +243,33 @@ class DependencyRecords:
 
 
 class _LineIndex:
-    """The first line of a file that names a dependency, computed once per file."""
+    r"""The first line of a file that names a dependency.
 
-    def __init__(self, texts: Mapping[str, str]) -> None:
+    A name is found where `(?<![\w@./-])NAME(?![\w-])` matches. The lookbehind starts every
+    match at the start of a maximal run of `[\w@./-]`, and the lookahead ends it at the run's end
+    or just before an `@`, `.` or `/` inside it, so the names a line holds are exactly those
+    prefixes of its runs. The caller says up front which names it will ask of which file (the
+    dependencies parsed from it); on a file's first lookup one pass over its lines records the
+    first line of each of those, and every lookup after is a dictionary read. Searching the file
+    again for each dependency made a lockfile's cost grow with the square of its entries. Memory
+    is what was asked for, never what the file holds. A name with another character (a space, a
+    `:`), or one not asked for up front, is searched for line by line as before."""
+
+    #: Lines read, as the line-by-line search reads them.
+    MAX_LINES: ClassVar[int] = 200_000
+    RUN: ClassVar[re.Pattern[str]] = re.compile(r"[\w@./-]+")
+    INNER_END: ClassVar[re.Pattern[str]] = re.compile(r"[@./]")
+
+    def __init__(
+        self, texts: Mapping[str, str], queries: Iterable[tuple[str | None, str]] = ()
+    ) -> None:
         self._texts = texts
         self._lines: dict[str, list[str]] = {}
+        self._wanted: dict[str, set[str]] = {}
+        for path, name in queries:
+            if path and name and _LineIndex.RUN.fullmatch(name):
+                self._wanted.setdefault(path, set()).add(name)
+        self._first: dict[str, dict[str, int]] = {}
 
     def find(self, path: str | None, name: str) -> int | None:
         if not path or not name or path not in self._texts:
@@ -253,8 +278,37 @@ class _LineIndex:
         if lines is None:
             lines = self._texts[path].splitlines()
             self._lines[path] = lines
+        wanted = self._wanted.get(path)
+        if wanted is not None and name in wanted:
+            if path not in self._first:
+                self._first[path] = _LineIndex.first_lines(lines, wanted)
+            return self._first[path].get(name)
+        return _LineIndex.search(lines, name)
+
+    @staticmethod
+    def first_lines(lines: list[str], wanted: set[str]) -> dict[str, int]:
+        """The first line holding each wanted name, in one pass. A prefix longer than the longest
+        wanted name cannot be one, so no run is cut past that length."""
+        longest = max(len(name) for name in wanted)
+        first: dict[str, int] = {}
+        for number, line in enumerate(lines[: _LineIndex.MAX_LINES], start=1):
+            for run in _LineIndex.RUN.finditer(line):
+                text = run.group()
+                for found in _LineIndex.INNER_END.finditer(text):
+                    end = found.start()
+                    if end > longest:
+                        break
+                    if end and text[:end] in wanted:
+                        first.setdefault(text[:end], number)
+                if len(text) <= longest and text in wanted:
+                    first.setdefault(text, number)
+        return first
+
+    @staticmethod
+    def search(lines: list[str], name: str) -> int | None:
+        """The first line that names `name`, read line by line."""
         pattern = re.compile(r"(?<![\w@./-])" + re.escape(name) + r"(?![\w-])")
-        for number, line in enumerate(lines[:200_000], start=1):
+        for number, line in enumerate(lines[: _LineIndex.MAX_LINES], start=1):
             if name in line and pattern.search(line):
                 return number
         return None
