@@ -96,6 +96,37 @@ class TestWorkerCount(ParallelFixtures):
         assert 1 <= count <= MAX_WORKERS
 
 
+class TestThePoolIsSizedByTheWork:
+    """Sized by 4 MB batches, a 9 MB archive (armadaproject/armada, 1,346 members) got three
+    workers and three batches, one holding 899 of the files: the scan waited on that batch, and
+    took as long at `--jobs 4` as at `--jobs 1`."""
+
+    def test_the_work_not_the_batch_count_decides_the_workers(self) -> None:
+        assert ParallelScanner.worker_count(4, file_count=1_346, total_bytes=9_478_000) == 4
+
+    def test_a_worker_is_not_started_for_less_work_than_it_costs(self) -> None:
+        from cordon_scanner.engine.parallel import WORK_PER_WORKER
+
+        assert (
+            ParallelScanner.worker_count(16, file_count=500, total_bytes=4 * WORK_PER_WORKER) == 4
+        )
+
+    def test_each_worker_gets_several_batches_so_none_waits_on_one(self) -> None:
+        from cordon_scanner.engine.parallel import BATCHES_PER_WORKER
+
+        items = [(i, f"m{i}.go", 7_000, "", None) for i in range(1_346)]
+        total = sum(item[2] for item in items)
+        batches = ParallelScanner.batch_by_bytes(items, ParallelScanner.batch_target(total, 4))
+        assert len(batches) >= 4 * BATCHES_PER_WORKER - 1
+        assert sorted(i for batch in batches for i, *_ in batch) == list(range(1_346))
+
+    def test_batches_stay_within_their_bounds(self) -> None:
+        from cordon_scanner.engine.parallel import BATCH_TARGET_BYTES, MIN_BATCH_BYTES
+
+        assert ParallelScanner.batch_target(1_000, 8) == MIN_BATCH_BYTES
+        assert ParallelScanner.batch_target(10 << 30, 2) == BATCH_TARGET_BYTES
+
+
 class TestBatching(ParallelFixtures):
     def test_batches_are_balanced_by_bytes(self) -> None:
         """One large file and a thousand small ones are not the same work.
