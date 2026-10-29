@@ -206,7 +206,7 @@ class AdvisoryFiles:
         """
         from cordon_scanner.foundation.paths import StatePaths
 
-        return StatePaths.default_cache_dir() / "advisories"
+        return StatePaths.synced_intel_dir()
 
     @staticmethod
     def _read_meta(root: Path) -> DatabaseMeta:

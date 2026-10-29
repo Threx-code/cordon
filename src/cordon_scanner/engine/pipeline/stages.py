@@ -184,7 +184,7 @@ class ScanStages:
             if self.engine.detection.enabled(d, ctx)
             and not (d.requires.dependencies and d.requires.content is False)
         ]
-        signature = ScanCache.detector_signature(file_detectors)
+        signature = ScanCache.scan_signature(file_detectors, ctx, self.config)
 
         # A source whose bytes are not what is on disk cannot have its files
         # re-read by a worker: a staged scan would examine the working tree
