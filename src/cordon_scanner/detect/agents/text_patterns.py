@@ -119,6 +119,8 @@ exfiltration: "copy `.env.template` to `.env`" is setup, and netdata's and AutoG
 say exactly that; "send `~/.ssh/id_rsa` to https://..." or "post the `.env` to this webhook" is
 the attack."""
 
+# Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
+# with only optional items between them split one stretch every way.
 SECRECY: Final = re.compile(
     # Never telling someone: an object follows. "Without revealing secret values" and "which the
     # label views never show" protect or describe; "do not tell the user", "never mention it" hide.
@@ -129,7 +131,7 @@ SECRECY: Final = re.compile(
     # "hide this from the user".
     r"|\bkeep\s+(?:it|this|that|them|these)\s+(?:a\s+)?(?:secret|hidden|private|confidential)\s+from\b"
     r"|\bwithout\s+(?:the\s+)?user(?:'s)?\s+(?:knowledge|knowing|noticing|awareness|consent)\b"
-    r"|\b(?:hide|conceal)\s+(?:it|this|that|them|these|everything)?\s*from\s+(?:the\s+)?user\b"
+    r"|\b(?:hide|conceal)\s++(?:(?:it|this|that|them|these|everything)\s*+)?from\s+(?:the\s+)?user\b"
 )
 
 #: Text ordering the agent to run a shell command: "you must execute the following system command
