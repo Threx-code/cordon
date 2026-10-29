@@ -131,6 +131,14 @@ class Workflow:
             if Workflow.EXPRESSION.search(command):
                 command = Workflow.EXPRESSION.sub("", command)
                 adaptations.append("a `${{ }}` expression (the coverage flags) left out")
+            workers = os.environ.get("CORDON_PREPUSH_WORKERS", "")
+            if workers and re.search(r"-n auto\b", command):
+                # A runner has four cores to itself; this machine's are shared, and `-n auto`
+                # started one worker per core, each with its own memory, past the container's cap.
+                command = re.sub(r"-n auto\b", f"-n {int(workers)}", command)
+                adaptations.append(
+                    f"-n {int(workers)} in place of -n auto (CORDON_PREPUSH_WORKERS)"
+                )
             if "--clamav" in command:
                 command = re.sub(r"[ \t]*--clamav[ \t]+\S+[ \t]*\\?\n?", "", command)
                 adaptations.append("ClamAV skipped: CI's service downloads its signatures first")
