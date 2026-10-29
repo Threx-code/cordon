@@ -16,11 +16,15 @@ MAX_DEPTH: Final = 60
 MAX_TEXT: Final = 600_000
 #: What a decoded value has to be to count as something hidden: a module that reaches the system or
 #: the network, a URL or host, a shell command, code. Bundles decode ordinary strings constantly.
+#: Searched for whether it occurs: a host is tried only from the start of its run of `[a-z0-9-]`,
+#: which finds one exactly when a start inside the run would, without re-reading the run from each
+#: of its characters (that was quadratic on a long run of letters or dashes).
 _HIDDEN_SIGNIFICANT: Final = re.compile(
     r"^(?:child_process|os|dns|net|https?|fs|vm|crypto|process|util|tls|dgram|worker_threads)$"
     r"|https?://|\b(?:curl|wget|powershell|cmd(?:\.exe)?|bash|sh -c|chmod|nc|certutil|rundll32)\b"
     r"|\brequire\s*\(|\beval\s*\(|\b(?:exec|spawn|execSync|userInfo|hostname|homedir|lookup|resolve4)\b"
-    r"|\.(?:exe|dll|ps1|bat|sh|vbs)\b|[a-z0-9-]+\.(?:com|net|org|io|xyz|top|ru|cn|site|online|me)\b"
+    r"|\.(?:exe|dll|ps1|bat|sh|vbs)\b"
+    r"|(?<![a-z0-9-])[a-z0-9-]+\.(?:com|net|org|io|xyz|top|ru|cn|site|online|me)\b"
 )
 #: A loop that builds a string one `String.fromCharCode` at a time over an array: the decoder a
 #: small local function is (`JsEval.BUILTIN_DECODER_LOOP`).
