@@ -37,8 +37,11 @@ MAX_TABLE: Final = 4_096
 MAX_TEXT: Final = 2_000_000
 
 _NAME: Final = r"[A-Za-z_][A-Za-z0-9_]{0,80}"
+#: Each blank run before a name, a type or `=` is possessive: none of those starts with a blank, so
+#: giving blanks back never made a match, and a line of blanks was tried in every split (4.4x for 2x).
+#: The run after `=` gives back, since the value may start with a blank.
 _ASSIGN: Final = re.compile(
-    rf"(?m)^[ \t]*(?:var[ \t]+)?(?P<name>{_NAME})[ \t]*(?:[A-Za-z_\[\]]{{0,20}}[ \t]*)?:?=[ \t]*(?P<value>[^\n]{{1,{MAX_TEXT}}})$"
+    rf"(?m)^[ \t]*+(?:var[ \t]++)?(?P<name>{_NAME})[ \t]*+(?:[A-Za-z_\[\]]{{0,20}}[ \t]*+)?:?=[ \t]*(?P<value>[^\n]{{1,{MAX_TEXT}}})$"
 )
 _TABLE: Final = re.compile(r"^\[\]string[ \t]*\{(?P<body>.*)\}[ \t;]*$", re.S)
 _INDEX: Final = re.compile(rf"^(?P<name>{_NAME})\[(?P<index>\d{{1,5}})\]$")
