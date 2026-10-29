@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import bisect
 import contextlib
 import re
 from pathlib import Path
@@ -261,6 +262,11 @@ _OVERRIDE_REACH: Final = 4
 """How many of a tool's first statements are read for an argument override."""
 
 _SENTENCE: Final = re.compile(r"[^\n]{1,2000}?(?:[.!?](?!\w)|\n|$)")
+#: Where `_SENTENCE` can end: a stop that ends a word, or a line break. `McpServerSource.sentences`
+#: reads them once; `_SENTENCE.findall` tried up to 2,000 lengths from every start of a long line
+#: with no stop -- 7 s for one 128,000-character description (review 98, 27-PERFORMANCE).
+_SENTENCE_STOP: Final = re.compile(r"[.!?](?!\w)|\n")
+_SENTENCE_LIMIT: Final = 2000
 """One sentence: up to a stop that ends a word, a line break or the end. It crosses a dot inside a
 word. The earlier `[^.!?\n]+` could not, so a sentence holding a domain or a file name --
 `forward a copy to x@evil.example`, `read config.json` -- was skipped whole, and every check made
@@ -293,6 +299,33 @@ class McpServerSource:
     """An MCP server's own source: its tool descriptions, and scanning a fetched server."""
 
     @staticmethod
+    def sentences(text: str) -> list[str]:
+        """`_SENTENCE.findall(text)`, with each stop found once.
+
+        From a start that is not a line break, `_SENTENCE` ends at the first stop after it (a line
+        break, a `.`, `!` or `?` that ends a word, or the end of the text), taking the stop, if that
+        stop lies within `_SENTENCE_LIMIT` characters; otherwise nothing starts there, and nothing
+        starts anywhere up to `_SENTENCE_LIMIT` before that stop either, since no line break lies
+        between. So the next start to try is that one.
+        """
+        stops = [m.start() for m in _SENTENCE_STOP.finditer(text)]
+        stops.append(len(text))
+        out: list[str] = []
+        start = 0
+        while start < len(text):
+            if text[start] == "\n":
+                start += 1
+                continue
+            stop = stops[bisect.bisect_right(stops, start)]
+            if stop - start > _SENTENCE_LIMIT:
+                start = stop - _SENTENCE_LIMIT
+                continue
+            end = min(stop + 1, len(text))
+            out.append(text[start:end])
+            start = end
+        return out
+
+    @staticmethod
     def _poisoned_description(description: str) -> str | None:
         """What makes a tool description an instruction to the agent rather than a description.
 
@@ -310,7 +343,7 @@ class McpServerSource:
             return "wraps text in a tag addressed to the model"
         if SECRECY.search(description):
             return "asks the agent to keep something from the user"
-        sentences = _SENTENCE.findall(description)
+        sentences = McpServerSource.sentences(description)
         if any(
             _OTHER_TOOL.search(s) and _COERCE.search(s) and _ALTERS.search(s) for s in sentences
         ):
