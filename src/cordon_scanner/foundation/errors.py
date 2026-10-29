@@ -56,6 +56,15 @@ class ConfigError(CordonError):
     exit_code = ExitCode.CONFIG_ERROR
 
 
+class LimitError(ConfigError, ValueError):
+    """A limit given a value of the wrong type or outside its range.
+
+    A ConfigError, so a command-line override (`--timeout -1`, `--jobs 100000`) exits as the
+    operator's mistake (CONFIG_ERROR) rather than as cordon's own crash, and a ValueError, so every
+    handler that already catches what `Limits` raised keeps catching it.
+    """
+
+
 class PolicyViolationError(ConfigError):
     """A repository config tried to weaken something organisation policy sets.
 
