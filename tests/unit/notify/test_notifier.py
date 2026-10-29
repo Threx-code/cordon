@@ -184,8 +184,14 @@ class TestWhatIsSent:
             exit_code=0,
             gate="passed",
         )
-        assert json.loads(sent.calls[0][1])["scan"]["gate"] == "passed"
-        assert json.loads(sent.calls[1][1])["text"] == "Cordon: acme-api passed its gate"
+        # Channels are sent in parallel, so the recorded order is whichever finished first: each
+        # body is found by its channel's URL.
+        by_url = {url: body for url, body, _headers in sent.calls}
+        assert json.loads(by_url[ENV["CORDON_NOTIFY_WEBHOOK"]])["scan"]["gate"] == "passed"
+        assert (
+            json.loads(by_url[ENV["CORDON_NOTIFY_SLACK"]])["text"]
+            == "Cordon: acme-api passed its gate"
+        )
 
     def test_a_test_message_is_marked(self) -> None:
         sent = _Recorder()

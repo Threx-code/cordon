@@ -508,3 +508,28 @@ class TestLimits(ConfigFixtures):
         a = DEFAULT_LIMITS.merged(max_workers=0)
         b = DEFAULT_LIMITS.merged(max_workers=4)
         assert a.stricter_of(b).max_workers == 4
+
+
+class TestTheFingerprintIgnoresWhereAScanPosts:
+    """`Config.fingerprint` keys the scan cache with everything that can change a finding. Where a
+    scan posts its outcome changes none, and notify part 2 put the two notify settings in it: every
+    cached result was thrown away by a change of channel, and every report's `config_hash` moved."""
+
+    def test_notify_settings_leave_the_fingerprint_alone(self) -> None:
+        import dataclasses
+
+        from cordon_scanner.foundation.config.settings import Config
+
+        base = Config.default()
+        posted = dataclasses.replace(base, notify_channels=("slack",), notify_on=("passed",))
+        assert posted.fingerprint() == base.fingerprint()
+
+    def test_a_setting_that_changes_findings_still_moves_it(self) -> None:
+        import dataclasses
+
+        from cordon_scanner.foundation.config.settings import Config
+
+        base = Config.default()
+        assert (
+            dataclasses.replace(base, offline=not base.offline).fingerprint() != base.fingerprint()
+        )
