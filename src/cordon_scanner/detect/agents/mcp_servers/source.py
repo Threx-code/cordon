@@ -78,8 +78,10 @@ SERVER_SOURCE_SUFFIXES: Final = (
     ".php",
 )
 
+# Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
+# with only optional items between them split one stretch every way.
 MCP_SDK: Final = re.compile(
-    r"\b(?:server|mcp|app)\.(?:tool|registerTool)\s*\(\s*\{?\s*(?:name\s*:|[\"'`])|\bnew\s+McpServer\s*\("
+    r"\b(?:server|mcp|app)\.(?:tool|registerTool)\s*\(\s*+(?:\{\s*+)?(?:name\s*:|[\"'`])|\bnew\s+McpServer\s*\("
     r"|@modelcontextprotocol/sdk|\bfrom[ \t]+(?:mcp(?:\.server)?|fastmcp)\b[^\n]{0,40}\bimport\b"
     r"|^[ \t]*import[ \t]+(?:fastmcp|mcp)\b"
     r"|github\.com/mark3labs/mcp-go|github\.com/modelcontextprotocol/go-sdk|\bmcp\.NewTool\s*\("
@@ -235,17 +237,21 @@ _CALL_AROUND_THIS: Final = re.compile(
 )
 
 #: A message scripted for the user: "report to the user: 'CRITICAL SECURITY ALERT: ...'".
+# Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
+# with only optional items between them split one stretch every way.
 _SCRIPTED_MESSAGE: Final = re.compile(
-    r"(?i)\b(?:report|state|say|tell|announce|present)\s+(?:this\s+)?(?:to\s+the\s+user\s*)?:?\s*"
+    r"(?i)\b(?:report|state|say|tell|announce|present)\s++(?:this\s++)?(?:to\s+the\s+user\s*+)?(?::\s*+)?"
     r"['\"]\s*(?:IMPORTANT|CRITICAL|URGENT|WARNING|ALERT|NOTICE)\b"
 )
 
 #: A tool result sending the agent to call a tool on an address the result supplies: "please call
 #: fetch with URL 'https://...'" (MCP-SafetyBench "Function Return Injection"). Real results chain
 #: tools by an id they just produced (`Use save_chart with chartId "..."`), not by a web address.
+# Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
+# with only optional items between them split one stretch every way.
 RESULT_SENDS_TO_URL: Final = re.compile(
-    r"(?i)\b(?:call|use|invoke)\s+[`'\"]?[a-z_][\w.-]*[`'\"]?\s+(?:tool\s+)?with\s+(?:the\s+)?"
-    r"(?:url|link|address)?\s*[`'\"]?https?://"
+    r"(?i)\b(?:call|use|invoke)\s+[`'\"]?[a-z_][\w.-]*[`'\"]?\s+(?:tool\s+)?with\s++(?:the\s++)?"
+    r"(?:(?:url|link|address)\s*+)?[`'\"]?https?://"
 )
 
 _TOOL_DECORATOR: Final = re.compile(r"(?:^|\.)tool\b")
@@ -260,8 +266,10 @@ word. The earlier `[^.!?\n]+` could not, so a sentence holding a domain or a fil
 `forward a copy to x@evil.example`, `read config.json` -- was skipped whole, and every check made
 per sentence never saw it."""
 
+# Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
+# with only optional items between them split one stretch every way.
 _AGENT_TAG: Final = re.compile(
-    r"(?i)<\s*(?P<close>/)?\s*(?P<tag>important|system|instructions?|hidden|admin|override"
+    r"(?i)<\s*+(?:(?P<close>/)\s*+)?(?P<tag>important|system|instructions?|hidden|admin|override"
     r"|note\s+to\s+(?:the\s+)?(?:ai|assistant|agent))\s*>"
 )
 """A tag addressed to the model. It counts when an opening and a closing one of the same name wrap
