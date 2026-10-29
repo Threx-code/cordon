@@ -47,9 +47,11 @@ _FLAG_TAGS: Final = re.compile(rb"\xf0\x9f\x8f\xb4(?:\xf3\xa0[\x80\x81][\x80-\xb
 
 #: Code that lets one fixed identity through an access check: an equality with a literal or a
 #: constant, then `return {allowed: true}`, `return True` or `authorized = true`.
+# Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
+# with only optional items between them split one stretch every way.
 _AUTH_BYPASS_CODE: Final = re.compile(
-    r"(?:===?|==)\s*(?:\"[^\"\n]{1,80}\"|'[^'\n]{1,80}'|[A-Z][A-Z0-9_]{3,40})\s*\)?\s*(?:\|\||&&|or|and)?"
-    r"[^\n]{0,120}?(?:\)\s*\{|:)\s*\n?[ \t]*(?:return\s*\{[^}]{0,200}?\b(?:allowed|authori[sz]ed|isAdmin"
+    r"(?:===?|==)\s*(?:\"[^\"\n]{1,80}\"|'[^'\n]{1,80}'|[A-Z][A-Z0-9_]{3,40})\s*+(?:\)\s*+)?(?:\|\||&&|or|and)?"
+    r"[^\n]{0,120}?(?:\)\s*\{|:)\s*+(?:return\s*\{[^}]{0,200}?\b(?:allowed|authori[sz]ed|isAdmin"
     r"|is_admin|granted|bypass|admin)\s*:\s*true|return\s+(?:True|true)\s*(?:#|//|;|\n)|\b(?:allowed"
     r"|authori[sz]ed|isAdmin|is_admin|granted)\s*=\s*(?:true|True))"
 )
