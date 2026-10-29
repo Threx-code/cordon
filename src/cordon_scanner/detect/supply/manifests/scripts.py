@@ -716,8 +716,16 @@ INERT_CALL = re.compile(
 )
 """A call that writes a message or ends the process, and does nothing else."""
 
-ANY_CALL = re.compile(r"[A-Za-z_$][\w.$\[\]'\"]*\s*\(")
-"""Anything that looks like a call, so the inert ones can be counted against the total."""
+ANY_CALL = re.compile(
+    r"(?<![\w.$\[\]'\"])(?:[^\WA-Za-z_]|[.\[\]'\"])*+([A-Za-z_$][\w.$\[\]'\"]*+\s*\()"
+)
+r"""Anything that looks like a call, so the inert ones can be counted against the total.
+
+`findall` gives each call from its first letter, `_` or `$` to its `(`, as the plain
+`[A-Za-z_$][\w.$\[\]'"]*\s*\(` would. A match starts only where a run of name characters
+starts (the lookbehind), skipping the run's characters that cannot begin a name: the plain form
+retried every position of a long run that never reaches `(`, quadratic in a script an attacker
+writes (review 98, 27-PERFORMANCE)."""
 
 NOT_INERT = (
     "require(",
