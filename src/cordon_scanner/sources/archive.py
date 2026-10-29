@@ -33,12 +33,19 @@ import zipfile
 import zlib
 from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.sources.base import RejectedMember, Rejection
+from cordon_scanner.sources.budget import (
+    READ_CHUNK,
+    ZSTD_MAGIC,
+    BudgetExceeded,
+    _BudgetedStream,
+    _BytesReader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -72,8 +79,6 @@ ARCHIVE_SUFFIXES = (
     ".tzst",
 )
 
-READ_CHUNK = 65536
-ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _COMPRESSED_MAGIC = (b"\x1f\x8b", b"BZh", b"\xfd7zXZ\x00", ZSTD_MAGIC)
 """gzip, bzip2, xz and zstd: the streams a tarball is compressed in."""
 
@@ -392,71 +397,7 @@ class ArchiveReader:
             for info in infos:
                 if deadline is not None and time.monotonic() > deadline:
                     raise ArchiveError(f"{path}: the time budget ran out while reading the archive")
-                if info.is_dir():
-                    continue
-
-                safe = ArchiveReader.safe_member_name(
-                    info.filename, collapse=not ArchiveReader._links_seen(result)
-                )
-                if safe is None:
-                    result.rejected.append(
-                        RejectedMember(
-                            info.filename,
-                            Rejection.TRAVERSAL,
-                            "member name escapes the destination directory",
-                        )
-                    )
-                    continue
-
-                # Zip stores unix mode in the top 16 bits of external_attr. A
-                # symlink member is never materialised: following one is how an
-                # extractor is made to write, or read, outside its own directory.
-                mode = info.external_attr >> 16
-                if mode and (mode & 0o170000) == 0o120000:
-                    # A zip symlink's data is its target path: a few bytes, read only to place it.
-                    target = ""
-                    if info.file_size <= 4096:
-                        try:
-                            target = archive.read(info).decode("utf-8", "replace")
-                        except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
-                            target = ""
-                    if ArchiveReader.link_stays_inside(safe, target):
-                        result.links.append(safe)
-                        continue
-                    result.rejected.append(
-                        RejectedMember(
-                            safe,
-                            Rejection.LINK,
-                            f"symbolic-link members are never extracted (-> {target[:200]})",
-                        )
-                    )
-                    continue
-
-                if ArchiveReader._would_exceed(
-                    result, info.compress_size, info.file_size, limits, safe
-                ) and not ArchiveReader._spilled_instead(result, safe):
-                    continue
-
-                try:
-                    with archive.open(info) as handle:
-                        payload = ArchiveReader._read_bounded(
-                            handle, limits, info.compress_size, result, safe
-                        )
-                except (zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError) as exc:
-                    result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
-                    continue
-
-                if payload is None:
-                    continue
-
-                result.members.append(
-                    ExtractedMember(
-                        name=safe,
-                        data=payload,
-                        compressed_size=info.compress_size,
-                        uncompressed_size=len(payload),
-                    )
-                )
+                ArchiveReader._zip_member(archive, info, limits, result)
 
         # The tar path called this and the zip path did not, so the compression
         # ratio ceiling -- the control the module documents first -- applied to
@@ -533,99 +474,185 @@ class ArchiveReader:
                         )
                         break
 
-                    if member.isdir():
-                        continue
+                    ArchiveReader._tar_member(archive, member, limits, result)
 
-                    # Anything that is not a plain file: links, devices, FIFOs. A
-                    # device node or FIFO can block a reader indefinitely, and a link
-                    # can redirect it outside the archive entirely.
-                    if member.issym() or member.islnk():
-                        if ArchiveReader.link_stays_inside(
-                            member.name, member.linkname, hard=member.islnk()
-                        ):
-                            result.links.append(member.name)
-                            continue
-                        result.rejected.append(
-                            RejectedMember(
-                                member.name,
-                                Rejection.LINK,
-                                f"link members are never extracted (-> {member.linkname[:200]})",
-                            )
-                        )
-                        continue
-                    if not member.isfile():
-                        result.rejected.append(
-                            RejectedMember(member.name, Rejection.SPECIAL, "not a regular file")
-                        )
-                        continue
-
-                    safe = ArchiveReader.safe_member_name(
-                        member.name, collapse=not ArchiveReader._links_seen(result)
-                    )
-                    if safe is None:
-                        result.rejected.append(
-                            RejectedMember(
-                                member.name,
-                                Rejection.TRAVERSAL,
-                                "member name escapes the destination directory",
-                            )
-                        )
-                        continue
-
-                    # The declared size is the attacker's number. It is used only to
-                    # reject early; the real bound is enforced while reading.
-                    if ArchiveReader._would_exceed(
-                        result, 0, member.size, limits, safe
-                    ) and not ArchiveReader._spilled_instead(result, safe):
-                        continue
-
-                    try:
-                        handle = archive.extractfile(member)
-                        if handle is None:
-                            continue
-                        payload = ArchiveReader._read_bounded(handle, limits, 0, result, safe)
-                    except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
-                        result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
-                        continue
-
-                    if payload is None:
-                        continue
-
-                    result.members.append(
-                        ExtractedMember(
-                            name=safe,
-                            data=payload,
-                            compressed_size=0,
-                            uncompressed_size=len(payload),
-                        )
-                    )
-
-            except BudgetExceeded as exc:
-                # Stopped where the budget ran out. What was read is kept and scanned; past an
-                # expansion this lopsided, what was not read is behind padding.
-                result.truncated = True
-                shape = Rejection.PADDED if exc.padded else Rejection.SIZE
-                result.rejected.append(RejectedMember(path, shape, str(exc)))
-            except ArchiveError as exc:
-                result.truncated = True
-                result.rejected.append(RejectedMember(path, Rejection.ENTRIES, str(exc)))
-            except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
-                # A corrupt index surfaces mid-iteration. The members before it are kept: npm and
-                # pip extract a tarball as a stream, and install every file they read before the
-                # damage. Refusing the whole archive passed `legoa-repodb` 66.0.0 and its kind --
-                # internal names republished on npm, the dependency-confusion shape -- unread.
-                if not result.members:
-                    raise ArchiveError(f"{path}: archive index is corrupt: {exc}") from exc
-                result.truncated = True
-                result.rejected.append(
-                    RejectedMember(
-                        path,
-                        Rejection.UNREADABLE,
-                        f"damaged after {len(result.members)} member(s): {exc}",
-                    )
-                )
+            except (ArchiveError, tarfile.TarError, OSError, ValueError, EOFError) as exc:
+                ArchiveReader._tar_stopped(exc, path, result)
 
         result.total_compressed = max(result.total_compressed, len(data))
+
+    @staticmethod
+    def _zip_member(
+        archive: zipfile.ZipFile, info: zipfile.ZipInfo, limits: Limits, result: ExtractionResult
+    ) -> None:
+        """One member of a zip: kept, recorded as a link inside the archive, or rejected with its
+        reason. A directory is skipped; the deadline is `_extract_zip`'s."""
+        if info.is_dir():
+            return
+
+        safe = ArchiveReader.safe_member_name(
+            info.filename, collapse=not ArchiveReader._links_seen(result)
+        )
+        if safe is None:
+            result.rejected.append(
+                RejectedMember(
+                    info.filename,
+                    Rejection.TRAVERSAL,
+                    "member name escapes the destination directory",
+                )
+            )
+            return
+
+        # Zip stores unix mode in the top 16 bits of external_attr. A
+        # symlink member is never materialised: following one is how an
+        # extractor is made to write, or read, outside its own directory.
+        mode = info.external_attr >> 16
+        if mode and (mode & 0o170000) == 0o120000:
+            # A zip symlink's data is its target path: a few bytes, read only to place it.
+            target = ""
+            if info.file_size <= 4096:
+                try:
+                    target = archive.read(info).decode("utf-8", "replace")
+                except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
+                    target = ""
+            if ArchiveReader.link_stays_inside(safe, target):
+                result.links.append(safe)
+                return
+            result.rejected.append(
+                RejectedMember(
+                    safe,
+                    Rejection.LINK,
+                    f"symbolic-link members are never extracted (-> {target[:200]})",
+                )
+            )
+            return
+
+        if ArchiveReader._would_exceed(
+            result, info.compress_size, info.file_size, limits, safe
+        ) and not ArchiveReader._spilled_instead(result, safe):
+            return
+
+        try:
+            with archive.open(info) as handle:
+                payload = ArchiveReader._read_bounded(
+                    handle, limits, info.compress_size, result, safe
+                )
+        except (zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError) as exc:
+            result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
+            return
+
+        if payload is None:
+            return
+
+        result.members.append(
+            ExtractedMember(
+                name=safe,
+                data=payload,
+                compressed_size=info.compress_size,
+                uncompressed_size=len(payload),
+            )
+        )
+
+    @staticmethod
+    def _tar_stopped(exc: Exception, path: str, result: ExtractionResult) -> None:
+        """A tar stream that stopped part way: what was read is kept, and why it stopped recorded.
+        Raises `ArchiveError` only for a damaged index with nothing read before it."""
+        if isinstance(exc, BudgetExceeded):
+            # Stopped where the budget ran out. What was read is kept and scanned; past an
+            # expansion this lopsided, what was not read is behind padding.
+            result.truncated = True
+            shape = Rejection.PADDED if exc.padded else Rejection.SIZE
+            result.rejected.append(RejectedMember(path, shape, str(exc)))
+            return
+        if isinstance(exc, ArchiveError):
+            result.truncated = True
+            result.rejected.append(RejectedMember(path, Rejection.ENTRIES, str(exc)))
+            return
+        # A corrupt index surfaces mid-iteration. The members before it are kept: npm and
+        # pip extract a tarball as a stream, and install every file they read before the
+        # damage. Refusing the whole archive passed `legoa-repodb` 66.0.0 and its kind --
+        # internal names republished on npm, the dependency-confusion shape -- unread.
+        if not result.members:
+            raise ArchiveError(f"{path}: archive index is corrupt: {exc}") from exc
+        result.truncated = True
+        result.rejected.append(
+            RejectedMember(
+                path,
+                Rejection.UNREADABLE,
+                f"damaged after {len(result.members)} member(s): {exc}",
+            )
+        )
+
+    @staticmethod
+    def _tar_member(
+        archive: tarfile.TarFile, member: tarfile.TarInfo, limits: Limits, result: ExtractionResult
+    ) -> None:
+        """One member of a tar stream: kept, recorded as a link inside the archive, or rejected with
+        its reason. A directory is skipped; nothing here stops the stream (`_extract_tar` does)."""
+        if member.isdir():
+            return
+
+        # Anything that is not a plain file: links, devices, FIFOs. A
+        # device node or FIFO can block a reader indefinitely, and a link
+        # can redirect it outside the archive entirely.
+        if member.issym() or member.islnk():
+            if ArchiveReader.link_stays_inside(member.name, member.linkname, hard=member.islnk()):
+                result.links.append(member.name)
+                return
+            result.rejected.append(
+                RejectedMember(
+                    member.name,
+                    Rejection.LINK,
+                    f"link members are never extracted (-> {member.linkname[:200]})",
+                )
+            )
+            return
+        if not member.isfile():
+            result.rejected.append(
+                RejectedMember(member.name, Rejection.SPECIAL, "not a regular file")
+            )
+            return
+
+        safe = ArchiveReader.safe_member_name(
+            member.name, collapse=not ArchiveReader._links_seen(result)
+        )
+        if safe is None:
+            result.rejected.append(
+                RejectedMember(
+                    member.name,
+                    Rejection.TRAVERSAL,
+                    "member name escapes the destination directory",
+                )
+            )
+            return
+
+        # The declared size is the attacker's number. It is used only to
+        # reject early; the real bound is enforced while reading.
+        if ArchiveReader._would_exceed(
+            result, 0, member.size, limits, safe
+        ) and not ArchiveReader._spilled_instead(result, safe):
+            return
+
+        try:
+            handle = archive.extractfile(member)
+            if handle is None:
+                return
+            payload = ArchiveReader._read_bounded(handle, limits, 0, result, safe)
+        except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
+            result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
+            return
+
+        if payload is None:
+            return
+
+        result.members.append(
+            ExtractedMember(
+                name=safe,
+                data=payload,
+                compressed_size=0,
+                uncompressed_size=len(payload),
+            )
+        )
 
     @staticmethod
     def member_limit(limits: Limits) -> int:
@@ -920,143 +947,6 @@ class ArchiveReader:
                         rejected.append((member_path, Rejection.UNREADABLE, str(exc)))
 
             yield member_path, member.data
-
-
-class BudgetExceeded(ArchiveError):
-    """A decompressed budget was reached. `padded` when it was the expansion cap."""
-
-    def __init__(self, message: str, *, hint: str = "", padded: bool = False) -> None:
-        super().__init__(message, hint=hint)
-        self.padded = padded
-
-
-class _BudgetedStream:
-    """A tar archive's DECOMPRESSED bytes, metered as they are produced.
-
-    Every byte tarfile reads - a header, a member it hands back, or the data of a member it skips -
-    passes through `read`, so three limits hold whatever tarfile does with the bytes:
-
-    * the expansion cap, `ArchiveReader.expansion_cap`, judged from the whole archive's size;
-    * a total decompressed budget, `Limits.max_uncompressed_bytes`;
-    * the deadline.
-
-    Each raises; the members read before it are kept (`ArchiveReader._extract_tar`), as a
-    streaming installer would have written them.
-    """
-
-    def __init__(
-        self,
-        inner: Any,
-        compressed: _BytesReader | None,
-        limits: Limits,
-        deadline: float | None,
-        path: str,
-        cap: int = 0,
-    ) -> None:
-        self.inner, self.compressed, self.limits, self.deadline, self.path = (
-            inner,
-            compressed,
-            limits,
-            deadline,
-            path,
-        )
-        self.cap = cap
-        self.produced = 0
-
-    @classmethod
-    def open(
-        cls, data: bytes, *, limits: Limits, deadline: float | None, path: str, cap: int = 0
-    ) -> _BudgetedStream:
-        import bz2
-        import gzip
-        import lzma
-
-        raw = _BytesReader(data)
-        # Not context-managed: the decompressor is the stream tarfile reads for as long as the
-        # archive is open, over bytes already in memory, so there is no descriptor to leak.
-        if data[:2] == b"\x1f\x8b":
-            inner: Any = gzip.GzipFile(fileobj=cast("Any", raw), mode="rb")
-        elif data[:3] == b"BZh":
-            inner = bz2.BZ2File(cast("Any", raw), mode="rb")
-        elif data[:6] == b"\xfd7zXZ\x00":
-            inner = lzma.LZMAFile(cast("Any", raw), mode="rb")  # noqa: SIM115
-        elif data[:4] == ZSTD_MAGIC:
-            # Past the budget by a read's worth, so `read` reports the budget, not the decoder.
-            inner = _BudgetedStream._zstd(raw, limits.max_uncompressed_bytes + READ_CHUNK * 16)
-        else:
-            return cls(raw, None, limits, deadline, path, cap)
-        return cls(inner, raw, limits, deadline, path, cap)
-
-    @staticmethod
-    def _zstd(raw: _BytesReader, limit: int) -> Any:
-        """A zstd decompressing reader: the standard library's (3.14), else the core's own decoder
-        (`intel/store/zstd`), so a `.conda` package is read with no third-party dependency
-        (CONSTRAINT C1). The last fails past `limit` bytes."""
-        try:
-            from compression import zstd  # type: ignore[import-not-found]
-
-            return zstd.ZstdFile(raw, mode="rb")
-        except ImportError:
-            from cordon_scanner.intel.store.zstd import Zstd
-
-            return Zstd.Reader(raw, limit)
-
-    def read(self, size: int = -1) -> bytes:
-        if self.deadline is not None and time.monotonic() > self.deadline:
-            raise ArchiveError(f"{self.path}: the time budget ran out while reading the archive")
-        if size is None or size < 0:
-            size = READ_CHUNK
-        chunk: bytes = self.inner.read(min(size, READ_CHUNK * 16))
-        self.produced += len(chunk)
-        if self.compressed is not None and 0 < self.cap < self.produced:
-            raise BudgetExceeded(
-                f"{self.path}: expanded past {self.cap} bytes, over {self.limits.max_archive_ratio} "
-                f"times its size",
-                hint="This is the shape of padding or a decompression bomb.",
-                padded=True,
-            )
-        if self.produced > self.limits.max_uncompressed_bytes:
-            raise BudgetExceeded(
-                f"{self.path}: archive expands past the {self.limits.max_uncompressed_bytes}-byte budget",
-                hint="This is the shape of a decompression bomb.",
-            )
-        return chunk
-
-
-class _BytesReader:
-    """Minimal seekable wrapper, so format sniffing needs no temporary file."""
-
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-        self._pos = 0
-
-    def getvalue(self) -> bytes:
-        return self._data
-
-    def read(self, size: int = -1) -> bytes:
-        if size < 0:
-            chunk = self._data[self._pos :]
-            self._pos = len(self._data)
-            return chunk
-        chunk = self._data[self._pos : self._pos + size]
-        self._pos += len(chunk)
-        return chunk
-
-    def seek(self, offset: int, whence: int = 0) -> int:
-        if whence == 0:
-            self._pos = offset
-        elif whence == 1:
-            self._pos += offset
-        else:
-            self._pos = len(self._data) + offset
-        self._pos = max(0, min(self._pos, len(self._data)))
-        return self._pos
-
-    def tell(self) -> int:
-        return self._pos
-
-    def seekable(self) -> bool:
-        return True
 
 
 __all__ = ["ARCHIVE_SUFFIXES", "ArchiveReader", "ExtractedMember", "ExtractionResult"]

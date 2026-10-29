@@ -147,7 +147,7 @@ class Limits:
     members are held in memory, and this budget was 2 GiB against a 1 GiB memory limit, so an
     archive inside every other limit could still take a scanner past the memory it was given
     (`package.md` PK-02). It also bounds what is decompressed THROUGH: refused members' data counts
-    (`archive.safe._BudgetedStream`)."""
+    (`sources.budget._BudgetedStream`)."""
 
     # -- Traversal ---------------------------------------------------------
     max_path_depth: int = 64
