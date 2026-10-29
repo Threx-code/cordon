@@ -95,6 +95,13 @@ class StatePaths:
         return Path.home() / ".cache" / "cordon"
 
     @staticmethod
+    def synced_intel_dir() -> Path:
+        """Where `advisories sync` and the feed write what they fetch: the advisory database, the
+        feed's overlays and rules, the OS databases. Inside the cache root (`default_cache_dir`),
+        so it moves with it."""
+        return StatePaths.default_cache_dir() / "advisories"
+
+    @staticmethod
     def key_dir() -> Path:
         """Where the authentication key lives. Not environment-directed.
 

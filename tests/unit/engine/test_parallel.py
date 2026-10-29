@@ -491,13 +491,15 @@ class TestThePoolStopsAtTheDeadline(ParallelFixtures):
             ParallelScanner, "_worker", SimpleNamespace(engine=None, context=None, detectors=())
         )
         out = ParallelScanner._inspect_batch(self.items(3, 4), "/nonexistent", deadline=0.0)
-        assert out == [(3, [], None), (4, [], None)]
+        assert out == [(3, [], None, False), (4, [], None, False)]
 
     def test_batches_not_started_are_cancelled_and_listed(self) -> None:
         from concurrent.futures import Future
 
         finished: Future = Future()
-        finished.set_result([(0, [], True), (1, [], None)])  # 1 was reached after the deadline
+        finished.set_result(
+            [(0, [], True, True), (1, [], None, False)]
+        )  # 1 was reached after the deadline
         never_started: Future = Future()
         collected: list = []
         unstarted: list[int] = []
@@ -508,7 +510,7 @@ class TestThePoolStopsAtTheDeadline(ParallelFixtures):
             0.0,
             unstarted,
         )
-        assert [index for index, _findings, _trusted in collected] == [0]
+        assert [index for index, _findings, _trusted, _cacheable in collected] == [0]
         assert sorted(unstarted) == [1, 2, 3]
         assert never_started.cancelled()
 
@@ -530,3 +532,93 @@ class TestThePoolStopsAtTheDeadline(ParallelFixtures):
         ]
         assert messages, [f.message for f in result.findings]
         assert not result.complete, "a scan with unexamined files reported complete"
+
+
+class TestTheWorkerHasTheWholeContext:
+    """A worker judges a file with everything the parent's context knows (`ScanContext.facts`).
+
+    It was sent a list of facts instead, each added when its absence was noticed, and the five
+    set after the list was last extended never arrived. The cost was not a lower score: a
+    `setup.py` that spawns the binary its package ships was MALWARE.INSTALL.CONSUMER_CODE.001 at
+    critical with one worker and nothing with eight, so a scan with the default worker count of
+    any source distribution over four megabytes passed it.
+    """
+
+    SETUP = (
+        "import os, subprocess\n"
+        "from setuptools import setup\n"
+        "from setuptools.command.install import install\n\n\n"
+        "class Post(install):\n"
+        "    def run(self):\n"
+        "        install.run(self)\n"
+        "        subprocess.Popen([os.path.join(os.path.dirname(__file__), 'dist', 'pip_security')])\n\n\n"
+        "setup(name='probe', version='1.0', cmdclass={'install': Post})\n"
+    )
+
+    @staticmethod
+    def sdist(path, setup: str) -> None:
+        """An sdist whose `setup.py` spawns a shipped native binary, padded with plain data past
+        the size at which members are scanned across a pool."""
+        import io
+        import tarfile
+
+        def add(archive, name: str, data: bytes, mode: int = 0o644) -> None:
+            member = tarfile.TarInfo(f"probe-1.0/{name}")
+            member.size, member.mode = len(data), mode
+            archive.addfile(member, io.BytesIO(data))
+
+        with tarfile.open(path, "w:gz") as archive:
+            add(archive, "PKG-INFO", b"Metadata-Version: 2.1\nName: probe\nVersion: 1.0\n")
+            add(archive, "setup.py", setup.encode())
+            add(archive, "dist/pip_security", b"\x7fELF\x02\x01\x01" + bytes(64), 0o755)
+            for i in range(4):
+                rows = "".join(f"{j},{j * 3}\n" for j in range(120_000))
+                add(archive, f"data/table{i}.csv", f"id,value\n{rows}".encode())
+
+    def test_a_shipped_binary_spawned_at_install_blocks_at_any_worker_count(self, tmp_path) -> None:
+        target = tmp_path / "probe-1.0.tar.gz"
+        self.sdist(target, self.SETUP)
+        found = {}
+        for workers in (1, 8):
+            config = Config.default().with_overrides(
+                use_cache=False, limits=Config.default().limits.merged(max_workers=workers)
+            )
+            found[workers] = sorted(
+                f.rule_id
+                for f in Scanner(config).scan(target).findings
+                if f.location.path.endswith("setup.py")
+            )
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" in found[1]
+        assert found[8] == found[1]
+
+    def test_the_pool_is_sent_every_fact_of_the_context(self, monkeypatch, tmp_path) -> None:
+        """Every field but the process-local ones, so a field added later reaches the workers
+        without anyone remembering to send it."""
+        from dataclasses import fields
+
+        from cordon_scanner.detect.base import ScanContext
+
+        target = tmp_path / "probe-1.0.tar.gz"
+        self.sdist(target, self.SETUP)
+        sent: list[set[str]] = []
+        run = ParallelScanner.run
+
+        def recording(**kwargs):
+            sent.append(set(kwargs["facts"]))
+            return run(**kwargs)
+
+        monkeypatch.setattr(ParallelScanner, "run", staticmethod(recording))
+        config = Config.default().with_overrides(
+            use_cache=False, limits=Config.default().limits.merged(max_workers=8)
+        )
+        Scanner(config).scan(target)
+        assert sent, "the probe must cross the parallel threshold"
+        assert sent[0] == {f.name for f in fields(ScanContext)} - set(ScanContext.LOCAL)
+
+    def test_every_local_field_is_a_field_and_says_why(self) -> None:
+        from dataclasses import fields
+
+        from cordon_scanner.detect.base import ScanContext
+
+        assert set(ScanContext.LOCAL) <= {f.name for f in fields(ScanContext)}
+        assert all(reason.strip() for reason in ScanContext.LOCAL.values())
