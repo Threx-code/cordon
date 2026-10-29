@@ -41,9 +41,14 @@ _BOUND = re.compile(
 _FUNCTION = re.compile(
     r"^\s*(?:async\s+)?(?:def|function|func|sub)\s+(?:\([^)]*\)\s*)?(?P<name>[A-Za-z_]\w*)"
     r"|^\s*(?P<shell>[A-Za-z_][\w-]*)\s*\(\s*\)\s*\{"
-    r"|^\s*(?:const|let|var)\s+(?P<arrowfn>[A-Za-z_]\w*)\s*=\s*(?:async\s*)?\(?[^)]*\)?\s*=>"
+    r"|^\s*(?:const|let|var)\s+(?P<arrowfn>[A-Za-z_]\w*)\s*=[^)]*(?:\)\s*)?=>"
 )
-"""Where a function's body begins, and its name."""
+r"""Where a function's body begins, and its name.
+
+The arrow function's tail is `=[^)]*(?:\)\s*)?=>`, which is `=\s*(?:async\s*)?\(?[^)]*\)?\s*=>`: what
+the blanks, `async` and `(` before the parameters can take, `[^)]*` takes too, and so do the blanks
+before `=>` when there is no `)`. As written out, the overlapping runs were cubic in blanks after
+`const a=` (review 98, 27-PERFORMANCE)."""
 
 _ARGUMENT = re.compile(r"(?<![\w.$])([A-Za-z_]\w*)(?![\w$]|\s*[.(])")
 """A bare name, not a callee (`f(`), not a receiver (`os.`), not an attribute (`.path`)."""
