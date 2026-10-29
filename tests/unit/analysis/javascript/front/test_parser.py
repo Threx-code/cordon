@@ -124,7 +124,9 @@ class TestRecovery:
     def test_time_is_linear_in_the_input(self) -> None:
         """Four times the input costs about four times as long. Measured against a linear
         reference timed in the same loop, so a loaded machine slows both sides alike: a linear
-        parser's growth over the reference is about 1, a quadratic one's about 4."""
+        parser's growth over the reference is about 1, a quadratic one's about 4. In CPU time (the
+        parse runs in this process, serially), after a warm-up parse, and at a size whose parse
+        takes at least half a second: a short timing let one interruption swing the ratio."""
         unit = "const a = require('m'); a.f(b, `t${c}`, /r/g, x => ({ y: [1, 2] }));\n"
 
         def reference(text: str) -> int:
@@ -136,14 +138,22 @@ class TestRecovery:
             text = unit * n
             parse = ref = float("inf")
             for _ in range(5):
-                start = time.perf_counter()
+                start = time.process_time()
                 Parser(text).program()
-                parse = min(parse, time.perf_counter() - start)
-                start = time.perf_counter()
+                parse = min(parse, time.process_time() - start)
+                start = time.process_time()
                 reference(text)
-                ref = min(ref, time.perf_counter() - start)
+                ref = min(ref, time.process_time() - start)
             return parse, ref
 
-        (parse_n, ref_n), (parse_4n, ref_4n) = cost(1_000), cost(4_000)
+        Parser(unit * 50).program()  # the warm-up: what a first parse pays once
+        n = 1_000
+        while n < 64_000:
+            start = time.process_time()
+            Parser(unit * n).program()
+            if time.process_time() - start >= 0.5:
+                break
+            n *= 2
+        (parse_n, ref_n), (parse_4n, ref_4n) = cost(n), cost(4 * n)
         growth = (parse_4n / parse_n) / (ref_4n / ref_n)
-        assert growth < 2.5, f"parsing grew {growth:.2f} times faster than the input"
+        assert growth < 2.5, f"parsing grew {growth:.2f} times faster than the input at {n:,} units"

@@ -124,9 +124,10 @@ class TestWhereRunningThreadsIsDear:
     def test_long_counted_repeats_over_spaces_finish_at_once(self) -> None:
         data = (b" " * 1371 + b"\n" + b" " * 1108 + b"ab1" + b" " * 1018 + b"Z9+/") * 2
         rules = Runs.rules(r"/ +\s{475}\s{402,}/i")
-        started = time.perf_counter()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         found = Runs.matches(rules, data, chain=True)
-        assert time.perf_counter() - started < 5
+        assert time.process_time() - started < 5
         assert found[0][1]
 
     def test_a_pattern_the_runs_refuse_is_answered_correctly(self) -> None:

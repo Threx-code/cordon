@@ -34,12 +34,30 @@ class WarmKit:
         return Runner(offline=True, environment=env)
 
     @staticmethod
-    def ready(runner: Runner, seconds: float = 120) -> None:
+    def ready(runner: Runner, seconds: float = 600) -> None:
+        """Wait until the helper is ready. Polled against a generous deadline, since a loaded
+        machine slows the helper's start; a helper that exited fails at once instead."""
         runner.start_warm()
         deadline = time.monotonic() + seconds
         while not (runner.warm and runner.warm.ready):
+            warm = runner.warm
+            process = warm._process if warm is not None else None
+            dead = warm is not None and (
+                warm._dead.is_set() or (process is not None and process.poll() is not None)
+            )
+            assert not dead, "the warm helper exited before it was ready"
             assert time.monotonic() < deadline, "the warm scanner never became ready"
             time.sleep(0.1)
+
+    @staticmethod
+    def best(runner: Runner, args: list[str], runs: int) -> float:
+        """The fastest of `runs` calls, in wall-clock seconds."""
+        fastest = float("inf")
+        for _ in range(runs):
+            started = time.monotonic()
+            runner.run(args, timeout=120, token=CancelToken())
+            fastest = min(fastest, time.monotonic() - started)
+        return fastest
 
     @staticmethod
     def findings(stdout: str) -> list[tuple[str, str]]:
@@ -83,15 +101,13 @@ class TestWarmScanner:
         try:
             WarmKit.ready(runner)
             runner.run(self.args(root), timeout=120, token=CancelToken())
-            started = time.monotonic()
-            runner.run(self.args(root), timeout=120, token=CancelToken())
-            warm_seconds = time.monotonic() - started
+            warm_seconds = WarmKit.best(runner, self.args(root), runs=3)
         finally:
             runner.close()
-        cold = WarmKit.runner(CORDON_MCP_WARM="off")
-        started = time.monotonic()
-        cold.run(self.args(root), timeout=120, token=CancelToken())
-        assert warm_seconds < time.monotonic() - started
+        # Best of several each: the calls run in child processes, which process_time cannot see,
+        # and a single wall-clock pair on a loaded machine measured the machine, not the helper.
+        cold_seconds = WarmKit.best(WarmKit.runner(CORDON_MCP_WARM="off"), self.args(root), runs=2)
+        assert warm_seconds < cold_seconds, f"warm {warm_seconds:.2f}s, cold {cold_seconds:.2f}s"
 
     def test_the_deadline_ends_the_child(self, tmp_path):
         root = WarmKit.project(tmp_path)

@@ -38,9 +38,10 @@ class TestTheStreamedBinaryReader:
     def test_a_long_printable_run_is_linear(self) -> None:
         # Megabytes of printable text with no terminator: the shape a Go binary's string table has.
         data = (b"A" * (4 << 20)) + b"\x00" + (b"B" * (4 << 20))
-        started = time.perf_counter()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         StreamedBinary.read("big", io.BytesIO(data), len(data))
-        assert time.perf_counter() - started < 10
+        assert time.process_time() - started < 10
 
 
 class TestOneLanguageEverywhere:

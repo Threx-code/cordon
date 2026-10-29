@@ -37,23 +37,33 @@ class TestH3GlobMatchingIsLinear:
 
     def test_a_pathological_pattern_is_fast(self) -> None:
         path = "/".join(["a" * 200] * 60) + "/x.js"
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         PathGlob.matches(path, "**a**a**a**a.zzz")
-        assert time.monotonic() - started < 0.5, "matching is super-linear again"
+        assert time.process_time() - started < 0.5, "matching is super-linear again"
 
     def test_cost_does_not_explode_with_length(self) -> None:
         """The shape of the growth, not just one measurement. Quartic growth
         over a 4x length increase is 256x; linear is 4x."""
 
-        def cost(segments: int) -> float:
+        def cost(segments: int, repeats: int) -> float:
+            """CPU time for `repeats` matches: the match runs in this process."""
             path = "/".join(["a" * 200] * segments) + "/x.js"
-            started = time.monotonic()
-            for _ in range(3):
+            started = time.process_time()
+            for _ in range(repeats):
                 PathGlob.matches(path, "**a**a**a**a.zzz")
-            return time.monotonic() - started
+            return time.process_time() - started
 
-        small, large = cost(5), cost(20)
-        assert large < max(small * 40, 0.2), f"{small:.5f}s -> {large:.5f}s"
+        cost(5, 3)  # the warm-up
+        # Repeated until the small size takes half a second of CPU, so one interruption of a
+        # few milliseconds cannot swing the ratio; the large size is matched as many times.
+        repeats = 3
+        while repeats < 3_000_000 and cost(5, repeats) < 0.5:
+            repeats *= 4
+        small, large = cost(5, repeats), cost(20, repeats)
+        assert large < max(small * 40, 0.2), (
+            f"{small:.5f}s -> {large:.5f}s over {repeats:,} matches"
+        )
 
     @pytest.mark.parametrize(
         ("path", "pattern", "expected"),
