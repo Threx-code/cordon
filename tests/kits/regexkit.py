@@ -619,7 +619,6 @@ class Listed:
     #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
     OPEN: ClassVar[dict[str, str]] = {
         "detect.code.features:CodeFeatures._URL": "modelling team (measurement-only, every-literal proof)",
-        "analysis.shared.deobfuscation:ObfuscatorIo._ROTATION": "outer-layer team",
     }
     #: Kept as the specification of code that replaced them: superlinear, and called by nothing.
     SPECIFICATIONS: ClassVar[dict[str, str]] = {
@@ -642,6 +641,7 @@ class Listed:
             "analysis.javascript.front.lexer:Lexer.SPACE_RUN",
             "analysis.nix.nix_code:RUNS_BEFORE",
             "analysis.shared.deobfuscation:Layers._INVISIBLE_RUN",
+            "analysis.shared.deobfuscation:ObfuscatorIo._ROTATION",
             "analysis.shared.render_diff:HiddenInstruction._DESTINATION",
             "analysis.shared.render_diff:RenderDiff._COMMENT",
             "detect.agents.ci_workflows:_BROAD_TOOLS",
