@@ -54,9 +54,8 @@ class Layout:
     }
     #: Places only tests have: the repository itself, the bench harness, the sandbox package.
     TEST_PLACES: ClassVar[frozenset[str]] = frozenset({"repository", "bench", "sandbox"})
-    #: The limits of reviews 21-MAINTAINABILITY.md (the owner's, 2026-10-28): what exceeds one today is
-    #: frozen in package_layout.json with its size and may only shrink; when every list is empty the
-    #: limits hold with no exceptions.
+    #: The limits of reviews 21-MAINTAINABILITY.md (the owner's, 2026-10-28). They hold with no
+    #: exceptions: the lists of what exceeded them were emptied by the 0.7.0 restructuring and deleted.
     MAX_MODULES: ClassVar[int] = 20
     MAX_LINES: ClassVar[int] = 1_000
     MAX_CLASS_LINES: ClassVar[int] = 1_000
@@ -271,10 +270,6 @@ class Structure:
     )
 
     @staticmethod
-    def frozen() -> dict[str, Any]:
-        return Layout.data()["frozen"]
-
-    @staticmethod
     def imports(module: str) -> list[str]:
         """The cordon_scanner modules a module imports, as paths (`engine/engine`)."""
         tree = ast.parse((ROOT / f"{module}.py").read_text(encoding="utf-8"))
@@ -415,9 +410,9 @@ class Structure:
 
 
 class TestStructure:
-    """The rules that keep the repository arranged (reviews 20-PACKAGE-STRUCTURE.md). Each list
-    under `frozen` in package_layout.json may only shrink: a check fails when something is added
-    to what it freezes, and when an entry no longer applies, so the lists stay exact."""
+    """The rules that keep the repository arranged (reviews 20-PACKAGE-STRUCTURE.md), each with no
+    exceptions: a module, class, function or directory past its limit, an outward or adapter import,
+    a path counted from a file's own position or a docstring cut off from its field fails here."""
 
     def test_every_module_and_test_is_where_the_table_puts_it(self) -> None:
         report = Layout.report()
@@ -430,41 +425,32 @@ class TestStructure:
         assert not sorted((packages | modules) - set(Layout.LAYERS)), "give it a layer, or a home"
 
     @staticmethod
-    def within(
-        name: str, now: dict[str, int], frozen: dict[str, int], limit: int, what: str
-    ) -> None:
-        """Each measured size at most its limit, or its frozen size; each frozen entry still over
-        the limit (else remove it) -- so a frozen list only shrinks and stays exact."""
-        over = {k: v for k, v in now.items() if v > frozen.get(k, limit)}
-        assert not over, f"{name}: past {limit} {what} (or past its frozen size): split it: {over}"
-        gone = sorted(k for k in frozen if now.get(k, 0) <= limit)
-        assert not gone, f"{name}: back within {limit} {what}: remove from frozen: {gone}"
+    def within(name: str, now: dict[str, int], limit: int, what: str) -> None:
+        """Each measured size at most its limit."""
+        over = {k: v for k, v in now.items() if v > limit}
+        assert not over, f"{name}: past {limit} {what}: split it: {over}"
 
     def test_no_directory_holds_more_than_20_modules(self) -> None:
         TestStructure.within(
-            "directories", Structure.directories(), Structure.frozen()["large_directories"],
+            "directories", Structure.directories(),
             Layout.MAX_MODULES, "modules",
         )  # fmt: skip
 
     def test_no_class_grows_past_1000_lines(self) -> None:
         TestStructure.within(
-            "classes", Structure.classes(), Structure.frozen()["long_classes"],
+            "classes", Structure.classes(),
             Layout.MAX_CLASS_LINES, "lines",
         )  # fmt: skip
 
     def test_no_function_grows_past_90_lines(self) -> None:
         TestStructure.within(
-            "functions", Structure.functions(), Structure.frozen()["long_functions"],
+            "functions", Structure.functions(),
             Layout.MAX_FUNCTION_LINES, "lines",
         )  # fmt: skip
 
     def test_the_engine_reaches_adapters_only_through_the_registry(self) -> None:
-        frozen = set(Structure.frozen()["engine_adapter_imports"])
         now = Structure.engine_adapters()
-        assert not sorted(now - frozen), (
-            "the engine imports an adapter: register it, use its protocol"
-        )
-        assert not sorted(frozen - now), "these are gone: remove them from frozen"
+        assert not sorted(now), "the engine imports an adapter: register it, use its protocol"
 
     #: What a registry may type a role by, besides its layer's own protocols: plain values.
     VALUE_TYPES: ClassVar[frozenset[str]] = frozenset(
@@ -538,31 +524,25 @@ class TestStructure:
 
     def test_no_module_grows_past_its_length(self) -> None:
         TestStructure.within(
-            "modules", Structure.lengths(), Structure.frozen()["long_modules"],
+            "modules", Structure.lengths(),
             Layout.MAX_LINES, "lines",
         )  # fmt: skip
 
     def test_no_new_outward_import(self) -> None:
-        frozen = set(Structure.frozen()["outward_imports"])
         now = Structure.outward()
-        assert not sorted(now - frozen), "an import that points outward: invert it, or move it"
-        assert not sorted(frozen - now), "these are gone: remove them from frozen"
+        assert not sorted(now), "an import that points outward: invert it, or move it"
 
     def test_no_new_path_found_from_a_file_s_own_position(self) -> None:
         # Data is found from the package (foundation/paths.py), tests find the repository from
         # support.ROOT: a file that counts directories from itself breaks when it moves.
-        frozen = set(Structure.frozen()["file_relative_paths"])
         now = Structure.file_relative()
-        assert not sorted(now - frozen), "use PackagePaths or support.ROOT"
-        assert not sorted(frozen - now), "these are gone: remove them from frozen"
+        assert not sorted(now), "use PackagePaths or support.ROOT"
 
     def test_no_docstring_is_cut_off_from_what_it_documents(self) -> None:
         # A move that leaves an attribute's docstring behind attaches it to nothing (or, worse, to
         # the next reader's idea of what it describes): it belongs directly after its assignment.
-        frozen = set(Structure.frozen()["orphaned_docstrings"])
         now = Structure.orphaned_docstrings()
-        assert not sorted(now - frozen), "put the docstring directly after what it documents"
-        assert not sorted(frozen - now), "these are gone: remove them from frozen"
+        assert not sorted(now), "put the docstring directly after what it documents"
 
     #: What may not change without its owner's review: the rules here and what the guard pins.
     OWNED: ClassVar[tuple[str, ...]] = (

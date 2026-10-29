@@ -125,6 +125,16 @@ regex. Especially dangerous because organisations write their own rules.
   `max_file_bytes` (default 10 MiB). Larger files get a targeted subset of rules
   (literal and entropy only) plus an `OPERATIONAL` note.
 
+**Known gap (2026-10-29): the scanner's own patterns.** The load-time validator covers rule
+packs, not the regular expressions in the scanner's own detectors and analysers, and
+`per_file_timeout` is checked between detectors: it cannot interrupt a regex already running,
+and the detectors that always run are not budgeted. A measured probe found patterns there that
+grow superlinearly on long crafted lines (one, in the config detector, with two adjacent
+`[ \t]*` runs). A file built for one stalls the scan until `total_timeout`, which ends it
+incomplete rather than clean (exit code 4 with `--fail-on-incomplete`). The fix in progress: a
+repository test that times every compiled pattern in `detect/` and `analysis/` the way its caller
+calls it, against a linear reference, and an output-identical rewrite of each pattern it flags.
+
 ### T5 — Memory exhaustion
 
 **Controls.** Files above a threshold are `mmap`'d rather than read; findings are

@@ -74,8 +74,7 @@ gate and of CI, holds the rest of the arrangement:
     ports only                                  ecosystem, source or intel module: an adapter
                                               layer's `base` (its protocols) and `registry`
                                               (what implements them) are the way in
-  imports point inward                        a NEW outward import (today's are frozen; each
-                                              one removed comes off the list)
+  imports point inward                        an import from an inner layer to an outer one
   no paths counted from a file's position     a new `__file__`: data is found with PackagePaths
                                               (foundation/paths.py), the repository from
                                               support.ROOT in tests, the checkout from where a
@@ -85,12 +84,8 @@ gate and of CI, holds the rest of the arrangement:
                                               with its reason
 ```
 
-What exceeds a limit today -- modules, classes, functions and directories past their size, the
-outward imports -- is listed in
-`package_layout.json` under `frozen` with its size, and may only shrink: nothing new may join a list
-and nothing on one may grow. Shrinking one is a one-line edit there; the test also fails when an
-entry no longer applies, so the lists stay exact. The lists are being emptied (reviews
-`21-MAINTAINABILITY.md`); when they are, every rule above holds with no exceptions.
+Every rule above holds with no exceptions. Until the 0.7.0 restructuring, what exceeded one was
+listed in `package_layout.json` and could only shrink; those lists were emptied and deleted.
 
 ## Adding a detection rule
 
