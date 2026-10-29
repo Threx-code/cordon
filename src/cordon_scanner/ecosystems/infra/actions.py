@@ -273,8 +273,13 @@ class ActionsFile:
         declared: list[DeclaredDependency] = []
         seen: set[tuple[str, str, str | None]] = set()
         scalars = ActionsFile.block_scalar_lines(text)
+        # The line of each match, counted on from the last one rather than from the top: counting
+        # from the top for every `uses:` made a long workflow's cost grow with its square.
+        line, counted = 0, 0
         for match in ActionsFile.USES.finditer(text):
-            if text.count("\n", 0, match.start()) in scalars:
+            line += text.count("\n", counted, match.start())
+            counted = match.start()
+            if line in scalars:
                 # Text inside a `run: |` script (one that writes a workflow, say), not a step.
                 continue
             # A job's `uses:` (a reusable workflow) and a step's are both read; the reference itself
@@ -340,8 +345,11 @@ class ActionsFile:
     def _job_images(text: str, scalars: set[int], declared: list[DeclaredDependency]) -> None:
         """A job's container and services: the images it runs on the runner, once each."""
         # A job's `container:` and its `services:` run as images on the runner.
+        line, counted = 0, 0
         for found in ActionsFile.IMAGE_KEY.finditer(text):
-            if text.count("\n", 0, found.start()) in scalars:
+            line += text.count("\n", counted, found.start())
+            counted = found.start()
+            if line in scalars:
                 continue
             value = found.group("image")
             reference = value if value.startswith("docker://") else f"docker://{value}"

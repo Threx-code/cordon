@@ -122,13 +122,17 @@ CONTROL = re.compile(r"(?:exit(?:\s+\d{1,3})?|true|:)")
 """Shell words that do nothing but end or succeed: `echo "use pnpm" && exit 1` is a guard."""
 
 FILE_TEST = re.compile(
-    r"(?:test|\[)\s+!?\s*-[defrsxz]\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}(?:\s+\])?"
+    r"(?:test|\[)\s++(?:!\s*+)?-[defrsxz]\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}(?:\s+\])?"
 )
-"""A test of a path inside the package, as in `test -d dist || npm run build || true`: it runs
-nothing and only decides whether the step after it does, which is judged on its own."""
+r"""A test of a path inside the package, as in `test -d dist || npm run build || true`: it runs
+nothing and only decides whether the step after it does, which is judged on its own. The blanks
+around the `!` are taken once (`\s++(?:!\s*+)?`): as `\s+!?\s*` they split one run every way, which
+`fullmatch` did on every lifecycle-script word (review 98, 27-PERFORMANCE)."""
 
-CD_INSIDE = re.compile(r"cd\s+(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}")
-"""A change of directory inside the package: what the command after it runs still decides."""
+CD_INSIDE = re.compile(r"cd\s++(?![/~$\\])(?!.*\.\.)[\w./@-]{1,200}")
+r"""A change of directory inside the package: what the command after it runs still decides. The
+blanks are taken once (`\s++`; the directory cannot start with one): as `\s+` each blank given back
+ran the `(?!.*\.\.)` lookahead to the end of the word again (review 98, 27-PERFORMANCE)."""
 
 RUN_SCRIPT = re.compile(
     r"(?:npm\s+run(?:-script)?|pnpm\s+run|yarn\s+run|yarn|pnpm)\s+(?P<name>[\w:.-]{1,80})(?:\s+--.*)?"
@@ -516,8 +520,11 @@ class ManifestScripts:
         r"/(?:repository/archive|-/archive|archive|tarball|zipball)(?:/|\.tar\.gz|\.zip|\?)"
     )
     #: A file named for a release, `xlsx-0.20.3.tgz`: what a vendor's CDN serves, fixed per URL.
+    #: "A version somewhere in the name" is the lookahead `(?=[^/?#]*\d\.\d)`, read once per path
+    #: segment: written `[^/?#]*\d+\.\d+[^/?#]*` it split each segment every way around its digits
+    #: (review 98, 27-PERFORMANCE). The extension holds no digit, so the version still comes before it.
     _VERSIONED_TARBALL: ClassVar[re.Pattern[str]] = re.compile(
-        r"/[^/?#]*\d+\.\d+[^/?#]*\.(?:tgz|tar\.gz)(?:[?#].*)?$"
+        r"/(?=[^/?#]*\d\.\d)[^/?#]*\.(?:tgz|tar\.gz)(?:[?#].*)?$"
     )
 
     @staticmethod

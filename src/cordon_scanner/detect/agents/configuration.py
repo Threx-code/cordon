@@ -16,6 +16,7 @@ across every agent's configuration format:
 
 from __future__ import annotations
 
+import bisect
 import re
 import shlex
 from dataclasses import dataclass
@@ -26,16 +27,30 @@ from typing import Final
 _SHELL_FETCH_EXEC: Final = re.compile(
     r"(?i)\b(?:curl|wget|fetch)\b[^\n|;]{0,300}\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b"
     r"|\b(?:curl|wget)\b[^\n]{0,300}\|\s*(?:python3?|node|perl|ruby)\b(?![ \t]{1,8}-[cm]\b)"
-    r"|\b(?:curl|wget)\b[^\n]{0,200}(?:-o|-O|--output)\s*\S+[^\n]{0,80}&&[^\n]{0,80}\b(?:sh|bash|chmod\s+\+x)\b"
     r"|\bbase64\s+(?:-d|--decode|-D)\b[^\n]{0,80}\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b"
     r"|\b(?:ba|z)?sh\s+-c\s+[\"']?\$\((?:curl|wget)\b"
     r"|\b(?:ba|z)?sh\s+<\(\s*(?:curl|wget)\b"
 )
+# `curl -o FILE ... && sh FILE` is one more fetch-exec shape, found by
+# `CommandClassifier._downloads_then_runs` rather than as a branch above: as the branch
+# `\b(?:curl|wget)\b[^\n]{0,200}(?:-o|-O|--output)\s*\S+[^\n]{0,80}&&[^\n]{0,80}\b(?:sh|bash|chmod\s+\+x)\b`
+# its unbounded `\S+` re-read one long word from every `curl ... -o` in it -- quadratic, over
+# 60 s for one 16,000-character line an attacker writes (review 98, 27-PERFORMANCE).
+_FETCH_TOOL: Final = re.compile(r"(?i)\b(?:curl|wget)\b")
+#: Every place an output flag starts, overlapping ones included (`--output` holds `-o` too).
+_OUTPUT_FLAG: Final = re.compile(r"(?i)(?=(-o|-O|--output))")
+#: What follows the `&&`: a shell, or the file made executable, within 80 characters.
+_RUNS_IT: Final = re.compile(r"(?i)[^\n]{0,80}\b(?:sh|bash|chmod\s+\+x)\b")
+_BLANKS: Final = re.compile(r"\s*")
+_BLANK: Final = re.compile(r"\s")
 _POWERSHELL_FETCH_EXEC: Final = re.compile(
     r"(?i)\b(?:iwr|irm|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile|"
     r"net\.webclient|start-bitstransfer)\b[^\n]{0,300}(?:\|\s*(?:iex|invoke-expression)\b|\biex\b|"
     r"\binvoke-expression\b|start-process)"
-    r"|\b(?:iex|invoke-expression)\s*[\(\s]\s*[\(\s]*(?:new-object\s+net\.webclient|iwr|irm|invoke-webrequest|invoke-restmethod)\b"
+    # `[\(\s]++`, not `\s*[\(\s]\s*[\(\s]*`: the same strings (any run of blanks and `(`, at least
+    # one), taken once. Four adjacent repeats over the same characters were cubic in a run of
+    # blanks after `iex` -- 13 s for 1,000 -- in a file an attacker writes (review 98, 27-PERFORMANCE).
+    r"|\b(?:iex|invoke-expression)[\(\s]++(?:new-object\s+net\.webclient|iwr|irm|invoke-webrequest|invoke-restmethod)\b"
     r"|-(?:e|enc|encodedcommand)\s+[A-Za-z0-9+/]{40,}={0,2}"
 )
 _INTERPRETER_FETCH_EXEC: Final = re.compile(
@@ -126,11 +141,62 @@ class CommandClassifier:
             )
         if (
             _SHELL_FETCH_EXEC.search(command)
+            or CommandClassifier._downloads_then_runs(command)
             or _POWERSHELL_FETCH_EXEC.search(command)
             or _INTERPRETER_FETCH_EXEC.search(command)
         ):
             return CommandVerdict("fetch-exec", "downloads code and runs it")
         return None
+
+    @staticmethod
+    def _downloads_then_runs(command: str) -> bool:
+        r"""Whether `curl|wget`, then within 200 characters of the line an output flag, then a file
+        name, then `&&` and a shell or `chmod +x` within 80 characters, as the regular expression in
+        the comment above `_FETCH_TOOL` matches -- found with every part read once.
+
+        The expression's `\s*\S+[^\n]{0,80}&&` after the flag holds exactly when, with `s` the first
+        non-blank after the flag (the blanks may cross lines) and `w` the first blank at or after it,
+        an `&&` starts at some `p` with `s < p <= min(w + 80, the next newline)`: the name is `\S+`
+        up to `w` at most, and at most 80 characters, none a newline, lie between it and the `&&`.
+        """
+        if "&&" not in command:
+            return False
+        runs = [
+            p
+            for p in range(len(command) - 1)
+            if command.startswith("&&", p) and _RUNS_IT.match(command, p + 2)
+        ]
+        if not runs:
+            return False
+        blanks = [m.start() for m in _BLANK.finditer(command)]
+        newlines = [m.start() for m in re.finditer("\n", command)]
+        flags = [(m.start(), m.start() + len(m.group(1))) for m in _OUTPUT_FLAG.finditer(command)]
+        starts = [start for start, _ in flags]
+        end_of = len(command)
+
+        def first(positions: list[int], at: int) -> int:
+            i = bisect.bisect_left(positions, at)
+            return positions[i] if i < len(positions) else end_of
+
+        reached: dict[int, bool] = {}
+        for tool in _FETCH_TOOL.finditer(command):
+            after = tool.end()
+            limit = min(after + 200, first(newlines, after))
+            for i in range(bisect.bisect_left(starts, after), bisect.bisect_right(starts, limit)):
+                start, end = flags[i]
+                found = reached.get(start)
+                if found is None:
+                    name = _BLANKS.match(command, end).end()  # type: ignore[union-attr]
+                    word_end = first(blanks, name)
+                    j = bisect.bisect_left(runs, name + 1)
+                    found = reached[start] = (
+                        name < word_end
+                        and j < len(runs)
+                        and runs[j] <= min(word_end + 80, first(newlines, name))
+                    )
+                if found:
+                    return True
+        return False
 
     @staticmethod
     def reaches_out(command: str) -> bool:

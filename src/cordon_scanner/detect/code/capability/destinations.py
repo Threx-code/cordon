@@ -117,8 +117,11 @@ class DestinationLabels:
     # '154.57.164.64'` handed to `http.request({hostname: TARGET_HOST})`, or a socket's
     # `connect(4444, '154.57.164.64')`. A bare four-part string is as often a version number,
     # so it counts only where the line names it as a host.
+    # `\b(?=[a-z_]*host)[a-z_]*+` is `\b[a-z_]*host[a-z_]*`: what follows cannot be `[a-z_]`, so the
+    # word is always taken whole, and asking first whether it holds `host` reads it once instead of
+    # once per `host` in it. The blanks of `connect(` are taken once (review 98, 27-PERFORMANCE).
     _IP_HOST = re.compile(
-        rb"(?i)(?:\b[a-z_]*host[a-z_]*[\"']?\s*[:=]|\b(?:connect|createConnection)\(\s*(?:\d{1,5}\s*,\s*)?)"
+        rb"(?i)(?:\b(?=[a-z_]*host)[a-z_]*+[\"']?\s*[:=]|\b(?:connect|createConnection)\(\s*+(?:\d{1,5}\s*,\s*+)?)"
         rb"\s*[\"'](\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})[\"']"
     )
 

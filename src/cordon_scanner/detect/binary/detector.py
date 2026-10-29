@@ -385,9 +385,11 @@ class BinaryDetector(BaseDetector):
 
     #: What code looks like when nothing announces its format: a script's opening, a call that
     #: runs or loads something, a language's markers. Read in the first few kilobytes.
+    # Each run here is taken once (possessive; review 98, 27-PERFORMANCE): runs that can take the
+    # same characters, with only optional items between them, split one stretch every way.
     _CODE_MARKERS: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"(?i)<\?php|<script\b|@echo\s+off|\bpowershell\b|cmd(?:\.exe)?\s+/c\b|\beval\s*\("
-        rb"|\bexec\s*\(|\brequire\s*\(|\bimport\s+[\w.]+|\bfunction\s*[\w$]*\s*\("
+        rb"|\bexec\s*\(|\brequire\s*\(|\bimport\s+[\w.]+|\bfunction\s*+[\w$]*+\s*+\("
         rb"|\b(?:var|const|let)\s+[\w$]+\s*=|\bdef\s+\w+\s*\(|\bInvoke-\w+|\bSet-\w+"
         rb"|\bWScript\.|\bCreateObject\s*\(|/bin/(?:ba)?sh\b|\bcurl\s+-|\bwget\s+"
         # What an image or document processor executes: ImageMagick's MVG (ImageTragick), HTML,

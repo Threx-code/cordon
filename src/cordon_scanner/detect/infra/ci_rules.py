@@ -105,8 +105,10 @@ UNTRUSTED_DESTINATION: Final = re.compile(
 """Where a pipeline has no business sending anything: a paste site, a tunnel, a webhook catcher
 or interaction service (`intel.hosts`), a bare IPv4 address, a raw socket."""
 
+# Each run here is taken once (possessive; review 98, 27-PERFORMANCE): runs that can take the
+# same characters, with only optional items between them, split one stretch every way.
 UNTRUSTED_TRIGGER: Final = re.compile(
-    rb"(?m)^[ \t]{0,8}(?:-[ \t]{0,4})?(?:pull_request_target|issue_comment|workflow_run)[ \t]*:?[ \t]*$"
+    rb"(?m)^[ \t]{0,8}(?:-[ \t]{0,4})?(?:pull_request_target|issue_comment|workflow_run)[ \t]*+(?::[ \t]*+)?$"
     rb"|\bon[ \t]*:[ \t]*\[?[^\n]{0,80}\b(?:pull_request_target|issue_comment|workflow_run)\b"
 )
 """A workflow trigger whose run an outside contributor can start, with the base repository's

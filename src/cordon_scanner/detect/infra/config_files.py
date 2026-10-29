@@ -313,7 +313,9 @@ class ConfigDetector(BaseDetector):
         rb"""|\bdirection["']?[ \t]*[=:][ \t]*["']?(?:egress|outbound)\b"""
     )
     #: The line opening a block named for egress: `egress {`, `egress_all = {`.
-    OUTBOUND_OPENER = re.compile(rb"""(?i)[ \t]*["']?egress\w*["']?[ \t]*[=:]?[ \t]*\{""")
+    # Each run here is taken once (possessive; review 98, 27-PERFORMANCE): runs that can take the
+    # same characters, with only optional items between them, split one stretch every way.
+    OUTBOUND_OPENER = re.compile(rb"""(?i)[ \t]*+["']?egress\w*+["']?[ \t]*+(?:[=:][ \t]*+)?\{""")
     #: CloudFormation's two lists and two resource types; whichever is nearest above a match
     #: is the one it belongs to.
     CLOUDFORMATION_DIRECTION = re.compile(rb"SecurityGroup(In|E)gress")
