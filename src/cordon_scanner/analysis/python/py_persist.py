@@ -40,16 +40,19 @@ PERSIST_WORD: Final = re.compile(
     r"|systemctl|wantedby|currentversion|sitecustomize|usercustomize|startup"
 )
 
-#: A command, folded whole, that only reads what a persistence location holds.
+#: A command, folded whole, that only reads what a persistence location holds. Read with
+#: `fullmatch`: trailing whitespace is in the class that ends every branch but `crontab`'s, so only
+#: that branch takes a `\s*` of its own; a second one after the class split each run of spaces
+#: every way between the two and was quadratic on a long one.
 READ_ONLY_COMMAND: Final = re.compile(
-    r"(?i)\s*(?:crontab\s+-l(?:\s+-u\s+[\w.-]+)?"
+    r"(?i)\s*(?:crontab\s+-l(?:\s+-u\s+[\w.-]+)?\s*"
     r"|systemctl\s+(?:--user\s+)?(?:status|is-enabled|is-active|list-units|list-unit-files"
     r"|list-timers|show|cat)\b[^;&|<>`$]*"
     r"|launchctl\s+(?:list|print)\b[^;&|<>`$]*"
     r"|schtasks(?:\.exe)?\s+/query\b[^;&|<>`$]*"
     r"|reg(?:\.exe)?\s+(?:query|export)\b[^;&|<>`$]*"
     r"|(?:ls|cat|head|tail|stat|grep|test)\b[^;&|<>`$]*"
-    r"|find\b(?![^;&|<>`$]*\s-(?:exec|execdir|ok|okdir|delete|fprint|fprintf|fls)\b)[^;&|<>`$]*)\s*"
+    r"|find\b(?![^;&|<>`$]*\s-(?:exec|execdir|ok|okdir|delete|fprint|fprintf|fls)\b)[^;&|<>`$]*)"
 )
 
 
