@@ -114,15 +114,20 @@ class CompositeEvaluator:
             # socket from another 25 lines below, past a 30-line window (review 98). Proximity
             # separates the halves of a library; it does not separate the halves of a hook.
             proximity = 0
+        # Which lines' spawns run a program written out in full is a fact about the file (see
+        # `_fixed_argv_window`), the same for every window: found once here, not once per window --
+        # per window it made the search quadratic in the hits, 61 of 73 s on one 1,024-line setup.py
+        # (review 98, 27-PERFORMANCE, 7).
+        fixed = CompositeEvaluator.fixed_lines(hits)
         if proximity <= 0:
             if self._evaluate_over(
-                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, fixed_lines=fixed
             ):
                 return hits
             return None
         if len(hits) > self.MAX_PROXIMITY_HITS:
             return self._dense_window(
-                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, proximity
+                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, proximity, fixed
             )
 
         # Sorted by line ALONE, and stably. Adding `byte_start` to the key looks
@@ -143,7 +148,7 @@ class CompositeEvaluator:
                 if h.line <= limit and abs(h.byte_start - first.byte_start) <= byte_limit
             ]
             if self._evaluate_over(
-                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+                compiled, window, path, in_hook, in_ci, in_consumer, deferred, fixed_lines=fixed
             ):
                 return window
         return None
@@ -161,6 +166,7 @@ class CompositeEvaluator:
         in_consumer: bool,
         deferred: frozenset[tuple[int, int]],
         proximity: int,
+        fixed: frozenset[int],
     ) -> list[CapabilityHit] | None:
         """Proximity over a file with more hits than the pairwise search affords.
 
@@ -186,7 +192,7 @@ class CompositeEvaluator:
             last = (lo, hi)
             window = [h for h in by_byte[lo:hi] if abs(h.line - centre.line) <= proximity]
             if self._evaluate_over(
-                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+                compiled, window, path, in_hook, in_ci, in_consumer, deferred, fixed_lines=fixed
             ):
                 return window
         return None
@@ -201,10 +207,9 @@ class CompositeEvaluator:
         in_consumer: bool = False,
         deferred: frozenset[tuple[int, int]] = frozenset(),
         *,
-        all_hits: list[CapabilityHit] | None = None,
+        fixed_lines: frozenset[int],
     ) -> bool:
-        all_hits = window if all_hits is None else all_hits
-        window = CompositeEvaluator._fixed_argv_window(all_hits, window)
+        window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
         # The file runs at install time; this window has to as well. If any hit
         # in it sits in a body the hooks never call, the pair the composite
         # describes is not something that happens during an install -- so the
@@ -227,7 +232,7 @@ class CompositeEvaluator:
 
     @staticmethod
     def _fixed_argv_window(
-        all_hits: list[CapabilityHit], window: list[CapabilityHit]
+        window: list[CapabilityHit], fixed_lines: frozenset[int]
     ) -> list[CapabilityHit]:
         """The window without the spawns whose whole argv is written out: they run a fixed program, and count only where nothing else speaks for the composite."""
         # A spawn whose whole argv is written out in the source does not count.
@@ -293,17 +298,22 @@ class CompositeEvaluator:
         # the marker reproduced it exactly, and adding the `ast` match kind
         # did. Taking the fact from the file removes the ordering dependency
         # instead of restating the rule that protects it.
-        speaking_argv = {
-            hit.line
-            for hit in all_hits
-            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
-        }
-        fixed_lines = {hit.line for hit in all_hits if hit.fixed} - speaking_argv
         return [
             hit
             for hit in window
             if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
         ]
+
+    @staticmethod
+    def fixed_lines(all_hits: list[CapabilityHit]) -> frozenset[int]:
+        """The lines whose spawn runs a program written out in full, from every hit in the FILE:
+        a fact about the line, which no window can change (see `_fixed_argv_window`)."""
+        speaking_argv = {
+            hit.line
+            for hit in all_hits
+            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
+        }
+        return frozenset({hit.line for hit in all_hits if hit.fixed} - speaking_argv)
 
     def evaluate(
         self,
