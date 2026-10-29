@@ -14,12 +14,12 @@ naming a package without a version covers every version, as both formats allow).
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Category, Suppression
 
 if TYPE_CHECKING:
@@ -73,8 +73,8 @@ class VexDocuments:
             try:
                 if path.stat().st_size > MAX_BYTES:
                     raise VexError(f"{path}: larger than {MAX_BYTES} bytes")
-                document = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
+                document = ScannedJson.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, RecursionError) as exc:
                 raise VexError(f"{path}: {exc}") from exc
             statements.extend(VexDocuments.parse(document, str(path)))
         return statements

@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Finding
 from cordon_scanner.foundation.paths import StatePaths
 from cordon_scanner.version import SCHEMA_VERSION
@@ -689,7 +690,7 @@ class ScanCache:
             return None
 
         try:
-            payload = json.loads(raw)
+            payload = ScannedJson.loads(raw)
             if not self._verify(payload, key):
                 # Not deleted. An unverified entry may belong to another user
                 # sharing the directory, and removing it would turn a read
@@ -697,7 +698,7 @@ class ScanCache:
                 self.misses += 1
                 return None
             findings = tuple(ScanCache.finding_from_dict(f) for f in payload["findings"])
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError, RecursionError):
             # A corrupt entry is removed rather than left to fail repeatedly.
             path.unlink(missing_ok=True)
             self.misses += 1

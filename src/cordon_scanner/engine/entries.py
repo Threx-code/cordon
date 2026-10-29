@@ -6,8 +6,9 @@ them as `import_entry_paths`, and, without the command targets, as `library_entr
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit
@@ -29,8 +30,8 @@ class PackageEntries:
         if distribution == "npm":
             manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
             try:
-                document = json.loads(manifest.content.text) if manifest is not None else {}
-            except ValueError:
+                document = ScannedJson.loads(manifest.content.text) if manifest is not None else {}
+            except (ValueError, RecursionError):
                 document = {}
             if not isinstance(document, dict):
                 document = {}
@@ -82,8 +83,8 @@ class PackageEntries:
             return ""
         manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
         try:
-            document = json.loads(manifest.content.text) if manifest is not None else {}
-        except ValueError:
+            document = ScannedJson.loads(manifest.content.text) if manifest is not None else {}
+        except (ValueError, RecursionError):
             return ""
         repository = document.get("repository") if isinstance(document, dict) else None
         if isinstance(repository, dict):

@@ -16,6 +16,7 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
     MALICIOUS_REMOTE_TARBALL_RULE,
     REMOTE_TARBALL_RULE,
 )
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Severity,
 )
@@ -622,10 +623,9 @@ class ManifestScripts:
     @staticmethod
     def npm_scripts(unit: FileUnit) -> tuple[dict[str, str], dict[str, str]]:
         """A package.json's scripts, and every dependency it declares with its spec."""
-        import json
 
         try:
-            data = json.loads(unit.content.text)
+            data = ScannedJson.loads(unit.content.text)
         except ValueError:
             return {}, {}
         if not isinstance(data, dict):
@@ -653,10 +653,9 @@ class ManifestScripts:
         patch-package`, `wxt prepare`, `husky`). A published package cannot carry the flag, so
         no published package's hook is graded here.
         """
-        import json
 
         try:
-            data = json.loads(unit.content.text)
+            data = ScannedJson.loads(unit.content.text)
         except ValueError:
             return False
         return isinstance(data, dict) and data.get("private") is True
