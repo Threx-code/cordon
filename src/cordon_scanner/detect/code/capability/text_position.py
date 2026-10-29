@@ -404,9 +404,14 @@ class TextPosition:
     #: Make's three diagnostic functions, and the printing commands of every shell
     #: and language that appears in a build file. A capability matched inside the
     #: string one of these is given is a capability the file TALKS ABOUT.
+    #:
+    #: The indentation is possessive (`*+`): what it gives back the `[@-]` cannot take and the
+    #: next `[ \t]*` takes instead, so no match changes, but without it a long run of blanks is
+    #: retried at every split -- quadratic in the 4,096 bytes asked, once per candidate on a line
+    #: (review 98, 27-PERFORMANCE).
     DIAGNOSTIC_STATEMENT = re.compile(
         rb"""(?ix)
-        ^[ \t]*
+        ^[ \t]*+
         (?:
             [@-]{0,2}[ \t]*
             (?:echo|printf|print|puts|say|warn|

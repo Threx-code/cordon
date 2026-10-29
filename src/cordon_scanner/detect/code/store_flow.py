@@ -49,10 +49,15 @@ _ARGUMENT = re.compile(r"(?<![\w.$])([A-Za-z_]\w*)(?![\w$]|\s*[.(])")
 """A bare name, not a callee (`f(`), not a receiver (`os.`), not an attribute (`.path`)."""
 
 _FILLED = re.compile(
-    r"([A-Za-z_]\w*)\s*\.\s*(?:append|extend|write|writelines|writerow|writerows|update|add|"
-    r"insert|push|put|setdefault|set|concat|join)\s*\("
+    r"(?<!\w)[^\WA-Za-z_]*+([A-Za-z_]\w*+)\s*\.\s*(?:append|extend|write|writelines|writerow|"
+    r"writerows|update|add|insert|push|put|setdefault|set|concat|join)\s*\("
 )
-"""The receiver of a call that puts something into it."""
+r"""The receiver of a call that puts something into it.
+
+Group 1 is the receiver, as `([A-Za-z_]\w*)\s*\.` alone would give it. A match starts only where
+a word starts (the lookbehind), past the word's leading digits: the plain form retried every
+position of a long word that is not followed by such a call, quadratic in a line an attacker
+writes (review 98, 27-PERFORMANCE)."""
 
 _PATH_LITERAL = re.compile(
     r"\"([^\"\n:]{1,200}[./\\][^\"\n:]{1,200})\"|'([^'\n:]{1,200}[./\\][^'\n:]{1,200})'"
