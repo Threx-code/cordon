@@ -33,7 +33,8 @@ import math
 import multiprocessing
 import multiprocessing.context
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -401,8 +402,8 @@ class ParallelScanner:
 
     @staticmethod
     def _inspect_batch(
-        batch: list[WorkItem], root: str
-    ) -> list[tuple[int, list[dict[str, Any]], bool]]:
+        batch: list[WorkItem], root: str, deadline: float | None = None
+    ) -> list[tuple[int, list[dict[str, Any]], bool | None]]:
         """Scan one batch inside a worker.
 
         Findings cross the process boundary as dictionaries rather than as domain
@@ -415,6 +416,10 @@ class ParallelScanner:
         scanned in parallel at all: re-reading by path would scan the working
         tree while the caller believes it is scanning the index. The bytes the
         parent already read travel with the item, and the worker reads nothing.
+
+        `deadline` is the scan's budget as a `time.monotonic()` reading, which is the same clock
+        in every process on the machine. A file reached after it is not read: it comes back
+        marked `None`, not examined, for the parent to report.
         """
         if ParallelScanner._worker is None:  # pragma: no cover - only reachable on a broken pool
             return []
@@ -426,9 +431,12 @@ class ParallelScanner:
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
         detectors = ParallelScanner._worker.detectors
-        out: list[tuple[int, list[dict[str, Any]], bool]] = []
+        out: list[tuple[int, list[dict[str, Any]], bool | None]] = []
 
         for index, relative, _size, expected, carried in batch:
+            if deadline is not None and time.monotonic() >= deadline:
+                out.append((index, [], None))  # not examined: the budget ran out first
+                continue
             if isinstance(carried, str):
                 loaded = FileContent.load(Path(carried), relative, engine.config.limits)
             elif carried is not None:
@@ -588,6 +596,8 @@ class ParallelScanner:
         install_entry_paths: frozenset[str] = frozenset(),
         consumer_install_paths: frozenset[str] = frozenset(),
         package_facts: dict[str, Any] | None = None,
+        deadline: float | None = None,
+        unstarted: list[int] | None = None,
     ) -> list[tuple[int, list[Finding], bool]] | None:
         """Inspect files across a pool, returning results in input order.
 
@@ -613,6 +623,11 @@ class ParallelScanner:
         derives from the inventory on its own and so cannot be worse than not
         passing them. They are still the difference between finding an
         install-time payload and not; see `_initialise`.
+
+        `deadline` (a `time.monotonic()` reading) is the scan's budget. Once it passes, no batch
+        that has not started is started: those are cancelled and their files' indices go into
+        `unstarted`, for the caller to report unexamined. Batches already running finish, and
+        their results are kept. With no deadline the pool runs every batch, as it always did.
         """
 
         batches = ParallelScanner.batch_by_bytes(files)
@@ -642,10 +657,9 @@ class ParallelScanner:
                     dict(package_facts or {}),
                 ),
             ) as pool:
-                futures = [
-                    pool.submit(ParallelScanner._inspect_batch, batch, root) for batch in batches
-                ]
-                ParallelScanner._collect(futures, collected, on_batch)
+                ParallelScanner._dispatch(
+                    pool, batches, root, collected, on_batch, deadline, unstarted
+                )
         except Exception:  # noqa: BLE001
             return None
 
@@ -656,9 +670,10 @@ class ParallelScanner:
 
     @staticmethod
     def _collect(
-        futures: list[Future[list[tuple[int, list[dict[str, Any]], bool]]]],
+        futures: list[Future[list[tuple[int, list[dict[str, Any]], bool | None]]]],
         collected: list[tuple[int, list[Finding], bool]],
         on_batch: Callable[[Sequence[int]], None] | None,
+        unstarted: list[int] | None = None,
     ) -> None:
         """Each batch's results as it finishes, reported to the caller as they arrive."""
         from cordon_scanner.engine.cache import ScanCache
@@ -677,12 +692,70 @@ class ParallelScanner:
         for future in as_completed(futures):
             completed: list[int] = []
             for index, findings, trusted in future.result():
+                if trusted is None:  # the worker reached it after the deadline
+                    if unstarted is not None:
+                        unstarted.append(index)
+                    continue
                 collected.append(
                     (index, [ScanCache.finding_from_dict(f) for f in findings], trusted)
                 )
                 completed.append(index)
             if on_batch is not None:
                 on_batch(completed)
+
+    @staticmethod
+    def _dispatch(
+        pool: ProcessPoolExecutor,
+        batches: list[list[WorkItem]],
+        root: str,
+        collected: list[tuple[int, list[Finding], bool]],
+        on_batch: Callable[[Sequence[int]], None] | None,
+        deadline: float | None,
+        unstarted: list[int] | None,
+    ) -> None:
+        """Every batch submitted to the pool and its results collected; with a deadline, what the
+        pool has not reached by then is left unexamined (`_collect_until`).
+
+        The deadline is a `time.monotonic()` reading taken in this process and compared in the
+        workers. That is sound because the monotonic clock is one system-wide clock on Linux and
+        macOS (CLOCK_MONOTONIC) and on Windows, not a per-process counter."""
+        futures = [
+            pool.submit(ParallelScanner._inspect_batch, batch, root, deadline) for batch in batches
+        ]
+        if deadline is None:
+            ParallelScanner._collect(futures, collected, on_batch)
+        else:
+            ParallelScanner._collect_until(
+                dict(zip(futures, batches, strict=True)),
+                collected,
+                on_batch,
+                deadline,
+                unstarted if unstarted is not None else [],
+            )
+
+    @staticmethod
+    def _collect_until(
+        batches: dict[Future[list[tuple[int, list[dict[str, Any]], bool | None]]], list[WorkItem]],
+        collected: list[tuple[int, list[Finding], bool]],
+        on_batch: Callable[[Sequence[int]], None] | None,
+        deadline: float,
+        unstarted: list[int],
+    ) -> None:
+        """`_collect`, stopping at the deadline: a batch not started by then is cancelled and its
+        files go into `unstarted`. A running batch stops at its next file (`_inspect_batch` checks
+        the same deadline), and what it examined before that is kept."""
+        pending = set(batches)
+        cutoff: float | None = deadline
+        while pending:
+            timeout = None if cutoff is None else max(0.0, cutoff - time.monotonic())
+            done, pending = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+            ParallelScanner._collect(list(done), collected, on_batch, unstarted)
+            if cutoff is not None and time.monotonic() >= cutoff:
+                for future in pending:
+                    if future.cancel():
+                        unstarted.extend(item[0] for item in batches[future])
+                pending = {future for future in pending if not future.cancelled()}
+                cutoff = None
 
 
 # ---------------------------------------------------------------------------
