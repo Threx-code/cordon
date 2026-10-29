@@ -35,7 +35,10 @@ _POWERSHELL_FETCH_EXEC: Final = re.compile(
     r"(?i)\b(?:iwr|irm|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile|"
     r"net\.webclient|start-bitstransfer)\b[^\n]{0,300}(?:\|\s*(?:iex|invoke-expression)\b|\biex\b|"
     r"\binvoke-expression\b|start-process)"
-    r"|\b(?:iex|invoke-expression)\s*[\(\s]\s*[\(\s]*(?:new-object\s+net\.webclient|iwr|irm|invoke-webrequest|invoke-restmethod)\b"
+    # `[\(\s]++`, not `\s*[\(\s]\s*[\(\s]*`: the same strings (any run of blanks and `(`, at least
+    # one), taken once. Four adjacent repeats over the same characters were cubic in a run of
+    # blanks after `iex` -- 13 s for 1,000 -- in a file an attacker writes (review 98, 27-PERFORMANCE).
+    r"|\b(?:iex|invoke-expression)[\(\s]++(?:new-object\s+net\.webclient|iwr|irm|invoke-webrequest|invoke-restmethod)\b"
     r"|-(?:e|enc|encodedcommand)\s+[A-Za-z0-9+/]{40,}={0,2}"
 )
 _INTERPRETER_FETCH_EXEC: Final = re.compile(
