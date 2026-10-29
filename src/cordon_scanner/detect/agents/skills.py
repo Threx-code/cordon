@@ -4,6 +4,7 @@ ship with it.
 
 from __future__ import annotations
 
+import bisect
 import re
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar, Final
@@ -54,6 +55,12 @@ _DECODE_BUFFER: Final = re.compile(
     r"\bBuffer\.from\s*\(\s*(?P<arg>[^,)]{1,200}),\s*['\"]base64['\"]"
 )
 _DOTTED_RUN: Final = re.compile(r"[\w.]+")
+#: A line assigning a name an encoded literal, and a call that executes a bare name: each read once
+#: per text by `SkillScripts.decode_run` (`_encoded_names`, `_executions`).
+_ASSIGNED_ENCODED: Final = re.compile(
+    rf"(?m)^\s*(?:const\s+|let\s+|var\s+)?([A-Za-z_]\w{{0,40}})\s*=\s*{_ENCODED_LITERAL}"
+)
+_EXECUTES_NAME: Final = re.compile(r"\b(?:exec|eval|Function)\s*\(\s*([A-Za-z_]\w*)\s*[,)]")
 _BOUNDARY: Final = re.compile(r"\b")
 
 #: A shell or PowerShell running an encoded literal.
@@ -186,9 +193,13 @@ class SkillScripts:
         shell = _SHELL_DECODE_RUN.search(text)
         if shell is not None:
             return shell
+        assigned_names: set[str] | None = None
+        runs_of: dict[str, list[int]] | None = None
         for call in SkillScripts.decode_calls(text):
             argument = (call.group("arg") or "").strip()
-            if not SkillScripts._encoded(argument, text):
+            if assigned_names is None:
+                assigned_names = SkillScripts._encoded_names(text)
+            if not SkillScripts._encoded(argument, assigned_names):
                 continue
             start = text.rfind("\n", 0, call.start()) + 1
             before = text[start : call.start()]
@@ -199,27 +210,50 @@ class SkillScripts:
             )
             if assigned is None:
                 continue
-            name = re.escape(assigned.group(1))
-            run = re.search(rf"\b(?:exec|eval|Function)\s*\(\s*{name}\s*[,)]", text[call.end() :])
+            if runs_of is None:
+                runs_of = SkillScripts._executions(text)
+            run = SkillScripts._first_execution(text, assigned.group(1), call.end(), runs_of)
             if run is not None:
-                return line.search(text, call.end() + run.start())
+                return line.search(text, run)
         return None
 
     @staticmethod
-    def _encoded(argument: str, text: str) -> bool:
+    def _encoded(argument: str, assigned_names: set[str]) -> bool:
         """Whether a decoder's argument is a fixed encoded payload: a literal, or a name the file
-        assigns one."""
+        assigns one (`_encoded_names`)."""
         if re.fullmatch(_ENCODED_LITERAL, argument):
             return True
-        if re.fullmatch(r"[A-Za-z_]\w{0,40}", argument):
-            return (
-                re.search(
-                    rf"(?m)^\s*(?:const\s+|let\s+|var\s+)?{re.escape(argument)}\s*=\s*{_ENCODED_LITERAL}",
-                    text,
-                )
-                is not None
-            )
-        return False
+        return bool(re.fullmatch(r"[A-Za-z_]\w{0,40}", argument)) and argument in assigned_names
+
+    @staticmethod
+    def _encoded_names(text: str) -> set[str]:
+        r"""Every name a line of `text` assigns an encoded literal, read in one pass: the names for
+        which `^\s*(?:const\s+|let\s+|var\s+)?NAME\s*=\s*LITERAL` (multiline) would match. Asked per
+        decoder call, that search read the whole text again each time (review 98, 27-PERFORMANCE)."""
+        return {m.group(1) for m in _ASSIGNED_ENCODED.finditer(text)}
+
+    @staticmethod
+    def _executions(text: str) -> dict[str, list[int]]:
+        """Where `exec(`, `eval(` or `Function(` is called with a bare name, by that name, in order."""
+        found: dict[str, list[int]] = {}
+        for m in _EXECUTES_NAME.finditer(text):
+            found.setdefault(m.group(1), []).append(m.start())
+        return found
+
+    @staticmethod
+    def _first_execution(
+        text: str, name: str, after: int, runs_of: dict[str, list[int]]
+    ) -> int | None:
+        r"""Where `\b(?:exec|eval|Function)\s*\(\s*NAME\s*[,)]` first matches in `text[after:]`, as a
+        position in `text`. A slice starts at a word boundary, so a call that opens exactly at
+        `after` counts even behind a word character; everywhere else the boundary is the text's."""
+        if re.compile(rf"(?:exec|eval|Function)\s*\(\s*{re.escape(name)}\s*[,)]").match(
+            text, after
+        ):
+            return after
+        starts = runs_of.get(name, [])
+        index = bisect.bisect_left(starts, after)
+        return starts[index] if index < len(starts) else None
 
 
 __all__ = ["SkillOrigin", "SkillScripts"]
