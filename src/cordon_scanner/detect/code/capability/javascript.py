@@ -296,8 +296,11 @@ class JavaScriptCapabilities:
     _JS_ONE_PARAM_FUNCTION: ClassVar[re.Pattern[str]] = re.compile(
         r"(?:(?:static\s+|async\s+)?(?P<method>[A-Za-z_$][\w$]{0,60})\s*\(\s*(?P<p1>[A-Za-z_$][\w$]{0,40})\s*\)\s*\{"
         r"|function\s+(?P<fn>[A-Za-z_$][\w$]{0,60})\s*\(\s*(?P<p2>[A-Za-z_$][\w$]{0,40})\s*\)\s*\{"
-        r"|(?:const|let|var)\s+(?P<arrow>[A-Za-z_$][\w$]{0,60})\s*=\s*(?:async\s*)?\(?\s*(?P<p3>[A-Za-z_$][\w$]{0,40})\s*\)?\s*=>\s*\{)"
+        r"|(?:const|let|var)\s+(?P<arrow>[A-Za-z_$][\w$]{0,60})\s*=\s*+(?:async\s*+)?(?:\(\s*+)?(?P<p3>[A-Za-z_$][\w$]{0,40})\s*+(?:\)\s*+)?=>\s*\{)"
     )
+    # In the arrow form each run of blanks is taken once (`\s*+`, the optional `async ` and `( `
+    # carrying their own): written `\s*(?:async\s*)?\(?\s*` and `\s*\)?\s*`, the runs beside each
+    # other split one stretch of blanks every way (review 98, 27-PERFORMANCE).
 
     @classmethod
     def js_wallet_secret_through_helper(cls, text: str) -> list[CapabilityHit]:
