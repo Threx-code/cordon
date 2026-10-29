@@ -65,9 +65,12 @@ _XOR_KEY: Final = re.compile(
 _DECODE_CALL: Final = re.compile(rf"\b(?P<fn>{_NAME})\([ \t]*(?P<arg>{_NAME})[ \t]*\)")
 #: A one-line helper over its string parameters: `func _env(a, b string) string { return
 #: os.Getenv(a + b) }`. Its calls with literal arguments are evaluated by substitution.
+#: The blanks after `return` are read once. The body may start with a blank in one case only, blanks
+#: straight before `}` (`return  }`: body " "), which the lookahead branch keeps; otherwise the body
+#: starts at the first other character, so the run is possessive.
 _HELPER: Final = re.compile(
-    rf"func[ \t]+(?P<fn>{_NAME})\((?P<params>(?:{_NAME}[ \t]*,[ \t]*){{0,4}}{_NAME})[ \t]+string\)"
-    r"[ \t]*string[ \t]*\{[ \t]*return[ \t]+(?P<body>[^\n{}]{1,200}?)[ \t]*\}"
+    rf"func[ \t]++(?P<fn>{_NAME})\((?P<params>(?:{_NAME}[ \t]*+,[ \t]*+){{0,4}}{_NAME})[ \t]++string\)"
+    r"[ \t]*+string[ \t]*+\{[ \t]*+return(?:[ \t]+(?=[ \t]\})|[ \t]++)(?P<body>[^\n{}]{1,200}?)[ \t]*\}"
 )
 _HELPER_CALL: Final = re.compile(rf"\b(?P<fn>{_NAME})\((?P<args>[^()\n]{{1,300}})\)")
 _GETENV: Final = re.compile(r"^os\.(?:Getenv|LookupEnv)\((?P<inner>.+)\)$")
