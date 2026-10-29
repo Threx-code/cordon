@@ -55,7 +55,8 @@ class TestDiscovery:
         assert pack is None
 
     def test_the_generated_pack_loads_and_passes_its_own_samples(self, tmp_path: Path) -> None:
-        from cordon_scanner.rules.loader import RuleLoader, RuleTester
+        from cordon_scanner.rules.loader import RuleLoader
+        from cordon_scanner.rules.tester import RuleTester
 
         misses = [DiscoverKit.unit(tmp_path, f"m{i}", SHARED) for i in range(3)]
         benign = [DiscoverKit.unit(tmp_path, "b0", BENIGN_TOO)]

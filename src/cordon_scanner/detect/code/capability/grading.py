@@ -39,7 +39,7 @@ from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 from cordon_scanner.foundation.text.redact import Redactor
 
 if TYPE_CHECKING:
-    from cordon_scanner.rules.loader import CompiledRule
+    from cordon_scanner.rules.pack import CompiledRule
 
 
 class CompositeGrading:

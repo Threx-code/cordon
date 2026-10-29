@@ -24,17 +24,17 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
-from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
+from cordon_scanner.foundation.errors import RulePackError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Confidence, RedactionMode, Severity
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
+from cordon_scanner.rules.pack import CompiledMatch, CompiledRule, RulePack
 from cordon_scanner.rules.patterns import PatternCompiler
 from cordon_scanner.version import ENGINE_API_VERSION
 
@@ -115,160 +115,6 @@ and the loader starts accepting it with no other change.
 """
 
 
-@dataclass(frozen=True, slots=True)
-class CompiledMatch:
-    """A rule's matching strategy, resolved at load time."""
-
-    kind: MatchKind
-    regex: re.Pattern[bytes] | None = None
-    literals: tuple[bytes, ...] = ()
-    capability: Capability | None = None
-    scope: str = "file"
-    proximity: int = 0
-    """How many lines may separate the capabilities a composite requires.
-
-    Zero means the whole file, which is what every composite meant before
-    this existed. That is right for a fifty-line install script and wrong
-    for Node's Makefile, where a `curl -o` on line 1268 and a `$(shell
-    uname)` on line 15 were read as one dropper. A composite is a claim
-    that a file does one thing; a distance makes it a claim that one part
-    of the file does it."""
-
-    all_of: tuple[Any, ...] = ()
-    any_of: tuple[Any, ...] = ()
-    unless: tuple[Any, ...] = ()
-    threshold: float = 0.0
-    window: int = 0
-    ast_query: Any = None
-    """The compiled query for a `kind: ast` match. See `detect/astquery.py`.
-
-    Typed loosely to keep this module free of a detector import at module
-    scope: the loader knows how to build one, and the detector knows how to
-    run it."""
-    raw: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
-
-    prefilter: tuple[bytes, ...] = ()
-    """Literals for which at least one must be present for this rule to match.
-
-    Computed once at load time (see :func:`_extract_prefilter`). Empty means no
-    prefilter is possible and the rule is evaluated against every candidate
-    file."""
-    prefilter_folded: tuple[bytes, ...] = ()
-    """Lower-cased literals from `PatternCompiler.required_literals`, used only when `prefilter`
-    is empty: one must appear in the file lower-cased. See `admits`."""
-
-    branches: tuple[tuple[LiteralGate | None, LiteralGate | None], ...] = field(
-        default=(), compare=False
-    )
-    """Per pattern, in order: two gates over the lower-cased file, each on lower-cased literals at
-    least one of which every match of that pattern contains -- the required literals, then a
-    sharper set tested only once the first passes. None is no condition; a pattern with neither
-    always runs. See `regex_for`."""
-    sources: tuple[str, ...] = field(default=(), compare=False, repr=False)
-    """The patterns themselves, to compile the subset a file needs."""
-    rule_id: str = field(default="", compare=False, repr=False)
-    folds: bool = field(default=False, compare=False)
-    """Whether any branch has a gate, which reads the lower-cased file."""
-    subsets: dict[tuple[int, ...], re.Pattern[bytes]] = field(
-        default_factory=dict, compare=False, repr=False
-    )
-    """Compiled alternations of the patterns a file can match, keyed by their positions."""
-
-    SUBSETS_KEPT: ClassVar[int] = 256
-
-    def regex_for(self, data: bytes, folded: bytes | None = None) -> re.Pattern[bytes] | None:
-        """The regex that finds exactly this rule's matches in `data`, cheapest first; None when
-        nothing can match.
-
-        Only the patterns that can match somewhere in `data` run. A pattern whose every match
-        contains one of its literals cannot match a file holding none of them, and an alternation
-        tries its branches in order at each position: a branch that cannot match anywhere changes
-        neither which branch matches there nor where scanning resumes. So the alternation of the
-        remaining patterns, in their order, finds the same matches in the same order -- and the
-        engine stops trying seventeen branches at every byte of a file where one of them had a
-        literal present. Callers read only a match's span and text, never its group numbers.
-        """
-        if not self.branches:
-            return self.regex if self.admits(data, folded) else None
-        # Without gates nothing reads it, so the file is not lowered for nothing.
-        lowered = folded if folded is not None else (data.lower() if self.folds else data)
-        chosen: list[int] = []
-        for position, (required, sharper) in enumerate(self.branches):
-            if required is not None and not required.present(lowered):
-                continue
-            if sharper is not None and not sharper.present(lowered):
-                continue
-            chosen.append(position)
-        if not chosen:
-            return None
-        if len(chosen) == len(self.branches):
-            return self.regex
-        key = tuple(chosen)
-        found: re.Pattern[bytes] | None = self.subsets.get(key)
-        if found is None:
-            found = self._subset(key)
-            if found is not None and len(self.subsets) < self.SUBSETS_KEPT:
-                self.subsets[key] = found
-        return found
-
-    def _subset(self, positions: tuple[int, ...]) -> re.Pattern[bytes] | None:
-        """The alternation of the patterns at `positions`, compiled as the whole rule was; the
-        whole rule's regex if that cannot be done identically."""
-        try:
-            subset = PatternCompiler.validate_pattern(
-                "|".join(f"(?:{self.sources[i]})" for i in positions), rule_id=self.rule_id
-            )
-        except (re.error, RulePackError, UnsafePatternError):
-            return self.regex
-        if self.regex is None or subset.flags != self.regex.flags:
-            return self.regex
-        return subset
-
-    def admits(self, data: bytes, folded: bytes | None = None) -> bool:
-        """Whether this rule could match `data` at all; False means its regex need not run.
-
-        `folded` is `data.lower()`, passed by a caller that tests many rules against one file so
-        it is computed once; computed here otherwise.
-        """
-        if self.prefilter:
-            return any(literal in data for literal in self.prefilter)
-        if self.prefilter_folded:
-            lowered = data.lower() if folded is None else folded
-            return any(literal in lowered for literal in self.prefilter_folded)
-        return True
-
-
-@dataclass(frozen=True, slots=True)
-class CompiledRule:
-    """A rule plus its resolved matching strategy."""
-
-    rule: Rule
-    match: CompiledMatch
-
-    @property
-    def id(self) -> str:
-        return self.rule.id
-
-
-@dataclass(frozen=True, slots=True)
-class RulePack:
-    """A named, versioned collection of rules."""
-
-    id: str
-    version: str
-    license: str
-    rules: tuple[CompiledRule, ...]
-    source: str = ""
-    description: str = ""
-    content_hash: str = ""
-
-    def __len__(self) -> int:
-        return len(self.rules)
-
-    def __iter__(self) -> Iterator[CompiledRule]:
-        return iter(self.rules)
-
-
 class RuleLoader:
     """Loads and validates rule packs.
 
@@ -288,6 +134,7 @@ class RuleLoader:
         from a review-time opinion into a load-time invariant."""
 
     def load_file(self, path: str | Path) -> RulePack:
+
         p = Path(path)
         if not p.is_file():
             raise RulePackError(f"rule pack not found: {p}")
@@ -313,6 +160,7 @@ class RuleLoader:
         )
 
     def load_dir(self, directory: str | Path) -> tuple[RulePack, ...]:
+
         d = Path(directory)
         if not d.is_dir():
             raise RulePackError(f"rule directory not found: {d}")
@@ -884,6 +732,7 @@ class RuleLoader:
         claims. An empty rule set is not a scan with fewer rules; it is a scan
         whose output no longer means what its reader thinks.
         """
+
         if loader is None:
             # The default load, once per process: compiling 1,390 rules' patterns is most of a
             # scan's fixed cost, and the packs are immutable once loaded. Keyed by directory, so
@@ -901,10 +750,12 @@ class RuleLoader:
     @staticmethod
     @OneOff.cache
     def _builtin_once(directory: str) -> tuple[RulePack, ...]:
+
         return RuleLoader._load_builtin(RuleLoader(), Path(directory))
 
     @classmethod
     def _load_builtin(cls, ldr: RuleLoader, directory: Path) -> tuple[RulePack, ...]:
+
         if not directory.is_dir():
             raise RulePackError(
                 f"the bundled rule packs are missing from {directory}",
@@ -925,111 +776,6 @@ class RuleLoader:
                 ),
             )
         return packs
-
-
-@dataclass(frozen=True, slots=True)
-class RuleTestFailure:
-    rule_id: str
-    kind: str
-    sample: str
-    detail: str
-
-
-class RuleTester:
-    """Executes the samples a rule declares about itself.
-
-    Separate from the loader because loading answers "is this pack well
-    formed?" and this answers "does it match anything?". A rule that parses,
-    compiles, loads and matches nothing is the failure a detection tool cannot
-    see from the inside: the scan runs, the pack is present, the output is
-    empty, and everything looks healthy.
-
-    This is what `cordon rules test` runs and what CI runs on every commit,
-    which is what makes an inert rule impossible to ship unnoticed.
-    """
-
-    @staticmethod
-    def run(pack: RulePack) -> tuple[RuleTestFailure, ...]:
-        """Execute every rule's declared samples.
-
-        This is what ``cordon rules test`` runs, and what the project's own CI runs
-        on every commit. It is the mechanism that makes an inert rule impossible to
-        ship unnoticed.
-
-        Only directly-matchable kinds are executed here. Composite and graph rules
-        are exercised by the corpus tests, because their inputs are other findings
-        rather than text.
-        """
-        failures: list[RuleTestFailure] = []
-
-        for compiled in pack.rules:
-            rule = compiled.rule
-            if compiled.match.kind not in {MatchKind.REGEX, MatchKind.LITERAL, MatchKind.AST}:
-                continue
-
-            for sample in rule.tests.positive:
-                result = RuleTester._sample_matches(compiled, sample)
-                if result is False:
-                    failures.append(
-                        RuleTestFailure(rule.id, "positive", sample, "expected a match, got none")
-                    )
-            for sample in rule.tests.negative:
-                result = RuleTester._sample_matches(compiled, sample)
-                if result is True:
-                    failures.append(
-                        RuleTestFailure(
-                            rule.id, "negative", sample, "expected no match, but it matched"
-                        )
-                    )
-
-        return tuple(failures)
-
-    @staticmethod
-    def _sample_matches(compiled: CompiledRule, sample: str) -> bool | None:
-        r"""Decide a sample exactly the way the detector decides a file.
-
-        Returns None for a sample that cannot be evaluated here -- an `ast` rule
-        for a language whose provider is an uninstalled optional extra -- so the
-        caller skips it rather than failing it. The provider-bearing extra is
-        installed in the test environment, so a skipped sample there is a setup
-        gap, not a rule that ships unchecked.
-
-        The prefilter is applied here for the same reason it is applied there:
-        without it, a rule whose prefilter is wrong passes all of its own
-        positive samples while matching nothing in production. That happened.
-        `secret\w{4,9}token` extracted the prefilter `4,9}token`, a literal that
-        appears in no file the rule is meant to match, so the rule was skipped
-        everywhere and its tests stayed green -- precisely the silent failure the
-        sample runner exists to prevent.
-
-        Running the same path turns that class of bug into a load-time failure
-        naming the rule.
-        """
-        if compiled.match.kind is MatchKind.AST:
-            # Parsed, not scanned. Running the sample through the same resolver
-            # the detector uses is the only way a sample can demonstrate what
-            # this kind claims -- that `f = os.system; f(x)` is the same call as
-            # `os.system(x)`. A byte comparison here would pass on the first
-            # spelling and prove nothing about the second.
-            from cordon_scanner.analysis.shared.ast_providers import AstProviders
-
-            language = compiled.rule.languages[0] if compiled.rule.languages else "python"
-            provider = AstProviders.ast_provider_for(language)
-            if provider is None:
-                return None
-            return bool(compiled.match.ast_query.matching(provider.resolve_calls(sample)))
-
-        data = sample.encode("utf-8")
-
-        if not compiled.match.admits(data):
-            return False
-
-        if compiled.match.regex is not None:
-            regex = compiled.match.regex_for(data)
-            return regex is not None and regex.search(data) is not None
-        if compiled.match.literals:
-            return any(lit in data for lit in compiled.match.literals)
-        return False
 
     # ---------------------------------------------------------------------------
     # Registry
@@ -1078,13 +824,16 @@ class RuleSet:
         universal: encoded payloads and bidirectional control characters mean the
         same thing in every language.
         """
+
         specific = self._by_language.get(language or "", [])
         return tuple(specific) + tuple(self._language_agnostic)
 
     def by_kind(self, kind: MatchKind) -> tuple[CompiledRule, ...]:
+
         return tuple(r for r in self.rules if r.match.kind is kind)
 
     def get(self, rule_id: str) -> CompiledRule | None:
+
         return next((r for r in self.rules if r.id == rule_id), None)
 
     @property
@@ -1104,6 +853,7 @@ class RuleSet:
         return len(self.rules)
 
     def __iter__(self) -> Iterator[CompiledRule]:
+
         return iter(self.rules)
 
 
@@ -1113,12 +863,7 @@ class RuleSet:
 
 
 __all__ = [
-    "CompiledMatch",
-    "CompiledRule",
     "PatternCompiler",
     "RuleLoader",
-    "RulePack",
     "RuleSet",
-    "RuleTestFailure",
-    "RuleTester",
 ]
