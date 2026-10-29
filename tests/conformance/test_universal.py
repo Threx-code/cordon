@@ -270,9 +270,10 @@ class TestScale:
 
     The bound is on growth, not seconds: four times the packages may cost at most eight times as
     long. A linear read costs under four times (each scan's start-up is paid once), a quadratic
-    one about sixteen. The small scan runs before and after the large one and the two are
-    averaged, so a load swing between scans moves the ratio less; a fixed ceiling failed at six
-    to seven times the idle time under a loaded suite."""
+    one about sixteen. Measured in CPU time, which load does not stretch as it stretches wall
+    time; the small scan runs before and after the large one and the two are averaged. A fixed
+    ceiling failed at six to seven times the idle time under a loaded suite, and a wall-clock
+    ratio on a single load spike during one scan."""
 
     @staticmethod
     def packages(profile: EcosystemProfile, count: int) -> list[Pkg]:
@@ -291,9 +292,12 @@ class TestScale:
     def timed(
         profile: EcosystemProfile, pkgs: list[Pkg], where: Path
     ) -> tuple[dict[str, Any], float]:
-        started = time.monotonic()
+        """A scan and the CPU time it took. The scan runs in this process and serially (a
+        lockfile project is a file or two), so its CPU time is its work, which other processes
+        on a loaded machine do not stretch as they stretch wall-clock time."""
+        started = time.process_time()
         report = Universal.scan(Universal.project(where, profile, pkgs), profile.id)
-        return report, time.monotonic() - started
+        return report, time.process_time() - started
 
     @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))
     def test_two_thousand_packages(self, profile, tmp_path) -> None:
