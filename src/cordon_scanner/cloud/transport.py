@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 from cordon_scanner.cloud import CloudError
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.version import __version__
 
 TIMEOUT_SECONDS: Final = 15.0
@@ -46,9 +47,9 @@ class CloudTransport:
         opener = urllib.request.build_opener(_NoRedirect)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-                return int(response.status), response.read(MAX_RESPONSE_BYTES + 1)
+                return int(response.status), Download.read(response, MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
-            return int(exc.code), exc.read(MAX_RESPONSE_BYTES + 1)
+            return int(exc.code), Download.read(exc, MAX_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             host = urllib.parse.urlsplit(url).hostname
             raise CloudError(f"could not reach {host} ({type(exc).__name__})") from exc

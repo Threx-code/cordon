@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.registries import registry_client as base
 from cordon_scanner.intel.registries.registry_client import (
     PackageNotFound,
@@ -47,7 +48,7 @@ class RegistryHttp:
         for attempt in range(base.RETRY_ATTEMPTS):
             try:
                 with opener.open(request, timeout=base.TIMEOUT_SECONDS) as response:
-                    body = response.read(base.MAX_RESPONSE_BYTES + 1)
+                    body = Download.read(response, base.MAX_RESPONSE_BYTES + 1)
                     encoding = str(response.headers.get("Content-Encoding", "")).lower()
                 break
             except urllib.error.HTTPError as exc:
@@ -136,7 +137,7 @@ class RegistryHttp:
         opener = urllib.request.build_opener(base._NoRedirect)
         try:
             with opener.open(request, timeout=base.TIMEOUT_SECONDS) as response:
-                return bytes(response.read(base.MAX_RESPONSE_BYTES))
+                return bytes(Download.read(response, base.MAX_RESPONSE_BYTES))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise PackageNotFound("the registry has no such artefact") from exc
@@ -161,7 +162,7 @@ class RegistryHttp:
         authorised = urllib.request.Request(url, headers=bearer)  # noqa: S310
         try:
             with opener.open(authorised, timeout=base.TIMEOUT_SECONDS) as response:
-                return bytes(response.read(base.MAX_RESPONSE_BYTES))
+                return bytes(Download.read(response, base.MAX_RESPONSE_BYTES))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise PackageNotFound("the registry has no such artefact") from exc
