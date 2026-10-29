@@ -13,9 +13,10 @@ resolve to a scanned file is simply not a hook.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from typing import Any
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 
 class ComposerPluginHooks:
@@ -49,7 +50,7 @@ class ComposerPluginHooks:
         if not isinstance(text, str):
             return None
         try:
-            parsed = json.loads(text)
+            parsed = ScannedJson.loads(text)
         except (ValueError, RecursionError):
             return None
         return parsed if isinstance(parsed, dict) else None

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Protocol
 
 from cordon_scanner.detect.agents.language_model.review import JudgeError
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
 
 TIMEOUT_SECONDS: Final = 90.0
@@ -112,7 +113,7 @@ class HttpTransport:
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ProviderUnavailable(f"the judge at {host} answered with too much")
         try:
-            parsed = json.loads(raw)
+            parsed = ScannedJson.loads(raw)
         except ValueError as exc:
             raise ProviderUnavailable(f"the judge at {host} did not answer with JSON") from exc
         if not isinstance(parsed, dict):

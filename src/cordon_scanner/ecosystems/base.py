@@ -21,11 +21,11 @@ positives.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 from cordon_scanner.foundation.results import Dependency
 
@@ -555,7 +555,7 @@ class BaseEcosystem:
         `tomllib.loads` cannot return a non-mapping, so the TOML parsers need no
         equivalent.
         """
-        data = json.loads(text)
+        data = ScannedJson.loads(text)
         if not isinstance(data, dict):
             raise ValueError(f"top level is {type(data).__name__}, expected an object")
         return data

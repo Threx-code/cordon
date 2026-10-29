@@ -10,7 +10,6 @@ A file a hook runs is read as install-time code; a test fixture or a vendored ex
 from __future__ import annotations
 
 import io
-import json
 import posixpath
 import re
 from dataclasses import replace
@@ -40,6 +39,7 @@ from cordon_scanner.engine.pipeline.constants import (
     PRINTING_COMMANDS,
     PROJECT_BUILD_FILENAMES,
 )
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import OperationalFinding, Repository
@@ -140,8 +140,8 @@ class Hooks:
             if not (root.endswith(".vsix!extension/") or re.search(r"/extensions/[^/]+/$", root)):
                 continue
             try:
-                manifest = json.loads(unit.content.raw)
-            except (ValueError, UnicodeDecodeError):
+                manifest = ScannedJson.loads(unit.content.raw)
+            except (ValueError, UnicodeDecodeError, RecursionError):
                 continue
             if not isinstance(manifest, dict) or not isinstance(manifest.get("engines"), dict):
                 continue

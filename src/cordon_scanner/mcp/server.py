@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Final, TextIO
 
 from cordon_scanner.engine.parallel import ParallelScanner
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.mcp.brand import ICONS
 from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner
 from cordon_scanner.mcp.tools.base import Outcome, Settings, ToolError
@@ -179,7 +180,7 @@ class Server:
 
     def receive(self, line: str) -> None:
         try:
-            message = json.loads(line)
+            message = ScannedJson.loads(line)
         except (ValueError, RecursionError):
             # RecursionError: JSON nested deeper than the parser goes. Answered, never fatal.
             self.send(self.error(None, PARSE_ERROR, "not valid JSON, or nested too deeply"))
