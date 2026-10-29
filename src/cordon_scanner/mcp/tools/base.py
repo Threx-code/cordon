@@ -36,6 +36,8 @@ class Settings:
     allow_machine: bool = False
     allow_private_network: bool = False
     timeout: float = 600.0
+    per_file_timeout: float | None = None
+    """`--per-file-timeout`: each scan's budget for one file; None leaves the scanner's own."""
     max_findings: int = 50
     version: str = ""
     jobs: int = 0
@@ -261,6 +263,8 @@ class Scans:
             args += ["--model", settings.model]
         if settings.jobs:
             args += ["--jobs", str(settings.jobs)]
+        if settings.per_file_timeout is not None:
+            args += ["--per-file-timeout", str(settings.per_file_timeout)]
         if not cache:
             args.append("--no-cache")
         args += extra or []

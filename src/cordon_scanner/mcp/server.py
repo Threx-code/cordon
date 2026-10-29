@@ -470,6 +470,13 @@ class Server:
             help="deadline for one scan (default 600)",
         )
         parser.add_argument(
+            "--per-file-timeout",
+            type=float,
+            default=None,
+            metavar="SECONDS",
+            help="budget for one file within a scan (default: the scanner's own; 0 means none)",
+        )
+        parser.add_argument(
             "--max-concurrent",
             type=int,
             default=4,
@@ -513,9 +520,11 @@ class Server:
             or not 1 <= args.rate <= 100_000
             or not 1 <= args.max_findings <= 500
             or args.timeout <= 0
+            or (args.per_file_timeout is not None and args.per_file_timeout < 0)
         ):
             print(
-                "cordon-scanner mcp: --max-concurrent 1-64, --rate 1-100000, --max-findings 1-500, --timeout > 0",
+                "cordon-scanner mcp: --max-concurrent 1-64, --rate 1-100000, --max-findings 1-500,"
+                " --timeout > 0, --per-file-timeout >= 0",
                 file=sys.stderr,
             )
             return 3
@@ -553,6 +562,7 @@ class Server:
             allow_machine=args.allow_machine,
             allow_private_network=args.allow_private_network,
             timeout=args.timeout,
+            per_file_timeout=args.per_file_timeout,
             max_findings=args.max_findings,
             version=__version__,
             # The scans running at once share the machine: each gets its share of the cores, so

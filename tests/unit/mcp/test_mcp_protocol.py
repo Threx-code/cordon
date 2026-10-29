@@ -615,3 +615,43 @@ class TestModelPassThrough:
         Scans.scan(settings, str(tmp_path), CancelToken(), online=False, max_findings=5)
         assert "--model" in seen[0] and seen[0][seen[0].index("--model") + 1] == "cordon-cloud"
         assert "--offline" not in seen[0] and "--online" not in seen[0]
+
+
+class TestPerFileBudgetPassThrough:
+    """`cordon mcp --per-file-timeout` reaches every scan the server starts, and only when set."""
+
+    @staticmethod
+    def scanned_with(tmp_path: Path, **settings: Any) -> list[str]:
+        from cordon_scanner.mcp.runner import Run
+        from cordon_scanner.mcp.tools.base import Scans
+
+        seen: list[list[str]] = []
+
+        class Recording(Runner):
+            def run(self, args: list[str], **kwargs: Any) -> Run:
+                seen.append(args)
+                return Run(0, '{"findings": [], "complete": true}', "", 0.1, False)
+
+        Scans.scan(
+            Settings(
+                workspace=Workspace((tmp_path.resolve(),)),
+                runner=Recording(offline=True),
+                **settings,
+            ),
+            str(tmp_path),
+            CancelToken(),
+            online=False,
+            max_findings=5,
+        )
+        return seen[0]
+
+    def test_a_set_budget_is_passed_to_the_scan(self, tmp_path: Path) -> None:
+        args = self.scanned_with(tmp_path, per_file_timeout=0.0)
+        assert args[args.index("--per-file-timeout") + 1] == "0.0"
+
+    def test_no_budget_leaves_the_scanners_own(self, tmp_path: Path) -> None:
+        assert "--per-file-timeout" not in self.scanned_with(tmp_path)
+
+    def test_a_negative_budget_is_refused(self, tmp_path: Path, capsys) -> None:
+        assert Server.main(["--root", str(tmp_path), "--per-file-timeout", "-1"]) == 3
+        assert "--per-file-timeout >= 0" in capsys.readouterr().err

@@ -658,6 +658,18 @@ class TestLimitsAsAnExclusion:
             Scanner(config).scan(root)
         )
 
+    def test_the_operators_per_file_budget_is_the_one_the_scan_runs_with(self, tmp_path) -> None:
+        """`--per-file-timeout` on the command line is operator input, like `--timeout`."""
+        from cordon_scanner.cli.commands.scan.command import ScanCommand
+        from cordon_scanner.cli.parser import CommandParser
+
+        root = tmp_path / "r"
+        root.mkdir()
+        for value, expected in ((["--per-file-timeout", "0"], 0.0), ([], 5.0)):
+            args = CommandParser.build().parse_args(["scan", *value, str(root)])
+            config, _ = ScanCommand._configure(args, root, ScanCommand._overrides(args))
+            assert config.limits.per_file_timeout == expected
+
 
 class TestThresholdsCannotWeakenTheGate:
     """Fourth adversarial pass, and the most serious finding of the review.
