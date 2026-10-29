@@ -120,15 +120,10 @@ class PreviousRelease:
                 f"https://registry.npmjs.org/{urllib.parse.quote(identity.name, safe='@')}"
             )
             times = document.get("time", {})
-            current = times.get(identity.version)
-            earlier = sorted(
-                (t, v)
-                for v, t in times.items()
-                if v in document.get("versions", {}) and current and t < current
-            )
-            if not earlier:
+            published = {v: t for v, t in times.items() if v in document.get("versions", {})}
+            version = PreviousRelease._before("npm", identity.version, published)
+            if version is None:
                 return None
-            version = earlier[-1][1]
             meta = document["versions"][version]
             blob = PreviousRelease._artefact(meta["dist"]["tarball"], "npm")
             integrity = meta["dist"].get("integrity", "")
@@ -155,19 +150,14 @@ class PreviousRelease:
             f"https://pypi.org/pypi/{urllib.parse.quote(identity.name, safe='')}/json"
         )
         releases = document.get("releases", {})
-        current_files = releases.get(identity.version) or []
-        current = min((f["upload_time_iso_8601"] for f in current_files), default=None)
-        earlier = sorted(
-            (min(f["upload_time_iso_8601"] for f in files), v)
+        published = {
+            v: min(f["upload_time_iso_8601"] for f in files)
             for v, files in releases.items()
-            if files
-            and current
-            and min(f["upload_time_iso_8601"] for f in files) < current
-            and not any(f.get("yanked") for f in files)
-        )
-        if not earlier:
+            if files and (v == identity.version or not any(f.get("yanked") for f in files))
+        }
+        version = PreviousRelease._before("pypi", identity.version, published)
+        if version is None:
             return None
-        version = earlier[-1][1]
         files = releases[version]
         chosen = next((f for f in files if f.get("packagetype") == "sdist"), files[0])
         blob = PreviousRelease._artefact(chosen["url"], "pypi")
@@ -176,6 +166,25 @@ class PreviousRelease:
         path = into / PreviousRelease._safe(str(chosen["filename"]))
         path.write_bytes(blob)
         return Previous(path, f"{identity.name} {version}")
+
+    @staticmethod
+    def _before(ecosystem: str, version: str, published: dict[str, str]) -> str | None:
+        """The release before `version` on its own line: of the versions published before it, the
+        highest below it in the ecosystem's version order. Not the latest published before it:
+        maintained lines interleave in time, and `express` 4.21.2 was compared with 5.0.1, out a
+        month before it on the next major line."""
+        from cordon_scanner.intel.advisories.versions import Versions
+
+        current = published.get(version)
+        if current is None:
+            return None
+        best: str | None = None
+        for candidate, when in published.items():
+            if when >= current or Versions.compare(ecosystem, candidate, version) >= 0:
+                continue
+            if best is None or Versions.compare(ecosystem, candidate, best) > 0:
+                best = candidate
+        return best
 
     @staticmethod
     def _from_registry(identity: Identity, into: Path) -> Previous | None:

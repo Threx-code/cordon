@@ -773,6 +773,7 @@
   "test_package_intel.py": "intel/registries",
   "test_package_layout.py": "repository",
   "test_package_paths.py": "foundation",
+  "test_previous.py": "sources",
   "test_parallel.py": "engine",
   "test_pattern_literals.py": "analysis/python",
   "test_pattern_safety.py": "rules",
