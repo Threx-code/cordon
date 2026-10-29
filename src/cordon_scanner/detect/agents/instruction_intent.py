@@ -113,7 +113,15 @@ _CONFUSABLE: Final = str.maketrans(
 )
 #: Five or more single letters separated by single spaces or dots: "i g n o r e".
 _SPACED: Final = re.compile(r"\b(?:[A-Za-z][ .]){4,40}[A-Za-z]\b")
-_SENTENCE_END: Final = re.compile(r"(?<=[.!?;。])\s+|\n{2,}|\n(?=\s*[-*\d])")
+#: Where one sentence ends: after closing punctuation, at a blank line, or at a line break before a
+#: list item. Read through `InstructionIntent.split`, which is `re.split` on
+#: `(?<=[.!?;。])\s+|\n{2,}|\n(?=\s*[-*\d])`: as an expression, that lookahead read the rest of a
+#: run of blanks from every line break in it -- quadratic in `\n \n \n ...`, in a file an attacker
+#: writes (review 98, 27-PERFORMANCE). Here the lone line break is taken by `(\n)` and kept only when
+#: the first non-blank after it opens a list item, which is looked up once per run.
+_SENTENCE_END: Final = re.compile(r"(?<=[.!?;。])(\s+)|(\n{2,})|(\n)")
+_NOT_BLANK: Final = re.compile(r"\S")
+_LIST_ITEM: Final = re.compile(r"[-*\d]")
 
 _URL: Final = re.compile(
     r"https?://[^\s)\"'<>]{3,200}|\b[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{2,63}\b|\bwebhook\b"
@@ -338,10 +346,37 @@ class InstructionIntent:
         return _SPACED.sub(lambda m: re.sub(r"[ .]", "", m.group(0)), folded)
 
     @staticmethod
+    def split(text: str) -> list[str]:
+        r"""`re.split(r"(?<=[.!?;。])\s+|\n{2,}|\n(?=\s*[-*\d])", text)`, each run of blanks read once.
+
+        `_SENTENCE_END` tries the same alternatives in the same order with the lookahead left out,
+        so it finds every position the expression would try; a lone line break it finds is kept
+        only if the lookahead would hold, and otherwise the search goes on from the next
+        character, as the expression's would. No alternative matches empty, so the pieces are
+        the text between the kept matches.
+        """
+        pieces: list[str] = []
+        last = position = 0
+        seen_from, seen_at = -1, -1  # text[seen_from:seen_at] is blank and text[seen_at] is not
+        while (found := _SENTENCE_END.search(text, position)) is not None:
+            if found.group(3) is not None:
+                after = found.end()
+                if not seen_from <= after <= seen_at:
+                    blank = _NOT_BLANK.search(text, after)
+                    seen_from, seen_at = after, blank.start() if blank else len(text)
+                if not _LIST_ITEM.match(text, seen_at):
+                    position = found.start() + 1
+                    continue
+            pieces.append(text[last : found.start()])
+            last = position = found.end()
+        pieces.append(text[last:])
+        return pieces
+
+    @staticmethod
     def sentences(text: str) -> list[tuple[int, str]]:
         out: list[tuple[int, str]] = []
         position = 0
-        for piece in _SENTENCE_END.split(text):
+        for piece in InstructionIntent.split(text):
             index = text.find(piece, position) if piece else position
             if piece.strip():
                 out.append((max(index, 0), piece[:MAX_SENTENCE]))

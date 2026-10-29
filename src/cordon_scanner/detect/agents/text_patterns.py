@@ -84,7 +84,9 @@ INJECTION_INTL: Final = re.compile(
 
 FETCH_EXEC: Final = re.compile(
     r"(?i)\b(?:iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n|]{0,300}\|\s*(?:iex|invoke-expression)\b"
-    r"|\b(?:iex|invoke-expression)\s*[\(\s]\s*[\(\s]*new-object\s+net\.webclient\b"
+    # `[\(\s]++`, not `\s*[\(\s]\s*[\(\s]*`: the same run of blanks and `(`, taken once; four adjacent
+    # repeats over it were cubic in blanks after `iex` (review 98, 27-PERFORMANCE).
+    r"|\b(?:iex|invoke-expression)[\(\s]++new-object\s+net\.webclient\b"
     # Something to fetch -- a URL, a host or a variable -- before the pipe: "no `curl | bash`
     # flows" names the shape without doing it.
     r"|\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n|]{0,300}?(?:https?://|\$\{?\w|\b[\w-]+\.[a-z]{2,}\b)"

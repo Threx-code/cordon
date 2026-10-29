@@ -217,8 +217,11 @@ class JavaScriptLeak:
             index += 1
         return text[start:index]
 
-    #: Where a function's body starts: after `=>`, or after `function name(...)`.
-    _BODY = re.compile(r"""=>\s*\{|\bfunction\b\s*\*?\s*[\w$]*\s*\([^()]*\)\s*\{""")
+    #: Where a function's body starts: after `=>`, or after `function name(...)`. The blanks, the `*`
+    #: and the name are taken possessively: each is followed by what it cannot take, so no match gives
+    #: anything back, and `\s*\*?\s*[\w$]*\s*` beside each other were cubic in blanks after
+    #: `function` (review 98, 27-PERFORMANCE).
+    _BODY = re.compile(r"""=>\s*\{|\bfunction\b\s*+(?:\*\s*+)?[\w$]*+\s*+\([^()]*\)\s*\{""")
     #: A binding whose value is a function or a class binds code, not data.
     _BINDS_CODE = re.compile(
         r"""\s*(?:async\s+)?(?:function\b|class\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)"""

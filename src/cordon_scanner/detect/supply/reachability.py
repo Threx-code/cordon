@@ -613,8 +613,15 @@ MAX_SYMBOLS_NAMED = 8
 _JS_IMPORT = re.compile(
     r"""(?:require\s*\(\s*|from\s+|import\s+)['"]([^'"]{1,200})['"]""",
 )
+# An import statement's whitespace is read once. `^[^\S\n]*+import`, not `^\s*import`: a statement
+# after blank lines starts on its own line rather than on the first blank one (the span is only used to
+# leave the statement's own names uncounted, and no name starts on a blank), so a blank region is not
+# read again from every line start in it. The blanks after `import`, `type`, the default name and the
+# comma are possessive: what follows each starts with a non-blank, so no match gives one back. As
+# `\s*,?\s*` beside four other blank runs it was beyond quadratic: 9.6 s for `import` and 500 blanks
+# (review 98, 27-PERFORMANCE).
 _JS_BINDING = re.compile(
-    r"""^\s*import\s+(type\s+)?([\w$]+)?\s*,?\s*(?:\*\s+as\s+([\w$]+)|\{([^}]{0,2000})\})?\s*from\s*['"]([^'"]{1,200})['"]"""
+    r"""^[^\S\n]*+import\s++(type\s++)?([\w$]+)?\s*+(?:,\s*+)?(?:\*\s+as\s+([\w$]+)|\{([^}]{0,2000})\})?\s*from\s*['"]([^'"]{1,200})['"]"""
     r"""|(?:const|let|var)\s+(?:([\w$]+)|\{([^}]{0,2000})\})\s*=\s*require\s*\(\s*['"]([^'"]{1,200})['"]\s*\)""",
     re.MULTILINE,
 )
