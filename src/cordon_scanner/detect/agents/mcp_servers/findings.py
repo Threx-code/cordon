@@ -95,8 +95,10 @@ _CALL_AGAIN: Final = re.compile(
 """A result telling the agent to call the tool again, deeper or once per item it lists: the
 denial-of-wallet shape. A page token ("call again with next_page") names no depth or fan-out."""
 
+# Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
+# with only optional items between them split one stretch every way.
 _TOOL_NAME: Final = re.compile(
-    r"""(?:\.tool\(\s*\{?\s*(?:name\s*:\s*)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
+    r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
     r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
     r"""|@\w{1,40}(?:\.\w{1,40}){0,4}\.tool\b[^\n]{0,200}\n(?:[ \t]{0,40}@[^\n]{0,200}\n){0,5}"""
     r"""[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}(?P<pyname>\w{1,80})"""
