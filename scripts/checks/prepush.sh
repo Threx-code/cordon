@@ -4,6 +4,8 @@
 #   scripts/checks/prepush.sh           everything CI runs, the full suite included (about 15 minutes)
 #   scripts/checks/prepush.sh --quick   everything but the suite, perf and fuzz (about 5 minutes)
 #
+#   CORDON_PREPUSH_MEMORY=16g scripts/checks/prepush.sh   the container's memory cap (default 10g)
+#
 # Installed as the pre-push hook by `make hooks`. Nothing runs on the host but git and the
 # Docker CLI: the checks run in a container, against a clean clone of HEAD, so the working
 # tree's uncommitted and gitignored files neither help nor hurt. See scripts/checks/ci_parity.py for
@@ -19,6 +21,10 @@ mode=""
 
 command -v docker >/dev/null 2>&1 || { echo "prepush: Docker is required" >&2; exit 2; }
 
+# A cap on the container's memory, swap included. On a machine whose Docker VM other work shares,
+# an uncapped suite took memory those runs needed and they were killed.
+memory="${CORDON_PREPUSH_MEMORY:-10g}"
+
 # Rebuilt only when the toolchain changes: tagged with its lock file's blob hash.
 tag="cordon-prepush:$(git -C "$root" hash-object ci/dev-requirements.txt | cut -c1-12)"
 if ! docker image inspect "$tag" >/dev/null 2>&1; then
@@ -29,8 +35,8 @@ if ! docker image inspect "$tag" >/dev/null 2>&1; then
         | xargs -r docker rmi >/dev/null 2>&1 || true
 fi
 
-echo "prepush: checking $(git -C "$root" rev-parse --short HEAD) in $tag"
-docker run --rm --init \
+echo "prepush: checking $(git -C "$root" rev-parse --short HEAD) in $tag (memory $memory)"
+docker run --rm --init --memory "$memory" --memory-swap "$memory" \
     -v "$root:/src:ro" \
     -e mode="$mode" \
     "$tag" sh -c '
