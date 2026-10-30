@@ -8,6 +8,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import random
+import re
+import time
 import urllib.error
 from email.message import Message
 from typing import Any
@@ -334,3 +337,22 @@ class TestTheScanAsksThem:
         )
         with pytest.raises(ConfigError, match="private_registries"):
             Config.from_untrusted_file(tmp_path / "cordon.yaml")
+
+
+class TestChallengeFieldLinear:
+    """A registry's challenge fields are read as the pattern they came from read them, in linear time
+    (2026-10-30)."""
+
+    OLD = re.compile(r'(\w+)="([^"]*)"')
+    PIECES = ("a", "b", "_", "1", "=", '"', ",", " ", "realm", '="x"', "\u00e9", "-", "\\")
+
+    def test_the_same_fields_as_the_old_pattern(self) -> None:
+        rng = random.Random("challenge|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        for _ in range(20_000):
+            text = "".join(rng.choice(self.PIECES) for _ in range(rng.randint(0, 12)))
+            assert PrivateRegistries.CHALLENGE_FIELD.findall(text) == self.OLD.findall(text), text
+
+    def test_a_long_word_is_linear(self) -> None:
+        start = time.perf_counter()
+        PrivateRegistries.CHALLENGE_FIELD.findall("a" * 2_000_000)
+        assert time.perf_counter() - start < 3
