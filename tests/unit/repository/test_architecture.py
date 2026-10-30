@@ -11,8 +11,9 @@ for every list to be.
   images < detect. One rank let them import each other, and they formed a cycle.
 - cycles: no module cycle, imports inside functions included. A lazy import that closes a cycle
   breaks no import, but the two modules still cannot change apart.
-- detect_on_intel: a detector reads intelligence through intel.base's protocols, never a concrete
-  intel module, so a detector is tested and changed without the store behind it.
+- detect_on_intel: a detector reads intelligence through the layer's port, intel.registry's roles,
+  each typed by a protocol in intel.base, never a concrete intel module: the engine reaches intel the
+  same way, so a store can move or be replaced without a detector changing.
 - ecosystem_names: an ecosystem's name is compared only where its facts live (ecosystems, sources,
   images, intel.registries' clients). Elsewhere a new ecosystem would mean editing an if-chain.
 - duplicate_classes: one piece of logic is written once; a class body with methods repeated in
@@ -243,7 +244,8 @@ class Rules:
             for module in Modules.trees()
             if Modules.layer(module) == "detect"
             for target in Modules.imports(module)
-            if Modules.layer(target) == "intel" and target not in ("cordon_scanner.intel.base",)
+            if Modules.layer(target) == "intel"
+            and target not in ("cordon_scanner.intel.base", "cordon_scanner.intel.registry")
         }
 
     @staticmethod
