@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar
 
 from cordon_scanner.engine.pipeline.dependency_scope import DependencyScope
@@ -99,3 +100,56 @@ class TestDependencyScope:
     def test_any_other_target_keeps_its_order(self) -> None:
         units = Paths.units(Paths.REPOSITORY)
         assert DependencyScope.of(units, published="", archive=True).ordered(units) == units
+
+
+class DirectoryKit:
+    """A skill-shaped directory holding every file a published package's scope would leave out."""
+
+    @staticmethod
+    def write(root: Path) -> Path:
+        import json
+
+        lock = {
+            "name": "x",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "x", "version": "1.0.0", "dependencies": {"left": "1.0.0"}},
+                "node_modules/left": {"version": "1.0.0"},
+            },
+        }
+        files = {
+            "SKILL.md": "---\nname: x\ndescription: x\n---\n",
+            "package.json": json.dumps(
+                {"name": "x", "version": "1.0.0", "dependencies": {"a": "1"}}
+            ),
+            "package-lock.json": json.dumps(lock),
+            "ui/package-lock.json": json.dumps(lock),
+            "test/fixtures/broken/package.json": json.dumps({"dependencies": {"b": "1"}}),
+            "vendor/tool/requirements.txt": "requests==2.0.0\n",
+        }
+        for name, text in files.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(text, encoding="utf-8")
+        return root
+
+
+class TestADirectoryScan:
+    """Skills and every directory target are scanned on disk, where nothing narrows: the not-installed
+    records, their twins and P8's skills rows all rest on it (review 98, the fit's recompute set)."""
+
+    def test_its_scope_never_narrows_whatever_the_layout(self) -> None:
+        paths = [p.removeprefix(Paths.NPM) for p in Paths.PACKAGE]
+        for published in ("", "npm"):
+            scope = DependencyScope.of(Paths.units(paths), published=published, archive=False)
+            assert not scope.narrows(Paths.units(paths))
+
+    def test_its_scan_has_no_record_not_installed(self, tmp_path: Path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        root = DirectoryKit.write(tmp_path / "skill")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        assert result.dependencies, "the scan read no dependency, so the check proves nothing"
+        assert all(d.installed for d in result.dependencies)
+        assert {d.declared_in for d in result.dependencies} >= {"ui/package-lock.json"}
