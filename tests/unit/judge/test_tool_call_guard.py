@@ -278,19 +278,26 @@ class TestJudgePatternsLinear:
             )
 
     def test_hosts_as_before(self) -> None:
+        # With the two shapes a single lookbehind on "." got wrong: a dot after no label character
+        # ("://.", "\u00e9.") and a top label past the 24-letter bound.
         pieces = (
             "a",
+            "h",
             "Z",
             "1",
             "-",
             ".",
             "com",
             "io",
+            "b" * 25,
             "http://",
             "https://",
+            "://",
             "/",
             " ",
             "_",
+            "\u00e9",
+            "\u212a",
             "anthropic",
         )
         for text in self.texts("host", pieces, 12):
@@ -305,4 +312,5 @@ class TestJudgePatternsLinear:
         calls._XXE.search("<!ENTITY" + " " * 2_000_000)
         calls._SQLI.search('"' + " " * 2_000_000)
         list(calls._HOST.finditer("a" * 2_000_000))
+        list(calls._HOST.finditer("h." * 1_000_000))
         assert time.perf_counter() - start < 3

@@ -157,9 +157,13 @@ _BRANDS: Final = (
 #: `\s+%?\s*` written as `\s+(?:%\s*)?`: one run of blanks per item, so a long run is not split
 #: every way between two runs (the same matches; 2026-10-30).
 _XXE: Final = re.compile(r"(?i)<!ENTITY\s+(?:%\s*)?\w+\s+(?:SYSTEM|PUBLIC)\b|<!DOCTYPE\s+\w+\s*\[")
-#: A host name, its labels started only at a label's first character (the lookbehind), so a long run of
-#: label characters is not rescanned from every position: the same matches as without it.
-_HOST: Final = re.compile(r"(?i)(?:https?://)?(?<![a-z0-9-])((?:[a-z0-9-]+\.)+[a-z]{2,24})\b")
+#: A host name, started only at a dotted run's first label: not after a label character, nor after a
+#: label's dot (a start there is covered by the run's first label, which matches whenever a later one
+#: would). So neither a long label nor a long dotted run is re-read from every position: the same
+#: matches as without the lookbehinds.
+_HOST: Final = re.compile(
+    r"(?i)(?:https?://)?(?<![a-z0-9-])(?<![a-z0-9-]\.)((?:[a-z0-9-]+\.)+[a-z]{2,24})\b"
+)
 #: Instructions addressed to the model, in the shapes a tool argument carries them. ATR's text rules
 #: read beside these; its command rules are not used here -- on plain values ("User logged in at
 #: 10:00", a `SELECT ... WHERE role = 'admin'`) they fired on 13 of 610 benign AgentDefense calls.
