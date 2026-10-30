@@ -27,11 +27,12 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PrivateRegistry
+from cordon_scanner.intel.registries.challenge import Challenge
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -43,8 +44,6 @@ MAX_BYTES: Final = 32 << 20
 
 class PrivateRegistries:
     """The configured registries, and the questions put to them."""
-
-    CHALLENGE_FIELD: ClassVar[re.Pattern[str]] = re.compile(r'(?<!\w)(\w+)="([^"]*)"')
 
     @staticmethod
     def parse(values: Iterable[str]) -> tuple[PrivateRegistry, ...]:
@@ -349,9 +348,7 @@ class PrivateRegistries:
                 return direct
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(f"{type(exc).__name__} asking {registry.host}") from exc
-        # Anchored at a word's start, so a long word with no `=` after it is not rescanned from every
-        # position: linear, and the same fields as `(\w+)="([^"]*)"`.
-        fields = dict(PrivateRegistries.CHALLENGE_FIELD.findall(challenge))
+        fields = Challenge.fields(challenge)
         realm = urllib.parse.urlsplit(fields.get("realm", ""))
         if realm.scheme != "https" or realm.netloc.lower() != registry.host:
             raise RegistryError(
