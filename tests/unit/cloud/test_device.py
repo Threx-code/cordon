@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -117,3 +118,38 @@ class TestReport(DeviceFixtures):
         assert CommandLine.main(["agent", "report", "--url", "https://api.cordon.test"]) == 0
         assert json.loads(sent[0]) == printed
         assert "receipt r1" in capsys.readouterr().out
+
+
+class TestExtensionFolderBound:
+    """An extension folder's name is read by its pattern only up to 255 bytes (2026-10-30)."""
+
+    class Refuse:
+        def match(self, text: str) -> None:
+            raise AssertionError(f"the pattern was called on {len(text)} characters")
+
+    def test_a_256_byte_name_is_unrecognised_without_the_pattern(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        name = "a." + "1" * 248 + "-1.0.0"
+        assert len(name.encode()) == device.DeviceInventory.NAME_BYTES + 1
+        monkeypatch.setattr(device.DeviceInventory, "EXTENSION_FOLDER", self.Refuse())
+        folder = tmp_path / "x"
+        assert device.DeviceInventory._extension_identity(folder.with_name(name)) == (
+            name.lower(),
+            "",
+        )
+
+    def test_the_bound_reads_as_before_and_its_worst_case_is_quick(self, tmp_path: Path) -> None:
+        assert device.DeviceInventory._extension_identity(
+            tmp_path / "ms-python.python-2024.1.0-darwin-arm64"
+        ) == (
+            "ms-python.python",
+            "2024.1.0",
+        )
+        worst = 0.0
+        for unit in ("0.--0.0.0", "0.-0.0.0-", "a.-1.1.1", "-1", ".-", "0.0.0-", "a-a-"):
+            name = ("a." + unit * 255)[:254] + "\x01"
+            start = time.perf_counter()
+            device.DeviceInventory._extension_identity(tmp_path / name)
+            worst = max(worst, time.perf_counter() - start)
+        assert worst < 0.001
