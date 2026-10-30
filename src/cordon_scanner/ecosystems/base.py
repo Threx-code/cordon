@@ -649,6 +649,10 @@ class BaseEcosystem(NamingDefaults, VersionDefaults, TraitDefaults):
     purl_type: str = "generic"
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
+    installed_with_package: tuple[str, ...] = ()
+    """Nested dependency files, relative to a published package's root, whose packages this
+    ecosystem's installer brings in with it, exactly as shipped (npm's bundled `node_modules`). The
+    inventory reads them as part of the install set (`DependencyScope`); none by default."""
     registry_hosts: frozenset[str] = frozenset()
     records_integrity: bool = True
     """Whether this ecosystem's lock format records a per-package hash at all. Where it does

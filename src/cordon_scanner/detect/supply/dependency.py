@@ -19,16 +19,47 @@ conditions must all hold before a name is flagged:
 Requiring all three costs some recall. That trade is made knowingly: a
 typosquat check that fires on legitimate packages gets the whole detector
 disabled, at which point recall is zero.
+
+Records installing the target does not install (`Dependency.installed` False: a published package's
+nested lockfiles, test and vendored manifests) are not part of the install set, so no install-set
+check reads them. The rule for which checks still look at them is by what the check is about:
+
+- About what the record itself says -- a vulnerable version, a known-malicious name, a source
+  outside the registry, a lookalike name, a name on the hallucinated list -- the risk travels with
+  the record, so each has a not-installed twin, reported after the verdict and never gating:
+  VULNERABLE.DEPENDENCY.BUNDLED (info) and MALWARE.DEPENDENCY.BUNDLED (high) from the advisory
+  detector; SUSPECT.DEPENDENCY.SOURCE.BUNDLED and SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED (info) here;
+  SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED (info) from the slopsquat detector; and, for what a
+  not-installed manifest's own declaration of one dependency says, every rule in
+  `manifests.rule_ids.NOT_INSTALLED_TWINS` (`NotInstalledFiles`): a source outside the registry, a
+  reference that can move, an archive from a URL (at high from a drop-point host), a foreign commit,
+  an untrusted chart repository, a pinned digest that is not one; and for what a not-installed
+  lockfile's entries record, every rule in `lockfile.NOT_INSTALLED_TWINS`: an entry resolved outside
+  the registry, an integrity value that is not a hash, one version locked with two hashes. Rules about a manifest as a whole (its
+  install scripts, its own name and fields, where it says to look for packages) are the
+  manifest's, whoever installs it, and are unchanged.
+- About installing it -- registry existence, provenance, an abandoned package, a missing integrity
+  hash, dependency confusion against a private registry -- the question only arises for what is
+  installed, so there is no twin; a lockfile entry's missing hash (POLICY.LOCKFILE.INTEGRITY) is
+  one. Nor is there one for an organisation's denylist
+  (POLICY.PACKAGE.DENIED), which governs what a project depends on.
 """
 
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.supply.dependency_rules import ABANDONED_RULE, DECLARED_RULES, DETECTOR
+from cordon_scanner.detect.supply.dependency_rules import (
+    ABANDONED_RULE,
+    DECLARED_RULES,
+    DETECTOR,
+    SOURCE_BUNDLED_RULE,
+    TYPOSQUAT_BUNDLED_RULE,
+)
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
@@ -349,6 +380,45 @@ class DependencyDetector(BaseDetector):
             findings.extend(self._check(dependency, unit, ctx, mirrors))
         return findings
 
+    def not_installed(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
+        """Records installing the target does not install (`installed=False`) that resolve from
+        outside their registry, or whose name is a lookalike: SUSPECT.DEPENDENCY.SOURCE.BUNDLED and
+        SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED, at info, naming the file."""
+        records = tuple(d for d in dependencies if not d.installed)
+        mirrors = self._configured_mirrors(records)
+        findings: list[Finding] = []
+        for dependency in records:
+            ecosystem = EcosystemRegistry.get(dependency.ecosystem)
+            if ecosystem is None:
+                continue
+            normalized = ecosystem.normalize_name(dependency.name)
+            lookalikes = (
+                ()
+                if PopularPackageNames.is_known(dependency.ecosystem, normalized)
+                else self._lookalike(dependency, normalized, ctx)
+            )
+            for twin, finding in (
+                *((TYPOSQUAT_BUNDLED_RULE, f) for f in lookalikes),
+                *(
+                    (SOURCE_BUNDLED_RULE, f)
+                    for f in self._outside_registry_finding(ctx, dependency, ecosystem, mirrors)
+                ),
+            ):
+                findings.append(
+                    replace(
+                        finding,
+                        rule_id=twin,
+                        severity=Severity.INFO,
+                        message=(
+                            f"Not installed with this package: only {dependency.declared_in} "
+                            f"records it. {finding.message}"
+                        ),
+                        explanation=replace(finding.explanation, matched_rule=twin),
+                        risk=ctx.scorer.score(Severity.INFO, finding.confidence),
+                    )
+                )
+        return findings
+
     @staticmethod
     def _configured_mirrors(dependencies: tuple[Dependency, ...]) -> frozenset[str]:
         """Hosts that serve most of the graph, and are therefore the registry.
@@ -416,7 +486,12 @@ class DependencyDetector(BaseDetector):
             return
 
         yield from self._confusion_finding(dep, ecosystem, ctx)
+        yield from self._lookalike(dep, normalized, ctx)
+        yield from self._lock_findings(ctx, dep, ecosystem, mirrors, unit)
 
+    def _lookalike(self, dep: Dependency, normalized: str, ctx: ScanContext) -> Iterator[Finding]:
+        """A name one plausible slip from a popular package's (the caller has ruled out a known
+        package of that name)."""
         target = self._typosquat_target(dep.ecosystem, normalized)
         confusable = not dep.name.isascii()
         # The three slip kinds a keyboard does not produce by accident. Graded
@@ -428,8 +503,6 @@ class DependencyDetector(BaseDetector):
             and self._slip_kind(normalized, target) in {"transposition", "doubled", "homoglyph"}
         )
         yield from self._typosquat_findings(confusable, ctx, deliberate, dep, target)
-
-        yield from self._lock_findings(ctx, dep, ecosystem, mirrors, unit)
 
     def _typosquat_findings(
         self,

@@ -160,6 +160,10 @@ class SbomDocument:
             licence = SbomDocument._licence_of(dependency)
             if licence is not None:
                 component["licenses"] = [{"license": {"name": licence}}]
+            if not dependency.installed:
+                # It ships in the artifact, so it is listed, but installing the target does not
+                # install it (`Dependency.installed`): a consumer can tell the two apart.
+                component["properties"] = [{"name": "cordon:installed", "value": "false"}]
             components.append(component)
 
         edges: dict[str, set[str]] = {root_purl: set()}
@@ -282,6 +286,11 @@ class SbomDocument:
                     }
                 ],
             }
+            if not dependency.installed:
+                entry["comment"] = (
+                    "cordon:installed=false -- ships in the artifact, but installing it does not "
+                    f"install this package (recorded only by {dependency.declared_in})."
+                )
             digest = SbomDocument._hash_of(dependency)
             if digest is not None:
                 entry["checksums"] = [

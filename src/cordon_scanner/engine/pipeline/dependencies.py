@@ -22,6 +22,7 @@ from cordon_scanner.ecosystems.base import Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
+from cordon_scanner.engine.pipeline.dependency_scope import DependencyScope
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
@@ -282,16 +283,39 @@ class Dependencies:
             )
         return out
 
-    def build(self, units: list[FileUnit], acc: Accumulator) -> tuple[Dependency, ...]:
+    def build(
+        self, units: list[FileUnit], acc: Accumulator, *, published: str = ""
+    ) -> tuple[Dependency, ...]:
         """Build the resolved graph from lockfiles.
 
         Never by invoking the package manager and never over the network (C2,
         C4). Running the ecosystem's own resolver would execute untrusted
         tooling against attacker-controlled metadata inside the tool whose whole
         purpose is avoiding that, and it would make results non-reproducible
-        because a resolver consults a live registry.
+        because a resolver consults a live registry. What it reads is `DependencyScope`'s:
+        `published` is `PackageFormat.of` for an archive that is a published package.
+
+        Returns what installing the target installs. What only a file outside the scope records
+        is kept beside it, in `acc.not_installed` with `installed=False`: read from the same files
+        as before, into a graph of its own that leaves the scan's completeness and findings alone.
         """
-        Graph.unread_dependency_files(units, acc)
+        scope = DependencyScope.of(
+            units, published=published, archive=self.engine._scanning_archive
+        )
+        installed = self._graph(units, acc, scope)
+        if scope.narrows(units):
+            everything = self._graph(units, Accumulator(), DependencyScope.everything())
+            held = {(d.purl, d.project) for d in installed}
+            acc.not_installed.extend(
+                replace(d, installed=False) for d in everything if (d.purl, d.project) not in held
+            )
+        return installed
+
+    def _graph(
+        self, units: list[FileUnit], acc: Accumulator, scope: DependencyScope
+    ) -> tuple[Dependency, ...]:
+        """The graph of what `scope` reads, from lockfiles first, then manifests no lockfile resolved."""
+        Graph.unread_dependency_files(units, acc, scope)
         collected: list[Dependency] = []
         companions: list[tuple[str | None, str, Any, LockGraph]] = []
         completing: set[tuple[str | None, str, str]] = set()
@@ -301,11 +325,12 @@ class Dependencies:
         # again on its own (which put a second, unresolved copy of each of its dependencies in).
         workspace_members: dict[tuple[str, str], str | None] = {}
         tree: dict[str, Any] | None = None
-        for unit in units:
+        for unit in scope.ordered(units):
             if "!" in unit.path and not self.engine._scanning_archive:
-                # A lockfile inside a vendored archive describes that artefact's own
-                # build, not what this project installs. Its members are scanned for
-                # content; they do not become this project's dependency graph.
+                # A lockfile inside a vendored archive describes that artefact's own build, not
+                # what this project installs: scanned for content, not graphed.
+                continue
+            if not scope.reads(unit.path):
                 continue
             ecosystem_id = EcosystemRegistry.lockfile_ecosystem(unit.path)
             if ecosystem_id is None:
@@ -313,19 +338,16 @@ class Dependencies:
             ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:
                 continue
-            # Contained. `Detection.run` exists so that "a detector that raises
-            # must not abort the scan", and this call site and the manifest one
-            # below bypassed it and called an ecosystem parser straight from
-            # `scan()`. `inventory` wraps the identical call, so the
-            # inconsistency sat within one file: a parser raising on a crafted
-            # lockfile terminated the whole scan with exit 2, which reads as
-            # "the scanner broke" and gets a pipeline to skip the step.
+            # Contained, as `Detection.run` contains a detector: a parser raising on a crafted
+            # lockfile once ended the whole scan with exit 2, "the scanner broke".
             try:
                 graph, tree = Dependencies.parse_lockfile(ecosystem, tree, units, unit)
             except Exception as exc:  # noqa: BLE001
                 Dependencies.parser_failed(acc, unit, ecosystem_id, exc)
                 continue
             if graph.parse_error or not graph.entries:
+                # Unparsed (named by OPERATIONAL.LOCKFILE.UNPARSED): what it resolves is missing.
+                acc.complete = acc.complete and not graph.parse_error
                 continue
             project = Dependencies.lockfile_project(unit, graph)
             if graph.fragment:
@@ -347,29 +369,40 @@ class Dependencies:
             Dependencies.lockfile_members(
                 graph, project, workspace_members, ecosystem_id, collected, ecosystem, unit
             )
+            scope.note_members(workspace_members)
 
-            if len(collected) > self.config.limits.max_dependencies:
-                acc.complete = False
-                acc.append(
-                    OperationalFinding.build(
-                        path=unit.path,
-                        rule_id="OPERATIONAL.GRAPH.LIMIT",
-                        message=(
-                            f"The dependency graph exceeded "
-                            f"{self.config.limits.max_dependencies} entries and was "
-                            f"truncated. Dependency analysis is partial."
-                        ),
-                        remediation="Raise limits.max_dependencies, or scan projects separately.",
-                    )
-                )
+            if Dependencies.past_limit(collected, self.config.limits.max_dependencies, unit, acc):
                 break
 
         Dependencies.join_fragments(fragments, collected)
 
-        collected = self.complete(collected, companions, completing, units, workspace_members, acc)
+        collected = self.complete(
+            collected, companions, completing, units, workspace_members, acc, scope
+        )
 
         resolved = self.deduplicate(collected)
         return tuple(sorted(resolved, key=lambda d: (d.purl, d.project or "")))
+
+    @staticmethod
+    def past_limit(
+        collected: list[Dependency], limit: int, unit: FileUnit, acc: Accumulator
+    ) -> bool:
+        """Whether the graph has grown past `limits.max_dependencies`: reported, and incomplete."""
+        if len(collected) <= limit:
+            return False
+        acc.complete = False
+        acc.append(
+            OperationalFinding.build(
+                path=unit.path,
+                rule_id="OPERATIONAL.GRAPH.LIMIT",
+                message=(
+                    f"The dependency graph exceeded {limit} entries and was "
+                    f"truncated. Dependency analysis is partial."
+                ),
+                remediation="Raise limits.max_dependencies, or scan projects separately.",
+            )
+        )
+        return True
 
     @staticmethod
     def lockfile_project(unit: FileUnit, graph: Any) -> str:
@@ -423,6 +456,7 @@ class Dependencies:
         units: list[FileUnit],
         workspace_members: dict[tuple[str, str], str | None],
         acc: Accumulator,
+        scope: DependencyScope,
     ) -> list[Dependency]:
         """Companion facts applied, workspace members found, manifests joined where no lockfile resolved, scopes propagated."""
         # Per project AND ecosystem. A lockfile resolves its own ecosystem's
@@ -454,7 +488,9 @@ class Dependencies:
         # verification metadata holds the hash of `guava:33.3.1-jre` whether or not the build
         # also locks.
         collected.extend(
-            Graph.apply_companions(self.declared(units, acc, covered=covered), companions)
+            Graph.apply_companions(
+                self.declared(units, acc, covered=covered, scope=scope), companions
+            )
         )
         return collected
 
@@ -548,6 +584,7 @@ class Dependencies:
         acc: Accumulator,
         *,
         covered: set[tuple[str | None, str]],
+        scope: DependencyScope | None = None,
     ) -> list[Dependency]:
         """Manifest-declared dependencies, for projects no lockfile resolved.
 
@@ -579,7 +616,7 @@ class Dependencies:
 
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
-            if ecosystem_id is None:
+            if ecosystem_id is None or (scope is not None and not scope.reads(unit.path)):
                 continue
             ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:
@@ -589,17 +626,8 @@ class Dependencies:
             if (project, ecosystem_id) in covered:
                 continue
 
-            try:
-                manifest = Graph.manifest_of(ecosystem, unit, contents)
-            except Exception:  # noqa: BLE001, S112
-                # Deliberately silent here, and not a swallowed failure.
-                # `_manifest_hook_paths` parses the same file, under the same
-                # predicate, in the same scan, and reports
-                # OPERATIONAL.PARSER.FAILED for it. A second finding would say
-                # nothing the first did not.
-                continue
-
-            if manifest.parse_error:
+            manifest = Dependencies.readable_manifest(ecosystem, unit, contents, acc)
+            if manifest is None:
                 continue
 
             # What the file includes: pip's `-r` adds another file's requirements to this one,
@@ -615,23 +643,32 @@ class Dependencies:
                 declarations, ecosystem_id, ecosystem, pins, manifest, collected, project, members
             )
 
-            if len(collected) > self.config.limits.max_dependencies:
-                acc.complete = False
-                acc.append(
-                    OperationalFinding.build(
-                        path=unit.path,
-                        rule_id="OPERATIONAL.GRAPH.LIMIT",
-                        message=(
-                            f"The dependency graph exceeded "
-                            f"{self.config.limits.max_dependencies} entries and was "
-                            f"truncated. Dependency analysis is partial."
-                        ),
-                        remediation="Raise limits.max_dependencies, or scan projects separately.",
-                    )
-                )
+            if Dependencies.past_limit(collected, self.config.limits.max_dependencies, unit, acc):
                 break
 
         return collected
+
+    @staticmethod
+    def readable_manifest(
+        ecosystem: Ecosystem, unit: FileUnit, contents: dict[str, Any], acc: Accumulator
+    ) -> Any:
+        """The manifest the inventory is about to read, or None: one it cannot read leaves its
+        dependencies out of the graph, so the scan is incomplete.
+
+        No finding here. A parse error is named by the manifest detector
+        (OPERATIONAL.MANIFEST.UNPARSED), and a parser that raises by `_manifest_hook_paths`, which
+        parses the same file under the same predicate (OPERATIONAL.PARSER.FAILED); a second
+        finding would say nothing the first did not.
+        """
+        try:
+            manifest = Graph.manifest_of(ecosystem, unit, contents)
+        except Exception:  # noqa: BLE001
+            acc.complete = False
+            return None
+        if manifest.parse_error:
+            acc.complete = False
+            return None
+        return manifest
 
     @staticmethod
     def included_declarations(

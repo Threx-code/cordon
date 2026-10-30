@@ -26,6 +26,8 @@ from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.advisories.findings import (
+    BUNDLED_MALWARE_RULE,
+    BUNDLED_RULE,
     MALICIOUS_RULE,
     PROVISIONAL_RULE,
     AdvisoryFinding,
@@ -261,6 +263,96 @@ class AdvisoryDetector(BaseDetector):
                 )
             if dependency.version is None and dependency.declared_spec:
                 findings.extend(self._admitted_malware(dependency, ctx))
+
+    def not_installed(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
+        """Advisories about the records installing the target does not install (`installed=False`):
+        the bundled database only, never the network, each under its own rule -- a vulnerability
+        at info, a known-malicious release at high -- naming the file that records it."""
+        findings = self._bundled(dependencies, ctx)
+        note = self._not_installed_no_feed(dependencies)
+        if note is not None:
+            findings.append(note)
+        return findings
+
+    def _record_findings(self, dependency: Dependency, ctx: ScanContext) -> Iterator[Finding]:
+        """What a not-installed record itself says, by the install set's own checks: its advisories
+        by name and version, a repository recorded as malicious that its code is fetched from, and
+        a declared range that admits a recorded malicious release (the only one for a record with
+        no version, as a nested manifest's are). A removed name's warning is about installing it,
+        so not here."""
+        reported: set[str] = set()
+        for advisory in self._own_records(dependency):
+            if advisory.identifier and advisory.identifier in reported:
+                continue
+            reported.add(advisory.identifier)
+            yield AdvisoryFinding.finding(dependency, advisory, ctx, advice=self._upgrade_advice)
+        malicious = any(a.malicious for a in self._own_records(dependency))
+        repository = self._repository_matches(dependency)
+        if repository and not malicious:
+            yield AdvisoryFinding.finding(
+                dependency, repository[1][0], ctx, advice=self._upgrade_advice
+            )
+            malicious = True
+        if not malicious and dependency.version is None and dependency.declared_spec:
+            yield from (
+                f for f in self._admitted_malware(dependency, ctx) if f.rule_id == MALICIOUS_RULE
+            )
+
+    def _bundled(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
+        self._advice = {}
+        findings: list[Finding] = []
+        for dependency in dependencies:
+            if dependency.local or dependency.installed:
+                continue
+            for finding in self._record_findings(dependency, ctx):
+                malicious = finding.rule_id == MALICIOUS_RULE
+                rule = BUNDLED_MALWARE_RULE if malicious else BUNDLED_RULE
+                severity = Severity.HIGH if malicious else Severity.INFO
+                findings.append(
+                    replace(
+                        finding,
+                        rule_id=rule,
+                        severity=severity,
+                        message=(
+                            f"Not installed with this package: only {dependency.declared_in} "
+                            f"records it. {finding.message}"
+                        ),
+                        explanation=replace(finding.explanation, matched_rule=rule),
+                        risk=ctx.scorer.score(severity, finding.confidence),
+                    )
+                )
+        return findings
+
+    def _not_installed_no_feed(self, dependencies: Iterable[Dependency]) -> Finding | None:
+        """The no-feed note for records installing the target does not install: what is still
+        true of them is that the bundled database is all they are matched against, so an
+        ecosystem it does not cover is named -- at info, and never as lost coverage."""
+        unchecked = [
+            d
+            for d in dependencies
+            if not d.installed
+            and not d.local
+            and not d.bundled
+            and d.ecosystem
+            and d.ecosystem not in OS_ECOSYSTEMS
+            and d.ecosystem not in ("image", RUNTIME_ECOSYSTEM)
+            and not self._database.covers(d.ecosystem)
+        ]
+        if not unchecked:
+            return None
+        ecosystems = sorted({str(d.ecosystem) for d in unchecked})
+        return self.operational(
+            path=".",
+            message=(
+                f"Not installed with this package: {len(unchecked)} {', '.join(ecosystems)} "
+                f"dependency(ies) that only nested or vendored files record were not checked for "
+                f"known vulnerabilities or known-malicious releases: the bundled database is what "
+                f"such records are matched against, and it does not cover them."
+            ),
+            detail="advisories",
+            rule_id=NO_FEED_RULE,
+            degrades_coverage=False,
+        )
 
     def _own_records(self, dependency: Dependency) -> tuple[Advisory, ...]:
         """The records about this dependency by its own name: by version, and for an image pinned by

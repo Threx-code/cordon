@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Final
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.supply.not_installed_files import NotInstalledFiles
 from cordon_scanner.ecosystems.base import Coordinate
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation import references
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.ecosystems.base import Ecosystem, LockEntry, LockGraph
+    from cordon_scanner.foundation.results import Dependency
 
 # Reporting one finding per unverified package turns a single misconfiguration
 # into hundreds of alerts, which is how a useful signal becomes a suppressed
@@ -58,6 +60,16 @@ if TYPE_CHECKING:
 MAX_INDIVIDUAL = 5
 MALFORMED_RULE = "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001"
 CONFLICT_RULE = "SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001"
+SOURCE_RULE: Final = "SUSPECT.LOCKFILE.SOURCE.001"
+
+#: The rules about what a lockfile's entries record, by their twin for a lockfile installing the
+#: package does not read (`NotInstalledFiles`): info. A missing hash
+#: (POLICY.LOCKFILE.INTEGRITY.001) is about verifying what installs, so it has none.
+NOT_INSTALLED_TWINS: Final = {
+    SOURCE_RULE: "SUSPECT.LOCKFILE.SOURCE.BUNDLED.001",
+    MALFORMED_RULE: "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.BUNDLED.001",
+    CONFLICT_RULE: "SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.BUNDLED.001",
+}
 
 
 CODE_HOSTS: Final = frozenset(
@@ -78,6 +90,26 @@ class LockfileDetector(BaseDetector):
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
+        rules = LockfileDetector._declared()
+        return rules + tuple(
+            NotInstalledFiles.declared(rule, NOT_INSTALLED_TWINS)
+            for rule in rules
+            if rule.id in NOT_INSTALLED_TWINS
+        )
+
+    @staticmethod
+    def not_installed_files(
+        findings: list[Finding],
+        installed: Iterable[Dependency],
+        not_installed: Iterable[Dependency],
+        ctx: ScanContext,
+    ) -> tuple[list[Finding], list[Finding]]:
+        """The findings about what one lockfile's entries record (`NOT_INSTALLED_TWINS`) split by
+        the inventory's install scope (`NotInstalledFiles`)."""
+        return NotInstalledFiles.split(findings, NOT_INSTALLED_TWINS, installed, not_installed, ctx)
+
+    @staticmethod
+    def _declared() -> tuple[DeclaredRule, ...]:
         return (
             DeclaredRule(
                 id="POLICY.LOCKFILE.INTEGRITY.001",
@@ -95,7 +127,7 @@ class LockfileDetector(BaseDetector):
                 remediation="Regenerate the lockfile so every entry carries a hash.",
             ),
             DeclaredRule(
-                id="SUSPECT.LOCKFILE.SOURCE.001",
+                id=SOURCE_RULE,
                 title="Lockfile entry resolved from outside the registry",
                 severity=Severity.MEDIUM,
                 confidence=Confidence.MEDIUM,
@@ -447,7 +479,7 @@ class LockfileDetector(BaseDetector):
             LockfileDetector._code_host(e.resolved_from or "") in CODE_HOSTS for e in foreign
         )
         yield self._finding(
-            rule_id="SUSPECT.LOCKFILE.SOURCE.001",
+            rule_id=SOURCE_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.LOW if code_hosts_only else Severity.MEDIUM,
             confidence=Confidence.CONFIRMED,

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-33 container rules and a policy table of 1,083 controls, over the files that
+34 container rules and a policy table of 1,083 controls, over the files that
 describe *where your code runs*. Cordon reads the definitions -- it never
 contacts a cluster, a cloud account or a registry to do it.
 
@@ -47,7 +47,7 @@ contacts a cluster, a cloud account or a registry to do it.
 
 ## The policy table, and why it is separate
 
-The 33 container rules above match a pattern against a file: they answer "does
+The 34 container rules above match a pattern against a file: they answer "does
 this contain something alarming". Most infrastructure policy is the other
 question -- *this* resource is missing *that* setting -- and a regex cannot
 express absence over a region it has no notion of.
