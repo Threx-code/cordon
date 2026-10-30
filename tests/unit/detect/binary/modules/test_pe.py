@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from cordon_scanner.detect.binary.modules.pe import Pe
+from cordon_scanner.detect.binary.modules.pe_imports import PeImports
 from cordon_scanner.detect.binary.modules.values import Call, Data, Keyed, Record, Scalar, Seq
 from cordon_scanner.detect.binary.rule_engine.lang import Rules
 from support import ROOT
@@ -150,3 +151,15 @@ class TestPeFunctions:
         )
         assert self._console(src, (DIR / ALL_UNDEFINED).read_bytes()) == []
         assert FUNCTIONS[ALL_UNDEFINED]["logs"] == []
+
+
+class TestImportDetails:
+    def test_a_zero_rva_is_undefined_as_the_reference_reports_it(self) -> None:
+        # The identity proof (2026-10-30): two malformed files whose first thunk the mutation zeroed gave
+        # an RVA of 0 here and none in the reference, which reports no 0 among 435,999 import entries.
+        (library,) = PeImports._as_details(
+            [(b"kernel32.dll", [(b"Sleep", None, 0), (b"ExitProcess", None, 4096)])]
+        ).values()
+        first, second = library["functions"][0], library["functions"][1]
+        assert "rva" not in first and first["name"] == b"Sleep"
+        assert second["rva"] == 4096

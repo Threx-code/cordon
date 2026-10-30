@@ -95,7 +95,10 @@ class PeFunctions:
         return [
             (
                 it["library_name"],
-                [(f.get("name"), f.get("ordinal"), f["rva"]) for f in it["functions"].values()],
+                [
+                    (f.get("name"), f.get("ordinal"), f.get("rva", 0))
+                    for f in it["functions"].values()
+                ],
             )
             for it in out[key].values()
         ]
@@ -122,7 +125,8 @@ class PeFunctions:
                 if low(it["library_name"]) == low(dll):
                     for f in it["functions"].values():
                         if match(f):
-                            return int(f["rva"])
+                            # An RVA of 0 is not reported as a field, and the function still answers 0.
+                            return int(f.get("rva", 0))
             return None
 
         def matching_name(name: bytes) -> Any:

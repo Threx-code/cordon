@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.detect.binary.modules.dotnet import Dotnet
+from cordon_scanner.detect.binary.modules.dotnet import Dotnet, _Method
 from cordon_scanner.detect.binary.modules.dotnet_metadata import Tables
 from cordon_scanner.detect.binary.modules.layout import Cursor, LazySeq
 from cordon_scanner.detect.binary.modules.values import Data, Keyed, Record, Scalar, Seq
@@ -157,6 +157,14 @@ class Build:
 
 
 class TestDotnetRegressions:
+    def test_a_method_without_a_parameter_list_has_empty_parameters_and_no_count(self) -> None:
+        # The identity proof (2026-10-30): on three malformed assemblies whose ParamList the mutation
+        # zeroed, the reference reported `parameters` as an empty array and no `number_of_parameters`;
+        # ours left `parameters` undefined, which `for all p in m.parameters` tells apart.
+        method = _Method((b"Run", 0, [], b"void", [], 0, 0), None, None)  # type: ignore[arg-type]
+        assert "parameters" in method and method["parameters"] == {}
+        assert "number_of_parameters" not in method
+
     def test_pe32plus_dotnet_is_recognised(self) -> None:
         """Guard: NumberOfRvaAndSizes is read at the PE32+ offset, so 64-bit assemblies are not dropped."""
         d = Dotnet.data(Build.pe32plus_dotnet())

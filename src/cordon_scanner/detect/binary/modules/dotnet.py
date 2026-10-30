@@ -71,9 +71,11 @@ class _Method(Mapping[str, Any]):
         self._tables = tables
         self._cache: dict[str, Any] = {}
         name, _flags, _gp, _ret, _pt, param_list, _n = descriptor
-        keys: tuple[str, ...] = _Method._BASE
-        if param_list:
-            keys += ("number_of_parameters", "parameters")
+        # `parameters` is always there (empty without a parameter list), as the reference reports it; only
+        # its count needs the list.
+        keys: tuple[str, ...] = _Method._BASE + (
+            ("number_of_parameters", "parameters") if param_list else ("parameters",)
+        )
         if name not in (b".ctor", b".cctor"):
             keys += ("return_type",)
         self._keys = keys  # the present fields, fixed by the descriptor and built once
@@ -102,7 +104,7 @@ class _Method(Mapping[str, Any]):
             return (
                 Dotnet._build_params(self._heaps, self._tables, param_list, n_params, ptypes)
                 if param_list
-                else None
+                else {}
             )
         if key == "return_type":
             return ret if name not in (b".ctor", b".cctor") else None

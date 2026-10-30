@@ -320,13 +320,15 @@ class PeImports:
 
     @staticmethod
     def _as_details(libraries: list[Any]) -> dict[int, Any]:
-        """A library list as the import_details / delayed_import_details array; an absent name or ordinal is
-        omitted, as the reference reports it undefined."""
+        """A library list as the import_details / delayed_import_details array; an absent name or ordinal, or an
+        RVA of 0, is omitted, as the reference reports it undefined."""
         details: dict[int, Any] = {}
         for position, (library, entries) in enumerate(libraries):
             functions: dict[int, Any] = {}
             for place, (name, ordinal, rva) in enumerate(entries):
-                record: dict[str, Any] = {"rva": rva}
+                # An RVA of 0 (a zeroed first thunk) is reported undefined, as the reference does: across
+                # 435,999 reference import entries none is 0 (identity proof, 2026-10-30).
+                record: dict[str, Any] = {"rva": rva} if rva else {}
                 if name is not None:
                     record["name"] = name
                 if ordinal is not None:
