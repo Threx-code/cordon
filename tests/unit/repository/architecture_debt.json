@@ -1,12 +1,7 @@
 {
  "_doc": "Sites that do not meet a design rule yet (tests/unit/repository/test_architecture.py; review 27, 2026-10-30). Entries are only ever deleted or lowered: a fixed site is deleted in the PR that fixes it.",
  "adapter_order": {
-  "cordon_scanner.intel.advisories.advisory_text -> cordon_scanner.detect.supply.reachability": 1,
-  "cordon_scanner.intel.malware.feed_rules -> cordon_scanner.rules.loader": 1,
-  "cordon_scanner.intel.malware.feed_rules -> cordon_scanner.rules.tester": 1,
-  "cordon_scanner.intel.registries.release_history -> cordon_scanner.detect.base": 1,
-  "cordon_scanner.intel.registries.release_history -> cordon_scanner.detect.code.obfuscation.packing": 1,
-  "cordon_scanner.intel.registries.release_history -> cordon_scanner.sources.archive": 1
+  "cordon_scanner.intel.advisories.advisory_text -> cordon_scanner.detect.supply.reachability": 1
  },
  "cycles": {
   "cordon_scanner.analysis.python.execution_flows -> cordon_scanner.analysis.python.pyast": 1,
@@ -74,7 +69,6 @@
   "cordon_scanner.intel.malware.feed -> cordon_scanner.intel.malware.feed_rules": 1,
   "cordon_scanner.intel.malware.feed_rules -> cordon_scanner.intel.advisories.advisories": 1,
   "cordon_scanner.intel.malware.feed_rules -> cordon_scanner.intel.malware.feed": 1,
-  "cordon_scanner.intel.malware.feed_rules -> cordon_scanner.rules.loader": 1,
   "cordon_scanner.intel.registries.image_registries -> cordon_scanner.intel.registries.registry_client": 1,
   "cordon_scanner.intel.registries.image_registries -> cordon_scanner.intel.registries.registry_http": 1,
   "cordon_scanner.intel.registries.infra_registries -> cordon_scanner.intel.registries.registry_client": 1,
@@ -94,8 +88,7 @@
   "cordon_scanner.intel.registries.registry_client -> cordon_scanner.intel.registries.registry_hosts": 1,
   "cordon_scanner.intel.registries.registry_hosts -> cordon_scanner.intel.registries.registry_client": 1,
   "cordon_scanner.intel.registries.registry_http -> cordon_scanner.intel.registries.registry_client": 1,
-  "cordon_scanner.intel.registries.registry_http -> cordon_scanner.intel.registries.registry_hosts": 1,
-  "cordon_scanner.rules.loader -> cordon_scanner.intel.malware.feed_rules": 1
+  "cordon_scanner.intel.registries.registry_http -> cordon_scanner.intel.registries.registry_hosts": 1
  },
  "detect_on_intel": {
   "cordon_scanner.detect.agents.extensions -> cordon_scanner.intel.advisories.advisories": 1,
