@@ -23,6 +23,9 @@ for every list to be.
   functions, not an object.
 - isinstance_chains: dispatch on a type by a table keyed by it, not by three or more isinstance
   branches, so a new type is a new entry.
+- hidden_state: a mutable module-level or class-level store that code writes to is either a cache
+  registered with ScanCaches (emptied after each scan, so a long-running process does not grow) or
+  deliberate process state; a table only ever read is a constant and is left.
 
 Rules that already hold have their own tests, unlisted: inner layers construct no adapter, no
 override refuses its base's method, no unannotated mutable module-level store.
@@ -178,8 +181,15 @@ class Rules:
     #: Where a word on the ecosystem list means something else, and why.
     NOT_AN_ECOSYSTEM: ClassVar[dict[str, str]] = {
         "cordon_scanner.judge.calls:ValueViews.of": "'hex' is an encoding there, not Elixir's registry",
-        "cordon_scanner.engine.pipeline.hooks:<module>": (
+        "cordon_scanner.engine.pipeline.hooks:Hooks.extension_entries": (
             "'vscode' there is the engines key of a VS Code extension's package.json"
+        ),
+        "cordon_scanner.analysis.shared.deobfuscation:Layers.decoded": "'hex' is an encoding there",
+        "cordon_scanner.detect.secrets.values:SecretValues.is_inside_example_literal": (
+            "'go' there is the Go source language, not its module ecosystem"
+        ),
+        "cordon_scanner.foundation.text.prose:Prose._is_initialism": (
+            "'npm' there is a word in a list of initialisms prose writes in lower case"
         ),
     }
 
@@ -407,6 +417,101 @@ class Rules:
                     out[key] = max(out.get(key, 0), chain)
         return out
 
+    MUTATORS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "append",
+            "add",
+            "update",
+            "setdefault",
+            "pop",
+            "popitem",
+            "clear",
+            "extend",
+            "insert",
+            "remove",
+            "discard",
+            "move_to_end",
+            "appendleft",
+            "__setitem__",
+        }
+    )
+
+    @staticmethod
+    def stores() -> dict[str, str]:
+        """`name -> module:Owner.name` for every mutable module-level or class-level store."""
+        mutable_calls = {"dict", "list", "set", "defaultdict", "OrderedDict", "Counter", "deque"}
+        out: dict[str, str] = {}
+        for module, tree in Modules.trees().items():
+            scopes: list[tuple[str, list[ast.stmt]]] = [("", tree.body)]
+            scopes += [
+                (f"{name}.", node.body)
+                for name, node in Modules.scoped(tree)
+                if isinstance(node, ast.ClassDef)
+            ]
+            for prefix, body in scopes:
+                for statement in body:
+                    if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+                        target, value = statement.targets[0], statement.value
+                    elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+                        target, value = statement.target, statement.value
+                    else:
+                        continue
+                    if not isinstance(target, ast.Name) or target.id == "__all__":
+                        continue
+                    mutable = isinstance(
+                        value,
+                        (ast.Dict, ast.List, ast.Set, ast.DictComp, ast.ListComp, ast.SetComp),
+                    ) or (
+                        isinstance(value, ast.Call)
+                        and ast.unparse(value.func).rsplit(".", 1)[-1] in mutable_calls
+                    )
+                    if mutable:
+                        out.setdefault(target.id, f"{module}:{prefix}{target.id}")
+        return out
+
+    @staticmethod
+    def hidden_state() -> dict[str, int]:
+        """Mutable module-level or class-level stores that some code writes to and that are not
+        registered with ScanCaches: state that outlives a scan, unseen by the registry that empties
+        what a scan held. A table only ever read is a constant and is left; a store written to is
+        either a cache (register it) or deliberate process state (list it, with its reason)."""
+        stores = Rules.stores()
+        written: set[str] = set()
+        registered: set[str] = set()
+        for tree in Modules.trees().values():
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                    holder = node.func.value
+                    name = (
+                        holder.attr
+                        if isinstance(holder, ast.Attribute)
+                        else getattr(holder, "id", None)
+                    )
+                    if node.func.attr in Rules.MUTATORS and name in stores:
+                        written.add(name)
+                    if ast.unparse(node.func).endswith("ScanCaches.register"):
+                        for arg in node.args:
+                            ref = (
+                                arg.attr
+                                if isinstance(arg, ast.Attribute)
+                                else getattr(arg, "id", None)
+                            )
+                            if ref:
+                                registered.add(ref)
+                elif isinstance(node, (ast.Assign, ast.AugAssign)):
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    for target in targets:
+                        if isinstance(target, ast.Subscript):
+                            holder = target.value
+                            name = (
+                                holder.attr
+                                if isinstance(holder, ast.Attribute)
+                                else getattr(holder, "id", None)
+                            )
+                            if name in stores:
+                                written.add(name)
+        return {stores[name]: 1 for name in sorted(written - registered)}
+
     ALL: ClassVar[tuple[str, ...]] = (
         "adapter_order",
         "cycles",
@@ -416,6 +521,7 @@ class Rules:
         "class_methods",
         "incohesive_classes",
         "isinstance_chains",
+        "hidden_state",
     )
 
     @staticmethod
@@ -524,6 +630,29 @@ class TestDesignRules:
             and "cordon_scanner" in Modules.imports(module)
         )
         assert not found, "imports the package's front door from inside:\n" + "\n".join(found)
+
+    def test_every_detector_runs_within_a_budget(self) -> None:
+        """A detector's per-file entry is called only by a budgeted runner: the engine's two
+        (detection, and the parallel workers) and `detect.base.DetectorRun` for everything else.
+        The history pass and the cloud device scan called it directly, with no deadline, so one
+        crafted blob or file held them."""
+        runners = {
+            "cordon_scanner.detect.base",
+            "cordon_scanner.engine.pipeline.detection",
+            "cordon_scanner.engine.parallel",
+        }
+        found = sorted(
+            f"{module}:{node.lineno}"
+            for module, tree in Modules.trees().items()
+            if module not in runners
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "inspect"
+        )
+        assert not found, (
+            "a detector run outside a budgeted runner (use DetectorRun):\n" + "\n".join(found)
+        )
 
     def test_no_override_refuses_its_base(self) -> None:
         classes: dict[str, list[ast.ClassDef]] = defaultdict(list)

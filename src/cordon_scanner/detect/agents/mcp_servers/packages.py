@@ -104,7 +104,7 @@ class McpPackageDetector(BaseDetector):
                 continue
             args = [str(a) for a in server.get("args") or () if isinstance(a, (str, int, float))]
             spec = McpConfigs.launched_package(server["command"], args)
-            if spec is None or spec[0] not in ("npm", "pypi") or (spec[0], spec[1]) in seen:
+            if spec is None or spec[0] not in McpConfigs.SPLIT_SPECS or (spec[0], spec[1]) in seen:
                 continue
             if ctx.out_of_time():
                 break

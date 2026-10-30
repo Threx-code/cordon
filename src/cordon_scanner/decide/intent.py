@@ -362,10 +362,14 @@ class IntentObserver:
     #: Per kilobyte, past which concealment is dense (`conceal:<kind>:dense`).
     _DENSE: ClassVar[dict[str, float]] = {"computed_call": 1.0, "charcode": 2.0}
 
+    #: The distributions whose intent facts are measured (npm first, M3); another joins this set
+    #: once its facts are measured there.
+    MEASURED: ClassVar[frozenset[str]] = frozenset({"npm"})
+
     @staticmethod
     def applies(ctx: ScanContext) -> bool:
-        """npm first (M3): every other ecosystem gets its facts once they are measured there."""
-        return ctx.distribution == "npm"
+        """Whether this distribution's intent facts are measured (`MEASURED`)."""
+        return ctx.distribution in IntentObserver.MEASURED
 
     @staticmethod
     def member(path: str) -> str:

@@ -451,7 +451,7 @@ class DeviceInventory:
     def _agent_findings(files: list[tuple[str, bytes]]) -> list[dict[str, Any]]:
         """What the agent detector finds in the files read, as the payload reports it."""
         from cordon_scanner.detect.agents.chain import AgentChainDetector
-        from cordon_scanner.detect.base import FileUnit, ScanContext
+        from cordon_scanner.detect.base import DetectorRun, FileUnit, ScanContext
         from cordon_scanner.foundation.config.settings import Config
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.rules.loader import RuleSet
@@ -462,7 +462,9 @@ class DeviceInventory:
         findings: list[dict[str, Any]] = []
         for logical, raw in files:
             unit = FileUnit(content=FileContent(path=logical, raw=raw, size=len(raw)))
-            for finding in detector.inspect(unit, context):
+            # Within the per-file budget, as a scan is: a crafted file must not hold the device.
+            found, _ = DetectorRun.findings(detector, unit, context, config.limits.per_file_timeout)
+            for finding in found:
                 findings.append(
                     {
                         "rule_id": finding.rule_id,
