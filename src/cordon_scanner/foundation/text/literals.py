@@ -30,6 +30,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
+
 
 class LiteralGate:
     """`any(literal in data for literal in literals)`, answered with fewer scans."""
@@ -95,13 +97,14 @@ class LiteralGate:
 
     @staticmethod
     def _found(data: bytes) -> dict[bytes, bool]:
-        held = LiteralGate._recent.get(id(data))
+        key = ScanCaches.identity(data)
+        held = LiteralGate._recent.get(key)
         if held is not None and held[0] is data:
             return held[1]
         if len(LiteralGate._recent) >= LiteralGate.RECENT:
             LiteralGate._recent.pop(next(iter(LiteralGate._recent)))
         found: dict[bytes, bool] = {}
-        LiteralGate._recent[id(data)] = (data, found)
+        LiteralGate._recent[key] = (data, found)
         return found
 
     @staticmethod
@@ -111,5 +114,8 @@ class LiteralGate:
             hit = found[literal] = literal in data
         return hit
 
+
+# The last files' bytes, emptied after each scan with the other caches that hold a scan's files.
+ScanCaches.register(LiteralGate._recent)
 
 __all__ = ["LiteralGate"]

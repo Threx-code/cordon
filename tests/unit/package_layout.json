@@ -573,6 +573,7 @@
   "test_content_memo.py": "analysis/shared",
   "test_atomic_file.py": "foundation/files",
   "test_collector.py": "foundation",
+  "test_scan_caches.py": "foundation",
   "test_atr_gate.py": "intel/malware",
   "test_atr_prefilter.py": "intel/malware",
   "test_campaign_fingerprint.py": "intel/malware",
