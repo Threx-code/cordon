@@ -173,6 +173,15 @@ class TestTheRecord:
         own = {"verdict": {"features": summary["features"]}}
         assert FeatureRecord.read(own) == (FeatureSchema.current(), summary["features"]["values"])
 
+    def test_a_rebuilt_row_is_stamped_with_its_producer_and_an_own_record_keeps_its_own(
+        self,
+    ) -> None:
+        _, summary = RecordKit.decide([RecordKit.finding()], RecordKit.model())
+        legacy = {"findings": [], "verdict": {"package": summary["package"]}}
+        assert FeatureRecord.read(legacy, producer="fs1-producer")[0] == "fs1-producer"
+        own = {"verdict": {"features": summary["features"]}}
+        assert FeatureRecord.read(own, producer="fs1-producer")[0] == FeatureSchema.current()
+
 
 class FoldKit:
     """Raw hashed code features, and a format-3 model split on one folded bucket: 0.9 when
@@ -265,3 +274,17 @@ class TestTheFold:
             monkeypatch.undo()
             FeatureFold.version.cache_clear()
         assert FeatureFold.version() == fold
+
+
+class TestAnOlderTree:
+    def test_a_tree_from_before_a_move_is_versioned_at_the_recorded_path(
+        self, tmp_path: Path
+    ) -> None:
+        """`MOVED` names where a piece lives now; a checkout from before the move (as P8's producer
+        is) still has it at the recorded path, and gets the version a pure move leaves alone."""
+        before = SchemaKit.tree(tmp_path / "before")
+        for recorded, moved in FeatureSchema.MOVED.items():
+            (before / moved).rename(before / recorded.split(":")[0])
+        assert FeatureSchema.version(before) == FeatureSchema.version(
+            SchemaKit.tree(tmp_path / "after")
+        )

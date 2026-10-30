@@ -82,7 +82,9 @@ class FeatureSchema:
         root = PackagePaths.root() if root is None else root
         digest = hashlib.sha256()
         for path, dotted in FeatureSchema.EXTRACTOR:
-            node = FeatureSchema._node(root / FeatureSchema.source(path, dotted), dotted)
+            # A tree from before a move has the piece where EXTRACTOR recorded it.
+            moved = root / FeatureSchema.source(path, dotted)
+            node = FeatureSchema._node(moved if moved.is_file() else root / path, dotted)
             digest.update(f"{path}:{dotted}\n".encode())
             digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
         listed = FeatureSchema.names() if names is None else names
@@ -213,14 +215,18 @@ class FeatureRecord:
         )
 
     @staticmethod
-    def read(row: dict[str, Any]) -> tuple[str | None, dict[str, float]]:
+    def read(
+        row: dict[str, Any], producer: str | None = None
+    ) -> tuple[str | None, dict[str, float]]:
         """A training row's (schema, features), the features folded as scoring folds them
         (`FeatureFold`): its own record, or for a row written before the record existed, the same
         features built from what it recorded (its findings as [rule, severity, confidence,
-        category, path, ...] and `verdict.package`), with no schema (the row's producer stamp names
-        it). The schema is the row's own: rows hold raw features."""
+        category, path, ...] and `verdict.package`). The schema is the row's own (rows hold raw
+        features); a rebuilt row has none, so it is stamped `producer`, the version of the tree
+        that wrote it (`FeatureSchema.version` of that checkout), and a fit can refuse a mix. `None`
+        when the caller does not know it."""
         schema, values = FeatureRecord._raw(row)
-        return schema, FeatureFold.apply(values)
+        return (producer if schema is None else schema), FeatureFold.apply(values)
 
     @staticmethod
     def _raw(row: dict[str, Any]) -> tuple[str | None, dict[str, float]]:
