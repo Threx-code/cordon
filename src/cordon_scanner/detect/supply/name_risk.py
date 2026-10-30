@@ -288,13 +288,14 @@ class PackageIdentities:
         if name is None:
             return None
         version = re.search(
-            r"(?m)^version:\s*!ruby/object:Gem::Version\s*\n\s+version:\s*['\"]?([^'\"\s]+)", text
+            r"(?m)^version:\s*!ruby/object:Gem::Version[^\S\n]*\n\s+version:\s*['\"]?([^'\"\s]+)",
+            text,
         )
         # `[ \t]*`, never `\s*`: an empty field must not read the next line as its value.
         description = re.search(r"(?m)^(?:summary|description):[ \t]*(\S.*)$", text)
         homepage = re.search(r"(?m)^homepage:[ \t]*(\S+)", text)
         source = re.search(r"(?m)^[ \t]+(?:source_code_uri|homepage_uri):[ \t]*(\S+)", text)
-        extensions = re.search(r"(?m)^extensions:\s*\n\s*-\s*\S", text)
+        extensions = re.search(r"(?m)^extensions:[^\S\n]*\n\s*-\s*\S", text)
         runtime = re.findall(r"(?m)^\s+type:\s*:runtime\b", text)
         value = description.group(1).strip().strip("'\"") if description else ""
         return PackageIdentity(

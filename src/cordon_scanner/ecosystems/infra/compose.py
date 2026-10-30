@@ -25,7 +25,7 @@ class ComposeLines:
 
     #: A `key:` line (or a list item, which a mapping does not hold but `children` reports).
     KEY: ClassVar[re.Pattern[str]] = re.compile(
-        r"""^(?:"[^"]*"|'[^']*'|[^"'\s][^:]*?)\s*:(?:\s|$)|^-(?:\s|$)"""
+        r"""^(?:"[^"]*"\s*|'[^']*'\s*|[^"'\s][^:]*):(?:\s|$)|^-(?:\s|$)"""
     )
 
     @staticmethod
@@ -63,7 +63,7 @@ class ComposeLines:
             if (
                 text.startswith("- ")
                 or text == "-"
-                or re.match(r"""^(?:"[^"]*"|'[^']*'|[^"'\s][^:]*?)\s*:(?:\s|$)""", text)
+                or re.match(r"""^(?:"[^"]*"\s*|'[^']*'\s*|[^"'\s][^:]*):(?:\s|$)""", text)
             ):
                 anchor = indent
                 continue

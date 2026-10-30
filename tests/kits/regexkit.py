@@ -1,4 +1,5 @@
-"""What the regular-expression scaling checks share: every compiled pattern in detect/ and analysis/,
+"""What the regular-expression scaling checks share: every pattern in the package -- compiled ones held
+by modules and classes, the ones written inline in calls, and every built-in rule's --
 how its owner's code calls it, inputs built from its own structure, a static reading of its shape, and
 the timing ladder that confirms or clears that reading.
 
@@ -27,8 +28,6 @@ from re import _parser as sre_parse  # type: ignore[attr-defined]
 from typing import ClassVar
 
 import cordon_scanner
-import cordon_scanner.analysis
-import cordon_scanner.detect
 
 Node = tuple[object, object]
 AnyPattern = re.Pattern[str] | re.Pattern[bytes]
@@ -45,7 +44,11 @@ class Found:
 
 
 class Sources:
-    """Every compiled pattern in detect/ and analysis/, with the modes its owner's code calls it in."""
+    """Every pattern in the package, with the modes its owner's code calls it in: compiled ones held by
+    a module or a class, the ones written inline in a call (`re.search(r"...", text)`), and every
+    built-in rule's regex and each of its branches. Until 2026-10-30 this read detect/ and analysis/
+    and compiled patterns only, and the regex sweep found 41 superlinear patterns outside that: in
+    ecosystems/, images/, engine/, decide/, cli/, inline in functions, and in the rule packs."""
 
     SRC = Path(cordon_scanner.__file__).parent
     SCANNING = frozenset({"search", "finditer", "findall", "sub", "subn", "split"})
@@ -120,21 +123,127 @@ class Sources:
     @functools.cache
     def patterns() -> tuple[Found, ...]:
         out: list[Found] = []
-        for package in (cordon_scanner.detect, cordon_scanner.analysis):
-            for info in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
-                module = importlib.import_module(info.name)
-                short = info.name.removeprefix("cordon_scanner.")
-                text = Sources.texts().get(short, "")
-                for name, value in vars(module).items():
-                    if isinstance(value, re.Pattern) and Sources.defines(text, name):
-                        out.append(Sources.found(short, "", name, value))
-                for owner, cls in inspect.getmembers(module, inspect.isclass):
-                    if cls.__module__ != info.name:
-                        continue
-                    for name, value in vars(cls).items():
-                        if isinstance(value, re.Pattern):
-                            out.append(Sources.found(short, owner, name, value))
+        for info in pkgutil.walk_packages(cordon_scanner.__path__, "cordon_scanner."):
+            module = importlib.import_module(info.name)
+            short = info.name.removeprefix("cordon_scanner.")
+            text = Sources.texts().get(short, "")
+            for name, value in vars(module).items():
+                if isinstance(value, re.Pattern) and Sources.defines(text, name):
+                    out.append(Sources.found(short, "", name, value))
+            for owner, cls in inspect.getmembers(module, inspect.isclass):
+                if cls.__module__ != info.name:
+                    continue
+                for name, value in vars(cls).items():
+                    if isinstance(value, re.Pattern):
+                        out.append(Sources.found(short, owner, name, value))
+        out.extend(Sources.inline())
+        out.extend(Sources.rules())
         return tuple(out)
+
+    FUNCTIONS: ClassVar[frozenset[str]] = SCANNING | ANCHORED | {"compile"}
+
+    @staticmethod
+    def inline() -> list[Found]:
+        """Patterns written as a literal in a call to `re` inside a function: `re.search(r"..", t)`,
+        and `re.compile(r"..")` that no module or class holds. Labelled by module, function and order
+        in it, so a listed one keeps its name while lines move."""
+        out: list[Found] = []
+        for module, tree in Sources.trees().items():
+            for function in ast.walk(tree):
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                parents = {
+                    child: node
+                    for node in ast.walk(function)
+                    for child in ast.iter_child_nodes(node)
+                }
+                count = 0
+                for node in ast.walk(function):
+                    pattern, mode = Sources._literal_call(node, parents)
+                    if pattern is None:
+                        continue
+                    count += 1
+                    label = f"{module}:{function.name}:{count}"
+                    out.append(Found(label, pattern, frozenset({mode}), True))
+        return out
+
+    @staticmethod
+    def _literal_call(
+        node: ast.AST, parents: dict[ast.AST, ast.AST]
+    ) -> tuple[AnyPattern | None, str]:
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "re"
+            and node.func.attr in Sources.FUNCTIONS
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str | bytes)
+        ):
+            return None, ""
+        flags = 0
+        given = [kw.value for kw in node.keywords if kw.arg == "flags"]
+        if node.func.attr == "compile" and len(node.args) > 1:
+            given.append(node.args[1])
+        for value in given:
+            with contextlib.suppress(Exception):
+                flags = eval(compile(ast.Expression(value), "flags", "eval"), {"re": re})  # noqa: S307 - a literal of re flags from our own source
+        try:
+            pattern = re.compile(node.args[0].value, flags)
+        except (re.error, TypeError, ValueError):
+            return None, ""
+        mode = node.func.attr
+        if mode == "compile":
+            parent = parents.get(node)
+            if isinstance(parent, ast.Attribute):
+                mode = parent.attr
+            elif (
+                isinstance(parent, ast.Assign)
+                and len(parent.targets) == 1
+                and isinstance(parent.targets[0], ast.Name)
+            ):
+                # Held in a local: the modes are its calls in the same function (all anchored, or search).
+                name = parent.targets[0].id
+                function = parent
+                while function in parents and not isinstance(
+                    function, (ast.FunctionDef, ast.AsyncFunctionDef)
+                ):
+                    function = parents[function]
+                used = {
+                    call.func.attr
+                    for call in ast.walk(function)
+                    if isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == name
+                }
+                mode = "match" if used and used <= Sources.ANCHORED else "search"
+                if used and used <= {"fullmatch"}:
+                    mode = "fullmatch"
+            else:
+                mode = "search"
+        return pattern, "search" if mode in Sources.SCANNING else mode
+
+    @staticmethod
+    def rules() -> list[Found]:
+        """Every built-in rule's regex and each of its branches, run the way the matcher runs them."""
+        from cordon_scanner.rules.loader import RuleLoader
+
+        out: list[Found] = []
+        for pack in RuleLoader.load_builtin():
+            for rule in pack:
+                regex = rule.match.regex
+                if regex is None:
+                    continue
+                out.append(Found(f"rule:{rule.id}", regex, frozenset({"search"}), True))
+                for index, source in enumerate(rule.match.sources):
+                    with contextlib.suppress(re.error, UnicodeEncodeError):
+                        branch = re.compile(source.encode("latin-1"), regex.flags)
+                        out.append(
+                            Found(f"rule:{rule.id}:{index}", branch, frozenset({"search"}), True)
+                        )
+        return out
 
     @staticmethod
     def by_label() -> dict[str, Found]:
@@ -689,7 +798,35 @@ class Listed:
 
     #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
     OPEN: ClassVar[dict[str, str]] = {
-        "detect.code.features:CodeFeatures._URL": "modelling team (measurement-only, every-literal proof)",
+        "rule:CAP.SH.PERSIST.001": "data-and-measurement team: line-monotone starts in rules/anchored (after the benchmark start)",
+        "rule:CAP.SH.PERSIST.001:0": "data-and-measurement team: line-monotone starts in rules/anchored (after the benchmark start)",
+        "cloud.device:_extension_identity:1": "modelling team (regex sweep 2026-10-30)",
+        "cloud.fixer:pypi:2": "modelling team (regex sweep 2026-10-30)",
+        "intel.advisories.upstream.cocoapods:NpmPodspec.METHOD": "modelling team (regex sweep 2026-10-30)",
+        "intel.advisories.upstream.cocoapods:read:1": "modelling team (regex sweep 2026-10-30)",
+        "intel.advisories.upstream.homebrew:source:1": "modelling team (regex sweep 2026-10-30)",
+        "intel.advisories.upstream.vcpkg:commands:1": "modelling team (regex sweep 2026-10-30)",
+        "intel.advisories.upstream.vcpkg:manifest:1": "modelling team (regex sweep 2026-10-30)",
+        "intel.advisories.upstream.vcpkg:qt_before_port_data:2": "modelling team (regex sweep 2026-10-30)",
+        "intel.advisories.upstream_advisories:cocoapods_checkout:1": "modelling team (regex sweep 2026-10-30)",
+        "intel.malware.campaign:CampaignFingerprint.FILE": "modelling team (regex sweep 2026-10-30)",
+        "intel.registries.private_registries:_oci_authorization:1": "modelling team (regex sweep 2026-10-30)",
+        "intel.registries.registry_http:oci_bytes:1": "modelling team (regex sweep 2026-10-30)",
+        "intel.registries.registry_image:_authenticate:1": "modelling team (regex sweep 2026-10-30)",
+        "judge.calls:_SAFETY_CONFIG": "modelling team (regex sweep 2026-10-30)",
+        "judge.calls:_SAFETY_OFF": "modelling team (regex sweep 2026-10-30)",
+        "judge.calls:_SQLI": "modelling team (regex sweep 2026-10-30)",
+        "judge.calls:_XXE": "modelling team (regex sweep 2026-10-30)",
+        "judge.calls:_squatted:1": "modelling team (regex sweep 2026-10-30)",
+        "mcp.packages:InstallCommand._SEPARATORS": "modelling team (regex sweep 2026-10-30)",
+        "decide.verdict_features:VerdictFeatures._FRONT_FIELD": (
+            "modelling team, after the P8 fits: VerdictFeatures is hashed by FeatureSchema, so its fix moves the version"
+        ),
+    }
+    #: Superlinear, and reading only text the scanner itself writes (its own help), never a scan's input:
+    #: each with what it reads. A pattern that may see scanned input never belongs here.
+    TRUSTED: ClassVar[dict[str, str]] = {
+        "cli.help:HelpPainter.VALUE": "the scanner's own help text, painted for a terminal",
     }
     #: Kept as the specification of code that replaced them: superlinear, and called by nothing.
     SPECIFICATIONS: ClassVar[dict[str, str]] = {
@@ -702,6 +839,154 @@ class Listed:
     #: the runs are bounded short.
     LINEAR: ClassVar[frozenset[str]] = frozenset(
         {
+            "detect.agents.mcp_servers.declarations:_continue_servers:3",
+            "ecosystems.packages.homebrew:_bottles_and_version:2",
+            "rule:CAP.RB.FETCH_EXEC.001:0",
+            "analysis.shared.source_paths:names_test_directory:1",
+            "analysis.shared.source_paths:names_test_file:1",
+            "cli.help:HelpPainter.LINK",
+            "cli.help:_line:1",
+            "cloud.fixer:_normalise:1",
+            "cloud.fixer:pypi:1",
+            "decide.verdict_features:_dependencies_used:1",
+            "decide.verdict_features:package:7",
+            "detect.agents.configuration:lookalike_of:2",
+            "detect.agents.extension_files:gitpod_extensions:1",
+            "detect.agents.extension_files:gitpod_extensions:2",
+            "detect.agents.extensions:_folded:1",
+            "detect.agents.instruction_files:_directive_findings:1",
+            "detect.agents.instructions:_triggers:2",
+            "detect.agents.instructions:_triggers:3",
+            "detect.agents.instructions:moves_credentials:1",
+            "detect.agents.language_model.review:squash:1",
+            "detect.agents.mcp_servers.packages:_local_copy:1",
+            "detect.agents.mcp_servers.packages:_local_copy:2",
+            "detect.agents.skills:decode_run:1",
+            "detect.binary.detector:_ld_script:1",
+            "detect.code.secretflow:findings:1",
+            "detect.secrets.names:_fold:1",
+            "detect.secrets.names:_name_words:2",
+            "detect.secrets.names:names_configuration:2",
+            "detect.secrets.names:names_placeholder:2",
+            "detect.secrets.names:value_restates_the_name:1",
+            "detect.secrets.values:reads_as_words:1",
+            "detect.supply.manifests.scripts:_targets_in_tree:3",
+            "detect.supply.name_risk:_npm:2",
+            "detect.supply.name_risk:_nuget:1",
+            "ecosystems.infra.actions:parse:4",
+            "ecosystems.infra.compose:_build_sources:1",
+            "ecosystems.infra.compose:_conditions:1",
+            "ecosystems.infra.compose:_resolve_aliases:2",
+            "ecosystems.infra.image:_copy_add_run:1",
+            "ecosystems.packages.cocoapods:_pod:2",
+            "ecosystems.packages.cocoapods:parse:1",
+            "ecosystems.packages.conda:render:1",
+            "ecosystems.packages.cran:_system_needs:2",
+            "ecosystems.packages.go:__init__:3",
+            "ecosystems.packages.go:release_manifest:1",
+            "ecosystems.packages.haskell.cabal_project:parse:2",
+            "ecosystems.packages.homebrew:_bottles_and_version:1",
+            "ecosystems.packages.homebrew:_depends:1",
+            "ecosystems.packages.homebrew:parse:1",
+            "ecosystems.packages.homebrew:parse:2",
+            "ecosystems.packages.homebrew:parse:3",
+            "ecosystems.packages.javascript.pnpm:_target:1",
+            "ecosystems.packages.jvm.gradle_scripts:_declarations:2",
+            "ecosystems.packages.jvm.gradle_scripts:_plugins:1",
+            "ecosystems.packages.jvm.gradle_scripts:_top_level:1",
+            "ecosystems.packages.nix:applied:1",
+            "ecosystems.packages.pypi:declared_dependencies:1",
+            "engine.inventory:_LineIndex.RUN",
+            "engine.inventory:_LineIndex.TOKEN",
+            "engine.package_format:of:1",
+            "engine.pipeline.ceilings:image_start_ceiling:1",
+            "engine.pipeline.graph:configured_sources:1",
+            "engine.pipeline.hooks:hook_command_scripts:1",
+            "engine.pipeline.hooks:languages_from_hooks:1",
+            "foundation.formats.datayaml:_flow_pair:1",
+            "foundation.models:_WHITESPACE",
+            "foundation.samples:names_authentication:1",
+            "foundation.samples:names_installer:1",
+            "foundation.text.redact:Redactor._CREDENTIAL_SHAPE",
+            "foundation.text.redact:Redactor._HIGH_ENTROPY_RUN",
+            "images.alas:fetch:1",
+            "images.binmeta:_PRINTABLE",
+            "images.binmeta:program:1",
+            "images.langpkgs:_GEMSPEC",
+            "images.langpkgs:_PY_VERSION",
+            "intel.advisories.advisory_text:_SENTENCE",
+            "intel.advisories.nvd:release_names:1",
+            "intel.advisories.rubysec:_ITEM",
+            "intel.advisories.rubysec:_KEY",
+            "intel.advisories.upstream.base:RepositoryArchive.CGIT_SNAPSHOT",
+            "intel.advisories.upstream.base:RepositoryArchive.GITLAB_RELEASE",
+            "intel.advisories.upstream.cocoapods:NpmPodspec.NOTE",
+            "intel.advisories.upstream.cocoapods:_answers:1",
+            "intel.advisories.upstream.tags:refs:1",
+            "intel.advisories.upstream.tags:repository:7",
+            "intel.advisories.upstream.vcpkg:VcpkgPorts.DOWNLOADS",
+            "intel.advisories.upstream.vcpkg:_fetched:1",
+            "intel.advisories.upstream.vcpkg:key:2",
+            "intel.advisories.versions:_PEP440_RE",
+            "intel.advisories.versions:_TOKEN_RE",
+            "intel.advisories.versions:components:1",
+            "intel.advisories.versions:components:2",
+            "intel.malware.atr:_BASE64_BLOCK",
+            "intel.malware.campaign:CampaignFingerprint.NUMBER",
+            "intel.provenance.gitfetch:objects:1",
+            "intel.registries.infra_registries:vcpkg:1",
+            "intel.registries.package_registries:_r_version:1",
+            "intel.registries.package_registries:hackage:1",
+            "intel.registries.package_registries:hackage:2",
+            "intel.registries.package_registries:retractions:1",
+            "intel.registries.package_registries:retractions:2",
+            "intel.registries.private_registries:_image:1",
+            "intel.registries.private_registries:_pypi:2",
+            "intel.store.licenses:_PUNCTUATION_RE",
+            "judge.calls:_DESTRUCTIVE",
+            "judge.calls:_UNTRUSTED_CONTROL",
+            "judge.calls:_value:1",
+            "mcp.packages:_composer:1",
+            "mcp.packages:_python:1",
+            "rule:CAP.BAT.FETCH_EXEC.001",
+            "rule:CAP.BAT.FETCH_EXEC.001:0",
+            "rule:CAP.DESTROY.HOME.001",
+            "rule:CAP.DESTROY.HOME.001:0",
+            "rule:CAP.DESTROY.SYSTEM_DISK.001",
+            "rule:CAP.DESTROY.SYSTEM_DISK.001:1",
+            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001",
+            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:0",
+            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:1",
+            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:2",
+            "rule:CAP.JS.CHARCODE_STRING.001",
+            "rule:CAP.JS.CHARCODE_STRING.001:0",
+            "rule:CAP.JS.CHARCODE_STRING.001:1",
+            "rule:CAP.JS.CHARCODE_STRING.001:2",
+            "rule:CAP.JS.EGRESS.001",
+            "rule:CAP.JS.EGRESS.001:5",
+            "rule:CAP.JS.RECON.001",
+            "rule:CAP.JS.RECON.001:2",
+            "rule:CAP.JS.RECON.001:4",
+            "rule:CAP.JS.RECON.001:5",
+            "rule:CAP.JS.SHELL_STDIO_JOINED.001",
+            "rule:CAP.JS.SHELL_STDIO_JOINED.001:0",
+            "rule:CAP.JS.SHELL_STDIO_JOINED.001:1",
+            "rule:CAP.JS.SPAWN.001",
+            "rule:CAP.JS.SPAWN.001:4",
+            "rule:CAP.JVM.RECON.001",
+            "rule:CAP.JVM.RECON.001:2",
+            "rule:CAP.LUA.EXECUTE.001",
+            "rule:CAP.LUA.EXECUTE.001:1",
+            "rule:CAP.SH.CREDENTIAL.001",
+            "rule:CAP.SH.CREDENTIAL.001:0",
+            "rule:CAP.SH.CREDENTIAL.001:5",
+            "rule:CAP.SH.EGRESS.001",
+            "rule:CAP.SH.EGRESS.001:2",
+            "rule:CAP.SH.FETCH_EXEC.001",
+            "rule:CAP.SH.FETCH_EXEC.001:1",
+            "rule:CAP.SH.PERSIST.001:2",
+            "rule:CAP.SH.SOCKET_LITERAL.001",
+            "rule:CAP.SH.SOCKET_LITERAL.001:1",
             "analysis.formats.documents:_RTF_CLASS",
             "analysis.go.go_eval:_ASSIGN",
             "analysis.go.go_eval:_HELPER",

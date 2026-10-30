@@ -105,7 +105,7 @@ class SettingsFileFindings:
                     a
                     for a in allowed
                     if re.fullmatch(
-                        r"\s*(?:\*|Bash|Bash\(\s*\*?\s*\)|Bash\(\s*\*\s*:\s*\*\s*\))\s*", a
+                        r"\s*(?:\*|Bash|Bash\(\s*(?:\*\s*)?\)|Bash\(\s*\*\s*:\s*\*\s*\))\s*", a
                     )
                 ),
                 None,

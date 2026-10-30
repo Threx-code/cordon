@@ -470,7 +470,7 @@ class Mixfile:
         """The module attributes set exactly once, to a plain string (`@version "1.4.5"`): the
         value a later `@version` reads. One set twice, or to anything else, is left unread."""
         sets: dict[str, list[str]] = {}
-        for found in re.finditer(r"(?m)^\s*@([a-z_]\w*)\s+(\S.*?)\s*$", text):
+        for found in re.finditer(r"(?m)^[^\S\n]*@([a-z_]\w*)\s+(\S(?:.*\S)?)\s*$", text):
             sets.setdefault(found.group(1), []).append(found.group(2))
         literal = re.compile(r'"((?:[^"\\#]|\\.)*)"')
         out: dict[str, str] = {}
@@ -481,12 +481,67 @@ class Mixfile:
         return out
 
     @staticmethod
+    def blanked(text: str) -> str:
+        """Each heredoc, string, charlist and comment replaced by a space, read once: what the
+        substitution of a heredoc (three double quotes to the next three), a double- or single-quoted
+        literal on one line with backslash escapes, or a `#` comment, by a space, gives. As an
+        expression an unclosed literal was read to its line's end (a heredoc, to the text's) from every
+        quote after it. Here a heredoc with no closing one ends every later heredoc, and a quoted
+        literal that cannot close marks the quotes of its kind before where it stopped as failing
+        too: each was read as escaped inside it, so its own read continues the same way."""
+        out: list[str] = []
+        at, size = 0, len(text)
+        heredocs_open = True
+        fail_before = {'"': 0, "'": 0}
+        while at < size:
+            char = text[at]
+            if char == '"' and heredocs_open and text.startswith('"""', at):
+                close = text.find('"""', at + 3)
+                if close >= 0:
+                    out.append(" ")
+                    at = close + 3
+                    continue
+                heredocs_open = False
+            if char in fail_before and at >= fail_before[char]:
+                end = Mixfile._quoted_end(text, at, char)
+                if end > 0:
+                    out.append(" ")
+                    at = end
+                    continue
+                fail_before[char] = -end
+            elif char == "#":
+                newline = text.find("\n", at)
+                out.append(" ")
+                at = size if newline < 0 else newline
+                continue
+            out.append(char)
+            at += 1
+        return "".join(out)
+
+    @staticmethod
+    def _quoted_end(text: str, start: int, quote: str) -> int:
+        """Past the literal opening at `start` (no raw newline in it; a backslash escapes the next
+        character but a newline), or minus where its read stopped when it cannot close."""
+        at, size = start + 1, len(text)
+        while at < size:
+            char = text[at]
+            if char == quote:
+                return at + 1
+            if char == "\n":
+                return -at
+            if char == "\\":
+                if at + 1 >= size or text[at + 1] == "\n":
+                    return -at
+                at += 2
+                continue
+            at += 1
+        return -at
+
+    @staticmethod
     def balanced(text: str) -> bool:
         """Whether every `do` block is closed by an `end` (strings, charlists and comments set
         aside; `do:` one-liners are not blocks). A mix.exs cut short is not."""
-        code = re.sub(
-            r'"""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|#[^\n]*', " ", text
-        )
+        code = Mixfile.blanked(text)
         opened = len(re.findall(r"\bdo\b(?!:)", code)) + len(re.findall(r"\bfn\b", code))
         closed = len(re.findall(r"\bend\b", code))
         return opened == closed

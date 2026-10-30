@@ -77,12 +77,16 @@ class TestTheShapeCheck:
 class TestPatterns:
     def test_every_listed_label_names_a_pattern(self) -> None:
         labels = set(Sources.by_label())
-        listed = set(Listed.OPEN) | set(Listed.SPECIFICATIONS) | set(Listed.LINEAR)
+        listed = (
+            set(Listed.OPEN) | set(Listed.SPECIFICATIONS) | set(Listed.LINEAR) | set(Listed.TRUSTED)
+        )
         assert listed <= labels, sorted(listed - labels)
         assert len(labels) > 500
 
     def test_a_pattern_is_flagged_exactly_when_it_is_listed(self) -> None:
-        listed = set(Listed.OPEN) | set(Listed.SPECIFICATIONS) | set(Listed.LINEAR)
+        listed = (
+            set(Listed.OPEN) | set(Listed.SPECIFICATIONS) | set(Listed.LINEAR) | set(Listed.TRUSTED)
+        )
         flagged = {
             found.label: why[0]
             for found in Sources.patterns()

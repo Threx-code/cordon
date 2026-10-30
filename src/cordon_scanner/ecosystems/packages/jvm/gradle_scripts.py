@@ -714,7 +714,7 @@ class GradleReader:
             if inner.head == "version" and inner.closure is not None:
                 for rich in inner.closure:
                     found = re.match(
-                        r"""^(strictly|require|prefer)\s*\(?\s*(["'])([^"'\n]{1,128})\2""",
+                        r"""^(strictly|require|prefer)\s*(?:\(\s*)?(["'])([^"'\n]{1,128})\2""",
                         rich.text,
                     )
                     if found and not strict:
@@ -725,7 +725,7 @@ class GradleReader:
         self, argument: str
     ) -> Iterator[tuple[str, str, tuple[str, ...], str | None, str | None]]:
         """`(name, spec, conditions, note, local project)` for each coordinate an argument names."""
-        wrapped = re.match(r"^(\w+)\s*\(\s*(.*)\s*\)$", argument, re.DOTALL)
+        wrapped = re.match(r"^(\w+)\s*\((?>\s*)(.*)\)$", argument, re.DOTALL)
         if wrapped and wrapped.group(1) in self.WRAPPERS:
             label = "platform" if wrapped.group(1) != "testFixtures" else "test fixtures"
             for name, spec, platform, note, local in self._coordinates(wrapped.group(2).strip()):

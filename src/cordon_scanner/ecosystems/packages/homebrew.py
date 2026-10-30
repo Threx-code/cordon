@@ -366,7 +366,9 @@ class Formula:
         name = content.basename.removesuffix(".rb")
         if not version:
             found = re.search(
-                r'^\s*url\s+"[^"]*?[-_/](?:v)?(\d+(?:\.\d+)+)[^"/]*"', text, re.MULTILINE
+                r'^[^\S\n]*url\s+"(?=[^"]*")(?:[^"]*(?=/[^"/]*"))?[^"/]*?[-_/](?:v)?(\d+(?:\.\d+)+)[^"/]*"',
+                text,
+                re.MULTILINE,
             )
             version = found.group(1) if found else None
         return name, version

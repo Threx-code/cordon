@@ -88,7 +88,7 @@ class Redactor:
             pass(?:wo?rd)? | secret | token | api[_-]?key | auth(?:orization)? |
             credential | private[_-]?key | access[_-]?key | bearer
         )
-        \s* [:=]? \s*
+        \s* (?: [:=] \s* )?
         (?: "([^\s"]{4,})" | '([^\s']{4,})' | ([^\s'"]{4,}) )
         """
     )

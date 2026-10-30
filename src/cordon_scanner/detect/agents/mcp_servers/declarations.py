@@ -170,7 +170,7 @@ class McpConfigs:
                 indent = len(env_start.group(1))
                 env: dict[str, str] = {}
                 for following in lines[index + 1 :]:
-                    pair = re.match(r"^(\s+)([A-Za-z_][\w]*)\s*:\s*(.*?)\s*$", following)
+                    pair = re.match(r"^(\s+)([A-Za-z_][\w]*)\s*:\s*((?:.*\S)?)\s*$", following)
                     if pair is None or len(pair.group(1)) <= indent:
                         break
                     env[pair.group(2)] = pair.group(3).strip("'\"")
@@ -203,14 +203,63 @@ class McpConfigs:
         ]
 
     @staticmethod
+    def without_comments(text: str) -> str:
+        """`re.sub(r'("(?:\\\\.|[^"\\\\])*")|//[^\\n]*|/\\*[\\s\\S]*?\\*/', keep strings, text)`, read
+        once: JSON with `//` and `/* */` comments, strings kept whole. As an expression an unclosed
+        string or comment was read to the end of the text from every quote or `/*` after it (quadratic);
+        here a string that cannot close marks every quote before where it failed as failing too (each
+        such quote was read as escaped inside it, so its own read continues the same way), and a `/*`
+        with no `*/` after it ends every later one."""
+        out: list[str] = []
+        at, size = 0, len(text)
+        strings_fail_before, comments_open = 0, True
+        while at < size:
+            char = text[at]
+            if char == '"' and at >= strings_fail_before:
+                end = McpConfigs._string_end(text, at)
+                if end > 0:
+                    out.append(text[at:end])
+                    at = end
+                    continue
+                strings_fail_before = -end
+            elif char == "/" and text.startswith("//", at):
+                newline = text.find("\n", at)
+                at = size if newline < 0 else newline
+                continue
+            elif char == "/" and comments_open and text.startswith("/*", at):
+                close = text.find("*/", at + 2)
+                if close >= 0:
+                    at = close + 2
+                    continue
+                comments_open = False
+            out.append(char)
+            at += 1
+        return "".join(out)
+
+    @staticmethod
+    def _string_end(text: str, start: int) -> int:
+        """The index past the string opening at `start` (`"(?:\\\\.|[^"\\\\])*"`), or minus the index its
+        read stopped at when it cannot close."""
+        at, size = start + 1, len(text)
+        while at < size:
+            char = text[at]
+            if char == '"':
+                return at + 1
+            if char == "\\":
+                if at + 1 >= size or text[at + 1] == "\n":
+                    return -at
+                at += 2
+                continue
+            at += 1
+        return -at
+
+    @staticmethod
     def _json_text(text: str) -> Any:
         try:
             return ScannedJson.loads(text)
         except ValueError:
             pass
-        stripped = re.sub(
-            r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*[\s\S]*?\*/', lambda m: m.group(1) or "", text
-        )
+        stripped = McpConfigs.without_comments(text)
         stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
         try:
             return ScannedJson.loads(stripped)

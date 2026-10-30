@@ -243,6 +243,32 @@ class DpkgDatabase:
             )
         return packages
 
+    _CLOSERS: ClassVar[dict[str, str]] = {"(": ")", "[": "]", "<": ">"}
+
+    @staticmethod
+    def unqualified(text: str) -> str:
+        """`re.sub(r"\\(.*?\\)|\\[.*?\\]|<.*?>", "", text)` read once: each bracketed version or
+        architecture qualifier removed, up to its first closer on its line. As an expression an
+        unclosed one was read to the line's end from every opener after it; here an opener with no
+        closer before its line ends marks every later opener of its kind on that line as unclosed."""
+        out: list[str] = []
+        at, size = 0, len(text)
+        unclosed_before = dict.fromkeys(DpkgDatabase._CLOSERS, 0)
+        while at < size:
+            char = text[at]
+            closer = DpkgDatabase._CLOSERS.get(char)
+            if closer is not None and at >= unclosed_before[char]:
+                line_end = text.find("\n", at)
+                line_end = size if line_end < 0 else line_end
+                close = text.find(closer, at + 1, line_end)
+                if close >= 0:
+                    at = close + 1
+                    continue
+                unclosed_before[char] = line_end
+            out.append(char)
+            at += 1
+        return "".join(out)
+
     @staticmethod
     def dpkg_relations(field: str) -> tuple[str, ...]:
         """`libc6 (>= 2.34), debconf (>= 0.5) | debconf-2.0, perl:any` -> `libc6`, `debconf|debconf-2.0`,
@@ -251,12 +277,7 @@ class DpkgDatabase:
         for group in field.replace("\n", " ").split(",")[:MAX_RELATIONS]:
             names = []
             for alternative in group.split("|"):
-                name = (
-                    re.sub(r"\(.*?\)|\[.*?\]|<.*?>", "", alternative)
-                    .strip()
-                    .split(":", 1)[0]
-                    .strip()
-                )
+                name = DpkgDatabase.unqualified(alternative).strip().split(":", 1)[0].strip()
                 if name:
                     names.append(name)
             if names:
