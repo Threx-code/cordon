@@ -63,6 +63,12 @@ class VcpkgVersions:
 class VcpkgPorts:
     """A vcpkg port's files at a version, and the source its portfile fetches."""
 
+    #: A CONTROL file's `Name: value` line, the value to its last non-blank as `(.*?)\s*$` gave it,
+    #: without the lazy value and the blank run trying every split of a long blank tail.
+    CONTROL_FIELD: ClassVar[re.Pattern[str]] = re.compile(
+        r"^([A-Za-z-]+):[ \t]*((?:[^\S\n]*+\S)*+)", re.MULTILINE
+    )
+
     REPOSITORY: ClassVar[str] = "https://github.com/microsoft/vcpkg"
 
     @staticmethod
@@ -107,9 +113,7 @@ class VcpkgPorts:
                 "utf-8", "replace"
             )
         # The first paragraph is the port's own; later ones are its features.
-        fields = dict(
-            re.findall(r"^([A-Za-z-]+):[ \t]*(.*?)\s*$", control.split("\n\n", 1)[0], re.MULTILINE)
-        )
+        fields = dict(VcpkgPorts.CONTROL_FIELD.findall(control.split("\n\n", 1)[0]))
         out: dict[str, Any] = {}
         if fields.get("Version"):
             out["version-string"] = fields["Version"]

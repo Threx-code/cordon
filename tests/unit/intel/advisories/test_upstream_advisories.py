@@ -22,6 +22,7 @@ import pytest
 from cordon_scanner.detect.supply.advisories.findings import AdvisoryFinding
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
+from cordon_scanner.intel.advisories.upstream.cocoapods import NpmPodspec
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
 from cordon_scanner.intel.advisories.upstream.inference import Inference
@@ -1917,4 +1918,83 @@ class TestHomebrewUrlFieldLinear:
     def test_a_long_word_is_linear(self) -> None:
         start = time.perf_counter()
         HomebrewBottles.URL_FIELD.findall("a" * 2_000_000)
+        assert time.perf_counter() - start < 3
+
+
+class TestUpstreamPatternsLinear:
+    """CocoaPods' and vcpkg's patterns answer as the ones they replace, in linear time (2026-10-30)."""
+
+    OLD_METHOD = re.compile(r"def self\.(\w+_config)\s*(?:\(\s*\))?\s*return\s*\{([^{}]*)\}\s*end")
+    OLD_RELEASE = re.compile(r"\d+\.\d+\.\d+[\w.-]*")
+    OLD_CHECKOUT = re.compile(r"git\+(\S+)#(\S+)")
+    OLD_CONTROL = re.compile(r"^([A-Za-z-]+):[ \t]*(.*?)\s*$", re.MULTILINE)
+
+    @staticmethod
+    def texts(seed: str, pieces: tuple[str, ...], longest: int = 12) -> list[str]:
+        rng = random.Random(f"{seed}|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        return [
+            "".join(rng.choice(pieces) for _ in range(rng.randint(0, longest)))
+            for _ in range(20_000)
+        ]
+
+    @staticmethod
+    def spans(found: re.Match[str] | None) -> object:
+        return found and (found.span(), found.groups())
+
+    def test_method_as_before(self) -> None:
+        pieces = (
+            "def self.",
+            "a",
+            "_config",
+            "_",
+            " ",
+            "\n",
+            "(",
+            ")",
+            "return",
+            "{",
+            "}",
+            "x: 1",
+            "end",
+        )
+        for text in self.texts("method", pieces):
+            new = [(m.span(), m.groups()) for m in NpmPodspec.METHOD.finditer(text)]
+            assert new == [(m.span(), m.groups()) for m in self.OLD_METHOD.finditer(text)], text
+
+    def test_release_and_checkout_as_before(self) -> None:
+        for text in self.texts("release", ("0", "1", ".", "-", "a", "_", "\x01", " ", "\u0663")):
+            assert self.spans(NpmPodspec.RELEASE.fullmatch(text)) == self.spans(
+                self.OLD_RELEASE.fullmatch(text)
+            ), text
+        for text in self.texts("checkout", ("git+", "#", "a", "b", " ", "\n", "/", ":", "+")):
+            assert self.spans(Upstreams.CHECKOUT.fullmatch(text)) == self.spans(
+                self.OLD_CHECKOUT.fullmatch(text)
+            ), text
+
+    def test_control_fields_as_before(self) -> None:
+        pieces = (
+            "a",
+            "B",
+            "-",
+            ":",
+            " ",
+            "\t",
+            "\n",
+            "\r",
+            "x",
+            "\x0b",
+            "\x85",
+            "\u2028",
+            "\u00a0",
+            "1",
+        )
+        for text in self.texts("control", pieces, 14):
+            assert VcpkgPorts.CONTROL_FIELD.findall(text) == self.OLD_CONTROL.findall(text), text
+
+    def test_long_runs_are_linear(self) -> None:
+        start = time.perf_counter()
+        list(NpmPodspec.METHOD.finditer("def self.__config" + " " * 2_000_000))
+        NpmPodspec.RELEASE.fullmatch("0.0." + "0" * 2_000_000 + "\x01")
+        Upstreams.CHECKOUT.fullmatch("git+" + "#" * 2_000_000 + " ")
+        VcpkgPorts.CONTROL_FIELD.findall("-:" + " " * 2_000_000)
         assert time.perf_counter() - start < 3
