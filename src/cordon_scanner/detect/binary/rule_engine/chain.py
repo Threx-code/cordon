@@ -20,9 +20,11 @@ anchors' offsets and gives, for each start, what running the anchors would. An a
 the chain's first term starts a match there and reads on greedily; when that term is a `+`, its
 backward run may also read more of the term's bytes before `q`, so every start back to the start
 of the term's run (within `REACH`) is a match too, and a start reached from several anchors keeps
-the last one's, as the search records it. A run reads at most `rule_engine.threads.REACH` bytes, so a
-match that long is left to the runs: `matches` gives no answer then, and none for an anchor
-outside the first term.
+the last one's, as the search records it. A run reads at most `rule_engine.threads.REACH` bytes and
+meets the end of its input there, so a match the reach cuts is the chain's over that window alone
+(`_within_reach`): handing it to the runs instead cost a run of up to `REACH` steps per anchor, 9.8 s
+for 5,000 spaces against ` +\\s{16,}`. `matches` gives no answer for an anchor outside the first
+term.
 """
 
 from __future__ import annotations
@@ -181,7 +183,11 @@ class Chain:
                 continue
             length = self._greedy(runs, feasible, q)
             if length >= REACH - 1:
-                return None  # the run's reach would cut it
+                # The run's reach cuts it: a run from `q` reads at most `REACH` bytes and meets the
+                # end of its input there, so its answer is the chain's over that window alone.
+                length = self._within_reach(runs, q, min(n, q + REACH))
+                if length < 0:
+                    continue
             lengths.append((q, length))
         if not (backward and self.first_repeats):
             return lengths
@@ -207,6 +213,28 @@ class Chain:
             end = Chain._run_end(runs[i], p)
             p = Chain._last_in(feasible[i + 1], p + lo, min(p + hi, end))
         return p - start
+
+    def _within_reach(self, runs: list[list[tuple[int, int]]], q: int, end: int) -> int:
+        """How far the chain reads from `q` when its input ends at `end`, as a run's does at its
+        reach; -1 when it cannot match there. Only the class runs inside the window count, and a
+        match that reads this far is in long runs, so they are few."""
+        clipped = []
+        for term_runs in runs:
+            i = max(0, bisect.bisect_right(term_runs, (q, 1 << 62)) - 1)
+            window: list[tuple[int, int]] = []
+            while i < len(term_runs) and term_runs[i][0] < end:
+                a, e = term_runs[i]
+                if e > q:
+                    window.append((max(a, q), min(e, end)))
+                i += 1
+            clipped.append(window)
+        feasible: list[Spans] = [[] for _ in self.terms] + [[(q, end)]]
+        for i in range(len(self.terms) - 1, -1, -1):
+            _, lo, hi = self.terms[i]
+            feasible[i] = Chain._before(clipped[i], feasible[i + 1], lo, hi)
+        if not Chain.within(feasible[0], q):
+            return -1
+        return self._greedy(clipped, feasible, q)
 
     @staticmethod
     def _in_time(deadline: float | None) -> None:
