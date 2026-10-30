@@ -49,7 +49,11 @@ from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabas
 from cordon_scanner.intel.advisories.ranges import VersionRanges
 from cordon_scanner.intel.advisories.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
 from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, UpstreamResult
-from cordon_scanner.intel.registry import EstablishedPackageNames, RemovedPackageNames
+from cordon_scanner.intel.registry import (
+    BundledAdvisories,
+    EstablishedPackageNames,
+    RemovedPackageNames,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -88,7 +92,7 @@ class AdvisoryDetector(BaseDetector):
         # database -- an organisation stating "these are the only advisories I
         # act on" got the shipped list instead, which is the substitution this
         # project argues against everywhere else.
-        self._database = AdvisoryDatabase.bundled() if database is None else database
+        self._database = BundledAdvisories.database() if database is None else database
         self._advice: dict[tuple[str | None, str, str | None], str] = {}
         #: The feed's provisional verdicts per ecosystem, read on first use (`_provisional`).
         self._provisional_cache: dict[str, list[dict[str, Any]]] = {}

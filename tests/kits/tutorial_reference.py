@@ -25,6 +25,7 @@ from cordon_scanner.detect.supply.provenance import SUPPORTED_ECOSYSTEMS as PROV
 from cordon_scanner.detect.supply.registries.detector import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from cordon_scanner.intel.registries.popular import PackageIntel
 from cordon_scanner.sources.package import PackageTarget
 from cordon_scanner.version import __version__
@@ -154,7 +155,7 @@ class EcosystemTutorial:
 
     @staticmethod
     def render() -> str:
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         ids = sorted(EcosystemRegistry.BY_ID, key=lambda i: NAMES.get(i, (i,))[0].lower())
         missing = [i for i in ids if i not in NAMES]
         if missing:

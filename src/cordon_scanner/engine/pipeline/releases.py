@@ -431,12 +431,12 @@ class ReleaseChecks:
         `*.dist-info/METADATA`. A repository's root `package.json` is not a release, so a project
         that shares a name with a malicious package is never matched by name alone.
         """
-        from cordon_scanner.intel.registry import AdvisoryDatabase
+        from cordon_scanner.intel.registry import BundledAdvisories
 
         identities, placeholders = ReleaseChecks.release_identities(units)
         if not identities:
             return []
-        database = AdvisoryDatabase.bundled()
+        database = BundledAdvisories.database()
         out: list[Finding] = []
         for ecosystem, name, version, path in identities[:20]:
             records = [a for a in database.matching(ecosystem, name, version) if a.malicious]

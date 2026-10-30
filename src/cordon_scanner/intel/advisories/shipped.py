@@ -14,6 +14,7 @@ from cordon_scanner.intel.advisories.advisories import (
     _REFUSED_SYNCED,
     _SHARED_DATA,
     _TAMPERED,
+    ADVISORY_ECOSYSTEMS,
     Advisory,
     AdvisoryDatabase,
     AdvisoryFiles,
@@ -152,6 +153,40 @@ class ShippedAdvisories:
         _REFUSED_SYNCED.clear()
         with AdvisoryDatabase.SHARED_LOCK:
             AdvisoryDatabase.shared = None
+
+    @staticmethod
+    def records(ecosystem: str) -> Mapping[str, tuple[dict[str, object], ...]]:
+        """One ecosystem's generated records by lowercased name (`DeferredRecords`)."""
+        return ShippedAdvisories._shipped_raw(ecosystem)
+
+    @staticmethod
+    def advisory(ecosystem: str, raw: dict[str, object]) -> Advisory:
+        """One generated record as an `Advisory` (`DeferredRecords`)."""
+        return ShippedAdvisories._advisory_from_dict(ecosystem, raw)
+
+    @staticmethod
+    def database() -> AdvisoryDatabase:
+        """The set that ships with this release: `BUNDLED` plus, when present,
+        the generated OSV-derived sets in `intel/data/`.
+
+        The generated sets are deferred, not loaded: constructing this object is
+        a stat per ecosystem, and the first `matching()` for an ecosystem is
+        what reads that ecosystem's file.
+
+        One per process, shared: each instance merges an ecosystem's records the first time it is
+        asked about it, and a new instance per caller re-merged npm's quarter of a million names
+        on every scan -- 38 merges and 0.7 s of a 0.9 s warm scan of a 4 KB package. A feed
+        update clears it with the other caches (`reset_caches`).
+        """
+        with AdvisoryDatabase.SHARED_LOCK:
+            if AdvisoryDatabase.shared is None:
+                AdvisoryDatabase.shared = AdvisoryDatabase(
+                    BUNDLED,
+                    meta=AdvisoryFiles._meta(),
+                    deferred=ADVISORY_ECOSYSTEMS,
+                    source=ShippedAdvisories,
+                )
+            return AdvisoryDatabase.shared
 
     @staticmethod
     @OneOff.cache

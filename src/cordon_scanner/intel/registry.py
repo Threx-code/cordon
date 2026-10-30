@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 #: when it is first asked for (PEP 562), as the engine's own imports were.
 ROLES: dict[str, tuple[str, str]] = {
     "AdvisoryBundle": ("cordon_scanner.intel.store.dbsync", "AdvisoryBundle"),
-    "AdvisoryDatabase": ("cordon_scanner.intel.advisories.advisories", "AdvisoryDatabase"),
+    "BundledAdvisories": ("cordon_scanner.intel.advisories.shipped", "ShippedAdvisories"),
     "AdvisoryFiles": ("cordon_scanner.intel.advisories.advisories", "AdvisoryFiles"),
     "ECOSYSTEMS": ("cordon_scanner.intel.registries.registry_record", "ECOSYSTEMS"),
     "EUVD_PAGE": ("cordon_scanner.intel.advisories.exploited", "EUVD_PAGE"),
@@ -85,15 +85,16 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.advisories import exploited as _intel_advisories_exploited
     from cordon_scanner.intel.advisories import osv_import as _intel_advisories_osv_import
     from cordon_scanner.intel.advisories import ranges as _intel_advisories_ranges
+    from cordon_scanner.intel.advisories import shipped as _intel_advisories_shipped
     from cordon_scanner.intel.advisories import upstream_advisories as _intel_advisories_upstream
     from cordon_scanner.intel.advisories import versions as _intel_advisories_versions
     from cordon_scanner.intel.base import (
         AdvisoryCves,
-        AdvisoryDatabases,
         AdvisoryFileChecks,
         ArtifactQueries,
         AttestationQueries,
         BottleProvenance,
+        BundledAdvisoryDatabase,
         BundleKeys,
         BundleVerification,
         ChartProvenance,
@@ -161,7 +162,7 @@ if TYPE_CHECKING:
     # Each implementation, as the engine sees it: by its protocol (the type checker proves the
     # implementation conforms) or, for a plain value, by the value's type.
     AdvisoryBundle: BundleKeys = _intel_store_dbsync.AdvisoryBundle
-    AdvisoryDatabase: AdvisoryDatabases = _intel_advisories_advisories.AdvisoryDatabase
+    BundledAdvisories: BundledAdvisoryDatabase = _intel_advisories_shipped.ShippedAdvisories
     AdvisoryFiles: AdvisoryFileChecks = _intel_advisories_advisories.AdvisoryFiles
     ECOSYSTEMS: frozenset[str] = _intel_registries_registry_record.ECOSYSTEMS
     EUVD_PAGE: str = _intel_advisories_exploited.EUVD_PAGE
@@ -241,11 +242,11 @@ __all__ = [
     "YOUNG_DEPENDENCY_DAYS",
     "AdvisoryBundle",
     "AdvisoryCveNames",
-    "AdvisoryDatabase",
     "AdvisoryFiles",
     "AnsibleSignatures",
     "AttestationDocuments",
     "BazelProvenance",
+    "BundledAdvisories",
     "Ed25519",
     "Epss",
     "EstablishedPackageNames",

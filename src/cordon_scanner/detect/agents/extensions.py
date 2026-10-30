@@ -16,9 +16,9 @@ class ExtensionVerdicts:
 
     @staticmethod
     def osv(identifier: str, version: str | None) -> tuple[str, str] | None:
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.registry import BundledAdvisories
 
-        database = AdvisoryDatabase.bundled()
+        database = BundledAdvisories.database()
         records = [a for a in database.for_package("vscode", identifier) if a.malicious]
         if not records:
             return None

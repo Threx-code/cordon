@@ -25,6 +25,7 @@ from cordon_scanner.detect.secrets.assembly import SecretAssembly
 from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
 from cordon_scanner.detect.secrets.patterns import ASSIGNMENT
 from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from support import Support
 
 JAVA_CLASS = b"\xca\xfe\xba\xbe" + (0).to_bytes(2, "big") + (65).to_bytes(2, "big") + b"\x00" * 40
@@ -13112,9 +13113,8 @@ class TestRegistryAdvisoriesAreAboutRegistryPackages:
 
     @staticmethod
     def _recorded_as_malware(name: str, version: str) -> bool:
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
-        return any(a.malicious for a in AdvisoryDatabase.bundled().matching("npm", name, version))
+        return any(a.malicious for a in ShippedAdvisories.database().matching("npm", name, version))
 
     def _graph(self, name: str, text: str):
         from cordon_scanner.ecosystems.packages.npm import NpmEcosystem

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from cordon_scanner.foundation.results import Dependency
+    from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
     from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
     from cordon_scanner.intel.provenance.helm_provenance import ChartCheck
     from cordon_scanner.intel.provenance.homebrew_provenance import BottleCheck
@@ -160,10 +161,11 @@ class AdvisoryFileChecks(Protocol):
     def refused_synced_files(self) -> tuple[str, ...]: ...
 
 
-class AdvisoryDatabases(Protocol):
-    """What the engine and the detectors use of the class `AdvisoryDatabase`."""
+class BundledAdvisoryDatabase(Protocol):
+    """What the engine and the detectors use of the class `ShippedAdvisories`: the advisory set
+    that ships with this release."""
 
-    def bundled(self) -> AdvisoryCatalog: ...
+    def database(self) -> AdvisoryDatabase: ...
 
 
 class BundleKeys(Protocol):
@@ -614,11 +616,11 @@ class PackageArchive:
 
 __all__ = [
     "Advisories",
-    "AdvisoryDatabases",
     "AdvisoryRecord",
     "ArtifactQueries",
     "BottleProvenance",
     "BundleKeys",
+    "BundledAdvisoryDatabase",
     "ChartProvenance",
     "DataFiles",
     "FeedStatus",

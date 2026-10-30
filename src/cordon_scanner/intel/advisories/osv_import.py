@@ -9,7 +9,7 @@ invoked from two places, both explicit and both operator-initiated:
   validate, open a pull request, never push directly).
 - `cordon-scanner advisories sync`, for an operator who wants current data
   without waiting for the next release. Writes to a user cache directory, not
-  into the installed package -- see `intel/advisories.py`'s `bundled()`.
+  into the installed package -- see `intel/advisories/shipped.py`'s `ShippedAdvisories.database()`.
 
 OSV publishes one zip per ecosystem at a fixed, documented, unauthenticated
 URL (https://google.github.io/osv.dev/data/#data-dumps): every vulnerability
@@ -680,7 +680,7 @@ class OsvImport:
         """Sync every requested ecosystem. Stops at the first failure.
 
         All-or-nothing on purpose: a partial write would let a later run of
-        `AdvisoryDatabase.bundled()` mix an old npm snapshot with a fresh pypi one
+        `ShippedAdvisories.database()` mix an old npm snapshot with a fresh pypi one
         with no way to tell they are from different points in time, which is
         exactly the kind of silent inconsistency `DatabaseMeta.built_at` exists to
         prevent.

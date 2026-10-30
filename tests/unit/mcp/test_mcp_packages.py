@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from cordon_scanner.mcp.packages import (
     ECOSYSTEMS,
     InstallCommand,
@@ -137,7 +137,7 @@ class Records:
     @staticmethod
     def affected(ecosystem: str) -> tuple[str, str, str]:
         """A real record from the bundled database whose affected version can be named exactly."""
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         database._load(ecosystem)
         names = itertools.islice(database._sources.get(ecosystem, {}), 20000)
         keys = [(ecosystem, name) for name in names] + [

@@ -21,8 +21,8 @@ from cordon_scanner.ecosystems.others import GitHubActionsEcosystem
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
-from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 from cordon_scanner.intel.advisories.osv_import import OsvImport
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
 
 class CoverageHelpers:
@@ -72,7 +72,7 @@ class TestEditorExtensionRecords:
     """OSV's VSCode records (Marketplace and Open VSX) wherever an extension is named."""
 
     def test_the_records_are_bundled(self) -> None:
-        records = AdvisoryDatabase.bundled().for_package("vscode", "ellacrity.recoil")
+        records = ShippedAdvisories.database().for_package("vscode", "ellacrity.recoil")
         assert any(a.malicious for a in records)
 
     def test_a_recommended_malicious_extension(self, tmp_path) -> None:

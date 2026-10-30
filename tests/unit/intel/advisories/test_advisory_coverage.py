@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
 #: Pins whose vulnerability has been public for years, one per ecosystem whose
 #: data this project ships. Chosen for longevity rather than severity: each is
@@ -75,7 +76,7 @@ class AdvisoryCoverageFixtures:
 
     @pytest.fixture(scope="module")
     def database(self) -> AdvisoryDatabase:
-        return AdvisoryDatabase.bundled()
+        return ShippedAdvisories.database()
 
 
 class TestKnownVulnerabilitiesAreFound(AdvisoryCoverageFixtures):
@@ -221,7 +222,7 @@ class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
         from cordon_scanner.intel.advisories import shipped
 
         shipped.ShippedAdvisories._shipped_raw.cache_clear()
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         assert shipped.ShippedAdvisories._shipped_raw.cache_info().misses == 0
         # And the first question about one ecosystem reads that one only.
         database.matching("cargo", "smallvec", "0.6.13")
@@ -229,7 +230,7 @@ class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
 
     @pytest.mark.conformance("x", "x.feeds")
     def test_an_ecosystem_with_no_records_is_not_claimed_as_covered(self) -> None:
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         assert database.covers("npm")
         assert not database.covers("conan")
         assert not database.covers("conda")
@@ -237,7 +238,7 @@ class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
 
     def test_the_bundled_set_is_never_empty(self) -> None:
         """`is_empty` decides whether the detector reports a lost database."""
-        assert not AdvisoryDatabase.bundled().is_empty
+        assert not ShippedAdvisories.database().is_empty
         assert AdvisoryDatabase().is_empty
 
 
@@ -263,11 +264,10 @@ class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
 
     def test_it_never_suggests_a_version_another_advisory_names(self) -> None:
         """The version that fixes one advisory is routinely named by the next."""
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         advice = self._advice("npm", "minimist", "1.2.0")
         suggested = advice.split("Upgrade to ", 1)[1].split(" ", 1)[0]
-        assert not AdvisoryDatabase.bundled().matching("npm", "minimist", suggested)
+        assert not ShippedAdvisories.database().matching("npm", "minimist", suggested)
 
     def test_a_record_with_a_list_and_a_range_names_the_fix(self) -> None:
         """PyPI records carry an enumerated list and a range; read together, as the OSV
@@ -276,7 +276,7 @@ class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
         advice = self._advice("pypi", "django", "3.2")
         assert advice.startswith("Upgrade to "), advice
         suggested = advice.split("Upgrade to ", 1)[1].split(" ", 1)[0]
-        assert not AdvisoryDatabase.bundled().matching("pypi", "django", suggested)
+        assert not ShippedAdvisories.database().matching("pypi", "django", suggested)
 
     def test_a_package_nothing_names_falls_back(self) -> None:
         advice = self._advice("npm", "cordon-no-such-package-exists", "1.0.0")

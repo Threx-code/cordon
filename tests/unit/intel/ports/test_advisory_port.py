@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from cordon_scanner.intel import registry
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase, AdvisoryFiles
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
 
 class PortKit:
@@ -24,7 +25,7 @@ class PortKit:
 class TestTheAdvisoryPort:
     def test_the_roles_are_the_classes(self) -> None:
         assert registry.AdvisoryFiles is AdvisoryFiles
-        assert registry.AdvisoryDatabase is AdvisoryDatabase
+        assert registry.BundledAdvisories is ShippedAdvisories
         assert registry.AdvisoryFiles.tampered_files() == AdvisoryFiles.tampered_files()
         assert registry.AdvisoryFiles.refused_synced_files() == AdvisoryFiles.refused_synced_files()
 
