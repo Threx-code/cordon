@@ -31,13 +31,9 @@ class Graph:
 
     #: Dependency files in a format no parser here reads, and what to supply instead. Reported,
     #: never skipped silently: a project whose only lockfile is one of these was not resolved.
-    UNREAD_DEPENDENCY_FILES: ClassVar[dict[str, tuple[str, str]]] = {
-        "bun.lockb": (
-            "bun.lock",
-            "Bun's legacy binary lockfile: an undocumented format Bun itself replaced with the "
-            "text `bun.lock` in 1.2. Regenerate it with `bun install --save-text-lockfile`.",
-        ),
-    }
+    UNREAD_DEPENDENCY_FILES: ClassVar[dict[str, tuple[str, str]]] = {}
+    """Empty since the bun.lockb reader (review 98, note 28): every dependency file the contract
+    names has a parser. The table and its report stay for the next format without one."""
 
     @staticmethod
     def unread_dependency_files(

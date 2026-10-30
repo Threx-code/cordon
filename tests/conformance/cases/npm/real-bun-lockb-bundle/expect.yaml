@@ -1,0 +1,9 @@
+# Bun's binary lockfile, format 3 (the current one), written by Bun for its bundle bench
+# (NOTICE.md): a hundred `npm:three@...` aliases all resolve to the one `three` package.
+kinds: [real-world, valid]
+covers:
+  - file:bun.lockb
+  - npm.bun
+dependencies:
+  - {name: three, resolved_version: 0.184.0, direct: true}
+  - {name: bun-types, resolved_version: 0.7.3, dependency_type: dev, direct: true}
