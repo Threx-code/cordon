@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Protocol
 
 from cordon_scanner.detect.agents.language_model.review import JudgeError
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.network.downloads import Download
 
 TIMEOUT_SECONDS: Final = 90.0
 LOCAL_TIMEOUT_SECONDS: Final = 300.0
@@ -101,7 +103,7 @@ class HttpTransport:
             with urllib.request.build_opener(_NoRedirect).open(
                 request, timeout=timeout
             ) as response:
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                raw = Download.read(response, MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raise ProviderUnavailable(f"the judge at {host} answered {exc.code}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
@@ -111,7 +113,7 @@ class HttpTransport:
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ProviderUnavailable(f"the judge at {host} answered with too much")
         try:
-            parsed = json.loads(raw)
+            parsed = ScannedJson.loads(raw)
         except ValueError as exc:
             raise ProviderUnavailable(f"the judge at {host} did not answer with JSON") from exc
         if not isinstance(parsed, dict):

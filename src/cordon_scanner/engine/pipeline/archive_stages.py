@@ -282,7 +282,7 @@ class ArchiveStages:
         if workers > 1:
             from cordon_scanner.engine.cache import ScanCache
 
-            signature = ScanCache.detector_signature(content_detectors)
+            signature = ScanCache.scan_signature(content_detectors, ctx, self.config)
             for start in range(0, len(units), ARCHIVE_SLICE):
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
                     acc.complete = False
@@ -296,17 +296,19 @@ class ArchiveStages:
                         )
                     )
                     break
-                acc.add(
-                    self.engine.detection.parallel(
-                        units[start : start + ARCHIVE_SLICE],
-                        path.parent,
-                        ctx,
-                        acc,
-                        content_detectors,
-                        signature,
-                        carry_content=True,
-                    )
+                found = self.engine.detection.parallel(
+                    units[start : start + ARCHIVE_SLICE],
+                    path.parent,
+                    ctx,
+                    acc,
+                    content_detectors,
+                    signature,
+                    carry_content=True,
+                    where=path.name,
                 )
+                acc.add(found)
+                if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
+                    break  # the pool stopped at the budget and said so; no slice after it
             units_left: list[FileUnit] = []
         else:
             units_left = units

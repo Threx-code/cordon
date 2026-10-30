@@ -29,6 +29,8 @@ import urllib.parse
 import urllib.request
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
+from cordon_scanner.foundation.network.downloads import Download
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -149,7 +151,7 @@ class PrivateRegistries:
         opener = urllib.request.build_opener(base._NoRedirect)
         try:
             with opener.open(request, timeout=base.TIMEOUT_SECONDS) as response:
-                body = bytes(response.read(MAX_BYTES + 1))
+                body = bytes(Download.read(response, MAX_BYTES + 1))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise PackageNotFound(f"{registry.host} has no such package") from exc

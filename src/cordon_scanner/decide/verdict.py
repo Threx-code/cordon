@@ -41,6 +41,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
 from cordon_scanner.foundation.paths import PackagePaths
 
@@ -275,8 +276,11 @@ class VerdictFeatures:
             base = path.rsplit("!", 1)[-1]
             if base.endswith("package.json"):
                 try:
-                    manifest = json.loads(data)
-                except ValueError:
+                    manifest = ScannedJson.loads(data)
+                except (ValueError, RecursionError):
+                    # Malformed, or nested past ScannedJson's limit: no features from it. Read
+                    # here outside any detector's isolation, a RecursionError once ended the whole
+                    # scan, exit 2; the manifest's own readers report it.
                     continue
                 if not isinstance(manifest, dict):
                     continue

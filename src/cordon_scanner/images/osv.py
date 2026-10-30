@@ -24,6 +24,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.version import __version__
 
 API: Final = "https://api.osv.dev/v1"
@@ -79,7 +81,7 @@ class OsvClient:
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-            return json.loads(response.read(MAX_BYTES))
+            return ScannedJson.loads(Download.read(response, MAX_BYTES))
 
     @staticmethod
     def _get(url: str) -> Any:
@@ -87,7 +89,7 @@ class OsvClient:
             url, headers={"User-Agent": f"cordon-scanner/{__version__}"}
         )
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-            return json.loads(response.read(MAX_BYTES))
+            return ScannedJson.loads(Download.read(response, MAX_BYTES))
 
     @staticmethod
     def _roundup(value: float) -> float:

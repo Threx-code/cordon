@@ -35,6 +35,7 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.files.atomic import AtomicFile
 from cordon_scanner.foundation.files.seal import LocalSeal
+from cordon_scanner.foundation.network.downloads import Download
 
 SEAL_LABEL: Final = "osv-delta"
 CHUNK: Final = 64 << 10
@@ -147,7 +148,7 @@ class OsvDelta:
         opener = urllib.request.build_opener(_NoRedirect)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
-                body = response.read(limit + 1)
+                body = Download.read(response, limit + 1, budget=TIMEOUT * 4)
         except urllib.error.HTTPError as exc:
             if exc.code == 416:  # a range past the end: the list was shorter than one chunk more
                 return b""

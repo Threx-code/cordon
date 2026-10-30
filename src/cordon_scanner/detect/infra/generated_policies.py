@@ -14,6 +14,7 @@ from typing import Any, Final
 from cordon_scanner.detect.infra.iac import IacPolicy
 from cordon_scanner.detect.infra.iac_policies import CURATED, CuratedPolicies
 from cordon_scanner.detect.infra.policy_terms import HIGH, LOW, MEDIUM
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
@@ -55,7 +56,9 @@ class GeneratedPolicies:
         worse than none, because the count still looks healthy.
         """
         try:
-            recorded = json.loads((path.parent / GENERATED_DIGESTS).read_text(encoding="utf-8"))
+            recorded = ScannedJson.loads(
+                (path.parent / GENERATED_DIGESTS).read_text(encoding="utf-8")
+            )
         except (OSError, ValueError):
             return True
         if not isinstance(recorded, dict) or path.name not in recorded:
@@ -107,7 +110,7 @@ class GeneratedPolicies:
     def generated_meta() -> dict[str, Any]:
         """What the generated set was built from, for `rules list` and the report."""
         try:
-            return dict(json.loads((DATA_DIR / GENERATED_META).read_text(encoding="utf-8")))
+            return dict(ScannedJson.loads((DATA_DIR / GENERATED_META).read_text(encoding="utf-8")))
         except (OSError, ValueError):
             return {}
 

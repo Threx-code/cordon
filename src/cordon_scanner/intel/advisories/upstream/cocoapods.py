@@ -11,6 +11,7 @@ import tarfile
 import urllib.parse
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.upstream.base import (
     RepositoryArchive,
     Unnamed,
@@ -210,7 +211,7 @@ class NpmPodspec:
             url, headers={"User-Agent": "cordon-scanner", "Accept-Encoding": "identity"}
         )
         with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
-            body: bytes = response.read(NpmPodspec.MAX_TARBALL + 1)
+            body: bytes = Download.read(response, NpmPodspec.MAX_TARBALL + 1)
         if len(body) > NpmPodspec.MAX_TARBALL:
             raise ValueError("tarball too large")
         return body

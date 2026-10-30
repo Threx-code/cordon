@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
@@ -379,8 +380,8 @@ class IntentObserver:
         if manifest is None:
             return set(), set()
         try:
-            document = json.loads(manifest.content.text)
-        except ValueError:
+            document = ScannedJson.loads(manifest.content.text)
+        except (ValueError, RecursionError):  # malformed, or nested past ScannedJson's limit
             return set(), set()
         if not isinstance(document, dict):
             return set(), set()

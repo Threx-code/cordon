@@ -38,6 +38,8 @@ import threading
 import time
 from typing import IO, Any, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+
 #: Exit status reported for a child the helper could not account for.
 LOST: Final = 70
 
@@ -86,7 +88,7 @@ class WarmScanner:
         stream = self._process.stdout if self._process is not None else None
         for line in stream or ():
             try:
-                message = json.loads(line)
+                message = ScannedJson.loads(line)
             except ValueError:
                 continue
             if message.get("ready"):
@@ -244,7 +246,7 @@ class WarmHelper:
                     while "\n" in buffered:
                         line, buffered = buffered.split("\n", 1)
                         try:
-                            request = json.loads(line)
+                            request = ScannedJson.loads(line)
                         except ValueError:
                             continue
                         pid = os.fork()

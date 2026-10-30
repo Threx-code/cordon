@@ -8,11 +8,12 @@ and they are matched against the same advisory database as a repository's lockfi
 
 from __future__ import annotations
 
-import json
 import posixpath
 import re
 from dataclasses import dataclass
 from typing import Final
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 #: A runtime installed from its own release tarball rather than a package manager records its
 #: version in a file of its own: the official python, node, golang and eclipse-temurin images all
@@ -168,7 +169,7 @@ class LanguagePackages:
         """`vendor/composer/installed.json`: a list of packages (Composer 1) or `{"packages": [...]}`
         (Composer 2), each with the name and version Composer installed."""
         try:
-            document = json.loads(data)
+            document = ScannedJson.loads(data)
         except ValueError:
             return []
         packages = document.get("packages") if isinstance(document, dict) else document
@@ -215,7 +216,7 @@ class LanguagePackages:
             )
         if base == "package.json":
             try:
-                manifest = json.loads(data)
+                manifest = ScannedJson.loads(data)
             except ValueError:
                 return None
             if not isinstance(manifest, dict):

@@ -11,6 +11,7 @@ import tarfile
 import urllib.parse
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
     RepositoryArchive,
@@ -44,7 +45,7 @@ class HomebrewBottles:
             headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(f"https://ghcr.io{path}", headers=headers)
         with urllib.request.build_opener(NoRedirect).open(request, timeout=60) as response:
-            body: bytes = response.read(4 << 20)
+            body: bytes = Download.read(response, 4 << 20)
         return body
 
     MAX_BOTTLE_BYTES: ClassVar[int] = 128 << 20

@@ -18,13 +18,14 @@ from cordon_scanner.detect.base import (
     Unit,
 )
 from cordon_scanner.detect.registry import JudgeGate
-from cordon_scanner.engine.cache import CacheKey
+from cordon_scanner.engine.cache import CacheKey, ScanCache
 from cordon_scanner.engine.parallel import ParallelScanner, WorkItem
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import (
     ADVISORY_DETECTORS,
     ALWAYS_RUN,
+    REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.models import Category, Finding, Severity
@@ -89,22 +90,24 @@ class Detection:
         skipped: list[str] = []
         skipped_judge = False
 
-        skipped_judge = self.each_detector(
-            detectors, budget, elapsed, skipped, produced, unit, ctx, acc, skipped_judge
-        )
+        root = ctx.repository.root if ctx.repository is not None else None
+        with ScanCache.watch(root, unit.path) as watch:
+            skipped_judge = self.each_detector(
+                detectors, budget, elapsed, skipped, produced, unit, ctx, acc, skipped_judge
+            )
 
-        # The rest of an oversized file, a window at a time (`core/windows.py`). The workers make
-        # the same call (`ParallelScanner._inspect_batch`), so a parallel scan reads as far.
-        windowed, intact = WindowPass.run(
-            unit,
-            [
-                d
-                for d in detectors
-                if d.id not in skipped and not (d.id == JudgeGate.ID and skipped_judge)
-            ],
-            lambda detector, part: self.run(detector, part, ctx, acc),
-            produced,
-        )
+            # The rest of an oversized file, a window at a time (`core/windows.py`). The workers
+            # make the same call (`ParallelScanner._inspect_batch`), so a parallel scan reads as far.
+            windowed, intact = WindowPass.run(
+                unit,
+                [
+                    d
+                    for d in detectors
+                    if d.id not in skipped and not (d.id == JudgeGate.ID and skipped_judge)
+                ],
+                lambda detector, part: self.run(detector, part, ctx, acc),
+                produced,
+            )
         produced.extend(windowed)
         if not intact:
             acc.complete = False
@@ -125,8 +128,9 @@ class Detection:
         ]
 
         # Only a complete result is cached. Caching the output of a run that hit
-        # a limit would make the degradation permanent and invisible.
-        if acc.complete:
+        # a limit would make the degradation permanent and invisible. Nor one whose
+        # inspection read past the file (`Watch`): what it read is in no key.
+        if acc.complete and not watch.reached:
             self.cache.put(key, produced)
 
         return produced
@@ -207,6 +211,7 @@ class Detection:
         signature: str,
         *,
         carry_content: bool = False,
+        where: str = REPOSITORY_SCOPE,
     ) -> list[Finding]:
         """Inspect files across a worker pool.
 
@@ -227,14 +232,9 @@ class Detection:
         if not pending:
             return results
 
-        def report(indices: Sequence[int]) -> None:
-            # Called as each batch's results arrive, so the count moves while
-            # the pool is still working. Advancing after `run` returned meant a
-            # parallel scan sat at 0 for its whole duration and then jumped to
-            # complete, which reads exactly like the hang it exists to rule out.
-            for index in indices:
-                self.progress.advance(units[index].path)
-
+        report = self.reporter(units)
+        # The files of batches the pool never started because the scan's budget ran out first.
+        unstarted: list[int] = []
         produced = ParallelScanner.run(
             config=self.config,
             root=str(root),
@@ -249,31 +249,13 @@ class Detection:
             # The parent already walked the tree. Sending the result costs one
             # pickle; recomputing it costs a full traversal per worker.
             inventory=ctx.repository,
-            # And the parts of the context the inventory cannot produce: which
-            # FILES an install hook runs, and the import closure around them. A
-            # worker rebuilding the context from the inventory alone knows that
-            # `package.json` declares a `postinstall` and not that it runs
-            # `scripts/setup.js`, so every composite gated on
-            # `ctx.in_install_hook` was silently off in parallel.
-            install_hook_paths=ctx.install_hook_paths,
-            ci_hook_paths=ctx.ci_hook_paths,
-            # And which bodies inside that closure the hooks never reach, for
-            # the same reason: a worker cannot derive it, and one that had the
-            # paths without it would apply install-time context more widely than
-            # the parent does.
-            install_deferred_lines=ctx.install_deferred_lines,
-            # An image's members are judged as an image's: a binary there is what it ships.
-            image=ctx.image,
-            install_entry_paths=ctx.install_entry_paths,
-            consumer_install_paths=ctx.consumer_install_paths,
-            package_facts={
-                "package_distribution": ctx.package_distribution,
-                "distribution": ctx.distribution,
-                "tree_paths": ctx.tree_paths,
-                "import_entry_paths": ctx.import_entry_paths,
-                "package_repository": ctx.package_repository,
-            },
+            # And everything else the parent's context knows, which a worker reading single files
+            # cannot derive: which files an install hook runs, the entry points and their closure,
+            # the skill scripts, the shipped binaries (`ScanContext.facts`, `_initialise`).
+            facts=ctx.facts(),
             on_batch=report,
+            deadline=ctx.deadline,
+            unstarted=unstarted,
         )
 
         if produced is None:
@@ -281,8 +263,39 @@ class Detection:
             return results
 
         self.merge_worker_results(produced, units, results, acc, ctx, signature)
+        if unstarted:
+            results.append(self.unexamined(len(unstarted), where, acc))
 
         return results
+
+    def reporter(self, units: list[FileUnit]) -> Callable[[Sequence[int]], None]:
+        """Progress for a pool's batches as their results arrive."""
+
+        def report(indices: Sequence[int]) -> None:
+            # Called as each batch's results arrive, so the count moves while
+            # the pool is still working. Advancing after `run` returned meant a
+            # parallel scan sat at 0 for its whole duration and then jumped to
+            # complete, which reads exactly like the hang it exists to rule out.
+            for index in indices:
+                self.progress.advance(units[index].path)
+
+        return report
+
+    def unexamined(self, count: int, where: str, acc: Accumulator) -> Finding:
+        """The pool stopped at the scan's budget with `count` files not reached. As the serial
+        loops report it: the scan is partial, and says so, rather than matching on past its
+        budget with nothing to show the budget was passed."""
+        acc.complete = False
+        return OperationalFinding.build(
+            path=where,
+            rule_id="OPERATIONAL.SCAN.TIMEOUT",
+            message=(
+                f"The {self.config.limits.total_timeout:.0f}s budget was reached with "
+                f"{count} file(s) still unexamined."
+            ),
+            remediation="Raise --timeout, or scan a smaller part at a time.",
+            severity=Severity.MEDIUM,
+        )
 
     def inspect_here(
         self,
@@ -342,7 +355,7 @@ class Detection:
 
     def merge_worker_results(
         self,
-        produced: list[tuple[int, list[Finding], bool]],
+        produced: list[tuple[int, list[Finding], bool, bool]],
         units: list[FileUnit],
         results: list[Finding],
         acc: Accumulator,
@@ -350,7 +363,7 @@ class Detection:
         signature: str,
     ) -> None:
         """What the workers found, merged in the order of the units, and cached where trusted."""
-        for index, findings, trusted in produced:
+        for index, findings, trusted, cacheable in produced:
             unit = units[index]
             results.extend(findings)
             if not trusted:
@@ -375,7 +388,7 @@ class Detection:
                     )
                 )
                 continue
-            if acc.complete:
+            if acc.complete and cacheable:
                 self.cache.put(self.cache_key(unit, ctx, signature), findings)
 
     def cache_key(self, unit: FileUnit, ctx: ScanContext, signature: str) -> CacheKey:

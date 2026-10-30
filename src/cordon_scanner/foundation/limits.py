@@ -26,6 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
+from cordon_scanner.foundation.errors import LimitError
+
 _LIMIT_RANGES: dict[str, tuple[float, float | None, type]] = {
     # name: (minimum, maximum or None, accepted type)
     "max_file_bytes": (1, None, int),
@@ -213,14 +215,14 @@ class Limits:
             # would reject `total_timeout: 900`, which is how everybody writes it.
             accepted: tuple[type, ...] = (int, float) if kind is float else (int,)
             if isinstance(value, bool) or not isinstance(value, accepted):
-                raise ValueError(
+                raise LimitError(
                     f"limit {name} must be {'a number' if kind is float else 'an integer'}, "
                     f"got {type(value).__name__}"
                 )
             numeric = float(value)  # type: ignore[arg-type]
             if numeric < floor or (ceiling is not None and numeric > ceiling):
                 bound = f"{floor} to {ceiling}" if ceiling is not None else f"at least {floor}"
-                raise ValueError(f"limit {name}={value} is out of range ({bound})")
+                raise LimitError(f"limit {name}={value} is out of range ({bound})")
             out[name] = value
         return out
 

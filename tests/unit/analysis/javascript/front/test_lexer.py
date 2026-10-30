@@ -138,16 +138,25 @@ class TestRecovery:
                     raise AssertionError("no progress")
 
     def test_time_is_linear_in_the_input(self) -> None:
-        def seconds(n: int) -> float:
-            """The best of five runs: on a loaded machine one run measures the machine."""
+        """Four times the input costs under ten times as long, the 2.5 times over linear that the
+        earlier ten-times step allowed with its bound of 25. In CPU time (the lexer runs in this
+        process), after a warm-up, at a size whose lexing takes at least half a second: a short
+        wall-clock timing failed on a loaded machine."""
+
+        def seconds(n: int, runs: int = 5) -> float:
+            """The best of `runs`: on a loaded machine one run measures the machine."""
             text = "a = `x${b}y` + 'c' / d; // e\n" * n
             best = float("inf")
-            for _ in range(5):
-                lexer, started = Lexer(text), time.perf_counter()
+            for _ in range(runs):
+                lexer, started = Lexer(text), time.process_time()
                 while lexer.next().kind != "eof":
                     pass
-                best = min(best, time.perf_counter() - started)
+                best = min(best, time.process_time() - started)
             return best
 
-        small, large = seconds(2_000), seconds(20_000)
-        assert large < small * 25
+        seconds(200, runs=1)  # the warm-up
+        n = 2_000
+        while n < 256_000 and seconds(n, runs=1) < 0.5:
+            n *= 2
+        small, large = seconds(n), seconds(4 * n)
+        assert large < small * 10, f"{small:.2f}s at {n:,} lines, {large:.2f}s at {4 * n:,}"

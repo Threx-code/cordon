@@ -12,8 +12,9 @@ outside a string.
 
 from __future__ import annotations
 
-import json
 from typing import Any
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 
 class Jsonc:
@@ -72,10 +73,10 @@ class Jsonc:
         if not isinstance(text, str):
             return None
         try:
-            return json.loads(text)
+            return ScannedJson.loads(text)
         except ValueError:
             pass
         try:
-            return json.loads(Jsonc._strip(text))
+            return ScannedJson.loads(Jsonc._strip(text))
         except ValueError:
             return None

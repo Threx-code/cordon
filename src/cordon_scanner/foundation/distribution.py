@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from cordon_scanner.foundation.errors import ConfigError
+from cordon_scanner.foundation.network.downloads import Download
 
 FETCH_TIMEOUT = 30
 MAX_POLICY_BYTES = 1024 * 1024
@@ -174,7 +175,7 @@ class PolicyDistribution:
             with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:  # noqa: S310
                 # Read one byte past the cap so the difference between "exactly
                 # at the limit" and "over it" is visible.
-                body: bytes = response.read(MAX_POLICY_BYTES + 1)
+                body: bytes = Download.read(response, MAX_POLICY_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise ConfigError(f"could not fetch policy {url}: {exc}") from exc
         if len(body) > MAX_POLICY_BYTES:

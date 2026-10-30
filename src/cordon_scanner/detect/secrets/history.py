@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import base64
 import http.client
-import json
 import time
 import urllib.error
 import urllib.request
@@ -32,7 +31,9 @@ from typing import ClassVar
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Location, Severity
+from cordon_scanner.foundation.network.downloads import Download
 
 LIVE_RULE = "SECRET.LIVE.001"
 REVOKED_RULE = "SECRET.LIVENESS.REJECTED.001"
@@ -280,7 +281,7 @@ class SecretLiveness:
     @staticmethod
     def _slack(status: int, body: bytes) -> bool | None:
         try:
-            answer = json.loads(body)
+            answer = ScannedJson.loads(body)
         except ValueError:
             return None
         if not isinstance(answer, dict):
@@ -388,7 +389,7 @@ class SecretLiveness:
         opener = urllib.request.build_opener(self._NoRedirect)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-                return response.status, response.read(64 << 10)
+                return response.status, Download.read(response, 64 << 10)
         except urllib.error.HTTPError as exc:
             return exc.code, b""
 
