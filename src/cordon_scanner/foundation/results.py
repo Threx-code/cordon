@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +423,9 @@ class ScanStats:
     archive_members: int = 0
     archive_ms: int = 0
     """Wall time spent expanding archives, so the cost of opening them is visible."""
+    detector_cpu_ms: Mapping[str, int] | None = None
+    """CPU milliseconds by detector id, only with `CORDON_DETECTOR_CLOCK=1`
+    (`engine/detector_clock`); absent otherwise, so a scan's output does not vary by run."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -437,6 +440,11 @@ class ScanStats:
             "duration_ms": self.duration_ms,
             "cache_hits": self.cache_hits,
             "cache_misses": self.cache_misses,
+            **(
+                {"detector_cpu_ms": dict(self.detector_cpu_ms)}
+                if self.detector_cpu_ms is not None
+                else {}
+            ),
         }
 
 

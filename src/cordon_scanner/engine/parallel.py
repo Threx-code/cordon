@@ -482,6 +482,30 @@ class ParallelScanner:
         return out
 
     @staticmethod
+    def _batch_results(
+        future: Any,
+    ) -> list[tuple[int, list[dict[str, Any]], bool | None, bool]]:
+        """A batch's per-file results; a timed batch's detector times added to this process's."""
+        from cordon_scanner.engine.detector_clock import DetectorClock
+
+        result = future.result()
+        if isinstance(result, tuple):
+            out, taken = result
+            DetectorClock.add(taken)
+            return out  # type: ignore[no-any-return]
+        return result  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _inspect_batch_timed(
+        batch: list[WorkItem], root: str, deadline: float | None = None
+    ) -> tuple[list[tuple[int, list[dict[str, Any]], bool | None, bool]], dict[str, float]]:
+        """`_inspect_batch`, with the CPU time each detector spent on it (`DetectorClock`)."""
+        from cordon_scanner.engine.detector_clock import DetectorClock
+
+        out = ParallelScanner._inspect_batch(batch, root, deadline)
+        return out, DetectorClock.taken()
+
+    @staticmethod
     def _inspected(
         loaded: FileContent, relative: str, root: str, ctx: Any, detectors: tuple[Any, ...]
     ) -> tuple[list[dict[str, Any]], bool, bool]:
@@ -514,6 +538,7 @@ class ParallelScanner:
     ) -> tuple[list[Any], list[dict[str, Any]], list[Finding], bool]:
         """One unit inspected inside the worker: every detector, the judge last, then the windows past its prefix."""
         from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.engine.detector_clock import DetectorClock
         from cordon_scanner.engine.window_pass import WindowPass
 
         unit = FileUnit(content=loaded, language=ParallelScanner._language(relative, loaded))
@@ -527,7 +552,9 @@ class ParallelScanner:
             relative: str = relative,
         ) -> list[Any]:
             try:
-                return list(detector.inspect(part, ctx))
+                return DetectorClock.timed(
+                    getattr(detector, "id", "unknown"), lambda: list(detector.inspect(part, ctx))
+                )
             except Exception as exc:  # noqa: BLE001
                 # A detector that fails in a worker must not silently reduce
                 # coverage. It is reported the same way the serial path reports
@@ -699,7 +726,7 @@ class ParallelScanner:
         # serial one produce identical output.
         for future in as_completed(futures):
             completed: list[int] = []
-            for index, findings, trusted, cacheable in future.result():
+            for index, findings, trusted, cacheable in ParallelScanner._batch_results(future):
                 if trusted is None:  # the worker reached it after the deadline
                     if unstarted is not None:
                         unstarted.append(index)
@@ -727,9 +754,15 @@ class ParallelScanner:
         The deadline is a `time.monotonic()` reading taken in this process and compared in the
         workers. That is sound because the monotonic clock is one system-wide clock on Linux and
         macOS (CLOCK_MONOTONIC) and on Windows, not a per-process counter."""
-        futures = [
-            pool.submit(ParallelScanner._inspect_batch, batch, root, deadline) for batch in batches
-        ]
+        from cordon_scanner.engine.detector_clock import DetectorClock
+
+        # With the detector clock on, each batch also hands back its workers' detector times.
+        inspect: Callable[..., Any] = (
+            ParallelScanner._inspect_batch_timed
+            if DetectorClock.enabled()
+            else ParallelScanner._inspect_batch
+        )
+        futures = [pool.submit(inspect, batch, root, deadline) for batch in batches]
         if deadline is None:
             ParallelScanner._collect(futures, collected, on_batch)
         else:

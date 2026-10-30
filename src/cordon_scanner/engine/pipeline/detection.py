@@ -19,6 +19,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import JudgeGate
 from cordon_scanner.engine.cache import CacheKey, ScanCache
+from cordon_scanner.engine.detector_clock import DetectorClock
 from cordon_scanner.engine.parallel import ParallelScanner, WorkItem
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
@@ -476,7 +477,7 @@ class Detection:
         as incomplete.
         """
         try:
-            produced = list(detector.inspect(unit, ctx))
+            produced = DetectorClock.timed(detector.id, lambda: list(detector.inspect(unit, ctx)))
         except Exception as exc:  # noqa: BLE001
             acc.complete = False
             return [

@@ -36,6 +36,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.cache import ScanCache
+from cordon_scanner.engine.detector_clock import DetectorClock
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archive_stages import ArchiveStages
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
@@ -201,6 +202,7 @@ class Engine:
                 dependencies=len(dependencies),
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
+                detector_cpu_ms=DetectorClock.milliseconds(),
             ),
             complete=acc.complete and acc.advisory_complete,
             content_complete=acc.complete,
@@ -269,6 +271,7 @@ class Engine:
                 bytes_scanned=acc.bytes_scanned,
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
+                detector_cpu_ms=DetectorClock.milliseconds(),
             ),
             complete=acc.complete and acc.advisory_complete,
             content_complete=acc.complete,
@@ -422,6 +425,7 @@ class Engine:
                 dependencies=len(dependencies),
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
+                detector_cpu_ms=DetectorClock.milliseconds(),
             ),
             complete=acc.complete and acc.advisory_complete,
             content_complete=acc.complete,
