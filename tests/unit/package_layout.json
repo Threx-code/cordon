@@ -45,6 +45,7 @@
   "analysis/python/pyast": "analysis/python/pyast",
   "analysis/python/pyfacts": "analysis/python/pyfacts",
   "analysis/python/pysyntax": "analysis/python/pysyntax",
+  "analysis/python/statements": "analysis/python/statements",
   "analysis/python/reachability": "analysis/python/reachability",
   "analysis/python/vocabulary": "analysis/python/vocabulary",
   "analysis/shared/ast_providers": "analysis/shared/ast_providers",
