@@ -418,7 +418,7 @@ rules:
     match:
       kind: regex
       patterns:
-        - '>>\s*[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
+        - '>>(?>\s*\n)?[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
         # `crontab -` installs what it reads, `crontab -u user <file>` a file. `-l` lists, `-e` opens an editor for a
         # person and `-r` removes: none plants anything, and incident-response scripts save `crontab
         # -l` as evidence (review 98, real skills). A pipeline that lists, edits and reinstalls still

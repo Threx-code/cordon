@@ -461,7 +461,7 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\b(?:eval|instance_eval|class_eval|module_eval|system|exec|spawn)\s*[( ]\s*(?:Kernel\s*\.\s*|URI\s*\.\s*)?open\s*\(\s*[^)\n]{1,200}\)\s*\.\s*read\b'
+        - '\b(?:eval|instance_eval|class_eval|module_eval|system|exec|spawn)(?:\s*\(\s*|[^\S ]* \s*)(?:Kernel\s*\.\s*|URI\s*\.\s*)?open\s*\(\s*[^)\n]{1,200}\)\s*\.\s*read\b'
         - '\b(?:eval|instance_eval|class_eval|module_eval|system|exec|spawn)\s*[( ]\s*Net::HTTP\s*\.\s*get\s*\('
         - '\b(?:eval|instance_eval|class_eval|module_eval)\s*[( ]\s*(?:HTTParty|RestClient|Faraday)\s*\.\s*get\s*\([^)\n]{1,200}\)\s*(?:\.\s*body\b)?'
     tests:

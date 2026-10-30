@@ -167,7 +167,7 @@ rules:
       kind: regex
       patterns:
         - '\beval\s*(?:\(\s*)?(?:LWP::Simple::)?get\s*\(\s*["''$]'
-        - '\beval\s*\(?\s*\$\w+\s*->\s*(?:get|request)\s*\([^)\n]{0,120}\)\s*->\s*(?:content|decoded_content)'
+        - '\beval\s*(?:\(\s*)?\$\w+\s*->\s*(?:get|request)\s*\([^)\n]{0,120}\)\s*->\s*(?:content|decoded_content)'
         - '\bsystem\s*(?:\(\s*)?(?:LWP::Simple::)?get\s*\('
     tests:
       positive:
