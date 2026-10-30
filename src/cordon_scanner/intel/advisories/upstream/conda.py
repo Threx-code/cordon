@@ -245,6 +245,9 @@ class CondaSiblings:
     conda-smithy writes the feedstock and commit a package was built from into its rendered
     recipe (`extra: remote_url, sha`); two packages with the same pair came from one build."""
 
+    #: The ecosystem whose builds share one upstream source (conda's, from one feedstock).
+    ECOSYSTEM: ClassVar[str] = "conda"
+
     _built: ClassVar[dict[str, tuple[str, str]]] = {}
 
     @staticmethod
@@ -264,13 +267,17 @@ class CondaSiblings:
         named: dict[tuple[str, str], Upstream] = {}
         for dependency, answer in zip(dependencies, answers, strict=True):
             build = CondaSiblings._built.get(dependency.resolved_from or "")
-            if dependency.ecosystem == "conda" and build and isinstance(answer, Upstream):
+            if (
+                dependency.ecosystem == CondaSiblings.ECOSYSTEM
+                and build
+                and isinstance(answer, Upstream)
+            ):
                 named.setdefault(build, answer)
         out = list(answers)
         for i, (dependency, answer) in enumerate(zip(dependencies, answers, strict=True)):
             build = CondaSiblings._built.get(dependency.resolved_from or "")
             if (
-                dependency.ecosystem == "conda"
+                dependency.ecosystem == CondaSiblings.ECOSYSTEM
                 and build in named
                 and isinstance(answer, Unnamed)
                 and answer.reason.startswith("its source names no URL")

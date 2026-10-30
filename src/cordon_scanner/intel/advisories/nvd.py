@@ -328,14 +328,21 @@ class NvdRange:
 class NvdAdvisories:
     """Checking packages against NVD once each is tied to a CPE product."""
 
+    #: A platform that makes a package a different product, and the curated table it is read from:
+    #: Homebrew's `docker` formula is the CLI, its `docker` cask is Docker Desktop.
+    PLATFORM_TABLES: ClassVar[dict[tuple[str, str], str]] = {("homebrew", "cask"): "homebrew-cask"}
+
     @staticmethod
     def names(dependency: Dependency) -> tuple[str, str]:
         """`(curated table, name)`: a cask is not the formula of the same name (Homebrew's
         `docker` formula is the CLI; its `docker` cask is Docker Desktop)."""
-        table = (
-            "homebrew-cask"
-            if dependency.ecosystem == "homebrew" and "cask" in dependency.platform
-            else str(dependency.ecosystem)
+        table = next(
+            (
+                named
+                for (ecosystem, platform), named in NvdAdvisories.PLATFORM_TABLES.items()
+                if dependency.ecosystem == ecosystem and platform in dependency.platform
+            ),
+            str(dependency.ecosystem),
         )
         return table, dependency.name.split("/")[-1]
 
