@@ -564,7 +564,7 @@ class NameSignals:
 
     @classmethod
     def _known(cls, ecosystem: str) -> frozenset[str]:
-        """Every name `PackageNames.is_known` accepts, normalised once per process.
+        """Every name `PopularNames.is_known` accepts, normalised once per process.
 
         The same three sources (popular set, shipped allowlist, curated neighbours); asking
         `is_known_package` instead re-normalises its whole allowlist for every name it does not
@@ -572,13 +572,13 @@ class NameSignals:
         cached = cls._KNOWN.get(ecosystem)
         if cached is None:
             from cordon_scanner.ecosystems.registry import EcosystemRegistry
-            from cordon_scanner.intel.registry import BuiltinPackageNames
+            from cordon_scanner.intel.registry import EstablishedPackageNames, PopularPackageNames
 
             implementation = EcosystemRegistry.get(ecosystem)
             names = (
-                BuiltinPackageNames.established(ecosystem)
-                | BuiltinPackageNames.popular(ecosystem)
-                | BuiltinPackageNames.neighbours(ecosystem)
+                EstablishedPackageNames.established(ecosystem)
+                | PopularPackageNames.popular(ecosystem)
+                | PopularPackageNames.neighbours(ecosystem)
             )
             cached = frozenset(
                 implementation.normalize_name(n) if implementation else n.lower() for n in names

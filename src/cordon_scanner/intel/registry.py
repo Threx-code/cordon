@@ -32,7 +32,10 @@ ROLES: dict[str, tuple[str, str]] = {
         "cordon_scanner.intel.advisories.upstream_advisories",
         "UpstreamAdvisories",
     ),
-    "BuiltinPackageNames": ("cordon_scanner.intel.registries.names", "BuiltinPackageNames"),
+    "EstablishedPackageNames": ("cordon_scanner.intel.registries.names", "EstablishedPackageNames"),
+    "PopularPackageNames": ("cordon_scanner.intel.registries.names", "PopularPackageNames"),
+    "RemovedPackageNames": ("cordon_scanner.intel.registries.removed", "RemovedNames"),
+    "AdvisoryCveNames": ("cordon_scanner.intel.advisories.exploited", "ExploitedCatalogue"),
     "RegistryError": ("cordon_scanner.intel.registries.registry_client", "RegistryError"),
     "RegistryRecord": ("cordon_scanner.intel.registries.registry_record", "RegistryRecord"),
     "ReleaseHistory": ("cordon_scanner.intel.registries.release_history", "ReleaseHistory"),
@@ -54,19 +57,22 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.advisories import upstream_advisories as _intel_advisories_upstream
     from cordon_scanner.intel.advisories import versions as _intel_advisories_versions
     from cordon_scanner.intel.base import (
+        AdvisoryCves,
         AdvisoryDatabases,
         AdvisoryFileChecks,
         BundleKeys,
+        EstablishedNames,
         Exploitations,
         ExploitLikelihoods,
         FeedStatus,
-        LicenseClassification,
+        LicenseExpressions,
         OsvRepositories,
-        PackageNames,
+        PopularNames,
         RangeMatching,
         RegistryRecords,
         RegistryVersions,
         ReleaseHistories,
+        RemovedNameList,
         SignatureCheck,
         UpstreamLookup,
         VersionOrdering,
@@ -78,6 +84,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries import registry_client as _intel_registries_registry_client
     from cordon_scanner.intel.registries import registry_record as _intel_registries_registry_record
     from cordon_scanner.intel.registries import release_history as _intel_registries_release_history
+    from cordon_scanner.intel.registries import removed as _intel_registries_removed
     from cordon_scanner.intel.store import dbsync as _intel_store_dbsync
     from cordon_scanner.intel.store import licenses as _intel_store_licenses
 
@@ -94,12 +101,15 @@ if TYPE_CHECKING:
     Ed25519: SignatureCheck = _intel_provenance__ed25519.Ed25519
     FeedClient: FeedStatus = _intel_malware_feed.FeedClient
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
-    LicenseClassifier: LicenseClassification = _intel_store_licenses.LicenseClassifier
+    LicenseClassifier: LicenseExpressions = _intel_store_licenses.LicenseClassifier
     MoreRegistries: RegistryVersions = _intel_registries_more_registries.MoreRegistries
     OsvImport: OsvRepositories = _intel_advisories_osv_import.OsvImport
     UPSTREAM_ECOSYSTEMS: frozenset[str] = _intel_advisories_upstream.SUPPORTED
     UpstreamAdvisories: UpstreamLookup = _intel_advisories_upstream.UpstreamAdvisories
-    BuiltinPackageNames: PackageNames = _intel_registries_names.BuiltinPackageNames
+    EstablishedPackageNames: EstablishedNames = _intel_registries_names.EstablishedPackageNames
+    PopularPackageNames: PopularNames = _intel_registries_names.PopularPackageNames
+    RemovedPackageNames: RemovedNameList = _intel_registries_removed.RemovedNames
+    AdvisoryCveNames: AdvisoryCves = _intel_advisories_exploited.ExploitedCatalogue
     RegistryError: type[Exception] = _intel_registries_registry_client.RegistryError
     RegistryRecord: RegistryRecords = _intel_registries_registry_record.RegistryRecord
     ReleaseHistory: ReleaseHistories = _intel_registries_release_history.ReleaseHistory
@@ -129,19 +139,22 @@ __all__ = [
     "UPSTREAM_ECOSYSTEMS",
     "YOUNG_DEPENDENCY_DAYS",
     "AdvisoryBundle",
+    "AdvisoryCveNames",
     "AdvisoryDatabase",
     "AdvisoryFiles",
-    "BuiltinPackageNames",
     "Ed25519",
     "Epss",
+    "EstablishedPackageNames",
     "ExploitedCatalogue",
     "FeedClient",
     "LicenseClassifier",
     "MoreRegistries",
     "OsvImport",
+    "PopularPackageNames",
     "RegistryError",
     "RegistryRecord",
     "ReleaseHistory",
+    "RemovedPackageNames",
     "UpstreamAdvisories",
     "VersionRanges",
     "Versions",

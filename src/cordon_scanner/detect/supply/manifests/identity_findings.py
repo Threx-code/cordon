@@ -99,7 +99,7 @@ class IdentityFindings:
         whole of the evidence.
         """
         from cordon_scanner.detect.supply.dependency import DependencyDetector
-        from cordon_scanner.intel.registry import BuiltinPackageNames
+        from cordon_scanner.intel.registry import PopularPackageNames
 
         if not manifest.name or "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
             return
@@ -107,7 +107,7 @@ class IdentityFindings:
         if ecosystem is None:
             return
         name = ecosystem.normalize_name(manifest.name)
-        if BuiltinPackageNames.is_known(ecosystem_id, name):
+        if PopularPackageNames.is_known(ecosystem_id, name):
             return
         target = DependencyDetector._typosquat_target(ecosystem_id, name)
         if target is None:

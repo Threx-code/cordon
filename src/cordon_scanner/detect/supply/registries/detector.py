@@ -644,7 +644,7 @@ class RegistryDetector(BaseDetector):
         same ecosystem, and never when the repository is the package's own name, a prefix of it, or
         its npm scope: `@babel/plugin-x` pointing at `babel/babel` is a monorepo, not a squat.
         """
-        from cordon_scanner.intel.registry import BuiltinPackageNames
+        from cordon_scanner.intel.registry import PopularPackageNames
 
         identity = RegistryEvidence.repository_identity(observed.repository)
         first = observed.first_published
@@ -657,7 +657,7 @@ class RegistryDetector(BaseDetector):
         scope = scope.lstrip("@")
         if repo in (base, scope) or owner == scope or base.startswith(repo):
             return ""
-        if repo not in BuiltinPackageNames.popular(dependency.ecosystem):
+        if repo not in PopularPackageNames.popular(dependency.ecosystem):
             return ""
         return f"{forge}/{owner}/{repo}"
 
@@ -751,13 +751,13 @@ class RegistryDetector(BaseDetector):
             PackageFacts,
             RegistryClient,
         )
-        from cordon_scanner.intel.registry import BuiltinPackageNames
+        from cordon_scanner.intel.registry import EstablishedPackageNames
 
         if not isinstance(observed, PackageFacts) or observed.repository:
             return None
         if not RegistryClient._younger_than(observed.first_published, NEW_PACKAGE_DAYS):
             return None
-        established = BuiltinPackageNames.established(dependency.ecosystem)
+        established = EstablishedPackageNames.established(dependency.ecosystem)
         name = dependency.name.lower()
         if name in established:
             return None

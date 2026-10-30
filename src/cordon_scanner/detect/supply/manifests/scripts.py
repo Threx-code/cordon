@@ -671,7 +671,7 @@ class ManifestScripts:
         on the benign long tail, 9 of 23 published packages blocked on an install hook ran a build
         tool this way.
         """
-        from cordon_scanner.intel.registry import BuiltinPackageNames
+        from cordon_scanner.intel.registry import EstablishedPackageNames
 
         command = part.split(maxsplit=1)[0] if part.strip() else ""
         if not command or command in RUNNERS or REDIRECT_OUTSIDE.search(part):
@@ -679,7 +679,7 @@ class ManifestScripts:
             # `node lib/utils/support.js`, and `@types/node` is a popular package named `node`
             # after its scope.
             return False
-        popular = BuiltinPackageNames.established("npm")
+        popular = EstablishedPackageNames.established("npm")
         named = TOOL_PACKAGES.get(command, ())
         return any(
             (name in named or name.rpartition("/")[2] == command)

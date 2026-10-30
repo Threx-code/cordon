@@ -20,16 +20,22 @@ if TYPE_CHECKING:
 
 
 class Advisories(Protocol):
-    """What the engine and the detectors use of instances of `AdvisoryDatabase`."""
+    """What the engine uses of instances of `AdvisoryDatabase`."""
+
+    def covers(self, ecosystem: str) -> bool: ...
+    def matching(
+        self, ecosystem: str, name: str, version: str | None
+    ) -> tuple[AdvisoryRecord, ...]: ...
+
+
+class AdvisoryCatalog(Advisories, Protocol):
+    """What the advisory detector uses of instances of `AdvisoryDatabase`, beyond the engine's: every
+    record about a package, whether there is anything to match, and when the data was built."""
 
     @property
     def is_empty(self) -> bool: ...
     @property
     def meta(self) -> AdvisoryMeta: ...
-    def covers(self, ecosystem: str) -> bool: ...
-    def matching(
-        self, ecosystem: str, name: str, version: str | None
-    ) -> tuple[AdvisoryRecord, ...]: ...
     def for_package(self, ecosystem: str, name: str) -> tuple[AdvisoryRecord, ...]: ...
 
 
@@ -47,12 +53,9 @@ class AdvisoryMeta(Protocol):
 
 
 class AdvisoryRecord(Protocol):
-    """What the engine and the detectors use of one `Advisory`."""
+    """What the engine and the detectors read of one `Advisory`: its fields, and whether it covers
+    a version."""
 
-    @property
-    def ecosystem(self) -> str: ...
-    @property
-    def name(self) -> str: ...
     @property
     def identifier(self) -> str: ...
     @property
@@ -80,9 +83,14 @@ class AdvisoryRecord(Protocol):
 
 class Exploitations(Protocol):
     """What the detectors use of the class `ExploitedCatalogue`: the newest known-exploited catalogue
-    (CISA KEV, ENISA EUVD) and the CVEs an advisory names."""
+    (CISA KEV, ENISA EUVD)."""
 
     def catalogue(self) -> ExploitedLookup: ...
+
+
+class AdvisoryCves(Protocol):
+    """Every CVE an advisory names (`ExploitedCatalogue.cves_of`), for the advisory findings."""
+
     def cves_of(self, advisory: AdvisoryRecord) -> set[str]: ...
 
 
@@ -149,7 +157,7 @@ class AdvisoryFileChecks(Protocol):
 class AdvisoryDatabases(Protocol):
     """What the engine and the detectors use of the class `AdvisoryDatabase`."""
 
-    def bundled(self) -> Advisories: ...
+    def bundled(self) -> AdvisoryCatalog: ...
 
 
 class BundleKeys(Protocol):
@@ -191,23 +199,39 @@ class LicenseCategory(enum.StrEnum):
 
 
 class LicenseClassification(Protocol):
-    """What the engine and the detectors use of the class `LicenseClassifier`."""
+    """What the engine uses of the class `LicenseClassifier`."""
 
     def classify(self, raw: str | None) -> LicenseCategory: ...
+
+
+class LicenseExpressions(LicenseClassification, Protocol):
+    """What the licence and package-policy detectors use of it, beyond the engine's: an expression's
+    canonical form, and its operands at the top level."""
+
     def normalize(self, raw: str | None) -> str | None: ...
     def split_top_level(self, expression: str, operator: str) -> list[str] | None: ...
 
 
-class PackageNames(Protocol):
-    """What the detectors ask of the package-name lists, per ecosystem: the popular names, their
-    curated neighbours, the shipped established names, and the names a registry has removed."""
+class PopularNames(Protocol):
+    """The popular package names per ecosystem, their curated neighbours, and whether a name is a
+    package known to exist (the three read together, for lookalikes)."""
 
     def popular(self, ecosystem: str) -> frozenset[str]: ...
     def neighbours(self, ecosystem: str) -> frozenset[str]: ...
     def is_known(self, ecosystem: str, normalized_name: str) -> bool: ...
+
+
+class EstablishedNames(Protocol):
+    """The shipped list of established package names per ecosystem."""
+
     def established(self, ecosystem: str) -> frozenset[str]: ...
+
+
+class RemovedNameList(Protocol):
+    """The names a registry no longer serves, per ecosystem, and when that list was refreshed."""
+
     def removed(self, ecosystem: str) -> frozenset[str]: ...
-    def removed_checked(self, ecosystem: str) -> str: ...
+    def checked(self, ecosystem: str) -> str: ...
 
 
 class RangeMatching(Protocol):
