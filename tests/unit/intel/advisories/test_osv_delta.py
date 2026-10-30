@@ -132,6 +132,28 @@ class TestRefresh:
         assert result.through == 0.0
         assert OsvDelta.read_overlay("npm")[0]
 
+    def test_the_last_checks_error_is_reported_by_every_scan_until_the_next(
+        self, osv: FakeOsv
+    ) -> None:
+        """The source is checked every RECHECK_SECONDS; reported only by the scan that checked,
+        the next scan a minute later described the same intel without the unreachable source."""
+        from cordon_scanner.intel.malware.feed import Feed, FeedClient
+
+        osv.down.add("PyPI")
+        first = FeedClient.status(use_feed=True, max_age=None, feed=Feed(root=None), now=NOW)
+        later = FeedClient.status(use_feed=True, max_age=None, feed=Feed(root=None), now=NOW + 60)
+        assert "pypi" in first.error.lower()
+        assert later.error == first.error
+        assert osv.requests.count("PyPI/modified_id.csv") >= 1
+        osv.down.clear()
+        recovered = FeedClient.status(
+            use_feed=True,
+            max_age=None,
+            feed=Feed(root=None),
+            now=NOW + osv_delta.RECHECK_SECONDS + 1,
+        )
+        assert "pypi" not in recovered.error.lower()
+
     def test_a_tampered_overlay_is_ignored(self, osv: FakeOsv) -> None:
         osv.lists["npm"] = [(NOW - 3600, "GHSA-new1-0000-0001")]
         osv.records["GHSA-new1-0000-0001"] = FakeOsv.record(
