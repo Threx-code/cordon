@@ -66,8 +66,5 @@
  },
  "incohesive_classes": {},
  "isinstance_chains": {},
- "hidden_state": {
-  "cordon_scanner.intel.advisories.nvd:CpeRule._sites": 1,
-  "cordon_scanner.intel.provenance.x509:PublicKey.VERDICTS": 1
- }
+ "hidden_state": {}
 }
