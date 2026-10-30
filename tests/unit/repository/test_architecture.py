@@ -526,9 +526,6 @@ class Rules:
     #: Stores a function writes to that are process state by design, and why each is bounded or
     #: must outlive a scan.
     PROCESS_STATE: ClassVar[dict[str, str]] = {
-        "cordon_scanner.analysis.javascript.front.syntax:Node.SHAPES": (
-            "one interned tuple of field names per node shape, a fixed set the grammar decides"
-        ),
         "cordon_scanner.foundation.collector:ScanCaches._clearers": "the registry itself",
         "cordon_scanner.analysis.javascript.front.syntax:Node.SHAPES": (
             "one interned tuple of field names per node shape, a fixed set the grammar decides"
