@@ -302,7 +302,8 @@ class TestJudgePatternsLinear:
         )
         for text in self.texts("host", pieces, 12):
             old = [(m.span(), m.groups()) for m in self.OLD_HOST.finditer(text)]
-            assert [(m.span(), m.groups()) for m in calls._HOST.finditer(text)] == old, text
+            new = [((s, e), (text[h:e],)) for s, h, e in ToolCallGuard._hosts(text)]
+            assert new == old, text
 
     def test_long_runs_are_linear(self) -> None:
         start = time.perf_counter()
@@ -311,6 +312,7 @@ class TestJudgePatternsLinear:
         calls._SAFETY_OFF.match("_" * 2_000_000 + "!")
         calls._XXE.search("<!ENTITY" + " " * 2_000_000)
         calls._SQLI.search('"' + " " * 2_000_000)
-        list(calls._HOST.finditer("a" * 2_000_000))
-        list(calls._HOST.finditer("h." * 1_000_000))
+        list(ToolCallGuard._hosts("a" * 2_000_000))
+        list(ToolCallGuard._hosts("h." * 1_000_000))
+        list(ToolCallGuard._hosts("a.." * 700_000))
         assert time.perf_counter() - start < 3
