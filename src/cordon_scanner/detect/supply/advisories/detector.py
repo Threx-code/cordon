@@ -265,19 +265,43 @@ class AdvisoryDetector(BaseDetector):
         """Advisories about the records installing the target does not install (`installed=False`):
         the bundled database only, never the network, each under its own rule -- a vulnerability
         at info, a known-malicious release at high -- naming the file that records it."""
+        findings = self._bundled(dependencies, ctx)
+        note = self._not_installed_no_feed(dependencies)
+        if note is not None:
+            findings.append(note)
+        return findings
+
+    def _record_findings(self, dependency: Dependency, ctx: ScanContext) -> Iterator[Finding]:
+        """What a not-installed record itself says, by the install set's own checks: its advisories
+        by name and version, a repository recorded as malicious that its code is fetched from, and
+        a declared range that admits a recorded malicious release (the only one for a record with
+        no version, as a nested manifest's are). A removed name's warning is about installing it,
+        so not here."""
+        reported: set[str] = set()
+        for advisory in self._own_records(dependency):
+            if advisory.identifier and advisory.identifier in reported:
+                continue
+            reported.add(advisory.identifier)
+            yield AdvisoryFinding.finding(dependency, advisory, ctx, advice=self._upgrade_advice)
+        malicious = any(a.malicious for a in self._own_records(dependency))
+        repository = self._repository_matches(dependency)
+        if repository and not malicious:
+            yield AdvisoryFinding.finding(
+                dependency, repository[1][0], ctx, advice=self._upgrade_advice
+            )
+            malicious = True
+        if not malicious and dependency.version is None and dependency.declared_spec:
+            yield from (
+                f for f in self._admitted_malware(dependency, ctx) if f.rule_id == MALICIOUS_RULE
+            )
+
+    def _bundled(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
         self._advice = {}
         findings: list[Finding] = []
         for dependency in dependencies:
             if dependency.local or dependency.installed:
                 continue
-            reported: set[str] = set()
-            for advisory in self._own_records(dependency):
-                if advisory.identifier and advisory.identifier in reported:
-                    continue
-                reported.add(advisory.identifier)
-                finding = AdvisoryFinding.finding(
-                    dependency, advisory, ctx, advice=self._upgrade_advice
-                )
+            for finding in self._record_findings(dependency, ctx):
                 malicious = finding.rule_id == MALICIOUS_RULE
                 rule = BUNDLED_MALWARE_RULE if malicious else BUNDLED_RULE
                 severity = Severity.HIGH if malicious else Severity.INFO
@@ -294,9 +318,6 @@ class AdvisoryDetector(BaseDetector):
                         risk=ctx.scorer.score(severity, finding.confidence),
                     )
                 )
-        note = self._not_installed_no_feed(dependencies)
-        if note is not None:
-            findings.append(note)
         return findings
 
     def _not_installed_no_feed(self, dependencies: Iterable[Dependency]) -> Finding | None:

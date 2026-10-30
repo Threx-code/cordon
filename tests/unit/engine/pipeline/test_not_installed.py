@@ -19,6 +19,7 @@ from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
 from cordon_scanner.detect.supply.advisories.findings import (
     BUNDLED_MALWARE_RULE,
     BUNDLED_RULE,
+    MALICIOUS_RULE,
     VULNERABLE_RULE,
 )
 from cordon_scanner.detect.supply.dependency import DependencyDetector
@@ -130,6 +131,34 @@ class TestNotInstalled:
         assert (BUNDLED_MALWARE_RULE, "high") in by_package
         vulnerable = [f for f in result.findings if f.rule_id == VULNERABLE_RULE]
         assert {f.location.package for f in vulnerable} == {"pkg:npm/lodash@4.17.20"}
+
+    def test_a_nested_manifests_range_over_a_malicious_release_is_named(
+        self, tmp_path: Path
+    ) -> None:
+        # A nested manifest declares ranges, never versions: only the range check sees the
+        # malicious release it admits. Installed at the root as well, and named at both files.
+        nested = {"name": "ui", "version": "1.0.0", "dependencies": {"evilpkg": "^1.0.0"}}
+        path = Tarball.write(
+            tmp_path,
+            {
+                "package.json": json.dumps(
+                    {"name": "x", "version": "1.0.0", "dependencies": {"evilpkg": "1.0.0"}}
+                ),
+                "package-lock.json": Tarball.lock(evilpkg="1.0.0"),
+                "index.js": "1;\n",
+                "build/apps/ui/package.json": json.dumps(nested),
+            },
+        )
+        result = Tarball.scan(path)
+        malware = {
+            (f.rule_id, f.severity, f.location.path.rpartition("!")[2])
+            for f in result.findings
+            if f.rule_id in (MALICIOUS_RULE, BUNDLED_MALWARE_RULE)
+        }
+        assert malware == {
+            (MALICIOUS_RULE, Severity.CRITICAL, "package/package-lock.json"),
+            (BUNDLED_MALWARE_RULE, Severity.HIGH, "package/build/apps/ui/package.json"),
+        }
 
     def test_an_unparsed_nested_lockfile_leaves_the_scan_complete(self, tmp_path: Path) -> None:
         assert Tarball.scan(Tarball.package(tmp_path, nested_lock="{ not json")).complete is True

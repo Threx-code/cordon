@@ -461,9 +461,8 @@ class ArchiveStages:
         detectors whose finding is about the record itself -- a known advisory (`advisory`), a
         source outside the registry or a lookalike name (`dependency`), a hallucinated name
         (`slopsquat`) -- and a not-installed manifest's own (`acc.not_installed_findings`), added
-        once the verdict is reached: at their
-        own info and high rules, they never feed the verdict, are never graded by it or by the
-        package's ceilings, and never gate."""
+        once the verdict is reached: at their own info and high rules, they never feed the verdict,
+        are never graded by it or by the package's ceilings, and never gate."""
         acc.add(acc.not_installed_findings)
         if not acc.not_installed:
             return
