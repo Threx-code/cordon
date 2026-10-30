@@ -10,6 +10,7 @@ a digest written so it pins nothing."""
 from __future__ import annotations
 
 import re
+from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -34,13 +35,31 @@ from cordon_scanner.foundation.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable, Iterator, Mapping
 
     from cordon_scanner.ecosystems.base import DeclaredDependency, Ecosystem, Manifest
 
 
 class SourceFindings:
     """The manifest findings about dependency sources."""
+
+    #: The checks that are one ecosystem's own, by the ecosystems each applies to: a new ecosystem
+    #: with such a rule adds a declaration here, not a branch in the check.
+    APPLIES_TO: ClassVar[Mapping[str, frozenset[str]]] = MappingProxyType(
+        {
+            "_composer_branch_findings": frozenset({"composer"}),
+            "_cocoapods_source_findings": frozenset({"cocoapods"}),
+            "_base_image_findings": frozenset({"image"}),
+            "_helm_repository_findings": frozenset({"helm"}),
+            "_conan_remote_findings": frozenset({"conan"}),
+            "_bundler_source_findings": frozenset({"rubygems"}),
+            "_nuget_source_findings": frozenset({"nuget"}),
+            # A Dockerfile's `ADD` of a URL, which the Dockerfile rule for remote ADD reports.
+            "_dockerfile_add": frozenset({"image"}),
+            # A full commit hash of a repository not the package's, which npm installs from.
+            "_foreign_commit": frozenset({"npm"}),
+        }
+    )
 
     @classmethod
     def wrapper_findings(cls, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
@@ -154,7 +173,7 @@ class SourceFindings:
         """A Composer constraint that names a branch (`dev-master`, `2.x-dev`), with or without an
         inline alias: what installs is whatever the branch points at when the lock is next
         updated. The lock pins a commit until then; the constraint is what lets it move."""
-        if manifest.ecosystem != "composer":
+        if manifest.ecosystem not in SourceFindings.APPLIES_TO["_composer_branch_findings"]:
             return
         for declared in manifest.dependencies:
             constraint = declared.spec.split(" as ", 1)[0].strip()
@@ -189,7 +208,7 @@ class SourceFindings:
         """The public spec repo listed before a private one. CocoaPods searches `source` lines in
         order and takes the first that has the pod, so a private pod's name published on trunk is
         resolved from trunk. Private repos first, trunk last, is the safe order."""
-        if manifest.ecosystem != "cocoapods":
+        if manifest.ecosystem not in SourceFindings.APPLIES_TO["_cocoapods_source_findings"]:
             return
         listed = [s.partition(" ")[2] for s in manifest.sources if s.startswith("source ")]
         public = [
@@ -264,7 +283,7 @@ class SourceFindings:
         """A stage built FROM an image named by tag alone. Read from the Dockerfile's stages, so
         `FROM builder` (an earlier stage), `FROM scratch`, `FROM --platform=...` and an image
         built from a global `ARG` are each read for what they are."""
-        if manifest.ecosystem != "image":
+        if manifest.ecosystem not in SourceFindings.APPLIES_TO["_base_image_findings"]:
             return
         for declared in manifest.dependencies:
             if declared.integrity:
@@ -329,7 +348,9 @@ class SourceFindings:
         the chart's dependencies, so the order of `version` and `repository` in an entry does not
         matter -- Helm's own examples put the version first."""
         basename = unit.path.rpartition("/")[2]
-        if manifest.ecosystem == "helm" and basename in ("Chart.yaml", "Chart.yml"):
+        if manifest.ecosystem in SourceFindings.APPLIES_TO["_helm_repository_findings"] and (
+            basename in ("Chart.yaml", "Chart.yml")
+        ):
             dependencies = list(manifest.dependencies)
         elif basename == "requirements.yaml":
             # An apiVersion v1 chart's dependencies: Helm's `dependencies:` key, where Ansible's
@@ -388,7 +409,7 @@ class SourceFindings:
     ) -> Iterable[Finding]:
         """ConanCenter listed before a private remote. Conan takes a recipe from the first remote
         that has it, so an internal recipe's name published on ConanCenter is fetched from there."""
-        if manifest.ecosystem != "conan":
+        if manifest.ecosystem not in SourceFindings.APPLIES_TO["_conan_remote_findings"]:
             return
         listed = [
             s.split(" ")[2] if len(s.split(" ")) > 2 else ""
@@ -431,7 +452,7 @@ class SourceFindings:
         source block from any of them, and before 2.2.18 took the highest version across all --
         the dependency confusion recorded as CVE-2020-36327. The remedy is one global source and
         a `source ... do` block for the internal gems."""
-        if manifest.ecosystem != "rubygems":
+        if manifest.ecosystem not in SourceFindings.APPLIES_TO["_bundler_source_findings"]:
             return
         global_sources = [
             s.partition(" ")[2]
@@ -466,7 +487,7 @@ class SourceFindings:
     def _nuget_source_findings(
         cls, manifest: Manifest, unit: FileUnit, ctx: ScanContext
     ) -> Iterable[Finding]:
-        if manifest.ecosystem != "nuget":
+        if manifest.ecosystem not in SourceFindings.APPLIES_TO["_nuget_source_findings"]:
             return
         sources = [s.partition(": ")[2] for s in manifest.sources if s.startswith("source ")]
         mapped = any(s.startswith("mapping ") for s in manifest.sources)
@@ -573,7 +594,7 @@ class SourceFindings:
             # monorepo's members as packages from outside the registry.
             return
         if (
-            manifest.ecosystem == "image"
+            manifest.ecosystem in SourceFindings.APPLIES_TO["_dockerfile_add"]
             and declared.field_name.startswith("ADD (line")
             and declared.spec.startswith(("http", "git+http"))
         ):
@@ -630,7 +651,7 @@ class SourceFindings:
             return
         foreign = (
             ManifestScripts._foreign_commit(declared.name, declared.spec, unit.path, ctx)
-            if manifest.ecosystem == "npm"
+            if manifest.ecosystem in SourceFindings.APPLIES_TO["_foreign_commit"]
             else None
         )
         if foreign is not None:

@@ -156,6 +156,64 @@ class EcosystemFacts(Protocol):
         ...
 
 
+class EcosystemNaming(Protocol):
+    """How an ecosystem names its packages: the namespace part of a name, a name that is the
+    toolchain's own rather than a package's, and the separator of a coordinate name."""
+
+    def namespace(self, ecosystem: str, name: str, alias: str | None = None) -> str | None:
+        """The namespace part of a package's identity (`@scope`, a Maven group, a tap), if any."""
+        ...
+
+    def is_builtin(self, ecosystem: str, name: str) -> bool:
+        """Whether the name is the toolchain's own, not a package (Go's `stdlib`)."""
+        ...
+
+    def coordinate_separator(self, ecosystem: str) -> str | None:
+        """The separator of a coordinate name (Maven's `group:artifact`), if names have one."""
+        ...
+
+
+class EcosystemVersions(Protocol):
+    """What an ecosystem's versions pin: a digest, a version re-published in place, a declared
+    version an installer reads as its lowest admitted one."""
+
+    def pinned_by_digest(self, ecosystem: str) -> bool:
+        """Whether a dependency of this ecosystem is pinned by its digest (`integrity`), as an
+        image is, rather than by its version."""
+        ...
+
+    def is_mutable_version(self, ecosystem: str, version: str) -> bool:
+        """Whether the version is re-published in place (a Maven `-SNAPSHOT`)."""
+        ...
+
+    def admits_lowest(self, ecosystem: str, declared_spec: str) -> bool:
+        """Whether the installer restores the lowest version a declared spec admits (NuGet's bare
+        `Version="1.2.3"`)."""
+        ...
+
+    def is_held_version(self, ecosystem: str, version: str) -> bool:
+        """Whether the version is the registry's own tombstone for a name it took over (npm's
+        `0.0.1-security`), not a release anyone published."""
+        ...
+
+
+class EcosystemTraits(Protocol):
+    """What an ecosystem's packages can carry: install scripts, scoped names, CI steps, and the
+    ecosystems a lookalike of one of its names is looked for in."""
+
+    def has_install_scripts(self, ecosystem: str) -> bool: ...
+    def has_scoped_names(self, ecosystem: str) -> bool: ...
+    def is_ci_step(self, ecosystem: str, name: str) -> bool: ...
+    def squat_comparisons(self, ecosystem: str) -> tuple[str, ...]: ...
+
+
+class InstalledEcosystemFacts(
+    EcosystemFacts, EcosystemNaming, EcosystemVersions, EcosystemTraits, Protocol
+):
+    """The installed facts object as the provider holds it; each reader asks for the one port it
+    uses (`naming`, `versions`, `traits`)."""
+
+
 class EcosystemFactsProvider:
     """The installed `EcosystemFacts`: the built-in one, registered through an entry point as the
     built-in detectors are."""
@@ -164,14 +222,26 @@ class EcosystemFactsProvider:
 
     @staticmethod
     @functools.cache
-    def facts() -> EcosystemFacts:
+    def facts() -> InstalledEcosystemFacts:
         found = [e for e in entry_points(group=EcosystemFactsProvider.GROUP) if e.name == "builtin"]
         if not found:
             raise RuntimeError(
                 f"no {EcosystemFactsProvider.GROUP} entry point named builtin: reinstall cordon-scanner"
             )
-        facts: EcosystemFacts = found[0].load()()
+        facts: InstalledEcosystemFacts = found[0].load()()
         return facts
+
+    @staticmethod
+    def naming() -> EcosystemNaming:
+        return EcosystemFactsProvider.facts()
+
+    @staticmethod
+    def versions() -> EcosystemVersions:
+        return EcosystemFactsProvider.facts()
+
+    @staticmethod
+    def traits() -> EcosystemTraits:
+        return EcosystemFactsProvider.facts()
 
 
 class DependencyIdentity:
@@ -179,32 +249,8 @@ class DependencyIdentity:
 
     @staticmethod
     def namespace(ecosystem: str, name: str) -> str | None:
-        if not name:
-            return None
-        if ecosystem == "npm":
-            return name.split("/", 1)[0] if name.startswith("@") and "/" in name else None
-        if ecosystem in ("maven", "gradle"):
-            return name.split(":", 1)[0] if ":" in name else None
-        if ecosystem == "composer":
-            return name.split("/", 1)[0] if "/" in name else None
-        if ecosystem in ("gomod", "swift", "nix"):
-            return name.rsplit("/", 1)[0] if "/" in name else None
-        if ecosystem == "actions":
-            return name.split("/", 1)[0] if "/" in name else None
-        if ecosystem in ("ansible", "vscode"):
-            return name.split(".", 1)[0] if "." in name else None
-        if ecosystem == "terraform":
-            parts = name.split("/")
-            return parts[-2] if len(parts) >= 2 else None
-        if ecosystem == "image":
-            return name.rsplit("/", 1)[0] if "/" in name else None
-        if ecosystem == "homebrew":
-            return name.rsplit("/", 1)[0] if name.count("/") >= 2 else None
-        if ecosystem == "conda":
-            return name.split("::", 1)[0] if "::" in name else None
-        if ecosystem == "hex":
-            return name.split("/", 1)[0] if "/" in name else None
-        return None
+        """Each ecosystem declares its own (`EcosystemNaming.namespace`)."""
+        return EcosystemFactsProvider.naming().namespace(ecosystem, name)
 
 
 class DependencySource:
@@ -356,7 +402,8 @@ class DependencyResolution:
             return "unresolved", "a git dependency with no recorded commit"
         if source == "vendored":
             return "resolved", "vendored into the repository at this version"
-        if dependency.ecosystem == "image":
+        versions = EcosystemFactsProvider.versions()
+        if versions.pinned_by_digest(dependency.ecosystem):
             # A digest names exactly one image; a tag names whichever image was pushed under it last.
             if dependency.integrity:
                 # An archive a Dockerfile ADDs is pinned by the checksum BuildKit verifies.
@@ -372,10 +419,8 @@ class DependencyResolution:
                     "a tag, which the registry can re-point to another image",
                 )
             return "unresolved", "no tag or digest"
-        if (
-            dependency.version
-            and dependency.ecosystem in ("maven", "gradle")
-            and dependency.version.upper().endswith("-SNAPSHOT")
+        if dependency.version and versions.is_mutable_version(
+            dependency.ecosystem, dependency.version
         ):
             # A SNAPSHOT is re-published in place: the same version names whatever was deployed last.
             return "partially_resolved", "a SNAPSHOT version, which is re-published in place"
@@ -385,9 +430,9 @@ class DependencyResolution:
             ):
                 return "resolved", "resolved by the lockfile"
             declared = (dependency.declared_spec or "").strip()
-            if dependency.ecosystem == "nuget" and declared and not declared.startswith("["):
+            if versions.admits_lowest(dependency.ecosystem, declared):
                 # `Version="1.2.3"` means at least 1.2.3, and NuGet restores the lowest version a
-                # direct reference admits.
+                # direct reference admits (`EcosystemVersions.admits_lowest`).
                 return "resolved", "NuGet restores the lowest version the reference admits"
             return "resolved", "an exact pin in the manifest"
         if source in ("archive", "url"):

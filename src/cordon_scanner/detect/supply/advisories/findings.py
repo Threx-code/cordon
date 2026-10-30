@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -28,7 +29,7 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories import exploited
 from cordon_scanner.intel.advisories.advisories import Advisory
-from cordon_scanner.intel.registries.removed import RemovedNames
+from cordon_scanner.intel.registry import RemovedPackageNames
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,7 +47,7 @@ PLACEHOLDER_RULE = "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
 
 REMOVED_RULE = "SUSPECT.DEPENDENCY.REMOVED_NAME.001"
 """A range over a name whose every version is malicious, and which the registry no longer serves
-(`RemovedNames`): an install fails rather than installing the malware, and a re-registration of the
+(`RemovedNameList.removed`): an install fails rather than installing the malware, and a re-registration of the
 name would deliver whatever its new owner publishes. Medium: a risk worth removing, not a block."""
 
 SECURITY_PLACEHOLDER = re.compile(r"^\d+\.\d+\.\d+-security$")
@@ -100,7 +101,7 @@ class AdvisoryFinding:
         cls, dependency: Dependency, spec: str, advisory: Advisory, ctx: ScanContext
     ) -> Finding:
         """The name is malicious in every version and gone from its registry (`REMOVED_RULE`)."""
-        checked = RemovedNames.checked(dependency.ecosystem)
+        checked = RemovedPackageNames.checked(dependency.ecosystem)
         return Finding(
             rule_id=REMOVED_RULE,
             category=Category.SUSPICIOUS,
@@ -194,10 +195,8 @@ class AdvisoryFinding:
         *,
         advice: Callable[[Dependency], str],
     ) -> Finding:
-        placeholder = (
-            advisory.malicious
-            and dependency.ecosystem == "npm"
-            and bool(SECURITY_PLACEHOLDER.match(dependency.version or ""))
+        placeholder = advisory.malicious and EcosystemFactsProvider.versions().is_held_version(
+            dependency.ecosystem, dependency.version or ""
         )
         if placeholder:
             return cls._placeholder_finding(dependency, advisory, ctx)

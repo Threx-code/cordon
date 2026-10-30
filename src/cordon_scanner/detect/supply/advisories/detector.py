@@ -49,8 +49,7 @@ from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabas
 from cordon_scanner.intel.advisories.ranges import VersionRanges
 from cordon_scanner.intel.advisories.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
 from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, UpstreamResult
-from cordon_scanner.intel.registries.real import RealPackages
-from cordon_scanner.intel.registries.removed import RemovedNames
+from cordon_scanner.intel.registry import EstablishedPackageNames, RemovedPackageNames
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -372,7 +371,7 @@ class AdvisoryDetector(BaseDetector):
             # Not a range over this name's registry releases: an alias, a path, a repository.
             return
         records = self._database.for_package(dependency.ecosystem, dependency.name)
-        if dependency.name in RealPackages.real_packages(dependency.ecosystem) or any(
+        if dependency.name in EstablishedPackageNames.established(dependency.ecosystem) or any(
             not record.malicious for record in records
         ):
             # An established package with one compromised release -- chalk 5.6.1, debug 4.4.2,
@@ -409,7 +408,9 @@ class AdvisoryDetector(BaseDetector):
             if not admitted:
                 continue
             release = admitted[-1] if admitted[-1] != "every version" else None
-            if release is None and dependency.name in RemovedNames.removed(dependency.ecosystem):
+            if release is None and dependency.name in RemovedPackageNames.removed(
+                dependency.ecosystem
+            ):
                 yield AdvisoryFinding.removed_finding(dependency, spec, advisory, ctx)
                 break
             finding = AdvisoryFinding.finding(

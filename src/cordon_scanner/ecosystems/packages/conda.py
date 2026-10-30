@@ -488,6 +488,10 @@ class CondaEcosystem(BaseEcosystem):
     """Conda: environment files, recipes, conda-lock files and explicit exports."""
 
     id = "conda"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split("::", 1)[0] if "::" in name else None
+
     purl_type = "conda"
     manifest_globs: tuple[str, ...] = (
         "**/environment.yml",

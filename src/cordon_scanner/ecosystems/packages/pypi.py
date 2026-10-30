@@ -14,7 +14,7 @@ import ast
 import re
 import tomllib
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.ecosystems.base import (
@@ -22,6 +22,7 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     InstallTool,
     Manifest,
+    ReleaseFile,
 )
 from cordon_scanner.ecosystems.packages.python.lockfiles import PypiLockfiles
 from cordon_scanner.ecosystems.packages.python.requirements import (
@@ -32,6 +33,8 @@ from cordon_scanner.ecosystems.packages.python.requirements import (
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -91,6 +94,23 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
         return out
 
     id = "pypi"
+
+    _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?m)^Requires-Dist:\s*([A-Za-z0-9][A-Za-z0-9._-]*)([^\n]*)$"
+    )
+
+    def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
+        """A published distribution's runtime dependencies: its `Requires-Dist`, extras left out."""
+        for file in files:
+            member = file.path.rpartition("!")[2]
+            if member.endswith(("/PKG-INFO", ".dist-info/METADATA")) and member.count("/") == 1:
+                return frozenset(
+                    re.sub(r"[-_.]+", "-", found.group(1)).lower()
+                    for found in PypiEcosystem._REQUIRES_DIST.finditer(file.content.text[:200_000])
+                    if "extra ==" not in found.group(2)
+                )
+        return frozenset()
+
     purl_type = "pypi"
     manifest_globs: tuple[str, ...] = (
         "**/pyproject.toml",

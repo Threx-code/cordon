@@ -30,6 +30,7 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, Graph
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.dependency_rules import ABANDONED_RULE, DECLARED_RULES, DETECTOR
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -44,7 +45,7 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.foundation.scoring import ScoringContext
-from cordon_scanner.intel.registries.popular import PackageIntel
+from cordon_scanner.intel.registry import PopularPackageNames
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -411,7 +412,7 @@ class DependencyDetector(BaseDetector):
         normalized = ecosystem.normalize_name(dep.name)
 
         # A package that exists in the known set is not a typosquat of itself.
-        if PackageIntel.is_known_package(dep.ecosystem, normalized):
+        if PopularPackageNames.is_known(dep.ecosystem, normalized):
             return
 
         yield from self._confusion_finding(dep, ecosystem, ctx)
@@ -554,7 +555,7 @@ class DependencyDetector(BaseDetector):
             and not dep.local
             and not dep.bundled
             and getattr(ecosystem, "records_integrity", True)
-            and not (dep.ecosystem == "gomod" and dep.name == "stdlib")
+            and not EcosystemFactsProvider.naming().is_builtin(dep.ecosystem, dep.name)
             and ecosystem.is_registry_host(dep.resolved_from)
         ):
             yield self._finding(
@@ -700,7 +701,7 @@ class DependencyDetector(BaseDetector):
         if cached is not None:
             return cached
 
-        popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
+        popular = PopularPackageNames.popular(ecosystem)
         implementation = EcosystemRegistry.get(ecosystem)
         if implementation is None:
             normalised = frozenset(popular)

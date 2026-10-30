@@ -801,6 +801,10 @@ class NixEcosystem(BaseEcosystem):
     """Flake inputs and hand-pinned sources."""
 
     id = "nix"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.rsplit("/", 1)[0] if "/" in name else None
+
     purl_type = "nix"
     manifest_globs: tuple[str, ...] = ("**/flake.nix", "**/default.nix", "**/shell.nix")
     lockfile_globs: tuple[str, ...] = ("**/flake.lock",)

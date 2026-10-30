@@ -53,6 +53,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
@@ -488,7 +489,9 @@ class NameSignals:
         anyone, and are what a brand-squat or a confusion probe for that company's internal
         packages registers. The scopes are those of the established packages the scanner ships.
         """
-        if identity.ecosystem != "npm" or identity.name.startswith("@"):
+        if not EcosystemFactsProvider.traits().has_scoped_names(identity.ecosystem) or (
+            identity.name.startswith("@")
+        ):
             return None
         if identity.name in NameSignals._known("npm"):
             return None
@@ -510,8 +513,7 @@ class NameSignals:
             return None
         if identity.name in NameSignals._known(identity.ecosystem):
             return None
-        others = ("pypi", "rubygems", "cargo") if identity.ecosystem == "npm" else ("npm", "cargo")
-        for other in others:
+        for other in EcosystemFactsProvider.traits().squat_comparisons(identity.ecosystem):
             if identity.name in NameSignals._known(other):
                 return other
         return None
@@ -564,7 +566,7 @@ class NameSignals:
 
     @classmethod
     def _known(cls, ecosystem: str) -> frozenset[str]:
-        """Every name `PackageIntel.is_known_package` accepts, normalised once per process.
+        """Every name `PopularNames.is_known` accepts, normalised once per process.
 
         The same three sources (popular set, shipped allowlist, curated neighbours); asking
         `is_known_package` instead re-normalises its whole allowlist for every name it does not
@@ -572,14 +574,13 @@ class NameSignals:
         cached = cls._KNOWN.get(ecosystem)
         if cached is None:
             from cordon_scanner.ecosystems.registry import EcosystemRegistry
-            from cordon_scanner.intel.registries.popular import PackageIntel
-            from cordon_scanner.intel.registries.real import RealPackages
+            from cordon_scanner.intel.registry import EstablishedPackageNames, PopularPackageNames
 
             implementation = EcosystemRegistry.get(ecosystem)
             names = (
-                RealPackages.real_packages(ecosystem)
-                | PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
-                | PackageIntel._KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
+                EstablishedPackageNames.established(ecosystem)
+                | PopularPackageNames.popular(ecosystem)
+                | PopularPackageNames.neighbours(ecosystem)
             )
             cached = frozenset(
                 implementation.normalize_name(n) if implementation else n.lower() for n in names

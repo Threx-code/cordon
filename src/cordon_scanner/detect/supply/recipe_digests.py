@@ -84,6 +84,9 @@ class RecipeDigests:
 class RecipeDigestDetector(BaseDetector):
     """Reports a recipe file whose exact bytes Cordon's feed condemned, or holds for review."""
 
+    #: Ecosystems whose recipes are bundles (an MCP bundle's zip), matched by their bytes whole.
+    WHOLE_FILE_BUNDLES: ClassVar[frozenset[str]] = frozenset({"mcp"})
+
     id = "recipe-digest"
     version = "0.1.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
@@ -135,9 +138,11 @@ class RecipeDigestDetector(BaseDetector):
         if ecosystem is None or content.truncated:
             return ()
         # A recipe is text; an MCP bundle is a zip, matched by its bytes whole or not at all.
-        if ecosystem == "mcp" and len(content.raw) != content.size:
+        if ecosystem in self.WHOLE_FILE_BUNDLES and len(content.raw) != content.size:
             return ()
-        if ecosystem != "mcp" and (content.is_binary or len(content.raw) > MAX_BYTES):
+        if ecosystem not in self.WHOLE_FILE_BUNDLES and (
+            content.is_binary or len(content.raw) > MAX_BYTES
+        ):
             return ()
         if ecosystem not in self._indexes:
             try:

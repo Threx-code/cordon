@@ -548,6 +548,12 @@ class NuGetAssets:
 
 class NuGetEcosystem(BaseEcosystem):
     id = "nuget"
+
+    def admits_lowest(self, declared_spec: str) -> bool:
+        # `Version="1.2.3"` means at least 1.2.3, and NuGet restores the lowest version a direct
+        # reference admits.
+        return bool(declared_spec) and not declared_spec.startswith("[")
+
     purl_type = "nuget"
     manifest_globs: tuple[str, ...] = (
         "**/*.csproj",

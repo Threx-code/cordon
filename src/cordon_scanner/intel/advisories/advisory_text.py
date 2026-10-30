@@ -53,10 +53,10 @@ class AdvisoryTextSymbols:
             if lowered in ("lodash", "lodash-es", "underscore"):
                 heads.append("_")
             return package, heads
-        from cordon_scanner.detect.supply.reachability import _IMPORT_ALIASES
+        from cordon_scanner.ecosystems.packages.python.import_names import PythonImportNames
 
         normalized = lowered.replace("_", "-")
-        aliases = list(_IMPORT_ALIASES.get(normalized, ()))
+        aliases = list(PythonImportNames.aliases(normalized))
         canonical = aliases[0] if aliases else normalized.replace("-", "_")
         return canonical, list(dict.fromkeys([canonical, *aliases, normalized.replace("-", "_")]))
 

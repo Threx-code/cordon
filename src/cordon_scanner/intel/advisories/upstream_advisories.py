@@ -55,7 +55,7 @@ from cordon_scanner.intel.advisories.upstream.tags import TagInference
 from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts, VcpkgVersions
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from cordon_scanner.foundation.results import Dependency
 
@@ -779,6 +779,61 @@ class UpstreamAdvisories:
             )
             UpstreamAdvisories._records[identifier] = cached
         return cached
+
+    @staticmethod
+    def for_graph(
+        dependencies: Iterable[Dependency], covers: Callable[[str], bool], *, offline: bool
+    ) -> UpstreamResult | None:
+        """What the advisory detector asks for a graph's packages no advisory source covers
+        (`covers`): OSV through each package's upstream, when the scan may use the network, then
+        NVD (`intel/nvd`), offline too since its data is bundled, for what no upstream route
+        checked. The two answers are merged into one result; None when nothing was asked."""
+        from cordon_scanner.intel.advisories.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
+        from cordon_scanner.intel.advisories.nvd import NvdAdvisories
+
+        graph = list(dependencies)
+        upstream: UpstreamResult | None = None
+        if not offline:
+            candidates = [
+                d
+                for d in graph
+                if not d.local
+                and not d.bundled
+                and d.ecosystem in SUPPORTED
+                and not covers(d.ecosystem)
+            ]
+            if candidates:
+                upstream = UpstreamAdvisories.check(candidates)
+        nvd = [
+            d
+            for d in graph
+            if not d.local
+            and not d.bundled
+            and d.ecosystem in NVD_ECOSYSTEMS
+            and not covers(d.ecosystem)
+            and not (upstream is not None and d.purl in upstream.checked)
+        ]
+        if not nvd:
+            return upstream
+        found = NvdAdvisories.check(
+            nvd,
+            upstream.homes if upstream is not None else {},
+            upstream.versions if upstream is not None else {},
+        )
+        merged = upstream if upstream is not None else UpstreamResult()
+        merged.checked |= found.checked
+        merged.advisories.update(found.advisories)
+        for dependency in nvd:
+            if dependency.purl in found.checked:
+                merged.unchecked.pop(dependency.purl, None)
+            elif dependency.purl in found.unchecked:
+                before = merged.unchecked.get(dependency.purl)
+                merged.unchecked[dependency.purl] = (
+                    f"{before}; and NVD: {found.unchecked[dependency.purl]}"
+                    if before
+                    else f"NVD: {found.unchecked[dependency.purl]}"
+                )
+        return merged
 
     @staticmethod
     def check(dependencies: Iterable[Dependency]) -> UpstreamResult:

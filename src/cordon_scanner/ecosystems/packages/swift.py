@@ -337,6 +337,10 @@ class SwiftResolved:
 
 class SwiftEcosystem(BaseEcosystem):
     id = "swift"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.rsplit("/", 1)[0] if "/" in name else None
+
     purl_type = "swift"
     manifest_globs: tuple[str, ...] = ("**/Package.swift",)
     lockfile_globs: tuple[str, ...] = ("**/Package.resolved",)

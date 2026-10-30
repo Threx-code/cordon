@@ -34,6 +34,10 @@ _DLX_RUNNERS: Final = {
 class McpConfigs:
     """MCP server declarations in every agent's configuration dialect, and what they launch."""
 
+    #: Ecosystems whose package specs read `name@version`, scoped names led by an `@`
+    #: (`@scope/pkg@1.2.3`).
+    SCOPED_AT_SPECS: ClassVar[frozenset[str]] = frozenset({"npm"})
+
     PATHS: ClassVar[tuple[str, ...]] = MCP_PATHS
     """The files an agent reads its MCP servers from (`agents.paths.MCP_PATHS`): where to look for
     the declarations `mcp_servers` reads."""
@@ -41,7 +45,7 @@ class McpConfigs:
     @staticmethod
     def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:
         """`@scope/pkg@1.2.3` to (`@scope/pkg`, `1.2.3`); a floating spec gets version None."""
-        if ecosystem == "npm":
+        if ecosystem in McpConfigs.SCOPED_AT_SPECS:
             head, _, version = (
                 spec[1:].partition("@") if spec.startswith("@") else spec.partition("@")
             )
@@ -85,7 +89,7 @@ class McpConfigs:
             break
         if not package:
             return None
-        if ecosystem == "npm":
+        if ecosystem in McpConfigs.SCOPED_AT_SPECS:
             name, _, version = (
                 package[1:].partition("@") if package.startswith("@") else package.partition("@")
             )
