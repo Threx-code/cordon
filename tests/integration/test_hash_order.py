@@ -56,6 +56,14 @@ if kind == "two-spellings":
                  identifier="GHSA-dddd-eeee-ffff"),
     ]
     scanner = Scanner(config, detectors=(AdvisoryDetector(AdvisoryDatabase(records)),))
+elif kind == "tag-cycle":
+    # A git tag among PEP 440 versions: compared by spelling against them, so the three order in
+    # a cycle (tag < v1.4.0a0 < 1.13.1 < tag), as torch's advisories have them.
+    records = [
+        Advisory(ecosystem="pypi", name="examplepkg", versions=("v1.4.0a0", "malfet/tag-ec6f767",
+                 "1.13.1"), summary="s", identifier="GHSA-gggg-hhhh-jjjj"),
+    ]
+    scanner = Scanner(config, detectors=(AdvisoryDetector(AdvisoryDatabase(records)),))
 else:
     scanner = Scanner(config)
 findings = []
@@ -156,6 +164,12 @@ class HashOrderKit:
         )
         return root
 
+    @staticmethod
+    def requirements(root: Path) -> Path:
+        root.mkdir()
+        (root / "requirements.txt").write_text("examplepkg==1.13.1\n", encoding="utf-8")
+        return root
+
 
 class TestTheHashSeedChangesNothing:
     def test_advisories_spelling_one_version_two_ways(self, tmp_path: Path) -> None:
@@ -173,6 +187,18 @@ class TestTheHashSeedChangesNothing:
         }
         assert len(twins) >= 5, twins
         assert not HashOrderKit.differences(*runs), HashOrderKit.differences(*runs)
+
+    def test_a_tag_among_versions_names_one_version(self, tmp_path: Path) -> None:
+        # The three versions compare in a cycle, so the old sort named whichever its input put
+        # last: under seeds 0, 1 and 2 it said v1.4.0a0, 1.13.1 and malfet/tag-ec6f767 (measured).
+        project = HashOrderKit.requirements(tmp_path / "project")
+        runs = [HashOrderKit.scan(project, "tag-cycle", seed, tmp_path) for seed in ("0", "1", "2")]
+        found = json.loads(runs[0])
+        assert any("Upgrade past" in str(f.get("remediation")) for f in found), found
+        assert not HashOrderKit.differences(*runs[:2]), HashOrderKit.differences(*runs[:2])
+        assert not HashOrderKit.differences(runs[0], runs[2]), HashOrderKit.differences(
+            runs[0], runs[2]
+        )
 
     @pytest.mark.parametrize("part", ["benign", "malicious"])
     def test_the_repository_corpus(self, tmp_path: Path, part: str) -> None:

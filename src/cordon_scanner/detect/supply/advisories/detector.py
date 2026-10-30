@@ -745,7 +745,15 @@ class AdvisoryDetector(BaseDetector):
             version a remediation names changed from one run to the next."""
             return compared(version), version
 
-        fixed = sorted({r.fixed for r in records if r.fixed}, key=order)
+        def ordered(versions: set[str]) -> list[str]:
+            """`versions` in the ecosystem's order, from an input spelled in order first. The
+            comparison is not always a total order: a version that does not parse is compared
+            by spelling, so `malfet/tag-ec6f767` < `v1.4.0a0` < `1.13.1` < `malfet/tag-ec6f767`
+            under PEP 440. With a cycle the sort's result follows its input's order, and a
+            set's order follows the hash seed; a fixed input makes it one answer."""
+            return sorted(sorted(versions), key=order)
+
+        fixed = ordered({r.fixed for r in records if r.fixed})
         for candidate in fixed:
             if Versions.compare(ecosystem, candidate, dependency.version) <= 0:
                 continue
@@ -760,7 +768,7 @@ class AdvisoryDetector(BaseDetector):
                 )
 
         affecting = [r for r in records if r.affects(dependency.version)]
-        named = sorted({version for record in affecting for version in record.versions}, key=order)
+        named = ordered({version for record in affecting for version in record.versions})
         if named:
             return (
                 f"Upgrade past {named[-1]}: the advisories that name "
