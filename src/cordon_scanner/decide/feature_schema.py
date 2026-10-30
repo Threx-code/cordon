@@ -27,12 +27,15 @@ import ast
 import functools
 import hashlib
 import json
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
+
+    from cordon_scanner.foundation.models import Finding
 
 
 class FeatureSchema:
@@ -122,4 +125,49 @@ class FeatureSchema:
         return copy
 
 
-__all__ = ["FeatureSchema"]
+class FeatureRecord:
+    """The features the verdict model reads, built in one place: what a scan's verdict record
+    carries (`verdict.features`) and what a fit trains on. Nothing else reaches the model."""
+
+    @staticmethod
+    def of(findings: Iterable[Finding], package: dict[str, float]) -> dict[str, float]:
+        """The features of a scan's findings and package facts."""
+        from cordon_scanner.decide.verdict import VerdictFeatures
+
+        return VerdictFeatures.evidence(
+            (
+                (f.rule_id, int(f.severity), int(f.confidence), str(f.category), f.location.path)
+                for f in findings
+            ),
+            package,
+        )
+
+    @staticmethod
+    def read(row: dict[str, Any]) -> tuple[str | None, dict[str, float]]:
+        """A training row's (schema, features): its own record, or for a row written before the
+        record existed, the same features built from what it recorded (its findings as
+        [rule, severity, confidence, category, path, ...] and `verdict.package`), with no schema
+        (the row's producer stamp names it)."""
+        from cordon_scanner.decide.verdict import VerdictFeatures
+        from cordon_scanner.foundation.models import Confidence, Severity
+
+        verdict = row.get("verdict") or {}
+        record = verdict.get("features")
+        if isinstance(record, dict) and isinstance(record.get("values"), dict):
+            return record.get("schema"), dict(record["values"])
+        return None, VerdictFeatures.evidence(
+            (
+                (
+                    f[0],
+                    int(Severity[f[1].upper()]),
+                    int(Confidence[f[2].upper()]),
+                    f[3],
+                    f[4] or "",
+                )
+                for f in row.get("findings", [])
+            ),
+            verdict.get("package") or {},
+        )
+
+
+__all__ = ["FeatureRecord", "FeatureSchema"]

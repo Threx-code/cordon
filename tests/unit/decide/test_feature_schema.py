@@ -5,11 +5,24 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
-from cordon_scanner.decide.feature_schema import FeatureSchema
-from cordon_scanner.decide.verdict import Verdict
+from cordon_scanner.decide.feature_schema import FeatureRecord, FeatureSchema
+from cordon_scanner.decide.verdict import Verdict, VerdictModel
+from cordon_scanner.foundation.models import (
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Location,
+    RedactionMode,
+    RiskScore,
+    Severity,
+)
 from cordon_scanner.foundation.paths import PackagePaths
 
 
@@ -74,9 +87,86 @@ class TestTheVersion:
             FeatureSchema.version(root, FeatureSchema.names())
 
 
-class TestTheRecord:
-    def test_every_verdict_record_names_its_schema(self) -> None:
-        _, summary = Verdict.decide(
-            [], [("package/package.json", 10)], {"package/package.json": b"{}"}
+class RecordKit:
+    """A finding and a one-split model (the verdict tests' shape): 0.9 when `r:SUSPECT.X.001` is high."""
+
+    @staticmethod
+    def finding(rule: str = "SUSPECT.X.001", severity: Severity = Severity.HIGH) -> Finding:
+        return Finding(
+            rule_id=rule,
+            category=Category.SUSPICIOUS,
+            severity=severity,
+            confidence=Confidence.HIGH,
+            message="m.",
+            location=Location(path="package/index.js"),
+            evidence=Evidence(
+                kind=EvidenceKind.SNIPPET,
+                match_hash=Evidence.hash_bytes(b"x"),
+                redaction=RedactionMode.MASKED,
+            ),
+            remediation="",
+            explanation=Explanation(summary="", matched_rule=rule),
+            risk=RiskScore(value=50, base=50, confidence_multiplier=1.0),
+            detector="t",
         )
-        assert summary["schema"] == FeatureSchema.current()
+
+    @staticmethod
+    def model() -> dict[str, object]:
+        logit = 2.1972245773
+        return {
+            "format": VerdictModel.FORMAT,
+            "features": ["r:SUSPECT.X.001"],
+            "baseline": 0.0,
+            "trees": [
+                [
+                    {
+                        "leaf": False,
+                        "feature": 0,
+                        "threshold": 2.5,
+                        "left": 1,
+                        "right": 2,
+                        "missing_left": True,
+                    },
+                    {"leaf": True, "value": -logit},
+                    {"leaf": True, "value": logit},
+                ]
+            ],
+            "areas": {"npm": 0.5, "package": 0.95},
+            "floor": [],
+        }
+
+    @staticmethod
+    def decide(findings: list[Finding], model: dict[str, object] | None):
+        with mock.patch.object(VerdictModel, "load", return_value=model):
+            return Verdict.decide(
+                findings,
+                [("package/package.json", 10), ("package/index.js", 10)],
+                {"package/package.json": b'{"name": "x"}'},
+            )
+
+
+class TestTheRecord:
+    def test_every_verdict_carries_its_versioned_features(self) -> None:
+        _, summary = RecordKit.decide([], None)
+        assert summary["features"]["schema"] == FeatureSchema.current()
+        assert isinstance(summary["features"]["values"], dict)
+
+    def test_a_score_is_reproduced_from_the_record_alone(self) -> None:
+        _, summary = RecordKit.decide([RecordKit.finding()] * 3, RecordKit.model())
+        values = summary["features"]["values"]
+        assert values["r:SUSPECT.X.001#n"] == 3.0
+        assert round(VerdictModel.score(RecordKit.model(), values), 4) == summary["score"]
+
+    def test_a_row_without_the_record_reads_to_the_same_features(self) -> None:
+        findings = [RecordKit.finding(), RecordKit.finding("SUSPECT.Y.001", Severity.LOW)]
+        _, summary = RecordKit.decide(findings, RecordKit.model())
+        legacy = {
+            "findings": [
+                [f.rule_id, str(f.severity), str(f.confidence), str(f.category), f.location.path]
+                for f in findings
+            ],
+            "verdict": {"package": summary["package"]},
+        }
+        assert FeatureRecord.read(legacy) == (None, summary["features"]["values"])
+        own = {"verdict": {"features": summary["features"]}}
+        assert FeatureRecord.read(own) == (FeatureSchema.current(), summary["features"]["values"])
