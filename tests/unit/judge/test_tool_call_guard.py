@@ -6,8 +6,13 @@ ever compared, never run. Measured on AgentDefense in `bench/suites/tool_call_gu
 
 from __future__ import annotations
 
+import random
+import re
+import time
+
 import pytest
 
+from cordon_scanner.judge import calls
 from cordon_scanner.judge.calls import ToolCallGuard
 
 
@@ -141,3 +146,131 @@ class TestReview98GuardSteps:
             "send_message", {"url": "https://hooks.example.invalid/x", "payload": "weekly report"}
         )
         assert not verdict.blocked
+
+
+class TestJudgePatternsLinear:
+    """The judge's patterns answer as the ones they replace, in linear time (2026-10-30)."""
+
+    OLD_SAFETY_CONFIG = re.compile(
+        r"(?im)^\s*\[?\s*(?:safety|guardrails?|sandbox|security|auth\w*|verification)\s*\]?\s*\n?"
+        r"\s*(?:enabled?|on|active|required)\s*[=:]\s*(?:false|off|no|0|disabled)\b"
+        r"|^\s*(?:safety|guardrails?|sandbox|security|auth\w*)_?(?:enabled|on|check\w*)?\s*[=:]\s*"
+        r"(?:false|off|no|0|disabled)\b"
+    )
+    OLD_SAFETY_OFF = re.compile(
+        r"(?i)^_*(?:bypass|disable|skip|ignore|override|no|without|turn_?off|allow_all|unrestricted|"
+        r"jailbr\w*|unsafe|trust_remote|auto_?(?:approve|execute|escalate|confirm)|elevat\w*|escalat\w*|"
+        r"with_elevated|exhaust|poison|steal|exfiltrat\w*|cover_tracks|infiltrat\w*|impersonat\w*)"
+        r"(?:_|$|(?=[A-Z]))[\w]*$|^(?:no_?(?:morals|ethics|limits|rate_limit|guardrails|filter\w*)|"
+        r"ignore_\w+|bypass_\w+|safety_disabled|allow_all_commands|use_victim_session|"
+        r"skip_\w*(?:confirm|review|check|auth)\w*|god_?mode|developer_?mode|do_anything_now)$"
+    )
+    OLD_XXE = re.compile(r"(?i)<!ENTITY\s+%?\s*\w+\s+(?:SYSTEM|PUBLIC)\b|<!DOCTYPE\s+\w+\s*\[")
+    OLD_HOST = re.compile(r"(?i)(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,24})\b")
+
+    @staticmethod
+    def texts(seed: str, pieces: tuple[str, ...], longest: int) -> list[str]:
+        rng = random.Random(f"{seed}|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        return [
+            "".join(rng.choice(pieces) for _ in range(rng.randint(0, longest)))
+            for _ in range(20_000)
+        ]
+
+    @staticmethod
+    def spans(found: re.Match[str] | None) -> object:
+        return found and (found.span(), found.groups())
+
+    def test_safety_config_as_before(self) -> None:
+        pieces = (
+            "safety",
+            "guardrails",
+            "sandbox",
+            "auth",
+            "authz",
+            "verification",
+            "enable",
+            "on",
+            "active",
+            "false",
+            "off",
+            "0",
+            "_",
+            "check",
+            "=",
+            ":",
+            "[",
+            "]",
+            " ",
+            "\t",
+            "\n",
+            "x",
+            "SAFETY",
+        )
+        for text in self.texts("safety-config", pieces, 10):
+            assert ToolCallGuard._safety_config_off(text) == bool(
+                self.OLD_SAFETY_CONFIG.search(text)
+            ), text
+
+    def test_safety_off_as_before(self) -> None:
+        pieces = (
+            "bypass",
+            "skip",
+            "no",
+            "jailbr",
+            "elevat",
+            "turn",
+            "off",
+            "auto",
+            "approve",
+            "filter",
+            "confirm",
+            "auth",
+            "god",
+            "mode",
+            "_",
+            "a",
+            "Z",
+            "1",
+            "-",
+            " ",
+        )
+        for text in self.texts("safety-off", pieces, 8):
+            assert self.spans(calls._SAFETY_OFF.match(text)) == self.spans(
+                self.OLD_SAFETY_OFF.match(text)
+            ), text
+
+    def test_xxe_as_before(self) -> None:
+        pieces = ("<!ENTITY", "<!DOCTYPE", " ", "\n", "%", "x", "SYSTEM", "public", "[", ">")
+        for text in self.texts("xxe", pieces, 10):
+            assert self.spans(calls._XXE.search(text)) == self.spans(self.OLD_XXE.search(text)), (
+                text
+            )
+
+    def test_hosts_as_before(self) -> None:
+        pieces = (
+            "a",
+            "Z",
+            "1",
+            "-",
+            ".",
+            "com",
+            "io",
+            "http://",
+            "https://",
+            "/",
+            " ",
+            "_",
+            "anthropic",
+        )
+        for text in self.texts("host", pieces, 12):
+            old = [(m.span(), m.groups()) for m in self.OLD_HOST.finditer(text)]
+            assert [(m.span(), m.groups()) for m in calls._HOST.finditer(text)] == old, text
+
+    def test_long_runs_are_linear(self) -> None:
+        start = time.perf_counter()
+        ToolCallGuard._safety_config_off("\n" * 2_000_000)
+        ToolCallGuard._safety_config_off("auth" + "a" * 2_000_000 + "!")
+        calls._SAFETY_OFF.match("_" * 2_000_000 + "!")
+        calls._XXE.search("<!ENTITY" + " " * 2_000_000)
+        list(calls._HOST.finditer("a" * 2_000_000))
+        assert time.perf_counter() - start < 3
