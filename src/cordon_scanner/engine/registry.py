@@ -186,6 +186,24 @@ class Registry:
         """
         loaded = self._load(DETECTOR_GROUP, BUILTIN_DETECTORS, only)
 
+        if only is None:
+            # Every built-in, or no scan. A built-in is loaded only from an entry point inside this
+            # package (`_is_ours`), so a source tree put on PYTHONPATH over another install had
+            # every built-in skipped as not ours: the scan ran with no detectors and would have
+            # reported clean. A package claiming a built-in's name cannot cause this -- the genuine
+            # entry still loads -- so refusing here is not the denial of service skipping avoids.
+            missing = sorted(set(BUILTIN_DETECTORS) - {getattr(d, "id", "") for d in loaded})
+            if missing:
+                raise ConfigError(
+                    f"{len(missing)} built-in detector(s) could not be loaded: "
+                    f"{', '.join(missing[:6])}{' ...' if len(missing) > 6 else ''}",
+                    hint=(
+                        "This installation's entry points name modules outside the package that "
+                        "was imported -- a source tree on PYTHONPATH over an install. Reinstall "
+                        "(`pip install -e .` in the source tree) or remove it from PYTHONPATH."
+                    ),
+                )
+
         if only is not None:
             found = {getattr(d, "id", "") for d in loaded}
             unknown = sorted(set(only) - found)

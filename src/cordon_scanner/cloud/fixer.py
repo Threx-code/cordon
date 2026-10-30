@@ -27,10 +27,10 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 from urllib.parse import urlsplit
 
-from cordon_scanner.cloud.runner import JobRefused
+from cordon_scanner.cloud import JobRefused
 
 _NPM_NAME: Final = re.compile(r"^(@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$")
 _PYPI_NAME: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -52,6 +52,13 @@ class FixRefused(JobRefused):
 
 @dataclass(frozen=True)
 class FixSpec:
+    #: The ecosystems this runner makes fixes for: each one's package-name pattern and the method
+    #: that checks its payload. A new ecosystem is an entry here and a writer in DependencyFixer.
+    FIXABLE: ClassVar[dict[str, tuple[re.Pattern[str], str]]] = {
+        "npm": (_NPM_NAME, "_npm_payload"),
+        "pypi": (_PYPI_NAME, "_pypi_payload"),
+    }
+
     ecosystem: str
     name: str
     from_version: str
@@ -71,9 +78,9 @@ class FixSpec:
         message = str(options.get("commit_message", ""))[:200].replace("\n", " ").strip()
         raw_payload = options.get("payload")
         payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
-        if ecosystem not in ("npm", "pypi"):
+        if ecosystem not in FixSpec.FIXABLE:
             raise FixRefused(f"this runner makes fixes for npm and PyPI, not {ecosystem!r}")
-        if not (_NPM_NAME if ecosystem == "npm" else _PYPI_NAME).match(name):
+        if not FixSpec.FIXABLE[ecosystem][0].match(name):
             raise FixRefused("the fix names a package this runner will not write into a lockfile")
         if not _VERSION.match(old) or not _VERSION.match(new) or old == new:
             raise FixRefused("the fix's versions are not two different versions")
@@ -81,45 +88,55 @@ class FixSpec:
             raise FixRefused("the fix's branch is not a cordon/fix-* branch")
         if not message:
             raise FixRefused("the fix has no commit message")
-        if ecosystem == "npm":
-            resolved, integrity = (
-                str(payload.get("resolved", "")),
-                str(payload.get("integrity", "")),
-            )
-            bare = name.split("/")[-1]
-            parts = urlsplit(resolved)
-            if (
-                parts.scheme != "https"
-                or parts.hostname != "registry.npmjs.org"
-                or parts.query
-                or parts.fragment
-                or parts.path != f"/{name}/-/{bare}-{new}.tgz"
-            ):
-                raise FixRefused(
-                    "the fix's resolved URL is not the registry's tarball for this version"
-                )
-            if not _INTEGRITY.match(integrity):
-                raise FixRefused("the fix's integrity is not a sha512")
-            for key in ("dependencies_from", "dependencies_to"):
-                value = payload.get(key)
-                if value is not None and not (
-                    isinstance(value, dict)
-                    and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
-                ):
-                    raise FixRefused("the fix's dependency lists are malformed")
-        else:
-            hashes = payload.get("hashes")
-            if (
-                not isinstance(hashes, list)
-                or not 1 <= len(hashes) <= 200
-                or not all(isinstance(h, str) and _SHA256.match(h) for h in hashes)
-            ):
-                raise FixRefused("the fix's file hashes are not sha256 digests")
+        getattr(cls, FixSpec.FIXABLE[ecosystem][1])(name, new, payload)
         return cls(ecosystem, name, old, new, branch, message, dict(payload))
+
+    @staticmethod
+    def _npm_payload(name: str, new: str, payload: dict[str, Any]) -> None:
+        """npm's fix carries the registry's tarball URL and its sha512, and the two dependency lists."""
+        resolved, integrity = (
+            str(payload.get("resolved", "")),
+            str(payload.get("integrity", "")),
+        )
+        bare = name.split("/")[-1]
+        parts = urlsplit(resolved)
+        if (
+            parts.scheme != "https"
+            or parts.hostname != "registry.npmjs.org"
+            or parts.query
+            or parts.fragment
+            or parts.path != f"/{name}/-/{bare}-{new}.tgz"
+        ):
+            raise FixRefused(
+                "the fix's resolved URL is not the registry's tarball for this version"
+            )
+        if not _INTEGRITY.match(integrity):
+            raise FixRefused("the fix's integrity is not a sha512")
+        for key in ("dependencies_from", "dependencies_to"):
+            value = payload.get(key)
+            if value is not None and not (
+                isinstance(value, dict)
+                and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+            ):
+                raise FixRefused("the fix's dependency lists are malformed")
+
+    @staticmethod
+    def _pypi_payload(name: str, new: str, payload: dict[str, Any]) -> None:
+        """PyPI's fix carries the new version's file hashes."""
+        hashes = payload.get("hashes")
+        if (
+            not isinstance(hashes, list)
+            or not 1 <= len(hashes) <= 200
+            or not all(isinstance(h, str) and _SHA256.match(h) for h in hashes)
+        ):
+            raise FixRefused("the fix's file hashes are not sha256 digests")
 
 
 class DependencyFixer:
     """Apply a `FixSpec` to a checked-out repository. Returns the files changed, relative to it."""
+
+    #: Each fixable ecosystem's writer, by method name.
+    WRITERS: ClassVar[dict[str, str]] = {"npm": "npm", "pypi": "pypi"}
 
     @staticmethod
     def _files(
@@ -317,11 +334,7 @@ class DependencyFixer:
 
     @staticmethod
     def apply(repo: Path, spec: FixSpec) -> list[str]:
-        changed = (
-            DependencyFixer.npm(repo, spec)
-            if spec.ecosystem == "npm"
-            else DependencyFixer.pypi(repo, spec)
-        )
+        changed = getattr(DependencyFixer, DependencyFixer.WRITERS[spec.ecosystem])(repo, spec)
         return sorted({p.relative_to(repo).as_posix() for p in changed})
 
 

@@ -39,6 +39,9 @@ class PodSiblings:
     gives (`https://dl.google.com/firebase/ios/analytics/c549faaa5cd321b5/FirebaseAnalytics-10.6.0
     .tar.gz`) -- the same file, published from that commit."""
 
+    #: The ecosystem whose pods share one upstream Git source.
+    ECOSYSTEM: ClassVar[str] = "cocoapods"
+
     MAX_CANDIDATES: ClassVar[int] = 6
 
     @staticmethod
@@ -64,7 +67,7 @@ class PodSiblings:
                 continue
             package = answer.query.get("package")
             if (
-                dependency.ecosystem == "cocoapods"
+                dependency.ecosystem == PodSiblings.ECOSYSTEM
                 and isinstance(package, dict)
                 and package.get("ecosystem") == "GIT"
                 and str(package.get("name") or "").startswith("https://github.com/")
@@ -75,7 +78,7 @@ class PodSiblings:
             return out
         for i, (dependency, answer) in enumerate(zip(dependencies, answers, strict=True)):
             if (
-                dependency.ecosystem == "cocoapods"
+                dependency.ecosystem == PodSiblings.ECOSYSTEM
                 and dependency.resolved_from is None
                 and dependency.version
                 and isinstance(answer, Unnamed)

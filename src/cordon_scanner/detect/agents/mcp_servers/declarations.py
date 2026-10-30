@@ -42,6 +42,9 @@ class McpConfigs:
     """The files an agent reads its MCP servers from (`agents.paths.MCP_PATHS`): where to look for
     the declarations `mcp_servers` reads."""
 
+    #: The launchers whose package spec `split_spec` reads into a name and a version.
+    SPLIT_SPECS: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
+
     @staticmethod
     def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:
         """`@scope/pkg@1.2.3` to (`@scope/pkg`, `1.2.3`); a floating spec gets version None."""

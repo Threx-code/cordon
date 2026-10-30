@@ -18,7 +18,7 @@ import urllib.parse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
@@ -44,6 +44,9 @@ class Previous:
 
 
 class PreviousRelease:
+    #: Ecosystems whose package names itself inside its archive, so `identify` reads the identity
+    #: from the archive rather than from what the command line named.
+    FROM_ARCHIVE: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
     """The release published before this one, fetched for comparison."""
 
     @staticmethod

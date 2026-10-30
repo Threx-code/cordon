@@ -227,6 +227,7 @@
   "detect/infra/generated_policies": "detect/infra/generated_policies",
   "detect/infra/gradle_auth": "detect/infra/gradle_auth",
   "detect/infra/iac": "detect/infra/iac",
+  "detect/infra/iac_model": "detect/infra/iac_model",
   "detect/infra/iac_policies": "detect/infra/iac_policies",
   "detect/infra/infrastructure_rules": "detect/infra/infrastructure_rules",
   "detect/infra/plaintext_policies": "detect/infra/plaintext_policies",

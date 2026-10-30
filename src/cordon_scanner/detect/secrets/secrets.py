@@ -24,7 +24,10 @@ fixture that must look real is precise; exempting the file it lives in is not.
 from __future__ import annotations
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
+    Category,
     Confidence,
     Severity,
 )
@@ -288,13 +291,82 @@ file to the next unrelated block.
 """
 
 
+#: The rules the history pass and the opt-in liveness check emit, under the secrets detector.
+LIVE_RULE = "SECRET.LIVE.001"
+REVOKED_RULE = "SECRET.LIVENESS.REJECTED.001"
+HISTORY_INCOMPLETE_RULE = "OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001"
+UNCHECKED_RULE = "OPERATIONAL.SECRET_LIVENESS.UNCHECKED.001"
+
+
+class SecretHistoryRules:
+    @staticmethod
+    def declared() -> list[DeclaredRule]:
+        return [
+            DeclaredRule(
+                id=LIVE_RULE,
+                title="The credential's issuer confirms it still works",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.CONFIRMED,
+                category=Category.SUSPICIOUS,
+                detector="secrets",
+                message=(
+                    "A committed credential was sent to its own issuer with --verify-secrets, and the "
+                    "issuer accepted it. Whoever has read this repository, or any clone of it, can use it now."
+                ),
+                remediation="Revoke it at the issuer first, then rotate, then remove it from history.",
+                references=(references.HARDCODED_CREDENTIALS,),
+            ),
+            DeclaredRule(
+                id=REVOKED_RULE,
+                title="The credential's issuer rejects it",
+                severity=Severity.INFO,
+                confidence=Confidence.CONFIRMED,
+                category=Category.SUSPICIOUS,
+                detector="secrets",
+                message=(
+                    "A committed credential was sent to its own issuer with --verify-secrets, and the "
+                    "issuer rejected it: revoked, expired or never valid. It still belongs out of the tree."
+                ),
+                remediation="Remove it from the tree; confirm the rejection was revocation, not a typo in a live key.",
+                references=(references.HARDCODED_CREDENTIALS,),
+            ),
+            DeclaredRule(
+                id=HISTORY_INCOMPLETE_RULE,
+                title="Part of git history was not read for secrets",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.OPERATIONAL,
+                detector="secrets",
+                message="The history pass stopped at a bound; the blobs past it were not read and are not clean.",
+                remediation="Raise the bound or scan history in a dedicated job with a longer budget.",
+                references=(references.HARDCODED_CREDENTIALS,),
+            ),
+            DeclaredRule(
+                id=UNCHECKED_RULE,
+                title="Some credentials could not be checked with their issuer",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.OPERATIONAL,
+                detector="secrets",
+                message="These credentials were found but their issuer was not asked, or did not answer.",
+                remediation="Check them by hand at the issuer, or rerun when the issuer is reachable.",
+                references=(references.HARDCODED_CREDENTIALS,),
+            ),
+        ]
+
+
 __all__ = [
     "ATTRIBUTE_SKIP",
     "DOCUMENTED_NAMES",
     "FIXTURE_CONFIDENCE",
+    "HISTORY_INCOMPLETE_RULE",
+    "LIVE_RULE",
     "MAX_TEST_MODULE_SCAN",
     "OPENERS",
+    "REVOKED_RULE",
     "RULE_MATERIAL_CEILING",
     "TEST_MODULE_ATTRIBUTE",
+    "UNCHECKED_RULE",
+    "SecretHistoryRules",
     "SourceSpans",
 ]

@@ -7,10 +7,10 @@ are known.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Final
 
-from cordon_scanner.detect.agents.autorun import Autorun
 from cordon_scanner.detect.agents.extensions import ExtensionNames
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import (
@@ -898,7 +898,47 @@ RULES.update(
         ),
     }
 )
-RULES.update(Autorun.build_rules(AgentRules._rule))
+
+
+class AutorunRules:
+    """The rules for commands an editor or agent runs when a folder opens (`autorun`). Here with
+    the other agent rules, so the catalogue does not import the detector that reads it."""
+
+    @staticmethod
+    def build_rules(rule: Callable[..., Any]) -> dict[str, Any]:
+        """The autorun rules, built with the caller's rule factory (agents.py passes
+        AgentRules._rule after its classes exist, so this module needs no AgentRule import)."""
+        return {
+            "MALWARE.AGENT.AUTORUN.001": rule(
+                "MALWARE.AGENT.AUTORUN.001",
+                "A command an editor or agent runs on its own attacks the machine",
+                Category.MALICIOUS,
+                Severity.CRITICAL,
+                Confidence.HIGH,
+                "A command this repository configures to run without anyone typing it -- a "
+                "settings helper the agent calls, a task that starts when the folder opens, a "
+                "dev-container lifecycle command, an agent environment's install step -- downloads "
+                "and runs code, sends credentials away, or opens a remote shell.",
+                "Remove the command and treat the repository as untrusted.",
+                (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_SETTINGS),
+            ),
+            "SUSPECT.CI.DEVCONTAINER_FETCH.001": rule(
+                "SUSPECT.CI.DEVCONTAINER_FETCH.001",
+                "A published package's dev-container fetches and runs code when a developer opens it",
+                Category.SUSPICIOUS,
+                Severity.LOW,
+                Confidence.HIGH,
+                "A published package ships an editor task or dev-container lifecycle command that "
+                "downloads and runs code when a developer opens the repository. That is off the "
+                "path a consumer who installs the package ever runs, so it is a hardening concern "
+                "rather than package malware -- but review it before opening in a dev container.",
+                "Pin or vendor the fetched installer, and review before opening in a dev container.",
+                (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+            ),
+        }
+
+
+RULES.update(AutorunRules.build_rules(AgentRules._rule))
 
 #: What each intent is, as a finding says it.
 INTENT_WORDS: Final = {

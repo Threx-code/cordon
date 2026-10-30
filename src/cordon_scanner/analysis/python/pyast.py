@@ -109,13 +109,6 @@ class PythonSource:
     """Conveniences over the Python analyser: loops, .pth start-up lines, resolution."""
 
     @staticmethod
-    def _word_key(word: str) -> str:
-        """A command word as `_file_key` names a file: `"{out}"` is the variable `out`."""
-        text = word.strip().strip("\"'")
-        placeholder = re.fullmatch(r"\{(\w{1,80})\}", text)
-        return f"name:{placeholder.group(1)}" if placeholder else text
-
-    @staticmethod
     def loop_delay_lines(source: str) -> frozenset[int]:
         """Lines where a sleep is inside a loop, and so a schedule rather than a delay.
 
