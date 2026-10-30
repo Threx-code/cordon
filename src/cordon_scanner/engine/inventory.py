@@ -246,19 +246,25 @@ class _LineIndex:
     r"""The first line of a file that names a dependency.
 
     A name is found where `(?<![\w@./-])NAME(?![\w-])` matches. The lookbehind starts every
-    match at the start of a maximal run of `[\w@./-]`, and the lookahead ends it at the run's end
-    or just before an `@`, `.` or `/` inside it, so the names a line holds are exactly those
-    prefixes of its runs. The caller says up front which names it will ask of which file (the
+    match at the start of a maximal run of `[\w@./-]`. A name made only of those characters is a
+    prefix of that run ending at the run's end or before an `@`, `.` or `/` inside it. A name with
+    another character (Maven's `group:artifact`) starts with its head, the part before that
+    character, which must be the whole run, since the run ends where the head does; the name
+    then continues past it. The caller says up front which names it will ask of which file (the
     dependencies parsed from it); on a file's first lookup one pass over its lines records the
-    first line of each of those, and every lookup after is a dictionary read. Searching the file
-    again for each dependency made a lockfile's cost grow with the square of its entries. Memory
-    is what was asked for, never what the file holds. A name with another character (a space, a
-    `:`), or one not asked for up front, is searched for line by line as before."""
+    first line of each, and every lookup after is a dictionary read. Searching the file again for
+    each dependency made a lockfile's cost grow with the square of its entries. Memory is what was
+    asked for. A name whose first character is outside the class, or one not asked for up front,
+    is searched for line by line as before."""
 
     #: Lines read, as the line-by-line search reads them.
     MAX_LINES: ClassVar[int] = 200_000
     RUN: ClassVar[re.Pattern[str]] = re.compile(r"[\w@./-]+")
     INNER_END: ClassVar[re.Pattern[str]] = re.compile(r"[@./]")
+    #: The pieces of a line after a head: a run, or one character outside the class.
+    TOKEN: ClassVar[re.Pattern[str]] = re.compile(r"[\w@./-]+|[^\w@./-]")
+    #: What may not follow a name.
+    FOLLOWER: ClassVar[re.Pattern[str]] = re.compile(r"[\w-]")
 
     def __init__(
         self, texts: Mapping[str, str], queries: Iterable[tuple[str | None, str]] = ()
@@ -266,9 +272,15 @@ class _LineIndex:
         self._texts = texts
         self._lines: dict[str, list[str]] = {}
         self._wanted: dict[str, set[str]] = {}
+        #: For names that run past their head: each head, and the longest such name it starts.
+        self._heads: dict[str, dict[str, int]] = {}
         for path, name in queries:
-            if path and name and _LineIndex.RUN.fullmatch(name):
+            head = _LineIndex.RUN.match(name) if path and name else None
+            if path and head is not None:
                 self._wanted.setdefault(path, set()).add(name)
+                if head.end() < len(name):
+                    longest = self._heads.setdefault(path, {})
+                    longest[head.group()] = max(longest.get(head.group(), 0), len(name))
         self._first: dict[str, dict[str, int]] = {}
 
     def find(self, path: str | None, name: str) -> int | None:
@@ -281,14 +293,19 @@ class _LineIndex:
         wanted = self._wanted.get(path)
         if wanted is not None and name in wanted:
             if path not in self._first:
-                self._first[path] = _LineIndex.first_lines(lines, wanted)
+                heads = self._heads.get(path, {})
+                self._first[path] = _LineIndex.first_lines(lines, wanted, heads)
             return self._first[path].get(name)
         return _LineIndex.search(lines, name)
 
     @staticmethod
-    def first_lines(lines: list[str], wanted: set[str]) -> dict[str, int]:
+    def first_lines(
+        lines: list[str], wanted: set[str], heads: Mapping[str, int] | None = None
+    ) -> dict[str, int]:
         """The first line holding each wanted name, in one pass. A prefix longer than the longest
-        wanted name cannot be one, so no run is cut past that length."""
+        wanted name cannot be one, so no run is cut past that length, and after a head the line is
+        read only as far as the longest name that head starts."""
+        heads = heads or {}
         longest = max(len(name) for name in wanted)
         first: dict[str, int] = {}
         for number, line in enumerate(lines[: _LineIndex.MAX_LINES], start=1):
@@ -302,7 +319,36 @@ class _LineIndex:
                         first.setdefault(text[:end], number)
                 if len(text) <= longest and text in wanted:
                     first.setdefault(text, number)
+                if text in heads:
+                    _LineIndex.past_head(
+                        line, run.start(), run.end(), heads[text], wanted, first, number
+                    )
         return first
+
+    @staticmethod
+    def past_head(
+        line: str,
+        start: int,
+        head_end: int,
+        reach: int,
+        wanted: set[str],
+        first: dict[str, int],
+        number: int,
+    ) -> None:
+        r"""The wanted names that run on from the head at `start`: every end a match could have
+        (a piece's end, or before an `@`, `.` or `/` in it) within `reach` characters, kept when
+        nothing in `[\w-]` follows it."""
+        limit = min(len(line), start + reach)
+        for piece in _LineIndex.TOKEN.finditer(line, head_end, limit):
+            ends = [
+                piece.start() + m.start()
+                for m in _LineIndex.INNER_END.finditer(piece.group())
+                if m.start()
+            ]
+            for end in (*ends, piece.end()):
+                name = line[start:end]
+                if name in wanted and not _LineIndex.FOLLOWER.match(line, end):
+                    first.setdefault(name, number)
 
     @staticmethod
     def search(lines: list[str], name: str) -> int | None:
