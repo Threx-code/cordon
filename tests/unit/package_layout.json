@@ -315,6 +315,7 @@
   "ecosystems/packages/javascript/pnpm": "ecosystems/packages/javascript/pnpm",
   "ecosystems/packages/nuget": "ecosystems/packages/nuget",
   "ecosystems/packages/ocaml/opam": "ecosystems/packages/ocaml/opam",
+  "ecosystems/packages/ocaml/opam_syntax": "ecosystems/packages/ocaml/opam_syntax",
   "ecosystems/packages/ocaml/dune": "ecosystems/packages/ocaml/dune",
   "ecosystems/packages/pub": "ecosystems/packages/pub",
   "ecosystems/packages/pypi": "ecosystems/packages/pypi",

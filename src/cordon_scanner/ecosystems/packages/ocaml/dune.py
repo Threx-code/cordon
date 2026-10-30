@@ -12,7 +12,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.packages.ocaml.opam import OpamDocument, Switch
+from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import OpamDocument, Switch
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
