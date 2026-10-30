@@ -677,7 +677,13 @@ class AdvisoryDetector(BaseDetector):
         def _ordering(left: str, right: str) -> int:
             return Versions.compare(ecosystem, left, right)
 
-        order = cmp_to_key(_ordering)
+        compared = cmp_to_key(_ordering)
+
+        def order(version: str) -> tuple[Any, str]:
+            """The ecosystem's order, then the spelling: versions it calls equal ("1.3" and
+            "1.3.0") otherwise kept a set's order, which follows the process's hash seed, so the
+            version a remediation names changed from one run to the next."""
+            return compared(version), version
 
         fixed = sorted({r.fixed for r in records if r.fixed}, key=order)
         for candidate in fixed:

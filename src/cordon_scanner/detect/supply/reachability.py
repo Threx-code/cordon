@@ -467,7 +467,7 @@ class ImportReachability:
                 usage[top].runtime_import = True  # a bare `import 'x'` or an inline require
         if not bindings:
             return
-        names = "|".join(re.escape(name) for name in sorted(bindings, key=len, reverse=True))
+        names = "|".join(re.escape(name) for name in sorted(bindings, key=lambda n: (-len(n), n)))
         reference = re.compile(rf"(?<![\w$.])({names})((?:\.[\w$]+)*)")
         dead = ImportReachability._js_unreached_spans(text, referenced or {})
         for match in reference.finditer(text):
