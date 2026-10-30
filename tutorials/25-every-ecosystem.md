@@ -549,7 +549,7 @@ JavaScript and TypeScript packages, with npm, pnpm, Yarn or Bun. Ecosystem id `n
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ MANIFESTS       package.json, deno.json, deno.jsonc                        │
 │ LOCKFILES       package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml,    │
-│                 yarn.lock, bun.lock, deno.lock                             │
+│                 yarn.lock, bun.lock, bun.lockb, deno.lock                  │
 │                                                                            │
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │
 │                 install hooks                                              │

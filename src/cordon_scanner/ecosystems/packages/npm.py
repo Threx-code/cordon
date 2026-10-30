@@ -223,6 +223,7 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
         "**/pnpm-lock.yaml",
         "**/yarn.lock",
         "**/bun.lock",
+        "**/bun.lockb",
         "**/deno.lock",
     )
     registry_hosts: frozenset[str] = frozenset(
@@ -348,6 +349,7 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         from cordon_scanner.ecosystems.packages.javascript.bun import BunLock
+        from cordon_scanner.ecosystems.packages.javascript.bun_lockb import BunLockb
         from cordon_scanner.ecosystems.packages.javascript.deno import DenoLock
         from cordon_scanner.ecosystems.packages.javascript.pnpm import PnpmLock
         from cordon_scanner.ecosystems.packages.javascript.yarn import YarnLock
@@ -361,6 +363,8 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
             return YarnLock.parse(content, self.id)
         if name == "bun.lock":
             return BunLock.parse(content, self.id)
+        if name == "bun.lockb":
+            return BunLockb.parse(content, self.id)
         if name == "deno.lock":
             return DenoLock.parse(content, self.id)
         return LockGraph(
