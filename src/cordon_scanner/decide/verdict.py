@@ -41,6 +41,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.decide.feature_schema import FeatureRecord, FeatureSchema
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
 from cordon_scanner.foundation.paths import PackagePaths
@@ -639,7 +640,15 @@ class Verdict:
         package = {**VerdictFeatures.package(paths_sizes, manifests, sources), **(profile or {})}
         Verdict._skill_claim(package)
         area = Verdict.area([p for p, _ in paths_sizes], manifests, package, rules)
-        summary: dict[str, Any] = {"rules": rules, "package": package, "area": area}
+        # The one record the model reads, versioned (`decide/feature_schema`): every input a score
+        # reads, so a score can be reproduced from it, and what a fit trains on.
+        features = FeatureRecord.of(findings, package)
+        summary: dict[str, Any] = {
+            "rules": rules,
+            "package": package,
+            "area": area,
+            "features": {"schema": FeatureSchema.current(), "values": features},
+        }
         model = VerdictModel.load()
         if model is None:
             return findings, summary
@@ -652,20 +661,6 @@ class Verdict:
         )
         if not rules and not reviewed:
             return findings, summary
-        features = VerdictFeatures.evidence(
-            (
-                (f.rule_id, int(f.severity), int(f.confidence), str(f.category), f.location.path)
-                for f in findings
-            ),
-            package,
-        )
-        # Every scored input is in the record, so a score can be reproduced from what is printed:
-        # `rules` gives each rule's strongest severity only, and the model also reads how many
-        # times each rule, family, place and category fired (a count that fell from 4 to 1 moved a
-        # score while `rules` stayed the same). The package facts are in `package`.
-        summary["evidence"] = {
-            key: value for key, value in sorted(features.items()) if not key.startswith("pkg:")
-        }
         # `reviewed` holds only with a registry section; said again so the type is known here.
         if reviewed and registry is not None:
             summary.update(
