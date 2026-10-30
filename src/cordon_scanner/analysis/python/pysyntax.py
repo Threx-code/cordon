@@ -18,6 +18,8 @@ import weakref
 from collections.abc import Callable
 from typing import Any, ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
+
 
 class PythonSyntax:
     @staticmethod
@@ -30,6 +32,7 @@ class PythonSyntax:
             return ast.parse(source, filename=filename, mode=mode)
 
     @staticmethod
+    @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)
     @functools.lru_cache(maxsize=4)
     def shared(source: str | bytes) -> Any:
         """One parse of `source` shared by every reader that does not change the tree: the Python
@@ -262,5 +265,8 @@ class TreeIndex:
             found.extend(self.order[p] for p in positions[low:high])
         return found
 
+
+# The last trees' indexes (and through them the trees), emptied after each scan.
+ScanCaches.register(TreeIndex.RECENT)
 
 __all__ = ["PythonSyntax", "TreeIndex"]
