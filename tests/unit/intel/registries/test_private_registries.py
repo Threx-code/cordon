@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from cordon_scanner.intel.registries.challenge import Challenge
 from cordon_scanner.intel.registries.private_registries import PrivateRegistries, PrivateRegistry
 from cordon_scanner.intel.registries.registry_client import PackageNotFound, RegistryError
 
@@ -350,9 +351,9 @@ class TestChallengeFieldLinear:
         rng = random.Random("challenge|2026-10-30")  # noqa: S311 -- a fixture, not key material
         for _ in range(20_000):
             text = "".join(rng.choice(self.PIECES) for _ in range(rng.randint(0, 12)))
-            assert PrivateRegistries.CHALLENGE_FIELD.findall(text) == self.OLD.findall(text), text
+            assert Challenge.FIELD.findall(text) == self.OLD.findall(text), text
 
     def test_a_long_word_is_linear(self) -> None:
         start = time.perf_counter()
-        PrivateRegistries.CHALLENGE_FIELD.findall("a" * 2_000_000)
+        Challenge.FIELD.findall("a" * 2_000_000)
         assert time.perf_counter() - start < 3

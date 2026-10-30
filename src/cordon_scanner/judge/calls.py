@@ -157,9 +157,16 @@ _BRANDS: Final = (
 #: `\s+%?\s*` written as `\s+(?:%\s*)?`: one run of blanks per item, so a long run is not split
 #: every way between two runs (the same matches; 2026-10-30).
 _XXE: Final = re.compile(r"(?i)<!ENTITY\s+(?:%\s*)?\w+\s+(?:SYSTEM|PUBLIC)\b|<!DOCTYPE\s+\w+\s*\[")
-#: A host name, its labels started only at a label's first character (the lookbehind), so a long run of
-#: label characters is not rescanned from every position: the same matches as without it.
-_HOST: Final = re.compile(r"(?i)(?:https?://)?(?<![a-z0-9-])((?:[a-z0-9-]+\.)+[a-z]{2,24})\b")
+#: A host name, `(?i)(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,24})\b` under finditer, read by
+#: `ToolCallGuard._hosts` from flat patterns: a label repeated inside a repeat is the shape the rule
+#: validator refuses, and it re-read a long dotted run from every label. A host starts only at a
+#: dotted run's first label (not after a label character, nor after a label's dot: the run's first
+#: label matches whenever a later one would) or after a scheme.
+_HOST_START: Final = re.compile(r"(?i)https?://|(?<![a-z0-9-])(?<![a-z0-9-]\.)[a-z0-9-]")
+_HOST_SCHEME: Final = re.compile(r"(?i)https?://")
+_HOST_LABEL: Final = re.compile(r"(?i)[a-z0-9-]+\.")
+_HOST_LABEL_CHAR: Final = re.compile(r"(?i)[a-z0-9-]")
+_HOST_TOP: Final = re.compile(r"(?i)[a-z]{2,24}\b")
 #: Instructions addressed to the model, in the shapes a tool argument carries them. ATR's text rules
 #: read beside these; its command rules are not used here -- on plain values ("User logged in at
 #: 10:00", a `SELECT ... WHERE role = 'admin'`) they fired on 13 of 610 benign AgentDefense calls.
@@ -540,10 +547,51 @@ class ToolCallGuard:
         return False
 
     @staticmethod
+    def _hosts(text: str) -> Iterator[tuple[int, int, int]]:
+        """(start, host start, end) of each host name, as `_HOST_START`'s comment's pattern finds
+        them under finditer: at each start the scheme first, then the bare host; from a host's start
+        the most labels first, then fewer (the greedy repeat), each followed by a top label."""
+        at = 0
+        while found := _HOST_START.search(text, at):
+            start = found.start()
+            scheme = _HOST_SCHEME.match(text, start)
+            host_start = scheme.end() if scheme else start
+            end = ToolCallGuard._host_end(text, host_start) if scheme else None
+            if end is None and ToolCallGuard._may_start(text, start):
+                host_start, end = start, ToolCallGuard._host_end(text, start)
+            if end is None:
+                at = start + 1
+                continue
+            yield start, host_start, end
+            at = end
+
+    @staticmethod
+    def _may_start(text: str, at: int) -> bool:
+        """A bare host may start at `at`: not after a label character, nor after a label's dot."""
+        if at and _HOST_LABEL_CHAR.match(text, at - 1):
+            return False
+        return not (at > 1 and text[at - 1] == "." and _HOST_LABEL_CHAR.match(text, at - 2))
+
+    @staticmethod
+    def _host_end(text: str, start: int) -> int | None:
+        """Where a host starting at `start` ends, or None: after its last label's dot the top label,
+        else after the one before, and so on."""
+        dots = []
+        found = _HOST_LABEL.match(text, start)
+        while found:
+            dots.append(found.end())
+            found = _HOST_LABEL.match(text, found.end())
+        for dot in reversed(dots):
+            top = _HOST_TOP.match(text, dot)
+            if top:
+                return top.end()
+        return None
+
+    @staticmethod
     def _squatted(text: str) -> str | None:
         """A vendor's name as a label of a host that is not the vendor's: `anthropic-mcp.attacker.com`."""
-        for found in _HOST.finditer(text):
-            host = found.group(1).lower()
+        for _, host_start, end in ToolCallGuard._hosts(text):
+            host = text[host_start:end].lower()
             labels = host.split(".")
             registered = ".".join(labels[-2:])
             for brand in _BRANDS:

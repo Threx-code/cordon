@@ -484,6 +484,7 @@
   "intel/provenance/sigstore_bundle": "intel/provenance/sigstore_bundle",
   "intel/provenance/transparency": "intel/provenance/transparency",
   "intel/provenance/x509": "intel/provenance/x509",
+  "intel/registries/challenge": "intel/registries/challenge",
   "intel/registries/image_registries": "intel/registries/image_registries",
   "intel/registries/registry_http": "intel/registries/registry_http",
   "intel/registries/registry_hosts": "intel/registries/registry_hosts",

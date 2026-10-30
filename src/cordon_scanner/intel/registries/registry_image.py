@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import IO, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
-from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+from cordon_scanner.intel.registries.challenge import Challenge
 
 MEDIA_INDEX: Final = (
     "application/vnd.oci.image.index.v1+json",
@@ -140,7 +140,7 @@ class RegistryImage:
         challenge = str(headers.get("WWW-Authenticate", ""))
         if not challenge.lower().startswith("bearer "):
             return False
-        fields = dict(PrivateRegistries.CHALLENGE_FIELD.findall(challenge))
+        fields = Challenge.fields(challenge)
         realm = fields.get("realm", "")
         if urllib.parse.urlsplit(realm).scheme != "https":
             return False

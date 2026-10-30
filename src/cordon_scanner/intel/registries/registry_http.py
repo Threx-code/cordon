@@ -18,7 +18,7 @@ from typing import Any, Final
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.registries import registry_request as base
-from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+from cordon_scanner.intel.registries.challenge import Challenge
 from cordon_scanner.intel.registries.registry_hosts import (
     _MAX_GZIP_BYTES,
     Redirected,
@@ -146,7 +146,7 @@ class RegistryHttp:
                 raise RegistryError(f"HTTP {exc.code} from an OCI registry") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(f"{type(exc).__name__} asking an OCI registry") from exc
-        fields = dict(PrivateRegistries.CHALLENGE_FIELD.findall(challenge))
+        fields = Challenge.fields(challenge)
         realm = fields.get("realm", "")
         if not realm.startswith("https://"):
             raise RegistryError("an OCI registry asked for credentials somewhere other than HTTPS")
