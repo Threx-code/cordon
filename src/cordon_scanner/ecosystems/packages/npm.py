@@ -660,6 +660,16 @@ class NpmEcosystem(BaseEcosystem):
             repository = repository.get("url")
         return repository.strip() if isinstance(repository, str) else ""
 
+    # -- what a published package of it runs (EcosystemPublishedCode) --------------
+
+    def ships_built_code(self) -> bool:
+        """`dist/` and the minified bundle of a published tarball are the code `main` runs."""
+        return True
+
+    def hooks_run_javascript(self) -> bool:
+        """Its install scripts and entry points are JavaScript."""
+        return True
+
 
 __all__ = ["NpmEcosystem"]
 

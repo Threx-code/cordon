@@ -23,6 +23,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent
@@ -84,7 +85,7 @@ class LegitimateUse:
         return (
             rule_id in LegitimateUse.FLOW_EVIDENCE_RULES
             and ctx.package_distribution
-            and ctx.distribution == "npm"
+            and EcosystemFactsProvider.published().ships_built_code(ctx.distribution)
             # Not a `bin` target alone: a CLI that fetches and runs its plugins or its update runs
             # when a person runs it (review 98: both benign blocks were `bin` tools).
             and (content.path in ctx.library_entry_paths or ctx.in_install_hook(content.path))
@@ -94,7 +95,7 @@ class LegitimateUse:
     def shipped_output(path: str, ctx: ScanContext) -> bool:
         return (
             ctx.package_distribution
-            and ctx.distribution == "npm"
+            and EcosystemFactsProvider.published().ships_built_code(ctx.distribution)
             and LegitimateUse.SHIPPED_OUTPUT.search(path) is not None
         )
 

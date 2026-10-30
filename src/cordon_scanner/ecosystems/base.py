@@ -905,6 +905,16 @@ class BaseEcosystem:
         """The source repository a published archive's manifest names, or ""."""
         return ""
 
+    # -- what a published package of it runs (EcosystemPublishedCode) ------------------------
+
+    def ships_built_code(self) -> bool:
+        """Whether a published archive's built output is the code that runs."""
+        return False
+
+    def hooks_run_javascript(self) -> bool:
+        """Whether its install hooks and entry points run JavaScript."""
+        return False
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation

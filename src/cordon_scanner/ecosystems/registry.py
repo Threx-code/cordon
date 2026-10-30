@@ -404,6 +404,14 @@ class RegistryFacts:
         return RegistryFacts._of(ecosystem).published_repository(manifest)
 
     @staticmethod
+    def ships_built_code(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).ships_built_code()
+
+    @staticmethod
+    def hooks_run_javascript(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).hooks_run_javascript()
+
+    @staticmethod
     def completes_from_checksums(ecosystem: str) -> bool:
         return RegistryFacts._of(ecosystem).completes_from_checksums()
 

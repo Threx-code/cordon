@@ -314,6 +314,19 @@ class EcosystemPackageEntries(Protocol):
     def published_repository(self, ecosystem: str, manifest: Mapping[str, Any]) -> str: ...
 
 
+class EcosystemPublishedCode(Protocol):
+    """What a published package of the ecosystem runs: its built output, and its hooks' language."""
+
+    def ships_built_code(self, ecosystem: str) -> bool:
+        """Whether a published archive's `dist/` and bundles are the code that runs, not build
+        output beside it (npm)."""
+        ...
+
+    def hooks_run_javascript(self, ecosystem: str) -> bool:
+        """Whether its install hooks and entry points run JavaScript (npm)."""
+        ...
+
+
 class InstalledEcosystemFacts(
     EcosystemFacts,
     EcosystemNaming,
@@ -325,6 +338,7 @@ class InstalledEcosystemFacts(
     EcosystemArchiveTraits,
     EcosystemResolution,
     EcosystemPackageEntries,
+    EcosystemPublishedCode,
     Protocol,
 ):
     """The installed facts object as the provider holds it; each reader asks for the one port it
@@ -358,6 +372,10 @@ class EcosystemFactsProvider:
 
     @staticmethod
     def traits() -> EcosystemTraits:
+        return EcosystemFactsProvider.facts()
+
+    @staticmethod
+    def published() -> EcosystemPublishedCode:
         return EcosystemFactsProvider.facts()
 
 
