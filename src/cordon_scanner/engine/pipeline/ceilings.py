@@ -511,9 +511,7 @@ class Ceilings:
         """
         compiled_is_inert = RegistryFacts.compiled_is_inert(distribution)
         # Another ecosystem's install manifest is author-time here: npm's package.json in a wheel.
-        foreign_manifests = RegistryFacts.any_install_manifest() - RegistryFacts.install_manifests(
-            distribution
-        )
+        foreign_manifests = RegistryFacts.foreign_install_manifests(distribution)
         make_is_inert = distribution not in MAKE_AT_INSTALL
 
         def author_time(member: str) -> bool:

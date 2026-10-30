@@ -283,8 +283,8 @@ class EcosystemArchiveTraits(Protocol):
 
     def install_manifests(self, ecosystem: str) -> frozenset[str]: ...
 
-    def any_install_manifest(self) -> frozenset[str]:
-        """Every ecosystem's install manifests together."""
+    def foreign_install_manifests(self, ecosystem: str) -> frozenset[str]:
+        """Every other ecosystem's install manifests: author-time files in this one's archive."""
         ...
 
 

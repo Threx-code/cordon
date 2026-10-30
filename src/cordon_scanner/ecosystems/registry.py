@@ -424,13 +424,14 @@ class RegistryFacts:
         return RegistryFacts._of(ecosystem).install_manifests()
 
     @staticmethod
-    def any_install_manifest() -> frozenset[str]:
-        return frozenset().union(
+    def foreign_install_manifests(ecosystem: str) -> frozenset[str]:
+        every = frozenset().union(
             *(
                 RegistryFacts._of(e.id).install_manifests()
                 for e in EcosystemRegistry.all_ecosystems()
             )
         )
+        return every - RegistryFacts._of(ecosystem).install_manifests()
 
     @staticmethod
     def identity_in_metadata(ecosystem: str) -> bool:
