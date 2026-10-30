@@ -76,6 +76,39 @@ class AdvisoryRecord(Protocol):
     def affects(self, version: str | None) -> bool: ...
 
 
+class Exploitations(Protocol):
+    """What the detectors use of the class `ExploitedCatalogue`: the newest known-exploited catalogue
+    (CISA KEV, ENISA EUVD) and the CVEs an advisory names."""
+
+    def catalogue(self) -> ExploitedLookup: ...
+    def cves_of(self, advisory: AdvisoryRecord) -> set[str]: ...
+
+
+class ExploitedLookup(Protocol):
+    """One catalogue (`Catalogue`): the exploitation recorded for any of a set of CVEs."""
+
+    def lookup(self, cves: set[str]) -> ExploitationFacts | None: ...
+
+
+class ExploitationFacts(Protocol):
+    """One CVE's recorded exploitation (`Exploitation`)."""
+
+    def describe(self) -> str: ...
+    def references(self) -> tuple[str, ...]: ...
+
+
+class ExploitLikelihoods(Protocol):
+    """What the detectors use of the class `Epss`: the highest-probability score among some CVEs."""
+
+    def lookup(self, cves: set[str]) -> LikelihoodFacts | None: ...
+
+
+class LikelihoodFacts(Protocol):
+    """One EPSS score (`EpssScore`)."""
+
+    def describe(self) -> str: ...
+
+
 class AdvisoryFileChecks(Protocol):
     """What the detectors report of the advisory files themselves (`AdvisoryFiles`): those refused
     for a digest mismatch, and synced ones this install did not write."""

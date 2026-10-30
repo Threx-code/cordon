@@ -17,6 +17,10 @@ ROLES: dict[str, tuple[str, str]] = {
     "AdvisoryDatabase": ("cordon_scanner.intel.advisories.advisories", "AdvisoryDatabase"),
     "AdvisoryFiles": ("cordon_scanner.intel.advisories.advisories", "AdvisoryFiles"),
     "ECOSYSTEMS": ("cordon_scanner.intel.registries.registry_record", "ECOSYSTEMS"),
+    "EUVD_PAGE": ("cordon_scanner.intel.advisories.exploited", "EUVD_PAGE"),
+    "Epss": ("cordon_scanner.intel.advisories.exploited", "Epss"),
+    "ExploitedCatalogue": ("cordon_scanner.intel.advisories.exploited", "ExploitedCatalogue"),
+    "KEV_PAGE": ("cordon_scanner.intel.advisories.exploited", "KEV_PAGE"),
     "Ed25519": ("cordon_scanner.intel.provenance._ed25519", "Ed25519"),
     "FeedClient": ("cordon_scanner.intel.malware.feed", "FeedClient"),
     "LICENSE_UNKNOWN": ("cordon_scanner.intel.store.licenses", "LicenseCategory.UNKNOWN"),
@@ -38,12 +42,15 @@ if TYPE_CHECKING:
     import enum
 
     from cordon_scanner.intel.advisories import advisories as _intel_advisories_advisories
+    from cordon_scanner.intel.advisories import exploited as _intel_advisories_exploited
     from cordon_scanner.intel.advisories import ranges as _intel_advisories_ranges
     from cordon_scanner.intel.advisories import versions as _intel_advisories_versions
     from cordon_scanner.intel.base import (
         AdvisoryDatabases,
         AdvisoryFileChecks,
         BundleKeys,
+        Exploitations,
+        ExploitLikelihoods,
         FeedStatus,
         LicenseClassification,
         PackageNames,
@@ -70,6 +77,10 @@ if TYPE_CHECKING:
     AdvisoryDatabase: AdvisoryDatabases = _intel_advisories_advisories.AdvisoryDatabase
     AdvisoryFiles: AdvisoryFileChecks = _intel_advisories_advisories.AdvisoryFiles
     ECOSYSTEMS: frozenset[str] = _intel_registries_registry_record.ECOSYSTEMS
+    EUVD_PAGE: str = _intel_advisories_exploited.EUVD_PAGE
+    Epss: ExploitLikelihoods = _intel_advisories_exploited.Epss
+    ExploitedCatalogue: Exploitations = _intel_advisories_exploited.ExploitedCatalogue
+    KEV_PAGE: str = _intel_advisories_exploited.KEV_PAGE
     Ed25519: SignatureCheck = _intel_provenance__ed25519.Ed25519
     FeedClient: FeedStatus = _intel_malware_feed.FeedClient
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
@@ -98,6 +109,8 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ECOSYSTEMS",
+    "EUVD_PAGE",
+    "KEV_PAGE",
     "LICENSE_UNKNOWN",
     "ROLES",
     "YOUNG_DEPENDENCY_DAYS",
@@ -106,6 +119,8 @@ __all__ = [
     "AdvisoryFiles",
     "BuiltinPackageNames",
     "Ed25519",
+    "Epss",
+    "ExploitedCatalogue",
     "FeedClient",
     "LicenseClassifier",
     "MoreRegistries",
