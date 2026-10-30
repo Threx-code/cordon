@@ -627,7 +627,6 @@ class Catalogue:
         return [t for t in TOOLS if all(enabled[n] for n in t.needs)]
 
 
-
 class ServerStatus:
     """The `server_status` tool: this server's settings and the tools it offers. Beside the
     catalogue, which it lists, so the tools need not import the module that lists them."""

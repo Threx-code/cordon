@@ -5,9 +5,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from cordon_scanner.mcp.packages import (
-    ECOSYSTEMS,
-)
 from cordon_scanner.mcp.runner import CancelToken
 from cordon_scanner.mcp.tools.base import (
     SEVERITY_ENUM,

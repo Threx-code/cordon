@@ -166,7 +166,8 @@ class OsPackage:
 
 
 class PackageDatabases:
-    """The dpkg, apk and RPM databases of an image, and the files they own."""
+    """What an image says it is (`/etc/os-release`). Each package database has its own class:
+    DpkgDatabase, ApkDatabase, RpmDatabase, PacmanDatabase, PortageDatabase."""
 
     @staticmethod
     def os_release(data: bytes) -> OsRelease:
@@ -181,6 +182,10 @@ class PackageDatabases:
             version=values.get("VERSION", ""),
             pretty_name=values.get("PRETTY_NAME", ""),
         )
+
+
+class DpkgDatabase:
+    """dpkg's status database and the files its packages own (Debian, Ubuntu)."""
 
     @staticmethod
     def _stanzas(data: bytes) -> list[dict[str, str]]:
@@ -208,7 +213,7 @@ class PackageDatabases:
     def dpkg(data: bytes) -> list[OsPackage]:
         """dpkg's `status` file, or one of distroless's `status.d` files: RFC 822 stanzas."""
         packages: list[OsPackage] = []
-        for stanza in PackageDatabases._stanzas(data)[:MAX_PACKAGES]:
+        for stanza in DpkgDatabase._stanzas(data)[:MAX_PACKAGES]:
             status = stanza.get("Status")
             if status is not None and not status.endswith(" installed"):
                 continue
@@ -217,12 +222,12 @@ class PackageDatabases:
                 continue
             source, _, rest = stanza.get("Source", "").partition(" ")
             source_version = rest.strip().strip("()") if rest else ""
-            requires = PackageDatabases.dpkg_relations(
+            requires = DpkgDatabase.dpkg_relations(
                 stanza.get("Pre-Depends", "")
-            ) + PackageDatabases.dpkg_relations(stanza.get("Depends", ""))
+            ) + DpkgDatabase.dpkg_relations(stanza.get("Depends", ""))
             provides = tuple(
                 group.split("|", 1)[0]
-                for group in PackageDatabases.dpkg_relations(stanza.get("Provides", ""))
+                for group in DpkgDatabase.dpkg_relations(stanza.get("Provides", ""))
             )
             packages.append(
                 OsPackage(
@@ -265,9 +270,33 @@ class PackageDatabases:
         all` package under the native architecture."""
         return frozenset(
             stanza["Package"]
-            for stanza in PackageDatabases._stanzas(data)
+            for stanza in DpkgDatabase._stanzas(data)
             if stanza.get("Auto-Installed", "").strip() == "1" and stanza.get("Package")
         )
+
+    @staticmethod
+    def dpkg_owned(lists: list[bytes]) -> set[str]:
+        """Paths from dpkg's `info/*.list` files."""
+        return {
+            line.strip().lstrip("/")
+            for data in lists
+            for line in data.decode("utf-8", "replace").splitlines()
+            if line.strip()
+        }
+
+    @staticmethod
+    def dpkg_md5sums_owned(data: bytes) -> set[str]:
+        """Paths from a `<package>.md5sums` file (distroless `status.d/`): `<md5>  <path>` lines."""
+        owned: set[str] = set()
+        for line in data.decode("utf-8", "replace").splitlines():
+            _digest, _, path = line.strip().partition("  ")
+            if path:
+                owned.add(path.strip().lstrip("/"))
+        return owned
+
+
+class ApkDatabase:
+    """apk's installed database and world file (Alpine)."""
 
     @staticmethod
     def apk_world(data: bytes) -> frozenset[str]:
@@ -317,6 +346,22 @@ class PackageDatabases:
                     )
                 )
         return packages
+
+    @staticmethod
+    def apk_owned(data: bytes) -> set[str]:
+        """Paths from apk's `installed` database: `F:` names a directory, `R:` a file in it."""
+        owned: set[str] = set()
+        directory = ""
+        for line in data.decode("utf-8", "replace").splitlines():
+            if line.startswith("F:"):
+                directory = line[2:].strip("/")
+            elif line.startswith("R:"):
+                owned.add(f"{directory}/{line[2:]}" if directory else line[2:])
+        return owned
+
+
+class RpmDatabase:
+    """RPM's databases, Berkeley DB, NDB and SQLite, and the files their packages own."""
 
     @staticmethod
     def rpm_header(blob: bytes) -> dict[int, str]:
@@ -431,12 +476,12 @@ class PackageDatabases:
         relations: list[tuple[list[str], list[str], list[str]]] = []
         for blob in blobs:
             with contextlib.suppress(ValueError, struct.error):
-                package = PackageDatabases._rpm_package(PackageDatabases.rpm_header(blob))
+                package = RpmDatabase._rpm_package(RpmDatabase.rpm_header(blob))
                 if package is not None:
-                    arrays = PackageDatabases._rpm_string_arrays(
+                    arrays = RpmDatabase._rpm_string_arrays(
                         blob, (RPM_REQUIRENAME, RPM_PROVIDENAME)
                     )
-                    indexes, basenames, dirnames = PackageDatabases._rpm_arrays(blob)
+                    indexes, basenames, dirnames = RpmDatabase._rpm_arrays(blob)
                     files = [
                         dirnames[i] + base
                         for i, base in zip(indexes, basenames, strict=False)
@@ -466,7 +511,7 @@ class PackageDatabases:
                         group
                         for r in requires[:MAX_RELATIONS]
                         if not r.startswith("rpmlib(")
-                        for group in PackageDatabases.rpm_requirement(r)
+                        for group in RpmDatabase.rpm_requirement(r)
                     ),
                     provides=tuple(provides[:MAX_RELATIONS])
                     + tuple(
@@ -562,7 +607,7 @@ class PackageDatabases:
 
     @staticmethod
     def rpm_sqlite(database: bytes, wal: bytes | None = None) -> list[OsPackage]:
-        return PackageDatabases.rpm_blobs(PackageDatabases.rpm_sqlite_blobs(database, wal))
+        return RpmDatabase.rpm_blobs(RpmDatabase.rpm_sqlite_blobs(database, wal))
 
     @staticmethod
     def _rpm_arrays(blob: bytes) -> tuple[list[int], list[str], list[str]]:
@@ -602,31 +647,15 @@ class PackageDatabases:
         owned: set[str] = set()
         for blob in blobs:
             with contextlib.suppress(ValueError, struct.error):
-                indexes, basenames, dirnames = PackageDatabases._rpm_arrays(blob)
+                indexes, basenames, dirnames = RpmDatabase._rpm_arrays(blob)
                 for index, base in zip(indexes, basenames, strict=False):
                     if 0 <= index < len(dirnames):
                         owned.add((dirnames[index] + base).lstrip("/"))
         return owned
 
-    @staticmethod
-    def dpkg_owned(lists: list[bytes]) -> set[str]:
-        """Paths from dpkg's `info/*.list` files."""
-        return {
-            line.strip().lstrip("/")
-            for data in lists
-            for line in data.decode("utf-8", "replace").splitlines()
-            if line.strip()
-        }
 
-    @staticmethod
-    def dpkg_md5sums_owned(data: bytes) -> set[str]:
-        """Paths from a `<package>.md5sums` file (distroless `status.d/`): `<md5>  <path>` lines."""
-        owned: set[str] = set()
-        for line in data.decode("utf-8", "replace").splitlines():
-            _digest, _, path = line.strip().partition("  ")
-            if path:
-                owned.add(path.strip().lstrip("/"))
-        return owned
+class PacmanDatabase:
+    """pacman's local database (Arch)."""
 
     PACMAN_SECTION: ClassVar[re.Pattern[str]] = re.compile(r"^%([A-Z0-9]{1,32})%$")
 
@@ -636,7 +665,7 @@ class PackageDatabases:
         sections: dict[str, list[str]] = {}
         current: list[str] | None = None
         for line in data.decode("utf-8", "replace").splitlines():
-            heading = PackageDatabases.PACMAN_SECTION.match(line)
+            heading = PacmanDatabase.PACMAN_SECTION.match(line)
             if heading:
                 current = sections.setdefault(heading.group(1), [])
             elif not line:
@@ -651,7 +680,7 @@ class PackageDatabases:
         dependency"; absent, it was asked for."""
         packages: list[OsPackage] = []
         for path in sorted(p for p in files if p.endswith("/desc"))[:MAX_PACKAGES]:
-            fields = PackageDatabases._pacman_sections(files[path])
+            fields = PacmanDatabase._pacman_sections(files[path])
             name, version = (fields.get("NAME") or [""])[0], (fields.get("VERSION") or [""])[0]
             if not name or not version:
                 continue
@@ -683,14 +712,19 @@ class PackageDatabases:
         for path in (p for p in files if p.endswith("/files")):
             owned.update(
                 f
-                for f in PackageDatabases._pacman_sections(files[path]).get("FILES", [])
+                for f in PacmanDatabase._pacman_sections(files[path]).get("FILES", [])
                 if not f.endswith("/")
             )
         return owned
 
+
+class PortageDatabase:
+    """Portage's installed-package database (Gentoo)."""
+
     PORTAGE_PACKAGE: ClassVar[re.Pattern[str]] = re.compile(
         r"^(?P<name>[A-Za-z0-9+_][\w+-]{0,200}?)-(?P<version>\d[\w.]{0,60}(?:_(?:alpha|beta|pre|rc|p)\d{0,12}){0,4}(?:-r\d{1,6})?)$"
     )
+
     PORTAGE_ATOM: ClassVar[re.Pattern[str]] = re.compile(
         r"^[<>=~!]{0,3}(?P<name>[A-Za-z0-9][\w+-]{0,100}/[A-Za-z0-9+_][\w+-]{0,200}?)(?:-\d[\w.*]{0,60}(?:_(?:alpha|beta|pre|rc|p)\d{0,12}){0,4}(?:-r\d{1,6})?)?(?::[^\s\[]{0,40})?(?:\[[^\]]{0,200}\])?$"
     )
@@ -704,7 +738,7 @@ class PackageDatabases:
         packages: list[OsPackage] = []
         for directory in directories[:MAX_PACKAGES]:
             category, _, entry = directory.removeprefix("var/db/pkg/").partition("/")
-            matched = PackageDatabases.PORTAGE_PACKAGE.match(entry)
+            matched = PortageDatabase.PORTAGE_PACKAGE.match(entry)
             if not category or not matched:
                 continue
             requires = tuple(
@@ -712,7 +746,7 @@ class PackageDatabases:
                 for token in files.get(f"{directory}/RDEPEND", b"")
                 .decode("utf-8", "replace")
                 .split()[:MAX_RELATIONS]
-                if (atom := PackageDatabases.PORTAGE_ATOM.match(token))
+                if (atom := PortageDatabase.PORTAGE_ATOM.match(token))
             )
             packages.append(
                 OsPackage(
@@ -735,18 +769,6 @@ class PackageDatabases:
                     owned.add(rest.rsplit(" ", 2)[0].lstrip("/"))
                 elif kind == "sym":
                     owned.add(rest.split(" -> ", 1)[0].lstrip("/"))
-        return owned
-
-    @staticmethod
-    def apk_owned(data: bytes) -> set[str]:
-        """Paths from apk's `installed` database: `F:` names a directory, `R:` a file in it."""
-        owned: set[str] = set()
-        directory = ""
-        for line in data.decode("utf-8", "replace").splitlines():
-            if line.startswith("F:"):
-                directory = line[2:].strip("/")
-            elif line.startswith("R:"):
-                owned.add(f"{directory}/{line[2:]}" if directory else line[2:])
         return owned
 
 

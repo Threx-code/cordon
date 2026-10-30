@@ -167,8 +167,8 @@
   "cordon_scanner.detect.supply.slopsquat -> cordon_scanner.intel.malware.hallucinated": 1
  },
  "ecosystem_names": {
-  "cordon_scanner.analysis.javascript.evaluation.expressions:_Evaluator._builtin": 2,
-  "cordon_scanner.analysis.javascript.evaluation.expressions:_Evaluator._method": 1,
+  "cordon_scanner.analysis.javascript.evaluation.expressions:_BuiltinCalls._builtin": 2,
+  "cordon_scanner.analysis.javascript.evaluation.expressions:_BuiltinCalls._method": 1,
   "cordon_scanner.analysis.shared.deobfuscation:Layers.decoded": 1,
   "cordon_scanner.cli.commands.review:ChangeReview.releases": 1,
   "cordon_scanner.cli.commands.scan.enrichment:ScanEnrichment.add_release_diff": 1,
@@ -253,34 +253,13 @@
   "cordon_scanner.mcp.packages:PackageSpec.purl": 1,
   "cordon_scanner.report.aibom:AiBom._mcp": 1
  },
- "duplicate_classes": {
-  "cordon_scanner.detect.binary.modules.values.Keyed,cordon_scanner.detect.binary.modules.values.Seq": 2
- },
+ "duplicate_classes": {},
  "class_methods": {
-  "cordon_scanner.analysis.javascript.evaluation.expressions:_Evaluator": 27,
   "cordon_scanner.analysis.javascript.front.grammar.stream:TokenStream": 28,
   "cordon_scanner.detect.binary.rule_engine.build:Builder": 39,
   "cordon_scanner.detect.binary.rule_engine.syntax:Grammar": 34,
-  "cordon_scanner.engine.cache:ScanCache": 30,
-  "cordon_scanner.foundation.content:FileContent": 31,
-  "cordon_scanner.images.packages:PackageDatabases": 26
+  "cordon_scanner.engine.cache:ScanCache": 30
  },
  "incohesive_classes": {},
- "isinstance_chains": {
-  "cordon_scanner.analysis.python.data_flows:DataFlows._environment_handed_to_children": 4,
-  "cordon_scanner.analysis.python.data_flows:DataFlows._keyed_environment_reads": 3,
-  "cordon_scanner.analysis.python.py_flow:PythonValueFlow.flow": 7,
-  "cordon_scanner.analysis.python.py_flow:PythonValueFlow.index": 3,
-  "cordon_scanner.analysis.python.py_flow:PythonValueFlow.taint": 3,
-  "cordon_scanner.analysis.python.pyast:PythonAnalyzer._collect_names": 4,
-  "cordon_scanner.analysis.python.pyast:PythonAnalyzer._walk": 3,
-  "cordon_scanner.decide.intent:IntentObserver.entries.resolve": 3,
-  "cordon_scanner.detect.agents.mcp_servers.handlers:McpCode._sends": 3,
-  "cordon_scanner.detect.code.download_flow:PythonDownloads._walk": 4,
-  "cordon_scanner.detect.supply.reachability:ImportReachability._referenced_names": 3,
-  "cordon_scanner.ecosystems.infra.bazel:ModuleFile._override": 5,
-  "cordon_scanner.ecosystems.packages.python.lockfiles:PypiLockfiles._parse_pipfile_lock": 3,
-  "cordon_scanner.engine.cache:ScanCache._feed": 7,
-  "cordon_scanner.engine.entries:PackageEntries.of.strings": 3
- }
+ "isinstance_chains": {}
 }

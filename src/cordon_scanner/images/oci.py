@@ -493,7 +493,7 @@ class ImageLayers:
                 break
         owned: set[str] = set()
         if DPKG_STATUS in files:
-            inventory.packages.extend(pkgdb.PackageDatabases.dpkg(files[DPKG_STATUS]))
+            inventory.packages.extend(pkgdb.DpkgDatabase.dpkg(files[DPKG_STATUS]))
         # distroless keeps one stanza per package in `status.d/<name>` and that package's files in
         # `status.d/<name>.md5sums`, where Debian has `info/<name>.list`. The md5sums were read
         # as if they were stanzas and never as file lists, so every file a distroless package
@@ -501,31 +501,29 @@ class ImageLayers:
         # added by the image and was content-scanned as if it were the application's own code.
         for path in sorted(p for p in files if p.startswith(DPKG_STATUS_D)):
             if path.endswith(".md5sums"):
-                owned |= pkgdb.PackageDatabases.dpkg_md5sums_owned(files[path])
+                owned |= pkgdb.DpkgDatabase.dpkg_md5sums_owned(files[path])
             else:
-                inventory.packages.extend(pkgdb.PackageDatabases.dpkg(files[path]))
-        owned |= pkgdb.PackageDatabases.dpkg_owned(
-            [files[p] for p in files if p.startswith(DPKG_INFO)]
-        )
+                inventory.packages.extend(pkgdb.DpkgDatabase.dpkg(files[path]))
+        owned |= pkgdb.DpkgDatabase.dpkg_owned([files[p] for p in files if p.startswith(DPKG_INFO)])
         for path in (APK_INSTALLED, APK_INSTALLED_USR):
             if path in files:
-                inventory.packages.extend(pkgdb.PackageDatabases.apk(files[path]))
-                owned |= pkgdb.PackageDatabases.apk_owned(files[path])
+                inventory.packages.extend(pkgdb.ApkDatabase.apk(files[path]))
+                owned |= pkgdb.ApkDatabase.apk_owned(files[path])
                 break
         pacman = {p: files[p] for p in files if p.startswith(PACMAN_LOCAL)}
         if pacman:
-            inventory.packages.extend(pkgdb.PackageDatabases.pacman(pacman))
-            owned |= pkgdb.PackageDatabases.pacman_owned(pacman)
+            inventory.packages.extend(pkgdb.PacmanDatabase.pacman(pacman))
+            owned |= pkgdb.PacmanDatabase.pacman_owned(pacman)
         portage = {p: files[p] for p in files if p.startswith(PORTAGE_DB)}
         if portage:
-            inventory.packages.extend(pkgdb.PackageDatabases.portage(portage))
-            owned |= pkgdb.PackageDatabases.portage_owned(portage)
+            inventory.packages.extend(pkgdb.PortageDatabase.portage(portage))
+            owned |= pkgdb.PortageDatabase.portage_owned(portage)
         ImageLayers._mark_requested(files, inventory)
         blobs: list[bytes] = []
         for path in RPM_SQLITE:
             if path in files:
                 try:
-                    blobs = pkgdb.PackageDatabases.rpm_sqlite_blobs(
+                    blobs = pkgdb.RpmDatabase.rpm_sqlite_blobs(
                         files[path], files.get(path + "-wal")
                     )
                 except Exception as exc:  # noqa: BLE001
@@ -538,9 +536,9 @@ class ImageLayers:
                 if path not in files:
                     continue
                 reader = (
-                    pkgdb.PackageDatabases.rpm_ndb_blobs
+                    pkgdb.RpmDatabase.rpm_ndb_blobs
                     if path.endswith(".db")
-                    else pkgdb.PackageDatabases.rpm_bdb_blobs
+                    else pkgdb.RpmDatabase.rpm_bdb_blobs
                 )
                 try:
                     blobs = reader(files[path])
@@ -548,8 +546,8 @@ class ImageLayers:
                     inventory.problems.append(f"the RPM database at {path} was not read ({exc})")
                 break
         if blobs:
-            inventory.packages.extend(pkgdb.PackageDatabases.rpm_blobs(blobs))
-            owned |= pkgdb.PackageDatabases.rpm_owned(blobs)
+            inventory.packages.extend(pkgdb.RpmDatabase.rpm_blobs(blobs))
+            owned |= pkgdb.RpmDatabase.rpm_owned(blobs)
         inventory.owned = frozenset(ImageLayers._with_merged_usr(owned))
         ImageLayers._unique_packages(inventory)
         return inventory
@@ -561,9 +559,9 @@ class ImageLayers:
         # Which packages were asked for: apt marks what it pulled in automatically, apk lists what
         # was requested. Without either, the graph's roots stand for them.
         automatic = (
-            pkgdb.PackageDatabases.apt_automatic(files[APT_STATES]) if APT_STATES in files else None
+            pkgdb.DpkgDatabase.apt_automatic(files[APT_STATES]) if APT_STATES in files else None
         )
-        world = pkgdb.PackageDatabases.apk_world(files[APK_WORLD]) if APK_WORLD in files else None
+        world = pkgdb.ApkDatabase.apk_world(files[APK_WORLD]) if APK_WORLD in files else None
         if automatic is not None or world is not None:
             inventory.packages = [
                 replace(package, requested=package.name not in automatic)

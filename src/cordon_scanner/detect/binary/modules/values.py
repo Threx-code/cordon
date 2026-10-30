@@ -64,22 +64,25 @@ class Record:
         self.fields = fields
 
 
-class Seq:
+class Items:
+    """A collection whose items are all of one type: how they are read is the subclass's."""
+
+    __slots__ = ("item",)
+
+    def __init__(self, item: Any) -> None:
+        self.item = item
+
+
+class Seq(Items):
     """Items read by integer index, all of one type."""
 
-    __slots__ = ("item",)
-
-    def __init__(self, item: Any) -> None:
-        self.item = item
+    __slots__ = ()
 
 
-class Keyed:
+class Keyed(Items):
     """Items read by a text key, all of one type."""
 
-    __slots__ = ("item",)
-
-    def __init__(self, item: Any) -> None:
-        self.item = item
+    __slots__ = ()
 
 
 class Sig:
