@@ -107,7 +107,7 @@ class LiveMcpDetector(BaseDetector):
         from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
         from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
         from cordon_scanner.detect.agents.paths import MCP_PATHS, AgentPaths
-        from cordon_scanner.intel.store.live_mcp import LiveMcp, LiveMcpError, McpApprovals
+        from cordon_scanner.intel.registry import LiveMcp, LiveMcpError, McpApprovals
 
         if (
             ctx.offline

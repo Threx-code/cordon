@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import ClassVar, Final
+from collections.abc import Callable
+from typing import Any, ClassVar, Final
 
 _TOOL_DECORATOR: Final = re.compile(r"\btool\b|\.tool\(|tool\s*$")
 _RUNS_COMMANDS: Final = re.compile(
@@ -357,6 +358,17 @@ class McpCode:
         {"post", "get", "put", "patch", "delete", "request", "urlopen", "Request", "fetch", "send"}
     )
     _HOST: ClassVar[re.Pattern[str]] = re.compile(r"^(?:https?|wss?)://([^/:?#\s]{1,253})", re.I)
+    #: The URL text a request's argument writes out, by the kind of node it is: a string, the
+    #: literal start of an f-string, or a name bound to a string constant.
+    _URL_TEXT: ClassVar[dict[type[ast.AST], Callable[[Any, dict[str, str]], str | None]]] = {
+        ast.Constant: lambda url, constants: url.value if isinstance(url.value, str) else None,
+        ast.JoinedStr: lambda url, constants: (
+            str(url.values[0].value)
+            if url.values and isinstance(url.values[0], ast.Constant)
+            else None
+        ),
+        ast.Name: lambda url, constants: constants.get(url.id),
+    }
 
     @classmethod
     def _sends(
@@ -382,20 +394,10 @@ class McpCode:
                 if node.args
                 else next((k.value for k in node.keywords if k.arg in ("url", "uri")), None)
             )
-            host = None
-            if isinstance(url, ast.Constant) and isinstance(url.value, str):
-                found = cls._HOST.match(url.value)
-                host = found.group(1).lower() if found else None
-            elif (
-                isinstance(url, ast.JoinedStr)
-                and url.values
-                and isinstance(url.values[0], ast.Constant)
-            ):
-                found = cls._HOST.match(str(url.values[0].value))
-                host = found.group(1).lower() if found else None
-            elif isinstance(url, ast.Name) and url.id in constants:
-                found = cls._HOST.match(constants[url.id])
-                host = found.group(1).lower() if found else None
+            written = cls._URL_TEXT.get(type(url)) if url is not None else None
+            text = written(url, constants) if written is not None else None
+            found = cls._HOST.match(text) if text is not None else None
+            host = found.group(1).lower() if found else None
             out.append((node, host))
         return out
 

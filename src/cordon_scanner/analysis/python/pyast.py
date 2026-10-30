@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
@@ -252,6 +252,68 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
 
     # -- Name resolution -------------------------------------------------
 
+    #: What each kind of statement binds for `_collect_names`, by the method that binds it.
+    _BIND: ClassVar[dict[type[ast.AST], str]] = {
+        ast.Import: "_bind_import",
+        ast.ImportFrom: "_bind_import_from",
+        ast.Assign: "_bind_assignment",
+        ast.For: "_bind_loop",
+    }
+
+    def _bind_import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self._aliases[alias.asname or alias.name] = alias.name
+
+    def _bind_import_from(self, node: ast.ImportFrom) -> None:
+        if node.module and not node.level:
+            for alias in node.names:
+                self._aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+
+    def _bind_assignment(self, node: ast.Assign) -> None:
+        if len(node.targets) != 1:
+            return
+        target = node.targets[0]
+        if isinstance(target, ast.Name):
+            dotted = self._dotted(node.value)
+            if dotted:
+                self._bindings[target.id] = dotted
+            literal = PythonFacts.constant(node.value)
+            if literal is not None:
+                # A second, different assignment makes the value unknowable statically.
+                known = self._strings.get(target.id, literal)
+                self._strings[target.id] = literal if known == literal else None
+            elif isinstance(node.value, ast.JoinedStr | ast.BinOp):
+                # A built string, kept for `_sketch`; assigned twice, it is not one thing.
+                if target.id in self._sketched:
+                    self._sketches.pop(target.id, None)
+                else:
+                    self._sketches[target.id] = node.value
+                self._sketched.add(target.id)
+        elif (
+            isinstance(target, ast.Tuple)
+            and isinstance(node.value, ast.Tuple)
+            and len(target.elts) == len(node.value.elts)
+        ):
+            # `a, b = eval("exec"), eval("compile")` binds each name as its own
+            # assignment would.
+            for name, value in zip(target.elts, node.value.elts, strict=True):
+                dotted = self._dotted(value) if isinstance(name, ast.Name) else None
+                if isinstance(name, ast.Name) and dotted:
+                    self._bindings[name.id] = dotted
+
+    def _bind_loop(self, node: ast.For) -> None:
+        if isinstance(node.target, ast.Name) and PythonFacts.is_literal_strings(node.iter):
+            # A loop over a literal list of strings. Every value the variable can
+            # take is written out above it, so a call through it is not a name this
+            # file withholds -- which is the whole of what the dynamic-dispatch
+            # label claims.
+            #
+            # `odysseus` ends its `setup.py` with a dependency check:
+            # `for mod in ["fastapi", "uvicorn", ...]: try: __import__(mod)`, and it
+            # was reported at CRITICAL as install-time code reaching a function by a
+            # computed name. Six names, all of them legible.
+            self._enumerated.add(node.target.id)
+
     def _collect_names(self, tree: ast.AST) -> None:
         """Build the alias and binding maps before evaluating any call.
 
@@ -280,57 +342,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
         self._collect_reads(tree)
-        for node in PythonSyntax.of(tree, ast.Import, ast.ImportFrom, ast.Assign, ast.For):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    self._aliases[alias.asname or alias.name] = alias.name
-            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-                for alias in node.names:
-                    self._aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
-            elif isinstance(node, ast.Assign) and len(node.targets) == 1:
-                target = node.targets[0]
-                if isinstance(target, ast.Name):
-                    dotted = self._dotted(node.value)
-                    if dotted:
-                        self._bindings[target.id] = dotted
-                    literal = PythonFacts.constant(node.value)
-                    if literal is not None:
-                        # A second, different assignment makes the value unknowable statically.
-                        known = self._strings.get(target.id, literal)
-                        self._strings[target.id] = literal if known == literal else None
-                    elif isinstance(node.value, ast.JoinedStr | ast.BinOp):
-                        # A built string, kept for `_sketch`; assigned twice, it is not one thing.
-                        if target.id in self._sketched:
-                            self._sketches.pop(target.id, None)
-                        else:
-                            self._sketches[target.id] = node.value
-                        self._sketched.add(target.id)
-                elif (
-                    isinstance(target, ast.Tuple)
-                    and isinstance(node.value, ast.Tuple)
-                    and len(target.elts) == len(node.value.elts)
-                ):
-                    # `a, b = eval("exec"), eval("compile")` binds each name as its own
-                    # assignment would.
-                    for name, value in zip(target.elts, node.value.elts, strict=True):
-                        dotted = self._dotted(value) if isinstance(name, ast.Name) else None
-                        if isinstance(name, ast.Name) and dotted:
-                            self._bindings[name.id] = dotted
-            elif (
-                isinstance(node, ast.For)
-                and isinstance(node.target, ast.Name)
-                and PythonFacts.is_literal_strings(node.iter)
-            ):
-                # A loop over a literal list of strings. Every value the variable can
-                # take is written out above it, so a call through it is not a name this
-                # file withholds -- which is the whole of what the dynamic-dispatch
-                # label claims.
-                #
-                # `odysseus` ends its `setup.py` with a dependency check:
-                # `for mod in ["fastapi", "uvicorn", ...]: try: __import__(mod)`, and it
-                # was reported at CRITICAL as install-time code reaching a function by a
-                # computed name. Six names, all of them legible.
-                self._enumerated.add(node.target.id)
+        for node in PythonSyntax.of(tree, *self._BIND):
+            getattr(self, self._BIND[type(node)])(node)
         # The tables are complete: from here a name resolves the same way every time it is asked.
         self._dotted_cache: dict[int, str | None] = {}
 
@@ -380,24 +393,38 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
         identical credential hits at one span. Reading a function without calling
         it is not the act the primitive describes."""
 
-        for node in PythonSyntax.of(tree, ast.Call, ast.Attribute, ast.Name, ast.Subscript):
-            if isinstance(node, ast.Call):
-                self._call(node)
-                self._written_code(node)
-            elif isinstance(node, ast.Attribute | ast.Name):
-                # `os.environ` is a primitive without being called.
-                dotted = self._dotted(node)
-                if id(node) in called:
-                    continue
-                if dotted in PRIMITIVES and PRIMITIVES[dotted] is Capability.CREDENTIAL:
-                    if id(node) in keyed and not CREDENTIAL_VARIABLE.search(keyed[id(node)]):
-                        # `os.environ["PORT"]`. The whole mapping was never
-                        # reached for; one named setting was. See
-                        # `CREDENTIAL_VARIABLE`.
-                        continue
-                    self._record(PRIMITIVES[dotted], node, dotted)
-            elif isinstance(node, ast.Subscript):
-                self._subscript(node)
+        for node in PythonSyntax.of(tree, *self._WALK):
+            getattr(self, self._WALK[type(node)])(node, called, keyed)
+
+    #: What `_walk` judges at each kind of node, by the method that judges it.
+    _WALK: ClassVar[dict[type[ast.AST], str]] = {
+        ast.Call: "_walk_call",
+        ast.Attribute: "_walk_reference",
+        ast.Name: "_walk_reference",
+        ast.Subscript: "_walk_subscript",
+    }
+
+    def _walk_call(self, node: ast.Call, called: set[int], keyed: dict[int, str]) -> None:
+        self._call(node)
+        self._written_code(node)
+
+    def _walk_reference(
+        self, node: ast.Attribute | ast.Name, called: set[int], keyed: dict[int, str]
+    ) -> None:
+        # `os.environ` is a primitive without being called.
+        dotted = self._dotted(node)
+        if id(node) in called:
+            return
+        if dotted in PRIMITIVES and PRIMITIVES[dotted] is Capability.CREDENTIAL:
+            if id(node) in keyed and not CREDENTIAL_VARIABLE.search(keyed[id(node)]):
+                # `os.environ["PORT"]`. The whole mapping was never
+                # reached for; one named setting was. See
+                # `CREDENTIAL_VARIABLE`.
+                return
+            self._record(PRIMITIVES[dotted], node, dotted)
+
+    def _walk_subscript(self, node: ast.Subscript, called: set[int], keyed: dict[int, str]) -> None:
+        self._subscript(node)
 
     def _written_code(self, node: ast.Call) -> None:
         """Python source written to a file, analysed as the code it is.

@@ -207,7 +207,7 @@ class TestRpm:
 
     def test_a_header_that_lies_about_its_size_is_refused(self) -> None:
         with pytest.raises(ValueError):
-            pkgdb.PackageDatabases.rpm_header(b"\x00\x00\x00\x02\x7f\xff\xff\xff" + b"\x00" * 16)
+            pkgdb.RpmDatabase.rpm_header(b"\x00\x00\x00\x02\x7f\xff\xff\xff" + b"\x00" * 16)
 
 
 class TestReleases:

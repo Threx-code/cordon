@@ -24,7 +24,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.images import oci
 from cordon_scanner.images.binmeta import BinaryMetadata
 from cordon_scanner.images.langpkgs import LanguagePackages
-from cordon_scanner.images.packages import PackageDatabases
+from cordon_scanner.images.packages import PacmanDatabase, PortageDatabase
 from kits.imagekit import ImageKit
 
 PACMAN_DESC = b"""%NAME%
@@ -94,7 +94,7 @@ class TestWolfi:
 
 class TestArch:
     def test_a_pacman_record(self) -> None:
-        [package] = PackageDatabases.pacman({"var/lib/pacman/local/acl-2.4.0-1/desc": PACMAN_DESC})
+        [package] = PacmanDatabase.pacman({"var/lib/pacman/local/acl-2.4.0-1/desc": PACMAN_DESC})
         assert (package.name, package.version, package.arch) == ("acl", "2.4.0-1", "x86_64")
         assert package.requires == ("glibc", "attr") and package.provides == ("libacl.so",)
         assert package.requested is False  # %REASON% 1: installed as a dependency
@@ -112,7 +112,7 @@ class TestArch:
 class TestGentoo:
     def test_a_portage_record(self) -> None:
         root = "var/db/pkg/dev-libs/openssl-3.3.2-r1"
-        packages = PackageDatabases.portage(
+        packages = PortageDatabase.portage(
             {
                 f"{root}/RDEPEND": b">=sys-libs/zlib-1.2.8-r1:= ssl? ( || ( dev-libs/a sys-libs/b-2.0[abi_x86_64(-)] ) )\n",
                 f"{root}/CONTENTS": b"dir /usr\nobj /usr/bin/openssl 0123 1700000000\nsym /usr/lib/libssl.so -> libssl.so.3 1700000000\n",
@@ -122,7 +122,7 @@ class TestGentoo:
         [package] = packages
         assert (package.name, package.version) == ("dev-libs/openssl", "3.3.2-r1")
         assert package.requires == ("sys-libs/zlib", "dev-libs/a", "sys-libs/b")
-        assert PackageDatabases.portage_owned(
+        assert PortageDatabase.portage_owned(
             {
                 f"{root}/CONTENTS": b"obj /usr/bin/openssl 0123 1700000000\nsym /usr/lib/libssl.so -> libssl.so.3 1\n"
             }

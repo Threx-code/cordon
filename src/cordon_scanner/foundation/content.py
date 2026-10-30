@@ -241,8 +241,420 @@ class TextEncoding:
             return raw
 
 
+class LineIndex:
+    """Where things are in a file's bytes: its lines, their lengths and offsets, a line's text, and
+    answers worked out once per line. Read by a `FileContent`, which holds what this reads."""
+
+    raw: bytes
+    limits: Limits
+    _comment_columns: dict[tuple[int, str | None], int | None]
+    _per_line: dict[tuple[str, int], Any]
+
+    @cached_property
+    def line_starts(self) -> tuple[int, ...]:
+        """Byte offset of the start of each line.
+
+        Computed once and binary-searched, so translating a byte offset into a
+        line number is logarithmic rather than a scan of the file. With thousands
+        of matches across thousands of files, the naive version is measurable.
+        """
+        starts = [0]
+        start = 0
+        while True:
+            found = self.raw.find(b"\n", start)
+            if found == -1:
+                break
+            starts.append(found + 1)
+            start = found + 1
+        return tuple(starts)
+
+    @cached_property
+    def line_count(self) -> int:
+        return len(self.line_starts)
+
+    @cached_property
+    def longest_line(self) -> int:
+        """Length in bytes of the longest line.
+
+        A payload appended to a source file is frequently one very long line,
+        because that is what keeps it off-screen in a diff view and out of the
+        reviewer's eye. The measurement is cheap and the signal is real, though
+        it needs calibrating against minified files, which are legitimately made
+        of very long lines. That calibration is the detector's job, not this
+        class's.
+        """
+        longest = 0
+        previous = 0
+        for start in self.line_starts[1:]:
+            # `- 1` drops the newline; the extra `- 1` drops a carriage return
+            # when the file uses CRLF. Counting it would make the same content
+            # measure differently depending on how it was checked out.
+            end = start - 1
+            if end > previous and self.raw[end - 1 : end] == b"\r":
+                end -= 1
+            longest = max(longest, end - previous)
+            previous = start
+
+        tail = len(self.raw)
+        if tail > previous and self.raw[tail - 1 : tail] == b"\r":
+            tail -= 1
+        return max(longest, tail - previous)
+
+    def line_of(self, byte_offset: int) -> int:
+        """1-indexed line number containing a byte offset."""
+        from bisect import bisect_right
+
+        return bisect_right(self.line_starts, byte_offset)
+
+    def column_of(self, byte_offset: int) -> int:
+        """1-indexed column, in bytes, of an offset within its line."""
+        line = self.line_of(byte_offset)
+        return byte_offset - self.line_starts[line - 1] + 1
+
+    def comment_column(self, line_number: int, language: str | None) -> int | None:
+        """Where a comment begins on this line, memoised for the file.
+
+        The computation is a scan of the line, and the answer does not depend on
+        which column is asked about -- so a detector with forty matches on one
+        line was paying for forty scans of it. That is invisible on ordinary
+        source, where a line is eighty characters, and ruinous on a bundle, where
+        the file is one line: `bun_environment.js`, the ten-megabyte payload the
+        Shai-Hulud npm worm ships beside its `preinstall` hook, spent most of its
+        five-second budget here and then exceeded it, so the detectors that would
+        have named it as obfuscated never ran.
+        """
+        key = (line_number, language)
+        memo = self._comment_columns
+        if key not in memo:
+            memo[key] = SourceComments.comment_column(self.line_text(line_number), language)
+        return memo[key]
+
+    def line_text(self, line_number: int) -> str:
+        """One line's text, bounded by ``max_line_bytes``.
+
+        The bound matters: a one-gigabyte single line is either minified output
+        or an attack on the line-slicing code, and neither should be
+        materialised in full to print an error message about it.
+        """
+        if line_number < 1 or line_number > len(self.line_starts):
+            return ""
+        start = self.line_starts[line_number - 1]
+        end = (
+            self.line_starts[line_number] if line_number < len(self.line_starts) else len(self.raw)
+        )
+        end = min(end, start + self.limits.max_line_bytes)
+        # Both terminators are stripped. A CRLF checkout would otherwise carry a
+        # trailing carriage return into every evidence snippet, and the same
+        # repository checked out with different line endings would produce
+        # different output -- which breaks the determinism guarantee across
+        # platforms rather than merely looking untidy.
+        return self.raw[start:end].decode("utf-8", errors="replace").rstrip("\r\n")
+
+    def line_bounds(self, byte_offset: int) -> tuple[int, int]:
+        """Where the line holding `byte_offset` starts and ends, its terminator excluded: for a
+        test of a match's neighbourhood, which reads a few bytes of `raw` around it rather than
+        copying a line that, in a minified bundle, is the whole file -- once per match."""
+        line = self.line_of(byte_offset)
+        starts = self.line_starts
+        start = starts[line - 1]
+        end = starts[line] - 1 if line < len(starts) else len(self.raw)
+        if end > start and self.raw[end - 1 : end] == b"\r":
+            end -= 1
+        return start, end
+
+    def once_per_line(self, name: str, byte_offset: int, compute: Callable[[], Any]) -> Any:
+        """`compute()`'s answer for the line holding `byte_offset`, worked out once per line: a
+        question about a whole line -- every host on it, every command on it -- has the same
+        answer for each match on that line, and a minified bundle is one line of thousands."""
+        key = (name, self.line_of(byte_offset))
+        if key not in self._per_line:
+            self._per_line[key] = compute()
+        return self._per_line[key]
+
+    def slice(self, start: int, end: int) -> bytes:
+        """Bounded byte slice, for evidence extraction."""
+        start = max(0, start)
+        end = min(len(self.raw), max(start, end))
+        return self.raw[start:end]
+
+
+class ContentKind:
+    """What a file's bytes are: binary or text and how the text decodes, a Git LFS pointer, rule
+    material, the language its name or shebang says. Read by a `FileContent`."""
+
+    path: str
+    raw: bytes
+
+    @cached_property
+    def is_binary(self) -> bool:
+        """Whether this file is a binary artefact rather than source.
+
+        Two signals, and *both* names are attacker-chosen, so neither is trusted
+        alone:
+
+        * **Magic bytes at offset zero** are decisive. A file that starts with
+          the PNG or ELF header is that format; nothing else needs checking.
+        * **A binary extension** is only believed when the content agrees with
+          it. A `.png` holding JavaScript text is not a PNG.
+
+        Each half fixes a real bypass, and the second was introduced by the fix
+        for the first.
+
+        The original implementation was `b"\\x00" in raw[:8192]`, and every
+        content detector opens with `if content.is_binary: return ()`. So
+        prepending `/* NUL */` to a payload removed it from capability,
+        obfuscation, secret and config detection at once, and the output was
+        identical to a clean file. Every language involved tolerates a NUL in a
+        comment, so the file still ran.
+
+        Deciding from the extension alone then reopened it from the other side.
+        A file named `payload.png` is skipped as an image -- and
+        `"postinstall": "node ./payload.png"` runs it, because an interpreter
+        handed an explicit path does not consult the extension. Same evasion,
+        same silence, one rename instead of one byte.
+
+        Requiring agreement closes both. A `.js` file never reaches the
+        extension branch whatever it contains, and a `.png` full of source is
+        not a PNG.
+        """
+        if any(self.raw.startswith(magic) for magic in BINARY_MAGIC):
+            return True
+
+        # A set lookup on the extension, not a scan over sixty-one suffixes.
+        # Every entry is a single leading-dot extension, so the two are
+        # equivalent, and the scan cost three million string comparisons on a
+        # fifty-thousand-file repository to answer "no" for all of them.
+        # `_BINARY_EXTENSIONS` is derived from `BINARY_SUFFIXES` rather than
+        # written out again, so the two cannot drift, and a test asserts a
+        # suffix that is not a plain extension would be caught.
+        # A third signal, for a format neither table knows: content that contains a
+        # NUL **and** will not decode as UTF-8.
+        #
+        # Both halves are required, and that is what makes it immune to the bypass the
+        # original heuristic had. `b"\x00" in raw[:8192]` alone meant prepending
+        # `/* NUL */` to a payload removed the file from every detector; such a file
+        # still decodes as UTF-8 perfectly, so it stays text here. Bytes that are both
+        # NUL-bearing and undecodable are not a text file with something prepended,
+        # they are a binary format nobody has added to `BINARY_MAGIC`.
+        #
+        # DuckDB's secret-manager fixtures are the case: `data/secrets/http/*.
+        # duckdb_secret` is a serialised struct starting `d\x00\x04http`, with no
+        # recognised magic and an extension no table lists. Scanned as text it produced
+        # three Stripe secret-key findings from chance byte sequences.
+        if b"\x00" in self.raw[:BINARY_SNIFF_BYTES] and not self._decodes_as_text:
+            return True
+
+        name = ContainerPaths.basename(self.path).lower()
+        dot = name.rfind(".")
+        if dot < 0 or name[dot:] not in _BINARY_EXTENSIONS:
+            return False
+
+        # The name claims binary. Believe it only if the bytes do too.
+        return self._looks_binary
+
+    @cached_property
+    def is_lfs_pointer(self) -> bool:
+        """Whether this file is a Git LFS pointer rather than the content it names.
+
+        A pointer is about 130 bytes of text:
+
+            version https://git-lfs.github.com/spec/v1
+            oid sha256:c7c7bf33de10f0b172e1153222ca8ad8e3ba09681525662a2e00177560f4acb6
+            size 755472
+
+        The bytes the name promises are on a server. A `.png` holding this is not a
+        forgery, it is a checkout without LFS -- which is the DEFAULT for
+        `actions/checkout`, so it is the state most CI runs are in.
+
+        `unionlabs/union` tracks `*.png`, `*.pdf` and `*.psd` through LFS, and a shallow
+        clone of it produced 907 format-mismatch findings: every tracked asset reported
+        as a polyglot. Any repository using LFS has the same shape.
+
+        Matched on the spec URL at offset zero, which is what the format requires and
+        what `git lfs` itself looks for. Cheap enough to ask on every file: the prefix
+        test fails on the first byte for anything else.
+        """
+        return self.raw.startswith(b"version https://git-lfs.github.com/spec/v1")
+
+    @cached_property
+    def is_rule_material(self) -> bool:
+        """Whether this file is another analyser's rule, or a test case for one.
+
+        Consulted by every content detector that applies a severity ceiling, and
+        cached here rather than recomputed in each of them: `semgrep/semgrep-rules`
+        tripped five detectors on the same files. See `core.samples` for what the
+        signals are and why this lowers a finding rather than removing it.
+
+        Binary files are not asked. A rule set is a text document and an annotation is
+        a comment, so neither signal can be present, and a megabyte of compiled output
+        should not pay for two regex passes to establish that.
+        """
+        if self.is_binary:
+            return False
+        return SampleKinds.is_rule_material(self.raw, self.path)
+
+    @cached_property
+    def _decodes_as_text(self) -> bool:
+        """Whether the leading bytes are valid UTF-8.
+
+        Separate from `_looks_binary`, which short-circuits on a NUL and so cannot
+        answer this question. A truncated multi-byte sequence at the window edge is not
+        evidence of anything, so the window is trimmed before the second attempt.
+        """
+        window = self.raw[:BINARY_SNIFF_BYTES]
+        for trim in (0, 1, 2, 3):
+            candidate = window[: len(window) - trim] if trim else window
+            try:
+                candidate.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            return True
+        return False
+
+    @cached_property
+    def _looks_binary(self) -> bool:
+        """Whether the leading bytes are unlike text.
+
+        Consulted only for a file whose extension already claims to be binary,
+        which is what keeps it from becoming the evasion it was. A NUL byte, or
+        content that will not decode as UTF-8, is the ordinary signal; neither
+        can be used to hide a `.js` file, because a `.js` file never gets here.
+        """
+        window = self.raw[:BINARY_SNIFF_BYTES]
+        if b"\x00" in window:
+            return True
+        try:
+            window.decode("utf-8")
+        except UnicodeDecodeError:
+            # A truncated multi-byte sequence at the window edge is not
+            # evidence of anything, so retry on a whole-character boundary.
+            try:
+                self.raw[: max(0, BINARY_SNIFF_BYTES - 4)].decode("utf-8")
+            except UnicodeDecodeError:
+                return True
+        return False
+
+    @cached_property
+    def text(self) -> str:
+        """Decoded content.
+
+        Decoded permissively with ``errors="replace"``. A file that is 99 percent
+        valid UTF-8 with a few stray bytes is common in real repositories, and it
+        is also exactly what a payload hiding behind an encoding trick looks
+        like. Refusing to decode would skip both; replacing the bad bytes scans
+        both.
+
+        Byte offsets from a byte-level match do not index into this string. That
+        is why :class:`Location` carries both, and why evidence extraction works
+        from ``raw``.
+        """
+        encoding = "utf-8"
+        if self.raw.startswith(b"\xef\xbb\xbf"):
+            encoding = "utf-8-sig"
+        elif self.raw.startswith((b"\xff\xfe", b"\xfe\xff")) and self._looks_utf16():
+            encoding = "utf-16"
+        try:
+            return self.raw.decode(encoding, errors="replace")
+        except (UnicodeDecodeError, LookupError):
+            return self.raw.decode("latin-1", errors="replace")
+
+    def _looks_utf16(self) -> bool:
+        """Corroborate a UTF-16 byte-order mark before trusting it.
+
+        Those two bytes are not rare, and any file whose content happens to
+        begin with them was previously decoded as UTF-16 and turned into noise.
+        Real UTF-16 text over a mostly-ASCII alphabet is half NUL bytes, so
+        their absence is decisive.
+        """
+        window = self.raw[2:66]
+        return b"\x00" in window
+
+    @property
+    def extension(self) -> str:
+        """Lower-cased suffix including the dot, or empty.
+
+        The basename is taken first. `"README".rpartition(".")` returns
+        `('', '', 'README')`, so the old form invented `.readme` for a
+        root-level `README`, `.makefile` for a `Makefile` and `.dockerfile` for
+        a `Dockerfile` -- while the same file one directory down correctly
+        returned empty, because the fabricated suffix then contained a slash.
+        Identical files behaved differently according to their depth.
+        """
+        name = ContainerPaths.basename(self.path)
+        dot = name.rfind(".")
+        if dot <= 0:
+            # `<= 0` and not `< 0`: a leading dot is a hidden file, not a
+            # suffix, so `.gitignore` has no extension.
+            return ""
+        return name[dot:].lower()
+
+    @property
+    def basename(self) -> str:
+        """The final component, correct for a member at an archive root.
+
+        `rpartition("/")` returned `pkg.zip!package.json` for one of those,
+        which matched no manifest glob and no language extension."""
+        return ContainerPaths.basename(self.path)
+
+    @cached_property
+    def shebang(self) -> str | None:
+        """The interpreter named on the first line, if any.
+
+        Needed because extension alone misidentifies files, and a scanner that
+        misidentifies a language applies the wrong rules to it. Executable
+        scripts with no extension are common and are exactly the kind of file
+        worth reading carefully.
+        """
+        # Past a byte-order mark. A Windows editor writes one in front of the
+        # shebang, the file still runs, and the shebang is still what it says --
+        # but `startswith(b"#!")` said no, the language came out unknown, and the
+        # shell rules never ran on it. `corpus/malicious/polyglot-png` loses its
+        # `SUSPECT.DROPPER.001` at HIGH to three bytes without this.
+        start = len(BYTE_ORDER_MARK) if self.raw.startswith(BYTE_ORDER_MARK) else 0
+        if not self.raw.startswith(b"#!", start):
+            return None
+        end = self.raw.find(b"\n", start, start + 256)
+        line = self.raw[start + 2 : end if end != -1 else start + 256]
+        return line.decode("utf-8", errors="replace").strip() or None
+
+    def sniff_language(self, extension_map: Sequence[tuple[str, str]]) -> str | None:
+        """Identify this file's language from extension, then shebang.
+
+        A method rather than a free function because both inputs it reads --
+        the extension and the shebang -- are properties of the content itself,
+        and the answer is a property of the file.
+
+        Extension first because it is right the overwhelming majority of the
+        time and costs nothing. Shebang second because it is authoritative when
+        present: a file declaring an interpreter is telling you what will
+        execute it, which beats any inference from its name.
+        """
+        ext = self.extension
+        if ext:
+            for suffix, language in extension_map:
+                if suffix == ext:
+                    return language
+
+        shebang = self.shebang
+        if shebang:
+            interpreter = (
+                shebang.split("/")[-1].split()[0] if "/" in shebang else shebang.split()[0]
+            )
+            # `#!/usr/bin/env python3` names env, not the interpreter. The real
+            # one is the argument, and this form is more common than the direct
+            # path.
+            if interpreter == "env" and " " in shebang:
+                interpreter = shebang.split()[-1]
+            for suffix, language in extension_map:
+                if suffix.lstrip(".") == interpreter:
+                    return language
+            return interpreter or None
+
+        return None
+
+
 @dataclass
-class FileContent:
+class FileContent(LineIndex, ContentKind):
     """One file's bytes and everything derived from them.
 
     Not frozen, because the memoised properties are computed on demand. It is
@@ -506,155 +918,6 @@ class FileContent:
     # -- Derived forms ---------------------------------------------------
 
     @cached_property
-    def is_binary(self) -> bool:
-        """Whether this file is a binary artefact rather than source.
-
-        Two signals, and *both* names are attacker-chosen, so neither is trusted
-        alone:
-
-        * **Magic bytes at offset zero** are decisive. A file that starts with
-          the PNG or ELF header is that format; nothing else needs checking.
-        * **A binary extension** is only believed when the content agrees with
-          it. A `.png` holding JavaScript text is not a PNG.
-
-        Each half fixes a real bypass, and the second was introduced by the fix
-        for the first.
-
-        The original implementation was `b"\\x00" in raw[:8192]`, and every
-        content detector opens with `if content.is_binary: return ()`. So
-        prepending `/* NUL */` to a payload removed it from capability,
-        obfuscation, secret and config detection at once, and the output was
-        identical to a clean file. Every language involved tolerates a NUL in a
-        comment, so the file still ran.
-
-        Deciding from the extension alone then reopened it from the other side.
-        A file named `payload.png` is skipped as an image -- and
-        `"postinstall": "node ./payload.png"` runs it, because an interpreter
-        handed an explicit path does not consult the extension. Same evasion,
-        same silence, one rename instead of one byte.
-
-        Requiring agreement closes both. A `.js` file never reaches the
-        extension branch whatever it contains, and a `.png` full of source is
-        not a PNG.
-        """
-        if any(self.raw.startswith(magic) for magic in BINARY_MAGIC):
-            return True
-
-        # A set lookup on the extension, not a scan over sixty-one suffixes.
-        # Every entry is a single leading-dot extension, so the two are
-        # equivalent, and the scan cost three million string comparisons on a
-        # fifty-thousand-file repository to answer "no" for all of them.
-        # `_BINARY_EXTENSIONS` is derived from `BINARY_SUFFIXES` rather than
-        # written out again, so the two cannot drift, and a test asserts a
-        # suffix that is not a plain extension would be caught.
-        # A third signal, for a format neither table knows: content that contains a
-        # NUL **and** will not decode as UTF-8.
-        #
-        # Both halves are required, and that is what makes it immune to the bypass the
-        # original heuristic had. `b"\x00" in raw[:8192]` alone meant prepending
-        # `/* NUL */` to a payload removed the file from every detector; such a file
-        # still decodes as UTF-8 perfectly, so it stays text here. Bytes that are both
-        # NUL-bearing and undecodable are not a text file with something prepended,
-        # they are a binary format nobody has added to `BINARY_MAGIC`.
-        #
-        # DuckDB's secret-manager fixtures are the case: `data/secrets/http/*.
-        # duckdb_secret` is a serialised struct starting `d\x00\x04http`, with no
-        # recognised magic and an extension no table lists. Scanned as text it produced
-        # three Stripe secret-key findings from chance byte sequences.
-        if b"\x00" in self.raw[:BINARY_SNIFF_BYTES] and not self._decodes_as_text:
-            return True
-
-        name = ContainerPaths.basename(self.path).lower()
-        dot = name.rfind(".")
-        if dot < 0 or name[dot:] not in _BINARY_EXTENSIONS:
-            return False
-
-        # The name claims binary. Believe it only if the bytes do too.
-        return self._looks_binary
-
-    @cached_property
-    def is_lfs_pointer(self) -> bool:
-        """Whether this file is a Git LFS pointer rather than the content it names.
-
-        A pointer is about 130 bytes of text:
-
-            version https://git-lfs.github.com/spec/v1
-            oid sha256:c7c7bf33de10f0b172e1153222ca8ad8e3ba09681525662a2e00177560f4acb6
-            size 755472
-
-        The bytes the name promises are on a server. A `.png` holding this is not a
-        forgery, it is a checkout without LFS -- which is the DEFAULT for
-        `actions/checkout`, so it is the state most CI runs are in.
-
-        `unionlabs/union` tracks `*.png`, `*.pdf` and `*.psd` through LFS, and a shallow
-        clone of it produced 907 format-mismatch findings: every tracked asset reported
-        as a polyglot. Any repository using LFS has the same shape.
-
-        Matched on the spec URL at offset zero, which is what the format requires and
-        what `git lfs` itself looks for. Cheap enough to ask on every file: the prefix
-        test fails on the first byte for anything else.
-        """
-        return self.raw.startswith(b"version https://git-lfs.github.com/spec/v1")
-
-    @cached_property
-    def is_rule_material(self) -> bool:
-        """Whether this file is another analyser's rule, or a test case for one.
-
-        Consulted by every content detector that applies a severity ceiling, and
-        cached here rather than recomputed in each of them: `semgrep/semgrep-rules`
-        tripped five detectors on the same files. See `core.samples` for what the
-        signals are and why this lowers a finding rather than removing it.
-
-        Binary files are not asked. A rule set is a text document and an annotation is
-        a comment, so neither signal can be present, and a megabyte of compiled output
-        should not pay for two regex passes to establish that.
-        """
-        if self.is_binary:
-            return False
-        return SampleKinds.is_rule_material(self.raw, self.path)
-
-    @cached_property
-    def _decodes_as_text(self) -> bool:
-        """Whether the leading bytes are valid UTF-8.
-
-        Separate from `_looks_binary`, which short-circuits on a NUL and so cannot
-        answer this question. A truncated multi-byte sequence at the window edge is not
-        evidence of anything, so the window is trimmed before the second attempt.
-        """
-        window = self.raw[:BINARY_SNIFF_BYTES]
-        for trim in (0, 1, 2, 3):
-            candidate = window[: len(window) - trim] if trim else window
-            try:
-                candidate.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
-            return True
-        return False
-
-    @cached_property
-    def _looks_binary(self) -> bool:
-        """Whether the leading bytes are unlike text.
-
-        Consulted only for a file whose extension already claims to be binary,
-        which is what keeps it from becoming the evasion it was. A NUL byte, or
-        content that will not decode as UTF-8, is the ordinary signal; neither
-        can be used to hide a `.js` file, because a `.js` file never gets here.
-        """
-        window = self.raw[:BINARY_SNIFF_BYTES]
-        if b"\x00" in window:
-            return True
-        try:
-            window.decode("utf-8")
-        except UnicodeDecodeError:
-            # A truncated multi-byte sequence at the window edge is not
-            # evidence of anything, so retry on a whole-character boundary.
-            try:
-                self.raw[: max(0, BINARY_SNIFF_BYTES - 4)].decode("utf-8")
-            except UnicodeDecodeError:
-                return True
-        return False
-
-    @cached_property
     def sha256(self) -> str:
         """Content hash. The incremental cache key and the artefact identity.
 
@@ -665,260 +928,15 @@ class FileContent:
             return self.whole_sha256
         return hashlib.sha256(self.streamed if self.streamed is not None else self.raw).hexdigest()
 
-    @cached_property
-    def text(self) -> str:
-        """Decoded content.
-
-        Decoded permissively with ``errors="replace"``. A file that is 99 percent
-        valid UTF-8 with a few stray bytes is common in real repositories, and it
-        is also exactly what a payload hiding behind an encoding trick looks
-        like. Refusing to decode would skip both; replacing the bad bytes scans
-        both.
-
-        Byte offsets from a byte-level match do not index into this string. That
-        is why :class:`Location` carries both, and why evidence extraction works
-        from ``raw``.
-        """
-        encoding = "utf-8"
-        if self.raw.startswith(b"\xef\xbb\xbf"):
-            encoding = "utf-8-sig"
-        elif self.raw.startswith((b"\xff\xfe", b"\xfe\xff")) and self._looks_utf16():
-            encoding = "utf-16"
-        try:
-            return self.raw.decode(encoding, errors="replace")
-        except (UnicodeDecodeError, LookupError):
-            return self.raw.decode("latin-1", errors="replace")
-
-    def _looks_utf16(self) -> bool:
-        """Corroborate a UTF-16 byte-order mark before trusting it.
-
-        Those two bytes are not rare, and any file whose content happens to
-        begin with them was previously decoded as UTF-16 and turned into noise.
-        Real UTF-16 text over a mostly-ASCII alphabet is half NUL bytes, so
-        their absence is decisive.
-        """
-        window = self.raw[2:66]
-        return b"\x00" in window
-
-    @cached_property
-    def line_starts(self) -> tuple[int, ...]:
-        """Byte offset of the start of each line.
-
-        Computed once and binary-searched, so translating a byte offset into a
-        line number is logarithmic rather than a scan of the file. With thousands
-        of matches across thousands of files, the naive version is measurable.
-        """
-        starts = [0]
-        start = 0
-        while True:
-            found = self.raw.find(b"\n", start)
-            if found == -1:
-                break
-            starts.append(found + 1)
-            start = found + 1
-        return tuple(starts)
-
-    @cached_property
-    def line_count(self) -> int:
-        return len(self.line_starts)
-
-    @cached_property
-    def longest_line(self) -> int:
-        """Length in bytes of the longest line.
-
-        A payload appended to a source file is frequently one very long line,
-        because that is what keeps it off-screen in a diff view and out of the
-        reviewer's eye. The measurement is cheap and the signal is real, though
-        it needs calibrating against minified files, which are legitimately made
-        of very long lines. That calibration is the detector's job, not this
-        class's.
-        """
-        longest = 0
-        previous = 0
-        for start in self.line_starts[1:]:
-            # `- 1` drops the newline; the extra `- 1` drops a carriage return
-            # when the file uses CRLF. Counting it would make the same content
-            # measure differently depending on how it was checked out.
-            end = start - 1
-            if end > previous and self.raw[end - 1 : end] == b"\r":
-                end -= 1
-            longest = max(longest, end - previous)
-            previous = start
-
-        tail = len(self.raw)
-        if tail > previous and self.raw[tail - 1 : tail] == b"\r":
-            tail -= 1
-        return max(longest, tail - previous)
-
     # -- Position translation --------------------------------------------
 
-    def line_of(self, byte_offset: int) -> int:
-        """1-indexed line number containing a byte offset."""
-        from bisect import bisect_right
-
-        return bisect_right(self.line_starts, byte_offset)
-
-    def column_of(self, byte_offset: int) -> int:
-        """1-indexed column, in bytes, of an offset within its line."""
-        line = self.line_of(byte_offset)
-        return byte_offset - self.line_starts[line - 1] + 1
-
-    def comment_column(self, line_number: int, language: str | None) -> int | None:
-        """Where a comment begins on this line, memoised for the file.
-
-        The computation is a scan of the line, and the answer does not depend on
-        which column is asked about -- so a detector with forty matches on one
-        line was paying for forty scans of it. That is invisible on ordinary
-        source, where a line is eighty characters, and ruinous on a bundle, where
-        the file is one line: `bun_environment.js`, the ten-megabyte payload the
-        Shai-Hulud npm worm ships beside its `preinstall` hook, spent most of its
-        five-second budget here and then exceeded it, so the detectors that would
-        have named it as obfuscated never ran.
-        """
-        key = (line_number, language)
-        memo = self._comment_columns
-        if key not in memo:
-            memo[key] = SourceComments.comment_column(self.line_text(line_number), language)
-        return memo[key]
-
-    def line_text(self, line_number: int) -> str:
-        """One line's text, bounded by ``max_line_bytes``.
-
-        The bound matters: a one-gigabyte single line is either minified output
-        or an attack on the line-slicing code, and neither should be
-        materialised in full to print an error message about it.
-        """
-        if line_number < 1 or line_number > len(self.line_starts):
-            return ""
-        start = self.line_starts[line_number - 1]
-        end = (
-            self.line_starts[line_number] if line_number < len(self.line_starts) else len(self.raw)
-        )
-        end = min(end, start + self.limits.max_line_bytes)
-        # Both terminators are stripped. A CRLF checkout would otherwise carry a
-        # trailing carriage return into every evidence snippet, and the same
-        # repository checked out with different line endings would produce
-        # different output -- which breaks the determinism guarantee across
-        # platforms rather than merely looking untidy.
-        return self.raw[start:end].decode("utf-8", errors="replace").rstrip("\r\n")
-
-    def line_bounds(self, byte_offset: int) -> tuple[int, int]:
-        """Where the line holding `byte_offset` starts and ends, its terminator excluded: for a
-        test of a match's neighbourhood, which reads a few bytes of `raw` around it rather than
-        copying a line that, in a minified bundle, is the whole file -- once per match."""
-        line = self.line_of(byte_offset)
-        starts = self.line_starts
-        start = starts[line - 1]
-        end = starts[line] - 1 if line < len(starts) else len(self.raw)
-        if end > start and self.raw[end - 1 : end] == b"\r":
-            end -= 1
-        return start, end
-
-    def once_per_line(self, name: str, byte_offset: int, compute: Callable[[], Any]) -> Any:
-        """`compute()`'s answer for the line holding `byte_offset`, worked out once per line: a
-        question about a whole line -- every host on it, every command on it -- has the same
-        answer for each match on that line, and a minified bundle is one line of thousands."""
-        key = (name, self.line_of(byte_offset))
-        if key not in self._per_line:
-            self._per_line[key] = compute()
-        return self._per_line[key]
-
-    def slice(self, start: int, end: int) -> bytes:
-        """Bounded byte slice, for evidence extraction."""
-        start = max(0, start)
-        end = min(len(self.raw), max(start, end))
-        return self.raw[start:end]
-
     # -- Convenience -----------------------------------------------------
-
-    @property
-    def extension(self) -> str:
-        """Lower-cased suffix including the dot, or empty.
-
-        The basename is taken first. `"README".rpartition(".")` returns
-        `('', '', 'README')`, so the old form invented `.readme` for a
-        root-level `README`, `.makefile` for a `Makefile` and `.dockerfile` for
-        a `Dockerfile` -- while the same file one directory down correctly
-        returned empty, because the fabricated suffix then contained a slash.
-        Identical files behaved differently according to their depth.
-        """
-        name = ContainerPaths.basename(self.path)
-        dot = name.rfind(".")
-        if dot <= 0:
-            # `<= 0` and not `< 0`: a leading dot is a hidden file, not a
-            # suffix, so `.gitignore` has no extension.
-            return ""
-        return name[dot:].lower()
-
-    @property
-    def basename(self) -> str:
-        """The final component, correct for a member at an archive root.
-
-        `rpartition("/")` returned `pkg.zip!package.json` for one of those,
-        which matched no manifest glob and no language extension."""
-        return ContainerPaths.basename(self.path)
-
-    @cached_property
-    def shebang(self) -> str | None:
-        """The interpreter named on the first line, if any.
-
-        Needed because extension alone misidentifies files, and a scanner that
-        misidentifies a language applies the wrong rules to it. Executable
-        scripts with no extension are common and are exactly the kind of file
-        worth reading carefully.
-        """
-        # Past a byte-order mark. A Windows editor writes one in front of the
-        # shebang, the file still runs, and the shebang is still what it says --
-        # but `startswith(b"#!")` said no, the language came out unknown, and the
-        # shell rules never ran on it. `corpus/malicious/polyglot-png` loses its
-        # `SUSPECT.DROPPER.001` at HIGH to three bytes without this.
-        start = len(BYTE_ORDER_MARK) if self.raw.startswith(BYTE_ORDER_MARK) else 0
-        if not self.raw.startswith(b"#!", start):
-            return None
-        end = self.raw.find(b"\n", start, start + 256)
-        line = self.raw[start + 2 : end if end != -1 else start + 256]
-        return line.decode("utf-8", errors="replace").strip() or None
 
     def __len__(self) -> int:
         return len(self.raw)
 
     def __repr__(self) -> str:
         return f"FileContent({self.path!r}, {self.size} bytes)"
-
-    def sniff_language(self, extension_map: Sequence[tuple[str, str]]) -> str | None:
-        """Identify this file's language from extension, then shebang.
-
-        A method rather than a free function because both inputs it reads --
-        the extension and the shebang -- are properties of the content itself,
-        and the answer is a property of the file.
-
-        Extension first because it is right the overwhelming majority of the
-        time and costs nothing. Shebang second because it is authoritative when
-        present: a file declaring an interpreter is telling you what will
-        execute it, which beats any inference from its name.
-        """
-        ext = self.extension
-        if ext:
-            for suffix, language in extension_map:
-                if suffix == ext:
-                    return language
-
-        shebang = self.shebang
-        if shebang:
-            interpreter = (
-                shebang.split("/")[-1].split()[0] if "/" in shebang else shebang.split()[0]
-            )
-            # `#!/usr/bin/env python3` names env, not the interpreter. The real
-            # one is the argument, and this form is more common than the direct
-            # path.
-            if interpreter == "env" and " " in shebang:
-                interpreter = shebang.split()[-1]
-            for suffix, language in extension_map:
-                if suffix.lstrip(".") == interpreter:
-                    return language
-            return interpreter or None
-
-        return None
 
 
 __all__ = ["BINARY_SNIFF_BYTES", "FileContent", "SkipReason", "Skipped"]

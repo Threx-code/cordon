@@ -20,7 +20,6 @@ ships `binding.gyp`. Without that every native addon would be reported.
 from __future__ import annotations
 
 import tarfile
-import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
@@ -112,11 +111,7 @@ class ManifestConfusion:
         Online only: the caller decides that. Unreadable archives and unanswered questions produce
         nothing here, because the release comparison beside it already states what it could not ask.
         """
-        from cordon_scanner.intel.registries.registry_client import (
-            REGISTRY_HOSTS,
-            RegistryClient,
-            RegistryError,
-        )
+        from cordon_scanner.intel.registry import PublishedManifests, RegistryError
 
         packaged = cls.packaged(target)
         if (
@@ -126,11 +121,8 @@ class ManifestConfusion:
         ):
             return []
         name, version = cls._text(packaged["name"]), cls._text(packaged["version"])
-        quoted = urllib.parse.quote(name, safe="@/")
         try:
-            registry = RegistryClient._fetch(
-                f"{REGISTRY_HOSTS['npm']}/{quoted}/{urllib.parse.quote(version, safe='')}"
-            )
+            registry = PublishedManifests.version_manifest(name, version)
         except RegistryError:
             return []
         disagreements = cls.differences(registry, packaged)

@@ -12,6 +12,7 @@ from typing import Any, Final, Protocol
 
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.version import __version__
 
 TIMEOUT_SECONDS: Final = 15.0
@@ -31,11 +32,6 @@ class Transport(Protocol):
     ) -> tuple[int, bytes]: ...
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class CloudTransport:
     """JSON over HTTPS to the cloud: no redirects, bounded responses, tokens never in errors."""
 
@@ -44,7 +40,7 @@ class CloudTransport:
         method: str, url: str, *, body: bytes | None, headers: dict[str, str]
     ) -> tuple[int, bytes]:
         request = urllib.request.Request(url, data=body, headers=headers, method=method)  # noqa: S310 - base_url() checked the scheme
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 return int(response.status), Download.read(response, MAX_RESPONSE_BYTES + 1)

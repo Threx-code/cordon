@@ -212,6 +212,11 @@ builtin = "cordon_scanner.ecosystems.registry:RegistryFacts"
 # found by entry point, so detection never imports their transports or keys.
 builtin = "cordon_scanner.judge.providers:ProviderFactory"
 
+[project.entry-points."cordon_scanner.commands"]
+# Front ends that drive the command line's own commands (`cordon-scanner mcp`): found by entry point,
+# so the command line never imports the server that runs it.
+mcp = "cordon_scanner.mcp.server:Server"
+
 [project.entry-points."cordon_scanner.notifiers"]
 webhook = "cordon_scanner.notify.channels.webhook:WebhookChannel"
 slack = "cordon_scanner.notify.channels.slack:SlackChannel"

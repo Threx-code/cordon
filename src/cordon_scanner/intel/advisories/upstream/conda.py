@@ -11,6 +11,7 @@ import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.network.downloads import BUDGET_SECONDS, Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.advisories.upstream.base import (
     RepositoryArchive,
     Unnamed,
@@ -51,14 +52,10 @@ class CondaPackage:
     def _range(url: str, header: str, limit: int) -> tuple[bytes, int]:
         import urllib.request
 
-        class NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-                return None
-
         request = urllib.request.Request(  # noqa: S310 - https, checked by the caller
             url, headers={"Range": header, "User-Agent": "cordon-scanner"}
         )
-        with urllib.request.build_opener(NoRedirect).open(request, timeout=60) as response:
+        with urllib.request.build_opener(NoRedirects).open(request, timeout=60) as response:
             if response.status != 206:
                 raise ValueError("the server does not answer a byte range")
             total = int(str(response.headers.get("Content-Range", "/0")).rpartition("/")[2] or 0)

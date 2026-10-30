@@ -19,7 +19,7 @@ import hashlib
 import hmac
 from typing import ClassVar
 
-from cordon_scanner.intel.provenance._der import Der, DerError
+from cordon_scanner.foundation.signatures.der import Der, DerError
 
 
 class Rsa:

@@ -36,6 +36,7 @@ from typing import Any, Final
 from cordon_scanner.foundation.files.atomic import AtomicFile
 from cordon_scanner.foundation.files.seal import LocalSeal
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 
 SEAL_LABEL: Final = "osv-delta"
 CHUNK: Final = 64 << 10
@@ -68,11 +69,6 @@ a subprocess does not reach the network either (`tests/conftest.py`)."""
 
 class OsvDeltaError(RuntimeError):
     pass
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
 
 
 @dataclass(frozen=True)
@@ -152,7 +148,7 @@ class OsvDelta:
         if byte_range is not None:
             headers["Range"] = f"bytes={byte_range[0]}-{byte_range[1]}"
         request = urllib.request.Request(url, headers=headers)
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
                 body = Download.read(response, limit + 1, budget=TIMEOUT * 4)

@@ -87,7 +87,7 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.foundation.text.redact import Redactor
-from cordon_scanner.intel.registries.installers import OfficialInstallers
+from cordon_scanner.intel.registry import OfficialInstallers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
