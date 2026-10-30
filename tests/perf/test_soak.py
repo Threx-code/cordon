@@ -17,6 +17,8 @@ from __future__ import annotations
 import gc
 import os
 import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -124,3 +126,81 @@ class TestSoak:
         assert grown <= GROWTH_MB, (
             f"the helper kept {grown:.0f} MB from call {WARM} to {CALLS}: {readings}"
         )
+
+
+class TestStatementWindowMemory:
+    """D1: an oversized Python module is read in statement windows, each window's tree released
+    before the next, so its peak memory does not grow with the module's length, and the windows add
+    little over what the first pass already holds."""
+
+    LIMIT = 3 * 1024 * 1024
+    ADDED_MB = 100
+    """The most the statement windows may add over the first pass's peak (measured: 62 MB at 2.9 windows of 3 MiB)."""
+
+    CHILD = """
+import json, sys
+from pathlib import Path
+from cordon_scanner import Scanner
+from cordon_scanner.engine import window_pass
+from cordon_scanner.foundation.config.settings import Config
+def hwm():
+    with open("/proc/self/status") as status:
+        return next(int(line.split()[1]) for line in status if line.startswith("VmHWM"))
+target, size = Path(sys.argv[1]), int(sys.argv[2])
+body, n = [], 0
+while sum(map(len, body)) < size:
+    body.append(f"class C{n}:\\n    @property\\n    def v(self):\\n        return {n}\\n\\n")
+    n += 1
+target.mkdir()
+(target / "generated.py").write_text("".join(body), encoding="utf-8")
+before = {}
+read = window_pass.WindowPass._read
+def reading(*args, release=False, **kwargs):
+    if release and "aligned" not in before:
+        before["aligned"] = hwm()
+    return read(*args, release=release, **kwargs)
+window_pass.WindowPass._read = staticmethod(reading)
+base = Config.default()
+limits = base.limits.merged(max_file_bytes=int(sys.argv[3]), per_file_timeout=0.0, total_timeout=0.0)
+Scanner(base.with_overrides(limits=limits, use_cache=False)).scan(target)
+print(json.dumps({"peak_kb": hwm(), "before_aligned_kb": before.get("aligned", 0)}))
+"""
+
+    @classmethod
+    def peaks(cls, work: Path, windows: float) -> dict[str, int]:
+        import json
+
+        environment = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        run = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                cls.CHILD,
+                str(work),
+                str(int(cls.LIMIT * windows)),
+                str(cls.LIMIT),
+            ],
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=1800,
+            check=False,
+        )
+        assert run.returncode == 0, run.stderr[-2000:]
+        result: dict[str, int] = json.loads(run.stdout.strip().splitlines()[-1])
+        return result
+
+    @pytest.mark.skipif(not Path("/proc/self/status").exists(), reason="reads VmHWM from /proc")
+    def test_a_longer_module_holds_no_more(self, tmp_path: Path) -> None:
+        three = self.peaks(tmp_path / "three", 2.9)["peak_kb"]
+        six = self.peaks(tmp_path / "six", 5.9)["peak_kb"]
+        assert six <= 1.1 * three, (
+            f"{six / 1024:.0f} MB at 5.9 windows, {three / 1024:.0f} MB at 2.9"
+        )
+
+    @pytest.mark.skipif(not Path("/proc/self/status").exists(), reason="reads VmHWM from /proc")
+    def test_the_statement_windows_add_little_over_the_first_pass(self, tmp_path: Path) -> None:
+        measured = self.peaks(tmp_path / "three", 2.9)
+        added = (measured["peak_kb"] - measured["before_aligned_kb"]) / 1024
+        assert measured["before_aligned_kb"] > 0, "the statement windows did not run"
+        assert added <= self.ADDED_MB, f"the statement windows added {added:.0f} MB"

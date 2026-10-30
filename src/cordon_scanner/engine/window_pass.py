@@ -15,11 +15,13 @@ pass did not find, so every finding already made stands as it was.
 
 from __future__ import annotations
 
+import gc
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.python.statements import PythonStatements
 from cordon_scanner.detect.base import FileUnit
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.files.windows import OVERLAP, Windows, WindowSourceChanged
 
@@ -70,13 +72,19 @@ class WindowPass:
             cut = STATEMENT_CUTS.get(unit.language or "")
             structural = [d for d in picked if getattr(d, "id", "") in STRUCTURAL_DETECTORS]
             if cut is not None and structural:
+                # The first pass's caches go before the first statement window too: it would
+                # otherwise be parsed on top of them (583 MB held, an 857 MB peak at 3 MiB windows).
+                ScanCaches.after_scan()
+                gc.collect()
                 aligned = Windows.aligned(
                     source,
                     size=content.limits.max_file_bytes,
                     limit=content.limits.max_stream_bytes,
                     cut=cut,
                 )
-                WindowPass._read(unit, source, aligned, structural, inspect, seen, out)
+                WindowPass._read(
+                    unit, source, aligned, structural, inspect, seen, out, release=True
+                )
         except WindowSourceChanged:
             return out, False
         return out, True
@@ -90,8 +98,16 @@ class WindowPass:
         inspect: Callable[[Any, Any], Iterable[Finding]],
         seen: set[tuple[str, int | None]],
         out: list[Finding],
+        *,
+        release: bool = False,
     ) -> None:
-        """Each detector over each window, its findings placed in the whole file, new ones kept."""
+        """Each detector over each window, its findings placed in the whole file, new ones kept.
+
+        With `release`, the registered caches are emptied after each window: a statement window is
+        up to `max_file_bytes` of Python, and its tree is several hundred megabytes, which the
+        shared-tree and index caches (4 and 8 deep) would otherwise keep for the windows after it.
+        Five of them took datadog 16.0.0 past 4.6 GB (review 98, D1). Files under the limit, and
+        the first pass, keep their caches as before."""
         content = unit.content
         for window in windows:
             part = FileUnit(
@@ -116,6 +132,14 @@ class WindowPass:
                     if key not in seen:
                         seen.add(key)
                         out.append(moved)
+            if release:
+                del part
+                ScanCaches.after_scan()
+                # A window's tree is freed by the cycle collector, not by reference counts (a tree
+                # parsed outside the shared cache keeps its own walk list, which holds the tree):
+                # left to the collector's thresholds, datadog's trees piled up, about 800 MB a
+                # window, to 5.7 GB. Collected here, once per window, they are gone before the next.
+                gc.collect()
 
     @staticmethod
     def shifted(finding: Finding, lines: int, offset: int) -> Finding:
