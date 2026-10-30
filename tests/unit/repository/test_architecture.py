@@ -178,6 +178,9 @@ class Rules:
     #: Where a word on the ecosystem list means something else, and why.
     NOT_AN_ECOSYSTEM: ClassVar[dict[str, str]] = {
         "cordon_scanner.judge.calls:ValueViews.of": "'hex' is an encoding there, not Elixir's registry",
+        "cordon_scanner.engine.pipeline.hooks:<module>": (
+            "'vscode' there is the engines key of a VS Code extension's package.json"
+        ),
     }
 
     @staticmethod

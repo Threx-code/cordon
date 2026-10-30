@@ -260,6 +260,13 @@ class Keyrings(Protocol):
     def load(self, paths: tuple[str, ...]) -> Keyring: ...
 
 
+# A value both the feed and the rule packs it delivers raise, so neither imports the other for it.
+
+
+class FeedError(Exception):
+    """The feed could not be used. Carries a message that is safe to show."""
+
+
 __all__ = [
     "Advisories",
     "AdvisoryDatabases",
@@ -269,6 +276,7 @@ __all__ = [
     "BundleKeys",
     "ChartProvenance",
     "DataFiles",
+    "FeedError",
     "FeedStatus",
     "InstallerChecks",
     "IntelReport",
