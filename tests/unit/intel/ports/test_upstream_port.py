@@ -8,10 +8,12 @@ from typing import ClassVar
 import pytest
 
 from cordon_scanner.detect.base import GraphUnit
-from cordon_scanner.detect.supply.advisories.detector import UPSTREAM_ECOSYSTEMS, AdvisoryDetector
+from cordon_scanner.detect.supply.advisories.detector import UPSTREAM_ECOSYSTEMS
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel import registry
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
+from cordon_scanner.intel.advisories.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
+from cordon_scanner.intel.advisories.nvd import NvdAdvisories
 from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, UpstreamResult
 
 
@@ -52,7 +54,9 @@ class UpstreamKit:
 
     @staticmethod
     def detector_today(database: AdvisoryDatabase, *, offline: bool) -> UpstreamResult | None:
-        """The detector's own lines: upstream for what it serves when online, then `_with_nvd`."""
+        """The detector's lines before they moved behind the port (release abc2085a: upstream for
+        what it serves when online, then `_with_nvd`), kept here verbatim as the reference the port
+        must answer the same as."""
         unit = GraphUnit(dependencies=UpstreamKit.GRAPH)
         upstream = None
         if not offline:
@@ -66,7 +70,43 @@ class UpstreamKit:
             ]
             if candidates:
                 upstream = UpstreamAdvisories.check(candidates)
-        return AdvisoryDetector(database)._with_nvd(unit, upstream)
+        return UpstreamKit.with_nvd(database, unit, upstream)
+
+    @staticmethod
+    def with_nvd(
+        database: AdvisoryDatabase, unit: GraphUnit, upstream: UpstreamResult | None
+    ) -> UpstreamResult | None:
+        """AdvisoryDetector._with_nvd at abc2085a."""
+        candidates = [
+            d
+            for d in unit.dependencies
+            if not d.local
+            and not d.bundled
+            and d.ecosystem in NVD_ECOSYSTEMS
+            and not database.covers(d.ecosystem)
+            and not (upstream is not None and d.purl in upstream.checked)
+        ]
+        if not candidates:
+            return upstream
+        found = NvdAdvisories.check(
+            candidates,
+            upstream.homes if upstream is not None else {},
+            upstream.versions if upstream is not None else {},
+        )
+        merged = upstream if upstream is not None else UpstreamResult()
+        merged.checked |= found.checked
+        merged.advisories.update(found.advisories)
+        for dependency in candidates:
+            if dependency.purl in found.checked:
+                merged.unchecked.pop(dependency.purl, None)
+            elif dependency.purl in found.unchecked:
+                before = merged.unchecked.get(dependency.purl)
+                merged.unchecked[dependency.purl] = (
+                    f"{before}; and NVD: {found.unchecked[dependency.purl]}"
+                    if before
+                    else f"NVD: {found.unchecked[dependency.purl]}"
+                )
+        return merged
 
 
 class TestThePort:
