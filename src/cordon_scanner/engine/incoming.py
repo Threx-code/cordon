@@ -143,11 +143,11 @@ class Incoming:
         for a pull or a hook is a different commit from the one being judged. Every file comes
         from the object store.
         """
-        from cordon_scanner import Scanner
+        from cordon_scanner.engine.assembly import ScanAssembly
 
         with tempfile.TemporaryDirectory(prefix="cordon-incoming-") as scratch:
             source = repository.tree(rev)
-            return Scanner(config, source=source).scan(Path(scratch))
+            return ScanAssembly.engine(config, source=source).scan(Path(scratch))
 
     # -- Git -----------------------------------------------------------------
 

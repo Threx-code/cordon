@@ -475,6 +475,20 @@ class TestDesignRules:
                     found.append(f"{module}:{statement.lineno} {name}")
         assert not found, "a mutable module-level store not named as a table:\n" + "\n".join(found)
 
+    def test_only_the_outer_layers_use_the_front_door(self) -> None:
+        """`cordon_scanner.Scanner` is for callers: the command line, the MCP server, the cloud
+        runner. A module inside the engine or below it that builds a scan through it reaches up past
+        its own layer; it uses engine.assembly, where a scan is put together."""
+        outer = {"cli", "mcp", "cloud", "judge", "model", "notify", "report", "__main__"}
+        found = sorted(
+            module
+            for module in Modules.trees()
+            if Modules.layer(module)
+            and Modules.layer(module) not in outer
+            and "cordon_scanner" in Modules.imports(module)
+        )
+        assert not found, "imports the package's front door from inside:\n" + "\n".join(found)
+
     def test_no_override_refuses_its_base(self) -> None:
         classes: dict[str, list[ast.ClassDef]] = defaultdict(list)
         for tree in Modules.trees().values():

@@ -99,51 +99,13 @@ class Scanner:
         source: FileSource | None = None,
         progress: Progress | None = None,
     ) -> None:
-        from cordon_scanner.engine.engine import Engine
-        from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+        from cordon_scanner.engine.assembly import ScanAssembly
 
         self.config = config or Config.default()
-
-        packs = list(RuleLoader.load_builtin())
-        if self.config.extra_rule_paths:
-            from cordon_scanner.foundation.errors import RulePackError
-            from cordon_scanner.rules.loader import RuleLoader
-            from cordon_scanner.rules.tester import RuleTester
-
-            loader = RuleLoader()
-            for path in self.config.extra_rule_paths:
-                pack = loader.load_file(path)
-                # The samples run here too, not only under `cordon-scanner rules test`: a pack whose own
-                # samples fail would load and report nothing while the scan looks healthy.
-                failures = RuleTester.run(pack)
-                if failures:
-                    first = failures[0]
-                    raise RulePackError(
-                        f"{path}: {first.rule_id} fails its own {first.kind} sample: {first.detail}",
-                        hint="Run `cordon-scanner rules test` on the pack to see every failing sample.",
-                    )
-                packs.append(pack)
-
-        self.rules = RuleSet(packs)
-
-        shadowed: list[tuple[str, str, str]] = []
-        if detectors is None:
-            registry = Registry(allow_third_party=self.config.allow_plugins)
-            detectors = registry.detectors()
-            # Carried into the engine so a package that tried to take a
-            # built-in's name is reported. Skipping it silently would trade a
-            # denial of service for a quiet one.
-            shadowed = registry.shadowed
-
-        self._engine = Engine(
-            self.config,
-            rules=self.rules,
-            detectors=detectors,
-            source=source,
-            progress=progress,
-            shadowed=shadowed,
+        self._engine = ScanAssembly.engine(
+            self.config, detectors=detectors, source=source, progress=progress
         )
+        self.rules = self._engine.rules
 
     @classmethod
     def for_target(

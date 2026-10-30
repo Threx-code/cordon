@@ -321,6 +321,7 @@
   "ecosystems/packages/swift": "ecosystems/packages/swift",
   "ecosystems/packages/vcpkg": "ecosystems/packages/vcpkg",
   "ecosystems/registry": "ecosystems/registry",
+  "engine/assembly": "engine/assembly",
   "engine/audit": "engine/audit",
   "engine/bundle": "engine/bundle",
   "engine/cache": "engine/cache",
