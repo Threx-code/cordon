@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.js_persist import JsPersistence
 from cordon_scanner.analysis.nix.nix_code import NixCode
@@ -60,7 +60,7 @@ from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.models import Category, Finding
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.content import FileContent
@@ -248,14 +248,14 @@ class CapabilityDetector(BaseDetector):
         from cordon_scanner.foundation.content import FileContent
 
         matched_content = content
-        if unit.language == "go" and content.size <= 2_000_000:
+        run_time_view = CapabilityDetector.RUN_TIME_VIEWS.get(unit.language or "")
+        if run_time_view is not None and content.size <= 2_000_000:
             # What the file builds at run time -- commands added up from a table of characters,
             # paths and endpoints XOR-decoded from byte tables -- written beside where it is built
             # (`detect/go_eval.py`), so the rules read the paths and hosts the code reaches.
-            from cordon_scanner.analysis.go.go_eval import GoEval
             from cordon_scanner.foundation.content import FileContent
 
-            view = GoEval.resolve(content.text)
+            view = run_time_view(content.text)
             if view != content.text:
                 raw = view.encode("utf-8")
                 matched_content = FileContent(path=content.path, raw=raw, size=len(raw))
@@ -272,12 +272,10 @@ class CapabilityDetector(BaseDetector):
         commands = commands + dotnet_commands
         if not commands and language not in ("python", "csharp"):
             source = content.text
-            if unit.language == "go":
+            if run_time_view is not None:
                 # A command assembled from a table of characters is read as the command it
                 # becomes (`detect/go_eval.py`): the 2025 Go typosquats never wrote theirs down.
-                from cordon_scanner.analysis.go.go_eval import GoEval
-
-                source = GoEval.resolve(source)
+                source = run_time_view(source)
             commands = embedded.EmbeddedCommands.extract(source, unit.language)
         # And the plaintext of any encoded command among them, so the shell rules
         # see what `powershell -EncodedCommand` was given rather than only that it
@@ -346,11 +344,9 @@ class CapabilityDetector(BaseDetector):
         hits.extend(JavaScriptCapabilities.js_string_code_run(content, unit.language))
         hits.extend(CredentialSweep.hits(matched_content))
         hits.extend(Labelling.browser_secrets_decrypted(matched_content))
-        if unit.language == "go":
-            from cordon_scanner.detect.code.go_runs import GoRuns
-
-            hits.extend(GoRuns.ci_environment_write(matched_content))
-            hits.extend(GoRuns.received_and_run(content))
+        language_hits = CapabilityDetector.LANGUAGE_HITS.get(unit.language or "")
+        if language_hits is not None:
+            hits.extend(language_hits(content, matched_content))
         if unit.language in ("javascript", "typescript"):
             from cordon_scanner.detect.code.js_runs import JsRuns
 
@@ -510,6 +506,27 @@ class CapabilityDetector(BaseDetector):
                 and KeychainOwner.excuses(unit.content, window, hits)
             )
         )
+
+    # -- what one language's code needs read differently, keyed by language ---------------
+
+    @staticmethod
+    def _go_run_time(text: str) -> str:
+        from cordon_scanner.analysis.go.go_eval import GoEval
+
+        return GoEval.resolve(text)
+
+    @staticmethod
+    def _go_hits(content: FileContent, matched: FileContent) -> list[CapabilityHit]:
+        from cordon_scanner.detect.code.go_runs import GoRuns
+
+        return GoRuns.ci_environment_write(matched) + GoRuns.received_and_run(content)
+
+    #: The source as a language's file builds it at run time, read by the rules in its place.
+    RUN_TIME_VIEWS: ClassVar[dict[str, Callable[[str], str]]] = {"go": _go_run_time}
+    #: Hits only one language's code has: Go's CI-environment write and received-then-run.
+    LANGUAGE_HITS: ClassVar[
+        dict[str, Callable[[FileContent, FileContent], list[CapabilityHit]]]
+    ] = {"go": _go_hits}
 
 
 __all__ = ["CapabilityDetector"]

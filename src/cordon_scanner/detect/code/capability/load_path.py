@@ -11,7 +11,7 @@ from __future__ import annotations
 import ast
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
@@ -20,6 +20,8 @@ from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -147,7 +149,8 @@ class LoadPath:
         if language in LoadPath.COMPILED_LANGUAGES:
             if LoadPath._in_load_time_initialiser(content, hits, matched):
                 return ""
-            if language == "go" and LoadPath.in_go_load_path(content, hits, matched):
+            check = LoadPath.LOAD_PATH_CHECKS.get(language)
+            if check is not None and check(content, hits, matched):
                 return ""
             return LoadPath.ON_REQUEST_REASONS[2]
         offsets = [
@@ -530,6 +533,12 @@ class LoadPath:
             and not ServerSources.NOT_A_SERVER_PATH.search(member)
             and ServerSources.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
         )
+
+    #: A compiled language's own test that a hit runs at load, beyond its initialisers: Go's
+    #: `init` and package-level variables. Keyed by language; a language without one has none.
+    LOAD_PATH_CHECKS: ClassVar[
+        dict[str, Callable[[FileContent, list[CapabilityHit], tuple[Capability, ...]], bool]]
+    ] = {"go": in_go_load_path}
 
 
 __all__ = ["LoadPath"]
