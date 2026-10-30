@@ -390,15 +390,10 @@ class IntentObserver:
 
         def resolve(value: object) -> set[str]:
             found: set[str] = set()
-            if isinstance(value, str) and "*" not in value:
-                base = root + value.strip().removeprefix("./").rstrip("/")
-                found.update(c for c in (base, f"{base}.js", f"{base}/index.js") if c in paths)
-            elif isinstance(value, dict):
-                for nested in value.values():
-                    found |= resolve(nested)
-            elif isinstance(value, list):
-                for nested in value:
-                    found |= resolve(nested)
+            for target in ScannedJson.strings(value):
+                if "*" not in target:
+                    base = root + target.strip().removeprefix("./").rstrip("/")
+                    found.update(c for c in (base, f"{base}.js", f"{base}/index.js") if c in paths)
             return found
 
         imported = resolve(document.get("main") or "index.js") | resolve(document.get("exports"))

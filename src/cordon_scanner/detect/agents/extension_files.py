@@ -106,7 +106,7 @@ class ExtensionFileFindings:
         publisher; an entry bundle named after a popular extension. And separately: a display
         name carrying invisible characters, which makes two names that read the same differ.
         """
-        from cordon_scanner.intel.store import datafile
+        from cordon_scanner.intel.registry import IntelDataFile
 
         identifier = f"{manifest['publisher']}.{manifest['name']}".lower()
         display = str(manifest.get("displayName") or "")
@@ -122,7 +122,7 @@ class ExtensionFileFindings:
                 f"{len(display) - len(visible)} invisible character(s): it reads the same as a "
                 "name it is not.",
             )
-        intel = datafile.IntelDataFile.newest("vscode-extensions.json")
+        intel = IntelDataFile.newest("vscode-extensions.json")
         popular = set(intel.get("popular") or ())
         if not popular or identifier in popular:
             return
@@ -156,12 +156,12 @@ class ExtensionFileFindings:
         version: str | None = None,
         osv: bool = True,
     ) -> Iterator[Finding]:
-        from cordon_scanner.intel.store import datafile
+        from cordon_scanner.intel.registry import IntelDataFile
 
         lowered = identifier.strip().lower()
         if not _EXTENSION_ID.match(lowered):
             return
-        intel = datafile.IntelDataFile.newest("vscode-extensions.json")
+        intel = IntelDataFile.newest("vscode-extensions.json")
         how = "recommends" if recommended else "vendors the package of"
         verdict = ExtensionVerdicts.osv(lowered, version) if osv else None
         if verdict is not None:

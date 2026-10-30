@@ -5,7 +5,7 @@ machine's identity, values read from local files, and the environment a child pr
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
@@ -416,6 +416,67 @@ class DataFlows(AnalyzerCore):
             return True
         return "__file__" in names
 
+    #: Where `_keyed_environment_reads` finds a read with one literal key, by the method that
+    #: finds it at each kind of node.
+    _KEYED: ClassVar[dict[type[ast.AST], str]] = {
+        ast.Subscript: "_keyed_subscript",
+        ast.Call: "_keyed_call",
+        ast.Compare: "_keyed_compare",
+    }
+
+    def _keyed_subscript(self, node: ast.Subscript, candidates: Any, keyed: dict[int, str]) -> None:
+        # `os.environ["NAME"]`
+        key = self._key_of(node.slice, candidates)
+        if key is not None and self._dotted(node.value) in ENVIRONMENT:
+            keyed[id(node.value)] = key
+
+    def _keyed_call(self, node: ast.Call, candidates: Any, keyed: dict[int, str]) -> None:
+        key = self._key_of(node.args[0], candidates) if node.args else None
+        if key is None:
+            return
+        if self._dotted(node.func) in ENVIRONMENT:
+            # `os.getenv("NAME")`. Mapped against the function node,
+            # because the walk reaches that as a bare `Attribute` too and
+            # would record it whatever `_call` decided.
+            keyed[id(node.func)] = key
+        elif (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"get", "setdefault", "pop"}
+            and self._dotted(node.func.value) in ENVIRONMENT
+        ):
+            # `os.environ.get("NAME")`, and the two methods that read the
+            # same way.
+            keyed[id(node.func.value)] = key
+
+    def _keyed_compare(self, node: ast.Compare, candidates: Any, keyed: dict[int, str]) -> None:
+        # `"NAME" in os.environ` asks whether one setting is present and
+        # obtains no value at all, so it is a weaker act than any of the
+        # keyed reads above. It reached none of them: a `Compare` names no
+        # key, registered nothing, and so the bare-`Attribute` branch of
+        # the walk saw an unkeyed `os.environ` and called it
+        # whole-environment access -- the broadest reading available, for
+        # the narrowest act there is.
+        #
+        # `saltstack/salt` writes `if "WRITE_SALT_VERSION" in os.environ`
+        # three times in its `setup.py` and `if "SALT_VERSION" in
+        # os.environ` in `salt/version.py`. Both files are install-time by
+        # definition and both reach the network, so both were
+        # `MALWARE.EXFIL.001` at CRITICAL -- "reads credentials and
+        # transmits them" -- for build flags that gate a version string.
+        #
+        # Judged by the name, like every other keyed read, rather than by
+        # a second rule of its own. A presence test on a name that reads
+        # as a credential is still worth the label, because code that asks
+        # whether a token is set is code that means to use it, and the
+        # read itself is its own hit wherever it happens.
+        left: ast.expr = node.left
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
+            if isinstance(op, ast.In | ast.NotIn) and (self._dotted(comparator) in ENVIRONMENT):
+                key = PythonFacts.constant(left)
+                if key is not None:
+                    keyed[id(comparator)] = key
+            left = comparator
+
     def _keyed_environment_reads(self, tree: ast.AST) -> dict[int, str]:
         """Environment nodes that are read with one literal key, and that key.
 
@@ -443,59 +504,8 @@ class DataFlows(AnalyzerCore):
         for node_id in self._environment_handed_to_children(tree):
             keyed[node_id] = ""
 
-        for node in PythonSyntax.of(tree, ast.Subscript, ast.Call, ast.Compare):
-            if isinstance(node, ast.Subscript):
-                # `os.environ["NAME"]`
-                key = self._key_of(node.slice, candidates)
-                if key is not None and self._dotted(node.value) in ENVIRONMENT:
-                    keyed[id(node.value)] = key
-            elif isinstance(node, ast.Call):
-                key = self._key_of(node.args[0], candidates) if node.args else None
-                if key is None:
-                    continue
-                if self._dotted(node.func) in ENVIRONMENT:
-                    # `os.getenv("NAME")`. Mapped against the function node,
-                    # because the walk reaches that as a bare `Attribute` too and
-                    # would record it whatever `_call` decided.
-                    keyed[id(node.func)] = key
-                elif (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr in {"get", "setdefault", "pop"}
-                    and self._dotted(node.func.value) in ENVIRONMENT
-                ):
-                    # `os.environ.get("NAME")`, and the two methods that read the
-                    # same way.
-                    keyed[id(node.func.value)] = key
-            elif isinstance(node, ast.Compare):
-                # `"NAME" in os.environ` asks whether one setting is present and
-                # obtains no value at all, so it is a weaker act than any of the
-                # keyed reads above. It reached none of them: a `Compare` names no
-                # key, registered nothing, and so the bare-`Attribute` branch of
-                # the walk saw an unkeyed `os.environ` and called it
-                # whole-environment access -- the broadest reading available, for
-                # the narrowest act there is.
-                #
-                # `saltstack/salt` writes `if "WRITE_SALT_VERSION" in os.environ`
-                # three times in its `setup.py` and `if "SALT_VERSION" in
-                # os.environ` in `salt/version.py`. Both files are install-time by
-                # definition and both reach the network, so both were
-                # `MALWARE.EXFIL.001` at CRITICAL -- "reads credentials and
-                # transmits them" -- for build flags that gate a version string.
-                #
-                # Judged by the name, like every other keyed read, rather than by
-                # a second rule of its own. A presence test on a name that reads
-                # as a credential is still worth the label, because code that asks
-                # whether a token is set is code that means to use it, and the
-                # read itself is its own hit wherever it happens.
-                left: ast.expr = node.left
-                for op, comparator in zip(node.ops, node.comparators, strict=True):
-                    if isinstance(op, ast.In | ast.NotIn) and (
-                        self._dotted(comparator) in ENVIRONMENT
-                    ):
-                        key = PythonFacts.constant(left)
-                        if key is not None:
-                            keyed[id(comparator)] = key
-                    left = comparator
+        for node in PythonSyntax.of(tree, *self._KEYED):
+            getattr(self, self._KEYED[type(node)])(node, candidates, keyed)
         for node_id in written:
             # A written name is not a read at all, whatever the name says.
             keyed[node_id] = ""

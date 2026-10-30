@@ -72,6 +72,7 @@ from cordon_scanner.detect.infra.repository_rules import (
     VERSION_CONTROL_RULES,
 )
 from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
     Category,
@@ -87,7 +88,7 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.foundation.text.redact import Redactor
-from cordon_scanner.intel.registries.installers import OfficialInstallers
+from cordon_scanner.intel.registry import OfficialInstallers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -700,6 +701,7 @@ class ConfigDetector(BaseDetector):
         )
 
     @staticmethod
+    @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)
     @functools.lru_cache(maxsize=131072)
     def _pattern_matches(path: str, pattern: str) -> bool:
         """Whether `path` matches one glob, memoised per (file, pattern).

@@ -34,7 +34,7 @@ from __future__ import annotations
 import functools
 import re
 from collections.abc import Callable
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 
 MAX_VERSION_LENGTH = 256
 """A version string longer than this is compared as opaque text.
@@ -64,6 +64,16 @@ both Maven's and RubyGems' key functions."""
 class Versions:
     """Ordering versions within an ecosystem."""
 
+    #: Each ecosystem's version scheme, by the method that compares under it; an ecosystem not here
+    #: is compared as raw strings. A new scheme is an entry and a method.
+    SCHEMES: ClassVar[dict[str, str]] = {
+        "pypi": "_pep440",
+        "rubygems": "_rubygems",
+        **dict.fromkeys(_MAVEN_ECOSYSTEMS, "_maven"),
+        **dict.fromkeys(_SEMVER_ECOSYSTEMS, "_semver"),
+        **dict.fromkeys(_LIBVERSION_ECOSYSTEMS, "_libversion"),
+    }
+
     @staticmethod
     # A pure function of three strings, asked the same question thousands of times in a scan:
     # deciding the version to upgrade to checks every `fixed` version against every advisory.
@@ -83,28 +93,42 @@ class Versions:
         if len(a) > MAX_VERSION_LENGTH or len(b) > MAX_VERSION_LENGTH:
             return Versions._compare_raw(a, b)
 
-        if ecosystem == "pypi":
-            return Versions._compare_keys(Versions._pep440_key(a), Versions._pep440_key(b), a, b)
-        if ecosystem in _MAVEN_ECOSYSTEMS:
-            return Versions._compare_padded_tokens(
-                a, b, _TOKEN_RE, Versions._maven_token_key, _MAVEN_QUALIFIER_PAD
-            )
-        if ecosystem == "rubygems":
-            # No release-equivalent qualifier in this scheme (see the module
-            # note above): a missing segment always beats a real qualifier
-            # segment, which is exactly what the numeric-zero pad already
-            # encodes, since "numeric" outranks "qualifier" at every position.
-            return Versions._compare_padded_tokens(
-                a, b, _TOKEN_RE, Versions._rubygems_segment_key, _NUMERIC_ZERO_PAD
-            )
-        if ecosystem in _SEMVER_ECOSYSTEMS:
-            return Versions._compare_keys(Versions._semver_key(a), Versions._semver_key(b), a, b)
-        if ecosystem in _LIBVERSION_ECOSYSTEMS:
-            return LibVersion.compare(
-                _PACKAGING_REVISION.sub("", a) if ecosystem != "cpe" else a,
-                _PACKAGING_REVISION.sub("", b) if ecosystem != "cpe" else b,
-            )
-        return Versions._compare_raw(a, b)
+        scheme = Versions.SCHEMES.get(ecosystem)
+        if scheme is None:
+            return Versions._compare_raw(a, b)
+        compared: int = getattr(Versions, scheme)(ecosystem, a, b)
+        return compared
+
+    @staticmethod
+    def _pep440(ecosystem: str, a: str, b: str) -> int:
+        return Versions._compare_keys(Versions._pep440_key(a), Versions._pep440_key(b), a, b)
+
+    @staticmethod
+    def _maven(ecosystem: str, a: str, b: str) -> int:
+        return Versions._compare_padded_tokens(
+            a, b, _TOKEN_RE, Versions._maven_token_key, _MAVEN_QUALIFIER_PAD
+        )
+
+    @staticmethod
+    def _rubygems(ecosystem: str, a: str, b: str) -> int:
+        # No release-equivalent qualifier in this scheme (see the module
+        # note above): a missing segment always beats a real qualifier
+        # segment, which is exactly what the numeric-zero pad already
+        # encodes, since "numeric" outranks "qualifier" at every position.
+        return Versions._compare_padded_tokens(
+            a, b, _TOKEN_RE, Versions._rubygems_segment_key, _NUMERIC_ZERO_PAD
+        )
+
+    @staticmethod
+    def _semver(ecosystem: str, a: str, b: str) -> int:
+        return Versions._compare_keys(Versions._semver_key(a), Versions._semver_key(b), a, b)
+
+    @staticmethod
+    def _libversion(ecosystem: str, a: str, b: str) -> int:
+        return LibVersion.compare(
+            _PACKAGING_REVISION.sub("", a) if ecosystem != "cpe" else a,
+            _PACKAGING_REVISION.sub("", b) if ecosystem != "cpe" else b,
+        )
 
     @staticmethod
     def in_range(

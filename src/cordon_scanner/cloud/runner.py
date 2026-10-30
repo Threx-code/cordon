@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-from cordon_scanner.cloud import CloudError
+from cordon_scanner.cloud import CloudError, JobRefused
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
 from cordon_scanner.foundation.files.trees import Trees
 from cordon_scanner.foundation.network.downloads import Download
@@ -107,10 +107,6 @@ class CheckedRedirects(urllib.request.HTTPRedirectHandler):
     @classmethod
     def opener(cls, config: RunnerConfig) -> urllib.request.OpenerDirector:
         return urllib.request.build_opener(cls(config))
-
-
-class JobRefused(CloudError):
-    """The job asked for something this runner will not do. Reported to the cloud as failed."""
 
 
 class CloudRunner:

@@ -12,6 +12,7 @@ import urllib.parse
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
     RepositoryArchive,
@@ -36,15 +37,11 @@ class HomebrewBottles:
     def _ghcr(path: str, accept: str, token: str | None) -> bytes:
         import urllib.request
 
-        class NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-                return None
-
         headers = {"User-Agent": "cordon-scanner", "Accept": accept}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(f"https://ghcr.io{path}", headers=headers)
-        with urllib.request.build_opener(NoRedirect).open(request, timeout=60) as response:
+        with urllib.request.build_opener(NoRedirects).open(request, timeout=60) as response:
             body: bytes = Download.read(response, 4 << 20)
         return body
 

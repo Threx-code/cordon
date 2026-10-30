@@ -13,12 +13,151 @@ for is never missed for want of a hop. Flow-insensitive, a fixpoint over `ROUNDS
 from __future__ import annotations
 
 import ast
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 Label = int
 
 
-class PythonValueFlow:
+class ValueFlowSteps:
+    """What `PythonValueFlow` does at each kind of node, chosen by the tables INDEX, TAINT and
+    FLOW: indexing scopes and calls, reading the seeds an expression carries, and moving values
+    through assignments, loops, returns and calls. Part of `PythonValueFlow`, whose state these
+    read."""
+
+    vars: dict[tuple[int, str], set[Label]]
+    returns: dict[str, set[Label]]
+    functions: dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]]
+    local: dict[int, set[str]]
+    calls: list[ast.Call]
+
+    if TYPE_CHECKING:
+
+        @staticmethod
+        def params(fn: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> list[ast.arg]: ...
+
+        def _key(self, name: str, node: ast.AST) -> tuple[int, str]: ...
+
+        def carries(self, node: ast.Call) -> bool: ...
+
+        def taint(self, node: ast.AST | None) -> set[Label]: ...
+
+        def bind(self, target: ast.AST, value: set[Label]) -> bool: ...
+
+        def call_flow(self, node: ast.Call) -> bool: ...
+
+        def _returned(self, node: ast.AST, value: set[Label]) -> bool: ...
+
+        def _bind_param(self, fn: ast.AST, name: str, value: set[Label]) -> bool: ...
+
+        def _call_flow(self, node: ast.Call) -> bool: ...
+
+        @staticmethod
+        def name(func: ast.AST) -> str | None: ...
+
+    #: What `index` records for each kind of node, by the method that records it; a node of any
+    #: other kind adds nothing but its scope. Each returns the scope its children are in.
+    INDEX: ClassVar[dict[type[ast.AST], str]] = {
+        ast.FunctionDef: "_index_function",
+        ast.AsyncFunctionDef: "_index_function",
+        ast.Lambda: "_index_function",
+        ast.Name: "_index_name",
+        ast.Call: "_index_call",
+    }
+
+    def _index_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda, scope: int
+    ) -> int:
+        inner = id(node)
+        self.local[inner] = {a.arg for a in self.params(node)}
+        if not isinstance(node, ast.Lambda):
+            self.functions.setdefault(node.name, []).append(node)
+        return inner
+
+    def _index_name(self, node: ast.Name, scope: int) -> int:
+        if isinstance(node.ctx, ast.Store):
+            self.local.setdefault(scope, set()).add(node.id)
+        return scope
+
+    def _index_call(self, node: ast.Call, scope: int) -> int:
+        self.calls.append(node)
+        return scope
+
+    #: What `taint` reads from each kind of node, by the method that reads it into `out`; each
+    #: returns whether the node's parts carry their seeds on.
+    TAINT: ClassVar[dict[type[ast.AST], str]] = {
+        ast.Name: "_taint_name",
+        ast.Attribute: "_taint_attribute",
+        ast.Call: "_taint_call",
+    }
+
+    def _taint_name(self, part: ast.Name, out: set[Label]) -> bool:
+        out |= self.vars.get(self._key(part.id, part), set())
+        return True
+
+    def _taint_attribute(self, part: ast.Attribute, out: set[Label]) -> bool:
+        out |= self.vars.get((0, part.attr), set())
+        return True
+
+    def _taint_call(self, part: ast.Call, out: set[Label]) -> bool:
+        name = self.name(part.func)
+        if name in self.functions:
+            out |= self.returns.get(name, set())
+        return self.carries(part)
+
+    #: How a value flows through each kind of node, by the method that moves it; each returns
+    #: whether anything new was bound.
+    FLOW: ClassVar[dict[type[ast.AST], str]] = {
+        ast.Assign: "_flow_assign",
+        ast.AnnAssign: "_flow_target",
+        ast.AugAssign: "_flow_target",
+        ast.NamedExpr: "_flow_target",
+        ast.For: "_flow_iteration",
+        ast.AsyncFor: "_flow_iteration",
+        ast.comprehension: "_flow_iteration",
+        ast.withitem: "_flow_with",
+        ast.Return: "_flow_returned",
+        ast.Yield: "_flow_returned",
+        ast.FunctionDef: "_flow_defaults",
+        ast.AsyncFunctionDef: "_flow_defaults",
+        ast.Call: "_flow_call",
+    }
+
+    def _flow_assign(self, node: ast.Assign) -> bool:
+        value = self.taint(node.value)
+        changed = False
+        for target in node.targets:
+            changed |= self.bind(target, value)
+        return changed
+
+    def _flow_target(self, node: ast.AnnAssign | ast.AugAssign | ast.NamedExpr) -> bool:
+        return self.bind(node.target, self.taint(node.value))
+
+    def _flow_iteration(self, node: ast.For | ast.AsyncFor | ast.comprehension) -> bool:
+        return self.bind(node.target, self.taint(node.iter))
+
+    def _flow_with(self, node: ast.withitem) -> bool:
+        if node.optional_vars is None:
+            return False
+        return self.bind(node.optional_vars, self.taint(node.context_expr))
+
+    def _flow_returned(self, node: ast.Return | ast.Yield) -> bool:
+        if node.value is None:
+            return False
+        return self._returned(node, self.taint(node.value))
+
+    def _flow_defaults(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        defaults = [*node.args.defaults, *(d for d in node.args.kw_defaults if d)]
+        value = set().union(*(self.taint(d) for d in defaults))
+        changed = False
+        for param in self.params(node):
+            changed |= self._bind_param(node, param.arg, value)
+        return changed
+
+    def _flow_call(self, node: ast.Call) -> bool:
+        return self._call_flow(node) | self.call_flow(node)
+
+
+class PythonValueFlow(ValueFlowSteps):
     #: Seeds followed before the file is left to the caller's fallback (`index` returns False).
     MAX_SEEDS: ClassVar[int] = 400
     #: Rounds of the fixpoint.
@@ -51,16 +190,8 @@ class PythonValueFlow:
         stack: list[tuple[ast.AST, int]] = [(self.tree, module)]
         while stack:
             node, scope = stack.pop()
-            inner = scope
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
-                inner = id(node)
-                self.local[inner] = {a.arg for a in self.params(node)}
-                if not isinstance(node, ast.Lambda):
-                    self.functions.setdefault(node.name, []).append(node)
-            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                self.local.setdefault(scope, set()).add(node.id)
-            elif isinstance(node, ast.Call):
-                self.calls.append(node)
+            indexer = self.INDEX.get(type(node))
+            inner = getattr(self, indexer)(node, scope) if indexer else scope
             label = self.seed(node)
             if label is not None:
                 self.seeds[id(node)] = label
@@ -102,16 +233,10 @@ class PythonValueFlow:
             label = self.seeds.get(id(part))
             if label is not None:
                 out.add(label)
-            elif isinstance(part, ast.Name):
-                out |= self.vars.get(self._key(part.id, part), set())
-            elif isinstance(part, ast.Attribute):
-                out |= self.vars.get((0, part.attr), set())
-            elif isinstance(part, ast.Call):
-                name = self.name(part.func)
-                if name in self.functions:
-                    out |= self.returns.get(name, set())
-                if not self.carries(part):
-                    continue
+            else:
+                reader = self.TAINT.get(type(part))
+                if reader is not None and not getattr(self, reader)(part, out):
+                    continue  # a call that does not carry its arguments' seeds
             stack.extend(ast.iter_child_nodes(part))
         return out
 
@@ -153,25 +278,9 @@ class PythonValueFlow:
         for _ in range(self.ROUNDS):
             changed = False
             for node in nodes:
-                if isinstance(node, ast.Assign):
-                    value = self.taint(node.value)
-                    for target in node.targets:
-                        changed |= self.bind(target, value)
-                elif isinstance(node, ast.AnnAssign | ast.AugAssign | ast.NamedExpr):
-                    changed |= self.bind(node.target, self.taint(node.value))
-                elif isinstance(node, ast.For | ast.AsyncFor | ast.comprehension):
-                    changed |= self.bind(node.target, self.taint(node.iter))
-                elif isinstance(node, ast.withitem) and node.optional_vars is not None:
-                    changed |= self.bind(node.optional_vars, self.taint(node.context_expr))
-                elif isinstance(node, ast.Return | ast.Yield) and node.value is not None:
-                    changed |= self._returned(node, self.taint(node.value))
-                elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                    defaults = [*node.args.defaults, *(d for d in node.args.kw_defaults if d)]
-                    value = set().union(*(self.taint(d) for d in defaults))
-                    for param in self.params(node):
-                        changed |= self._bind_param(node, param.arg, value)
-                elif isinstance(node, ast.Call):
-                    changed |= self._call_flow(node) | self.call_flow(node)
+                mover = self.FLOW.get(type(node))
+                if mover is not None:
+                    changed |= getattr(self, mover)(node)
             if not changed:
                 break
 

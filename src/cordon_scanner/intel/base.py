@@ -11,6 +11,13 @@ if TYPE_CHECKING:
     from typing import Any
 
     from cordon_scanner.detect.base import FileUnit
+    from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+    from cordon_scanner.intel.provenance.helm_provenance import ChartCheck
+    from cordon_scanner.intel.provenance.homebrew_provenance import BottleCheck
+    from cordon_scanner.intel.provenance.openpgp import Keyring
+    from cordon_scanner.intel.registries.private_registries import PrivateRegistry
+    from cordon_scanner.intel.registries.registry_client import PackageArchive, PackageFacts
+    from cordon_scanner.intel.store.live_mcp import ServedTool
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
@@ -144,20 +151,150 @@ class VersionOrdering(Protocol):
     def compare(self, ecosystem: str, a: str, b: str) -> int: ...
 
 
+# Detector-facing ports (review 27, F2): what a detector asks of registries, provenance checks,
+# live MCP servers, the known installers and the data files. `registry` hands each implementation
+# typed by one of these, so a detector never imports a concrete intel module.
+
+
+class InstallerChecks(Protocol):
+    """Whether a command or a URL is a project's own published installer."""
+
+    def is_official_installer(self, text: str) -> bool: ...
+    def pinned_download(self, url: str) -> bool: ...
+
+
+class PackageFactsQueries(Protocol):
+    """What a public registry says about one package version."""
+
+    def facts(
+        self, ecosystem: str, name: str, version: str | None, source: str | None = None
+    ) -> PackageFacts: ...
+
+
+class ArtifactQueries(Protocol):
+    """A version's published artefact and its attestation, for provenance checks."""
+
+    def attestation_payload(
+        self, ecosystem: str, name: str, version: str | None, digest: str | None = None
+    ) -> dict[str, Any] | None: ...
+    def package_archive(self, ecosystem: str, name: str, version: str | None) -> PackageArchive: ...
+
+
+class PublishedManifestQueries(Protocol):
+    """A registry's manifest for one published version, to compare with what was packed."""
+
+    def version_manifest(self, name: str, version: str) -> dict[str, Any]: ...
+
+
+class PrivateRegistryQueries(Protocol):
+    """The organisation's own registries: which one serves a package, and what it says."""
+
+    def matching(
+        self,
+        configured: tuple[PrivateRegistry, ...],
+        ecosystem: str,
+        name: str,
+        resolved_from: str | None,
+    ) -> PrivateRegistry | None: ...
+    def facts(
+        self, registry: PrivateRegistry, ecosystem: str, name: str, version: str | None
+    ) -> PackageFacts: ...
+
+
+class LiveServers(Protocol):
+    """A configured MCP server's tools, read from the server itself."""
+
+    def remote_url(self, server: dict[str, Any]) -> str | None: ...
+    def tools(self, url: str) -> list[ServedTool]: ...
+
+
+class ToolApprovals(Protocol):
+    """The tools a user approved, and how what a server serves now differs from them."""
+
+    def load(self, root: Path) -> dict[str, Any] | None: ...
+    def differences(
+        self, approved: dict[str, Any], tools: list[ServedTool]
+    ) -> list[tuple[str, str]]: ...
+
+
+class DataFiles(Protocol):
+    """The newest copy of one of the intel data files: shipped, or refreshed since."""
+
+    def newest(self, name: str) -> dict[str, Any]: ...
+
+
+class ModuleProvenance(Protocol):
+    """Whether a Bazel module's published integrity matches its registry's."""
+
+    def check(self, name: str, version: str, integrity: str | None) -> ModuleCheck: ...
+
+
+class ChartProvenance(Protocol):
+    """Whether a Helm chart is signed by a key the user trusts."""
+
+    def check(
+        self,
+        name: str,
+        version: str,
+        source: str | None,
+        integrity: str | None,
+        keyring: Keyring,
+    ) -> ChartCheck: ...
+
+
+class BottleProvenance(Protocol):
+    """Whether a Homebrew bottle is attested by the tap that builds it."""
+
+    def check(self, name: str, version: str | None) -> BottleCheck: ...
+
+
+class RepositoryHeads(Protocol):
+    """A GitHub repository's current name and default branch, as GitHub reports them."""
+
+    def current(self, owner: str, name: str) -> tuple[str, str] | None: ...
+
+
+class Keyrings(Protocol):
+    """The OpenPGP keys a user has said to trust."""
+
+    def load(self, paths: tuple[str, ...]) -> Keyring: ...
+
+
+# A value both the feed and the rule packs it delivers raise, so neither imports the other for it.
+
+
+class FeedError(Exception):
+    """The feed could not be used. Carries a message that is safe to show."""
+
+
 __all__ = [
     "Advisories",
     "AdvisoryDatabases",
     "AdvisoryRecord",
+    "ArtifactQueries",
+    "BottleProvenance",
     "BundleKeys",
+    "ChartProvenance",
+    "DataFiles",
+    "FeedError",
     "FeedStatus",
+    "InstallerChecks",
     "IntelReport",
+    "Keyrings",
     "LicenseClassification",
+    "LiveServers",
+    "ModuleProvenance",
+    "PackageFactsQueries",
+    "PrivateRegistryQueries",
+    "PublishedManifestQueries",
     "RangeMatching",
     "RegistryRecordFacts",
     "RegistryRecords",
     "RegistryVersions",
     "ReleaseBaseline",
     "ReleaseHistories",
+    "RepositoryHeads",
     "SignatureCheck",
+    "ToolApprovals",
     "VersionOrdering",
 ]

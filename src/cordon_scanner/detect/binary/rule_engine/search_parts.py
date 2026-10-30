@@ -90,7 +90,10 @@ class Part:
             if len(run) >= Part.LITERAL_MIN:
                 runs.append(bytes(run))
             run = bytearray()
-        return sorted(set(runs), key=lambda r: -len(r))
+        # Longest first, and equal lengths by their bytes: the set's own order follows the
+        # process's hash seed. Only the order the runs are tested in (`Search.holds`, an AND that
+        # stops at the first run missing) depends on it, never an answer; now not even that.
+        return sorted(set(runs), key=lambda r: (-len(r), r))
 
     @staticmethod
     def heavy_in(root: Term) -> bool:

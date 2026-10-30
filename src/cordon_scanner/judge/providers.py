@@ -30,6 +30,7 @@ from typing import Any, ClassVar, Final, Protocol
 from cordon_scanner.detect.agents.language_model.review import JudgeError
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 
 TIMEOUT_SECONDS: Final = 90.0
 LOCAL_TIMEOUT_SECONDS: Final = 300.0
@@ -68,11 +69,6 @@ class Transport(Protocol):
     ) -> dict[str, Any]: ...
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class HttpTransport:
     """JSON over HTTP(S): no redirects, a bounded response, and errors that name the host only."""
 
@@ -100,7 +96,7 @@ class HttpTransport:
         )
         host = parsed_url.hostname
         try:
-            with urllib.request.build_opener(_NoRedirect).open(
+            with urllib.request.build_opener(NoRedirects).open(
                 request, timeout=timeout
             ) as response:
                 raw = Download.read(response, MAX_RESPONSE_BYTES + 1)

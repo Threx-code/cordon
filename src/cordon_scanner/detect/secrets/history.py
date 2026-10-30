@@ -28,76 +28,20 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar
 
-from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.foundation import references
+from cordon_scanner.detect.secrets.secrets import (
+    HISTORY_INCOMPLETE_RULE,
+    LIVE_RULE,
+    REVOKED_RULE,
+    UNCHECKED_RULE,
+)
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
-from cordon_scanner.foundation.models import Category, Confidence, Finding, Location, Severity
+from cordon_scanner.foundation.models import Confidence, Finding, Location, Severity
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 
-LIVE_RULE = "SECRET.LIVE.001"
-REVOKED_RULE = "SECRET.LIVENESS.REJECTED.001"
-HISTORY_INCOMPLETE_RULE = "OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001"
-UNCHECKED_RULE = "OPERATIONAL.SECRET_LIVENESS.UNCHECKED.001"
 MAX_VERIFICATIONS = 50
 TIMEOUT_SECONDS = 6.0
-
-
-class SecretHistoryRules:
-    @staticmethod
-    def declared() -> list[DeclaredRule]:
-        return [
-            DeclaredRule(
-                id=LIVE_RULE,
-                title="The credential's issuer confirms it still works",
-                severity=Severity.CRITICAL,
-                confidence=Confidence.CONFIRMED,
-                category=Category.SUSPICIOUS,
-                detector="secrets",
-                message=(
-                    "A committed credential was sent to its own issuer with --verify-secrets, and the "
-                    "issuer accepted it. Whoever has read this repository, or any clone of it, can use it now."
-                ),
-                remediation="Revoke it at the issuer first, then rotate, then remove it from history.",
-                references=(references.HARDCODED_CREDENTIALS,),
-            ),
-            DeclaredRule(
-                id=REVOKED_RULE,
-                title="The credential's issuer rejects it",
-                severity=Severity.INFO,
-                confidence=Confidence.CONFIRMED,
-                category=Category.SUSPICIOUS,
-                detector="secrets",
-                message=(
-                    "A committed credential was sent to its own issuer with --verify-secrets, and the "
-                    "issuer rejected it: revoked, expired or never valid. It still belongs out of the tree."
-                ),
-                remediation="Remove it from the tree; confirm the rejection was revocation, not a typo in a live key.",
-                references=(references.HARDCODED_CREDENTIALS,),
-            ),
-            DeclaredRule(
-                id=HISTORY_INCOMPLETE_RULE,
-                title="Part of git history was not read for secrets",
-                severity=Severity.LOW,
-                confidence=Confidence.CONFIRMED,
-                category=Category.OPERATIONAL,
-                detector="secrets",
-                message="The history pass stopped at a bound; the blobs past it were not read and are not clean.",
-                remediation="Raise the bound or scan history in a dedicated job with a longer budget.",
-                references=(references.HARDCODED_CREDENTIALS,),
-            ),
-            DeclaredRule(
-                id=UNCHECKED_RULE,
-                title="Some credentials could not be checked with their issuer",
-                severity=Severity.LOW,
-                confidence=Confidence.CONFIRMED,
-                category=Category.OPERATIONAL,
-                detector="secrets",
-                message="These credentials were found but their issuer was not asked, or did not answer.",
-                remediation="Check them by hand at the issuer, or rerun when the issuer is reachable.",
-                references=(references.HARDCODED_CREDENTIALS,),
-            ),
-        ]
 
 
 class HistorySecretScan:
@@ -373,10 +317,6 @@ class SecretLiveness:
         "SECRET.STRIPE.WEBHOOK_SECRET.001": "a webhook signing secret has no validity endpoint",
     }
 
-    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-            return None
-
     def __init__(
         self,
         opener: Callable[[urllib.request.Request], tuple[int, bytes]] | None = None,
@@ -386,7 +326,7 @@ class SecretLiveness:
         self.clock = clock
 
     def _open(self, request: urllib.request.Request) -> tuple[int, bytes]:
-        opener = urllib.request.build_opener(self._NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 return response.status, Download.read(response, 64 << 10)

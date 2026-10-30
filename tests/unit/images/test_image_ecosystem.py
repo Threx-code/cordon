@@ -22,7 +22,13 @@ from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.images.identity import ImageIdentity
 from cordon_scanner.images.oci import ImageLayers
-from cordon_scanner.images.packages import OsPackage, PackageDatabases, PackageGraph
+from cordon_scanner.images.packages import (
+    ApkDatabase,
+    DpkgDatabase,
+    OsPackage,
+    PackageGraph,
+    RpmDatabase,
+)
 from kits.imagekit import ImageKit
 
 
@@ -325,12 +331,12 @@ class TestThePackageGraph:
             b"Package: exim4\nStatus: install ok installed\nVersion: 4.97\nProvides: mail-transport-agent\n\n"
             b"Package: libc6\nStatus: install ok installed\nVersion: 2.36\n"
         )
-        automatic = PackageDatabases.apt_automatic(
+        automatic = DpkgDatabase.apt_automatic(
             b"Package: libcurl4\nArchitecture: amd64\nAuto-Installed: 1\n\nPackage: exim4\nArchitecture: all\nAuto-Installed: 1\n"
         )
         packages = [
             OsPackage(**{**p.__dict__, "requested": p.name not in automatic})
-            for p in PackageDatabases.dpkg(status)
+            for p in DpkgDatabase.dpkg(status)
         ]
         edges = PackageGraph.edges(packages)
         names = [p.name for p in packages]
@@ -346,7 +352,7 @@ class TestThePackageGraph:
             b"P:libssl3\nV:3.3\n\n"
             b"P:ssl_client\nV:1.36\ni:busybox=1.36 libssl3\n"
         )
-        world = PackageDatabases.apk_world(b"busybox\nlibc-utils>=1\n")
+        world = ApkDatabase.apk_world(b"busybox\nlibc-utils>=1\n")
         packages = [
             OsPackage(
                 **{
@@ -354,7 +360,7 @@ class TestThePackageGraph:
                     "requested": p.name in world or any(x in world for x in p.provides),
                 }
             )
-            for p in PackageDatabases.apk(installed)
+            for p in ApkDatabase.apk(installed)
         ]
         edges = PackageGraph.edges(packages)
         names = [p.name for p in packages]
@@ -363,15 +369,15 @@ class TestThePackageGraph:
         assert PackageGraph.direct(packages, edges) == [True, False, True, False, False]
 
     def test_rpm_rich_dependencies(self) -> None:
-        assert PackageDatabases.rpm_requirement("(python3-libs or python3.11-libs)") == (
+        assert RpmDatabase.rpm_requirement("(python3-libs or python3.11-libs)") == (
             "python3-libs|python3.11-libs",
         )
-        assert PackageDatabases.rpm_requirement("(a >= 1 with b)") == ("a", "b")
-        assert PackageDatabases.rpm_requirement("(selinux-policy if selinux-policy-targeted)") == (
+        assert RpmDatabase.rpm_requirement("(a >= 1 with b)") == ("a", "b")
+        assert RpmDatabase.rpm_requirement("(selinux-policy if selinux-policy-targeted)") == (
             "selinux-policy",
         )
-        assert PackageDatabases.rpm_requirement("((a or b) and c)") == ()
-        assert PackageDatabases.rpm_requirement("glibc") == ("glibc",)
+        assert RpmDatabase.rpm_requirement("((a or b) and c)") == ()
+        assert RpmDatabase.rpm_requirement("glibc") == ("glibc",)
 
     def test_without_requested_markers_the_roots_and_one_of_each_lone_cycle_are_direct(
         self,

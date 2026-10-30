@@ -36,14 +36,14 @@ import contextlib
 import enum
 import re
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.models import Finding
@@ -205,19 +205,21 @@ class ImportReachability:
         names: set[str] = set()
         for tree in trees:
             for node in ast.walk(tree):
-                if isinstance(node, ast.Name):
-                    names.add(node.id)
-                elif isinstance(node, ast.Attribute):
-                    names.add(node.attr)
-                elif (
-                    isinstance(node, ast.Constant)
-                    and isinstance(node.value, str)
-                    and node.value.isidentifier()
-                ):
-                    names.add(
-                        node.value
-                    )  # getattr(obj, "name"), __all__ entries, registries by string
+                read = ImportReachability.NAME_OF.get(type(node))
+                name = read(node) if read is not None else None
+                if name:
+                    names.add(name)
         return names
+
+    #: The name each kind of node mentions: a name, an attribute, or a string that is an
+    #: identifier (getattr(obj, "name"), __all__ entries, registries by string).
+    NAME_OF: ClassVar[dict[type[ast.AST], Callable[[Any], str | None]]] = {
+        ast.Name: lambda node: node.id,
+        ast.Attribute: lambda node: node.attr,
+        ast.Constant: lambda node: (
+            node.value if isinstance(node.value, str) and node.value.isidentifier() else None
+        ),
+    }
 
     @staticmethod
     def _function_reachable(

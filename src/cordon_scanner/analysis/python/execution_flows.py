@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import base64
 import posixpath
+import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.pyfacts import (
@@ -116,11 +117,16 @@ class ExecutionFlows(AnalyzerCore):
         resolved = self._resolve_callee(node)
         return resolved is not None and PRIMITIVES.get(resolved[0]) is Capability.EGRESS
 
+    @staticmethod
+    def _word_key(word: str) -> str:
+        """A command word as `_file_key` names a file: `"{out}"` is the variable `out`."""
+        text = word.strip().strip("\"'")
+        placeholder = re.fullmatch(r"\{(\w{1,80})\}", text)
+        return f"name:{placeholder.group(1)}" if placeholder else text
+
     def _file_key(self, node: ast.AST) -> str | None:
         """A file named the same way twice: the literal path, the variable holding it, or a path
         built the same way each time (`os.getenv("APPDATA") + "\\u.exe"`)."""
-        from cordon_scanner.analysis.python.pyast import PythonSource
-
         literal = PythonFacts.constant(node)
         if literal is None and isinstance(node, ast.Name):
             literal = self._strings.get(node.id) or f"name:{node.id}"
@@ -128,7 +134,7 @@ class ExecutionFlows(AnalyzerCore):
             sketch = self._sketch(node)
             # Only a sketch that pins something down: a literal part, or a named variable's.
             if sketch and sketch.strip("{?}"):
-                literal = PythonSource._word_key(sketch)
+                literal = ExecutionFlows._word_key(sketch)
         return literal or None
 
     def _downloaded_and_run(self, tree: ast.AST) -> None:
@@ -140,8 +146,6 @@ class ExecutionFlows(AnalyzerCore):
         that is what is checked: a spawn whose argument list names a file that was the target of a
         download, or that was opened for writing and written from a network response.
         """
-        from cordon_scanner.analysis.python.pyast import PythonSource
-
         fetched: set[str] = set()
         downloaded: set[str] = set()
         for node in PythonSyntax.of(tree, ast.Assign, ast.With, ast.AsyncWith):
@@ -163,7 +167,7 @@ class ExecutionFlows(AnalyzerCore):
             command = self._command(resolved[1]) or ""
             download = DOWNLOAD_TO.search(command)
             if download:
-                downloaded.add(PythonSource._word_key(download.group("target")))
+                downloaded.add(ExecutionFlows._word_key(download.group("target")))
                 # The download is the request: `curl.exe -L URL -o X` reaches the network
                 # whatever the shell patterns make of the binary's name.
                 self._record(Capability.EGRESS, node, f"{resolved[0]} downloads to a file")
@@ -578,15 +582,13 @@ class ExecutionFlows(AnalyzerCore):
 
     def _words_run(self, words: Sequence[str | None], files: set[str], depth: int) -> bool:
         """Whether a command, as words, runs one of these files."""
-        from cordon_scanner.analysis.python.pyast import PythonSource
-
         present = [w for w in words if w and w.strip("\"'")]
         if not present or depth > 2:
             return False
         # `./tool` is `tool` run from here: the download was written as `tool`.
         first = present[0].strip("\"'")
-        if PythonSource._word_key(first) in files or (
-            first.startswith("./") and PythonSource._word_key(first[2:]) in files
+        if ExecutionFlows._word_key(first) in files or (
+            first.startswith("./") and ExecutionFlows._word_key(first[2:]) in files
         ):
             return True
         program = posixpath.basename(present[0].strip("\"'")).lower()
@@ -600,8 +602,8 @@ class ExecutionFlows(AnalyzerCore):
             if script is None:
                 return False
             script = script.strip("\"'")
-            return PythonSource._word_key(script) in files or (
-                script.startswith("./") and PythonSource._word_key(script[2:]) in files
+            return ExecutionFlows._word_key(script) in files or (
+                script.startswith("./") and ExecutionFlows._word_key(script[2:]) in files
             )
         return False
 

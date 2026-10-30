@@ -18,7 +18,7 @@ from cordon_scanner.detect.agents.text_patterns import (
     SEND,
     ZERO_WIDTH_ONLY,
 )
-from cordon_scanner.intel.registries.installers import KNOWN_INSTALLERS
+from cordon_scanner.intel.registry import KNOWN_INSTALLERS
 
 _WORD_BYTE: Final = re.compile(rb"[A-Za-z0-9]")
 

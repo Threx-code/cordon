@@ -17,6 +17,7 @@ import urllib.request
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.registries import registry_client as base
 from cordon_scanner.intel.registries.registry_client import (
     PackageNotFound,
@@ -43,7 +44,7 @@ class RegistryHttp:
             headers={"User-Agent": base.USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"},
             method="GET",
         )
-        opener = urllib.request.build_opener(base._NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         body, encoding = b"", ""
         for attempt in range(base.RETRY_ATTEMPTS):
             try:
@@ -134,7 +135,7 @@ class RegistryHttp:
         # https is checked by the caller.
         headers = {"User-Agent": base.USER_AGENT, "Accept": accept}
         request = urllib.request.Request(url, headers=headers)  # noqa: S310
-        opener = urllib.request.build_opener(base._NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=base.TIMEOUT_SECONDS) as response:
                 return bytes(Download.read(response, base.MAX_RESPONSE_BYTES))

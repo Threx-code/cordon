@@ -30,6 +30,7 @@ import urllib.request
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -148,7 +149,7 @@ class PrivateRegistries:
                 "Authorization": authorization or PrivateRegistries._authorization(credential),
             },
         )
-        opener = urllib.request.build_opener(base._NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=base.TIMEOUT_SECONDS) as response:
                 body = bytes(Download.read(response, MAX_BYTES + 1))
@@ -342,7 +343,7 @@ class PrivateRegistries:
             headers={"User-Agent": base.USER_AGENT, "Authorization": direct},
         )
         try:
-            with urllib.request.build_opener(base._NoRedirect).open(
+            with urllib.request.build_opener(NoRedirects).open(
                 request, timeout=base.TIMEOUT_SECONDS
             ):
                 return direct

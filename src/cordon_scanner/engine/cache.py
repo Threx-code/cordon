@@ -36,11 +36,11 @@ import sysconfig
 import tempfile
 import threading
 import time
-from dataclasses import dataclass, fields, is_dataclass, replace
-from enum import Enum
+from dataclasses import dataclass, is_dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from cordon_scanner.engine.canonical import Canonical
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Finding
@@ -416,57 +416,8 @@ class ScanCache:
         if repository is not None and is_dataclass(repository):
             facts["repository"] = replace(cast("Any", repository), root="")
         digest = hashlib.sha256()
-        ScanCache._feed(digest, facts)
+        Canonical.feed(digest, facts)
         return digest.hexdigest()[:16]
-
-    @staticmethod
-    def _feed(digest: Any, value: Any) -> None:
-        """Feed `value` into `digest` canonically: sets sorted, dataclasses by field.
-
-        Iterative, not recursive: a context carries parsed manifests, and their nesting is the
-        scanned package's to choose. A value of a type this does not know is fed by its type and
-        `repr`, which can only make two equal contexts hash apart -- a cache miss, never a
-        wrong hit."""
-        stack: list[Any] = [value]
-        while stack:
-            item = stack.pop()
-            if item is None or isinstance(item, (bool, int, float, str, bytes)):
-                digest.update(f"{type(item).__name__}:{item!r};".encode())
-            elif isinstance(item, Enum):
-                digest.update(f"enum:{type(item).__name__}.{item.name};".encode())
-            elif isinstance(item, Path):
-                digest.update(f"path:{item.as_posix()};".encode())
-            elif isinstance(item, (frozenset, set)):
-                members = sorted(ScanCache._canonical(member) for member in item)
-                digest.update(f"set:{len(members)}:".encode())
-                for member in members:
-                    digest.update(member.encode("utf-8") + b"\0")
-            elif isinstance(item, (list, tuple)):
-                digest.update(f"seq:{len(item)}:".encode())
-                stack.extend(reversed(item))
-            elif isinstance(item, dict):
-                ordered = sorted(item.items(), key=lambda pair: ScanCache._canonical(pair[0]))
-                digest.update(f"map:{len(ordered)}:".encode())
-                for key, member in reversed(ordered):
-                    stack.append(member)
-                    stack.append(key)
-            elif is_dataclass(item) and not isinstance(item, type):
-                names = [f.name for f in fields(item)]
-                digest.update(f"obj:{type(item).__qualname__}:{len(names)}:".encode())
-                for name in reversed(names):
-                    stack.append(getattr(item, name))
-                    stack.append(name)
-            else:
-                digest.update(f"other:{type(item).__qualname__}:{item!r};".encode())
-
-    @staticmethod
-    def _canonical(value: Any) -> str:
-        """One set member or mapping key as a string to sort and hash by."""
-        if isinstance(value, (str, int, float, bool, bytes)) or value is None:
-            return f"{type(value).__name__}:{value!r}"
-        digest = hashlib.sha256()
-        ScanCache._feed(digest, value)
-        return digest.hexdigest()
 
     @staticmethod
     def _intel_state() -> str:

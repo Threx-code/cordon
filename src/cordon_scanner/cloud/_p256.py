@@ -24,7 +24,7 @@ import hashlib
 import hmac
 import secrets
 
-from cordon_scanner.intel.provenance._ecdsa import Curve, Ecdsa
+from cordon_scanner.foundation.signatures.ecdsa import Curve, Ecdsa
 
 
 class P256Signer:

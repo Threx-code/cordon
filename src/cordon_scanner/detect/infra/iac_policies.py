@@ -58,7 +58,7 @@ from cordon_scanner.detect.infra.data_protection_policies import (
     PUBLIC_TRUE,
     WEAK_TLS,
 )
-from cordon_scanner.detect.infra.iac import IacPolicy
+from cordon_scanner.detect.infra.iac_model import IacPolicy
 from cordon_scanner.detect.infra.plaintext_policies import PLAINTEXT
 from cordon_scanner.detect.infra.policy_terms import HIGH, PresenceGate
 from cordon_scanner.detect.infra.workload_policies import (
