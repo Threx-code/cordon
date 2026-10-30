@@ -52,7 +52,7 @@ result that was never checked.
 | `julia` | `Project.toml`, `JuliaProject.toml` | `Manifest.toml`, `JuliaManifest.toml`, `Manifest-v*.toml`, `Artifacts.toml` | yes | yes | yes | -- | 40 |
 | `maven` | `pom.xml`, `.mvn/wrapper/maven-wrapper.properties` | `dependency-tree.txt`, `.mvn/checksums/*.sha1`, `.mvn/checksums/*.sha256`, `.mvn/checksums/*.sha512` | yes | yes | yes | yes | 110 |
 | `nix` | `flake.nix`, `default.nix`, `shell.nix` | `flake.lock` | upstream | yes | -- | -- | 23 |
-| `npm` | `package.json`, `deno.json`, `deno.jsonc` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `deno.lock` | yes | yes | yes | yes | 17,356 |
+| `npm` | `package.json`, `deno.json`, `deno.jsonc` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `deno.lock` | yes | yes | yes | yes | 17,356 |
 | `nuget` | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config`, `Directory.Packages.props`, `Directory.Build.props`, `NuGet.Config`, `nuget.config`, `NuGet.config`, `obj/project.assets.json` | `packages.lock.json`, `project.assets.json` | yes | yes | yes | -- | 4,026 |
 | `opam` | `*.opam`, `opam`, `dune-project`, `dune-workspace`, `dune.lock/lock.dune` | `*.opam.locked`, `dune.lock/*.pkg` | yes | yes | yes | -- | 34 |
 | `pub` | `pubspec.yaml` | `pubspec.lock`, `.dart_tool/package_config.json` | yes | yes | yes | -- | 7,359 |

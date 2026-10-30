@@ -798,30 +798,15 @@ class Listed:
 
     #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
     OPEN: ClassVar[dict[str, str]] = {
+        "judge.calls:_HOST": "modelling team: a start after a dot inside a dotted run",
         "rule:CAP.SH.PERSIST.001": "data-and-measurement team: line-monotone starts in rules/anchored (after the benchmark start)",
-        "rule:CAP.SH.PERSIST.001:0": "data-and-measurement team: line-monotone starts in rules/anchored (after the benchmark start)",
-        "cloud.device:_extension_identity:1": "modelling team (regex sweep 2026-10-30)",
-        "cloud.fixer:pypi:2": "modelling team (regex sweep 2026-10-30)",
-        "intel.advisories.upstream.cocoapods:NpmPodspec.METHOD": "modelling team (regex sweep 2026-10-30)",
-        "intel.advisories.upstream.cocoapods:read:1": "modelling team (regex sweep 2026-10-30)",
-        "intel.advisories.upstream.homebrew:source:1": "modelling team (regex sweep 2026-10-30)",
-        "intel.advisories.upstream.vcpkg:commands:1": "modelling team (regex sweep 2026-10-30)",
-        "intel.advisories.upstream.vcpkg:manifest:1": "modelling team (regex sweep 2026-10-30)",
-        "intel.advisories.upstream.vcpkg:qt_before_port_data:2": "modelling team (regex sweep 2026-10-30)",
-        "intel.advisories.upstream_advisories:cocoapods_checkout:1": "modelling team (regex sweep 2026-10-30)",
-        "intel.malware.campaign:CampaignFingerprint.FILE": "modelling team (regex sweep 2026-10-30)",
-        "intel.registries.private_registries:_oci_authorization:1": "modelling team (regex sweep 2026-10-30)",
-        "intel.registries.registry_http:oci_bytes:1": "modelling team (regex sweep 2026-10-30)",
-        "intel.registries.registry_image:_authenticate:1": "modelling team (regex sweep 2026-10-30)",
-        "judge.calls:_SAFETY_CONFIG": "modelling team (regex sweep 2026-10-30)",
-        "judge.calls:_SAFETY_OFF": "modelling team (regex sweep 2026-10-30)",
-        "judge.calls:_SQLI": "modelling team (regex sweep 2026-10-30)",
-        "judge.calls:_XXE": "modelling team (regex sweep 2026-10-30)",
-        "judge.calls:_squatted:1": "modelling team (regex sweep 2026-10-30)",
-        "mcp.packages:InstallCommand._SEPARATORS": "modelling team (regex sweep 2026-10-30)",
         "decide.verdict_features:VerdictFeatures._FRONT_FIELD": (
             "modelling team, after the P8 fits: VerdictFeatures is hashed by FeatureSchema, so its fix moves the version"
         ),
+    }
+    #: Superlinear in their pattern, and fed only input a guard in their code caps: each with the guard.
+    BOUNDED: ClassVar[dict[str, str]] = {
+        "cloud.device:DeviceInventory.EXTENSION_FOLDER": "a folder name over 255 UTF-8 bytes is refused before it; 0.22 ms at 255",
     }
     #: Superlinear, and reading only text the scanner itself writes (its own help), never a scan's input:
     #: each with what it reads. A pattern that may see scanned input never belongs here.
@@ -839,6 +824,12 @@ class Listed:
     #: the runs are bounded short.
     LINEAR: ClassVar[frozenset[str]] = frozenset(
         {
+            "intel.advisories.upstream.vcpkg:VcpkgPorts.CONTROL_FIELD",
+            "intel.advisories.upstream_advisories:Upstreams.CHECKOUT",
+            "intel.malware.campaign:CampaignFingerprint._RUN",
+            "judge.calls:_BLANKS",
+            "mcp.packages:InstallCommand._SEPARATORS",
+            "rule:CAP.RB.FETCH_EXEC.001",
             "detect.agents.mcp_servers.declarations:_continue_servers:3",
             "ecosystems.packages.homebrew:_bottles_and_version:2",
             "rule:CAP.RB.FETCH_EXEC.001:0",

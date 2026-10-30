@@ -78,14 +78,22 @@ class TestPatterns:
     def test_every_listed_label_names_a_pattern(self) -> None:
         labels = set(Sources.by_label())
         listed = (
-            set(Listed.OPEN) | set(Listed.SPECIFICATIONS) | set(Listed.LINEAR) | set(Listed.TRUSTED)
+            set(Listed.OPEN)
+            | set(Listed.SPECIFICATIONS)
+            | set(Listed.LINEAR)
+            | set(Listed.TRUSTED)
+            | set(Listed.BOUNDED)
         )
         assert listed <= labels, sorted(listed - labels)
         assert len(labels) > 500
 
     def test_a_pattern_is_flagged_exactly_when_it_is_listed(self) -> None:
         listed = (
-            set(Listed.OPEN) | set(Listed.SPECIFICATIONS) | set(Listed.LINEAR) | set(Listed.TRUSTED)
+            set(Listed.OPEN)
+            | set(Listed.SPECIFICATIONS)
+            | set(Listed.LINEAR)
+            | set(Listed.TRUSTED)
+            | set(Listed.BOUNDED)
         )
         flagged = {
             found.label: why[0]
