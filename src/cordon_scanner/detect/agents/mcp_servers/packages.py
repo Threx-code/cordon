@@ -159,7 +159,7 @@ class McpPackageDetector(BaseDetector):
     def _examine(
         self, unit: FileUnit, ctx: ScanContext, server: str, ecosystem: str, spec: str
     ) -> list[Finding]:
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registry import RegistryArtifacts, RegistryError
 
         name, version = McpConfigs.split_spec(ecosystem, spec)
         local = self._local_copy(ctx, unit.content.path, ecosystem, name)
@@ -174,7 +174,7 @@ class McpPackageDetector(BaseDetector):
             purl = f"pkg:{ecosystem}/{name}"
         elif not ctx.offline:
             try:
-                archive = RegistryClient.package_archive(ecosystem, name, version)
+                archive = RegistryArtifacts.package_archive(ecosystem, name, version)
             except RegistryError as exc:
                 return [
                     self._unresolved(

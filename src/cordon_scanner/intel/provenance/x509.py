@@ -28,8 +28,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from cordon_scanner.intel.provenance._der import Der, DerError
-from cordon_scanner.intel.provenance._ecdsa import Ecdsa
+from cordon_scanner.foundation.signatures.der import Der, DerError
+from cordon_scanner.foundation.signatures.ecdsa import Ecdsa
 from cordon_scanner.intel.provenance._ed25519 import Ed25519
 from cordon_scanner.intel.provenance._rsa import Rsa
 

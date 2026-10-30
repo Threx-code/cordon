@@ -703,6 +703,15 @@ class RegistryClient:
         return None
 
     @staticmethod
+    def version_manifest(name: str, version: str) -> dict[str, Any]:
+        """npm's manifest for one published version, as the registry serves it: what a tarball's own
+        package.json is compared with. Raises RegistryError when it cannot be had."""
+        quoted = urllib.parse.quote(name, safe="@/")
+        return RegistryClient._fetch(
+            f"{REGISTRY_HOSTS['npm']}/{quoted}/{urllib.parse.quote(version, safe='')}"
+        )
+
+    @staticmethod
     def package_archive(ecosystem: str, name: str, version: str | None) -> PackageArchive:
         """Download the archive a registry publishes for a version (`None` means the latest).
 

@@ -39,8 +39,8 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from cordon_scanner.foundation.paths import PackagePaths
-from cordon_scanner.intel.provenance._der import DerError
-from cordon_scanner.intel.provenance._ecdsa import Ecdsa
+from cordon_scanner.foundation.signatures.der import DerError
+from cordon_scanner.foundation.signatures.ecdsa import Ecdsa
 from cordon_scanner.intel.provenance._rsa import Rsa
 from cordon_scanner.intel.provenance.transparency import (
     Checkpoint,
@@ -432,7 +432,7 @@ class BundleVerifier:
 
     @staticmethod
     def _ecdsa_rs(signature: bytes) -> tuple[int, int]:
-        from cordon_scanner.intel.provenance._der import Der
+        from cordon_scanner.foundation.signatures.der import Der
 
         parts = Der.parse(signature, Der.SEQUENCE).children()
         if len(parts) != 2:

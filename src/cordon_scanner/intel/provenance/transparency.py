@@ -21,7 +21,7 @@ import hashlib
 import json
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.intel.provenance._der import Der, DerError
+from cordon_scanner.foundation.signatures.der import Der, DerError
 
 if TYPE_CHECKING:
     from cordon_scanner.intel.provenance.x509 import Certificate, PublicKey

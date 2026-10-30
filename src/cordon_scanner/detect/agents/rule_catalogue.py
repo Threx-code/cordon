@@ -38,13 +38,13 @@ class AgentRules:
     @staticmethod
     def agent_actions() -> dict[str, tuple[str, tuple[int, int, int] | None]]:
         """Action -> (agent name, first fixed version), from the intel file over the built-in table."""
-        from cordon_scanner.intel.store import datafile
+        from cordon_scanner.intel.registry import IntelDataFile
 
         known: dict[str, tuple[str, tuple[int, int, int] | None]] = {
             action: (agent, FIXED_IN.get(action)) for action, agent in AGENT_ACTIONS.items()
         }
         for action, entry in (
-            datafile.IntelDataFile.newest("agent-actions.json").get("actions") or {}
+            IntelDataFile.newest("agent-actions.json").get("actions") or {}
         ).items():
             if isinstance(entry, dict):
                 fixed = ExtensionNames._semver(str(entry.get("fixed") or ""))

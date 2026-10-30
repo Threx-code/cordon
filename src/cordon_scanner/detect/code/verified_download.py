@@ -410,7 +410,7 @@ class VerifiedDownload:
         ):
             return False
         from cordon_scanner.analysis.javascript.js_flow import JsFlow
-        from cordon_scanner.intel.registries.installers import OfficialInstallers
+        from cordon_scanner.intel.registry import OfficialInstallers
 
         requests = JsFlow.requests(text)
         official = [
@@ -428,7 +428,7 @@ class VerifiedDownload:
         """Every fetch-and-run in the file names a listed official installer, and nothing is
         decoded: storybook's script runs `curl -LsSf https://astral.sh/uv/install.sh | sh`, the
         documented way to install uv."""
-        from cordon_scanner.intel.registries.installers import OfficialInstallers
+        from cordon_scanner.intel.registry import OfficialInstallers
 
         if any(h.capability is Capability.DECODE for h in hits):
             return False
