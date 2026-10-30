@@ -9,7 +9,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
 )
-from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
+from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.scopes import LockScopes
 
@@ -35,6 +35,44 @@ class PnpmLock:
     ```
     """
 
+    @staticmethod
+    def split_key(key: str) -> tuple[str, str] | None:
+        """A pnpm package key as `(name, version)`, across the formats in use.
+
+        pnpm has written the key three ways. Lockfile 5 separates with a slash
+        and leads with one (`/lodash/4.17.21`, `/@babel/core/7.21.0`); 6 and 9
+        separate with `@` (`/@babel/core@7.21.0`, `lodash@4.17.21`). Splitting on
+        the last `@` alone reads every version-5 key as nameless and dropped the
+        whole file, silently, because an empty graph and a project with no
+        dependencies looked the same.
+
+        A peer-suffixed key (`foo@1.0.0(bar@2.0.0)`) keeps only its own version:
+        the suffix names the peer the entry was resolved against, not part of
+        what this entry is.
+        """
+        text = key.strip().strip("'\"")
+        if not text:
+            return None
+
+        head = text.split("(", 1)[0]
+        scoped = head.startswith(("/@", "@"))
+        body = head[1:] if head.startswith("/") else head
+
+        at = body.rfind("@")
+        if at > 0:
+            name, version = body[:at], body[at + 1 :]
+            if name and version and "/" not in version:
+                return (name, version)
+
+        # Lockfile 5: the version is the last slash-separated segment, and a
+        # scoped name keeps the slash that belongs to its scope.
+        cut = body.rfind("/")
+        if cut > 0:
+            name, version = body[:cut], body[cut + 1 :]
+            if name and version and (not scoped or "/" in name):
+                return (name, version)
+        return None
+
     SECTIONS: ClassVar[dict[str, Scope]] = {
         "dependencies": Scope.RUNTIME,
         "optionalDependencies": Scope.OPTIONAL,
@@ -53,7 +91,7 @@ class PnpmLock:
                 name = body[:at]
                 version = str(meta.get("version") or remainder)
                 return str(meta.get("name") or name), version
-        split = NpmEcosystem._pnpm_split_key(text)
+        split = PnpmLock.split_key(text)
         if split is not None:
             name, version = split
             return str(meta.get("name") or name), str(meta.get("version") or version)
@@ -324,7 +362,7 @@ class PnpmLock:
                     direct=key in direct,
                     local=str(resolved or "").startswith(("link:", "file:"))
                     or resolution.get("type") == "directory",
-                    platform=NpmEcosystem._platform(meta),
+                    platform=NpmConditions.platform(meta),
                     alias=aliases.get(key),
                 )
             )

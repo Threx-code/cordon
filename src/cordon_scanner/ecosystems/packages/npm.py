@@ -24,6 +24,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -389,7 +390,7 @@ class NpmEcosystem(BaseEcosystem):
                     local=NpmEcosystem._is_local_package(location, meta, resolved),
                     bundled=NpmEcosystem._is_bundled(location, meta, resolved, hashed),
                     license=NpmEcosystem._str_or_none(meta.get("license")),
-                    platform=NpmEcosystem._platform(meta),
+                    platform=NpmConditions.platform(meta),
                     alias=directory if "node_modules/" in location and directory != name else None,
                 )
             )
@@ -433,23 +434,6 @@ class NpmEcosystem(BaseEcosystem):
         if meta.get("peer") is True:
             return Scope.PEER
         return Scope.RUNTIME
-
-    @staticmethod
-    def _platform(meta: dict[str, Any]) -> tuple[str, ...]:
-        """`os`, `cpu` and `libc` as conditions: `os: darwin`, `cpu: !arm`."""
-        out: list[str] = []
-        for field in ("os", "cpu", "libc"):
-            values = meta.get(field)
-            if isinstance(values, str):
-                values = [values]
-            if isinstance(values, list):
-                listed = [str(v) for v in values if isinstance(v, (str, int))]
-                if listed:
-                    out.append(f"{field}: {', '.join(listed)}")
-        engines = meta.get("engines")
-        if isinstance(engines, dict) and isinstance(engines.get("node"), str):
-            out.append(f"node: {engines['node']}")
-        return tuple(out)
 
     @staticmethod
     def _is_local_package(location: str, meta: dict[str, Any], resolved: str | None) -> bool:
@@ -551,44 +535,6 @@ class NpmEcosystem(BaseEcosystem):
             if isinstance(nested, dict):
                 out.extend(self._walk_v1(nested, depth + 1))
         return out
-
-    @staticmethod
-    def _pnpm_split_key(key: str) -> tuple[str, str] | None:
-        """A pnpm package key as `(name, version)`, across the formats in use.
-
-        pnpm has written the key three ways. Lockfile 5 separates with a slash
-        and leads with one (`/lodash/4.17.21`, `/@babel/core/7.21.0`); 6 and 9
-        separate with `@` (`/@babel/core@7.21.0`, `lodash@4.17.21`). Splitting on
-        the last `@` alone reads every version-5 key as nameless and dropped the
-        whole file, silently, because an empty graph and a project with no
-        dependencies looked the same.
-
-        A peer-suffixed key (`foo@1.0.0(bar@2.0.0)`) keeps only its own version:
-        the suffix names the peer the entry was resolved against, not part of
-        what this entry is.
-        """
-        text = key.strip().strip("'\"")
-        if not text:
-            return None
-
-        head = text.split("(", 1)[0]
-        scoped = head.startswith(("/@", "@"))
-        body = head[1:] if head.startswith("/") else head
-
-        at = body.rfind("@")
-        if at > 0:
-            name, version = body[:at], body[at + 1 :]
-            if name and version and "/" not in version:
-                return (name, version)
-
-        # Lockfile 5: the version is the last slash-separated segment, and a
-        # scoped name keeps the slash that belongs to its scope.
-        cut = body.rfind("/")
-        if cut > 0:
-            name, version = body[:cut], body[cut + 1 :]
-            if name and version and (not scoped or "/" in name):
-                return (name, version)
-        return None
 
     # -- the projects mcp writes for a package check (EcosystemProjects) ------------
 

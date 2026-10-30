@@ -10,7 +10,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
 )
-from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
+from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -187,7 +187,7 @@ class BunLock:
                     dependencies=tuple(sorted(requires)),
                     direct=top and name in declared,
                     local=local,
-                    platform=NpmEcosystem._platform(metadata),
+                    platform=NpmConditions.platform(metadata),
                 )
             )
         return entries
