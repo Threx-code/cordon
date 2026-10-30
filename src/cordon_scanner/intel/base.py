@@ -6,11 +6,13 @@ import enum
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Set as AbstractSet
     from pathlib import Path
     from typing import Any
 
     from cordon_scanner.detect.base import FileUnit
+    from cordon_scanner.foundation.results import Dependency
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
@@ -107,6 +109,33 @@ class LikelihoodFacts(Protocol):
     """One EPSS score (`EpssScore`)."""
 
     def describe(self) -> str: ...
+
+
+class UpstreamLookup(Protocol):
+    """What the advisory detector asks for packages no advisory source covers (the class
+    `UpstreamAdvisories`): OSV through their upstreams when online, then NVD, merged."""
+
+    def for_graph(
+        self, dependencies: Iterable[Dependency], covers: Callable[[str], bool], *, offline: bool
+    ) -> UpstreamFindings | None: ...
+
+
+class UpstreamFindings(Protocol):
+    """What the detector reads of that answer (`UpstreamResult`): advisories by purl, the purls
+    checked, and why the others were not."""
+
+    @property
+    def advisories(self) -> Mapping[str, Sequence[AdvisoryRecord]]: ...
+    @property
+    def checked(self) -> AbstractSet[str]: ...
+    @property
+    def unchecked(self) -> Mapping[str, str]: ...
+
+
+class OsvRepositories(Protocol):
+    """What the detectors use of the class `OsvImport`: a repository address in its one spelling."""
+
+    def repository_key(self, url: str) -> str | None: ...
 
 
 class AdvisoryFileChecks(Protocol):

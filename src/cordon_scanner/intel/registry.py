@@ -26,6 +26,12 @@ ROLES: dict[str, tuple[str, str]] = {
     "LICENSE_UNKNOWN": ("cordon_scanner.intel.store.licenses", "LicenseCategory.UNKNOWN"),
     "LicenseClassifier": ("cordon_scanner.intel.store.licenses", "LicenseClassifier"),
     "MoreRegistries": ("cordon_scanner.intel.registries.more_registries", "MoreRegistries"),
+    "OsvImport": ("cordon_scanner.intel.advisories.osv_import", "OsvImport"),
+    "UPSTREAM_ECOSYSTEMS": ("cordon_scanner.intel.advisories.upstream_advisories", "SUPPORTED"),
+    "UpstreamAdvisories": (
+        "cordon_scanner.intel.advisories.upstream_advisories",
+        "UpstreamAdvisories",
+    ),
     "BuiltinPackageNames": ("cordon_scanner.intel.registries.names", "BuiltinPackageNames"),
     "RegistryError": ("cordon_scanner.intel.registries.registry_client", "RegistryError"),
     "RegistryRecord": ("cordon_scanner.intel.registries.registry_record", "RegistryRecord"),
@@ -43,7 +49,9 @@ if TYPE_CHECKING:
 
     from cordon_scanner.intel.advisories import advisories as _intel_advisories_advisories
     from cordon_scanner.intel.advisories import exploited as _intel_advisories_exploited
+    from cordon_scanner.intel.advisories import osv_import as _intel_advisories_osv_import
     from cordon_scanner.intel.advisories import ranges as _intel_advisories_ranges
+    from cordon_scanner.intel.advisories import upstream_advisories as _intel_advisories_upstream
     from cordon_scanner.intel.advisories import versions as _intel_advisories_versions
     from cordon_scanner.intel.base import (
         AdvisoryDatabases,
@@ -53,12 +61,14 @@ if TYPE_CHECKING:
         ExploitLikelihoods,
         FeedStatus,
         LicenseClassification,
+        OsvRepositories,
         PackageNames,
         RangeMatching,
         RegistryRecords,
         RegistryVersions,
         ReleaseHistories,
         SignatureCheck,
+        UpstreamLookup,
         VersionOrdering,
     )
     from cordon_scanner.intel.malware import feed as _intel_malware_feed
@@ -86,6 +96,9 @@ if TYPE_CHECKING:
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
     LicenseClassifier: LicenseClassification = _intel_store_licenses.LicenseClassifier
     MoreRegistries: RegistryVersions = _intel_registries_more_registries.MoreRegistries
+    OsvImport: OsvRepositories = _intel_advisories_osv_import.OsvImport
+    UPSTREAM_ECOSYSTEMS: frozenset[str] = _intel_advisories_upstream.SUPPORTED
+    UpstreamAdvisories: UpstreamLookup = _intel_advisories_upstream.UpstreamAdvisories
     BuiltinPackageNames: PackageNames = _intel_registries_names.BuiltinPackageNames
     RegistryError: type[Exception] = _intel_registries_registry_client.RegistryError
     RegistryRecord: RegistryRecords = _intel_registries_registry_record.RegistryRecord
@@ -113,6 +126,7 @@ __all__ = [
     "KEV_PAGE",
     "LICENSE_UNKNOWN",
     "ROLES",
+    "UPSTREAM_ECOSYSTEMS",
     "YOUNG_DEPENDENCY_DAYS",
     "AdvisoryBundle",
     "AdvisoryDatabase",
@@ -124,9 +138,11 @@ __all__ = [
     "FeedClient",
     "LicenseClassifier",
     "MoreRegistries",
+    "OsvImport",
     "RegistryError",
     "RegistryRecord",
     "ReleaseHistory",
+    "UpstreamAdvisories",
     "VersionRanges",
     "Versions",
 ]

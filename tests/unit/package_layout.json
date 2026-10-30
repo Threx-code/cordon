@@ -551,6 +551,7 @@
  "tests": {
   "test_accept_no_feed.py": "foundation/config",
   "test_adversarial_package.py": "cloud",
+  "test_upstream_port.py": "intel/advisories",
   "test_exploited_port.py": "intel/advisories",
   "test_advisory_port.py": "intel/advisories",
   "test_advisory_coverage.py": "intel/advisories",
