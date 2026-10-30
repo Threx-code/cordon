@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import io
 import json
+import random
+import re
 import tarfile
+import time
 from typing import ClassVar
 
 import pytest
@@ -21,6 +24,7 @@ from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.inference import Inference
+from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, Upstreams
 from cordon_scanner.intel.registries.package_registries import PackageRegistries
 from support import ROOT as REPO
@@ -1811,3 +1815,87 @@ class TestCondaFonts:
         with tarfile.open(fileobj=io.BytesIO(self.info(paths)), mode="r|") as archive:
             CondaPackage._from_tar(archive, seen)
         assert bool(seen.get("fonts_only")) is fonts_only
+
+
+class TestVcpkgLinear:
+    """vcpkg's port readers answer as before, in linear time (2026-10-30)."""
+
+    OLD_GITHUB = re.compile(r"set\(QT_FROM_GITHUB\s+([^)]*)\)")
+    NEW_GITHUB = re.compile(r"set\(QT_FROM_GITHUB\s++([^)]*)\)")
+    PIECES = (
+        "set",
+        "(",
+        ")",
+        " ",
+        "\t",
+        "\n",
+        "a",
+        "_",
+        "1",
+        "#",
+        '"',
+        "\\",
+        "x(",
+        "QT_REF",
+        "set(QT_FROM_GITHUB",
+    )
+
+    @staticmethod
+    def old_commands(text: str) -> list[tuple[str, str]]:
+        """`(name, arguments)` of each CMake command, in order: a name, `(`, and the text to the
+        matching `)`, quotes and nested parentheses respected, comments outside quotes skipped."""
+        out: list[tuple[str, str]] = []
+        index, length = 0, len(text)
+        name = re.compile(r"[A-Za-z_][A-Za-z0-9_]*[ \t]*\(")
+        while index < length:
+            character = text[index]
+            if character == "#":
+                newline = text.find("\n", index)
+                index = length if newline < 0 else newline
+                continue
+            if character == '"':
+                index += 1
+                while index < length and text[index] != '"':
+                    index += 2 if text[index] == "\\" else 1
+                index += 1
+                continue
+            found = name.match(text, index)
+            if not found or (index and (text[index - 1].isalnum() or text[index - 1] == "_")):
+                index += 1
+                continue
+            start, depth, index = found.end(), 1, found.end()
+            while index < length and depth:
+                if text[index] == '"':
+                    index += 1
+                    while index < length and text[index] != '"':
+                        index += 2 if text[index] == "\\" else 1
+                elif text[index] == "#":
+                    newline = text.find("\n", index)
+                    index = length - 1 if newline < 0 else newline
+                elif text[index] == "(":
+                    depth += 1
+                elif text[index] == ")":
+                    depth -= 1
+                index += 1
+            command = found.group(0).rstrip("( \t").lower()
+            out.append((command, text[start : index - 1]))
+        return out
+
+    def test_the_qt_github_list_is_read_as_before(self) -> None:
+        rng = random.Random("vcpkg-github|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        for _ in range(20_000):
+            text = "".join(rng.choice(self.PIECES) for _ in range(rng.randint(0, 12)))
+            a, b = self.OLD_GITHUB.search(text), self.NEW_GITHUB.search(text)
+            assert (a and (a.span(), a.groups())) == (b and (b.span(), b.groups())), text
+
+    def test_commands_are_read_as_before(self) -> None:
+        rng = random.Random("vcpkg-commands|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        for _ in range(20_000):
+            text = "".join(rng.choice(self.PIECES) for _ in range(rng.randint(0, 12)))
+            assert VcpkgPorts.commands(text) == self.old_commands(text), text
+
+    def test_long_runs_are_linear(self) -> None:
+        start = time.perf_counter()
+        VcpkgPorts.commands("a" * 2_000_000)
+        self.NEW_GITHUB.search("set(QT_FROM_GITHUB" + " " * 2_000_000)
+        assert time.perf_counter() - start < 3

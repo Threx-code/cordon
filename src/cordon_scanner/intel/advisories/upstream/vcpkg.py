@@ -282,7 +282,9 @@ class VcpkgPorts:
             return Unnamed(f"qtbase's port details at this baseline name no Qt {version}")
         field = re.escape(port)
         repositories = [f"https://code.qt.io/qt/{port}.git", f"https://github.com/qt/{port}"]
-        github = re.search(r"set\(QT_FROM_GITHUB\s+([^)]*)\)", details)
+        # \s++ possessive: the blanks and the argument run do not trade characters on an unclosed call,
+        # the same answer as `\s+` (whose greedy first try is the only one that can succeed).
+        github = re.search(r"set\(QT_FROM_GITHUB\s++([^)]*)\)", details)
         if github and port in github.group(1).split():
             return RepositoryArchive.upstream(
                 repositories[1], f"v{version}", f"{how} ({repositories[1]})"
@@ -363,8 +365,13 @@ class VcpkgPorts:
                     index += 2 if text[index] == "\\" else 1
                 index += 1
                 continue
+            # Tried only where a name can start: inside a long identifier every position was matched
+            # first and rejected after, a quadratic scan.
+            if index and (text[index - 1].isalnum() or text[index - 1] == "_"):
+                index += 1
+                continue
             found = name.match(text, index)
-            if not found or (index and (text[index - 1].isalnum() or text[index - 1] == "_")):
+            if not found:
                 index += 1
                 continue
             start, depth, index = found.end(), 1, found.end()
