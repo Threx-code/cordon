@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,479 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,481 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -495,7 +495,7 @@ rule's own samples.
 
 ## Dependencies
 
-31 rules.
+33 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -511,11 +511,13 @@ rule's own samples.
 | `POLICY.DEPENDENCY.MUTABLE_REF.001` | medium | Git dependency on a reference that can move |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | Dependency pins npm's security placeholder |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | Dependency declared from a non-registry source |
+| `POLICY.DEPENDENCY.SOURCE.BUNDLED.001` | info | A manifest the package bundles but does not install declares a non-registry source |
 | `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | Dependency has had no release in five years |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | Internal package name resolved from a public registry |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | Dependency pins a version its publisher deprecated for a security reason |
 | `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | A published package installs a dependency from another project's commit |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | A dependency's name is a documented AI hallucination |
+| `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | A dependency the package bundles but does not install is a documented AI hallucination |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | Dependency version is held for review |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
 | `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | Dependency names a removed malicious package |

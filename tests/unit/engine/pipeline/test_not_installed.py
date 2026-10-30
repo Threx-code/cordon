@@ -23,9 +23,14 @@ from cordon_scanner.detect.supply.advisories.findings import (
 )
 from cordon_scanner.detect.supply.dependency import DependencyDetector
 from cordon_scanner.detect.supply.dependency_rules import (
+    POLICY_SOURCE_BUNDLED_RULE,
+    POLICY_SOURCE_RULE,
     SOURCE_BUNDLED_RULE,
     TYPOSQUAT_BUNDLED_RULE,
 )
+from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
+from cordon_scanner.detect.supply.slopsquat import BUNDLED_RULE as HALLUCINATED_BUNDLED_RULE
+from cordon_scanner.detect.supply.slopsquat import SlopsquatDetector
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
@@ -183,10 +188,11 @@ class TestBundledDependencies:
 
 class TestNotInstalledSources:
     """A not-installed record's own risks stay visible at info: a source outside the registry, a
-    lookalike name, and an ecosystem no bundled database covers."""
+    lookalike or hallucinated name, a nested manifest's non-registry source, and an ecosystem no
+    bundled database covers."""
 
     @staticmethod
-    def scan(where: Path, nested_lock: str):
+    def scan(where: Path, nested_lock: str, **more: str):
         manifest = {"name": "x", "version": "1.0.0"}
         path = Tarball.write(
             where,
@@ -194,12 +200,17 @@ class TestNotInstalledSources:
                 "package.json": json.dumps(manifest),
                 "index.js": "1;\n",
                 "ui/package-lock.json": nested_lock,
+                **more,
             },
         )
         config = Config.default().with_overrides(use_cache=False, severity_threshold=Severity.INFO)
-        return Scanner(
-            config, detectors=(AdvisoryDetector(AdvisoryDatabase(())), DependencyDetector())
-        ).scan(path)
+        detectors = (
+            AdvisoryDetector(AdvisoryDatabase(())),
+            DependencyDetector(),
+            SlopsquatDetector(),
+            ManifestDetector(),
+        )
+        return Scanner(config, detectors=detectors).scan(path)
 
     def test_a_source_outside_the_registry_is_its_own_info_rule(self, tmp_path: Path) -> None:
         lock = {
@@ -222,6 +233,39 @@ class TestNotInstalledSources:
         result = TestNotInstalledSources.scan(tmp_path, Tarball.lock(lodahs="1.0.0"))
         rules = {(f.rule_id, f.severity) for f in result.findings if "TYPOSQUAT" in f.rule_id}
         assert rules == {(TYPOSQUAT_BUNDLED_RULE, Severity.INFO)}
+
+    def test_a_hallucinated_name_is_its_own_info_rule(self, tmp_path: Path) -> None:
+        result = TestNotInstalledSources.scan(
+            tmp_path, Tarball.lock(), **{"tools/requirements.txt": "Huggingface_CLI==0.1.1\n"}
+        )
+        rules = {(f.rule_id, f.severity) for f in result.findings if "HALLUCINATED" in f.rule_id}
+        assert rules == {(HALLUCINATED_BUNDLED_RULE, Severity.INFO)}
+
+    def test_a_nested_manifests_git_source_is_the_info_policy_rule(self, tmp_path: Path) -> None:
+        nested = {
+            "name": "ui",
+            "version": "1.0.0",
+            "dependencies": {"left": "github:o/left#0123456789abcdef0123456789abcdef01234567"},
+        }
+        result = TestNotInstalledSources.scan(
+            tmp_path, Tarball.lock(left="1.0.0"), **{"ui/package.json": json.dumps(nested)}
+        )
+        rules = {
+            (f.rule_id, f.severity) for f in result.findings if "POLICY.DEPENDENCY" in f.rule_id
+        }
+        assert rules == {(POLICY_SOURCE_BUNDLED_RULE, Severity.INFO)}
+
+    def test_the_root_manifests_git_source_stays_the_policy_rule(self, tmp_path: Path) -> None:
+        root = {
+            "name": "x",
+            "version": "1.0.0",
+            "dependencies": {"left": "github:o/left#0123456789abcdef0123456789abcdef01234567"},
+        }
+        path = Tarball.write(tmp_path, {"package.json": json.dumps(root), "index.js": "1;\n"})
+        config = Config.default().with_overrides(use_cache=False, severity_threshold=Severity.INFO)
+        result = Scanner(config, detectors=(DependencyDetector(), ManifestDetector())).scan(path)
+        rules = {f.rule_id for f in result.findings if "POLICY.DEPENDENCY" in f.rule_id}
+        assert rules == {POLICY_SOURCE_RULE}
 
     def test_the_same_lookalike_installed_is_the_install_set_rule(self, tmp_path: Path) -> None:
         path = Tarball.write(

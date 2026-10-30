@@ -388,6 +388,7 @@ class ArchiveStages:
         # A published package's inventory is its root manifest and lockfile (`DependencyScope`).
         published = package if image is None else ""
         dependencies = self.engine.dependencies.build(units, acc, published=published)
+        self._hold_not_installed_manifests(acc, dependencies, ctx)
         if image is not None:
             Images.report_image_contents(image, acc)
         target_kind = "image" if image is not None else "package" if package else "archive"
@@ -441,15 +442,31 @@ class ArchiveStages:
                 )
         return dependencies, target_kind, ctx
 
-    def not_installed(self, acc: Accumulator, ctx: ScanContext) -> None:
-        """What only a file outside the install set records (`acc.not_installed`), from the two
-        detectors whose finding is about the record itself -- a known advisory (`advisory`), a
-        source outside the registry (`dependency`) -- added once the verdict is reached: at their
-        own info and high rules, they never feed the verdict, are never graded by it or by the
-        package's ceilings, and never gate."""
+    def _hold_not_installed_manifests(
+        self, acc: Accumulator, dependencies: tuple[Dependency, ...], ctx: ScanContext
+    ) -> None:
+        """A not-installed manifest's own findings about its records (`not_installed_manifests`),
+        out of the verdict and kept at their info twins for after it."""
         if not acc.not_installed:
             return
-        for name in ("advisory", "dependency"):
+        detector = next((d for d in self.detectors if d.id == "dependency"), None)
+        split = getattr(detector, "not_installed_manifests", None)
+        if callable(split):
+            acc.findings[:], held = split(acc.findings, dependencies, acc.not_installed, ctx)
+            acc.not_installed_findings.extend(held)
+
+    def not_installed(self, acc: Accumulator, ctx: ScanContext) -> None:
+        """What only a file outside the install set records (`acc.not_installed`), from the
+        detectors whose finding is about the record itself -- a known advisory (`advisory`), a
+        source outside the registry or a lookalike name (`dependency`), a hallucinated name
+        (`slopsquat`) -- and a not-installed manifest's own (`acc.not_installed_findings`), added
+        once the verdict is reached: at their
+        own info and high rules, they never feed the verdict, are never graded by it or by the
+        package's ceilings, and never gate."""
+        acc.add(acc.not_installed_findings)
+        if not acc.not_installed:
+            return
+        for name in ("advisory", "dependency", "slopsquat"):
             detector = next((d for d in self.detectors if d.id == name), None)
             # Switched on by the configuration, whatever the install set holds: the detectors'
             # own `applicable` asks about installed dependencies, which a package may have none of.

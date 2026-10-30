@@ -142,6 +142,7 @@ rather than a document.
 | `POLICY.DEPENDENCY.MUTABLE_REF.001` | medium | `manifest` | policy |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | `advisory` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
+| `POLICY.DEPENDENCY.SOURCE.BUNDLED.001` | info | `dependency` | policy |
 | `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | `registry` | policy |
 | `POLICY.LICENSE.COPYLEFT.001` | medium | `license` | policy |
 | `POLICY.LICENSE.DENIED.001` | high | `package-policy` | policy |
@@ -156,6 +157,7 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | `registry` | policy |
 | `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
+| `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | `advisory` | policy |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | `advisory` | policy |

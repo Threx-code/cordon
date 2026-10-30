@@ -56,6 +56,10 @@ class Accumulator:
     """Dependency records only a file outside the inventory's scope declares (`DependencyScope`):
     reported with `installed=False`, never read by an install-set check or the verdict."""
 
+    not_installed_findings: list[Finding] = field(default_factory=list)
+    """Findings a member detector made about a file outside the inventory's scope, held out of the
+    verdict at their info twins (`DependencyDetector.not_installed_manifests`) and added after it."""
+
     def append(self, finding: Finding) -> bool:
         """Retain one finding if the cap allows it.
 
