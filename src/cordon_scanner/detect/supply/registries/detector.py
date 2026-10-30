@@ -644,7 +644,7 @@ class RegistryDetector(BaseDetector):
         same ecosystem, and never when the repository is the package's own name, a prefix of it, or
         its npm scope: `@babel/plugin-x` pointing at `babel/babel` is a monorepo, not a squat.
         """
-        from cordon_scanner.intel.registries.popular import PackageIntel
+        from cordon_scanner.intel.registry import BuiltinPackageNames
 
         identity = RegistryEvidence.repository_identity(observed.repository)
         first = observed.first_published
@@ -657,7 +657,7 @@ class RegistryDetector(BaseDetector):
         scope = scope.lstrip("@")
         if repo in (base, scope) or owner == scope or base.startswith(repo):
             return ""
-        if repo not in PackageIntel.POPULAR_PACKAGES.get(dependency.ecosystem, frozenset()):
+        if repo not in BuiltinPackageNames.popular(dependency.ecosystem):
             return ""
         return f"{forge}/{owner}/{repo}"
 
@@ -746,18 +746,18 @@ class RegistryDetector(BaseDetector):
     def _unvetted(cls, dependency: Dependency, observed: object) -> str | None:
         """The shape a slopsquatted package has: new, no source repository, and either barely
         downloaded or named by adding a generic affix to an established package."""
-        from cordon_scanner.intel.registries.real import RealPackages
         from cordon_scanner.intel.registries.registry_client import (
             NEW_PACKAGE_DAYS,
             PackageFacts,
             RegistryClient,
         )
+        from cordon_scanner.intel.registry import BuiltinPackageNames
 
         if not isinstance(observed, PackageFacts) or observed.repository:
             return None
         if not RegistryClient._younger_than(observed.first_published, NEW_PACKAGE_DAYS):
             return None
-        established = RealPackages.real_packages(dependency.ecosystem)
+        established = BuiltinPackageNames.established(dependency.ecosystem)
         name = dependency.name.lower()
         if name in established:
             return None

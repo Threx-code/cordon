@@ -600,14 +600,14 @@ class McpCode:
         """(line, name, popular) for a package a script installs at run time whose name is a slip
         of a popular one: installing it is how a typosquat's code gets on the machine."""
         from cordon_scanner.detect.supply.dependency import DependencyDetector
-        from cordon_scanner.intel.registries.popular import PackageIntel
+        from cordon_scanner.intel.registry import BuiltinPackageNames
 
         out: list[tuple[int, str, str]] = []
         for match in cls._INSTALL.finditer(text):
             chunk = match.group(1) or match.group(2) or ""
             for name in re.findall(r"[\"']([A-Za-z][\w.-]{1,60})[\"']", chunk):
                 low = name.lower()
-                if PackageIntel.is_known_package("pypi", low):
+                if BuiltinPackageNames.is_known("pypi", low):
                     continue
                 target = DependencyDetector._typosquat_target("pypi", low)
                 if target is not None:

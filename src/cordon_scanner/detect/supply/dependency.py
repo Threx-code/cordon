@@ -44,7 +44,7 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.foundation.scoring import ScoringContext
-from cordon_scanner.intel.registries.popular import PackageIntel
+from cordon_scanner.intel.registry import BuiltinPackageNames
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -411,7 +411,7 @@ class DependencyDetector(BaseDetector):
         normalized = ecosystem.normalize_name(dep.name)
 
         # A package that exists in the known set is not a typosquat of itself.
-        if PackageIntel.is_known_package(dep.ecosystem, normalized):
+        if BuiltinPackageNames.is_known(dep.ecosystem, normalized):
             return
 
         yield from self._confusion_finding(dep, ecosystem, ctx)
@@ -700,7 +700,7 @@ class DependencyDetector(BaseDetector):
         if cached is not None:
             return cached
 
-        popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
+        popular = BuiltinPackageNames.popular(ecosystem)
         implementation = EcosystemRegistry.get(ecosystem)
         if implementation is None:
             normalised = frozenset(popular)
