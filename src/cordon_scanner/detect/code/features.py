@@ -134,8 +134,13 @@ class CodeFeatures:
         }
     )
 
+    # A literal looks like a URL if any of these occurs in it (`shape` asks only whether one does).
+    # The domain test is written from its dot: `[a-z0-9.-]+\.(?:com|...)\b` occurs exactly where a
+    # dot and a top-level name follow at least one such character, and spelled as the run first it
+    # backtracked through every run of letters and digits from every start -- quadratic: a 2 MB
+    # string in an obfuscated setup.py held one scan for over 15 minutes (review 98, performance 2).
     _URL: ClassVar[re.Pattern[str]] = re.compile(
-        r"https?://|\b\d{1,3}(?:\.\d{1,3}){3}\b|[a-z0-9.-]+\.(?:com|net|org|io|ru|xyz|top|cn|info)\b",
+        r"https?://|\b\d{1,3}(?:\.\d{1,3}){3}\b|(?<=[a-z0-9.-])\.(?:com|net|org|io|ru|xyz|top|cn|info)\b",
         re.I,
     )
     _HEX: ClassVar[re.Pattern[str]] = re.compile(r"(?:\\x[0-9a-fA-F]{2}){6,}|\b[0-9a-fA-F]{32,}\b")

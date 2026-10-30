@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import random
+import re
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -193,3 +196,58 @@ class TestSources:
         unit = FileUnit(content=FileContent.from_bytes("index.js", JS.encode()))
         got = ReachedFlows.sources([unit], TestSources.ctx(entry=frozenset({"index.js"})))  # type: ignore[arg-type]
         assert got["import"] == [("index.js", JS.encode())]
+
+
+class TestShapeIsLinear:
+    #: The domain test as it was written before (review 98, performance 2): its answer is the
+    #: reference the linear form must give on every string.
+    RUN_FIRST = re.compile(
+        r"https?://|\b\d{1,3}(?:\.\d{1,3}){3}\b|[a-z0-9.-]+\.(?:com|net|org|io|ru|xyz|top|cn|info)\b",
+        re.I,
+    )
+
+    def test_it_answers_as_the_run_first_form(self) -> None:
+        rng = random.Random(20261030)  # noqa: S311 -- a fixture, not key material
+        pieces = [
+            "a",
+            "Z",
+            "9",
+            ".",
+            "-",
+            "com",
+            ".com",
+            ".Net",
+            "io",
+            "/",
+            " ",
+            "_",
+            "http://",
+            "1.",
+        ]
+        cases = [
+            "",
+            ".com",
+            "a.com",
+            "-.com",
+            "..com",
+            "x.comx",
+            "x.com_",
+            "A.INFO",
+            "café.com",
+            "1.2.3.4",
+        ]
+        cases += [
+            "".join(rng.choice(pieces) for _ in range(rng.randint(0, 30))) for _ in range(5_000)
+        ]
+        for text in cases:
+            assert bool(CodeFeatures._URL.search(text)) == bool(
+                TestShapeIsLinear.RUN_FIRST.search(text)
+            ), text
+
+    def test_a_long_run_of_letters_is_read_once(self) -> None:
+        # The run-first form backtracked through the whole run from every start: about 10^12 steps
+        # here. Read once, it is milliseconds.
+        started = time.process_time()
+        # Letters, dots and dashes the domain test reads, neither hex nor a base64 run.
+        assert CodeFeatures.shape("g.h-" * 500_000) == "LONG_STRING"
+        assert time.process_time() - started < 5
