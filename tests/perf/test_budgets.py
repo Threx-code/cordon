@@ -20,7 +20,6 @@ something to do on every `pytest` run.
 from __future__ import annotations
 
 import os
-import resource
 import shutil
 import subprocess
 import sys
@@ -70,7 +69,10 @@ class BudgetsHelpers:
     @staticmethod
     def scan_timed(target: Path, *args: str) -> tuple[float, float]:
         """`scan`'s wall time, and the CPU time the scan's processes used (the child and every
-        worker it waited for), which neighbouring load does not stretch."""
+        worker it waited for), which neighbouring load does not stretch. POSIX only, as the
+        `resource` module is."""
+        import resource
+
         before = resource.getrusage(resource.RUSAGE_CHILDREN)
         wall = BudgetsHelpers.scan(target, *args)
         after = resource.getrusage(resource.RUSAGE_CHILDREN)
