@@ -89,6 +89,15 @@ jobs:
           # party can rebuild from the tag and compare digests with the SBOM.
           SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) python -m build --no-isolation
 
+      - name: The wheel carries a verdict model this code loads
+        run: |
+          set -euo pipefail
+          # Without `detect/data/verdict.json.gz` the scanner runs with every verdict line off and
+          # says nothing: a release must not go out that way.
+          python -m venv /tmp/cordon-verdict
+          /tmp/cordon-verdict/bin/pip install -q --no-deps dist/*.whl
+          /tmp/cordon-verdict/bin/python -c "from cordon_scanner.decide.verdict import VerdictModel as V; import sys; sys.exit(V.load() is None)"
+
       - name: Generate the SBOM
         run: |
           set -euo pipefail
