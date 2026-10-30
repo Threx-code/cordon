@@ -229,6 +229,31 @@ class TestC3PluginTrustIsAnchoredOnLocation:
         detectors = Registry().detectors()
         assert {d.id for d in detectors} >= {"capability", "manifest", "secrets"}
 
+    def test_a_scan_without_its_built_ins_refuses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A source tree on PYTHONPATH over another install had every built-in skipped as not ours,
+        and the scan ran with no detectors: it would have reported a package clean."""
+        from cordon_scanner.engine.registry import Registry
+        from cordon_scanner.foundation.errors import ConfigError
+
+        monkeypatch.setattr(Registry, "_is_ours", classmethod(lambda cls, entry, provider: False))
+        with pytest.raises(ConfigError, match="built-in detector"):
+            Registry().detectors()
+
+    def test_one_missing_built_in_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cordon_scanner.engine.registry import Registry
+        from cordon_scanner.foundation.errors import ConfigError
+
+        ours = Registry._is_ours
+
+        def all_but_secrets(cls: type[Registry], entry: object, provider: str) -> bool:
+            return getattr(entry, "name", "") != "secrets" and ours(entry, provider)
+
+        monkeypatch.setattr(Registry, "_is_ours", classmethod(all_but_secrets))
+        with pytest.raises(
+            ConfigError, match=r"1 built-in detector\(s\) could not be loaded: secrets"
+        ):
+            Registry().detectors()
+
     def test_trust_is_not_decided_by_metadata_alone(self) -> None:
         from cordon_scanner.engine.registry import DISTRIBUTION, Registry
 
