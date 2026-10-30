@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.analysis.javascript.front.arena import Arena, Registry
 from cordon_scanner.analysis.javascript.front.lexer import Lexer, Token
 from cordon_scanner.analysis.javascript.front.syntax import Node
 
@@ -121,16 +120,10 @@ class TokenStream:
         {"name", "string", "number", "template", "template_head"}
     )
 
-    def __init__(
-        self, text: str, *, typescript: bool = False, jsx: bool = True, arena: bool = False
-    ) -> None:
+    def __init__(self, text: str, *, typescript: bool = False, jsx: bool = True) -> None:
         self.text = text
         self.typescript = typescript
         self.jsx = jsx
-        #: With `arena`, a closed function body or top-level statement is written into an arena
-        #: fragment at once and released; the tree then holds a stub where it was, and
-        #: `Arena.from_tree` splices the fragments in. One registry serves the whole parse.
-        self.registry: Registry | None = Registry() if arena else None
         self.lexer = Lexer(text)
         self.depth = 0
         self.errors = 0
@@ -185,15 +178,6 @@ class TokenStream:
 
     def node(self, type: str, start: int, **fields: Any) -> Node:
         return Node(type, start, self.prev.end, **fields)
-
-    def released(self, node: Node) -> Node:
-        """`node` written into an arena fragment and released, where the parse writes an arena:
-        the stub that stands for it. Otherwise the node itself. What the memory of a parse holds
-        is then the open bodies' partial children, not the file (review 98, D4)."""
-        if self.registry is None:
-            return node
-        fragment = Arena.from_tree(node, self.text, self.registry)
-        return Node(Arena.STUB, node.start, node.end, fragment=fragment)
 
     def _deeper(self) -> None:
         self.depth += 1

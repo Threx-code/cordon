@@ -28,8 +28,8 @@ import bisect
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.analysis.javascript.front.arena import Arena, Handle
 from cordon_scanner.analysis.javascript.front.parser import Parser
+from cordon_scanner.analysis.javascript.front.syntax import Node, Syntax
 from cordon_scanner.analysis.shared.content_memo import ContentMemo
 
 if TYPE_CHECKING:
@@ -165,20 +165,18 @@ class CallResolver:
             for offset, line, column, name, values, built in sorted(done, key=lambda d: d[0])
         ]
 
-    def _program(self, text: str) -> Handle:
-        """The tree of one part, as an arena: parsed into nodes, written into the arena's columns
-        and released, so what the analysis holds is about ten bytes a node (review 98, D4).
-        TypeScript is read without JSX (`<T>x` is an assertion there), and read again with it when
-        that fails on a part with a `<` in it -- a `.tsx` file; the reading with fewer errors is
-        kept."""
-        parser = Parser(text, typescript=self.typescript, jsx=not self.typescript, arena=True)
+    def _program(self, text: str) -> Node:
+        """The tree of one part. TypeScript is read without JSX (`<T>x` is an assertion there),
+        and read again with it when that fails on a part with a `<` in it -- a `.tsx` file; the
+        reading with fewer errors is kept."""
+        parser = Parser(text, typescript=self.typescript, jsx=not self.typescript)
         program = parser.program()
         if self.typescript and parser.errors and "<" in text:
-            again = Parser(text, typescript=True, jsx=True, arena=True)
+            again = Parser(text, typescript=True, jsx=True)
             other = again.program()
             if again.errors < parser.errors:
-                parser, program = again, other
-        return Handle(Arena.from_tree(program, text, parser.registry), 0)
+                return other
+        return program
 
     def _resolve_root(self, scope: Scope, root: str, rest: tuple[str, ...]) -> str:
         """`root.rest...` through the bindings visible from `scope`, following chains."""
@@ -276,13 +274,13 @@ class _Walker:
         self.resolver, self.module, self.places = resolver, module, places
         self.scopes: dict[int, Scope] = {}
         #: Every call met while declaring, with the scope it sits in: resolved once all bindings are known.
-        self.found: list[tuple[Handle, Scope]] = []
+        self.found: list[tuple[Node, Scope]] = []
 
     # -- declarations ---------------------------------------------------------
 
-    def declare(self, root: Handle, scope: Scope) -> None:
+    def declare(self, root: Node, scope: Scope) -> None:
         """Every binding under `root`, into the scope that owns it; by an explicit stack."""
-        stack: list[tuple[Handle, Scope]] = [(root, scope)]
+        stack: list[tuple[Node, Scope]] = [(root, scope)]
         while stack:
             node, here = stack.pop()
             t = node.type
@@ -293,7 +291,7 @@ class _Walker:
                 if t == "FunctionDeclaration" and node["id"] is not None:
                     here.names.setdefault(node["id"]["name"], "")
                 inner = Scope(here, function=True)
-                self.scopes[node.key] = inner
+                self.scopes[id(node)] = inner
                 for param in node["params"] or []:
                     for name in _Walker.pattern_names(param):
                         inner.names[name] = ""
@@ -307,13 +305,13 @@ class _Walker:
                     "SwitchStatement",
                     "StaticBlock",
                 )
-                and node != root
+                and node is not root
             ):
                 inner = Scope(here)
-                self.scopes[node.key] = inner
+                self.scopes[id(node)] = inner
             elif t == "CatchClause":
                 inner = Scope(here)
-                self.scopes[node.key] = inner
+                self.scopes[id(node)] = inner
                 if node["param"] is not None:
                     for name in _Walker.pattern_names(node["param"]):
                         inner.names[name] = ""
@@ -349,7 +347,7 @@ class _Walker:
                 if target and (name not in owner.names or not owner.names[name]):
                     owner.names[name] = target
             # In source order: a binding can name one declared above it (`const r = require`).
-            stack.extend((child, inner) for child in reversed(node.children()))
+            stack.extend((child, inner) for child in reversed(list(Syntax.children(node))))
 
     @staticmethod
     def _function_scope(scope: Scope) -> Scope:
@@ -359,7 +357,7 @@ class _Walker:
             s = s.parent
         return s
 
-    def bind(self, target: Handle, init: Handle | None, scope: Scope, *, constant: bool) -> None:
+    def bind(self, target: Node, init: Node | None, scope: Scope, *, constant: bool) -> None:
         """A declaration's names, with what each is bound to: the origin of `init`, a member of
         it for each property a destructuring takes, or a constant string."""
         if target.type == "Identifier":
@@ -402,7 +400,7 @@ class _Walker:
         elif target.type == "AssignmentPattern":
             self.bind(target["left"], init, scope, constant=constant)
 
-    def origin(self, node: Handle | None, scope: Scope) -> str:
+    def origin(self, node: Node | None, scope: Scope) -> str:
         """What a value is, as an alias: a module path, `REQUIRE`, a name to follow (`@a.b`), or
         "" when it is not one of those."""
         if node is None:
@@ -448,7 +446,7 @@ class _Walker:
             return self.origin(node["argument"], scope)
         return ""
 
-    def required(self, call: Handle, scope: Scope) -> str | None:
+    def required(self, call: Node, scope: Scope) -> str | None:
         """The module a `require("m")`, `r("m")` (`r = require`) or `import("m")` names."""
         callee = _Walker.unwrap(call["callee"])
         if callee.type == "Identifier":
@@ -460,7 +458,7 @@ class _Walker:
                 return self.fold(call["arguments"][0], scope)
         return None
 
-    def member_path(self, node: Handle, scope: Scope) -> str | None:
+    def member_path(self, node: Node, scope: Scope) -> str | None:
         """`a.b.c` (and `a["b"]`, `require("m").b`) as a dotted path from its root, or None."""
         parts: list[str] = []
         current = node
@@ -499,7 +497,7 @@ class _Walker:
         for node, here in self.found:
             self.call(node, here, done, pending)
 
-    def call(self, node: Handle, scope: Scope, done: list[Any], pending: list[Pending]) -> None:
+    def call(self, node: Node, scope: Scope, done: list[Any], pending: list[Pending]) -> None:
         callee = _Walker.unwrap(node["callee"])
         if callee.type == "SequenceExpression" and callee["expressions"]:  # `(0, o.f)(...)`
             callee = _Walker.unwrap(callee["expressions"][-1])
@@ -526,7 +524,7 @@ class _Walker:
         else:
             pending.append(Pending(byte, line, column, root, rest, values, built))
 
-    def arguments(self, args: list[Handle], scope: Scope) -> tuple[list[str], bool]:
+    def arguments(self, args: list[Node], scope: Scope) -> tuple[list[str], bool]:
         values: list[str] = []
         built = False
         for arg in args:
@@ -538,7 +536,7 @@ class _Walker:
 
     # -- values ---------------------------------------------------------------
 
-    def fold(self, node: Handle, scope: Scope, depth: int = 0) -> str | None:
+    def fold(self, node: Node, scope: Scope, depth: int = 0) -> str | None:
         """A constant string value of `node`, or None."""
         if depth > CallResolver.MAX_CHAIN:
             return None
@@ -561,7 +559,7 @@ class _Walker:
             return self._fold_call(node, scope, depth)
         return None
 
-    def _fold_call(self, node: Handle, scope: Scope, depth: int) -> str | None:
+    def _fold_call(self, node: Node, scope: Scope, depth: int) -> str | None:
         callee = _Walker.unwrap(node["callee"])
         args = node["arguments"]
         if callee.type != "MemberExpression" or callee["computed"]:
@@ -592,7 +590,7 @@ class _Walker:
     # -- helpers --------------------------------------------------------------
 
     @staticmethod
-    def unwrap(node: Handle) -> Handle:
+    def unwrap(node: Node) -> Node:
         while node.type in (
             "ParenthesizedExpression",
             "TSAsExpression",
@@ -603,7 +601,7 @@ class _Walker:
         return node
 
     @staticmethod
-    def pattern_names(node: Handle) -> list[str]:
+    def pattern_names(node: Node) -> list[str]:
         out: list[str] = []
         stack = [node]
         while stack:
