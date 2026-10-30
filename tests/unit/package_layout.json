@@ -283,6 +283,7 @@
   "ecosystems/infra/bazel": "ecosystems/infra/bazel",
   "ecosystems/infra/helm": "ecosystems/infra/helm",
   "ecosystems/infra/image": "ecosystems/infra/image",
+  "ecosystems/infra/references": "ecosystems/infra/references",
   "ecosystems/infra/compose": "ecosystems/infra/compose",
   "ecosystems/infra/infra": "ecosystems/infra/infra",
   "ecosystems/infra/terraform": "ecosystems/infra/terraform",

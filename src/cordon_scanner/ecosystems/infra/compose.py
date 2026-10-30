@@ -10,7 +10,7 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     Manifest,
 )
-from cordon_scanner.ecosystems.infra.image import ImageReference, Interpolation
+from cordon_scanner.ecosystems.infra.references import ImageReference, Interpolation
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
