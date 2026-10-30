@@ -67,6 +67,18 @@ class BudgetsHelpers:
         return time.monotonic() - started
 
     @staticmethod
+    def scan_timed(target: Path, *args: str) -> tuple[float, float]:
+        """`scan`'s wall time, and the CPU time the scan's processes used (the child and every
+        worker it waited for), which neighbouring load does not stretch. POSIX only, as the
+        `resource` module is."""
+        import resource
+
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        wall = BudgetsHelpers.scan(target, *args)
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return wall, (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
+
+    @staticmethod
     def report(name: str, seconds: float, target: float, ceiling: float) -> None:
         """Print the measurement against the published budget, which is for what every install
         runs -- Cordon's own JavaScript and TypeScript tier included; only a shared runner's
@@ -198,10 +210,16 @@ class TestBudgets:
             subprocess.run(
                 [shutil.which("git"), *command], cwd=root, check=True, capture_output=True
             )
-        elapsed = BudgetsHelpers.scan(root, "--staged")
+        elapsed, cpu = BudgetsHelpers.scan_timed(root, "--staged")
         # A different budget from the realistic case above, because this is not
         # a commit anybody makes: two thousand files staged at once. It is here
         # because it is where one git process per file was found, and it is
         # asserted so that regression cannot come back unnoticed.
         BudgetsHelpers.report("pre-commit, 2,000 staged", elapsed, 1.0, 3.0)
-        assert elapsed < 3.0 * ALLOWANCE
+        # Asserted on CPU time, not wall time: beside other load the wall clock measured the
+        # neighbours (22 s against this ceiling of 15 s with the shared allowance, while the same
+        # scan alone took 6.5 s on the release and on the change alike). Measured alone, ABBA by
+        # process: CPU median 2.49 s on 00578d7e, 2.70 s on 289c55cb; the bound is three times
+        # that, and a process per file, the regression this guards, costs far more.
+        print(f"  pre-commit, 2,000 staged: {cpu:.2f}s CPU (ceiling {7.5 * ALLOWANCE:.1f}s)")
+        assert cpu < 7.5 * ALLOWANCE

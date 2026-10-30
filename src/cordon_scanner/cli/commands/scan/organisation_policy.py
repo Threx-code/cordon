@@ -64,12 +64,12 @@ class OrganisationPolicy:
     @staticmethod
     def add_suppressions(config: Any, suppressions: tuple[Any, ...]) -> Any:
         """Add the organisation's approved suppressions, held to the same rules as any other."""
-        from cordon_scanner.foundation.config.parser import ConfigParser
+        from cordon_scanner.foundation.config.policy import PolicyComparisons
 
         problems = [
             f"{s.rule} at {s.path}: {problem}"
             for s in suppressions
-            if (problem := ConfigParser._suppression_violation(s, config.constraints))
+            if (problem := PolicyComparisons._suppression_violation(s, config.constraints))
         ]
         if problems:
             raise ConfigError(

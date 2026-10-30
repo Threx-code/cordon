@@ -24,6 +24,7 @@ import time
 from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.dependencies import CheckLog
 from cordon_scanner.foundation.models import (
     Category,
@@ -503,6 +504,7 @@ class RuleSelector:
     """
 
     @staticmethod
+    @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)
     @functools.lru_cache(maxsize=131072)
     def _pattern_matches(path: str, pattern: str) -> bool:
         """Whether `path` matches one glob, memoised per (file, pattern).

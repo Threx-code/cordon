@@ -634,6 +634,13 @@ class PackageArchive:
     data: bytes
 
 
+# A value both the feed and the rule packs it delivers raise, so neither imports the other for it.
+
+
+class FeedError(Exception):
+    """The feed could not be used. Carries a message that is safe to show."""
+
+
 __all__ = [
     "Advisories",
     "AdvisoryRecord",
@@ -643,6 +650,7 @@ __all__ = [
     "BundledAdvisoryDatabase",
     "ChartProvenance",
     "DataFiles",
+    "FeedError",
     "FeedStatus",
     "InstallerChecks",
     "IntelReport",
