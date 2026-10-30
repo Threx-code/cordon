@@ -38,6 +38,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.foundation.config.parser import CONFIG_VERSION, TOP_LEVEL_KEYS, ConfigParser
 from cordon_scanner.foundation.config.policy import (
     OrgConstraints,
     Policy,
@@ -57,7 +58,6 @@ from cordon_scanner.version import PROGRAM
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
-CONFIG_VERSION = 1
 
 CONFIG_FILENAMES = (
     "cordon.yaml",
@@ -313,9 +313,7 @@ class Config:
         Raises :class:`ConfigError` on any unknown key, malformed value, or
         invalid suppression. Nothing is coerced silently.
         """
-        from cordon_scanner.foundation.config.parser import ConfigParser
-
-        return ConfigParser._parse_config(data, source=source, layer=layer)
+        return ConfigParser._parse_config(data, source=source, layer=layer, into=cls)
 
     MAX_CONFIG_BYTES = 1024 * 1024
     """Ceiling on a configuration file.
@@ -926,15 +924,6 @@ class Config:
         }
 
 
-# ---------------------------------------------------------------------------
-# Parsing
-# ---------------------------------------------------------------------------
-
-TOP_LEVEL_KEYS = frozenset(
-    {"version", "scan", "policy", "evidence", "suppressions", "rules", "notify"}
-)
-
-
 class IntelAge:
     """Limits on how old the intel behind a scan may be."""
 
@@ -967,4 +956,4 @@ class IntelAge:
     # unsupported construct is a clear error rather than a silent misparse.
 
 
-__all__ = ["CONFIG_FILENAMES", "CONFIG_VERSION", "Config"]
+__all__ = ["CONFIG_FILENAMES", "CONFIG_VERSION", "TOP_LEVEL_KEYS", "Config"]

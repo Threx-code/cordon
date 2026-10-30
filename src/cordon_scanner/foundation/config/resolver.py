@@ -125,7 +125,7 @@ class ConfigResolver:
         # The policy's own scan settings form the upper configuration layer.
         body = {k: v for k, v in data.items() if k in TOP_LEVEL_KEYS and k != "suppressions"}
         body.setdefault("version", CONFIG_VERSION)
-        org_config = ConfigParser._parse_config(body, source=str(p), layer=Layer.ORG)
+        org_config = ConfigParser._parse_config(body, source=str(p), layer=Layer.ORG, into=Config)
 
         if constraints.max_total_timeout is not None:
             org_config = replace(

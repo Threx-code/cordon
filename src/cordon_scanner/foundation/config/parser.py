@@ -24,6 +24,8 @@ from cordon_scanner.foundation.taxonomy import ThreatDomain
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from cordon_scanner.foundation.config.settings import Config
+
 from cordon_scanner.foundation.config.policy import (
     DEFAULT_ADVISORY_DOMAINS,
     DEFAULT_MAX_MAJOR_DRIFT,
@@ -32,10 +34,13 @@ from cordon_scanner.foundation.config.policy import (
     Policy,
 )
 from cordon_scanner.foundation.config.provenance import Provenance
-from cordon_scanner.foundation.config.settings import (
-    CONFIG_VERSION,
-    TOP_LEVEL_KEYS,
-    Config,
+
+#: The configuration schema's version: what a document's `version` key must say.
+CONFIG_VERSION = 1
+
+#: The keys a configuration document may have at its top level; any other is an error.
+TOP_LEVEL_KEYS = frozenset(
+    {"version", "scan", "policy", "evidence", "suppressions", "rules", "notify"}
 )
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -156,7 +161,12 @@ class ConfigParser:
         return tuple(value)
 
     @staticmethod
-    def _parse_config(data: Mapping[str, Any], *, source: str, layer: str) -> Config:
+    def _parse_config(
+        data: Mapping[str, Any], *, source: str, layer: str, into: type[Config]
+    ) -> Config:
+        """`data` read into the configuration class `into` (`Config`, which hands itself in from
+        `Config.from_dict`): the parser builds it without importing it, so the settings module
+        reaches the parser and never the other way round."""
         if not isinstance(data, dict):
             raise ConfigError(f"{source}: top level must be a mapping")
 
@@ -201,7 +211,7 @@ class ConfigParser:
         record("evidence", str(evidence))
         record("scan.offline", bool(scan.get("offline", True)))
 
-        return Config(
+        return into(
             version=CONFIG_VERSION,
             severity_threshold=severity,
             confidence_threshold=confidence,
