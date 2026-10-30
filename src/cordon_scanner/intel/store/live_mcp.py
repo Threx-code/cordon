@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 
 PROTOCOL_VERSION: Final = "2025-06-18"
 MAX_RESPONSE_BYTES: Final = 4 << 20
@@ -70,11 +71,6 @@ class ServedTool:
         )
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class LiveMcp:
     """A minimal, read-only MCP client: initialize, then list tools."""
 
@@ -101,7 +97,7 @@ class LiveMcp:
         request = urllib.request.Request(  # noqa: S310 - scheme checked by the caller
             url, data=json.dumps(message).encode(), headers=headers, method="POST"
         )
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 body = Download.read(response, MAX_RESPONSE_BYTES + 1)

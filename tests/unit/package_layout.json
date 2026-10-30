@@ -374,6 +374,7 @@
   "foundation/formats/restricted_yaml": "foundation/formats/restricted_yaml",
   "foundation/content": "foundation/content",
   "foundation/network/downloads": "foundation/network/downloads",
+  "foundation/network/redirects": "foundation/network/redirects",
   "foundation/formats/datayaml": "foundation/formats/datayaml",
   "foundation/errors": "foundation/errors",
   "foundation/evidence_key": "foundation/evidence_key",

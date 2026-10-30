@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.provenance import attest
 
 FORMULA_API: Final = "https://formulae.brew.sh/api/formula/{name}.json"
@@ -43,11 +44,6 @@ TIMEOUT: Final = 15.0
 MAX_BYTES: Final = 8 << 20
 MAX_BOTTLES: Final = 8
 """Platforms checked per formula: each bottle is its own artefact and its own attestation."""
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
 
 
 @dataclass(frozen=True)
@@ -67,7 +63,7 @@ class HomebrewProvenance:
             # GitHub's own token, to GitHub's own API: the unauthenticated limit is 60 an hour.
             headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(url, headers=headers)  # noqa: S310 - fixed https hosts
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         with opener.open(request, timeout=TIMEOUT) as response:
             return json.loads(Download.read(response, MAX_BYTES))
 

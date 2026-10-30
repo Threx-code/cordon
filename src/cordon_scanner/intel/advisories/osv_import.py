@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.advisories.advisories import (
     DIGESTS_NAME,
     Advisory,
@@ -116,11 +117,6 @@ class OsvImportError(RuntimeError):
     failed rather than silently shipping nothing."""
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class OsvImport:
     """Building the advisory database from OSV's bulk export."""
 
@@ -136,7 +132,7 @@ class OsvImport:
         request = urllib.request.Request(  # noqa: S310  (scheme and host checked above)
             url, headers={"User-Agent": USER_AGENT}, method="GET"
         )
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
 
         written = 0
         try:

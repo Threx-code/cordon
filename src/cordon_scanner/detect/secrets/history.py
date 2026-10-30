@@ -34,6 +34,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Location, Severity
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 
 LIVE_RULE = "SECRET.LIVE.001"
 REVOKED_RULE = "SECRET.LIVENESS.REJECTED.001"
@@ -373,10 +374,6 @@ class SecretLiveness:
         "SECRET.STRIPE.WEBHOOK_SECRET.001": "a webhook signing secret has no validity endpoint",
     }
 
-    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-            return None
-
     def __init__(
         self,
         opener: Callable[[urllib.request.Request], tuple[int, bytes]] | None = None,
@@ -386,7 +383,7 @@ class SecretLiveness:
         self.clock = clock
 
     def _open(self, request: urllib.request.Request) -> tuple[int, bytes]:
-        opener = urllib.request.build_opener(self._NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 return response.status, Download.read(response, 64 << 10)
