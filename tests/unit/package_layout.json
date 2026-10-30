@@ -640,6 +640,7 @@
   "test_cvss.py": "intel/advisories",
   "test_datadog_malware.py": "intel/malware",
   "test_datayaml.py": "foundation/formats",
+  "test_license_port.py": "intel/store",
   "test_dbsync.py": "intel/store",
   "test_deobfuscation.py": "analysis/shared",
   "test_dependency_confusion.py": "detect/supply/manifests",

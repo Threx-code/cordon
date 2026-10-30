@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import enum
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    import enum
     from collections.abc import Mapping, Sequence
     from pathlib import Path
     from typing import Any
@@ -72,10 +72,23 @@ class IntelReport(Protocol):
     def to_dict(self) -> dict[str, Any]: ...
 
 
-class LicenseClassification(Protocol):
-    """What the engine uses of the class `LicenseClassifier`."""
+class LicenseCategory(enum.StrEnum):
+    """What a licence obliges, as `LicenseClassification` grades it: a plain value, so it lives with
+    the ports rather than behind one."""
 
-    def classify(self, raw: str | None) -> enum.Enum: ...
+    PERMISSIVE = "permissive"
+    WEAK_COPYLEFT = "weak_copyleft"
+    COPYLEFT = "copyleft"
+    NETWORK_COPYLEFT = "network_copyleft"
+    UNKNOWN = "unknown"
+
+
+class LicenseClassification(Protocol):
+    """What the engine and the detectors use of the class `LicenseClassifier`."""
+
+    def classify(self, raw: str | None) -> LicenseCategory: ...
+    def normalize(self, raw: str | None) -> str | None: ...
+    def split_top_level(self, expression: str, operator: str) -> list[str] | None: ...
 
 
 class PackageNames(Protocol):
