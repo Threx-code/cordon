@@ -178,8 +178,15 @@ class Rules:
     #: Where a word on the ecosystem list means something else, and why.
     NOT_AN_ECOSYSTEM: ClassVar[dict[str, str]] = {
         "cordon_scanner.judge.calls:ValueViews.of": "'hex' is an encoding there, not Elixir's registry",
-        "cordon_scanner.engine.pipeline.hooks:<module>": (
+        "cordon_scanner.engine.pipeline.hooks:Hooks.extension_entries": (
             "'vscode' there is the engines key of a VS Code extension's package.json"
+        ),
+        "cordon_scanner.analysis.shared.deobfuscation:Layers.decoded": "'hex' is an encoding there",
+        "cordon_scanner.detect.secrets.values:SecretValues.is_inside_example_literal": (
+            "'go' there is the Go source language, not its module ecosystem"
+        ),
+        "cordon_scanner.foundation.text.prose:Prose._is_initialism": (
+            "'npm' there is a word in a list of initialisms prose writes in lower case"
         ),
     }
 
