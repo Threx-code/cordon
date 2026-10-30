@@ -19,7 +19,7 @@ CLEARTEXT_SOURCE_RULE = "POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001"
 CONFUSION_RULE = "SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001"
 
 #: Every rule that judges one dependency's declaration, by its twin for a manifest installing the
-#: package does not read (`ManifestDetector.not_installed_manifests`): info, high for a drop-point host.
+#: package does not read (`ManifestDetector.not_installed_files`): info, high for a drop-point host.
 NOT_INSTALLED_TWINS: dict[str, str] = {
     "POLICY.DEPENDENCY.SOURCE.001": "POLICY.DEPENDENCY.SOURCE.BUNDLED.001",
     MUTABLE_REF_RULE: "POLICY.DEPENDENCY.MUTABLE_REF.BUNDLED.001",
@@ -27,6 +27,8 @@ NOT_INSTALLED_TWINS: dict[str, str] = {
     MALICIOUS_REMOTE_TARBALL_RULE: "MALWARE.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001",
     FOREIGN_COMMIT_RULE: "SUSPECT.DEPENDENCY.FOREIGN_COMMIT.BUNDLED.001",
     "SUSPECT.HELM.UNTRUSTED_REPOSITORY.001": "SUSPECT.HELM.UNTRUSTED_REPOSITORY.BUNDLED.001",
+    # A digest a declaration pins that is not a digest: the lockfile rule's, declared there.
+    "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001": "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.BUNDLED.001",
 }
 
 

@@ -388,7 +388,7 @@ class ArchiveStages:
         # A published package's inventory is its root manifest and lockfile (`DependencyScope`).
         published = package if image is None else ""
         dependencies = self.engine.dependencies.build(units, acc, published=published)
-        self._hold_not_installed_manifests(acc, dependencies, ctx)
+        self._hold_not_installed_files(acc, dependencies, ctx)
         if image is not None:
             Images.report_image_contents(image, acc)
         target_kind = "image" if image is not None else "package" if package else "archive"
@@ -442,18 +442,19 @@ class ArchiveStages:
                 )
         return dependencies, target_kind, ctx
 
-    def _hold_not_installed_manifests(
+    def _hold_not_installed_files(
         self, acc: Accumulator, dependencies: tuple[Dependency, ...], ctx: ScanContext
     ) -> None:
-        """A not-installed manifest's own findings about its records (`not_installed_manifests`),
-        out of the verdict and kept at their info twins for after it."""
+        """A not-installed manifest's or lockfile's own findings about its records
+        (`NotInstalledFiles`), out of the verdict and kept at their twins for after it."""
         if not acc.not_installed:
             return
-        detector = next((d for d in self.detectors if d.id == "manifest"), None)
-        split = getattr(detector, "not_installed_manifests", None)
-        if callable(split):
-            acc.findings[:], held = split(acc.findings, dependencies, acc.not_installed, ctx)
-            acc.not_installed_findings.extend(held)
+        for name in ("manifest", "lockfile"):
+            detector = next((d for d in self.detectors if d.id == name), None)
+            split = getattr(detector, "not_installed_files", None)
+            if callable(split):
+                acc.findings[:], held = split(acc.findings, dependencies, acc.not_installed, ctx)
+                acc.not_installed_findings.extend(held)
 
     def not_installed(self, acc: Accumulator, ctx: ScanContext) -> None:
         """What only a file outside the install set records (`acc.not_installed`), from the

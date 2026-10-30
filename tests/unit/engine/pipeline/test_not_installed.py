@@ -27,6 +27,7 @@ from cordon_scanner.detect.supply.dependency_rules import (
     SOURCE_BUNDLED_RULE,
     TYPOSQUAT_BUNDLED_RULE,
 )
+from cordon_scanner.detect.supply.lockfile import LockfileDetector
 from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
 from cordon_scanner.detect.supply.manifests.rule_ids import MUTABLE_REF_RULE, NOT_INSTALLED_TWINS
 from cordon_scanner.detect.supply.slopsquat import BUNDLED_RULE as HALLUCINATED_BUNDLED_RULE
@@ -209,6 +210,7 @@ class TestNotInstalledSources:
             DependencyDetector(),
             SlopsquatDetector(),
             ManifestDetector(),
+            LockfileDetector(),
         )
         return Scanner(config, detectors=detectors).scan(path)
 
@@ -226,7 +228,9 @@ class TestNotInstalledSources:
             },
         }
         result = TestNotInstalledSources.scan(tmp_path, json.dumps(lock))
-        rules = {(f.rule_id, f.severity) for f in result.findings if "SOURCE" in f.rule_id}
+        rules = {
+            (f.rule_id, f.severity) for f in result.findings if "DEPENDENCY.SOURCE" in f.rule_id
+        }
         assert rules == {(SOURCE_BUNDLED_RULE, Severity.INFO)}
 
     def test_a_lookalike_name_is_its_own_info_rule(self, tmp_path: Path) -> None:
@@ -266,12 +270,32 @@ class TestNotInstalledSources:
         assert rules == {(NOT_INSTALLED_TWINS[MUTABLE_REF_RULE], Severity.INFO)}
 
     def test_every_twin_is_declared_beside_its_rule(self) -> None:
+        from cordon_scanner.detect.supply import lockfile
+        from cordon_scanner.detect.supply.lockfile import LockfileDetector
         from cordon_scanner.detect.supply.manifests.rule_declarations import DECLARED_RULES
 
-        declared = {rule.id: rule for rule in DECLARED_RULES}
-        for twin in NOT_INSTALLED_TWINS.values():
+        declared = {rule.id: rule for rule in DECLARED_RULES + LockfileDetector.declared_rules()}
+        for twin in {*NOT_INSTALLED_TWINS.values(), *lockfile.NOT_INSTALLED_TWINS.values()}:
             want = Severity.HIGH if twin.startswith("MALWARE.") else Severity.INFO
             assert declared[twin].severity is want, twin
+
+    def test_a_nested_lockfiles_foreign_source_is_the_info_twin(self, tmp_path: Path) -> None:
+        lock = {
+            "name": "ui",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "ui", "version": "1.0.0", "dependencies": {"left": "1.0.0"}},
+                "node_modules/left": {
+                    "version": "1.0.0",
+                    "resolved": "https://code.example/left-1.0.0.tgz",
+                    "integrity": "sha512-" + "A" * 86 + "==",
+                },
+            },
+        }
+        result = TestNotInstalledSources.scan(tmp_path, json.dumps(lock))
+        rules = {(f.rule_id, f.severity) for f in result.findings if "LOCKFILE.SOURCE" in f.rule_id}
+        assert rules == {("SUSPECT.LOCKFILE.SOURCE.BUNDLED.001", Severity.INFO)}
 
     def test_the_root_manifests_git_source_stays_the_policy_rule(self, tmp_path: Path) -> None:
         root = {

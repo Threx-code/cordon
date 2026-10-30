@@ -31,14 +31,17 @@ check reads them. The rule for which checks still look at them is by what the ch
   detector; SUSPECT.DEPENDENCY.SOURCE.BUNDLED and SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED (info) here;
   SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED (info) from the slopsquat detector; and, for what a
   not-installed manifest's own declaration of one dependency says, every rule in
-  `manifests.rule_ids.NOT_INSTALLED_TWINS` (`ManifestDetector.not_installed_manifests`): a source
-  outside the registry, a reference that can move, an archive from a URL (at high from a drop-point
-  host), a foreign commit, an untrusted chart repository. Rules about a manifest as a whole (its
+  `manifests.rule_ids.NOT_INSTALLED_TWINS` (`NotInstalledFiles`): a source outside the registry, a
+  reference that can move, an archive from a URL (at high from a drop-point host), a foreign commit,
+  an untrusted chart repository, a pinned digest that is not one; and for what a not-installed
+  lockfile's entries record, every rule in `lockfile.NOT_INSTALLED_TWINS`: an entry resolved outside
+  the registry, an integrity value that is not a hash, one version locked with two hashes. Rules about a manifest as a whole (its
   install scripts, its own name and fields, where it says to look for packages) are the
   manifest's, whoever installs it, and are unchanged.
 - About installing it -- registry existence, provenance, an abandoned package, a missing integrity
   hash, dependency confusion against a private registry -- the question only arises for what is
-  installed, so there is no twin. Nor is there one for an organisation's denylist
+  installed, so there is no twin; a lockfile entry's missing hash (POLICY.LOCKFILE.INTEGRITY) is
+  one. Nor is there one for an organisation's denylist
   (POLICY.PACKAGE.DENIED), which governs what a project depends on.
 """
 

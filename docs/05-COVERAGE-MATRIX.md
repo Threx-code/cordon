@@ -174,8 +174,11 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | `registry` | typosquat |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | `registry` | policy |
 | `SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001` | high | `lockfile` | integrity |
+| `SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.BUNDLED.001` | info | `lockfile` | integrity |
 | `SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001` | high | `lockfile` | integrity |
+| `SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.BUNDLED.001` | info | `lockfile` | integrity |
 | `SUSPECT.LOCKFILE.SOURCE.001` | medium | `lockfile` | integrity |
+| `SUSPECT.LOCKFILE.SOURCE.BUNDLED.001` | info | `lockfile` | integrity |
 | `SUSPECT.RECIPE.PROVISIONAL.001` | high | `recipe-digest` | policy |
 | `SUSPECT.TYPOSQUAT.PACKAGE_NAME.001` | high | `manifest` | typosquat |
 | `VULNERABLE.DEPENDENCY.BUNDLED.001` | info | `advisory` | vulnerability |

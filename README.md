@@ -11,7 +11,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
 [![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/v0.6.0/pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/v0.6.0/LICENSE)
-[![Coverage matrix](https://img.shields.io/badge/rules-1%2C486-informational)](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/05-COVERAGE-MATRIX.md)
+[![Coverage matrix](https://img.shields.io/badge/rules-1%2C489-informational)](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/05-COVERAGE-MATRIX.md)
 [![Ecosystems](https://img.shields.io/badge/ecosystems-28-informational)](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/07-ECOSYSTEMS.md)
 
 Attackers stopped breaking in and started being installed: a typosquatted package, a release
@@ -101,7 +101,7 @@ measurements, the method behind each and what they are not: [docs/08-ACCURACY.md
 
 1. **Target**: a repository, an archive, a package before you install it, a container image, or git history.
 2. **Identify**: its languages, ecosystems, manifests and lockfiles.
-3. **Detect**: 1,486 rules, code reading, binary analysis and the AI-agent chain.
+3. **Detect**: 1,489 rules, code reading, binary analysis and the AI-agent chain.
 4. **Decide**: score, policy and baseline settle what fails the build.
 5. **Report**: text, JSON, SARIF, JUnit, GitHub annotations, SBOM.
 

@@ -6,8 +6,6 @@ other detectors that report from manifests (the registry review, advisories, bin
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.dependency_rules import DECLARED_RULES as DEPENDENCY_RULES
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
@@ -22,6 +20,7 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
     SOURCE_PRIORITY_RULE,
     WRAPPER_RULE,
 )
+from cordon_scanner.detect.supply.not_installed_files import NotInstalledFiles
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -571,29 +570,10 @@ _DECLARED: tuple[DeclaredRule, ...] = (
 )
 
 
-class NotInstalledTwins:
-    """Each per-declaration rule's twin for a manifest installing the package does not read, from
-    the rule itself: info, or high where the rule is malicious."""
-
-    @staticmethod
-    def of(rule: DeclaredRule) -> DeclaredRule:
-        return replace(
-            rule,
-            id=NOT_INSTALLED_TWINS[rule.id],
-            severity=Severity.HIGH if rule.category is Category.MALICIOUS else Severity.INFO,
-            title=f"{rule.title}, in a manifest installing the package does not read",
-            message=(
-                "Only a nested or vendored manifest in this package declares it: installing the "
-                "package does not read that file, building the subdirectory that holds it does. "
-                + rule.message
-            ),
-        )
-
-
 DECLARED_RULES: tuple[DeclaredRule, ...] = _DECLARED + tuple(
-    NotInstalledTwins.of(rule)
+    NotInstalledFiles.declared(rule, NOT_INSTALLED_TWINS)
     for rule in _DECLARED + DEPENDENCY_RULES
     if rule.id in NOT_INSTALLED_TWINS
 )
 
-__all__ = ["DECLARED_RULES", "NotInstalledTwins"]
+__all__ = ["DECLARED_RULES"]

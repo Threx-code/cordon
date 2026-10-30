@@ -265,6 +265,7 @@
   "detect/supply/obfuscated_hook": "detect/supply/obfuscated_hook",
   "detect/supply/ospackages": "detect/supply/ospackages",
   "detect/supply/package_policy": "detect/supply/package_policy",
+  "detect/supply/not_installed_files": "detect/supply/not_installed_files",
   "detect/supply/provenance": "detect/supply/provenance",
   "detect/supply/reachability": "detect/supply/reachability",
   "detect/supply/recipe_digests": "detect/supply/recipe_digests",
