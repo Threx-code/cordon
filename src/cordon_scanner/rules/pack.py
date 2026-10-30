@@ -10,6 +10,7 @@ from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.errors import RulePackError, UnsafePatternError
 from cordon_scanner.foundation.rule_model import Rule
 from cordon_scanner.foundation.text.literals import LiteralGate
+from cordon_scanner.rules.anchored import AnchoredSearch, Plan
 from cordon_scanner.rules.patterns import PatternCompiler
 
 if TYPE_CHECKING:
@@ -74,8 +75,21 @@ class CompiledMatch:
         default_factory=dict, compare=False, repr=False
     )
     """Compiled alternations of the patterns a file can match, keyed by their positions."""
+    plans: dict[re.Pattern[bytes], Plan | None] = field(
+        default_factory=dict, compare=False, repr=False
+    )
+    """Where each of this rule's regexes can start a match (`rules/anchored`), worked out once."""
 
     SUBSETS_KEPT: ClassVar[int] = 256
+
+    def matches(
+        self, regex: re.Pattern[bytes], data: bytes, folded: bytes | None = None
+    ) -> Iterator[re.Match[bytes]]:
+        """`regex.finditer(data)`, exactly, trying `regex` only where a match can start.
+        `regex` is this rule's (`regex_for`); `folded` is `data.lower()` when the caller has it."""
+        if regex not in self.plans:
+            self.plans[regex] = AnchoredSearch.plan(regex)
+        return AnchoredSearch.matches(regex, self.plans[regex], data, folded)
 
     def regex_for(self, data: bytes, folded: bytes | None = None) -> re.Pattern[bytes] | None:
         """The regex that finds exactly this rule's matches in `data`, cheapest first; None when

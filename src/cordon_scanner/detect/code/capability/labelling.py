@@ -175,6 +175,7 @@ class Labelling:
                 delays,
                 distinct,
                 first,
+                folded,
                 language,
                 prose,
                 raw,
@@ -268,6 +269,7 @@ class Labelling:
         delays: frozenset[int],
         distinct: set[bytes],
         first: re.Match[bytes] | None,
+        folded: bytes | None,
         language: str | None,
         prose: tuple[tuple[int, int], ...],
         raw: bytes,
@@ -275,7 +277,7 @@ class Labelling:
         tests: tuple[tuple[int, int], ...],
     ) -> re.Match[bytes] | None:
         """Walk one rule's matches in the file, dropping each the text's position excuses, counting the distinct operations it shows, and keeping the first that stands."""
-        for index, match in enumerate(regex.finditer(raw)):
+        for index, match in enumerate(compiled.match.matches(regex, raw, folded)):
             if TextPosition.is_printed_text(content, match.start(), match.end()):
                 continue
             if (
