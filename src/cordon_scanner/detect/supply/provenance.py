@@ -51,15 +51,15 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.scoring import ScoringContext
-from cordon_scanner.intel.provenance import attest
+from cordon_scanner.intel.base import AttestationOutcome
+from cordon_scanner.intel.registry import AttestationDocuments, SigstoreVerification
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
-    from cordon_scanner.intel.provenance.openpgp import Keyring
-    from cordon_scanner.intel.registries.registry_client import PackageFacts
+    from cordon_scanner.intel.base import AttestationResult, Keyring, PackageFacts
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
@@ -289,7 +289,7 @@ class ProvenanceDetector(BaseDetector):
         if verifier is not None:
             yield from getattr(self, verifier)(dependency, ctx)
             return
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registry import RegistryArtifacts, RegistryClient, RegistryError
 
         by_digest = EcosystemFactsProvider.versions().pinned_by_digest(dependency.ecosystem)
         asked = dependency.version or (dependency.integrity if by_digest else None)
@@ -323,7 +323,7 @@ class ProvenanceDetector(BaseDetector):
                 )
             return
 
-        digest = attest.AttestationDocuments.parse_integrity(dependency.integrity)
+        digest = AttestationDocuments.parse_integrity(dependency.integrity)
         if digest is None:
             # Two different situations, and telling a reader the wrong one sends
             # them to fix the wrong thing: a lockfile with no hash at all needs
@@ -346,13 +346,13 @@ class ProvenanceDetector(BaseDetector):
             return
 
         # The file the project pinned: a release attests each of its files on its own (PyPI).
-        payload = RegistryClient.attestation_payload(
+        payload = RegistryArtifacts.attestation_payload(
             dependency.ecosystem,
             dependency.name,
             asked,
             digest[1] if digest[0] == "sha256" else None,
         )
-        bundles = attest.AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
+        bundles = AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
         if not bundles:
             reason = "the registry served no verifiable attestation bundle"
             yield self._finding(
@@ -387,7 +387,7 @@ class ProvenanceDetector(BaseDetector):
         # Stopping at the first failure let an unreadable bundle decide the
         # verdict for a package whose next bundle verified.
         results = [
-            attest.SigstoreVerification.verify(
+            SigstoreVerification.verify(
                 bundle,
                 digest_hex=digest_hex,
                 algorithm=algorithm,
@@ -401,7 +401,7 @@ class ProvenanceDetector(BaseDetector):
             # The declared repository was renamed: verified against the name GitHub gives the
             # same repository now (`intel/github_repository`).
             results = [
-                attest.SigstoreVerification.verify(
+                SigstoreVerification.verify(
                     bundle,
                     digest_hex=digest_hex,
                     algorithm=algorithm,
@@ -410,7 +410,7 @@ class ProvenanceDetector(BaseDetector):
                 )
                 for bundle in bundles
             ]
-        if any(r.outcome is attest.Outcome.VERIFIED for r in results):
+        if any(r.outcome is AttestationOutcome.VERIFIED for r in results):
             # The clean case: no finding, and the record says so.
             ctx.checks.record(dependency.purl, "provenance", "verified")
             return
@@ -419,11 +419,11 @@ class ProvenanceDetector(BaseDetector):
         # cryptographically and then failed on identity or subject is the
         # actionable fact, whatever the others could not answer.
         last = next(
-            (r for r in results if r.outcome is attest.Outcome.INVALID),
+            (r for r in results if r.outcome is AttestationOutcome.INVALID),
             results[-1] if results else None,
         )
 
-        if last is not None and last.outcome is attest.Outcome.INVALID:
+        if last is not None and last.outcome is AttestationOutcome.INVALID:
             ctx.checks.record(dependency.purl, "provenance", "invalid")
             yield self._finding(
                 INVALID_RULE,
@@ -447,7 +447,7 @@ class ProvenanceDetector(BaseDetector):
 
     def _verify_homebrew(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """Each bottle against its own GitHub build attestation (`intel/homebrew_provenance`)."""
-        from cordon_scanner.intel.provenance.homebrew_provenance import HomebrewProvenance
+        from cordon_scanner.intel.registry import HomebrewProvenance
 
         check = HomebrewProvenance.check(dependency.name, dependency.version)
         label = f"{dependency.name}" + (f"@{check.version}" if check.version else "")
@@ -474,7 +474,7 @@ class ProvenanceDetector(BaseDetector):
     def _keyring_for(self, ctx: ScanContext) -> Keyring:
         """The operator's OpenPGP keyring (`--keyring`), read once per scan rather than once per
         package, and again when a file changes: a detector outlives one scan in a server."""
-        from cordon_scanner.intel.provenance.openpgp import OpenPgp
+        from cordon_scanner.intel.registry import OpenPgp
 
         paths = ctx.config.keyrings
         stamp = tuple((p, self._modified(p)) for p in paths)
@@ -488,10 +488,8 @@ class ProvenanceDetector(BaseDetector):
         """A collection's signatures, as `ansible-galaxy` checks them (`intel/ansible_signatures`):
         those its install recorded, over the MANIFEST.json in the tree; else Galaxy's and the
         requirement's own, over the artifact Galaxy serves."""
-        from cordon_scanner.intel.provenance.ansible_signatures import (
-            AnsibleSignatures,
-            CollectionCheck,
-        )
+        from cordon_scanner.intel.base import CollectionCheck
+        from cordon_scanner.intel.registry import AnsibleSignatures
 
         if dependency.signatures and dependency.signed is not None:
             check = AnsibleSignatures.installed(
@@ -539,7 +537,7 @@ class ProvenanceDetector(BaseDetector):
 
     def _verify_helm(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A chart's provenance file against the operator's keyring (`intel/helm_provenance`)."""
-        from cordon_scanner.intel.provenance.helm_provenance import HelmProvenance
+        from cordon_scanner.intel.registry import HelmProvenance
 
         check = HelmProvenance.check(
             dependency.name,
@@ -578,7 +576,7 @@ class ProvenanceDetector(BaseDetector):
 
     def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A BCR module's attestations against what the lock pinned (`intel/bazel_provenance`)."""
-        from cordon_scanner.intel.provenance.bazel_provenance import BazelProvenance
+        from cordon_scanner.intel.registry import BazelProvenance
 
         label = f"{dependency.name}@{dependency.version}"
         check = BazelProvenance.check(
@@ -611,20 +609,20 @@ class ProvenanceDetector(BaseDetector):
 
     @staticmethod
     def _renamed(
-        source: tuple[str, str, str] | None, results: list[attest.Result]
+        source: tuple[str, str, str] | None, results: list[AttestationResult]
     ) -> tuple[str, str, str] | None:
         """The declared GitHub repository under its current name, where a bundle was refused only
         because the certificate names the repository differently and GitHub resolves the declared
         one to another name (filelock declares `tox-dev/py-filelock`, renamed `tox-dev/filelock`)."""
         if source is None or source[0] != "github.com":
             return None
-        if any(r.outcome is attest.Outcome.VERIFIED for r in results) or not any(
-            r.outcome is attest.Outcome.INVALID
+        if any(r.outcome is AttestationOutcome.VERIFIED for r in results) or not any(
+            r.outcome is AttestationOutcome.INVALID
             and "GitHubWorkflowRepository does not match" in r.detail
             for r in results
         ):
             return None
-        from cordon_scanner.intel.provenance.github_repository import GitHubRepository
+        from cordon_scanner.intel.registry import GitHubRepository
 
         current = GitHubRepository.current(source[1], source[2])
         if current is None or f"{current[0]}/{current[1]}".lower() == (

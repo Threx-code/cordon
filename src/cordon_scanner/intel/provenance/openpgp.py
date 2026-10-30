@@ -29,8 +29,9 @@ import enum
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
+from cordon_scanner.intel.base import KeyInfo, Keyring
 from cordon_scanner.intel.provenance.pgp import (
     Algorithms,
     Cert,
@@ -147,44 +148,6 @@ class Result:
     expires: datetime | None = None
     """When the signing key expires (it has, if this is past), read from its current
     self-signature: a caller verifying as Helm does refuses a key expired now."""
-
-
-@dataclass(frozen=True)
-class KeyInfo:
-    """One certificate of the keyring, as its own packets describe it."""
-
-    cert: Any
-    fingerprint: str
-    key_ids: frozenset[str]
-    """The primary key's and every subkey's fingerprint and key ID, upper case."""
-    certified: tuple[datetime, ...]
-    """When each self-signature over the primary key (a user ID certification, or a direct-key
-    signature) was made."""
-    bound: dict[str, tuple[datetime, ...]]
-    """For each subkey ID (and fingerprint), when each binding signature over it was made."""
-
-
-@dataclass(frozen=True)
-class Keyring:
-    """The certificates in the operator's keyring files, and every key and subkey ID they hold."""
-
-    keys: tuple[KeyInfo, ...] = ()
-    paths: tuple[str, ...] = ()
-    problems: tuple[str, ...] = ()
-
-    @property
-    def certs(self) -> tuple[Any, ...]:
-        return tuple(k.cert for k in self.keys)
-
-    @property
-    def key_ids(self) -> frozenset[str]:
-        return frozenset(i for k in self.keys for i in k.key_ids)
-
-    def holding(self, key_id: str) -> KeyInfo | None:
-        return next((k for k in self.keys if key_id.upper() in k.key_ids), None)
-
-    def __bool__(self) -> bool:
-        return bool(self.keys)
 
 
 class Keybox:

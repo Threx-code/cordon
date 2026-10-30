@@ -38,7 +38,7 @@ import threading
 from importlib.metadata import entry_points
 from typing import Final, Protocol
 
-from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.models import Hook, Scope
 from cordon_scanner.foundation.results import Dependency
 
 ARCHIVE_SUFFIXES: Final = (
@@ -242,6 +242,18 @@ class EcosystemFactsProvider:
     @staticmethod
     def traits() -> EcosystemTraits:
         return EcosystemFactsProvider.facts()
+
+
+class HookKinds:
+    """What a manifest's hook is, where the answer is the ecosystem's (`EcosystemTraits`)."""
+
+    @staticmethod
+    def action_step(hook: Hook) -> bool:
+        """A published GitHub action's composite step: CI code on its consumers' runners, read in
+        CI context and never as an install hook or a lifecycle script (review 98)."""
+        return bool(hook.ecosystem) and EcosystemFactsProvider.traits().is_ci_step(
+            str(hook.ecosystem), hook.name
+        )
 
 
 class DependencyIdentity:
@@ -484,4 +496,5 @@ __all__ = [
     "DependencySource",
     "EcosystemFacts",
     "EcosystemFactsProvider",
+    "HookKinds",
 ]

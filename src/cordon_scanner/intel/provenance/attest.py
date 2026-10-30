@@ -42,10 +42,11 @@ from __future__ import annotations
 
 import base64
 import binascii
-import enum
 import json
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+from cordon_scanner.intel.base import AttestationOutcome as Outcome
+from cordon_scanner.intel.base import AttestationResult as Result
 
 if TYPE_CHECKING:
     from cordon_scanner.intel.provenance.sigstore_bundle import Verified
@@ -64,31 +65,6 @@ _ALGORITHMS = {"sha256": "SHA2_256", "sha512": "SHA2_512"}
 #: payload is read, because `verify_dsse` performs no validation of either the
 #: type or the payload and says so.
 _IN_TOTO_PAYLOAD_TYPE = "application/vnd.in-toto+json"
-
-
-class Outcome(enum.StrEnum):
-    """The result of asking whether a bundle verifies."""
-
-    VERIFIED = "verified"
-    """The signature, the transparency-log entry, the artefact digest and the
-    signing identity all checked out."""
-
-    INVALID = "invalid"
-    """The bundle was cryptographically rejected, or it was signed by an
-    identity other than the declared repository. This is the actionable one."""
-
-    UNVERIFIABLE = "unverifiable"
-    """Verification could not be attempted: the declared repository is missing or
-    on an unsupported forge, the bundle did not parse, or it uses evidence this
-    verifier does not read. Distinct from
-    `INVALID`, because "not checked" and "checked and failed" are opposite
-    facts -- the same distinction the registry client draws for reachability."""
-
-
-@dataclass(frozen=True, slots=True)
-class Result:
-    outcome: Outcome
-    detail: str
 
 
 class SigstoreVerification:

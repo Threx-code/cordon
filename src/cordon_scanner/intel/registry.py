@@ -67,6 +67,15 @@ ROLES: dict[str, tuple[str, str]] = {
     "PublishedManifests": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
     "RegistryArtifacts": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
     "RegistryClient": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
+    "AnsibleSignatures": (
+        "cordon_scanner.intel.provenance.ansible_signatures",
+        "AnsibleSignatures",
+    ),
+    "AttestationDocuments": ("cordon_scanner.intel.provenance.attest", "AttestationDocuments"),
+    "NEW_PACKAGE_DAYS": ("cordon_scanner.intel.registries.registry_client", "NEW_PACKAGE_DAYS"),
+    "PackageNotFound": ("cordon_scanner.intel.registries.registry_client", "PackageNotFound"),
+    "SigstoreVerification": ("cordon_scanner.intel.provenance.attest", "SigstoreVerification"),
+    "YoungReleases": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
 }
 
 if TYPE_CHECKING:
@@ -83,9 +92,12 @@ if TYPE_CHECKING:
         AdvisoryDatabases,
         AdvisoryFileChecks,
         ArtifactQueries,
+        AttestationQueries,
         BottleProvenance,
         BundleKeys,
+        BundleVerification,
         ChartProvenance,
+        CollectionSignatureQueries,
         DataFiles,
         EstablishedNames,
         Exploitations,
@@ -104,6 +116,7 @@ if TYPE_CHECKING:
         RangeMatching,
         RegistryRecords,
         RegistryVersions,
+        ReleaseAgeQueries,
         ReleaseHistories,
         RemovedNameList,
         RepositoryHeads,
@@ -114,6 +127,10 @@ if TYPE_CHECKING:
     )
     from cordon_scanner.intel.malware import feed as _intel_malware_feed
     from cordon_scanner.intel.provenance import _ed25519 as _intel_provenance__ed25519
+    from cordon_scanner.intel.provenance import (
+        ansible_signatures as _intel_provenance_ansible_signatures,
+    )
+    from cordon_scanner.intel.provenance import attest as _intel_provenance_attest
     from cordon_scanner.intel.provenance import (
         bazel_provenance as _intel_provenance_bazel_provenance,
     )
@@ -189,6 +206,14 @@ if TYPE_CHECKING:
     PublishedManifests: PublishedManifestQueries = _intel_registries_registry_client.RegistryClient
     RegistryArtifacts: ArtifactQueries = _intel_registries_registry_client.RegistryClient
     RegistryClient: PackageFactsQueries = _intel_registries_registry_client.RegistryClient
+    AnsibleSignatures: CollectionSignatureQueries = (
+        _intel_provenance_ansible_signatures.AnsibleSignatures
+    )
+    AttestationDocuments: AttestationQueries = _intel_provenance_attest.AttestationDocuments
+    NEW_PACKAGE_DAYS: int = _intel_registries_registry_client.NEW_PACKAGE_DAYS
+    PackageNotFound: type[Exception] = _intel_registries_registry_client.PackageNotFound
+    SigstoreVerification: BundleVerification = _intel_provenance_attest.SigstoreVerification
+    YoungReleases: ReleaseAgeQueries = _intel_registries_registry_client.RegistryClient
 
 
 def __getattr__(name: str) -> object:
@@ -209,6 +234,7 @@ __all__ = [
     "KEV_PAGE",
     "KNOWN_INSTALLERS",
     "LICENSE_UNKNOWN",
+    "NEW_PACKAGE_DAYS",
     "PUBLIC_HOSTS",
     "ROLES",
     "UPSTREAM_ECOSYSTEMS",
@@ -217,6 +243,8 @@ __all__ = [
     "AdvisoryCveNames",
     "AdvisoryDatabase",
     "AdvisoryFiles",
+    "AnsibleSignatures",
+    "AttestationDocuments",
     "BazelProvenance",
     "Ed25519",
     "Epss",
@@ -235,6 +263,7 @@ __all__ = [
     "OfficialInstallers",
     "OpenPgp",
     "OsvImport",
+    "PackageNotFound",
     "PopularPackageNames",
     "PrivateRegistries",
     "PublishedManifests",
@@ -244,7 +273,9 @@ __all__ = [
     "RegistryRecord",
     "ReleaseHistory",
     "RemovedPackageNames",
+    "SigstoreVerification",
     "UpstreamAdvisories",
     "VersionRanges",
     "Versions",
+    "YoungReleases",
 ]

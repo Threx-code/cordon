@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import enum
-from typing import TYPE_CHECKING, Protocol
+import urllib.parse
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
     from collections.abc import Set as AbstractSet
+    from datetime import datetime
     from pathlib import Path
     from typing import Any
 
@@ -15,9 +18,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
     from cordon_scanner.intel.provenance.helm_provenance import ChartCheck
     from cordon_scanner.intel.provenance.homebrew_provenance import BottleCheck
-    from cordon_scanner.intel.provenance.openpgp import Keyring
-    from cordon_scanner.intel.registries.private_registries import PrivateRegistry
-    from cordon_scanner.intel.registries.registry_client import PackageArchive, PackageFacts
+    from cordon_scanner.intel.registries.registry_client import PackageArchive
     from cordon_scanner.intel.store.live_mcp import ServedTool
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
@@ -421,6 +422,184 @@ class Keyrings(Protocol):
     def load(self, paths: tuple[str, ...]) -> Keyring: ...
 
 
+class AttestationQueries(Protocol):
+    """What a detector uses of the class `AttestationDocuments`: the digest a lockfile pinned, and
+    the bundles a registry's attestation payload holds."""
+
+    def parse_integrity(self, integrity: str | None) -> tuple[str, str] | None: ...
+    def extract_bundles(
+        self, ecosystem: str, payload: dict[str, Any] | None
+    ) -> tuple[str, ...]: ...
+
+
+class BundleVerification(Protocol):
+    """What a detector uses of the class `SigstoreVerification`."""
+
+    def verify(
+        self,
+        bundle_json: str | bytes,
+        *,
+        digest_hex: str,
+        algorithm: str,
+        source_repo: tuple[str, str, str] | None,
+        offline: bool = ...,
+    ) -> AttestationResult: ...
+
+
+class CollectionSignatureQueries(Protocol):
+    """What a detector uses of the class `AnsibleSignatures`."""
+
+    def installed(
+        self,
+        name: str,
+        version: str,
+        manifest: bytes,
+        signatures: tuple[str, ...],
+        keyring: Keyring,
+    ) -> CollectionCheck: ...
+    def remote(
+        self, name: str, version: str, sources: tuple[str, ...], keyring: Keyring
+    ) -> CollectionCheck: ...
+
+
+class ReleaseAgeQueries(Protocol):
+    """What a detector uses of the class `RegistryClient` to ask how old a release is."""
+
+    def younger_than(self, timestamp: str | None, days: int) -> bool: ...
+
+
+# Values the ports carry: plain data, defined here so a detector holds them without reaching a
+# concrete intel module.
+
+
+class AttestationOutcome(enum.StrEnum):
+    """The result of asking whether a bundle verifies."""
+
+    VERIFIED = "verified"
+    """The signature, the transparency-log entry, the artefact digest and the
+    signing identity all checked out."""
+
+    INVALID = "invalid"
+    """The bundle was cryptographically rejected, or it was signed by an
+    identity other than the declared repository. This is the actionable one."""
+
+    UNVERIFIABLE = "unverifiable"
+    """Verification could not be attempted: the declared repository is missing or
+    on an unsupported forge, the bundle did not parse, or it uses evidence this
+    verifier does not read. Distinct from
+    `INVALID`, because "not checked" and "checked and failed" are opposite
+    facts -- the same distinction the registry client draws for reachability."""
+
+
+@dataclass(frozen=True, slots=True)
+class AttestationResult:
+    outcome: AttestationOutcome
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class PackageFacts:
+    """What a registry says about one package version."""
+
+    name: str
+    version: str | None
+    yanked: bool = False
+    yanked_reason: str | None = None
+    latest: str | None = None
+    repository: str | None = None
+    """The source repository the registry records, for comparison with what the
+    package claims locally."""
+
+    digests: tuple[str, ...] = ()
+    """Hashes the registry publishes for this version's artefacts."""
+
+    attested: bool = False
+    """Whether the registry holds build provenance for *this* version."""
+
+    first_published: str | None = None
+    """ISO-8601 time of the package's first release: how long the name has existed."""
+
+    last_published: str | None = None
+    """ISO-8601 time of the package's most recent release: whether anyone still maintains it."""
+
+    deprecated: str | None = None
+    """The publisher's deprecation notice for this version (npm), or the project's own statement
+    that it is inactive (PyPI's `Development Status :: 7 - Inactive`). Publisher-written text."""
+
+    releases: int = 0
+
+    weekly_downloads: int | None = None
+    """npm's last-week download count, asked only for a package under a quarter old. None when not
+    asked, or for a registry with no first-party download figures (PyPI)."""
+
+    attested_versions: int = 0
+    """Attested releases published *before* the one pinned here.
+
+    Not a total, and the distinction is the rule. A package that has never
+    published provenance says nothing by not publishing it, and so does one
+    that started attesting last month -- every older pin predates the practice,
+    and counting totals made `requests==2.31.0` look like a gap because
+    `requests` attests now.
+
+    What is worth reporting is a release that shipped while the package was
+    already attesting and skipped it. That needs the ordering, so this counts
+    only the siblings that came first."""
+
+
+class PrivateRegistry(NamedTuple):
+    base: str
+    """`https://host[:port]/path`, without a trailing slash."""
+    variable: str
+    """The environment variable holding the token: `token` (bearer) or `user:token` (basic)."""
+
+    @property
+    def host(self) -> str:
+        return urllib.parse.urlsplit(self.base).netloc.lower()
+
+
+@dataclass(frozen=True)
+class KeyInfo:
+    """One certificate of the keyring, as its own packets describe it."""
+
+    cert: Any
+    fingerprint: str
+    key_ids: frozenset[str]
+    """The primary key's and every subkey's fingerprint and key ID, upper case."""
+    certified: tuple[datetime, ...]
+    """When each self-signature over the primary key (a user ID certification, or a direct-key
+    signature) was made."""
+    bound: dict[str, tuple[datetime, ...]]
+    """For each subkey ID (and fingerprint), when each binding signature over it was made."""
+
+
+@dataclass(frozen=True)
+class Keyring:
+    """The certificates in the operator's keyring files, and every key and subkey ID they hold."""
+
+    keys: tuple[KeyInfo, ...] = ()
+    paths: tuple[str, ...] = ()
+    problems: tuple[str, ...] = ()
+
+    @property
+    def certs(self) -> tuple[Any, ...]:
+        return tuple(k.cert for k in self.keys)
+
+    @property
+    def key_ids(self) -> frozenset[str]:
+        return frozenset(i for k in self.keys for i in k.key_ids)
+
+    def holding(self, key_id: str) -> KeyInfo | None:
+        return next((k for k in self.keys if key_id.upper() in k.key_ids), None)
+
+    def __bool__(self) -> bool:
+        return bool(self.keys)
+
+
+@dataclass(frozen=True)
+class CollectionCheck:
+    outcome: str
+    """`verified`, `invalid`, `unverifiable`, `unconfigured` (signed; no keyring) or `absent`."""
+    detail: str
 
 
 __all__ = [

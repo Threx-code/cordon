@@ -33,6 +33,7 @@ from cordon_scanner.analysis.javascript.js_flow import JsFlow
 from cordon_scanner.analysis.python.py_flow_facts import PythonFlowFacts
 from cordon_scanner.detect.binary.features import BinaryFeatures
 from cordon_scanner.detect.code.features import CodeFeatures
+from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.files.windows import BytesWindows, WindowSourceChanged
 
 if TYPE_CHECKING:
@@ -141,7 +142,7 @@ class ReachedFlows:
                 files += [
                     (f"{unit.path}#{hook.name}.sh", hook.command.encode())
                     for hook in hooks
-                    if hook.command and not hook.action_step
+                    if hook.command and not HookKinds.action_step(hook)
                 ]
             for unit in units:
                 if unit.path not in paths:

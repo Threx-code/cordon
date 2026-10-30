@@ -15,7 +15,7 @@ from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 from cordon_scanner.foundation.capabilities import Capability
-from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider, HookKinds
 from cordon_scanner.foundation.models import (
     AUTHOR_TIME_HOOKS,
     INSTALL_TIME_HOOKS,
@@ -117,7 +117,7 @@ class LifecycleFindings:
     ) -> Iterator[Finding]:
         """The findings for one lifecycle hook: what its command runs, and whether that is install-time payload."""
         command = hook.command
-        if not command or hook.action_step:
+        if not command or HookKinds.action_step(hook):
             return
         loader = _REQUIRE_ONLY.match(command.strip())
         if loader:

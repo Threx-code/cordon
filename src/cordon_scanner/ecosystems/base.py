@@ -538,17 +538,9 @@ class ReleaseFile(Protocol):
     def content(self) -> FileContent: ...
 
 
-class BaseEcosystem:
-    """Shared behaviour. Implementing the protocol directly is equally valid."""
-
-    def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
-        """The runtime dependencies a published release of this ecosystem declares, read from its
-        own files; none where the ecosystem's releases are not read this way."""
-        return frozenset()
-
-    # -- What each ecosystem declares about itself (`foundation.dependencies`' naming, versions
-    # and traits ports, answered by `ecosystems.registry.RegistryFacts`). The defaults are an
-    # ecosystem's that has none of them; each ecosystem overrides what is its own.
+class NamingDefaults:
+    """How an ecosystem names its packages (`foundation.dependencies.EcosystemNaming`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return None
@@ -558,6 +550,11 @@ class BaseEcosystem:
 
     def coordinate_separator(self) -> str | None:
         return None
+
+
+class VersionDefaults:
+    """What an ecosystem's versions pin (`foundation.dependencies.EcosystemVersions`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
 
     def pinned_by_digest(self) -> bool:
         return False
@@ -571,6 +568,11 @@ class BaseEcosystem:
     def is_held_version(self, version: str) -> bool:
         return False
 
+
+class TraitDefaults:
+    """What an ecosystem's packages can carry (`foundation.dependencies.EcosystemTraits`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
+
     def has_install_scripts(self) -> bool:
         return False
 
@@ -582,6 +584,15 @@ class BaseEcosystem:
 
     def squat_comparisons(self) -> tuple[str, ...]:
         return ("npm", "cargo")
+
+
+class BaseEcosystem(NamingDefaults, VersionDefaults, TraitDefaults):
+    """Shared behaviour. Implementing the protocol directly is equally valid."""
+
+    def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
+        """The runtime dependencies a published release of this ecosystem declares, read from its
+        own files; none where the ecosystem's releases are not read this way."""
+        return frozenset()
 
     def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
         return []
@@ -864,4 +875,7 @@ __all__ = [
     "LockEntry",
     "LockGraph",
     "Manifest",
+    "NamingDefaults",
+    "TraitDefaults",
+    "VersionDefaults",
 ]

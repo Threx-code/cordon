@@ -11,19 +11,25 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from cordon_scanner.foundation.errors import RulePackError
 from cordon_scanner.intel.malware.feed_rules import PACK_FILE, FeedRules
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from pathlib import Path
     from typing import Any
 
-    from cordon_scanner.rules.loader import RuleLoader
     from cordon_scanner.rules.pack import RulePack
 
 logger = logging.getLogger("cordon_scanner.intel.malware.feed_rules")
+
+
+class PackFiles(Protocol):
+    """What the delivered packs are read with: the rule loader's file reader."""
+
+    def load_file(self, path: str | Path) -> RulePack: ...
 
 
 class FeedPacks:
@@ -31,14 +37,14 @@ class FeedPacks:
 
     @classmethod
     def packs(
-        cls, loader: RuleLoader, bundled_ids: Iterable[str], *, shadow: bool | None = None
+        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
     ) -> tuple[RulePack, ...]:
         """The delivered packs this scan loads: verified, not colliding, shadow only when asked."""
         return tuple(pack for _, pack in cls._select(loader, bundled_ids, shadow=shadow))
 
     @classmethod
     def loaded(
-        cls, loader: RuleLoader, bundled_ids: Iterable[str], *, shadow: bool | None = None
+        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
     ) -> tuple[str, ...]:
         """The candidate ids of the delivered packs a scan here runs, each with a rule still on.
 
@@ -52,17 +58,8 @@ class FeedPacks:
         )
 
     @classmethod
-    def running(cls, *, shadow: bool | None = None) -> tuple[str, ...]:
-        """`loaded`, against the bundled rules of this install: what a default scan here runs."""
-        from cordon_scanner.rules.loader import RuleLoader
-
-        bundled = RuleLoader._builtin_once(str(RuleLoader.builtin_pack_dir()))
-        ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
-        return cls.loaded(RuleLoader(), ids, shadow=shadow)
-
-    @classmethod
     def _select(
-        cls, loader: RuleLoader, bundled_ids: Iterable[str], *, shadow: bool | None
+        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None
     ) -> list[tuple[str, RulePack]]:
         from cordon_scanner.foundation.models import Category, Confidence, Severity
 

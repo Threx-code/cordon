@@ -772,6 +772,16 @@ class RuleLoader:
         ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
         return bundled + FeedPacks.packs(loader or cls(), ids)
 
+    @classmethod
+    def running_feed_packs(cls, *, shadow: bool | None = None) -> tuple[str, ...]:
+        """`FeedPacks.loaded`, against the bundled rules of this install: what a default scan
+        here runs."""
+        from cordon_scanner.rules.feed_packs import FeedPacks
+
+        bundled = cls._builtin_once(str(cls.builtin_pack_dir()))
+        ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
+        return FeedPacks.loaded(cls(), ids, shadow=shadow)
+
     @staticmethod
     @OneOff.cache
     def _builtin_once(directory: str) -> tuple[RulePack, ...]:

@@ -85,8 +85,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
-    from cordon_scanner.intel.registries.private_registries import PrivateRegistry
-    from cordon_scanner.intel.registries.registry_client import PackageFacts
+    from cordon_scanner.intel.base import PackageFacts, PrivateRegistry
 
 MAX_QUERIES = 200
 """How many packages one scan will ask about.
@@ -216,9 +215,7 @@ class RegistryDetector(BaseDetector):
                 and d.ecosystem != RUNTIME_ECOSYSTEM
             }
         )
-        from cordon_scanner.intel.registries.private_registries import (
-            PrivateRegistry,
-        )
+        from cordon_scanner.intel.base import PrivateRegistry
 
         # Registries the organisation runs, with the credential the operator named for each.
         configured = tuple(PrivateRegistry(*pair) for pair in ctx.config.private_registries)
@@ -254,7 +251,7 @@ class RegistryDetector(BaseDetector):
             ImageReference,
             PublicRegistries,
         )
-        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+        from cordon_scanner.intel.registry import PrivateRegistries
 
         # An image pinned by digest alone is asked about by its digest. An image on a registry
         # an organisation runs answers only with credentials: asked with them where the operator
@@ -305,9 +302,9 @@ class RegistryDetector(BaseDetector):
         unanswered: list[str],
     ) -> int:
         """Ask the registries about each dependency in turn, within the time budget: what each answers is compared with what the project declares, a name no public registry knows is reported, and a question that went unanswered is kept for the coverage note. How many were left unasked when time ran out."""
-        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
-        from cordon_scanner.intel.registries.registry_client import (
+        from cordon_scanner.intel.registry import (
             PackageNotFound,
+            PrivateRegistries,
             RegistryClient,
             RegistryError,
         )
@@ -461,7 +458,7 @@ class RegistryDetector(BaseDetector):
         asserting a disagreement between two things one of which was never
         read.
         """
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registry import RegistryClient, RegistryError
 
         ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
         if ecosystem_id is None or ecosystem_id not in REGISTRY_ECOSYSTEMS:
@@ -528,7 +525,7 @@ class RegistryDetector(BaseDetector):
     def _compare(
         self, dependency: Dependency, observed: object, ctx: ScanContext
     ) -> Iterable[Finding]:
-        from cordon_scanner.intel.registries.registry_client import PackageFacts
+        from cordon_scanner.intel.base import PackageFacts
 
         if not isinstance(observed, PackageFacts):  # pragma: no cover - defensive
             return
@@ -763,16 +760,16 @@ class RegistryDetector(BaseDetector):
     def _unvetted(cls, dependency: Dependency, observed: object) -> str | None:
         """The shape a slopsquatted package has: new, no source repository, and either barely
         downloaded or named by adding a generic affix to an established package."""
-        from cordon_scanner.intel.registries.registry_client import (
+        from cordon_scanner.intel.base import PackageFacts
+        from cordon_scanner.intel.registry import (
             NEW_PACKAGE_DAYS,
-            PackageFacts,
-            RegistryClient,
+            EstablishedPackageNames,
+            YoungReleases,
         )
-        from cordon_scanner.intel.registry import EstablishedPackageNames
 
         if not isinstance(observed, PackageFacts) or observed.repository:
             return None
-        if not RegistryClient._younger_than(observed.first_published, NEW_PACKAGE_DAYS):
+        if not YoungReleases.younger_than(observed.first_published, NEW_PACKAGE_DAYS):
             return None
         established = EstablishedPackageNames.established(dependency.ecosystem)
         name = dependency.name.lower()
@@ -821,7 +818,7 @@ class RegistryDetector(BaseDetector):
         if dependency.ecosystem not in cls.ABSENCE_IS_WITHDRAWAL:
             return True
 
-        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
+        from cordon_scanner.intel.registry import PUBLIC_HOSTS
 
         resolved = dependency.resolved_from or ""
         if not resolved.startswith(("http://", "https://")):
@@ -842,7 +839,7 @@ class RegistryDetector(BaseDetector):
         if not resolved.startswith(("http://", "https://")):
             return False
         host = urllib.parse.urlsplit(resolved).hostname or ""
-        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
+        from cordon_scanner.intel.registry import PUBLIC_HOSTS
 
         return host not in {
             "registry.npmjs.org",

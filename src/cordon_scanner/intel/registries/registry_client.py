@@ -40,6 +40,7 @@ from typing import Any
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.intel.base import PackageFacts
 
 TIMEOUT_SECONDS = 5.0
 """Per-request ceiling. A scan waiting on a slow registry is a scan somebody
@@ -100,55 +101,6 @@ ATTESTATION_HOSTS = {
 }
 
 USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
-
-
-@dataclass(frozen=True, slots=True)
-class PackageFacts:
-    """What a registry says about one package version."""
-
-    name: str
-    version: str | None
-    yanked: bool = False
-    yanked_reason: str | None = None
-    latest: str | None = None
-    repository: str | None = None
-    """The source repository the registry records, for comparison with what the
-    package claims locally."""
-
-    digests: tuple[str, ...] = ()
-    """Hashes the registry publishes for this version's artefacts."""
-
-    attested: bool = False
-    """Whether the registry holds build provenance for *this* version."""
-
-    first_published: str | None = None
-    """ISO-8601 time of the package's first release: how long the name has existed."""
-
-    last_published: str | None = None
-    """ISO-8601 time of the package's most recent release: whether anyone still maintains it."""
-
-    deprecated: str | None = None
-    """The publisher's deprecation notice for this version (npm), or the project's own statement
-    that it is inactive (PyPI's `Development Status :: 7 - Inactive`). Publisher-written text."""
-
-    releases: int = 0
-
-    weekly_downloads: int | None = None
-    """npm's last-week download count, asked only for a package under a quarter old. None when not
-    asked, or for a registry with no first-party download figures (PyPI)."""
-
-    attested_versions: int = 0
-    """Attested releases published *before* the one pinned here.
-
-    Not a total, and the distinction is the rule. A package that has never
-    published provenance says nothing by not publishing it, and so does one
-    that started attesting last month -- every older pin predates the practice,
-    and counting totals made `requests==2.31.0` look like a gap because
-    `requests` attests now.
-
-    What is worth reporting is a release that shipped while the package was
-    already attesting and skipped it. That needs the ordering, so this counts
-    only the siblings that came first."""
 
 
 class RegistryError(RuntimeError):
@@ -549,6 +501,11 @@ class RegistryClient:
             attested=attested,
             attested_versions=attested_versions,
         )
+
+    @staticmethod
+    def younger_than(timestamp: str | None, days: int) -> bool:
+        """Whether an ISO-8601 time is less than `days` old (False when absent or unreadable)."""
+        return RegistryClient._younger_than(timestamp, days)
 
     @staticmethod
     def _younger_than(timestamp: str | None, days: int) -> bool:

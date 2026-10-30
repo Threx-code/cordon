@@ -27,10 +27,11 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, Any, Final, NamedTuple
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.intel.base import PrivateRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -38,17 +39,6 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries.registry_client import PackageFacts
 
 MAX_BYTES: Final = 32 << 20
-
-
-class PrivateRegistry(NamedTuple):
-    base: str
-    """`https://host[:port]/path`, without a trailing slash."""
-    variable: str
-    """The environment variable holding the token: `token` (bearer) or `user:token` (basic)."""
-
-    @property
-    def host(self) -> str:
-        return urllib.parse.urlsplit(self.base).netloc.lower()
 
 
 class PrivateRegistries:
